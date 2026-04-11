@@ -308,5 +308,42 @@
         {"input": 90.0,  "expected_events": ["CLEAR_WARNING"],       "note": "leave warning; critical also leaves silently (no event)"}
       ]
     }
+  },
+
+  "codecs": {
+    "codec_little_endian": {
+      "fixture": "CodecLittleEndian",
+      "signature": "(raw: &[u8]) <-> {sensorId: u8 @ byte 0, value: u16 @ byte 1 little-endian, status: u8 @ byte 3}",
+      "description": "Multi-field little-endian frame. Encode emits [sensorId, value_lo, value_hi, status]; decode reverses. Field names use SCXML source case (camelCase) as the canonical oracle key; each language fragment applies its own case filter to match the generated struct's native naming.",
+      "cases": [
+        {"decoded": {"sensorId": 42,  "value": 1000,  "status": 1},   "encoded": [42, 232, 3, 1],     "note": "value=0x03E8 -> lo=0xE8=232, hi=0x03=3"},
+        {"decoded": {"sensorId": 0,   "value": 0,     "status": 0},   "encoded": [0, 0, 0, 0],        "note": "all-zero frame"},
+        {"decoded": {"sensorId": 255, "value": 65535, "status": 255}, "encoded": [255, 255, 255, 255], "note": "all-one frame saturates every width"},
+        {"decoded": {"sensorId": 7,   "value": 4660,  "status": 2},   "encoded": [7, 52, 18, 2],      "note": "value=0x1234 -> lo=0x34=52, hi=0x12=18"}
+      ]
+    },
+    "codec_simple_frame": {
+      "fixture": "CodecSimpleFrame",
+      "signature": "(raw: &[u8]) <-> {msgId: u8 @ byte 0, length: u8 @ byte 1, payload: u16 @ byte 2 big-endian}",
+      "description": "Big-endian 4-byte frame. Encode emits [msgId, length, payload_hi, payload_lo]; decode reverses. Byte-order contrast to codec_little_endian proves the encode/decode expressions track sce:default-endian.",
+      "cases": [
+        {"decoded": {"msgId": 1,   "length": 10,  "payload": 4660},  "encoded": [1, 10, 18, 52],     "note": "payload=0x1234 -> hi=0x12=18, lo=0x34=52"},
+        {"decoded": {"msgId": 0,   "length": 0,   "payload": 0},     "encoded": [0, 0, 0, 0],        "note": "all-zero frame"},
+        {"decoded": {"msgId": 255, "length": 255, "payload": 65535}, "encoded": [255, 255, 255, 255], "note": "all-one frame"},
+        {"decoded": {"msgId": 128, "length": 4,   "payload": 256},   "encoded": [128, 4, 1, 0],      "note": "payload=0x0100 -> hi=1, lo=0"}
+      ]
+    },
+    "codec_subbyte": {
+      "fixture": "CodecSubbyte",
+      "signature": "(raw: &[u8]) <-> {priority: u8 @ byte 0 bits[7:5], channel: u8 @ byte 0 bits[4:2], direction: u8 @ byte 0 bits[1:0]}",
+      "description": "Sub-byte bit-field extraction packed into a single byte: priority(3b) | channel(3b) | direction(2b). Encode shifts and ORs; decode shifts and masks. Exercises the sub-byte branch of the codec code generator which produces different expressions from whole-byte fields.",
+      "cases": [
+        {"decoded": {"priority": 5, "channel": 3, "direction": 1}, "encoded": [173], "note": "(5<<5)|(3<<2)|1 = 160|12|1 = 173"},
+        {"decoded": {"priority": 0, "channel": 0, "direction": 0}, "encoded": [0],   "note": "all-zero"},
+        {"decoded": {"priority": 7, "channel": 7, "direction": 3}, "encoded": [255], "note": "saturated (7<<5)|(7<<2)|3 = 224|28|3 = 255"},
+        {"decoded": {"priority": 1, "channel": 2, "direction": 2}, "encoded": [42],  "note": "(1<<5)|(2<<2)|2 = 32|8|2 = 42"},
+        {"decoded": {"priority": 4, "channel": 5, "direction": 0}, "encoded": [148], "note": "(4<<5)|(5<<2)|0 = 128|20|0 = 148"}
+      ]
+    }
   }
 }

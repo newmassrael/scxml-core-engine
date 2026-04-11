@@ -1,0 +1,35 @@
+{# Codec kind — round-trip { decoded, encoded } cases. The Kotlin data
+   class keeps the SCXML source case (camelCase) as-is, so field accesses
+   use `{{ field.name }}` without a case filter. `decode` is on the
+   companion object; `encode` is an instance method returning ByteArray. #}
+        val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
+        spec["cases"]!!.jsonArray.forEachIndexed { i, caseEl ->
+            val decoded = caseEl.jsonObject["decoded"]!!.jsonObject
+{% for field in f.fields %}
+            val input{{ field.name | to_pascal_case }} = {{ ('decoded["' ~ field.name ~ '"]!!') | kt_unmarshal(field.type) }}
+{% endfor %}
+            val expectedBytes = caseEl.jsonObject["encoded"]!!.jsonArray
+                .map { it.jsonPrimitive.int.toByte() }
+                .toByteArray()
+
+            val valueObj = {{ f.name | to_pascal_case }}(
+{% for field in f.fields %}
+                {{ field.name }} = input{{ field.name | to_pascal_case }}{% if not loop.last %},{% endif %}
+{% endfor %}
+            )
+            val encoded = valueObj.encode()
+            assertTrue(
+                encoded.contentEquals(expectedBytes),
+                "{{ f.name }} case $i encode: actual=${encoded.joinToString()} expected=${expectedBytes.joinToString()}",
+            )
+
+            val roundTripped = {{ f.name | to_pascal_case }}.decode(expectedBytes)
+                ?: error("{{ f.name }} case $i decode returned null")
+{% for field in f.fields %}
+            assertEquals(
+                input{{ field.name | to_pascal_case }},
+                roundTripped.{{ field.name }},
+                "{{ f.name }} case $i decode {{ field.name }}",
+            )
+{% endfor %}
+        }

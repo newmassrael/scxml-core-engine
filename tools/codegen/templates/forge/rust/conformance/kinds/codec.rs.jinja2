@@ -1,0 +1,50 @@
+{# Codec kind — round-trip { decoded, encoded } cases. Each case binds the
+   per-field oracle values under an `input_<field>` prefix, inlines the
+   struct literal into the `encode()` call (so no intermediate variable can
+   shadow a field name), then decodes `expected_bytes` back and asserts
+   every field matches the `input_<field>` value.
+
+   Naming convention is shared with C++/Kotlin/Python codec fragments:
+   `input_<field>` for oracle-derived values, `round_tripped` for the
+   decoded struct. A codec fixture may declare any field name (including
+   common words like `value`, `data`, `result`) without risk of colliding
+   with the fragment's local bindings. #}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for (i, case) in spec["cases"]
+        .as_array()
+        .expect("cases must be array")
+        .iter()
+        .enumerate()
+    {
+        let decoded = &case["decoded"];
+{% for field in f.fields %}
+        let input_{{ field.name | to_snake_case }} = {{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }};
+{% endfor %}
+        let expected_bytes: Vec<u8> = case["encoded"]
+            .as_array()
+            .expect("encoded must be array")
+            .iter()
+            .map(|v| v.as_u64().expect("byte must be u64") as u8)
+            .collect();
+
+        let encoded = {{ f.name | to_pascal_case }} {
+{% for field in f.fields %}
+            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }},
+{% endfor %}
+        }
+        .encode();
+        assert_eq!(
+            encoded, expected_bytes,
+            "{{ f.name }} case {i} encode"
+        );
+
+        let round_tripped = {{ f.name | to_pascal_case }}::decode(&expected_bytes)
+            .expect("{{ f.name }} decode must succeed");
+{% for field in f.fields %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }},
+            input_{{ field.name | to_snake_case }},
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% endfor %}
+    }

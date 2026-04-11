@@ -10,7 +10,8 @@
     "observer":      "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
     "procedure":     "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions.",
     "lookup":        "Finite key→value mapping with on-miss=error policy. Free function lookup_<name>(key) -> Option<V>. Numeric output only — string outputs go through the existing enum-dispatch lookup path tested by forge_conformance goldens. Reference section: pure_functions.",
-    "validator":     "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators."
+    "validator":     "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators.",
+    "codec":         "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional). Oracle cases are `{decoded, encoded}` pairs exercising round-trip symmetry in both directions. Field layout lives in SCXML (sce:byte, sce:bit-offset, sce:bit-size, sce:default-endian); the manifest entry only mirrors field names and canonical types so fragments can iterate them. Field names use SCXML source case (camelCase) as the canonical key across oracle and manifest; each per-language fragment applies its own case filter (Rust/Python snake_case, Go PascalCase, C++/Kotlin as-is camelCase). Reference section: codecs."
   },
   "canonical_types": {
     "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++).",
@@ -197,6 +198,37 @@
       "output": [
         {"name": "valid",  "type": "bool",   "compare": "equality"},
         {"name": "reason", "type": "string", "compare": "equality"}
+      ]
+    },
+
+    {
+      "name": "codec_little_endian",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {"name": "sensorId", "type": "u8",  "compare": "equality"},
+        {"name": "value",    "type": "u16", "compare": "equality"},
+        {"name": "status",   "type": "u8",  "compare": "equality"}
+      ]
+    },
+    {
+      "name": "codec_simple_frame",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {"name": "msgId",   "type": "u8",  "compare": "equality"},
+        {"name": "length",  "type": "u8",  "compare": "equality"},
+        {"name": "payload", "type": "u16", "compare": "equality"}
+      ]
+    },
+    {
+      "name": "codec_subbyte",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {"name": "priority",  "type": "u8", "compare": "equality"},
+        {"name": "channel",   "type": "u8", "compare": "equality"},
+        {"name": "direction", "type": "u8", "compare": "equality"}
       ]
     }
   ]

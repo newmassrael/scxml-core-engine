@@ -1,0 +1,47 @@
+{# Codec kind — round-trip { decoded, encoded } cases. The generated Go
+   package exposes `Decode<PascalName>(raw []byte) *<PascalName>` and
+   `func (s *<PascalName>) Encode() []byte`. SCXML source case (camelCase)
+   is converted to PascalCase for Go struct fields via the `to_pascal_case`
+   filter, matching the generator's naming convention. #}
+	cases := ref.codecCases(t, "{{ f.ref_section }}", "{{ f.name }}")
+	type decodedShape struct {
+{% for field in f.fields %}
+		{{ field.name | to_pascal_case }} {{ field.type | go_type }} `json:"{{ field.name }}"`
+{% endfor %}
+	}
+	for i, c := range cases {
+		var d decodedShape
+		unmarshalOrFatal(t, c.Decoded, &d, "{{ f.name }} decoded")
+		expectedBytes := make([]byte, len(c.Encoded))
+		for j, b := range c.Encoded {
+			expectedBytes[j] = byte(b)
+		}
+
+		value := &{{ f.name }}.{{ f.name | to_pascal_case }}{
+{% for field in f.fields %}
+			{{ field.name | to_pascal_case }}: d.{{ field.name | to_pascal_case }},
+{% endfor %}
+		}
+		encoded := value.Encode()
+		if len(encoded) != len(expectedBytes) {
+			t.Errorf("{{ f.name }} case %d encode: length actual=%d expected=%d", i, len(encoded), len(expectedBytes))
+		} else {
+			for j := range expectedBytes {
+				if encoded[j] != expectedBytes[j] {
+					t.Errorf("{{ f.name }} case %d encode byte %d: actual=%d expected=%d", i, j, encoded[j], expectedBytes[j])
+					break
+				}
+			}
+		}
+
+		roundTripped := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(expectedBytes)
+		if roundTripped == nil {
+			t.Errorf("{{ f.name }} case %d decode returned nil", i)
+			continue
+		}
+{% for field in f.fields %}
+		if roundTripped.{{ field.name | to_pascal_case }} != d.{{ field.name | to_pascal_case }} {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, roundTripped.{{ field.name | to_pascal_case }}, d.{{ field.name | to_pascal_case }})
+		}
+{% endfor %}
+	}

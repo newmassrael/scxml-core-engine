@@ -97,12 +97,26 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["interpolation", "transform", "condition", "filter", "observer", "procedure", "lookup"]
+          "enum": ["interpolation", "transform", "condition", "filter", "observer", "procedure", "lookup", "validator", "codec"]
         },
         "ref_section": {
           "type": "string",
-          "enum": ["pure_functions", "stateful_filters", "observers"],
+          "enum": ["pure_functions", "stateful_filters", "observers", "validators", "codecs"],
           "description": "Top-level key in numerical_reference.json that holds the oracle entries for this fixture."
+        },
+        "fields": {
+          "type": "array",
+          "description": "Codec kind: ordered list of struct fields (name in SCXML source case, canonical type, compare mode). Per-language fragments iterate this list to build the decoded literal and round-trip assertions.",
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "compare"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "$ref": "#/$defs/canonicalType" },
+              "compare": { "$ref": "#/$defs/compareMode" }
+            }
+          }
         },
         "args": {
           "type": "array",
@@ -170,6 +184,14 @@
             "required": ["args", "output", "on_miss"],
             "not": { "required": ["function"] }
           }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "validator" } }, "required": ["kind"] },
+          "then": { "required": ["args", "output"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "codec" } }, "required": ["kind"] },
+          "then": { "required": ["fields"] }
         }
       ]
     }

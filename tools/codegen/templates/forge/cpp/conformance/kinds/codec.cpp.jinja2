@@ -1,0 +1,50 @@
+{# Codec kind — round-trip { decoded, encoded } cases. Each case binds the
+   per-field oracle values under an `input_<field>` prefix, then inlines
+   the struct literal into the `encode()` call so no intermediate variable
+   can shadow a user-declared field name. `round_tripped` holds the
+   `decode()` result for reverse-direction assertions.
+
+   Naming convention matches the Rust/Kotlin/Python codec fragments — any
+   SCXML field name (including `value`, `data`, `result`, etc.) is safe
+   because local bindings are all `input_<field>` and never bare. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    int i = 0;
+    for (const auto &case_entry : spec["cases"]) {
+        const auto &decoded_json = case_entry["decoded"];
+{% for field in f.fields %}
+        auto input_{{ field.name }} = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
+{% endfor %}
+        std::vector<std::uint8_t> expected_bytes;
+        for (const auto &b : case_entry["encoded"]) {
+            expected_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
+        }
+
+        auto encoded = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}{
+{% for field in f.fields %}
+            .{{ field.name }} = input_{{ field.name }}{% if not loop.last %},{% endif %}
+{% endfor %}
+        }
+        .encode();
+        CHECK(encoded == expected_bytes,
+              "{{ f.name }} case %d encode: size actual=%zu expected=%zu",
+              i, encoded.size(), expected_bytes.size());
+
+        auto round_tripped = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(
+            expected_bytes.data(), expected_bytes.size());
+        CHECK(round_tripped.has_value(),
+              "{{ f.name }} case %d decode returned nullopt", i);
+        if (round_tripped.has_value()) {
+{% for field in f.fields %}
+{% if field.type == "bool" %}
+            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+                  "{{ f.name }} case %d decode {{ field.name }}: actual=%d expected=%d",
+                  i, static_cast<int>(round_tripped->{{ field.name }}), static_cast<int>(input_{{ field.name }}));
+{% else %}
+            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+                  "{{ f.name }} case %d decode {{ field.name }}: actual=%s expected=%s",
+                  i, std::to_string(round_tripped->{{ field.name }}).c_str(), std::to_string(input_{{ field.name }}).c_str());
+{% endif %}
+{% endfor %}
+        }
+        ++i;
+    }

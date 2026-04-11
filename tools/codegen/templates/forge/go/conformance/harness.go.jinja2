@@ -43,6 +43,7 @@ type reference struct {
 	StatefulFilters map[string]filterSpec    `json:"stateful_filters"`
 	Observers       map[string]observerSpec  `json:"observers"`
 	Validators      map[string]validatorSpec `json:"validators"`
+	Codecs          map[string]codecSpec     `json:"codecs"`
 }
 
 type pureSpec struct {
@@ -79,6 +80,20 @@ type validatorSpec struct {
 type validatorStep struct {
 	Args     []json.RawMessage `json:"args"`
 	Expected json.RawMessage   `json:"expected"`
+}
+
+type codecSpec struct {
+	Cases []codecCase `json:"cases"`
+}
+
+// codecCase holds one round-trip pair. `Encoded` is modelled as `[]int`
+// rather than `[]byte` because Go's encoding/json treats `[]byte` as a
+// base64-encoded string; the oracle stores bytes as a JSON array of
+// unsigned integers, which unmarshals cleanly into `[]int` and is
+// converted to `[]byte` at use site inside the codec fragment.
+type codecCase struct {
+	Decoded json.RawMessage `json:"decoded"`
+	Encoded []int           `json:"encoded"`
 }
 
 // pureCases looks up pure-function cases by the manifest's ref_section
@@ -138,6 +153,22 @@ func (r *reference) validatorSteps(t *testing.T, section, fixture string) []vali
 		t.Fatalf("fixture %q: missing entry in validators", fixture)
 	}
 	return spec.Sequence
+}
+
+// codecCases — see filterSteps for the drift-detection contract. Codec
+// cases are independent round-trip pairs rather than an ordered sequence,
+// but the ref_section assertion and missing-fixture guard are identical to
+// the other kind-specific accessors.
+func (r *reference) codecCases(t *testing.T, section, fixture string) []codecCase {
+	t.Helper()
+	if section != "codecs" {
+		t.Fatalf("fixture %q: codec kind requires ref_section=codecs, got %q", fixture, section)
+	}
+	spec, ok := r.Codecs[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in codecs", fixture)
+	}
+	return spec.Cases
 }
 
 func repoRoot(t *testing.T) string {

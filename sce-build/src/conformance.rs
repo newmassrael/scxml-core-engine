@@ -182,6 +182,24 @@ pub enum FixtureSpec {
         args: Vec<CanonicalType>,
         output: Vec<StructField>,
     },
+    /// Byte-layout codec. Generated struct exposes `encode()` returning the
+    /// raw byte vector and a static `decode(raw)` returning the typed struct
+    /// (wrapped in the language's optional type). The fixture oracle holds
+    /// per-case `{decoded, encoded}` pairs so every test exercises both
+    /// directions and catches drift in either path.
+    ///
+    /// Field layout (names, canonical types, byte/bit offsets) lives in the
+    /// SCXML source — the forge product code generator is the authority on
+    /// it. The manifest entry mirrors only the field *names and types* so
+    /// the conformance fragments can iterate them to build the decoded
+    /// literal and per-field equality assertions without hard-coding names
+    /// across five templates. Field names are declared in SCXML source case
+    /// (camelCase from `<data id="...">`) and each per-language fragment
+    /// applies its own case filter to match the generated struct's native
+    /// naming convention.
+    Codec {
+        fields: Vec<StructField>,
+    },
 }
 
 impl FixtureSpec {
@@ -199,6 +217,7 @@ impl FixtureSpec {
             FixtureSpec::Procedure { .. } => "procedure",
             FixtureSpec::Lookup { .. } => "lookup",
             FixtureSpec::Validator { .. } => "validator",
+            FixtureSpec::Codec { .. } => "codec",
         }
     }
 }
@@ -416,6 +435,16 @@ impl Manifest {
                             "fixture {}: validator requires at least one \
                              `output` field — an empty output would render \
                              an assertion-free test body",
+                            f.name
+                        ));
+                    }
+                }
+                FixtureSpec::Codec { fields, .. } => {
+                    if fields.is_empty() {
+                        return Err(format!(
+                            "fixture {}: codec requires at least one `fields` \
+                             entry — an empty field list would render an \
+                             assertion-free round-trip test body",
                             f.name
                         ));
                     }
