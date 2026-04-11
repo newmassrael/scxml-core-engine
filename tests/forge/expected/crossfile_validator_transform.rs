@@ -24,7 +24,7 @@ impl CrossfileValidatorTransform {
         if raw_temp < 0 || raw_temp > 4095 {
             return ValidationResult { valid: false, reason: "raw_temp_out_of_range".to_string() };
         }
-        if !(transform_temperature::compute_temperature(raw_temp) > -40 as f64 && transform_temperature::compute_temperature(raw_temp) < 200.0) {
+        if !(transform_temperature::compute_temperature(raw_temp) > -40.0 && transform_temperature::compute_temperature(raw_temp) < 200.0) {
             return ValidationResult { valid: false, reason: "plausibility_failed".to_string() };
         }
         ValidationResult { valid: true, reason: String::new() }

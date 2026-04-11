@@ -23,7 +23,7 @@ struct CrossfileValidatorTransform {
     ValidationResult validate(uint16_t rawTemp) {
         if (rawTemp < 0 || rawTemp > 4095)
             return {false, "raw_temp_out_of_range"};
-        if (!(SCE::Generated::TransformTemperature::computeTemperature(rawTemp) > -40 && SCE::Generated::TransformTemperature::computeTemperature(rawTemp) < 200.0))
+        if (!(SCE::Generated::TransformTemperature::computeTemperature(rawTemp) > -40.0 && SCE::Generated::TransformTemperature::computeTemperature(rawTemp) < 200.0))
             return {false, "plausibility_failed"};
         return {true, ""};
     }

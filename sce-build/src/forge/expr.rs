@@ -1125,6 +1125,26 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
             return format!("{l} {} {r}", cpp_binop(*op));
         }
     }
+    // Push-down: Unary{Neg|Pos} in float context — without this, `-40` in a
+    // float comparison falls into `cpp_emit_node`'s Unary arm which passes
+    // `expr.ty` (the unary's own UntypedInt type) instead of the caller's
+    // float `expected`, so the inner literal stays `40` and the result is
+    // `-40` instead of the symmetric `-40.0`. Mirrors the Binary push-down
+    // above.
+    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+        if matches!(expected, InferredType::Float { .. }) {
+            let inner = emit_cpp(operand, expected);
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            return if wrap {
+                format!("{}({inner})", cpp_unary(*op))
+            } else {
+                format!("{}{inner}", cpp_unary(*op))
+            };
+        }
+    }
     let raw = cpp_emit_node(expr);
     cpp_coerce(raw, expr.ty, expected, expr)
 }
@@ -1272,6 +1292,24 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
             } else { r_raw };
             let inner = format!("{l} {} {r}", kotlin_binop(*op));
             return kotlin_coerce(inner, widened, expected, expr);
+        }
+    }
+    // Push-down: Unary{Neg|Pos} in float context — without this the inner
+    // literal stays UntypedInt and the outer `kotlin_coerce` falls back to
+    // `(-40).toDouble()`. Pushing the Float expectation into the operand
+    // lets it pick up the `.0` literal-rewrite path and emit `-40.0`.
+    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+        if matches!(expected, InferredType::Float { .. }) {
+            let inner = emit_kotlin(operand, expected);
+            let prefix = match op {
+                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
+                _ => unreachable!("guarded by outer match"),
+            };
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            return if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") };
         }
     }
     let raw = kotlin_emit_node(expr);
@@ -1486,6 +1524,31 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, String>
             return Ok(format!("{l} {} {r}", rust_binop(*op)));
         }
     }
+    // Push-down: Unary{Neg|Pos} in float context. Without this, `-40` in a
+    // `> -40` comparison falls into `rust_emit_node`'s Unary arm which
+    // recurses with `expr.ty` (the unary's UntypedInt) instead of the
+    // caller's float `expected`, so the inner literal stays `40` and
+    // `rust_coerce` then takes the "Computed subtree" branch on the outer
+    // Unary, emitting the ugly `-40 as f64` instead of the symmetric
+    // `-40.0`. Mirrors the Binary push-down above.
+    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+        if matches!(expected, InferredType::Float { .. }) {
+            let inner = emit_rust(operand, expected)?;
+            let prefix = match op {
+                UnaryOp::Neg => "-", UnaryOp::Pos => "",
+                _ => unreachable!("guarded by outer match"),
+            };
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            return Ok(if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            });
+        }
+    }
     let raw = rust_emit_node(expr)?;
     rust_coerce(raw, expr.ty, expected, expr)
 }
@@ -1675,6 +1738,28 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, String> {
             return Ok(format!("{l} {} {r}", go_binop(*op)));
         }
     }
+    // Push-down: Unary{Neg|Pos} in float context — see emit_rust for the
+    // rationale. Go has untyped constants so `-40` in a `float64` context
+    // already compiles, but we still rewrite it to `-40.0` for cross-
+    // language symmetry with the positive-literal `< 200.0` form.
+    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+        if matches!(expected, InferredType::Float { .. }) {
+            let inner = emit_go(operand, expected)?;
+            let prefix = match op {
+                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
+                _ => unreachable!("guarded by outer match"),
+            };
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            return Ok(if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            });
+        }
+    }
     let raw = go_emit_node(expr)?;
     Ok(go_coerce(raw, expr.ty, expected, expr))
 }
@@ -1836,6 +1921,25 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
                 format!("({r_raw})")
             } else { r_raw };
             return format!("{l} {} {r}", python_binop(*op));
+        }
+    }
+    // Push-down: Unary{Neg|Pos} in float context — Python is dynamically
+    // typed and `-40` works at runtime, but we still rewrite to `-40.0` so
+    // the generated source documents the float intent and stays symmetric
+    // with the positive-literal `< 200.0` form. Same shape as the other 4
+    // emitters; see emit_rust for the cross-language rationale.
+    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+        if matches!(expected, InferredType::Float { .. }) {
+            let inner = emit_python(operand, expected);
+            let prefix = match op {
+                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
+                _ => unreachable!("guarded by outer match"),
+            };
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            return if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") };
         }
     }
     let raw = python_emit_node(expr);

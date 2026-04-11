@@ -13,7 +13,7 @@ class CrossfileValidatorTransform {
     fun validate(rawTemp: UShort): ValidationResult {
         if (rawTemp.toInt() < 0 || rawTemp.toInt() > 4095)
             return ValidationResult(false, "raw_temp_out_of_range")
-        if (!(computeTemperature(rawTemp) > (-40).toDouble() && computeTemperature(rawTemp) < 200.0))
+        if (!(computeTemperature(rawTemp) > -40.0 && computeTemperature(rawTemp) < 200.0))
             return ValidationResult(false, "plausibility_failed")
         return ValidationResult(true, "")
     }
