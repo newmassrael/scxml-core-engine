@@ -8,7 +8,7 @@
 package procedure_startup_check
 
 import (
-	"github.com/newmassrael/sce-go-runtime/forge"
+	"github.com/newmassrael/sce-forge-runtime/forge"
 )
 
 // ── State and Event constants ───────────────────────────────────

@@ -26,7 +26,7 @@ import (
 	"testing"
 
 {% if has_procedure %}
-	"github.com/newmassrael/sce-go-runtime/forge"
+	"github.com/newmassrael/sce-forge-runtime/forge"
 {% endif %}
 {% for f in fixtures %}
 	{{ f.name }} "github.com/newmassrael/sce-forge-runtime/conformance/generated/{{ f.name }}"

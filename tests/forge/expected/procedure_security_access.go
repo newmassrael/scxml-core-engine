@@ -12,7 +12,7 @@ package procedure_security_access
 
 import (
 	"fmt"
-	"github.com/newmassrael/sce-go-runtime/forge"
+	"github.com/newmassrael/sce-forge-runtime/forge"
 )
 
 // ── State and Event constants ───────────────────────────────────

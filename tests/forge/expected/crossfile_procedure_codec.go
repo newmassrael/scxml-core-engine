@@ -13,7 +13,7 @@ package crossfile_procedure_codec
 import (
 	"example.com/sce-forge/codec_simple_frame"
 	"fmt"
-	"github.com/newmassrael/sce-go-runtime/forge"
+	"github.com/newmassrael/sce-forge-runtime/forge"
 )
 
 // ── State and Event constants ───────────────────────────────────
