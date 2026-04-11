@@ -23,7 +23,7 @@ func (v *CrossfileValidatorTransform) Validate(rawTemp uint16) ValidationResult 
 	if rawTemp < 0 || rawTemp > 4095 {
 		return ValidationResult{Valid: false, Reason: "rawTemp_out_of_range"}
 	}
-	if !(transform_temperature.ComputeTemperature(rawTemp) > -40 && transform_temperature.ComputeTemperature(rawTemp) < 200) {
+	if !(transform_temperature.ComputeTemperature(rawTemp) > -40 && transform_temperature.ComputeTemperature(rawTemp) < 200.0) {
 		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
 	}
 	return ValidationResult{Valid: true, Reason: ""}

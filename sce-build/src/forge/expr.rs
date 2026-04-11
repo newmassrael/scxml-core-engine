@@ -13,13 +13,16 @@
 //   parse     (`Parser::parse_expression`)
 //     │   produces a `TypedExpr` whose every node has `ty: Unknown`
 //     ▼
-//   rename    (`rename_identifiers`, optional)
-//     │   applies user-supplied ident → ident map (e.g. `_event.data` collapse,
-//     │   datamodel → struct field rename)
-//     ▼
 //   infer     (`infer_types`)
 //     │   bottom-up annotation using `TypeCtx` (variable types + function sigs)
 //     │   and the lattice in `forge::types::{join_arith, join_int}`
+//     ▼
+//   rename    (`rename_identifiers`, optional)
+//     │   applies user-supplied ident → ident map (e.g. `_event.data` collapse,
+//     │   datamodel → struct field rename, cross-file alias → qualified call).
+//     │   Runs *after* `infer_types` so each leaf can still bind its type from
+//     │   the TypeCtx using its original name; the rename only changes node
+//     │   `kind`s, never `ty` slots.
 //     ▼
 //   emit      (`emit_cpp` / `emit_rust` / `emit_go` / `emit_kotlin` / `emit_python`)
 //         each emitter consumes the typed AST plus an `expected: InferredType`
@@ -107,10 +110,18 @@ pub fn transpile_typed(
 
     let tokens = tokenize(expr)?;
     let mut ast = Parser::new(&tokens).parse_expression()?;
+    // Inference must run BEFORE rename so Call callees, Idents, and Members
+    // are still in their pre-rename form. The TypeCtx is keyed by the
+    // user-visible names (`tempConvert`, datamodel ids, …) — once rename
+    // collapses an Ident or Member into a `Raw` fragment we lose the ability
+    // to look it up. Inferring first lets each leaf bind its type from the
+    // context; the rename pass then changes only the syntactic form,
+    // leaving each TypedExpr's `ty` slot intact (which is exactly what the
+    // `Raw` arm of `infer_types` already documents).
+    infer_types(&mut ast, ctx);
     if !renames.is_empty() {
         rename_identifiers(&mut ast, renames);
     }
-    infer_types(&mut ast, ctx);
 
     match target {
         ExprTarget::Cpp => Ok(emit_cpp(&ast, expected)),
