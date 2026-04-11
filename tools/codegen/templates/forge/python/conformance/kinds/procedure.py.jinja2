@@ -1,8 +1,11 @@
-{# Procedure kind — execute(args) -> result with .completed and .final_state. #}
+{# Procedure kind — execute(handler, args) -> result with .completed and .final_state. #}
+        from sce_forge import ProcedureServiceResponse
+        def _handler(_req):
+            return ProcedureServiceResponse(success=True, data="")
         for case in spec["cases"]:
             args = case["args"]
             expected = case["expected"]
-            result = {{ f.name }}.execute(*args)
+            result = {{ f.name }}.execute(_handler, *args)
             self.assertEqual(
                 result.completed,
                 expected["completed"],

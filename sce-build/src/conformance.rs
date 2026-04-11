@@ -623,8 +623,17 @@ pub fn render_harness(
         }
     }
 
+    // Per-kind presence flags let per-language harness scaffolds pull in
+    // kind-specific runtime imports (e.g. Go `forge` package, Kotlin
+    // `sce-kotlin-runtime` types) only when the fixture set actually uses
+    // that kind, keeping unused-import warnings and transitive deps scoped.
+    let has_procedure = fixtures
+        .iter()
+        .any(|f| matches!(f.spec, FixtureSpec::Procedure { .. }));
+
     let ctx = minijinja::context! {
         fixtures => minijinja::Value::from_serialize(&fixtures),
+        has_procedure => has_procedure,
     };
 
     tmpl.render(ctx)

@@ -33,6 +33,10 @@ set(REFERENCE_JSON "${REPO_ROOT}/tests/forge/conformance/numerical_reference.jso
 set(FIXTURE_MANIFEST "${REPO_ROOT}/tests/forge/conformance/fixtures.json")
 set(CONFORMANCE_TEMPLATE_DIR "${REPO_ROOT}/tools/codegen/templates/forge/cpp/conformance")
 set(RUNTIME_INCLUDE_DIR "${REPO_ROOT}/sce-forge-runtime/cpp/include")
+# StaticExecutionEngine.h lives with the main SCE C++ core. Generated
+# procedure headers `#include "static/StaticExecutionEngine.h"` — the
+# same header product consumers pull from the installed SCE headers.
+set(SCE_CORE_INCLUDE_DIR "${REPO_ROOT}/sce/include")
 set(NLOHMANN_JSON_INCLUDE_DIR "${REPO_ROOT}/third_party/nlohmann_json/include")
 
 # Rebuild sce-codegen from the current sce-build sources when the Rust
@@ -156,6 +160,7 @@ add_dependencies(numerical_conformance_test generate_forge_fixtures_cpp)
 
 target_include_directories(numerical_conformance_test PRIVATE
     "${RUNTIME_INCLUDE_DIR}"
+    "${SCE_CORE_INCLUDE_DIR}"
     "${NLOHMANN_JSON_INCLUDE_DIR}"
     "${GENERATED_DIR}"
 )

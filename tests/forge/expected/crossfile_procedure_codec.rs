@@ -1,8 +1,9 @@
-// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure", Level 2)
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Do not edit — regenerate from the source SCXML file.
 //
-// Level 2 procedure: event-driven state machine using ProcedurePolicy trait.
+// Event-driven state machine using ProcedurePolicy trait.
 // Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+// Pure decision trees (no events/sends) execute via Event::None transitions.
 //
 // External dependencies (from sce:payload expressions — must be in scope):
 //   frame.encode()
@@ -159,7 +160,7 @@ impl ProcedurePolicy for CrossfileProcedureCodec {
 // ── Convenience wrapper function ────────────────────────────────
 
 #[allow(dead_code)]
-pub fn execute_crossfile_procedure_codec(
+pub fn execute(
     handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static,
     ecu_addr: u32,
 ) -> ProcedureRunResult {

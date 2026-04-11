@@ -1,4 +1,4 @@
-{# Procedure kind — Class.execute(args) -> ProcedureResult{completed, finalState}. #}
+{# Procedure kind — execute(handler, args) -> ProcedureRunResult{completed, finalState}. #}
         val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
         for (case in cases) {
             val args = case.jsonObject["args"]!!.jsonArray
@@ -8,7 +8,10 @@
             val expected = case.jsonObject["expected"]!!.jsonObject
             val expectedCompleted = expected["completed"]!!.jsonPrimitive.boolean
             val expectedFinal = expected["final_state"]!!.jsonPrimitive.content
-            val result: {{ f.name | to_pascal_case }}Result = {{ f.name | to_pascal_case }}.execute({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val handler: com.sce.runtime.forge.ProcedureServiceHandler = { _ ->
+                com.sce.runtime.forge.ProcedureServiceResponse(success = true, data = "")
+            }
+            val result: com.sce.runtime.forge.ProcedureRunResult = com.sce.generated.{{ f.name }}.execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
             assertEquals(expectedCompleted, result.completed, "{{ f.name }}.completed")
             assertEquals(expectedFinal, result.finalState, "{{ f.name }}.final_state")
         }

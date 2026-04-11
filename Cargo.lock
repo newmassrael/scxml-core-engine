@@ -1353,6 +1353,7 @@ name = "sce-forge-runtime"
 version = "0.1.0"
 dependencies = [
  "sce-build",
+ "sce-rust-runtime",
  "serde_json",
 ]
 

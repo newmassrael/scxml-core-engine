@@ -1,8 +1,9 @@
-// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure", Level 2)
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Do not edit — regenerate from the source SCXML file.
 //
-// Level 2 procedure: event-driven state machine using ProcedureStateMachine.
+// Event-driven state machine using ProcedureStateMachine.
 // Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+// Pure decision trees (no events/sends) execute via Event.NONE transitions.
 //
 // External dependencies (from sce:payload expressions — must be in scope):
 //   frame.encode()
@@ -37,7 +38,7 @@ class CrossfileProcedureCodec : ProcedureStateMachine<State, Event>() {
     private val frame: CodecSimpleFrame = CodecSimpleFrame()
 
     fun setEcuAddr(value: UInt) {
-        ecuAddr = value
+        this.ecuAddr = value
     }
 
     override val noneEvent = Event.NONE
@@ -111,7 +112,7 @@ class CrossfileProcedureCodec : ProcedureStateMachine<State, Event>() {
 
 // ── Convenience wrapper function ────────────────────────────────
 
-fun executeCrossfileProcedureCodec(
+fun execute(
     handler: ProcedureServiceHandler,
     ecuAddr: UInt): ProcedureRunResult {
     val sm = CrossfileProcedureCodec()

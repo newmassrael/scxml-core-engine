@@ -1,4 +1,4 @@
-{# Procedure kind — sm.execute(args) -> ProcedureResult{completed, final_state}. #}
+{# Procedure kind — execute(handler, args) -> ProcedureRunResult{completed, final_state}. #}
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     for (const auto &c : spec["cases"]) {
 {% for arg_ty in f.args %}
@@ -6,8 +6,11 @@
 {% endfor %}
         auto expected_completed = c["expected"]["completed"].get<bool>();
         auto expected_final = c["expected"]["final_state"].get<std::string>();
-        SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} sm;
-        auto result = sm.execute({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        SCE::Forge::ProcedureServiceHandler handler =
+            [](const SCE::Forge::ProcedureServiceRequest &) {
+                return SCE::Forge::ProcedureServiceResponse{true, std::string()};
+            };
+        auto result = SCE::Generated::{{ f.name | to_pascal_case }}::execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
         CHECK(result.completed == expected_completed,
               "{{ f.name }}.completed: actual=%d expected=%d",
               static_cast<int>(result.completed), static_cast<int>(expected_completed));

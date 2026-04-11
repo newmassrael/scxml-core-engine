@@ -1,4 +1,4 @@
-{# Procedure kind — Execute(args) -> ProcedureResult{Completed, FinalState}. #}
+{# Procedure kind — Execute(handler, args) -> ProcedureRunResult{Completed, FinalState}. #}
 	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	for _, c := range cases {
 {% for arg_ty in f.args %}
@@ -10,7 +10,10 @@
 			FinalState string `json:"final_state"`
 		}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		result := {{ f.name }}.Execute({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		handler := func(_ forge.ProcedureServiceRequest) forge.ProcedureServiceResponse {
+			return forge.ProcedureServiceResponse{Success: true, Data: ""}
+		}
+		result := {{ f.name }}.Execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
 		if result.Completed != expected.Completed || result.FinalState != expected.FinalState {
 			t.Errorf("{{ f.name }}: actual=(%v,%q) expected=(%v,%q)",
 				result.Completed, result.FinalState, expected.Completed, expected.FinalState)

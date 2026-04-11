@@ -27,6 +27,11 @@ sce-build = { path = "../../sce-build" }
 
 [dev-dependencies]
 serde_json = "1"
+# Procedure kind runtime types (ProcedurePolicy, ProcedureServiceRequest, run_procedure).
+# Integration tests compile generated procedure fixtures which use
+# `sce_rust_runtime::forge::*` — the same import path product consumers use.
+# no-script feature keeps the script engine out of the test dep graph.
+sce-rust-runtime = { path = "../../sce-rust-runtime", default-features = false, features = ["no-script"] }
 
 [[test]]
 name = "numerical_conformance"

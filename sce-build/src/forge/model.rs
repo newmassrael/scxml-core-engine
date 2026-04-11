@@ -461,10 +461,6 @@ pub struct ProcedureModel {
     pub initial: String,
     /// All states in document order (regular + final).
     pub states: Vec<ProcedureState>,
-    /// Whether this procedure uses event-driven features (Level 2).
-    /// Auto-detected: true if any transition has `event`, any state has `<onentry>` sends,
-    /// any transition has `<assign>`, or any final has `<donedata>`.
-    pub is_event_driven: bool,
 }
 
 // ── Codec kind ─────────────────────────────────────────────────

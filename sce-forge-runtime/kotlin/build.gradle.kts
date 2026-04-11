@@ -193,6 +193,11 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(libs.kotlinx.serialization.json)
+                // Procedure kind runtime types (ProcedureStateMachine,
+                // ProcedureServiceHandler, ProcedureRunResult). Generated procedure
+                // fixtures import them via `com.sce.runtime.forge.*` — the same
+                // package product consumers use.
+                implementation(project(":sce-kotlin-runtime"))
             }
             kotlin.srcDir(generateForgeFixtures.map { it.outputDir })
         }

@@ -1,54 +1,180 @@
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 # Do not edit — regenerate from the source SCXML file.
+#
+# Event-driven state machine using ProcedureStateMachine.
+# Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+# Pure decision trees (no events/sends) execute via Event.NONE transitions.
+{% if has_external_deps %}
+#
+# External dependencies (from sce:payload expressions — must be in scope):
+{% for expr in payload_exprs %}
+#   {{ expr }}
+{% endfor %}
+{% endif %}
+
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}
 {% endif %}
+from enum import IntEnum
+from typing import Callable, Optional, Tuple
 
-from dataclasses import dataclass
-
-
-@dataclass
-class ProcedureResult:
-    completed: bool
-    final_state: str
-
-
-_STATE_NAMES = [{% for n in state_names %}"{{ n }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+from sce_forge import (
+    ProcedureRunResult,
+    ProcedureServiceRequest,
+    ProcedureServiceResponse,
+    ProcedureStateMachine,
+)
 
 
-def execute({{ params }}) -> ProcedureResult:
-    current = {{ initial_index }}
-    for _ in range({{ state_count }}):
+# ── State and Event enums ────────────────────────────────────────
+
+class State(IntEnum):
+{% for s in state_enum %}
+    {{ s.name }} = {{ s.index }}
+{% endfor %}
+
+
+class Event(IntEnum):
+    NONE = 0
+{% for e in event_enum %}
+    {{ e.name }} = {{ e.index }}
+{% endfor %}
+
+
+_FINAL_STATES = frozenset([{% for s in final_states %}State.{{ s.name }}{% if not loop.last %}, {% endif %}{% endfor %}])
+
+
+# ── Generated procedure state machine ────────────────────────────
+
+class {{ class_name }}(ProcedureStateMachine):
+
+    def __init__(self) -> None:
+        super().__init__()
+{% for f in input_fields %}
+        self._{{ f.snake_id }}: {{ f.py_type }} = {{ f.default_value }}
+{% endfor %}
+{% for f in internal_fields %}
+        self._{{ f.snake_id }}: {{ f.py_type }} = {{ f.default_value }}
+{% endfor %}
+{% if has_imports %}
+        # Imported kinds (cross-file composition)
+{% for imp in imports %}
+        self.{{ imp.member_name }}: {{ imp.member_type }} = {{ imp.member_type }}()
+{% endfor %}
+{% endif %}
+
+{% for f in input_fields %}
+    def set_{{ f.snake_id }}(self, value: {{ f.py_type }}) -> None:
+        self._{{ f.snake_id }} = value
+
+{% endfor %}
+    def _none_event(self) -> int:
+        return Event.NONE
+
+    def _initial_state(self) -> int:
+        return State.{{ initial_state }}
+
+    def _is_final(self, state: int) -> bool:
+        return state in _FINAL_STATES
+
+    def _final_state_name(self, state: int) -> str:
+{% for s in final_states %}
+        if state == State.{{ s.name }}:
+            return "{{ s.id }}"
+{% endfor %}
+        return ""
+
+    def _execute_entry_actions(
+        self, state: int
+    ) -> Tuple[int, str]:
+{% for s in states_with_entry %}
+        if state == State.{{ s.name }}:
+{% for send in s.sends %}
+            if self._service_handler is not None:
+                req = ProcedureServiceRequest(
+                    service="{{ send.service }}",
+{% if send.subfunc %}
+                    subfunc="{{ send.subfunc }}",
+{% endif %}
+{% if send.has_addr %}
+                    addr=str({{ send.addr_expr }}),
+{% endif %}
+{% if send.payload %}
+                    payload={{ send.payload_expr }},
+{% endif %}
+                )
+                resp = self._service_handler(req)
+                event = Event.Ok if resp.success else Event.Fail
+                return (event, resp.data)
+{% endfor %}
+{% endfor %}
+{% for s in final_states_with_donedata %}
+        if state == State.{{ s.name }}:
+{% for p in s.done_params %}
+            self._done_data["{{ p.name }}"] = {{ p.expr }}
+{% endfor %}
+{% endfor %}
+        return (Event.NONE, "")
+
+    def _process_transition(
+        self, state: int, event: int
+    ) -> Optional[Tuple[int, int, bool]]:
 {% for s in non_final_states %}
-{% if loop.first %}
-        if current == {{ s.index }}:
-{% else %}
-        elif current == {{ s.index }}:
-{% endif %}
+        if state == State.{{ s.name }}:
 {% for tr in s.transitions %}
-{% if loop.first %}
+{% if tr.has_event %}
+            if event == Event.{{ tr.event_enum }}:
 {% if tr.has_cond %}
-            if {{ tr.cond }}:
-                current = {{ tr.target_index }}
+                if {{ tr.cond }}:
+                    return (State.{{ tr.target_name }}, {{ tr.index }}, {% if tr.has_assigns %}True{% else %}False{% endif %})
 {% else %}
-            current = {{ tr.target_index }}
+                return (State.{{ tr.target_name }}, {{ tr.index }}, {% if tr.has_assigns %}True{% else %}False{% endif %})
 {% endif %}
 {% else %}
+            if event == Event.NONE:
 {% if tr.has_cond %}
-            elif {{ tr.cond }}:
-                current = {{ tr.target_index }}
+                if {{ tr.cond }}:
+                    return (State.{{ tr.target_name }}, {{ tr.index }}, {% if tr.has_assigns %}True{% else %}False{% endif %})
 {% else %}
-            else:
-                current = {{ tr.target_index }}
+                return (State.{{ tr.target_name }}, {{ tr.index }}, {% if tr.has_assigns %}True{% else %}False{% endif %})
 {% endif %}
 {% endif %}
 {% endfor %}
 {% endfor %}
-        else:
-            break
-        if {{ final_check }}:
-            break
-    completed = {{ final_check }}
-    return ProcedureResult(completed, _STATE_NAMES[current])
+        return None
+
+    def _execute_transition_actions(
+        self, source: int, tr_index: int
+    ) -> None:
+{% if not states_with_assigns %}
+        pass
+{% else %}
+{% for s in states_with_assigns %}
+        if source == State.{{ s.name }}:
+{% for tr in s.assign_transitions %}
+            if tr_index == {{ tr.index }}:
+{% for a in tr.assigns %}
+                {{ a.location }} = {{ a.expr }}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+
+# ── Convenience wrapper function ─────────────────────────────────
+
+def execute(
+    handler: Callable[[ProcedureServiceRequest], ProcedureServiceResponse],
+{% for f in input_fields %}
+    {{ f.snake_id }}: {{ f.py_type }},
+{% endfor %}
+) -> ProcedureRunResult:
+    sm = {{ class_name }}()
+    sm.set_service_handler(handler)
+{% for f in input_fields %}
+    sm.set_{{ f.snake_id }}({{ f.snake_id }})
+{% endfor %}
+    return sm.run_to_completion()
+

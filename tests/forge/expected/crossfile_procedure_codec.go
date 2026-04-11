@@ -1,8 +1,9 @@
-// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure", Level 2)
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Do not edit — regenerate from the source SCXML file.
 //
-// Level 2 procedure: event-driven state machine using forge.ProcedurePolicy.
+// Event-driven state machine using forge.ProcedurePolicy.
 // Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+// Pure decision trees (no events/sends) execute via eventNone transitions.
 //
 // External dependencies (from sce:payload expressions — must be in scope):
 //   frame.encode()

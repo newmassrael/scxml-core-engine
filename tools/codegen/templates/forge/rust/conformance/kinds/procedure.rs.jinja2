@@ -1,4 +1,4 @@
-{# Procedure kind — execute(args) -> ProcedureResult{completed, final_state}. #}
+{# Procedure kind — execute(handler, args) -> ProcedureRunResult{completed, final_state}. #}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     for case in spec["cases"].as_array().expect("cases must be array") {
 {% for arg_ty in f.args %}
@@ -10,7 +10,13 @@
         let expected_final = case["expected"]["final_state"]
             .as_str()
             .expect("final_state is string");
-        let result = fixtures::{{ f.name }}::execute({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        let handler = |_req: &sce_rust_runtime::forge::ProcedureServiceRequest| {
+            sce_rust_runtime::forge::ProcedureServiceResponse {
+                success: true,
+                data: String::new(),
+            }
+        };
+        let result = fixtures::{{ f.name }}::execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
         assert_eq!(
             result.completed, expected_completed,
             "{{ f.name }}.completed"

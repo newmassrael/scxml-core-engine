@@ -1,34 +1,93 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Do not edit — regenerate from the source SCXML file.
+//
+// Event-driven state machine using ProcedureStateMachine.
+// Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+// Pure decision trees (no events/sends) execute via Event.NONE transitions.
 
 package com.sce.generated.procedure_linear
 
-data class ProcedureResult(val completed: Boolean, val finalState: String)
+import com.sce.runtime.forge.*
 
-object ProcedureLinear {
-    private val STATE_NAMES = arrayOf("stage_a", "stage_b", "stage_c", "done")
+// ── State and Event enums ───────────────────────────────────────
 
-    fun execute(value: Int): ProcedureResult {
-        var current = 0
-        var iterations = 0
-        while (iterations++ < 4) {
-            val next = when (current) {
-                0 -> {
-                    1
-                }
-                1 -> {
-                    2
-                }
-                2 -> {
-                    3
-                }
-                else -> -1
-            }
-            if (next < 0) break
-            current = next
-            if (current == 3) break
-        }
-        val completed = current == 3
-        return ProcedureResult(completed, STATE_NAMES[current])
+enum class State {
+    StageA,
+    StageB,
+    StageC,
+    Done
+}
+
+enum class Event {
+    NONE,
+    Fail,
+    Ok
+}
+
+// ── Generated procedure state machine ───────────────────────────
+
+class ProcedureLinear : ProcedureStateMachine<State, Event>() {
+    private var value: Int = 0
+
+    fun setValue(value: Int) {
+        this.value = value
     }
+
+    override val noneEvent = Event.NONE
+
+    override fun initialState() = State.StageA
+
+    override fun isFinal(state: State) = state in FINAL_STATES
+
+    override fun finalStateName(state: State) = when (state) {
+        State.Done -> "done"
+        else -> ""
+    }
+
+    override fun executeEntryActions(state: State): Pair<Event, String> {
+        when (state) {
+            else -> {}
+        }
+        return Pair(Event.NONE, "")
+    }
+
+    override fun processTransition(state: State, event: Event): Triple<State, Int, Boolean>? {
+        when (state) {
+            State.StageA -> {
+                if (event == Event.NONE) {
+                    return Triple(State.StageB, 0, false)
+                }
+            }
+            State.StageB -> {
+                if (event == Event.NONE) {
+                    return Triple(State.StageC, 0, false)
+                }
+            }
+            State.StageC -> {
+                if (event == Event.NONE) {
+                    return Triple(State.Done, 0, false)
+                }
+            }
+            else -> {}
+        }
+        return null
+    }
+
+    override fun executeTransitionActions(source: State, trIndex: Int) {
+    }
+
+    companion object {
+        private val FINAL_STATES = setOf(State.Done)
+    }
+}
+
+// ── Convenience wrapper function ────────────────────────────────
+
+fun execute(
+    handler: ProcedureServiceHandler,
+    value: Int): ProcedureRunResult {
+    val sm = ProcedureLinear()
+    sm.setServiceHandler(handler)
+    sm.setValue(value)
+    return sm.runToCompletion()
 }

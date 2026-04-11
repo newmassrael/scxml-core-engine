@@ -466,12 +466,6 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
         }
     }
 
-    // Track Level 2 feature usage for auto-detection
-    let mut has_events = false;
-    let mut has_sends = false;
-    let mut has_assigns = false;
-    let mut has_done_data = false;
-
     // Parse <state> and <final> elements
     let mut states = Vec::new();
     let mut state_ids = std::collections::BTreeSet::new();
@@ -495,32 +489,15 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
         let transitions = if is_final {
             Vec::new()
         } else {
-            let trs = parse_procedure_transitions(&child)?;
-            // Detect Level 2 features in transitions
-            for tr in &trs {
-                if tr.event.is_some() {
-                    has_events = true;
-                }
-                if !tr.assigns.is_empty() {
-                    has_assigns = true;
-                }
-            }
-            trs
+            parse_procedure_transitions(&child)?
         };
 
-        // Parse <onentry> → <send> actions (Level 2)
+        // Parse <onentry> → <send> actions
         let on_entry_sends = parse_procedure_onentry(&child)?;
-        if !on_entry_sends.is_empty() {
-            has_sends = true;
-        }
 
-        // Parse <donedata> on <final> elements (Level 2)
+        // Parse <donedata> on <final> elements
         let done_params = if is_final {
-            let dp = parse_procedure_donedata(&child)?;
-            if !dp.is_empty() {
-                has_done_data = true;
-            }
-            dp
+            parse_procedure_donedata(&child)?
         } else {
             Vec::new()
         };
@@ -575,20 +552,12 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
         }
     }
 
-    // Auto-detect Level 2: event-driven if any L2 feature is present.
-    // Note: `!internals.is_empty()` is intentional — Level 1 procedures are stateless
-    // (parameters forwarded via variadic templates, no member variables). Internal fields
-    // require a policy struct with member storage, which is the Level 2 codegen path.
-    let is_event_driven =
-        has_events || has_sends || has_assigns || has_done_data || !internals.is_empty();
-
     Ok(ProcedureModel {
         name: name.to_string(),
         inputs,
         internals,
         initial,
         states,
-        is_event_driven,
     })
 }
 

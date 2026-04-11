@@ -1,49 +1,127 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Do not edit — regenerate from the source SCXML file.
+//
+// Event-driven state machine using forge.ProcedurePolicy.
+// Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+// Pure decision trees (no events/sends) execute via eventNone transitions.
 
 package procedure_diamond
 
-// ProcedureResult holds the outcome of a procedure execution.
-type ProcedureResult struct {
-	Completed  bool
-	FinalState string
+import (
+	"github.com/newmassrael/sce-go-runtime/forge"
+)
+
+// ── State and Event constants ───────────────────────────────────
+
+const (
+	stateClassify = 0
+	stateHighPath = 1
+	stateMidPath = 2
+	stateLowPath = 3
+	stateAccept = 4
+	stateReject = 5
+)
+
+const (
+	eventNone = 0
+	eventFail = 1
+	eventOk = 2
+)
+
+// ── Generated procedure policy ──────────────────────────────────
+
+type policy struct {
+	sensorValue	uint16
+	mode	string
+	serviceHandler   forge.ServiceHandler
+	doneData         map[string]string
+	pendingEventData string
 }
 
-var stateNames = [6]string{ "classify", "high_path", "mid_path", "low_path", "accept", "reject" }
+func newPolicy(handler forge.ServiceHandler, sensorValue uint16, mode string) *policy {
+	return &policy{
+		sensorValue: sensorValue,
+		mode: mode,
+		serviceHandler: handler,
+		doneData:       make(map[string]string),
+	}
+}
 
-// Execute runs the procedure to completion and returns the final state reached.
-func Execute(sensorValue uint16, mode string) ProcedureResult {
-	current := 0
-	for iterations := 0; iterations < 6; iterations++ {
-		next := -1
-		switch current {
-		case 0:
-			if sensorValue > 1000 {
-				next = 1
-			} else if sensorValue > 500 {
-				next = 2
-			} else {
-				next = 3
+func (p *policy) NoneEvent() int             { return eventNone }
+func (p *policy) InitialState() int          { return stateClassify }
+func (p *policy) SetPendingEventData(d string) { p.pendingEventData = d }
+func (p *policy) DoneData() map[string]string  { return p.doneData }
+
+func (p *policy) IsFinal(s int) bool {
+	switch s {
+	case stateAccept:
+		return true
+	case stateReject:
+		return true
+	}
+	return false
+}
+
+func (p *policy) FinalStateName(s int) string {
+	switch s {
+	case stateAccept:
+		return "accept"
+	case stateReject:
+		return "reject"
+	}
+	return ""
+}
+
+func (p *policy) ExecuteEntryActions(s int) (int, string) {
+	switch s {
+	}
+	return eventNone, ""
+}
+
+func (p *policy) ProcessTransition(s int, ev int) (int, int, bool, bool) {
+	switch s {
+	case stateClassify:
+		if ev == eventNone {
+			if p.sensorValue > 1000 {
+				return stateHighPath, 0, false, true
 			}
-		case 1:
-			if mode == "strict" {
-				next = 5
-			} else {
-				next = 4
+		}
+		if ev == eventNone {
+			if p.sensorValue > 500 {
+				return stateMidPath, 1, false, true
 			}
-		case 2:
-			next = 4
-		case 3:
-			next = 4
 		}
-		if next < 0 {
-			break
+		if ev == eventNone {
+			return stateLowPath, 2, false, true
 		}
-		current = next
-		if current == 4 || current == 5 {
-			break
+	case stateHighPath:
+		if ev == eventNone {
+			if p.mode == "strict" {
+				return stateReject, 0, false, true
+			}
+		}
+		if ev == eventNone {
+			return stateAccept, 1, false, true
+		}
+	case stateMidPath:
+		if ev == eventNone {
+			return stateAccept, 0, false, true
+		}
+	case stateLowPath:
+		if ev == eventNone {
+			return stateAccept, 0, false, true
 		}
 	}
-	completed := current == 4 || current == 5
-	return ProcedureResult{Completed: completed, FinalState: stateNames[current]}
+	return 0, 0, false, false
+}
+
+func (p *policy) ExecuteTransitionActions(source int, trIndex int) {
+}
+
+// ── Convenience wrapper function ────────────────────────────────
+
+// Execute runs the procedure to completion.
+func Execute(handler forge.ServiceHandler, sensorValue uint16, mode string) forge.ProcedureRunResult {
+	p := newPolicy(handler, sensorValue, mode)
+	return forge.RunProcedure(p)
 }

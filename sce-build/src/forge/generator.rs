@@ -501,13 +501,7 @@ pub fn generate_cpp_with_imports(
         ForgeDocument::Condition(m) => render_condition_cpp(&env, m, imports)?,
         ForgeDocument::Codec(m) => render_codec_cpp(&env, m, imports)?,
         ForgeDocument::Validator(m) => render_validator_cpp(&env, m, imports)?,
-        ForgeDocument::Procedure(m) => {
-            if m.is_event_driven {
-                render_procedure_l2_cpp(&env, m, imports)?
-            } else {
-                render_procedure_cpp(&env, m, imports)?
-            }
-        }
+        ForgeDocument::Procedure(m) => render_procedure_cpp(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Cpp)?,
@@ -1108,13 +1102,7 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Condition(m) => render_condition_kotlin(&env, m, imports)?,
         ForgeDocument::Codec(m) => render_codec_kotlin(&env, m, imports)?,
         ForgeDocument::Validator(m) => render_validator_kotlin(&env, m, imports)?,
-        ForgeDocument::Procedure(m) => {
-            if m.is_event_driven {
-                render_procedure_l2_kotlin(&env, m, imports)?
-            } else {
-                render_procedure_kotlin(&env, m, imports)?
-            }
-        }
+        ForgeDocument::Procedure(m) => render_procedure_kotlin(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Kotlin)?,
@@ -1655,13 +1643,7 @@ pub fn generate_rust_with_imports(
         ForgeDocument::Condition(m) => render_condition_rust(&env, m, imports)?,
         ForgeDocument::Codec(m) => render_codec_rust(&env, m, imports)?,
         ForgeDocument::Validator(m) => render_validator_rust(&env, m, imports)?,
-        ForgeDocument::Procedure(m) => {
-            if m.is_event_driven {
-                render_procedure_l2_rust(&env, m, imports)?
-            } else {
-                render_procedure_rust(&env, m, imports)?
-            }
-        }
+        ForgeDocument::Procedure(m) => render_procedure_rust(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Rust)?,
@@ -2223,13 +2205,7 @@ pub fn generate_go_with_imports(
         ForgeDocument::Condition(m) => render_condition_go(&env, m, imports)?,
         ForgeDocument::Codec(m) => render_codec_go(&env, m, imports)?,
         ForgeDocument::Validator(m) => render_validator_go(&env, m, imports)?,
-        ForgeDocument::Procedure(m) => {
-            if m.is_event_driven {
-                render_procedure_l2_go(&env, m, imports)?
-            } else {
-                render_procedure_go(&env, m, imports)?
-            }
-        }
+        ForgeDocument::Procedure(m) => render_procedure_go(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Go)?,
@@ -2793,13 +2769,7 @@ pub fn generate_python_with_imports(
         ForgeDocument::Condition(m) => render_condition_python(&env, m, imports)?,
         ForgeDocument::Codec(m) => render_codec_python(&env, m, imports)?,
         ForgeDocument::Validator(m) => render_validator_python(&env, m, imports)?,
-        ForgeDocument::Procedure(m) => {
-            if m.is_event_driven {
-                render_procedure_l2_python(&env, m, imports)?
-            } else {
-                render_procedure_python(&env, m, imports)?
-            }
-        }
+        ForgeDocument::Procedure(m) => render_procedure_python(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Python)?,
@@ -3290,211 +3260,9 @@ fn render_validator_python(
     tmpl.render(ctx).map_err(generator::render_error)
 }
 
-// ══════════════════════════════════════════════════════════════
-// ── Procedure: resolved model (state-index mapping, computed once) ──
-// ══════════════════════════════════════════════════════════════
-
-/// A transition with its target pre-resolved to a state index.
-struct ResolvedTransition {
-    target_index: usize,
-    /// Guard expression, pre-transpiled to the target language.
-    cond: Option<String>,
-}
-
-/// A state with its transitions pre-resolved.
-struct ResolvedProcedureState {
-    id: String,
-    index: usize,
-    is_final: bool,
-    transitions: Vec<ResolvedTransition>,
-}
-
-/// Procedure model with state-to-index associations pre-resolved.
-/// Eliminates repeated name lookups across 5 language renderers.
-struct ResolvedProcedure {
-    inputs: Vec<ForgeField>,
-    states: Vec<ResolvedProcedureState>,
-    initial_index: usize,
-    state_count: usize,
-}
-
-fn resolve_procedure(
-    m: &ProcedureModel,
-    target: ExprTarget,
-    imports: &[ImportContext],
-) -> Result<ResolvedProcedure, String> {
-    // Build name→index map
-    let index_map: std::collections::BTreeMap<&str, usize> = m
-        .states
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (s.id.as_str(), i))
-        .collect();
-
-    let initial_index = *index_map
-        .get(m.initial.as_str())
-        .ok_or_else(|| format!("Initial state '{}' not found", m.initial))?;
-
-    let type_ctx = crate::forge::type_ctx::procedure(m, imports);
-    let empty_renames = std::collections::HashMap::new();
-
-    let states = m
-        .states
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let transitions = s
-                .transitions
-                .iter()
-                .map(|tr| {
-                    let target_index = *index_map
-                        .get(tr.target.as_str())
-                        .ok_or_else(|| format!("Transition target '{}' not found", tr.target))?;
-                    let cond = match &tr.cond {
-                        Some(c) => Some(expr::transpile_typed(
-                            c,
-                            target,
-                            &type_ctx,
-                            &empty_renames,
-                            crate::forge::types::InferredType::Bool,
-                        )?),
-                        None => None,
-                    };
-                    Ok(ResolvedTransition {
-                        target_index,
-                        cond,
-                    })
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-
-            Ok(ResolvedProcedureState {
-                id: s.id.clone(),
-                index: i,
-                is_final: s.is_final,
-                transitions,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-
-    Ok(ResolvedProcedure {
-        inputs: m.inputs.clone(),
-        states,
-        initial_index,
-        state_count: m.states.len(),
-    })
-}
-
-/// Build common procedure data structures for template rendering.
-fn build_procedure_data(rp: &ResolvedProcedure) -> (Vec<serde_json::Value>, Vec<serde_json::Value>, Vec<usize>) {
-    let state_names: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .map(|s| serde_json::json!(s.id))
-        .collect();
-
-    let non_final_states: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .filter(|s| !s.is_final)
-        .map(|s| {
-            let transitions: Vec<serde_json::Value> = s
-                .transitions
-                .iter()
-                .map(|tr| {
-                    serde_json::json!({
-                        "target_index": tr.target_index,
-                        "has_cond": tr.cond.is_some(),
-                        "cond": tr.cond.as_deref().unwrap_or(""),
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "index": s.index,
-                "id": s.id,
-                "transitions": transitions,
-            })
-        })
-        .collect();
-
-    let final_indices: Vec<usize> = rp
-        .states
-        .iter()
-        .filter(|s| s.is_final)
-        .map(|s| s.index)
-        .collect();
-
-    (state_names, non_final_states, final_indices)
-}
-
-/// Build a final-state check expression for the given operator (e.g., "||", "or").
-fn final_check_expr(final_indices: &[usize], var: &str, op: &str) -> String {
-    final_indices
-        .iter()
-        .map(|i| format!("{var} == {i}"))
-        .collect::<Vec<_>>()
-        .join(&format!(" {op} "))
-}
-
 // ── Procedure: C++ ──────────────────────────────────────────
 
 fn render_procedure_cpp(
-    env: &minijinja::Environment,
-    m: &ProcedureModel,
-    imports: &[ImportContext],
-) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Cpp, imports)?;
-    let ns = filters::to_pascal_case(m.name.clone());
-    let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let params = rp
-        .inputs
-        .iter()
-        .map(|inp| format!("{} {}", cpp_param_type(&inp.sce_type), inp.id))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let (state_names, non_final_states, final_indices) = build_procedure_data(&rp);
-
-    let state_enum: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .map(|s| {
-            serde_json::json!({
-                "name": to_upper_snake(&s.id),
-                "index": s.index,
-            })
-        })
-        .collect();
-
-    let final_check = final_check_expr(&final_indices, "s", "||");
-
-    let tmpl = env
-        .get_template("procedure.h.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        guard => guard, namespace => ns, struct_name => struct_name,
-        params => params,
-        state_enum => minijinja::Value::from_serialize(&state_enum),
-        state_names => minijinja::Value::from_serialize(&state_names),
-        state_count => rp.state_count,
-        initial_index => rp.initial_index,
-        non_final_states => minijinja::Value::from_serialize(&non_final_states),
-        final_check => final_check,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    tmpl.render(ctx).map_err(generator::render_error)
-}
-
-// ── Procedure Level 2: C++ (event-driven, StaticExecutionEngine) ──
-
-fn render_procedure_l2_cpp(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
@@ -3840,7 +3608,7 @@ fn render_procedure_l2_cpp(
     let has_external_deps = !payload_exprs.is_empty();
 
     let tmpl = env
-        .get_template("procedure_l2.h.jinja2")
+        .get_template("procedure.h.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
     // Cross-file imports: stateful imports become member variables
@@ -3957,7 +3725,7 @@ fn stateful_import_method_renames(
     out
 }
 
-/// Transpile a Level 2 procedure expression with a pre-built rename map and
+/// Transpile a procedure expression with a pre-built rename map and
 /// type context. On failure, emits a C++ comment with the error for
 /// compile-time visibility.
 ///
@@ -3978,350 +3746,11 @@ fn transpile_l2_expr(
     }
 }
 
-// ── Procedure: Kotlin ───────────────────────────────────────
-
-fn render_procedure_kotlin(
-    env: &minijinja::Environment,
-    m: &ProcedureModel,
-    imports: &[ImportContext],
-) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Kotlin, imports)?;
-    let package = filters::to_snake_case(m.name.clone());
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let params = rp
-        .inputs
-        .iter()
-        .map(|inp| format!("{}: {}", inp.id, kotlin_type(&inp.sce_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let (state_names, _, final_indices) = build_procedure_data(&rp);
-
-    // Guard expressions are already fully transpiled (with Kotlin unsigned
-    // coercion applied internally by the typed emitter) inside resolve_procedure.
-    let non_final_states: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .filter(|s| !s.is_final)
-        .map(|s| {
-            let transitions: Vec<serde_json::Value> = s
-                .transitions
-                .iter()
-                .map(|tr| {
-                    serde_json::json!({
-                        "target_index": tr.target_index,
-                        "has_cond": tr.cond.is_some(),
-                        "cond": tr.cond.clone().unwrap_or_default(),
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "index": s.index,
-                "id": s.id,
-                "transitions": transitions,
-            })
-        })
-        .collect();
-
-    let final_check = final_check_expr(&final_indices, "current", "||");
-
-    let tmpl = env
-        .get_template("procedure.kt.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package, struct_name => struct_name,
-        params => params,
-        state_names => minijinja::Value::from_serialize(&state_names),
-        state_count => rp.state_count,
-        initial_index => rp.initial_index,
-        non_final_states => minijinja::Value::from_serialize(&non_final_states),
-        final_check => final_check,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    tmpl.render(ctx).map_err(generator::render_error)
-}
-
 // ── Procedure: Rust ─────────────────────────────────────────
 
-fn render_procedure_rust(
-    env: &minijinja::Environment,
-    m: &ProcedureModel,
-    imports: &[ImportContext],
-) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Rust, imports)?;
-    let struct_name = filters::to_pascal_case(m.name.clone());
+// ── Procedure: shared helpers ───────────────────────────────
 
-    let params = rp
-        .inputs
-        .iter()
-        .map(|f| {
-            format!(
-                "{}: {}",
-                filters::to_snake_case(f.id.clone()),
-                rust_param_type(&f.sce_type)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let state_names: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .map(|s| serde_json::json!(s.id))
-        .collect();
-
-    // Guard expressions are already fully transpiled (with Rust snake_case
-    // rename applied internally by the typed emitter) inside resolve_procedure.
-    let non_final_states: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .filter(|s| !s.is_final)
-        .map(|s| {
-            let transitions: Vec<serde_json::Value> = s
-                .transitions
-                .iter()
-                .map(|tr| {
-                    serde_json::json!({
-                        "target_index": tr.target_index,
-                        "has_cond": tr.cond.is_some(),
-                        "cond": tr.cond.clone().unwrap_or_default(),
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "index": s.index,
-                "id": s.id,
-                "transitions": transitions,
-            })
-        })
-        .collect();
-
-    let final_indices: Vec<usize> = rp
-        .states
-        .iter()
-        .filter(|s| s.is_final)
-        .map(|s| s.index)
-        .collect();
-
-    let final_check = final_check_expr(&final_indices, "current", "||");
-
-    let tmpl = env
-        .get_template("procedure.rs.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        struct_name => struct_name,
-        params => params,
-        state_names => minijinja::Value::from_serialize(&state_names),
-        state_count => rp.state_count,
-        initial_index => rp.initial_index,
-        non_final_states => minijinja::Value::from_serialize(&non_final_states),
-        final_check => final_check,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    tmpl.render(ctx).map_err(generator::render_error)
-}
-
-// ── Procedure: Go ───────────────────────────────────────────
-
-fn render_procedure_go(
-    env: &minijinja::Environment,
-    m: &ProcedureModel,
-    imports: &[ImportContext],
-) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Go, imports)?;
-    let package = filters::to_snake_case(m.name.clone());
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let go_renames: Vec<(String, String)> = rp
-        .inputs
-        .iter()
-        .map(|f| (f.id.clone(), go_escape_builtin(&f.id)))
-        .collect();
-
-    let params = rp
-        .inputs
-        .iter()
-        .map(|f| format!("{} {}", go_escape_builtin(&f.id), go_type(&f.sce_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let state_names: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .map(|s| serde_json::json!(s.id))
-        .collect();
-
-    // Apply Go variable renames to guard expressions
-    let non_final_states: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .filter(|s| !s.is_final)
-        .map(|s| {
-            let transitions: Vec<serde_json::Value> = s
-                .transitions
-                .iter()
-                .map(|tr| {
-                    let cond = tr.cond.as_ref().map(|c| {
-                        let mut expr = c.clone();
-                        for (from, to) in &go_renames {
-                            if from != to {
-                                let re = regex::Regex::new(&format!(
-                                    r"\b{}\b",
-                                    regex::escape(from)
-                                ))
-                                .unwrap();
-                                expr = re.replace_all(&expr, to.as_str()).to_string();
-                            }
-                        }
-                        expr
-                    });
-                    serde_json::json!({
-                        "target_index": tr.target_index,
-                        "has_cond": cond.is_some(),
-                        "cond": cond.unwrap_or_default(),
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "index": s.index,
-                "id": s.id,
-                "transitions": transitions,
-            })
-        })
-        .collect();
-
-    let final_indices: Vec<usize> = rp
-        .states
-        .iter()
-        .filter(|s| s.is_final)
-        .map(|s| s.index)
-        .collect();
-
-    let final_check = final_check_expr(&final_indices, "current", "||");
-
-    let tmpl = env
-        .get_template("procedure.go.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package, struct_name => struct_name,
-        params => params,
-        state_names => minijinja::Value::from_serialize(&state_names),
-        state_count => rp.state_count,
-        initial_index => rp.initial_index,
-        non_final_states => minijinja::Value::from_serialize(&non_final_states),
-        final_check => final_check,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    tmpl.render(ctx).map_err(generator::render_error)
-}
-
-// ── Procedure: Python ───────────────────────────────────────
-
-fn render_procedure_python(
-    env: &minijinja::Environment,
-    m: &ProcedureModel,
-    imports: &[ImportContext],
-) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Python, imports)?;
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let params = rp
-        .inputs
-        .iter()
-        .map(|f| {
-            format!(
-                "{}: {}",
-                filters::to_snake_case(f.id.clone()),
-                python_type(&f.sce_type)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let state_names: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .map(|s| serde_json::json!(s.id))
-        .collect();
-
-    // Apply variable renames to guard expressions
-    let non_final_states: Vec<serde_json::Value> = rp
-        .states
-        .iter()
-        .filter(|s| !s.is_final)
-        .map(|s| {
-            let transitions: Vec<serde_json::Value> = s
-                .transitions
-                .iter()
-                .map(|tr| {
-                    serde_json::json!({
-                        "target_index": tr.target_index,
-                        "has_cond": tr.cond.is_some(),
-                        "cond": tr.cond.clone().unwrap_or_default(),
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "index": s.index,
-                "id": s.id,
-                "transitions": transitions,
-            })
-        })
-        .collect();
-
-    let final_indices: Vec<usize> = rp
-        .states
-        .iter()
-        .filter(|s| s.is_final)
-        .map(|s| s.index)
-        .collect();
-
-    let final_check = final_check_expr(&final_indices, "current", "or");
-
-    let tmpl = env
-        .get_template("procedure.py.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        struct_name => struct_name,
-        params => params,
-        state_names => minijinja::Value::from_serialize(&state_names),
-        state_count => rp.state_count,
-        initial_index => rp.initial_index,
-        non_final_states => minijinja::Value::from_serialize(&non_final_states),
-        final_check => final_check,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    tmpl.render(ctx).map_err(generator::render_error)
-}
-
-// ── Procedure Level 2: shared helpers ───────────────────────────
-
-/// Common L2 procedure data shared across all language renderers.
+/// Common procedure data shared across all language renderers.
 struct L2Common {
     state_enum: Vec<serde_json::Value>,
     event_enum: Vec<serde_json::Value>,
@@ -4332,7 +3761,7 @@ struct L2Common {
     has_external_deps: bool,
 }
 
-/// Build language-independent L2 procedure data (state/event enums, final states).
+/// Build language-independent procedure data (state/event enums, final states).
 fn build_l2_common(m: &ProcedureModel) -> L2Common {
     let state_enum: Vec<serde_json::Value> = m
         .states
@@ -4659,9 +4088,9 @@ fn python_default(ty: &SceType) -> &'static str {
     }
 }
 
-// ── Procedure Level 2: Kotlin ───────────────────────────────────
+// ── Procedure: Kotlin ───────────────────────────────────────
 
-fn render_procedure_l2_kotlin(
+fn render_procedure_kotlin(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
@@ -4757,7 +4186,7 @@ fn render_procedure_l2_kotlin(
     );
 
     let tmpl = env
-        .get_template("procedure_l2.kt.jinja2")
+        .get_template("procedure.kt.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
     // Cross-file imports
@@ -4787,9 +4216,9 @@ fn render_procedure_l2_kotlin(
     tmpl.render(ctx).map_err(generator::render_error)
 }
 
-// ── Procedure Level 2: Rust ─────────────────────────────────────
+// ── Procedure: Rust ─────────────────────────────────────────
 
-fn render_procedure_l2_rust(
+fn render_procedure_rust(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
@@ -4950,7 +4379,7 @@ fn render_procedure_l2_rust(
     );
 
     let tmpl = env
-        .get_template("procedure_l2.rs.jinja2")
+        .get_template("procedure.rs.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
     // Cross-file imports
@@ -4979,9 +4408,9 @@ fn render_procedure_l2_rust(
     tmpl.render(ctx).map_err(generator::render_error)
 }
 
-// ── Procedure Level 2: Go ───────────────────────────────────────
+// ── Procedure: Go ───────────────────────────────────────────
 
-fn render_procedure_l2_go(
+fn render_procedure_go(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
@@ -5109,7 +4538,7 @@ fn render_procedure_l2_go(
     );
 
     let tmpl = env
-        .get_template("procedure_l2.go.jinja2")
+        .get_template("procedure.go.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
     // Cross-file imports
@@ -5140,9 +4569,9 @@ fn render_procedure_l2_go(
     tmpl.render(ctx).map_err(generator::render_error)
 }
 
-// ── Procedure Level 2: Python ───────────────────────────────────
+// ── Procedure: Python ───────────────────────────────────────
 
-fn render_procedure_l2_python(
+fn render_procedure_python(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
@@ -5255,7 +4684,7 @@ fn render_procedure_l2_python(
     );
 
     let tmpl = env
-        .get_template("procedure_l2.py.jinja2")
+        .get_template("procedure.py.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
     // Cross-file imports

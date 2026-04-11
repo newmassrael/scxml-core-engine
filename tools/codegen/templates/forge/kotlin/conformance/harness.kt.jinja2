@@ -14,14 +14,11 @@
 
 import com.sce.forge.runtime.EventQueue
 {% for f in fixtures %}
-{% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" or f.kind == "procedure" or f.kind == "validator" or f.kind == "codec" %}
+{% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" or f.kind == "validator" or f.kind == "codec" %}
 import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}
 {% endif %}
 {% if f.kind == "observer" %}
 import com.sce.generated.{{ f.name }}.ForgeDomainTag as {{ f.name | to_pascal_case }}Tag
-{% endif %}
-{% if f.kind == "procedure" %}
-import com.sce.generated.{{ f.name }}.ProcedureResult as {{ f.name | to_pascal_case }}Result
 {% endif %}
 {% if f.kind == "transform" %}
 {% if f.output %}

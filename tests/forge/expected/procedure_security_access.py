@@ -1,8 +1,9 @@
-# SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure", Level 2)
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 # Do not edit — regenerate from the source SCXML file.
 #
-# Level 2 procedure: event-driven state machine using ProcedureStateMachine.
+# Event-driven state machine using ProcedureStateMachine.
 # Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+# Pure decision trees (no events/sends) execute via Event.NONE transitions.
 #
 # External dependencies (from sce:payload expressions — must be in scope):
 #   computeKey(seed)
@@ -145,7 +146,7 @@ class ProcedureSecurityAccess(ProcedureStateMachine):
 
 # ── Convenience wrapper function ─────────────────────────────────
 
-def execute_procedure_security_access(
+def execute(
     handler: Callable[[ProcedureServiceRequest], ProcedureServiceResponse],
     ecu_addr: int,
 ) -> ProcedureRunResult:

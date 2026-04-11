@@ -534,7 +534,7 @@ fn discover_primary_function(
         }
         // Stateful kinds (Codec, Validator, Procedure, Filter, Observer, Timer)
         // use member access, not free function calls. They are handled by the
-        // member rename mechanism in procedure_l2 and validator render functions.
+        // member rename mechanism in procedure and validator render functions.
         forge::model::ForgeDocument::Codec(_)
         | forge::model::ForgeDocument::Validator(_)
         | forge::model::ForgeDocument::Procedure(_)

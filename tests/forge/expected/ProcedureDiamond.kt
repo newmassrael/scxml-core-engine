@@ -1,40 +1,117 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Do not edit — regenerate from the source SCXML file.
+//
+// Event-driven state machine using ProcedureStateMachine.
+// Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+// Pure decision trees (no events/sends) execute via Event.NONE transitions.
 
 package com.sce.generated.procedure_diamond
 
-data class ProcedureResult(val completed: Boolean, val finalState: String)
+import com.sce.runtime.forge.*
 
-object ProcedureDiamond {
-    private val STATE_NAMES = arrayOf("classify", "high_path", "mid_path", "low_path", "accept", "reject")
+// ── State and Event enums ───────────────────────────────────────
 
-    fun execute(sensorValue: UShort, mode: String): ProcedureResult {
-        var current = 0
-        var iterations = 0
-        while (iterations++ < 6) {
-            val next = when (current) {
-                0 -> {
-                    if (sensorValue > 1000.toUShort()) 1
-                    else if (sensorValue > 500.toUShort()) 2
-                    else 3
-                }
-                1 -> {
-                    if (mode == "strict") 5
-                    else 4
-                }
-                2 -> {
-                    4
-                }
-                3 -> {
-                    4
-                }
-                else -> -1
-            }
-            if (next < 0) break
-            current = next
-            if (current == 4 || current == 5) break
-        }
-        val completed = current == 4 || current == 5
-        return ProcedureResult(completed, STATE_NAMES[current])
+enum class State {
+    Classify,
+    HighPath,
+    MidPath,
+    LowPath,
+    Accept,
+    Reject
+}
+
+enum class Event {
+    NONE,
+    Fail,
+    Ok
+}
+
+// ── Generated procedure state machine ───────────────────────────
+
+class ProcedureDiamond : ProcedureStateMachine<State, Event>() {
+    private var sensorValue: UShort = 0.toUShort()
+    private var mode: String = ""
+
+    fun setSensorValue(value: UShort) {
+        this.sensorValue = value
     }
+
+    fun setMode(value: String) {
+        this.mode = value
+    }
+
+    override val noneEvent = Event.NONE
+
+    override fun initialState() = State.Classify
+
+    override fun isFinal(state: State) = state in FINAL_STATES
+
+    override fun finalStateName(state: State) = when (state) {
+        State.Accept -> "accept"
+        State.Reject -> "reject"
+        else -> ""
+    }
+
+    override fun executeEntryActions(state: State): Pair<Event, String> {
+        when (state) {
+            else -> {}
+        }
+        return Pair(Event.NONE, "")
+    }
+
+    override fun processTransition(state: State, event: Event): Triple<State, Int, Boolean>? {
+        when (state) {
+            State.Classify -> {
+                if (event == Event.NONE) {
+                    if (sensorValue > 1000.toUShort()) return Triple(State.HighPath, 0, false)
+                }
+                if (event == Event.NONE) {
+                    if (sensorValue > 500.toUShort()) return Triple(State.MidPath, 1, false)
+                }
+                if (event == Event.NONE) {
+                    return Triple(State.LowPath, 2, false)
+                }
+            }
+            State.HighPath -> {
+                if (event == Event.NONE) {
+                    if (mode == "strict") return Triple(State.Reject, 0, false)
+                }
+                if (event == Event.NONE) {
+                    return Triple(State.Accept, 1, false)
+                }
+            }
+            State.MidPath -> {
+                if (event == Event.NONE) {
+                    return Triple(State.Accept, 0, false)
+                }
+            }
+            State.LowPath -> {
+                if (event == Event.NONE) {
+                    return Triple(State.Accept, 0, false)
+                }
+            }
+            else -> {}
+        }
+        return null
+    }
+
+    override fun executeTransitionActions(source: State, trIndex: Int) {
+    }
+
+    companion object {
+        private val FINAL_STATES = setOf(State.Accept, State.Reject)
+    }
+}
+
+// ── Convenience wrapper function ────────────────────────────────
+
+fun execute(
+    handler: ProcedureServiceHandler,
+    sensorValue: UShort,
+    mode: String): ProcedureRunResult {
+    val sm = ProcedureDiamond()
+    sm.setServiceHandler(handler)
+    sm.setSensorValue(sensorValue)
+    sm.setMode(mode)
+    return sm.runToCompletion()
 }
