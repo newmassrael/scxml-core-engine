@@ -26,7 +26,7 @@ mod fixtures {
 }
 
 {% for f in fixtures %}
-{% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" %}
+{% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" or f.kind == "validator" %}
 use fixtures::{{ f.name }}::{{ f.name | to_pascal_case }};
 {% endif %}
 {% endfor %}

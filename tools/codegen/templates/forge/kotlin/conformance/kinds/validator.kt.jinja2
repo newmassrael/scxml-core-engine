@@ -1,0 +1,15 @@
+{# Validator kind — stateful validator.validate(args...) -> ValidationResult(valid, reason). #}
+        val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
+        val validator = {{ f.name | to_pascal_case }}()
+        spec["sequence"]!!.jsonArray.forEachIndexed { i, step ->
+            val args = step.jsonObject["args"]!!.jsonArray
+{% for arg_ty in f.args %}
+            val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
+{% endfor %}
+            val expected = step.jsonObject["expected"]!!.jsonObject
+            val expectedValid = expected["valid"]!!.jsonPrimitive.boolean
+            val expectedReason = expected["reason"]!!.jsonPrimitive.content
+            val result = validator.validate({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            assertEquals(expectedValid, result.valid, "{{ f.name }} step $i valid")
+            assertEquals(expectedReason, result.reason, "{{ f.name }} step $i reason")
+        }

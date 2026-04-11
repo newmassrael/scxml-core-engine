@@ -1,9 +1,8 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 // Do not edit — regenerate from the source SCXML file.
 
-#![allow(dead_code)]
-
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ValidationResult {
     pub valid: bool,
     pub reason: String,

@@ -146,6 +146,16 @@ pub enum FixtureSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         function: Option<String>,
     },
+    /// Stateful data validator. Generated struct exposes
+    /// `validate(args...) -> ValidationResult { valid: bool, reason: String }`.
+    /// Internal state (previous sample memory for rate-of-change checks) is
+    /// implicit in the struct — not modelled in the manifest. The oracle lives
+    /// in the `validators` reference section and uses stateful sequences that
+    /// exercise range / ROC / plausibility branches and the documented rule
+    /// that state only advances on a successful validation.
+    Validator {
+        args: Vec<CanonicalType>,
+    },
 }
 
 impl FixtureSpec {
@@ -162,6 +172,7 @@ impl FixtureSpec {
             FixtureSpec::Observer { .. } => "observer",
             FixtureSpec::Procedure { .. } => "procedure",
             FixtureSpec::Lookup { .. } => "lookup",
+            FixtureSpec::Validator { .. } => "validator",
         }
     }
 }
@@ -374,7 +385,8 @@ impl Manifest {
                 | FixtureSpec::Condition { .. }
                 | FixtureSpec::Filter { .. }
                 | FixtureSpec::Observer { .. }
-                | FixtureSpec::Procedure { .. } => {}
+                | FixtureSpec::Procedure { .. }
+                | FixtureSpec::Validator { .. } => {}
             }
         }
         Ok(())

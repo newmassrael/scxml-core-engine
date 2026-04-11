@@ -1,0 +1,28 @@
+{# Validator kind — stateful instance::validate(args...) -> ValidationResult. #}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    let mut validator = {{ f.name | to_pascal_case }}::new();
+    for (i, step) in spec["sequence"]
+        .as_array()
+        .expect("sequence must be array")
+        .iter()
+        .enumerate()
+    {
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("step[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% endfor %}
+        let expected_valid = step["expected"]["valid"]
+            .as_bool()
+            .expect("expected.valid is bool");
+        let expected_reason = step["expected"]["reason"]
+            .as_str()
+            .expect("expected.reason is string");
+        let result = validator.validate({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        assert_eq!(
+            result.valid, expected_valid,
+            "{{ f.name }} step {i} valid mismatch"
+        );
+        assert_eq!(
+            result.reason.as_str(), expected_reason,
+            "{{ f.name }} step {i} reason mismatch"
+        );
+    }

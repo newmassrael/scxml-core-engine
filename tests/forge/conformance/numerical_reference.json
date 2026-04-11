@@ -234,6 +234,66 @@
     }
   },
 
+  "validators": {
+    "validator_range_only": {
+      "fixture": "ValidatorRangeOnly::validate",
+      "signature": "(temperature: f64) -> ValidationResult{valid, reason}",
+      "description": "Stateless single-argument range check on [-40.0, 150.0] inclusive. No state, no ROC, no plausibility — the simplest validator shape.",
+      "sequence": [
+        {"args": [25.0],   "expected": {"valid": true,  "reason": ""},                            "note": "mid-range"},
+        {"args": [-40.0],  "expected": {"valid": true,  "reason": ""},                            "note": "inclusive low boundary"},
+        {"args": [150.0],  "expected": {"valid": true,  "reason": ""},                            "note": "inclusive high boundary"},
+        {"args": [-40.1],  "expected": {"valid": false, "reason": "temperature_out_of_range"},    "note": "one ulp below low"},
+        {"args": [150.1],  "expected": {"valid": false, "reason": "temperature_out_of_range"},    "note": "one ulp above high"},
+        {"args": [0.0],    "expected": {"valid": true,  "reason": ""},                            "note": "recover after out-of-range (no state to invalidate)"}
+      ]
+    },
+    "validator_plausibility_only": {
+      "fixture": "ValidatorPlausibilityOnly::validate",
+      "signature": "(voltage: f64, current: f64) -> ValidationResult{valid, reason}",
+      "description": "Stateless two-argument plausibility: voltage * current <= 1000.0. Negative products pass (<= 1000). Boundary product == 1000 passes. Exercises the `!(expr)` path used when plausibility is the only rule.",
+      "sequence": [
+        {"args": [10.0,  50.0],  "expected": {"valid": true,  "reason": ""},                    "note": "product 500 well under limit"},
+        {"args": [20.0,  50.0],  "expected": {"valid": true,  "reason": ""},                    "note": "product 1000 exactly at boundary"},
+        {"args": [20.0,  50.1],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "product 1002 just over limit"},
+        {"args": [100.0, 11.0],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "product 1100"},
+        {"args": [0.0,   999.0], "expected": {"valid": true,  "reason": ""},                    "note": "zero voltage -> zero product"},
+        {"args": [-10.0, -50.0], "expected": {"valid": true,  "reason": ""},                    "note": "two negatives -> positive product 500"},
+        {"args": [-10.0, 200.0], "expected": {"valid": true,  "reason": ""},                    "note": "negative product -2000 passes (-2000 <= 1000)"}
+      ]
+    },
+    "validator_rpm_check": {
+      "fixture": "ValidatorRpmCheck::validate",
+      "signature": "(rpm: u16, engine_state: string) -> ValidationResult{valid, reason}",
+      "description": "Stateful validator: range [0,8000] -> ROC (|rpm - prev_rpm| > 500 fails, initial prev_rpm=0) -> plausibility (rpm==0 OR engine_state!=\"STOP\"). Order matters: the Rust golden evaluates range first, then ROC, then plausibility. State (prev_rpm) advances ONLY on a successful validation — every failure case in this sequence implicitly asserts that the following step still sees the previous prev_rpm.",
+      "sequence": [
+        {"args": [0,    "STOP"], "expected": {"valid": true,  "reason": ""},                             "note": "initial step: rpm=0 allowed at STOP by plausibility clause; prev_rpm 0 -> 0"},
+        {"args": [400,  "RUN"],  "expected": {"valid": true,  "reason": ""},                             "note": "delta=400 within ROC; prev_rpm -> 400"},
+        {"args": [1000, "RUN"],  "expected": {"valid": false, "reason": "rpm_rate_of_change_exceeded"},  "note": "delta=600 > 500; state must NOT update (prev_rpm stays 400)"},
+        {"args": [900,  "RUN"],  "expected": {"valid": true,  "reason": ""},                             "note": "proves prior failure did not advance state: delta from 400 is 500 (not > 500); prev_rpm -> 900"},
+        {"args": [900,  "STOP"], "expected": {"valid": false, "reason": "plausibility_failed"},          "note": "rpm!=0 AND engine_state==STOP fails plausibility; prev_rpm stays 900"},
+        {"args": [8500, "RUN"],  "expected": {"valid": false, "reason": "rpm_out_of_range"},             "note": "range check runs before ROC; prev_rpm stays 900"},
+        {"args": [1400, "RUN"],  "expected": {"valid": true,  "reason": ""},                             "note": "delta from 900 is 500 (ok); prev_rpm -> 1400"},
+        {"args": [0,    "RUN"],  "expected": {"valid": false, "reason": "rpm_rate_of_change_exceeded"},  "note": "delta=1400 > 500 even though rpm=0 would satisfy plausibility; ROC fires first"}
+      ]
+    },
+    "validator_signed_roc": {
+      "fixture": "ValidatorSignedRoc::validate",
+      "signature": "(speed: i32, altitude: f64) -> ValidationResult{valid, reason}",
+      "description": "Stateful validator with per-field rate-of-change memory (prev_speed, prev_altitude), both starting at 0. Evaluation order: speed range [-100,500] -> altitude range (<=50000, no min) -> speed ROC (|delta|>50) -> altitude ROC (|delta|>100.0). State for BOTH fields updates atomically only on success.",
+      "sequence": [
+        {"args": [50,   100.0],   "expected": {"valid": true,  "reason": ""},                               "note": "initial step: speed delta=50 (ok), altitude delta=100.0 (ok, boundary); prev -> (50, 100)"},
+        {"args": [100,  200.0],   "expected": {"valid": true,  "reason": ""},                               "note": "both deltas at boundary (50, 100); prev -> (100, 200)"},
+        {"args": [200,  200.0],   "expected": {"valid": false, "reason": "speed_rate_of_change_exceeded"},  "note": "speed delta 100 > 50; state stays (100, 200)"},
+        {"args": [150,  350.0],   "expected": {"valid": false, "reason": "altitude_rate_of_change_exceeded"}, "note": "speed delta 50 ok, altitude delta 150 > 100; speed ROC must run before altitude ROC"},
+        {"args": [-101, 200.0],   "expected": {"valid": false, "reason": "speed_out_of_range"},             "note": "speed range fires before anything else"},
+        {"args": [150,  50001.0], "expected": {"valid": false, "reason": "altitude_out_of_range"},          "note": "speed range ok then altitude range fails"},
+        {"args": [150,  300.0],   "expected": {"valid": true,  "reason": ""},                               "note": "recovery: from (100, 200) deltas are (50, 100) ok; prev -> (150, 300)"},
+        {"args": [100,  200.0],   "expected": {"valid": true,  "reason": ""},                               "note": "reverse step also at boundary; prev -> (100, 200)"}
+      ]
+    }
+  },
+
   "observers": {
     "observer_coolant": {
       "fixture": "ObserverCoolant",

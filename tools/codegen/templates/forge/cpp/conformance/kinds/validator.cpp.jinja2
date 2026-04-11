@@ -1,0 +1,19 @@
+{# Validator kind — stateful sm.validate(args...) -> ValidationResult{valid, reason}. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} validator{};
+    int i = 0;
+    for (const auto &step : spec["sequence"]) {
+{% for arg_ty in f.args %}
+        auto arg{{ loop.index0 }} = step["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
+{% endfor %}
+        auto expected_valid = step["expected"]["valid"].get<bool>();
+        auto expected_reason = step["expected"]["reason"].get<std::string>();
+        auto result = validator.validate({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        CHECK(result.valid == expected_valid,
+              "{{ f.name }} step %d valid: actual=%d expected=%d",
+              i, static_cast<int>(result.valid), static_cast<int>(expected_valid));
+        CHECK(result.reason == expected_reason,
+              "{{ f.name }} step %d reason: actual=\"%s\" expected=\"%s\"",
+              i, result.reason.c_str(), expected_reason.c_str());
+        ++i;
+    }

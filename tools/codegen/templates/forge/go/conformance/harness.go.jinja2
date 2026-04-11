@@ -33,6 +33,7 @@ type reference struct {
 	PureFunctions   map[string]pureSpec     `json:"pure_functions"`
 	StatefulFilters map[string]sequenceSpec `json:"stateful_filters"`
 	Observers       map[string]sequenceSpec `json:"observers"`
+	Validators      map[string]sequenceSpec `json:"validators"`
 }
 
 // pureCases looks up pure-function cases by the manifest's ref_section
@@ -65,8 +66,10 @@ func (r *reference) sequenceSteps(t *testing.T, section, fixture string) []seque
 		src = r.StatefulFilters
 	case "observers":
 		src = r.Observers
+	case "validators":
+		src = r.Validators
 	default:
-		t.Fatalf("fixture %q: section %q has no sequence (only stateful_filters/observers do)", fixture, section)
+		t.Fatalf("fixture %q: section %q has no sequence (only stateful_filters/observers/validators do)", fixture, section)
 	}
 	spec, ok := src[fixture]
 	if !ok {
@@ -89,9 +92,10 @@ type sequenceSpec struct {
 }
 
 type sequenceStep struct {
-	Input          json.RawMessage `json:"input"`
-	Expected       json.RawMessage `json:"expected"`
-	ExpectedEvents []string        `json:"expected_events"`
+	Input          json.RawMessage   `json:"input"`
+	Args           []json.RawMessage `json:"args"`
+	Expected       json.RawMessage   `json:"expected"`
+	ExpectedEvents []string          `json:"expected_events"`
 }
 
 func repoRoot(t *testing.T) string {

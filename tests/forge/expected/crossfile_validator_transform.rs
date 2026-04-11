@@ -1,11 +1,10 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 // Do not edit — regenerate from the source SCXML file.
 
-#![allow(dead_code)]
-
 use super::transform_temperature::TransformTemperature;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ValidationResult {
     pub valid: bool,
     pub reason: String,
