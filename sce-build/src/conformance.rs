@@ -9,7 +9,7 @@
 // truth for fixture structural metadata (kind, arg types, output shape);
 // expected oracle values live separately in numerical_reference.json.
 //
-// Adding a new fixture kind requires extending `FixtureKind` here *and* the
+// Adding a new fixture kind requires extending `FixtureSpec` here *and* the
 // corresponding `{{ kind }}` branch in every per-language harness template.
 
 use serde::{Deserialize, Serialize};
@@ -81,74 +81,87 @@ pub struct CompoundOutput {
     pub compare: CompareMode,
 }
 
-/// One fixture entry. The full enum varies by `kind` — fields not meaningful
-/// for a given kind are `None`. Per-language templates select the relevant
-/// subset via `kind` dispatch.
+/// One fixture entry. `name` and `ref_section` are common to every kind;
+/// kind-specific data lives in the `spec` tagged enum below. The
+/// `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat
+/// object (`{name, ref_section, kind, args, output, ...}`) so per-language
+/// Jinja2 templates can continue to read `f.args` / `f.output` / etc. without
+/// having to walk a nested `f.spec.*` path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fixture {
     pub name: String,
-    pub kind: FixtureKind,
     pub ref_section: String,
-
-    /// Pure-function kinds (interpolation/transform/condition/procedure).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<CanonicalType>,
-
-    /// Stateful kinds (filter/observer). Single per-step input.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input: Option<CanonicalType>,
-
-    /// Scalar output descriptor (interpolation/condition/filter, or transform
-    /// with a single output function).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output: Option<ScalarOutput>,
-
-    /// Compound output — transform fixtures with multiple named outputs.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub compound_outputs: Vec<CompoundOutput>,
-
-    /// Free-function name for `kind = "condition"` (where the generated
-    /// function name matches the fixture name in snake_case).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub function: Option<String>,
-
-    /// Observer kind: ordered list of emitted event tag names.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub event_tags: Vec<String>,
-
-    /// Lookup kind: declared miss-handling policy. Required for `kind=lookup`,
-    /// rejected for every other kind. The harness fragment branches on this
-    /// to choose the correct unwrap strategy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub on_miss: Option<LookupMissPolicy>,
+    #[serde(flatten)]
+    pub spec: FixtureSpec,
 }
 
-/// The `kind` discriminator. Mirrors SCE Forge `sce:kind` attribute values
-/// but is declared here so the manifest parser does not have to reach into
-/// the forge model types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum FixtureKind {
-    Interpolation,
-    Transform,
-    Condition,
-    Filter,
-    Observer,
-    Procedure,
-    Lookup,
+/// Kind-specific fixture data. The `#[serde(tag = "kind")]` attribute makes
+/// each variant discriminate on a top-level `"kind"` string, which matches
+/// what fixtures.json already stores and what the templates already read.
+///
+/// The Rust type system now enforces "this kind requires these fields", so
+/// `Manifest::validate` no longer has to hand-check field presence for every
+/// kind — it only checks cross-field semantic invariants that cannot be
+/// expressed in the types (e.g. Transform needs at least one of the two
+/// output shapes; Lookup's `function` is derived at runtime so users must
+/// not supply it in the manifest).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum FixtureSpec {
+    Interpolation {
+        args: Vec<CanonicalType>,
+        output: ScalarOutput,
+    },
+    Transform {
+        args: Vec<CanonicalType>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output: Option<ScalarOutput>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        compound_outputs: Vec<CompoundOutput>,
+    },
+    Condition {
+        function: String,
+        args: Vec<CanonicalType>,
+        output: ScalarOutput,
+    },
+    Filter {
+        input: CanonicalType,
+        output: ScalarOutput,
+    },
+    Observer {
+        input: CanonicalType,
+        event_tags: Vec<String>,
+    },
+    Procedure {
+        args: Vec<CanonicalType>,
+    },
+    Lookup {
+        args: Vec<CanonicalType>,
+        output: ScalarOutput,
+        on_miss: LookupMissPolicy,
+        /// Derived at harness-rendering time from the SCXML
+        /// `<data sce:direction="out">` id. Must be absent in the manifest
+        /// JSON — `Manifest::validate` rejects any user-supplied value so
+        /// the SCXML stays the single source of truth.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        function: Option<String>,
+    },
 }
 
-impl FixtureKind {
-    /// Lowercase string used by templates (e.g. `{% if fixture.kind == "filter" %}`).
-    pub fn as_str(&self) -> &'static str {
+impl FixtureSpec {
+    /// Lowercase discriminator string, used by this module's validate/render
+    /// logic when it needs a stable identifier without pattern-matching the
+    /// full variant. Matches the `#[serde(tag)]` value so it also matches
+    /// what `{{ f.kind }}` renders inside the Jinja2 templates.
+    pub fn kind_str(&self) -> &'static str {
         match self {
-            FixtureKind::Interpolation => "interpolation",
-            FixtureKind::Transform => "transform",
-            FixtureKind::Condition => "condition",
-            FixtureKind::Filter => "filter",
-            FixtureKind::Observer => "observer",
-            FixtureKind::Procedure => "procedure",
-            FixtureKind::Lookup => "lookup",
+            FixtureSpec::Interpolation { .. } => "interpolation",
+            FixtureSpec::Transform { .. } => "transform",
+            FixtureSpec::Condition { .. } => "condition",
+            FixtureSpec::Filter { .. } => "filter",
+            FixtureSpec::Observer { .. } => "observer",
+            FixtureSpec::Procedure { .. } => "procedure",
+            FixtureSpec::Lookup { .. } => "lookup",
         }
     }
 }
@@ -308,14 +321,26 @@ impl Manifest {
         Ok(manifest)
     }
 
-    /// Structural checks that cannot be expressed in the type system alone:
-    /// fixture names must be unique, kinds must agree with field presence.
+    /// Semantic cross-field checks the tagged-enum type system cannot express.
     ///
-    /// Note: this is the **only** runtime validator for the manifest. The
-    /// `tests/forge/conformance/fixtures.schema.json` document is purely
-    /// for editor / IDE / CI-linter integration via the `$schema` reference
-    /// in `fixtures.json`; it is never consulted at codegen time. The Rust
-    /// type system + this function are the source of truth at runtime.
+    /// Field-presence invariants ("filter requires `input`", "lookup requires
+    /// `on_miss`", "observer requires `event_tags`", etc.) are now enforced
+    /// by `FixtureSpec`'s per-variant struct fields — deserialization fails
+    /// with a clear serde error before this function runs. What remains here
+    /// is anything that the type system alone cannot check:
+    ///
+    /// * fixture names must be unique across the catalog,
+    /// * `transform` fixtures must carry at least one of the two output
+    ///   shapes (`output` scalar OR non-empty `compound_outputs`),
+    /// * `lookup` fixtures must not preset `function` — it is derived from
+    ///   the SCXML output id at harness-rendering time, and letting users
+    ///   supply it in the manifest would invite the SCXML/manifest pair to
+    ///   drift out of sync.
+    ///
+    /// This is still the **only** runtime validator for the manifest. The
+    /// `tests/forge/conformance/fixtures.schema.json` document is purely for
+    /// editor / IDE / CI-linter integration via the `$schema` reference in
+    /// `fixtures.json`; it is never consulted at codegen time.
     pub fn validate(&self) -> Result<(), String> {
         use std::collections::HashSet;
         let mut seen = HashSet::new();
@@ -323,100 +348,33 @@ impl Manifest {
             if !seen.insert(f.name.clone()) {
                 return Err(format!("duplicate fixture name: {}", f.name));
             }
-            match f.kind {
-                FixtureKind::Filter | FixtureKind::Observer => {
-                    if f.input.is_none() {
-                        return Err(format!(
-                            "fixture {}: kind={} requires `input`",
-                            f.name,
-                            f.kind.as_str()
-                        ));
-                    }
-                    if !f.args.is_empty() {
-                        return Err(format!(
-                            "fixture {}: stateful kinds use `input`, not `args`",
-                            f.name
-                        ));
-                    }
-                }
-                FixtureKind::Interpolation
-                | FixtureKind::Condition
-                | FixtureKind::Procedure
-                | FixtureKind::Lookup => {
-                    if f.args.is_empty() {
-                        return Err(format!(
-                            "fixture {}: kind={} requires non-empty `args`",
-                            f.name,
-                            f.kind.as_str()
-                        ));
-                    }
-                }
-                FixtureKind::Transform => {
-                    if f.args.is_empty() {
-                        return Err(format!(
-                            "fixture {}: transform requires `args`",
-                            f.name
-                        ));
-                    }
-                    if f.output.is_none() && f.compound_outputs.is_empty() {
+            match &f.spec {
+                FixtureSpec::Transform {
+                    output,
+                    compound_outputs,
+                    ..
+                } => {
+                    if output.is_none() && compound_outputs.is_empty() {
                         return Err(format!(
                             "fixture {}: transform needs `output` or `compound_outputs`",
                             f.name
                         ));
                     }
                 }
-            }
-            match f.kind {
-                FixtureKind::Observer => {
-                    if f.event_tags.is_empty() {
-                        return Err(format!(
-                            "fixture {}: observer requires `event_tags`",
-                            f.name
-                        ));
-                    }
-                }
-                FixtureKind::Condition => {
-                    if f.function.is_none() {
-                        return Err(format!(
-                            "fixture {}: kind=condition requires `function`",
-                            f.name
-                        ));
-                    }
-                }
-                FixtureKind::Lookup => {
-                    // Lookup function name is derived from the SCXML output
-                    // field id at harness-rendering time, not stored in the
-                    // manifest. Reject the field here so the SCXML stays the
-                    // single source of truth.
-                    if f.function.is_some() {
+                FixtureSpec::Lookup { function, .. } => {
+                    if function.is_some() {
                         return Err(format!(
                             "fixture {}: lookup `function` is derived from \
                              the SCXML output id; remove it from fixtures.json",
                             f.name
                         ));
                     }
-                    if f.output.is_none() {
-                        return Err(format!(
-                            "fixture {}: lookup requires `output`",
-                            f.name
-                        ));
-                    }
-                    if f.on_miss.is_none() {
-                        return Err(format!(
-                            "fixture {}: lookup requires `on_miss` (\"error\" | \"default\")",
-                            f.name
-                        ));
-                    }
                 }
-                _ => {}
-            }
-            // `on_miss` is meaningful only for lookup; reject elsewhere.
-            if f.on_miss.is_some() && f.kind != FixtureKind::Lookup {
-                return Err(format!(
-                    "fixture {}: `on_miss` is only valid for kind=lookup, not {}",
-                    f.name,
-                    f.kind.as_str()
-                ));
+                FixtureSpec::Interpolation { .. }
+                | FixtureSpec::Condition { .. }
+                | FixtureSpec::Filter { .. }
+                | FixtureSpec::Observer { .. }
+                | FixtureSpec::Procedure { .. } => {}
             }
         }
         Ok(())
@@ -565,12 +523,12 @@ pub fn render_harness(
     // entries from the SCXML output id without mutating the manifest.
     let mut fixtures = manifest.fixtures.clone();
     for f in fixtures.iter_mut() {
-        if f.kind == FixtureKind::Lookup {
+        if let FixtureSpec::Lookup { function, .. } = &mut f.spec {
             let scxml_path = resource_dir.join(format!("{}.scxml", f.name));
             let output_id = read_lookup_output_id(&scxml_path)?;
             // Function naming convention: lookup_<output_id_snake>. Per-language
             // case conversion (camel/pascal) is applied by template filters.
-            f.function = Some(format!(
+            *function = Some(format!(
                 "lookup_{}",
                 crate::filters::to_snake_case(output_id)
             ));
