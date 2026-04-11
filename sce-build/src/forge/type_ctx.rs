@@ -50,25 +50,28 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
 }
 
 /// Populate `ctx.vars` with every **stateful** import's alias as an opaque
-/// struct-typed variable (the alias itself refers to the member in the
-/// enclosing generated code). The fields of that struct are registered via
-/// qualified keys of the form `"alias.field"`, which is how the expression
-/// transpiler looks up member access chains when the `object.property`
-/// pattern is resolved through the rename pass.
+/// struct-typed variable, and every publicly accessible member field of
+/// that alias under the qualified key `"{alias}.{field}"`.
 ///
-/// We cannot represent a genuine "struct with fields" type in our simple
-/// lattice, so we use the convention: the alias itself maps to `Unknown`
-/// (emitters fall through to verbatim access), and each individual field
-/// is looked up via the rename pass + a direct ident entry added here
-/// under the `alias.field` key. Callers that want a member field's type
-/// should therefore add a rename entry mapping `alias.field` → some local
-/// identifier, then register that local identifier's type here.
+/// **Key namespace invariant**: member field keys MUST be qualified with the
+/// alias prefix. An unqualified bare key would collide with any same-named
+/// field in the enclosing kind (e.g. a codec named `frame` with field
+/// `payload` imported into a procedure whose own input is also called
+/// `payload`), silently yielding wrong type inference. The qualification
+/// happens at enrichment time (`lib.rs::validate_and_enrich_imports`), so
+/// this function simply trusts `imp.member_field_types` keys are already in
+/// `"{alias}.{field}"` form.
 ///
-/// For the present refactor we take the simpler route: we register the
-/// alias itself as Unknown and leave member-access typing as a future
-/// extension. In practice the bug Fix 3 was solving (literal promotion in
-/// arithmetic over float operands) is dominated by direct field access on
-/// the enclosing kind's inputs, not cross-file struct member access.
+/// The alias itself maps to `Unknown` because our type lattice cannot
+/// represent a genuine struct type; downstream emitters must consult the
+/// rename map to turn the alias Ident into a target-language member access
+/// (e.g. `self.frame_`, `p.Frame`, `frame_` — one per language).
+///
+/// The inference pass in [`crate::forge::expr::infer_types`] looks up these
+/// qualified keys via its Member branch: when it sees
+/// `Member{object: Ident(obj), property: prop}` it forms `"{obj}.{prop}"`
+/// and calls `ctx.lookup_var`, which returns the field's concrete type if
+/// registered here.
 fn insert_stateful_import_aliases<'a>(
     ctx: &mut TypeCtx<'a>,
     imports: &'a [ImportContext],
@@ -78,12 +81,8 @@ fn insert_stateful_import_aliases<'a>(
             continue;
         }
         ctx.insert_var(imp.alias.as_str(), InferredType::Unknown);
-        // Register individual member fields under the qualified key.
-        // Emitters do not consult this directly, but the inference pass
-        // looks up Ident nodes produced by the rename pass that collapsed
-        // an `alias.field` Member into a synthetic ident.
-        for (fname, fty) in &imp.member_field_types {
-            ctx.insert_var(fname.as_str(), InferredType::from_sce_type(fty));
+        for (qualified_key, fty) in &imp.member_field_types {
+            ctx.insert_var(qualified_key.as_str(), InferredType::from_sce_type(fty));
         }
     }
 }

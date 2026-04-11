@@ -918,12 +918,26 @@ fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             infer_types(alternate, ctx);
             join_arith(consequent.ty, alternate.ty)
         }
-        ExprKind::Member { object, .. } => {
+        ExprKind::Member { object, property } => {
             infer_types(object, ctx);
-            // Member access into opaque structs — cannot infer field type
-            // from local information. Future extension: dispatch on a
-            // per-object member type table.
-            InferredType::Unknown
+            // Qualified-key lookup: when the Member's object is a bare
+            // Ident (i.e. a pre-rename, pre-collapse access), we form
+            // `"{obj}.{prop}"` and consult `ctx.vars`. Stateful import
+            // aliases register their fields under exactly this key shape
+            // (see `forge::type_ctx::insert_stateful_import_aliases`), so
+            // this path recovers the concrete field type for expressions
+            // like `frame.payload` where `frame` is an imported codec.
+            //
+            // Inference must run BEFORE rename (see top-of-file rationale)
+            // so the Member node still carries its `Ident(obj)` form at
+            // this point; after rename the object may become `Raw(...)`
+            // and the qualified key lookup would no longer resolve.
+            if let ExprKind::Ident(obj_name) = &object.kind {
+                let qualified = format!("{}.{}", obj_name, property);
+                ctx.lookup_var(&qualified)
+            } else {
+                InferredType::Unknown
+            }
         }
         ExprKind::Index { object, index } => {
             infer_types(object, ctx);

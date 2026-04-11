@@ -360,7 +360,17 @@ fn validate_and_enrich_imports(
                 ctx.param_types = params;
                 ctx.ret_type = ret;
             } else {
-                ctx.member_field_types = discover_stateful_member_fields(&doc);
+                // Qualify every discovered field key with the import's alias
+                // so the typed expression pipeline can look it up via the
+                // `"{alias}.{field}"` convention used by `infer_types` when
+                // it encounters `Member{Ident(alias), field}` AST nodes.
+                // Unqualified bare field names would collide with the
+                // enclosing kind's own inputs/internals that happen to share
+                // a name, silently producing wrong type inference.
+                ctx.member_field_types = discover_stateful_member_fields(&doc)
+                    .into_iter()
+                    .map(|(field, ty)| (format!("{}.{}", ctx.alias, field), ty))
+                    .collect();
             }
         }
     }
