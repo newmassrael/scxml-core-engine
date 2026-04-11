@@ -1,14 +1,14 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Do not edit — regenerate from the source SCXML file.
 
-#![allow(dead_code)]
-
+#[allow(dead_code)]
 pub struct CodecSimpleFrame {
     pub msg_id: u8,
     pub length: u8,
     pub payload: u16,
 }
 
+#[allow(dead_code)]
 impl CodecSimpleFrame {
     pub fn decode(raw: &[u8]) -> Option<Self> {
         if raw.len() < 4 {

@@ -27,55 +27,22 @@ import (
 {% endfor %}
 )
 
+// ── Per-kind spec and step types ────────────────────────────────
+//
+// Each sequence-based kind (filter, observer, validator) gets its own Step
+// struct declaring exactly the JSON fields it needs. The older design used
+// a single superset sequenceStep struct whose fields were a union of every
+// kind's needs, with fragments silently ignoring irrelevant fields — this
+// split restores per-kind type safety and lets each fragment's field access
+// fail at compile time if the oracle shape ever drifts.
+
 type reference struct {
-	Version         int                     `json:"version"`
-	FloatTolerance  float64                 `json:"float_tolerance"`
-	PureFunctions   map[string]pureSpec     `json:"pure_functions"`
-	StatefulFilters map[string]sequenceSpec `json:"stateful_filters"`
-	Observers       map[string]sequenceSpec `json:"observers"`
-	Validators      map[string]sequenceSpec `json:"validators"`
-}
-
-// pureCases looks up pure-function cases by the manifest's ref_section
-// name. Each kind fragment passes the section name from f.ref_section so
-// that drift between fixtures.json and this harness fails loudly at test
-// time instead of silently reading the wrong section.
-func (r *reference) pureCases(t *testing.T, section, fixture string) []pureCase {
-	t.Helper()
-	var src map[string]pureSpec
-	switch section {
-	case "pure_functions":
-		src = r.PureFunctions
-	default:
-		t.Fatalf("fixture %q: section %q has no pure cases (only pure_functions does)", fixture, section)
-	}
-	spec, ok := src[fixture]
-	if !ok {
-		t.Fatalf("fixture %q: missing entry in section %q", fixture, section)
-	}
-	return spec.Cases
-}
-
-// sequenceSteps looks up stateful sequence steps by the manifest's
-// ref_section name (stateful_filters or observers).
-func (r *reference) sequenceSteps(t *testing.T, section, fixture string) []sequenceStep {
-	t.Helper()
-	var src map[string]sequenceSpec
-	switch section {
-	case "stateful_filters":
-		src = r.StatefulFilters
-	case "observers":
-		src = r.Observers
-	case "validators":
-		src = r.Validators
-	default:
-		t.Fatalf("fixture %q: section %q has no sequence (only stateful_filters/observers/validators do)", fixture, section)
-	}
-	spec, ok := src[fixture]
-	if !ok {
-		t.Fatalf("fixture %q: missing entry in section %q", fixture, section)
-	}
-	return spec.Sequence
+	Version         int                      `json:"version"`
+	FloatTolerance  float64                  `json:"float_tolerance"`
+	PureFunctions   map[string]pureSpec      `json:"pure_functions"`
+	StatefulFilters map[string]filterSpec    `json:"stateful_filters"`
+	Observers       map[string]observerSpec  `json:"observers"`
+	Validators      map[string]validatorSpec `json:"validators"`
 }
 
 type pureSpec struct {
@@ -87,15 +54,90 @@ type pureCase struct {
 	Expected json.RawMessage   `json:"expected"`
 }
 
-type sequenceSpec struct {
-	Sequence []sequenceStep `json:"sequence"`
+type filterSpec struct {
+	Sequence []filterStep `json:"sequence"`
 }
 
-type sequenceStep struct {
-	Input          json.RawMessage   `json:"input"`
-	Args           []json.RawMessage `json:"args"`
-	Expected       json.RawMessage   `json:"expected"`
-	ExpectedEvents []string          `json:"expected_events"`
+type filterStep struct {
+	Input    json.RawMessage `json:"input"`
+	Expected json.RawMessage `json:"expected"`
+}
+
+type observerSpec struct {
+	Sequence []observerStep `json:"sequence"`
+}
+
+type observerStep struct {
+	Input          json.RawMessage `json:"input"`
+	ExpectedEvents []string        `json:"expected_events"`
+}
+
+type validatorSpec struct {
+	Sequence []validatorStep `json:"sequence"`
+}
+
+type validatorStep struct {
+	Args     []json.RawMessage `json:"args"`
+	Expected json.RawMessage   `json:"expected"`
+}
+
+// pureCases looks up pure-function cases by the manifest's ref_section
+// name. Each kind fragment passes the section name from f.ref_section so
+// that drift between fixtures.json and this harness fails loudly at test
+// time instead of silently reading the wrong section.
+func (r *reference) pureCases(t *testing.T, section, fixture string) []pureCase {
+	t.Helper()
+	if section != "pure_functions" {
+		t.Fatalf("fixture %q: pure-function kinds require ref_section=pure_functions, got %q", fixture, section)
+	}
+	spec, ok := r.PureFunctions[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in pure_functions", fixture)
+	}
+	return spec.Cases
+}
+
+// filterSteps returns the step sequence for a filter fixture, asserting
+// that the manifest's ref_section matches the hard-wired expectation for
+// this kind. The assertion is what catches drift — a filter fixture in
+// fixtures.json tagged ref_section="observers" fails loudly here rather
+// than silently reading from the wrong map.
+func (r *reference) filterSteps(t *testing.T, section, fixture string) []filterStep {
+	t.Helper()
+	if section != "stateful_filters" {
+		t.Fatalf("fixture %q: filter kind requires ref_section=stateful_filters, got %q", fixture, section)
+	}
+	spec, ok := r.StatefulFilters[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in stateful_filters", fixture)
+	}
+	return spec.Sequence
+}
+
+// observerSteps — see filterSteps for the drift-detection contract.
+func (r *reference) observerSteps(t *testing.T, section, fixture string) []observerStep {
+	t.Helper()
+	if section != "observers" {
+		t.Fatalf("fixture %q: observer kind requires ref_section=observers, got %q", fixture, section)
+	}
+	spec, ok := r.Observers[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in observers", fixture)
+	}
+	return spec.Sequence
+}
+
+// validatorSteps — see filterSteps for the drift-detection contract.
+func (r *reference) validatorSteps(t *testing.T, section, fixture string) []validatorStep {
+	t.Helper()
+	if section != "validators" {
+		t.Fatalf("fixture %q: validator kind requires ref_section=validators, got %q", fixture, section)
+	}
+	spec, ok := r.Validators[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in validators", fixture)
+	}
+	return spec.Sequence
 }
 
 func repoRoot(t *testing.T) string {

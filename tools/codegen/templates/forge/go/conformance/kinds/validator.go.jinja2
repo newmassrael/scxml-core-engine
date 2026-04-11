@@ -1,5 +1,5 @@
 {# Validator kind — stateful Validate(args...) -> ValidationResult{Valid, Reason}. #}
-	steps := ref.sequenceSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
+	steps := ref.validatorSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
 	var validator {{ f.name }}.{{ f.name | to_pascal_case }}
 	type expectedShape struct {
 		Valid  bool   `json:"valid"`

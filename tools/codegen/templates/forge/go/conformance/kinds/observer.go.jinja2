@@ -1,5 +1,5 @@
 {# Observer kind — stateful Update(input) producing a tag queue per step. #}
-	steps := ref.sequenceSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
+	steps := ref.observerSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
 	var observer {{ f.name }}.{{ f.name | to_pascal_case }}
 	for i, step := range steps {
 		var input {{ f.input | go_type }}

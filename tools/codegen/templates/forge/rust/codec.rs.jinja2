@@ -1,7 +1,5 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Do not edit — regenerate from the source SCXML file.
-
-#![allow(dead_code)]
 {% if all_imports %}
 
 {% for imp in all_imports %}
@@ -9,12 +7,14 @@
 {% endfor %}
 {% endif %}
 
+#[allow(dead_code)]
 pub struct {{ struct_name }} {
 {% for field in fields %}
     pub {{ field.id }}: {{ field.rs_type }},
 {% endfor %}
 }
 
+#[allow(dead_code)]
 impl {{ struct_name }} {
     pub fn decode(raw: &[u8]) -> Option<Self> {
         if raw.len() < {{ min_bytes }} {

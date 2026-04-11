@@ -7,8 +7,6 @@
 // External dependencies (from sce:payload expressions — must be in scope):
 //   frame.encode()
 
-#![allow(dead_code)]
-
 use super::codec_simple_frame::CodecSimpleFrame;
 
 use std::collections::HashMap;
@@ -20,6 +18,7 @@ use sce_rust_runtime::forge::{
 // ── State and Event enums ───────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum State {
     SendRequest = 0,
     Decode = 1,
@@ -28,6 +27,7 @@ pub enum State {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Event {
     None = 0,
     Fail = 1,
@@ -36,6 +36,7 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+#[allow(dead_code)]
 pub struct CrossfileProcedureCodec {
     ecu_addr: u32,
     response: Vec<u8>,
@@ -46,6 +47,7 @@ pub struct CrossfileProcedureCodec {
     pending_event_data: String,
 }
 
+#[allow(dead_code)]
 impl CrossfileProcedureCodec {
     pub fn new() -> Self {
         Self {
@@ -158,6 +160,7 @@ impl ProcedurePolicy for CrossfileProcedureCodec {
 
 // ── Convenience wrapper function ────────────────────────────────
 
+#[allow(dead_code)]
 pub fn execute_crossfile_procedure_codec(
     handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static,
     ecu_addr: u32,

@@ -7,8 +7,6 @@
 // External dependencies (from sce:payload expressions — must be in scope):
 //   computeKey(seed)
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use sce_rust_runtime::forge::{
     ProcedurePolicy, ProcedureRunResult, ProcedureServiceRequest, ProcedureServiceResponse,
@@ -18,6 +16,7 @@ use sce_rust_runtime::forge::{
 // ── State and Event enums ───────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum State {
     SendTesterPresent = 0,
     RequestSeed = 1,
@@ -28,6 +27,7 @@ pub enum State {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Event {
     None = 0,
     Fail = 1,
@@ -36,6 +36,7 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+#[allow(dead_code)]
 pub struct ProcedureSecurityAccess {
     ecu_addr: u32,
     seed: Vec<u8>,
@@ -46,6 +47,7 @@ pub struct ProcedureSecurityAccess {
     pending_event_data: String,
 }
 
+#[allow(dead_code)]
 impl ProcedureSecurityAccess {
     pub fn new() -> Self {
         Self {
@@ -212,6 +214,7 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
 
 // ── Convenience wrapper function ────────────────────────────────
 
+#[allow(dead_code)]
 pub fn execute_procedure_security_access(
     handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static,
     ecu_addr: u32,

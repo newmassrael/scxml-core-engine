@@ -10,8 +10,6 @@
 //   {{ expr }}
 {% endfor %}
 {% endif %}
-
-#![allow(dead_code)]
 {% if all_imports %}
 
 {% for imp in all_imports %}
@@ -28,6 +26,7 @@ use sce_rust_runtime::forge::{
 // ── State and Event enums ───────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum State {
 {% for s in state_enum %}
     {{ s.name }} = {{ s.index }},
@@ -35,6 +34,7 @@ pub enum State {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Event {
     None = 0,
 {% for e in event_enum %}
@@ -44,6 +44,7 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+#[allow(dead_code)]
 pub struct {{ struct_name }} {
 {% for f in input_fields %}
     {{ f.id }}: {{ f.rs_type }},
@@ -62,6 +63,7 @@ pub struct {{ struct_name }} {
     pending_event_data: String,
 }
 
+#[allow(dead_code)]
 impl {{ struct_name }} {
     pub fn new() -> Self {
         Self {
@@ -218,6 +220,7 @@ impl ProcedurePolicy for {{ struct_name }} {
 
 // ── Convenience wrapper function ────────────────────────────────
 
+#[allow(dead_code)]
 pub fn execute_{{ snake_name }}(
     handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static{% for f in input_fields %},
     {{ f.param_name }}: {{ f.rs_param_type }}{% endfor %},

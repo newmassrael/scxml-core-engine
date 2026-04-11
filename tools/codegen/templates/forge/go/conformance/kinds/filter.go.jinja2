@@ -1,5 +1,5 @@
 {# Filter kind — stateful Update(input) over a fixed sequence. #}
-	steps := ref.sequenceSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
+	steps := ref.filterSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
 	filt := {{ f.name }}.New{{ f.name | to_pascal_case }}()
 	for i, step := range steps {
 		var input {{ f.input | go_type }}

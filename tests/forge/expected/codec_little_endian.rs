@@ -1,14 +1,14 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Do not edit — regenerate from the source SCXML file.
 
-#![allow(dead_code)]
-
+#[allow(dead_code)]
 pub struct CodecLittleEndian {
     pub sensor_id: u8,
     pub value: u16,
     pub status: u8,
 }
 
+#[allow(dead_code)]
 impl CodecLittleEndian {
     pub fn decode(raw: &[u8]) -> Option<Self> {
         if raw.len() < 4 {

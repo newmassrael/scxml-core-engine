@@ -1,14 +1,14 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Do not edit — regenerate from the source SCXML file.
 
-#![allow(dead_code)]
-
+#[allow(dead_code)]
 pub struct CodecSubbyte {
     pub priority: u8,
     pub channel: u8,
     pub direction: u8,
 }
 
+#[allow(dead_code)]
 impl CodecSubbyte {
     pub fn decode(raw: &[u8]) -> Option<Self> {
         if raw.len() < 1 {
