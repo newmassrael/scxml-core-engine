@@ -150,7 +150,22 @@ pub(crate) enum ExprKind {
     StringLit { value: String, quote: char },
     BoolLit(bool),
     NullLit,
+    /// A lexer-produced bare identifier. Represents a name the user wrote in
+    /// SCXML source; per-language emitters apply case conversion
+    /// (`to_snake_case`, `to_pascal_case`, etc.) to produce the target-language
+    /// spelling.
     Ident(String),
+    /// A pre-resolved, target-language-native expression fragment. Produced by
+    /// [`rename_identifiers`] when it collapses a Member node or substitutes an
+    /// alias with its fully-formatted call string (e.g. `self.ecu_addr`,
+    /// `transform_temperature::compute_temperature`). Every emitter emits the
+    /// string **verbatim** — no case conversion, no parenthesisation, no
+    /// qualification. This variant exists to keep the type-level distinction
+    /// "needs formatting" vs "already formatted" explicit; the earlier approach
+    /// of stuffing both into `Ident(String)` forced emitters to guess via
+    /// string-content heuristics, which broke as soon as the rename format
+    /// diverged from the lexer's grammar for bare identifiers.
+    Raw(String),
     Binary { op: BinOp, left: Box<TypedExpr>, right: Box<TypedExpr> },
     Unary { op: UnaryOp, operand: Box<TypedExpr> },
     Conditional {
@@ -782,7 +797,10 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
     match &mut ast.kind {
         ExprKind::Ident(name) => {
             if let Some(renamed) = renames.get(name.as_str()) {
-                *name = renamed.to_string();
+                // Produce a Raw node — the rename map value is the
+                // target-language-native fragment, and downstream emitters
+                // must not apply further case conversion to it.
+                ast.kind = ExprKind::Raw(renamed.to_string());
             }
         }
         ExprKind::Binary { left, right, .. } => {
@@ -801,7 +819,7 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
             if let ExprKind::Ident(obj_name) = &object.kind {
                 let full_path = format!("{}.{}", obj_name, property);
                 if let Some(renamed) = renames.get(full_path.as_str()) {
-                    ast.kind = ExprKind::Ident(renamed.to_string());
+                    ast.kind = ExprKind::Raw(renamed.to_string());
                     ast.ty = InferredType::Unknown;
                     return;
                 }
@@ -818,7 +836,8 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
                 rename_identifiers(arg, renames);
             }
         }
-        ExprKind::NumberLit(_) | ExprKind::StringLit { .. }
+        ExprKind::Raw(_)
+        | ExprKind::NumberLit(_) | ExprKind::StringLit { .. }
         | ExprKind::BoolLit(_) | ExprKind::NullLit => {}
     }
 }
@@ -854,6 +873,13 @@ fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         ExprKind::BoolLit(_) => InferredType::Bool,
         ExprKind::NullLit => InferredType::Null,
         ExprKind::Ident(name) => ctx.lookup_var(name.as_str()),
+        // Raw fragments are opaque — they came from a rename map whose key was
+        // looked up in the same TypeCtx before renaming happened, so the
+        // surrounding node already has the correct type information bound via
+        // `rename_identifiers` (which leaves `ast.ty` untouched for Ident→Raw
+        // and resets it to Unknown for Member→Raw). Treating them as Unknown
+        // here is correct: no local type information to recover.
+        ExprKind::Raw(_) => InferredType::Unknown,
         ExprKind::Binary { op, left, right } => {
             infer_types(left, ctx);
             infer_types(right, ctx);
@@ -1099,6 +1125,7 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "nullptr".to_string(),
         ExprKind::Ident(s) => s.clone(),
+        ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_cpp(left, operand_ty);
@@ -1253,6 +1280,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "null".to_string(),
         ExprKind::Ident(s) => s.clone(),
+        ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_kotlin(left, operand_ty);
@@ -1458,6 +1486,7 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, String> {
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
+        ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_rust(left, operand_ty)?;
@@ -1646,6 +1675,7 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, String> {
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "nil".to_string(),
         ExprKind::Ident(s) => s.clone(),
+        ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_go(left, operand_ty)?;
@@ -1808,6 +1838,7 @@ fn python_emit_node(expr: &TypedExpr) -> String {
         ExprKind::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
+        ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_python(left, operand_ty);

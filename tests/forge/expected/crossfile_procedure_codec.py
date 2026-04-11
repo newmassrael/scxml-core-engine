@@ -75,8 +75,8 @@ class CrossfileProcedureCodec(ProcedureStateMachine):
                 req = ProcedureServiceRequest(
                     service="Diag",
                 )
-                req.params["addr"] = str(self__ecu_addr)
-                req.params["payload"] = str(self_frame.encode())
+                req.params["addr"] = str(self._ecu_addr)
+                req.params["payload"] = str(self.frame.encode())
                 resp = self._service_handler(req)
                 event = Event.Ok if resp.success else Event.Fail
                 return (event, resp.data)
@@ -104,7 +104,7 @@ class CrossfileProcedureCodec(ProcedureStateMachine):
     ) -> None:
         if source == State.SendRequest:
             if tr_index == 0:
-                self._response = self__pending_event_data.encode()
+                self._response = self._pending_event_data.encode()
 
 
 # ── Convenience wrapper function ─────────────────────────────────
