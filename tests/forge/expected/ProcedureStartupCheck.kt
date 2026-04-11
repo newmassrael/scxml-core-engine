@@ -7,7 +7,7 @@
 
 package com.sce.generated.procedure_startup_check
 
-import com.sce.runtime.forge.*
+import com.sce.forge.runtime.procedure.*
 
 // ── State and Event enums ───────────────────────────────────────
 

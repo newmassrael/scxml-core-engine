@@ -11,7 +11,7 @@
 package com.sce.generated.crossfile_procedure_codec
 import com.sce.generated.codec_simple_frame.*
 
-import com.sce.runtime.forge.*
+import com.sce.forge.runtime.procedure.*
 
 // ── State and Event enums ───────────────────────────────────────
 

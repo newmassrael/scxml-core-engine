@@ -7,7 +7,7 @@
 
 package com.sce.generated.procedure_diamond
 
-import com.sce.runtime.forge.*
+import com.sce.forge.runtime.procedure.*
 
 // ── State and Event enums ───────────────────────────────────────
 

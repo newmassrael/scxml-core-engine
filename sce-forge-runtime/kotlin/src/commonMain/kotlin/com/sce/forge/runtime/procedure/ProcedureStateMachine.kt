@@ -4,7 +4,7 @@
 // Generated code extends this class and implements the abstract methods.
 // The event loop lives here — generated code provides only the policy.
 
-package com.sce.runtime.forge
+package com.sce.forge.runtime.procedure
 
 /**
  * Abstract base class for Level 2 (event-driven) procedure state machines.

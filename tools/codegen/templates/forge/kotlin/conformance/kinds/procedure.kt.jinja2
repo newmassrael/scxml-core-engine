@@ -9,11 +9,11 @@
             val expectedCompleted = expected["completed"]!!.jsonPrimitive.boolean
             val expectedFinal = expected["final_state"]!!.jsonPrimitive.content
             val captured = mutableListOf<ByteArray>()
-            val handler: com.sce.runtime.forge.ProcedureServiceHandler = { req ->
+            val handler: com.sce.forge.runtime.procedure.ProcedureServiceHandler = { req ->
                 req.payload?.let { captured.add(it) }
-                com.sce.runtime.forge.ProcedureServiceResponse(success = true, data = "")
+                com.sce.forge.runtime.procedure.ProcedureServiceResponse(success = true, data = "")
             }
-            val result: com.sce.runtime.forge.ProcedureRunResult = com.sce.generated.{{ f.name }}.execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
+            val result: com.sce.forge.runtime.procedure.ProcedureRunResult = com.sce.generated.{{ f.name }}.execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
             assertEquals(expectedCompleted, result.completed, "{{ f.name }}.completed")
             assertEquals(expectedFinal, result.finalState, "{{ f.name }}.final_state")
             val expectedBytes: List<ByteArray> = expected["dispatched_payload_bytes"]

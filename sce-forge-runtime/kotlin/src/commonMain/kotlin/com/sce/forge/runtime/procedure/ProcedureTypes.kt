@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SCE Forge: Procedure service types for event-driven (Level 2) procedures.
 
-package com.sce.runtime.forge
+package com.sce.forge.runtime.procedure
 
 /**
  * Request sent to a service handler during procedure execution.
