@@ -20,6 +20,7 @@ use crate::generator::Language;
 /// Canonical primitive types used across the manifest. Each per-language
 /// template maps these to its native type system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum CanonicalType {
     Bool,
@@ -34,6 +35,7 @@ pub enum CanonicalType {
 
 /// Floating-point comparison vs exact equality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum CompareMode {
     Tolerance,
@@ -52,6 +54,7 @@ pub enum CompareMode {
 /// fixtures may include miss inputs that test the fallback path. The
 /// reference oracle simply lists the expected fallback value for those cases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum LookupMissPolicy {
     Error,
@@ -61,6 +64,7 @@ pub enum LookupMissPolicy {
 /// Scalar output descriptor for fixtures whose `expected` JSON value is a
 /// single primitive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ScalarOutput {
     #[serde(rename = "type")]
     pub ty: CanonicalType,
@@ -73,6 +77,7 @@ pub struct ScalarOutput {
 /// Compound output descriptor for fixtures whose `expected` JSON value is an
 /// object with multiple named fields, each computed by a distinct free function.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CompoundOutput {
     pub key: String,
     pub function: String,
@@ -92,6 +97,7 @@ pub struct CompoundOutput {
 /// authority on the struct layout; this manifest entry exists only so the
 /// conformance fragments don't have to hard-code field names in five places.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct StructField {
     pub name: String,
     #[serde(rename = "type")]
@@ -106,6 +112,7 @@ pub struct StructField {
 /// Jinja2 templates can continue to read `f.args` / `f.output` / etc. without
 /// having to walk a nested `f.spec.*` path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Fixture {
     pub name: String,
     pub ref_section: String,
@@ -124,6 +131,7 @@ pub struct Fixture {
 /// output shapes; Lookup's `function` is derived at runtime so users must
 /// not supply it in the manifest).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum FixtureSpec {
     Interpolation {
@@ -359,6 +367,7 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
 
 /// Top-level manifest document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Manifest {
     pub version: u32,
     #[serde(default)]
@@ -635,6 +644,50 @@ mod tests {
         assert!(
             !m.fixtures.is_empty(),
             "manifest should contain at least one fixture"
+        );
+    }
+
+    /// Drift guard between the Rust `Manifest`/`FixtureSpec` type hierarchy
+    /// and the checked-in `tests/forge/conformance/fixtures.schema.json`.
+    ///
+    /// Prior to this test the schema was hand-maintained and could silently
+    /// lag behind type changes — the validator session added a field and the
+    /// schema update was forgotten for a full session. Now every type in the
+    /// manifest hierarchy derives `JsonSchema` (gated on `cfg(test)` so the
+    /// dependency stays in dev-deps), and this test re-derives the schema on
+    /// every run and fails with a diff if the checked-in file drifts.
+    ///
+    /// Bootstrap / refresh: run `UPDATE_EXPECT=1 cargo test -p sce-build
+    /// schema_drift_guard` to rewrite the file from the current types. The
+    /// reviewer inspects the diff and commits alongside whatever type change
+    /// triggered the update — the invariant is *not* that the schema is
+    /// frozen, it is that the schema matches the Rust types at every commit.
+    #[test]
+    fn schema_drift_guard() {
+        let schema = schemars::schema_for!(Manifest);
+        let generated =
+            serde_json::to_string_pretty(&schema).expect("schema must serialize to JSON");
+        // Trailing newline so the file is POSIX-friendly and `git diff`
+        // doesn't flag a "no newline at end of file" on every write.
+        let generated = format!("{generated}\n");
+
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/fixtures.schema.json");
+
+        if std::env::var_os("UPDATE_EXPECT").is_some() {
+            std::fs::write(&path, &generated)
+                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            return;
+        }
+
+        let checked_in = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        assert_eq!(
+            checked_in, generated,
+            "\nfixtures.schema.json is out of sync with the Rust types in \
+             sce-build/src/conformance.rs. Run:\n    \
+             UPDATE_EXPECT=1 cargo test -p sce-build schema_drift_guard\n\
+             and commit the regenerated file.\n"
         );
     }
 }

@@ -1494,6 +1494,14 @@ The "Cross-language equivalence verification" requirement from §9 (Overall Succ
 
 Both files are consumed by all five per-language harnesses. When any language drifts, the mismatch surfaces as a test failure in the wrong language's generated harness — there is no golden file per language to go stale. The editor-only JSON schema at `tests/forge/conformance/fixtures.schema.json` mirrors the manifest types for IDE integration; runtime validation is performed by `Manifest::validate` only.
 
+**Schema drift guard (automated).** `fixtures.schema.json` is no longer hand-maintained. `sce-build/src/conformance.rs` derives `schemars::JsonSchema` on every manifest type under `#[cfg_attr(test, derive(...))]`, and a dedicated test (`conformance::tests::schema_drift_guard`) re-derives the schema on every run and fails with a diff if the checked-in file has drifted from the Rust types. To refresh after a type change:
+
+```sh
+UPDATE_EXPECT=1 cargo test -p sce-build schema_drift_guard
+```
+
+The reviewer inspects the regenerated schema and commits alongside the type change that triggered it. This replaces a prior pattern where schema updates could be silently forgotten for an entire session — a failure mode that actually happened once during the validator kind rollout.
+
 **Tagged `FixtureSpec` enum.** Every manifest entry is deserialized into a Rust tagged enum keyed on the `kind` discriminator:
 
 ```rust

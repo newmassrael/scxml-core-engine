@@ -43,6 +43,14 @@ default = []
 wasm = ["wasm-bindgen"]
 cli = ["clap"]
 
+# JSON Schema derivation for the conformance manifest. Dev-only so release
+# builds and downstream consumers don't pick up the extra dependency — the
+# schema is a CI drift guard, not runtime data. The `drift_guard` test in
+# `conformance.rs` generates the schema from the types and fails if the
+# checked-in `tests/forge/conformance/fixtures.schema.json` diverges.
+[dev-dependencies]
+schemars = "0.8"
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

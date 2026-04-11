@@ -1,199 +1,390 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/newmassrael/scxml-core-engine/tests/forge/conformance/fixtures.schema.json",
-  "title": "SCE Forge conformance fixture catalog",
-  "description": "Single source of truth for cross-language numerical conformance fixtures. Consumed by sce-codegen to render per-language test harnesses (Rust, Python, Go, Kotlin, C++) and by every language's build system to enumerate which fixtures participate.",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Manifest",
+  "description": "Top-level manifest document.",
   "type": "object",
-  "required": ["version", "fixtures"],
-  "additionalProperties": false,
+  "required": [
+    "fixtures",
+    "version"
+  ],
   "properties": {
-    "$schema": {
-      "type": "string",
-      "description": "JSON schema URL; present only for editor integration and ignored by the Rust parser."
-    },
-    "version": {
-      "type": "integer",
-      "const": 1,
-      "description": "Manifest schema version. Bump only when adding/removing top-level fields."
-    },
     "description": {
+      "default": "",
       "type": "string"
-    },
-    "kinds": {
-      "type": "object",
-      "description": "Documentation-only map of kind -> human description. Parser ignores it.",
-      "additionalProperties": { "type": "string" }
-    },
-    "canonical_types": {
-      "type": "object",
-      "description": "Documentation-only enumeration of canonical primitive types. The Rust enum in sce-build is the authoritative source.",
-      "properties": {
-        "description": { "type": "string" },
-        "types": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/canonicalType" }
-        }
-      },
-      "additionalProperties": false
     },
     "fixtures": {
       "type": "array",
-      "description": "One entry per conformance fixture. Adding a fixture requires only this entry plus an SCXML file and a numerical_reference.json entry.",
-      "items": { "$ref": "#/$defs/fixture" }
+      "items": {
+        "$ref": "#/definitions/Fixture"
+      }
+    },
+    "version": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
     }
   },
-  "$defs": {
-    "canonicalType": {
+  "definitions": {
+    "CanonicalType": {
+      "description": "Canonical primitive types used across the manifest. Each per-language template maps these to its native type system.",
       "type": "string",
-      "enum": ["bool", "i32", "u8", "u16", "u32", "f32", "f64", "string"],
-      "description": "Canonical primitive type. Each per-language template maps these to its native type system."
+      "enum": [
+        "bool",
+        "i32",
+        "u8",
+        "u16",
+        "u32",
+        "f32",
+        "f64",
+        "string"
+      ]
     },
-    "compareMode": {
+    "CompareMode": {
+      "description": "Floating-point comparison vs exact equality.",
       "type": "string",
-      "enum": ["tolerance", "equality"],
-      "description": "tolerance: assert |actual-expected| <= float_tolerance. equality: assert actual == expected."
+      "enum": [
+        "tolerance",
+        "equality"
+      ]
     },
-    "scalarOutput": {
+    "CompoundOutput": {
+      "description": "Compound output descriptor for fixtures whose `expected` JSON value is an object with multiple named fields, each computed by a distinct free function.",
       "type": "object",
-      "description": "Single primitive expected value.",
-      "required": ["type", "compare"],
-      "additionalProperties": false,
+      "required": [
+        "compare",
+        "function",
+        "key",
+        "type"
+      ],
       "properties": {
-        "type": { "$ref": "#/$defs/canonicalType" },
-        "compare": { "$ref": "#/$defs/compareMode" },
+        "compare": {
+          "$ref": "#/definitions/CompareMode"
+        },
         "function": {
-          "type": "string",
-          "description": "Free-function name (transform kind with a single output function)."
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/CanonicalType"
         }
       }
     },
-    "compoundOutput": {
+    "Fixture": {
+      "description": "One fixture entry. `name` and `ref_section` are common to every kind; kind-specific data lives in the `spec` tagged enum below. The `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat object (`{name, ref_section, kind, args, output, ...}`) so per-language Jinja2 templates can continue to read `f.args` / `f.output` / etc. without having to walk a nested `f.spec.*` path.",
       "type": "object",
-      "description": "One named field of a multi-output transform fixture.",
-      "required": ["key", "function", "type", "compare"],
-      "additionalProperties": false,
-      "properties": {
-        "key": {
-          "type": "string",
-          "description": "JSON key in numerical_reference.json expected.{key}."
-        },
-        "function": {
-          "type": "string",
-          "description": "Free function that computes this output."
-        },
-        "type": { "$ref": "#/$defs/canonicalType" },
-        "compare": { "$ref": "#/$defs/compareMode" }
-      }
-    },
-    "fixture": {
-      "type": "object",
-      "required": ["name", "kind", "ref_section"],
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Fixture identifier; must match the SCXML filename stem (tests/forge/resources/{name}.scxml)."
-        },
-        "kind": {
-          "type": "string",
-          "enum": ["interpolation", "transform", "condition", "filter", "observer", "procedure", "lookup", "validator", "codec"]
-        },
-        "ref_section": {
-          "type": "string",
-          "enum": ["pure_functions", "stateful_filters", "observers", "validators", "codecs"],
-          "description": "Top-level key in numerical_reference.json that holds the oracle entries for this fixture."
-        },
-        "fields": {
-          "type": "array",
-          "description": "Codec kind: ordered list of struct fields (name in SCXML source case, canonical type, compare mode). Per-language fragments iterate this list to build the decoded literal and round-trip assertions.",
-          "items": {
-            "type": "object",
-            "required": ["name", "type", "compare"],
-            "additionalProperties": false,
-            "properties": {
-              "name": { "type": "string" },
-              "type": { "$ref": "#/$defs/canonicalType" },
-              "compare": { "$ref": "#/$defs/compareMode" }
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "args",
+            "kind",
+            "output"
+          ],
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/CanonicalType"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "interpolation"
+              ]
+            },
+            "output": {
+              "$ref": "#/definitions/ScalarOutput"
             }
           }
         },
-        "args": {
-          "type": "array",
-          "description": "Pure-function kinds (interpolation/transform/condition/procedure): argument types in declaration order.",
-          "items": { "$ref": "#/$defs/canonicalType" }
+        {
+          "type": "object",
+          "required": [
+            "args",
+            "kind"
+          ],
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/CanonicalType"
+              }
+            },
+            "compound_outputs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/CompoundOutput"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "transform"
+              ]
+            },
+            "output": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ScalarOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
         },
-        "input": {
-          "$ref": "#/$defs/canonicalType",
-          "description": "Stateful kinds (filter/observer): per-step input type."
+        {
+          "type": "object",
+          "required": [
+            "args",
+            "function",
+            "kind",
+            "output"
+          ],
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/CanonicalType"
+              }
+            },
+            "function": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "condition"
+              ]
+            },
+            "output": {
+              "$ref": "#/definitions/ScalarOutput"
+            }
+          }
         },
-        "output": { "$ref": "#/$defs/scalarOutput" },
-        "compound_outputs": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/compoundOutput" }
+        {
+          "type": "object",
+          "required": [
+            "input",
+            "kind",
+            "output"
+          ],
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/CanonicalType"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "filter"
+              ]
+            },
+            "output": {
+              "$ref": "#/definitions/ScalarOutput"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "event_tags",
+            "input",
+            "kind"
+          ],
+          "properties": {
+            "event_tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "input": {
+              "$ref": "#/definitions/CanonicalType"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "observer"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "args",
+            "kind"
+          ],
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/CanonicalType"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "procedure"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "args",
+            "kind",
+            "on_miss",
+            "output"
+          ],
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/CanonicalType"
+              }
+            },
+            "function": {
+              "description": "Derived at harness-rendering time from the SCXML `<data sce:direction=\"out\">` id. Must be absent in the manifest JSON — `Manifest::validate` rejects any user-supplied value so the SCXML stays the single source of truth.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "lookup"
+              ]
+            },
+            "on_miss": {
+              "$ref": "#/definitions/LookupMissPolicy"
+            },
+            "output": {
+              "$ref": "#/definitions/ScalarOutput"
+            }
+          }
+        },
+        {
+          "description": "Stateful data validator. Generated struct exposes `validate(args...) -> <ReturnStruct>` where `<ReturnStruct>` has the fields listed in `output` (canonical order). Internal sample memory for rate-of-change checks is implicit in the struct — not modelled in the manifest. The oracle lives in the `validators` reference section and uses stateful sequences that exercise range / ROC / plausibility branches and the documented rule that state only advances on a successful validation.\n\nEvery existing forge validator returns `ValidationResult { valid, reason }`, but modelling the return shape as `Vec<StructField>` keeps the oracle format, the conformance fragments, and future multi-field codec-style kinds all sharing one descriptor instead of every fragment carrying a duplicated hard-coded list of field names.",
+          "type": "object",
+          "required": [
+            "args",
+            "kind",
+            "output"
+          ],
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/CanonicalType"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "validator"
+              ]
+            },
+            "output": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/StructField"
+              }
+            }
+          }
+        },
+        {
+          "description": "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional type). The fixture oracle holds per-case `{decoded, encoded}` pairs so every test exercises both directions and catches drift in either path.\n\nField layout (names, canonical types, byte/bit offsets) lives in the SCXML source — the forge product code generator is the authority on it. The manifest entry mirrors only the field *names and types* so the conformance fragments can iterate them to build the decoded literal and per-field equality assertions without hard-coding names across five templates. Field names are declared in SCXML source case (camelCase from `<data id=\"...\">`) and each per-language fragment applies its own case filter to match the generated struct's native naming convention.",
+          "type": "object",
+          "required": [
+            "fields",
+            "kind"
+          ],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/StructField"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "codec"
+              ]
+            }
+          }
+        }
+      ],
+      "required": [
+        "name",
+        "ref_section"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "ref_section": {
+          "type": "string"
+        }
+      }
+    },
+    "LookupMissPolicy": {
+      "description": "`kind = \"lookup\"` miss-handling policy. Mirrors `forge::model::MissPolicy` but stays in the conformance manifest namespace so the harness manifest parser does not have to depend on the SCE Forge model types.\n\n`Error`: the generated function returns the language's optional type; fixtures must hit a key on every input (happy-path only) and the harness fragment unwraps with `.expect()` / `.value()` / `?: error()`.\n\n`Default`: the generated function returns the raw value with a fallback; fixtures may include miss inputs that test the fallback path. The reference oracle simply lists the expected fallback value for those cases.",
+      "type": "string",
+      "enum": [
+        "error",
+        "default"
+      ]
+    },
+    "ScalarOutput": {
+      "description": "Scalar output descriptor for fixtures whose `expected` JSON value is a single primitive.",
+      "type": "object",
+      "required": [
+        "compare",
+        "type"
+      ],
+      "properties": {
+        "compare": {
+          "$ref": "#/definitions/CompareMode"
         },
         "function": {
-          "type": "string",
-          "description": "Free-function name for kind=condition. Lookup's function name is derived from the SCXML output id at harness-rendering time and must NOT be specified here."
+          "description": "Only used by `kind = \"transform\"` with a single output function.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "event_tags": {
-          "type": "array",
-          "description": "Observer kind: ordered list of emitted event tag names.",
-          "items": { "type": "string" }
-        },
-        "on_miss": {
-          "type": "string",
-          "enum": ["error", "default"],
-          "description": "Lookup kind only: miss-handling policy. error → generated function returns Option<V> and harness unwraps; default → generated function returns raw V via fallback."
+        "type": {
+          "$ref": "#/definitions/CanonicalType"
         }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "kind": { "const": "filter" } }, "required": ["kind"] },
-          "then": { "required": ["input", "output"] }
+      }
+    },
+    "StructField": {
+      "description": "Struct-return output descriptor for fixtures whose `expected` JSON value is an object matching the layout of a generated return struct — a single call returns multiple fields (e.g. `ValidationResult { valid, reason }`). This differs from [`CompoundOutput`] in that every field comes from the *same* call site rather than a distinct free function, so the fragment emits one `validate(...)` / `decode(...)` and then iterates the fields to generate per-field assertions. The descriptor is intentionally kept minimal — name, type, compare mode — because the forge product code generator is the authority on the struct layout; this manifest entry exists only so the conformance fragments don't have to hard-code field names in five places.",
+      "type": "object",
+      "required": [
+        "compare",
+        "name",
+        "type"
+      ],
+      "properties": {
+        "compare": {
+          "$ref": "#/definitions/CompareMode"
         },
-        {
-          "if": { "properties": { "kind": { "const": "observer" } }, "required": ["kind"] },
-          "then": { "required": ["input", "event_tags"] }
+        "name": {
+          "type": "string"
         },
-        {
-          "if": { "properties": { "kind": { "const": "interpolation" } }, "required": ["kind"] },
-          "then": { "required": ["args", "output"] }
-        },
-        {
-          "if": { "properties": { "kind": { "const": "condition" } }, "required": ["kind"] },
-          "then": { "required": ["args", "function", "output"] }
-        },
-        {
-          "if": { "properties": { "kind": { "const": "procedure" } }, "required": ["kind"] },
-          "then": { "required": ["args"] }
-        },
-        {
-          "if": { "properties": { "kind": { "const": "transform" } }, "required": ["kind"] },
-          "then": {
-            "required": ["args"],
-            "oneOf": [
-              { "required": ["output"], "not": { "required": ["compound_outputs"] } },
-              { "required": ["compound_outputs"], "not": { "required": ["output"] } }
-            ]
-          }
-        },
-        {
-          "if": { "properties": { "kind": { "const": "lookup" } }, "required": ["kind"] },
-          "then": {
-            "required": ["args", "output", "on_miss"],
-            "not": { "required": ["function"] }
-          }
-        },
-        {
-          "if": { "properties": { "kind": { "const": "validator" } }, "required": ["kind"] },
-          "then": { "required": ["args", "output"] }
-        },
-        {
-          "if": { "properties": { "kind": { "const": "codec" } }, "required": ["kind"] },
-          "then": { "required": ["fields"] }
+        "type": {
+          "$ref": "#/definitions/CanonicalType"
         }
-      ]
+      }
     }
   }
 }
