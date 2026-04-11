@@ -14,6 +14,8 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <functional>
+#include <stdexcept>
 #include <map>
 #include <optional>
 #include <string>
@@ -57,6 +59,11 @@ public:
     /// Set the service handler for <send sce:service> actions.
     void setServiceHandler(SCE::Forge::ProcedureServiceHandler handler) {
         serviceHandler_ = std::move(handler);
+    }
+
+    /// Set the <sce:helper name="computeKey"> DI closure.
+    void setComputeKey(std::function<std::vector<uint8_t>(const std::vector<uint8_t>&)> fn) {
+        computeKey_ = std::move(fn);
     }
 
     /// Set input parameters before calling runToCompletion().
@@ -135,7 +142,7 @@ public:
                     SCE::Forge::ProcedureServiceRequest req;
                     req.service = "SecurityAccess";
                     req.subfunc = std::string("0x02");
-                    req.payload = computeKey(seed_);
+                    req.payload = computeKey_(seed_);
                     auto resp = serviceHandler_(req);
                     return { resp.success ? Event::Ok : Event::Fail, resp.data };
                 }
@@ -251,6 +258,11 @@ private:
     // ── Service handler (for <send sce:service>) ─────────────────
     SCE::Forge::ProcedureServiceHandler serviceHandler_;
 
+    // ── Helper DI closures (for <sce:helper> declarations) ───────
+    // Default-initialised to fail-fast throwing lambdas; the user must call
+    // the matching set*() setter before runToCompletion().
+    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&)> computeKey_ = [](const std::vector<uint8_t>& _arg0) -> std::vector<uint8_t> { throw std::runtime_error("helper 'computeKey' not set — call setComputeKey() before runToCompletion()"); };
+
     // ── Done data storage ────────────────────────────────────────
     std::map<std::string, std::string> doneData_;
 
@@ -262,9 +274,11 @@ private:
 
 inline SCE::Forge::ProcedureRunResult execute(
     SCE::Forge::ProcedureServiceHandler handler,
+    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&)> computeKey,
     uint32_t ecuAddr) {
     ProcedureSecurityAccess sm;
     sm.setServiceHandler(std::move(handler));
+    sm.setComputeKey(std::move(computeKey));
     sm.setEcuAddr(ecuAddr);
     return sm.runToCompletion();
 }

@@ -140,6 +140,15 @@
       "ref_section": "pure_functions",
       "args": ["u32"]
     },
+    {
+      "name": "procedure_security_access",
+      "kind": "procedure",
+      "ref_section": "pure_functions",
+      "args": ["u32"],
+      "helpers": {
+        "computeKey": {"kind": "xor_bytes", "mask": 165}
+      }
+    },
 
     {
       "name": "lookup_alarm_code",

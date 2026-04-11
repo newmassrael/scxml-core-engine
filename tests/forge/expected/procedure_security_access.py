@@ -19,6 +19,21 @@ from sce_forge_runtime.procedure import (
 )
 
 
+# ── <sce:helper> DI fail-fast factory ───────────────────────────
+#
+# Python lambdas cannot contain a raise statement, so declared helper
+# closures default to a nested function that raises RuntimeError with the
+# helper name and setter method name baked in. Matches the Rust / C++ / Go
+# / Kotlin fail-fast defaults.
+
+def _unset_helper_raiser(helper_name, setter_name):
+    def _raiser(*_args, **_kwargs):
+        raise RuntimeError(
+            f"helper {helper_name!r} not set — call {setter_name}() before run_to_completion()"
+        )
+    return _raiser
+
+
 # ── State and Event enums ────────────────────────────────────────
 
 class State(IntEnum):
@@ -49,6 +64,14 @@ class ProcedureSecurityAccess(ProcedureStateMachine):
         self._seed: bytes = b""
         self._max_retries: int = 3
         self._retry_count: int = 0
+        # <sce:helper> DI closures — initialise to fail-fast sentinels
+        # produced by _unset_helper_raiser (module-level factory above) that
+        # raise RuntimeError with the helper name + setter name baked in.
+        # Matches the Rust / C++ / Go / Kotlin fail-fast rationale.
+        self._compute_key: Callable[[bytes], bytes] = _unset_helper_raiser("computeKey", "set_compute_key")
+
+    def set_compute_key(self, fn: Callable[[bytes], bytes]) -> None:
+        self._compute_key = fn
 
     def set_ecu_addr(self, value: int) -> None:
         self._ecu_addr = value
@@ -95,7 +118,7 @@ class ProcedureSecurityAccess(ProcedureStateMachine):
                 req = ProcedureServiceRequest(
                     service="SecurityAccess",
                     subfunc="0x02",
-                    payload=compute_key(self._seed),
+                    payload=self._compute_key(self._seed),
                 )
                 resp = self._service_handler(req)
                 event = Event.Ok if resp.success else Event.Fail
@@ -148,9 +171,11 @@ class ProcedureSecurityAccess(ProcedureStateMachine):
 
 def execute(
     handler: Callable[[ProcedureServiceRequest], ProcedureServiceResponse],
+    compute_key: Callable[[bytes], bytes],
     ecu_addr: int,
 ) -> ProcedureRunResult:
     sm = ProcedureSecurityAccess()
     sm.set_service_handler(handler)
+    sm.set_compute_key(compute_key)
     sm.set_ecu_addr(ecu_addr)
     return sm.run_to_completion()

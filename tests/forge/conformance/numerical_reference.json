@@ -158,6 +158,23 @@
         }
       ]
     },
+    "procedure_security_access": {
+      "fixture": "ProcedureSecurityAccess::execute",
+      "signature": "(ecu_addr: u32) -> ProcedureRunResult{completed, final_state, dispatched_payload_bytes}",
+      "description": "UDS Security Access flow with a first-class <sce:helper name='computeKey'> DI injection point. The generator emits computeKey as a typed closure member + setter on the generated state machine (mirroring serviceHandler); the conformance harness passes in a deterministic stub (XOR each byte with 0xA5) as an additional execute() wrapper argument across all 5 languages. The handler's response data is 'SEED' on every call, so the RequestSeed -> SendKey transition's <assign location='seed' expr='_event.data'/> populates seed with the 4 bytes [0x53, 0x45, 0x45, 0x44]; SendKey then dispatches computeKey(seed) = [0xF6, 0xE0, 0xE0, 0xE1] through the capture channel. Verifies end-to-end: multi-state multi-send, transition-assign from _event.data, guarded eventless transitions (retry loop structurally emitted but not exercised in the happy path), and the helper-DI wiring proving the framework's first-class solution to the 'user-provided expression helpers' escape hatch.",
+      "cases": [
+        {
+          "args": [305419896],
+          "handler_response_data": "SEED",
+          "expected": {
+            "completed": true,
+            "final_state": "done",
+            "dispatched_payload_bytes": [[246, 224, 224, 225]]
+          },
+          "note": "happy path: handler returns 'SEED' (0x53,0x45,0x45,0x44) on every call -> seed assigned on RequestSeed edge -> SendKey dispatches computeKey stub output (XOR 0xA5) = [0xF6,0xE0,0xE0,0xE1] = [246,224,224,225]"
+        }
+      ]
+    },
 
     "lookup_alarm_code": {
       "fixture": "lookup_severity",

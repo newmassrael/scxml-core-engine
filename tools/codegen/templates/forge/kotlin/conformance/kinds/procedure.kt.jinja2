@@ -8,12 +8,22 @@
             val expected = case.jsonObject["expected"]!!.jsonObject
             val expectedCompleted = expected["completed"]!!.jsonPrimitive.boolean
             val expectedFinal = expected["final_state"]!!.jsonPrimitive.content
+            val handlerResponseData = case.jsonObject["handler_response_data"]
+                ?.jsonPrimitive?.content ?: ""
             val captured = mutableListOf<ByteArray>()
             val handler: com.sce.forge.runtime.procedure.ProcedureServiceHandler = { req ->
                 req.payload?.let { captured.add(it) }
-                com.sce.forge.runtime.procedure.ProcedureServiceResponse(success = true, data = "")
+                com.sce.forge.runtime.procedure.ProcedureServiceResponse(success = true, data = handlerResponseData)
             }
-            val result: com.sce.forge.runtime.procedure.ProcedureRunResult = com.sce.generated.{{ f.name }}.execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
+{% for h in f.helpers_ordered %}
+{% if h.stub.kind == "xor_bytes" %}
+            // <sce:helper name="{{ h.name }}"> stub — XOR every byte with {{ h.stub.mask }}.
+            val stub{{ h.name | to_pascal_case }}: (ByteArray) -> ByteArray = { input ->
+                ByteArray(input.size) { i -> (input[i].toInt() xor {{ h.stub.mask }}).toByte() }
+            }
+{% endif %}
+{% endfor %}
+            val result: com.sce.forge.runtime.procedure.ProcedureRunResult = com.sce.generated.{{ f.name }}.execute(handler{% for h in f.helpers_ordered %}, stub{{ h.name | to_pascal_case }}{% endfor %}{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
             assertEquals(expectedCompleted, result.completed, "{{ f.name }}.completed")
             assertEquals(expectedFinal, result.finalState, "{{ f.name }}.final_state")
             val expectedBytes: List<ByteArray> = expected["dispatched_payload_bytes"]

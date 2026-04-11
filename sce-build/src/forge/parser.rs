@@ -453,6 +453,7 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
     // Parse input and internal fields from <datamodel>
     let mut inputs = Vec::new();
     let mut internals = Vec::new();
+    let mut helpers = Vec::new();
     if let Some(datamodel) = find_child(root, "datamodel") {
         for data in data_children(&datamodel) {
             let field = parse_forge_field(&data)?;
@@ -463,6 +464,26 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
                     // Output fields are not used as execute() parameters
                 }
             }
+        }
+        // Collect <sce:helper> DI declarations — user-provided closure members
+        // injected via per-language setters. The parser treats them as typed
+        // free-function signatures so the expression pipeline can infer return
+        // types through enclosing arithmetic / member access. Duplicate names
+        // are rejected here so the downstream generator emits clean per-field
+        // errors rather than a decipher-the-duplicate-struct-field tailspin.
+        for child in datamodel.children().filter(|n| {
+            n.is_element()
+                && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && n.tag_name().name() == "helper"
+        }) {
+            let helper = parse_procedure_helper(&child)?;
+            if helpers.iter().any(|h: &ProcedureHelper| h.name == helper.name) {
+                return Err(format!(
+                    "duplicate <sce:helper name=\"{}\"> declaration in procedure <datamodel>",
+                    helper.name
+                ));
+            }
+            helpers.push(helper);
         }
     }
 
@@ -556,8 +577,64 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
         name: name.to_string(),
         inputs,
         internals,
+        helpers,
         initial,
         states,
+    })
+}
+
+/// Validate that `name` matches `[A-Za-z_][A-Za-z0-9_]*` — the common
+/// C-family identifier grammar every target language (Rust / C++ / Python /
+/// Kotlin / Go) accepts as an unquoted identifier. Helper names flow
+/// verbatim into `format!` strings that emit generated source code,
+/// per-language error messages, and rename-map keys, so any character
+/// outside this grammar (quote, backslash, space, non-ASCII, leading digit,
+/// etc.) would break the generator and has no legitimate use case.
+fn is_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else { return false };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Parse `<sce:helper name="..." args="bytes,uint32" returns="bytes"/>`.
+/// Zero-arg helpers use `args=""`. Both `args` and `returns` accept the full
+/// `SceType::from_attr` vocabulary.
+fn parse_procedure_helper(node: &roxmltree::Node) -> Result<ProcedureHelper, String> {
+    let name = node
+        .attribute("name")
+        .ok_or("<sce:helper> must have a 'name' attribute")?
+        .to_string();
+    if name.is_empty() {
+        return Err("<sce:helper> 'name' attribute must not be empty".to_string());
+    }
+    if !is_ident(&name) {
+        return Err(format!(
+            "<sce:helper name=\"{name}\"> is not a valid identifier — must match \
+             [A-Za-z_][A-Za-z0-9_]* so the name can flow cleanly into 5-language \
+             generated source without escaping"
+        ));
+    }
+    let args_raw = node.attribute("args").unwrap_or("");
+    let mut args = Vec::new();
+    for part in args_raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        let sce_ty = SceType::from_attr(part).ok_or_else(|| {
+            format!("Unknown sce:type '{part}' in <sce:helper name=\"{name}\"> args")
+        })?;
+        args.push(sce_ty);
+    }
+    let returns_raw = node
+        .attribute("returns")
+        .ok_or_else(|| format!("<sce:helper name=\"{name}\"> must have a 'returns' attribute"))?;
+    let returns = SceType::from_attr(returns_raw).ok_or_else(|| {
+        format!("Unknown sce:type '{returns_raw}' in <sce:helper name=\"{name}\"> returns")
+    })?;
+    Ok(ProcedureHelper {
+        name,
+        args,
+        returns,
     })
 }
 

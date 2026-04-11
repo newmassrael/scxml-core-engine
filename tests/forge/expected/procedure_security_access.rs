@@ -44,6 +44,7 @@ pub struct ProcedureSecurityAccess {
     max_retries: i32,
     retry_count: i32,
     service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
+    compute_key: Box<dyn Fn(&[u8]) -> Vec<u8>>,
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
@@ -57,6 +58,7 @@ impl ProcedureSecurityAccess {
             max_retries: 3,
             retry_count: 0,
             service_handler: None,
+            compute_key: Box::new(|_arg0| panic!("helper 'computeKey' not set — call set_compute_key() before run_to_completion()")),
             done_data: BTreeMap::new(),
             pending_event_data: String::new(),
         }
@@ -67,6 +69,10 @@ impl ProcedureSecurityAccess {
         handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static,
     ) {
         self.service_handler = Some(Box::new(handler));
+    }
+
+    pub fn set_compute_key(&mut self, f: impl Fn(&[u8]) -> Vec<u8> + 'static) {
+        self.compute_key = Box::new(f);
     }
 
     pub fn set_ecu_addr(&mut self, value: u32) {
@@ -137,7 +143,7 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
                         service: "SecurityAccess".to_string(),
                         subfunc: Some("0x02".to_string()),
                         addr: None,
-                        payload: Some(compute_key(&self.seed)),
+                        payload: Some((self.compute_key)(&self.seed)),
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };
@@ -217,10 +223,12 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
 #[allow(dead_code)]
 pub fn execute(
     handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static,
+    compute_key: impl Fn(&[u8]) -> Vec<u8> + 'static,
     ecu_addr: u32,
 ) -> ProcedureRunResult {
     let mut sm = ProcedureSecurityAccess::new();
     sm.set_service_handler(handler);
+    sm.set_compute_key(compute_key);
     sm.set_ecu_addr(ecu_addr);
     sm.run_to_completion()
 }

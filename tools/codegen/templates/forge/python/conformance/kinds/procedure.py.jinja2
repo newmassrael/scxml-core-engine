@@ -3,12 +3,20 @@
         for case in spec["cases"]:
             args = case["args"]
             expected = case["expected"]
+            handler_response_data = case.get("handler_response_data", "")
             captured = []
-            def _handler(req, _captured=captured):
+            def _handler(req, _captured=captured, _data=handler_response_data):
                 if req.payload is not None:
                     _captured.append(list(req.payload))
-                return ProcedureServiceResponse(success=True, data="")
-            result = {{ f.name }}.execute(_handler, *args)
+                return ProcedureServiceResponse(success=True, data=_data)
+{% for h in f.helpers_ordered %}
+{% if h.stub.kind == "xor_bytes" %}
+            # <sce:helper name="{{ h.name }}"> stub — XOR every byte with {{ h.stub.mask }}.
+            def _stub_{{ h.name }}(input_bytes):
+                return bytes(b ^ {{ h.stub.mask }} for b in input_bytes)
+{% endif %}
+{% endfor %}
+            result = {{ f.name }}.execute(_handler{% for h in f.helpers_ordered %}, _stub_{{ h.name }}{% endfor %}, *args)
             self.assertEqual(
                 result.completed,
                 expected["completed"],

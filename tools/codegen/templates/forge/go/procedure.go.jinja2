@@ -54,12 +54,23 @@ type policy struct {
 	{{ imp.member_name }} {{ imp.member_type }}
 {% endfor %}
 {% endif %}
+{% if helper_fields %}
+	// <sce:helper> DI closures
+{% for h in helper_fields %}
+	{{ h.id }} {{ h.function_type }}
+{% endfor %}
+{% endif %}
 	serviceHandler   forge.ServiceHandler
 	doneData         map[string]string
 	pendingEventData string
 }
 
-func newPolicy(handler forge.ServiceHandler{% for f in input_fields %}, {{ f.param_id }} {{ f.go_type }}{% endfor %}) *policy {
+func newPolicy(handler forge.ServiceHandler{% for h in helper_fields %}, {{ h.id }} {{ h.function_type }}{% endfor %}{% for f in input_fields %}, {{ f.param_id }} {{ f.go_type }}{% endfor %}) *policy {
+{% for h in helper_fields %}
+	if {{ h.id }} == nil {
+		{{ h.id }} = {{ h.default_impl }}
+	}
+{% endfor %}
 	return &policy{
 {% for f in input_fields %}
 		{{ f.id }}: {{ f.param_id }},
@@ -68,6 +79,9 @@ func newPolicy(handler forge.ServiceHandler{% for f in input_fields %}, {{ f.par
 {% if f.has_default %}
 		{{ f.id }}: {{ f.default_value }},
 {% endif %}
+{% endfor %}
+{% for h in helper_fields %}
+		{{ h.id }}: {{ h.id }},
 {% endfor %}
 		serviceHandler: handler,
 		doneData:       make(map[string]string),
@@ -190,8 +204,8 @@ func (p *policy) ExecuteTransitionActions(source int, trIndex int) {
 // ── Convenience wrapper function ────────────────────────────────
 
 // Execute runs the procedure to completion.
-func Execute(handler forge.ServiceHandler{% for f in input_fields %}, {{ f.param_id }} {{ f.go_type }}{% endfor %}) forge.ProcedureRunResult {
-	p := newPolicy(handler{% for f in input_fields %}, {{ f.param_id }}{% endfor %})
+func Execute(handler forge.ServiceHandler{% for h in helper_fields %}, {{ h.id }} {{ h.function_type }}{% endfor %}{% for f in input_fields %}, {{ f.param_id }} {{ f.go_type }}{% endfor %}) forge.ProcedureRunResult {
+	p := newPolicy(handler{% for h in helper_fields %}, {{ h.id }}{% endfor %}{% for f in input_fields %}, {{ f.param_id }}{% endfor %})
 	return forge.RunProcedure(p)
 }
 

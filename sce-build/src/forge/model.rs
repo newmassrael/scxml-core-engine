@@ -446,6 +446,26 @@ pub struct ProcedureState {
     pub done_params: Vec<ProcedureDoneParam>,
 }
 
+/// A user-declared helper function referenced by procedure expressions
+/// (typically from `sce:payload` / `sce:addr` attributes). Declared as
+/// `<sce:helper name="..." args="..." returns="..."/>` inside the procedure's
+/// `<datamodel>`. The generator emits a typed closure member + setter per
+/// helper, mirroring the existing `serviceHandler` dependency-injection
+/// pattern — rather than emitting the user's identifier verbatim and relying
+/// on it being in scope at compile time. The helper's signature seeds the
+/// expression-pipeline type context so inference can propagate return types
+/// through enclosing expressions.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcedureHelper {
+    /// User-visible identifier as it appears in expressions
+    /// (e.g. `computeKey` in `sce:payload="computeKey(seed)"`).
+    pub name: String,
+    /// Parameter types in positional order.
+    pub args: Vec<SceType>,
+    /// Return type.
+    pub returns: SceType,
+}
+
 /// Procedure: sequential branching logic with states and guarded transitions.
 /// Level 1 (guard-only): CRTP base + switch/case, stateless `execute()`.
 /// Level 2 (event-driven): StaticExecutionEngine<Policy> + `runToCompletion()`.
@@ -457,6 +477,9 @@ pub struct ProcedureModel {
     /// Internal state variables (sce:direction="internal"). Level 2 only.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub internals: Vec<ForgeField>,
+    /// User-declared helper function DI points (see [`ProcedureHelper`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub helpers: Vec<ProcedureHelper>,
     /// Id of the initial state (from `initial` attribute on `<scxml>`).
     pub initial: String,
     /// All states in document order (regular + final).

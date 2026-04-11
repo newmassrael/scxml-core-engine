@@ -6,15 +6,33 @@
 {% endfor %}
         auto expected_completed = c["expected"]["completed"].get<bool>();
         auto expected_final = c["expected"]["final_state"].get<std::string>();
+        // Optional per-case handler response bytes (see procedure.rs.jinja2
+        // for the rationale).
+        std::string handler_response_data;
+        if (c.contains("handler_response_data")) {
+            handler_response_data = c["handler_response_data"].get<std::string>();
+        }
         std::vector<std::vector<std::uint8_t>> captured;
         SCE::Forge::ProcedureServiceHandler handler =
-            [&captured](const SCE::Forge::ProcedureServiceRequest &req) {
+            [&captured, handler_response_data](const SCE::Forge::ProcedureServiceRequest &req) {
                 if (req.payload.has_value()) {
                     captured.push_back(*req.payload);
                 }
-                return SCE::Forge::ProcedureServiceResponse{true, std::string()};
+                return SCE::Forge::ProcedureServiceResponse{true, handler_response_data};
             };
-        auto result = SCE::Generated::{{ f.name | to_pascal_case }}::execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
+{% for h in f.helpers_ordered %}
+{% if h.stub.kind == "xor_bytes" %}
+        // <sce:helper name="{{ h.name }}"> stub — XOR every byte with {{ h.stub.mask }}.
+        std::function<std::vector<std::uint8_t>(const std::vector<std::uint8_t> &)> stub_{{ h.name }} =
+            [](const std::vector<std::uint8_t> &input) {
+                std::vector<std::uint8_t> output;
+                output.reserve(input.size());
+                for (auto b : input) { output.push_back(static_cast<std::uint8_t>(b ^ {{ h.stub.mask }})); }
+                return output;
+            };
+{% endif %}
+{% endfor %}
+        auto result = SCE::Generated::{{ f.name | to_pascal_case }}::execute(handler{% for h in f.helpers_ordered %}, std::move(stub_{{ h.name }}){% endfor %}{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
         CHECK(result.completed == expected_completed,
               "{{ f.name }}.completed: actual=%d expected=%d",
               static_cast<int>(result.completed), static_cast<int>(expected_completed));

@@ -54,7 +54,20 @@ class {{ class_name }} : ProcedureStateMachine<State, Event>() {
     private val {{ imp.member_name }}: {{ imp.member_type }} = {{ imp.member_type }}()
 {% endfor %}
 {% endif %}
+{% if helper_fields %}
 
+    // <sce:helper> DI closures
+{% for h in helper_fields %}
+    private var {{ h.id }}: {{ h.function_type }} = {{ h.default_impl }}
+{% endfor %}
+{% endif %}
+
+{% for h in helper_fields %}
+    fun set{{ h.setter_name }}(fn: {{ h.function_type }}) {
+        this.{{ h.id }} = fn
+    }
+
+{% endfor %}
 {% for f in input_fields %}
     fun set{{ f.setter_name }}(value: {{ f.kt_type }}) {
         this.{{ f.id }} = value
@@ -162,11 +175,15 @@ class {{ class_name }} : ProcedureStateMachine<State, Event>() {
 // ── Convenience wrapper function ────────────────────────────────
 
 fun execute(
-    handler: ProcedureServiceHandler{% for f in input_fields %},
+    handler: ProcedureServiceHandler{% for h in helper_fields %},
+    {{ h.id }}: {{ h.function_type }}{% endfor %}{% for f in input_fields %},
     {{ f.id }}: {{ f.kt_type }}{% endfor %}
 ): ProcedureRunResult {
     val sm = {{ class_name }}()
     sm.setServiceHandler(handler)
+{% for h in helper_fields %}
+    sm.set{{ h.setter_name }}({{ h.id }})
+{% endfor %}
 {% for f in input_fields %}
     sm.set{{ f.setter_name }}({{ f.id }})
 {% endfor %}

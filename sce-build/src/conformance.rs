@@ -86,6 +86,40 @@ pub struct CompoundOutput {
     pub compare: CompareMode,
 }
 
+/// Canonical deterministic implementations that the conformance harness can
+/// bake into a per-fixture helper stub closure at codegen time. Each variant
+/// declares just enough data for each per-language template to render the
+/// same byte-level transform — every fixture that declares a `<sce:helper>`
+/// DI point pairs it with one of these, so the oracle
+/// `dispatched_payload_bytes` can be pre-computed from the stub arithmetic
+/// without the harness needing to talk to the generated state machine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StubKind {
+    /// `|bytes| -> bytes` that XORs every byte with `mask`. Models a
+    /// simplified OEM-specific UDS Security Access key derivation.
+    XorBytes { mask: u8 },
+}
+
+/// Derived helper stub descriptor used inside the clone-and-mutate harness-
+/// render path. Carries the helper name (sourced from the SCXML) and its
+/// stub implementation (sourced from the fixtures.json dict); templates
+/// iterate this vector in SCXML declaration order so positional `execute()`
+/// args line up with the generated wrapper's parameter list.
+///
+/// Derives `Deserialize` so the containing `FixtureSpec::Procedure` struct
+/// parses cleanly, but [`Manifest::validate`] rejects any user-supplied
+/// `helpers_ordered` value — the SCXML is the single source of truth for
+/// helper names and order; fixtures.json only supplies the stub dict keyed
+/// by name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct HelperStub {
+    pub name: String,
+    pub stub: StubKind,
+}
+
 /// Struct-return output descriptor for fixtures whose `expected` JSON value is
 /// an object matching the layout of a generated return struct — a single call
 /// returns multiple fields (e.g. `ValidationResult { valid, reason }`). This
@@ -160,6 +194,24 @@ pub enum FixtureSpec {
     },
     Procedure {
         args: Vec<CanonicalType>,
+        /// Raw helper stub declarations from fixtures.json — a name-keyed
+        /// dict (`{"computeKey": {"kind": "xor_bytes", "mask": 165}}`) whose
+        /// keys must match `<sce:helper name="...">` declarations in the
+        /// fixture's SCXML. Keying the dict by name rather than storing an
+        /// ordered list makes drift between fixtures.json and SCXML
+        /// structurally impossible: a mismatch fails loudly at
+        /// [`render_harness`] time rather than drifting silently into
+        /// positional argument swaps.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        helpers: std::collections::BTreeMap<String, StubKind>,
+        /// Derived at harness-rendering time: the SCXML's helper declarations
+        /// in source order, each paired with its stub implementation looked
+        /// up from `helpers` by name. Templates iterate this ordered vector
+        /// so positional `execute()` arguments match the generator's emitted
+        /// wrapper parameter list. Must be absent in the manifest JSON —
+        /// `Manifest::validate` rejects any user-supplied value.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        helpers_ordered: Vec<HelperStub>,
     },
     Lookup {
         args: Vec<CanonicalType>,
@@ -458,11 +510,22 @@ impl Manifest {
                         ));
                     }
                 }
+                FixtureSpec::Procedure {
+                    helpers_ordered, ..
+                } => {
+                    if !helpers_ordered.is_empty() {
+                        return Err(format!(
+                            "fixture {}: procedure `helpers_ordered` is \
+                             derived from the SCXML at harness-rendering \
+                             time; remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                }
                 FixtureSpec::Interpolation { .. }
                 | FixtureSpec::Condition { .. }
                 | FixtureSpec::Filter { .. }
-                | FixtureSpec::Observer { .. }
-                | FixtureSpec::Procedure { .. } => {}
+                | FixtureSpec::Observer { .. } => {}
             }
         }
         Ok(())
@@ -525,6 +588,43 @@ pub fn harness_layout(language: Language) -> HarnessLayout {
 /// compile; new code should call [`harness_layout`] directly.
 pub fn harness_filename(language: Language) -> &'static str {
     harness_layout(language).output_filename
+}
+
+/// Parse a `<scxml sce:kind="procedure">` source file and return the
+/// `<sce:helper name="...">` declarations in source order. The conformance
+/// harness uses this to drive positional `execute()` argument ordering from
+/// the SCXML (single source of truth) while fixtures.json only supplies the
+/// stub implementation dict, making name-drift structurally impossible.
+pub(crate) fn read_procedure_helper_names(scxml_path: &Path) -> Result<Vec<String>, String> {
+    let text = std::fs::read_to_string(scxml_path)
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
+    let doc = roxmltree::Document::parse(&text)
+        .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
+    let scxml_ns = "http://www.w3.org/2005/07/scxml";
+    let sce_ns = crate::forge::model::SCE_NAMESPACE;
+    let Some(datamodel) = doc.root_element().children().find(|n| {
+        n.is_element()
+            && n.tag_name().name() == "datamodel"
+            && n.tag_name().namespace() == Some(scxml_ns)
+    }) else {
+        // No datamodel → no helpers. Procedures without datamodel are valid.
+        return Ok(Vec::new());
+    };
+    let mut names = Vec::new();
+    for child in datamodel.children().filter(|n| {
+        n.is_element()
+            && n.tag_name().name() == "helper"
+            && n.tag_name().namespace() == Some(sce_ns)
+    }) {
+        let name = child.attribute("name").ok_or_else(|| {
+            format!(
+                "{}: <sce:helper> missing 'name' attribute",
+                scxml_path.display()
+            )
+        })?;
+        names.push(name.to_string());
+    }
+    Ok(names)
 }
 
 /// Parse a `<scxml sce:kind="lookup">` source file and return the
@@ -607,19 +707,69 @@ pub fn render_harness(
         .get_template(tmpl_name)
         .map_err(|e| format!("template {tmpl_name} not found: {e}"))?;
 
-    // Clone fixtures so we can fill the derived `function` field for lookup
-    // entries from the SCXML output id without mutating the manifest.
+    // Clone fixtures so we can fill derived fields from each SCXML source
+    // (lookup's `function` id + procedure's `helpers_ordered` list) without
+    // mutating the loaded manifest.
     let mut fixtures = manifest.fixtures.clone();
     for f in fixtures.iter_mut() {
-        if let FixtureSpec::Lookup { function, .. } = &mut f.spec {
-            let scxml_path = resource_dir.join(format!("{}.scxml", f.name));
-            let output_id = read_lookup_output_id(&scxml_path)?;
-            // Function naming convention: lookup_<output_id_snake>. Per-language
-            // case conversion (camel/pascal) is applied by template filters.
-            *function = Some(format!(
-                "lookup_{}",
-                crate::filters::to_snake_case(output_id)
-            ));
+        let fixture_name = f.name.clone();
+        match &mut f.spec {
+            FixtureSpec::Lookup { function, .. } => {
+                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
+                let output_id = read_lookup_output_id(&scxml_path)?;
+                // Function naming convention: lookup_<output_id_snake>.
+                // Per-language case conversion (camel/pascal) is applied by
+                // template filters.
+                *function = Some(format!(
+                    "lookup_{}",
+                    crate::filters::to_snake_case(output_id)
+                ));
+            }
+            FixtureSpec::Procedure {
+                helpers,
+                helpers_ordered,
+                ..
+            } => {
+                // Parse the SCXML for <sce:helper> declarations and cross-check
+                // against the fixtures.json helpers dict. Missing in either
+                // direction fails loud here rather than drifting silently into
+                // positional-argument swaps at test compile time.
+                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
+                let scxml_helper_names = read_procedure_helper_names(&scxml_path)?;
+                for scxml_name in &scxml_helper_names {
+                    if !helpers.contains_key(scxml_name) {
+                        return Err(format!(
+                            "fixture {}: SCXML declares <sce:helper name=\"{}\"> \
+                             but fixtures.json has no matching stub entry under \
+                             procedure.helpers",
+                            fixture_name, scxml_name
+                        ));
+                    }
+                }
+                for dict_name in helpers.keys() {
+                    if !scxml_helper_names.contains(dict_name) {
+                        return Err(format!(
+                            "fixture {}: fixtures.json has helper stub \"{}\" \
+                             but the SCXML does not declare <sce:helper name=\"{}\">",
+                            fixture_name, dict_name, dict_name
+                        ));
+                    }
+                }
+                // Build the ordered list in SCXML source order. The stub dict
+                // is consumed by name during this fold so any leftover entries
+                // (already checked above) would have failed earlier.
+                *helpers_ordered = scxml_helper_names
+                    .iter()
+                    .map(|name| HelperStub {
+                        name: name.clone(),
+                        stub: helpers
+                            .get(name)
+                            .cloned()
+                            .expect("cross-checked above"),
+                    })
+                    .collect();
+            }
+            _ => {}
         }
     }
 

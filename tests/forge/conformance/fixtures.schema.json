@@ -226,6 +226,20 @@
                 "$ref": "#/definitions/CanonicalType"
               }
             },
+            "helpers": {
+              "description": "Raw helper stub declarations from fixtures.json — a name-keyed dict (`{\"computeKey\": {\"kind\": \"xor_bytes\", \"mask\": 165}}`) whose keys must match `<sce:helper name=\"...\">` declarations in the fixture's SCXML. Keying the dict by name rather than storing an ordered list makes drift between fixtures.json and SCXML structurally impossible: a mismatch fails loudly at [`render_harness`] time rather than drifting silently into positional argument swaps.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/StubKind"
+              }
+            },
+            "helpers_ordered": {
+              "description": "Derived at harness-rendering time: the SCXML's helper declarations in source order, each paired with its stub implementation looked up from `helpers` by name. Templates iterate this ordered vector so positional `execute()` arguments match the generator's emitted wrapper parameter list. Must be absent in the manifest JSON — `Manifest::validate` rejects any user-supplied value.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/HelperStub"
+              }
+            },
             "kind": {
               "type": "string",
               "enum": [
@@ -335,6 +349,22 @@
         }
       }
     },
+    "HelperStub": {
+      "description": "Derived helper stub descriptor used inside the clone-and-mutate harness- render path. Carries the helper name (sourced from the SCXML) and its stub implementation (sourced from the fixtures.json dict); templates iterate this vector in SCXML declaration order so positional `execute()` args line up with the generated wrapper's parameter list.\n\nDerives `Deserialize` so the containing `FixtureSpec::Procedure` struct parses cleanly, but [`Manifest::validate`] rejects any user-supplied `helpers_ordered` value — the SCXML is the single source of truth for helper names and order; fixtures.json only supplies the stub dict keyed by name.",
+      "type": "object",
+      "required": [
+        "name",
+        "stub"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "stub": {
+          "$ref": "#/definitions/StubKind"
+        }
+      }
+    },
     "LookupMissPolicy": {
       "description": "`kind = \"lookup\"` miss-handling policy. Mirrors `forge::model::MissPolicy` but stays in the conformance manifest namespace so the harness manifest parser does not have to depend on the SCE Forge model types.\n\n`Error`: the generated function returns the language's optional type; fixtures must hit a key on every input (happy-path only) and the harness fragment unwraps with `.expect()` / `.value()` / `?: error()`.\n\n`Default`: the generated function returns the raw value with a fallback; fixtures may include miss inputs that test the fallback path. The reference oracle simply lists the expected fallback value for those cases.",
       "type": "string",
@@ -385,6 +415,32 @@
           "$ref": "#/definitions/CanonicalType"
         }
       }
+    },
+    "StubKind": {
+      "description": "Canonical deterministic implementations that the conformance harness can bake into a per-fixture helper stub closure at codegen time. Each variant declares just enough data for each per-language template to render the same byte-level transform — every fixture that declares a `<sce:helper>` DI point pairs it with one of these, so the oracle `dispatched_payload_bytes` can be pre-computed from the stub arithmetic without the harness needing to talk to the generated state machine.",
+      "oneOf": [
+        {
+          "description": "`|bytes| -> bytes` that XORs every byte with `mask`. Models a simplified OEM-specific UDS Security Access key derivation.",
+          "type": "object",
+          "required": [
+            "kind",
+            "mask"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "xor_bytes"
+              ]
+            },
+            "mask": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            }
+          }
+        }
+      ]
     }
   }
 }

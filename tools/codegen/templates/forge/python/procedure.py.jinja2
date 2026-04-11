@@ -27,6 +27,23 @@ from sce_forge_runtime.procedure import (
     ProcedureStateMachine,
 )
 
+{% if helper_fields %}
+
+# ── <sce:helper> DI fail-fast factory ───────────────────────────
+#
+# Python lambdas cannot contain a raise statement, so declared helper
+# closures default to a nested function that raises RuntimeError with the
+# helper name and setter method name baked in. Matches the Rust / C++ / Go
+# / Kotlin fail-fast defaults.
+
+def _unset_helper_raiser(helper_name, setter_name):
+    def _raiser(*_args, **_kwargs):
+        raise RuntimeError(
+            f"helper {helper_name!r} not set — call {setter_name}() before run_to_completion()"
+        )
+    return _raiser
+
+{% endif %}
 
 # ── State and Event enums ────────────────────────────────────────
 
@@ -64,7 +81,21 @@ class {{ class_name }}(ProcedureStateMachine):
         self.{{ imp.member_name }}: {{ imp.member_type }} = {{ imp.member_type }}()
 {% endfor %}
 {% endif %}
+{% if helper_fields %}
+        # <sce:helper> DI closures — initialise to fail-fast sentinels
+        # produced by _unset_helper_raiser (module-level factory above) that
+        # raise RuntimeError with the helper name + setter name baked in.
+        # Matches the Rust / C++ / Go / Kotlin fail-fast rationale.
+{% for h in helper_fields %}
+        self._{{ h.snake_id }}: {{ h.callable_type }} = {{ h.default_impl }}
+{% endfor %}
+{% endif %}
 
+{% for h in helper_fields %}
+    def {{ h.setter_name }}(self, fn: {{ h.callable_type }}) -> None:
+        self._{{ h.snake_id }} = fn
+
+{% endfor %}
 {% for f in input_fields %}
     def set_{{ f.snake_id }}(self, value: {{ f.py_type }}) -> None:
         self._{{ f.snake_id }} = value
@@ -167,12 +198,18 @@ class {{ class_name }}(ProcedureStateMachine):
 
 def execute(
     handler: Callable[[ProcedureServiceRequest], ProcedureServiceResponse],
+{% for h in helper_fields %}
+    {{ h.snake_id }}: {{ h.callable_type }},
+{% endfor %}
 {% for f in input_fields %}
     {{ f.snake_id }}: {{ f.py_type }},
 {% endfor %}
 ) -> ProcedureRunResult:
     sm = {{ class_name }}()
     sm.set_service_handler(handler)
+{% for h in helper_fields %}
+    sm.{{ h.setter_name }}({{ h.snake_id }})
+{% endfor %}
 {% for f in input_fields %}
     sm.set_{{ f.snake_id }}({{ f.snake_id }})
 {% endfor %}

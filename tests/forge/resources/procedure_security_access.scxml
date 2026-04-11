@@ -6,6 +6,7 @@
     <data id="seed" sce:type="bytes" sce:direction="internal"/>
     <data id="maxRetries" expr="3" sce:type="int32" sce:direction="internal"/>
     <data id="retryCount" expr="0" sce:type="int32" sce:direction="internal"/>
+    <sce:helper name="computeKey" args="bytes" returns="bytes"/>
   </datamodel>
 
   <state id="sendTesterPresent">

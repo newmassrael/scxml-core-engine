@@ -60,6 +60,9 @@ pub struct {{ struct_name }} {
 {% endfor %}
 {% endif %}
     service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
+{% for h in helper_fields %}
+    {{ h.id }}: {{ h.closure_type }},
+{% endfor %}
     done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
@@ -80,6 +83,9 @@ impl {{ struct_name }} {
 {% endfor %}
 {% endif %}
             service_handler: None,
+{% for h in helper_fields %}
+            {{ h.id }}: {{ h.default_impl }},
+{% endfor %}
             done_data: BTreeMap::new(),
             pending_event_data: String::new(),
         }
@@ -92,6 +98,12 @@ impl {{ struct_name }} {
         self.service_handler = Some(Box::new(handler));
     }
 
+{% for h in helper_fields %}
+    pub fn {{ h.setter_name }}(&mut self, f: {{ h.setter_param_type }}) {
+        self.{{ h.id }} = Box::new(f);
+    }
+
+{% endfor %}
 {% for f in input_fields %}
     pub fn set_{{ f.setter_name }}(&mut self, value: {{ f.rs_param_type }}) {
         self.{{ f.id }} = {{ f.setter_conv }};
@@ -213,11 +225,15 @@ impl ProcedurePolicy for {{ struct_name }} {
 
 #[allow(dead_code)]
 pub fn execute(
-    handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static{% for f in input_fields %},
+    handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static{% for h in helper_fields %},
+    {{ h.id }}: {{ h.setter_param_type }}{% endfor %}{% for f in input_fields %},
     {{ f.param_name }}: {{ f.rs_param_type }}{% endfor %},
 ) -> ProcedureRunResult {
     let mut sm = {{ struct_name }}::new();
     sm.set_service_handler(handler);
+{% for h in helper_fields %}
+    sm.{{ h.setter_name }}({{ h.id }});
+{% endfor %}
 {% for f in input_fields %}
     sm.set_{{ f.setter_name }}({{ f.param_name }});
 {% endfor %}

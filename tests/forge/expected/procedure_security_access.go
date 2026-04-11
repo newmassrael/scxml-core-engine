@@ -39,16 +39,22 @@ type policy struct {
 	seed	[]byte
 	maxRetries	int32
 	retryCount	int32
+	// <sce:helper> DI closures
+	computeKey func([]byte) []byte
 	serviceHandler   forge.ServiceHandler
 	doneData         map[string]string
 	pendingEventData string
 }
 
-func newPolicy(handler forge.ServiceHandler, ecuAddr uint32) *policy {
+func newPolicy(handler forge.ServiceHandler, computeKey func([]byte) []byte, ecuAddr uint32) *policy {
+	if computeKey == nil {
+		computeKey = func(_arg0 []byte) []byte { panic("helper 'computeKey' passed nil to Execute — pass a non-nil func([]byte) []byte argument") }
+	}
 	return &policy{
 		ecuAddr: ecuAddr,
 		maxRetries: 3,
 		retryCount: 0,
+		computeKey: computeKey,
 		serviceHandler: handler,
 		doneData:       make(map[string]string),
 	}
@@ -113,7 +119,7 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 			req := forge.ProcedureServiceRequest{
 				Service: "SecurityAccess",
 				Subfunc: &subfuncVal,
-				Payload: computeKey(p.seed),
+				Payload: p.computeKey(p.seed),
 			}
 			resp := p.serviceHandler(req)
 			if resp.Success {
@@ -183,7 +189,7 @@ func (p *policy) ExecuteTransitionActions(source int, trIndex int) {
 // ── Convenience wrapper function ────────────────────────────────
 
 // Execute runs the procedure to completion.
-func Execute(handler forge.ServiceHandler, ecuAddr uint32) forge.ProcedureRunResult {
-	p := newPolicy(handler, ecuAddr)
+func Execute(handler forge.ServiceHandler, computeKey func([]byte) []byte, ecuAddr uint32) forge.ProcedureRunResult {
+	p := newPolicy(handler, computeKey, ecuAddr)
 	return forge.RunProcedure(p)
 }

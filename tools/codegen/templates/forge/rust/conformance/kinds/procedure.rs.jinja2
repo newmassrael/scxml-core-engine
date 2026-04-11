@@ -10,21 +10,39 @@
         let expected_final = case["expected"]["final_state"]
             .as_str()
             .expect("final_state is string");
+        // Optional per-case handler response bytes (string-typed on the wire;
+        // the state machine byte-copies this into its `seed`-style internal
+        // fields via `pending_event_data.as_bytes()` at assign time). When
+        // absent, preserves the legacy empty-data behaviour.
+        let handler_response_data = case
+            .get("handler_response_data")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let captured: std::rc::Rc<std::cell::RefCell<Vec<Vec<u8>>>> =
             std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let handler = {
             let captured = captured.clone();
+            let data = handler_response_data.clone();
             move |req: &sce_forge_runtime::procedure::ProcedureServiceRequest| {
                 if let Some(ref bytes) = req.payload {
                     captured.borrow_mut().push(bytes.clone());
                 }
                 sce_forge_runtime::procedure::ProcedureServiceResponse {
                     success: true,
-                    data: String::new(),
+                    data: data.clone(),
                 }
             }
         };
-        let result = fixtures::{{ f.name }}::execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
+{% for h in f.helpers_ordered %}
+{% if h.stub.kind == "xor_bytes" %}
+        // <sce:helper name="{{ h.name }}"> stub — XOR every byte with {{ h.stub.mask }}.
+        let stub_{{ h.name }} = |input: &[u8]| -> Vec<u8> {
+            input.iter().map(|b| b ^ {{ h.stub.mask }}u8).collect()
+        };
+{% endif %}
+{% endfor %}
+        let result = fixtures::{{ f.name }}::execute(handler{% for h in f.helpers_ordered %}, stub_{{ h.name }}{% endfor %}{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
         assert_eq!(
             result.completed, expected_completed,
             "{{ f.name }}.completed"

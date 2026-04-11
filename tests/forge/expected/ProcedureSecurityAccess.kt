@@ -37,6 +37,13 @@ class ProcedureSecurityAccess : ProcedureStateMachine<State, Event>() {
     private var maxRetries: Int = 3
     private var retryCount: Int = 0
 
+    // <sce:helper> DI closures
+    private var computeKey: (ByteArray) -> ByteArray = { _arg0 -> error("helper 'computeKey' not set — call setComputeKey() before runToCompletion()") }
+
+    fun setComputeKey(fn: (ByteArray) -> ByteArray) {
+        this.computeKey = fn
+    }
+
     fun setEcuAddr(value: UInt) {
         this.ecuAddr = value
     }
@@ -158,9 +165,11 @@ class ProcedureSecurityAccess : ProcedureStateMachine<State, Event>() {
 
 fun execute(
     handler: ProcedureServiceHandler,
+    computeKey: (ByteArray) -> ByteArray,
     ecuAddr: UInt): ProcedureRunResult {
     val sm = ProcedureSecurityAccess()
     sm.setServiceHandler(handler)
+    sm.setComputeKey(computeKey)
     sm.setEcuAddr(ecuAddr)
     return sm.runToCompletion()
 }

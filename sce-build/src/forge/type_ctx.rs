@@ -154,17 +154,33 @@ pub fn observer<'a>(m: &'a ObserverModel, imports: &'a [ImportContext]) -> TypeC
     ctx
 }
 
+/// Populate `ctx.funcs` with each declared `<sce:helper>` signature, keyed
+/// by the user-visible name. Expressions referencing a declared helper get
+/// typed inference on both the argument slots and the return value — which
+/// means `computeKey(seed)` in an `sce:payload` attribute can propagate its
+/// declared `returns="bytes"` type up through enclosing arithmetic / member
+/// access, instead of the old "unknown → emit verbatim" fallback.
+fn insert_procedure_helpers<'a>(ctx: &mut TypeCtx<'a>, helpers: &'a [ProcedureHelper]) {
+    for h in helpers {
+        let params: Vec<InferredType> = h.args.iter().map(InferredType::from_sce_type).collect();
+        let ret = InferredType::from_sce_type(&h.returns);
+        ctx.insert_func(h.name.as_str(), FuncSig { params, ret });
+    }
+}
+
 /// TypeCtx for a **Procedure** kind. The procedure model exposes inputs
 /// and internal state fields to expressions (guards, assigns, sends). The
 /// `_event.data` rename that the generator applies before transpile is
 /// transparent to the TypeCtx — the caller is responsible for registering
 /// the target rename key (e.g. `pendingEventData_`) with the right type
 /// via [`TypeCtx::insert_var`] after calling this builder, if that type
-/// is statically known.
+/// is statically known. `<sce:helper>` declarations seed `ctx.funcs` via
+/// [`insert_procedure_helpers`] so helper call sites are fully typed.
 pub fn procedure<'a>(m: &'a ProcedureModel, imports: &'a [ImportContext]) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
     insert_fields(&mut ctx, &m.inputs);
     insert_fields(&mut ctx, &m.internals);
+    insert_procedure_helpers(&mut ctx, &m.helpers);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_import_aliases(&mut ctx, imports);
     ctx

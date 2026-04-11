@@ -3335,6 +3335,51 @@ fn render_procedure_cpp(
         })
         .collect();
 
+    // <sce:helper> DI closure members (C++ std::function). Initialised to a
+    // fail-fast lambda that throws std::runtime_error with a clear "helper
+    // not set" message — a default-constructed std::function would throw
+    // std::bad_function_call at invoke time, giving the caller zero context
+    // about which helper was missing or which setter to call. See the Rust
+    // / Python / Go / Kotlin branches above for the matching fail-fast
+    // rationale.
+    let helper_fields: Vec<serde_json::Value> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            let params_ty: Vec<String> =
+                h.args.iter().map(cpp_param_type).collect();
+            let ret_ty = cpp_type(&h.returns);
+            let function_type = format!(
+                "std::function<{}({})>",
+                ret_ty,
+                params_ty.join(", "),
+            );
+            let setter_name = filters::to_pascal_case(h.name.clone());
+            // Typed lambda signature matching the function_type. Param names
+            // are generated _argN so unused-parameter warnings stay quiet.
+            let lambda_params: Vec<String> = h
+                .args
+                .iter()
+                .enumerate()
+                .map(|(i, a)| format!("{} _arg{i}", cpp_param_type(a)))
+                .collect();
+            let default_impl = format!(
+                "[]({}) -> {} {{ throw std::runtime_error(\"helper '{}' not set — call set{}() before runToCompletion()\"); }}",
+                lambda_params.join(", "),
+                ret_ty,
+                h.name,
+                setter_name,
+            );
+            serde_json::json!({
+                "id": h.name,                                     // user-visible name
+                "member_name": format!("{}_", h.name),            // trailing-underscore member
+                "setter_name": setter_name,
+                "function_type": function_type,
+                "default_impl": default_impl,
+            })
+        })
+        .collect();
+
     // Build the typed context once — every expression in this render
     // function (internal defaults, guards, assigns, sends, donedata) sees
     // the same set of procedure inputs/internals as identifiers.
@@ -3390,6 +3435,17 @@ fn render_procedure_cpp(
     let cpp_method_renames =
         stateful_import_method_renames(imports, &generator::Language::Cpp);
     for (k, v) in &cpp_method_renames {
+        owned_rename_map.insert(k.as_str(), v.clone());
+    }
+    // <sce:helper> rename entries — each declared helper call site collapses
+    // to `helperName_(...)` (member std::function with trailing-underscore
+    // naming that matches the existing datamodel / import member convention).
+    let cpp_helper_rename_pairs: Vec<(String, String)> = m
+        .helpers
+        .iter()
+        .map(|h| (h.name.clone(), format!("{}_", h.name)))
+        .collect();
+    for (k, v) in &cpp_helper_rename_pairs {
         owned_rename_map.insert(k.as_str(), v.clone());
     }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_map
@@ -3625,6 +3681,7 @@ fn render_procedure_cpp(
         event_enum => minijinja::Value::from_serialize(&event_enum),
         input_fields => minijinja::Value::from_serialize(&input_fields),
         internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        helper_fields => minijinja::Value::from_serialize(&helper_fields),
         initial_state => initial_state,
         final_states => minijinja::Value::from_serialize(&final_states),
         states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
@@ -4114,6 +4171,44 @@ fn render_procedure_kotlin(
         })
         .collect();
 
+    // <sce:helper> DI closure members (Kotlin function-type properties).
+    // Initialised to a fail-fast lambda using `error("...")` (throws
+    // IllegalStateException) rather than a zero-value closure — matching the
+    // Rust / C++ / Python / Go branches.
+    let helper_fields: Vec<serde_json::Value> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            let params_ty: Vec<String> = h
+                .args
+                .iter()
+                .map(|a| kotlin_type(a).to_string())
+                .collect();
+            let ret_ty = kotlin_type(&h.returns);
+            let function_type = format!(
+                "({}) -> {}",
+                params_ty.join(", "),
+                ret_ty,
+            );
+            let setter_name = filters::to_pascal_case(h.name.clone());
+            let placeholder_args = (0..h.args.len())
+                .map(|i| format!("_arg{i}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let default_impl = format!(
+                "{{ {placeholder_args} -> error(\"helper '{}' not set — call set{}() before runToCompletion()\") }}",
+                h.name,
+                setter_name,
+            );
+            serde_json::json!({
+                "id": h.name,
+                "setter_name": setter_name,
+                "function_type": function_type,
+                "default_impl": default_impl,
+            })
+        })
+        .collect();
+
     let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
     let empty_procedure_renames = std::collections::HashMap::new();
 
@@ -4147,6 +4242,14 @@ fn render_procedure_kotlin(
     // (byte-identical to the current verbatim path for codec, since Kotlin
     // codec methods are already lowercase — the entries exist so future
     // Kotlin-specific method casing has a single source of truth).
+    //
+    // Note: <sce:helper> declarations do NOT need rename entries here. Kotlin
+    // function-type class properties are directly invokable via `operator fun
+    // invoke`, and bare `computeKey(seed)` inside a class method body resolves
+    // through the implicit `this` receiver to `this.computeKey(seed)`. The
+    // expression pipeline's type inference picks up the helper's signature
+    // from `ctx.funcs` (seeded by type_ctx::insert_procedure_helpers), so no
+    // syntactic rewriting at the rename pass is required for Kotlin.
     let mut owned_rename: std::collections::HashMap<&str, String> =
         std::collections::HashMap::from([("_event.data", "pendingEventData".to_string())]);
     let kotlin_method_renames =
@@ -4201,6 +4304,7 @@ fn render_procedure_kotlin(
         event_enum => minijinja::Value::from_serialize(&common.event_enum),
         input_fields => minijinja::Value::from_serialize(&input_fields),
         internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        helper_fields => minijinja::Value::from_serialize(&helper_fields),
         initial_state => common.initial_state,
         final_states => minijinja::Value::from_serialize(&common.final_states),
         states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
@@ -4260,6 +4364,23 @@ fn render_procedure_rust(
     for (k, v) in &rust_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
+    // <sce:helper> rename entries: every declared helper call site collapses
+    // to `(self.helper_name)(...)`. The extra parens are required so Rust
+    // parses the closure field access as the callee of the invocation,
+    // disambiguating from a `self.helper_name(...)` method call.
+    let helper_rename_pairs: Vec<(String, String)> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            (
+                h.name.clone(),
+                format!("(self.{})", filters::to_snake_case(h.name.clone())),
+            )
+        })
+        .collect();
+    for (k, v) in &helper_rename_pairs {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -4285,6 +4406,54 @@ fn render_procedure_rust(
                 "setter_conv": setter_conv,
                 "param_name": snake_id,
                 "default_value": rust_default(&f.sce_type),
+            })
+        })
+        .collect();
+
+    // <sce:helper> DI closure members. Each declared helper becomes a field
+    // of type `Box<dyn Fn(...) -> ...>` initialised to a fail-fast sentinel
+    // (panics with a clear "helper not set" message when invoked without a
+    // prior setter call), plus a public setter accepting any
+    // `Fn(...) -> ... + 'static`. Call sites in expressions dispatch through
+    // the rename map as `(self.helper_name)(args)`. Fail-fast instead of
+    // silently returning a zero/empty value: a helper inside an expression
+    // has no sensible no-op semantic (unlike `serviceHandler` which can
+    // legitimately skip a send), so an unset helper is a programming bug
+    // that must surface immediately rather than produce wrong numbers.
+    let helper_fields: Vec<serde_json::Value> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            let snake = filters::to_snake_case(h.name.clone());
+            let setter_name = format!("set_{}", snake);
+            let params_ty: Vec<String> =
+                h.args.iter().map(rust_param_type).collect();
+            let ret_ty = rust_type(&h.returns);
+            let closure_type = format!(
+                "Box<dyn Fn({}) -> {}>",
+                params_ty.join(", "),
+                ret_ty,
+            );
+            let setter_param_type = format!(
+                "impl Fn({}) -> {} + 'static",
+                params_ty.join(", "),
+                ret_ty,
+            );
+            let placeholder_args = (0..h.args.len())
+                .map(|i| format!("_arg{i}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let default_impl = format!(
+                "Box::new(|{placeholder_args}| panic!(\"helper '{}' not set — call {}() before run_to_completion()\"))",
+                h.name,
+                setter_name,
+            );
+            serde_json::json!({
+                "id": snake,
+                "setter_name": setter_name,
+                "closure_type": closure_type,
+                "setter_param_type": setter_param_type,
+                "default_impl": default_impl,
             })
         })
         .collect();
@@ -4348,6 +4517,10 @@ fn render_procedure_rust(
     for (k, v) in &rust_method_renames {
         owned_payload_rename.insert(k.as_str(), v.clone());
     }
+    // <sce:helper> rename entries, same shape as `rename_map` above.
+    for (k, v) in &helper_rename_pairs {
+        owned_payload_rename.insert(k.as_str(), v.clone());
+    }
     let payload_rename_map: std::collections::HashMap<&str, &str> = owned_payload_rename
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -4393,6 +4566,7 @@ fn render_procedure_rust(
         event_enum => minijinja::Value::from_serialize(&common.event_enum),
         input_fields => minijinja::Value::from_serialize(&input_fields),
         internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        helper_fields => minijinja::Value::from_serialize(&helper_fields),
         initial_state => common.initial_state,
         final_states => minijinja::Value::from_serialize(&common.final_states),
         states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
@@ -4455,6 +4629,22 @@ fn render_procedure_go(
     for (k, v) in &go_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
+    // <sce:helper> rename entries — Go func-field members accessed via the
+    // struct receiver `p.helperName(...)`. The helper name is kept in its
+    // source camelCase casing (unexported — state machine private field).
+    let go_helper_rename_pairs: Vec<(String, String)> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            (
+                h.name.clone(),
+                format!("p.{}", go_escape_builtin(&h.name)),
+            )
+        })
+        .collect();
+    for (k, v) in &go_helper_rename_pairs {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -4483,6 +4673,46 @@ fn render_procedure_go(
                 "go_type": go_type(&f.sce_type),
                 "setter_name": filters::to_pascal_case(f.id.clone()),
                 "param_id": go_id,
+            })
+        })
+        .collect();
+
+    // <sce:helper> DI closure members (Go func fields). Go uses
+    // constructor-injection (no setters): the helper is a required
+    // positional parameter on `newPolicy` / `Execute`. A missing arg is a
+    // compile error; a nil arg is swapped in-place for a fail-fast closure
+    // that panics with a clear "helper not set" message, so no call site
+    // bypasses the checked contract.
+    let helper_fields: Vec<serde_json::Value> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            let escaped_id = go_escape_builtin(&h.name);
+            let params_ty: Vec<String> =
+                h.args.iter().map(|a| go_type(a).to_string()).collect();
+            let ret_ty = go_type(&h.returns);
+            let function_type = format!(
+                "func({}) {}",
+                params_ty.join(", "),
+                ret_ty,
+            );
+            let placeholder_args = (0..h.args.len())
+                .map(|i| format!("_arg{i} {}", params_ty[i]))
+                .collect::<Vec<_>>()
+                .join(", ");
+            // Nil-replacement closure emitted in newPolicy when the caller
+            // passes nil — same fail-fast shape as the other 4 languages'
+            // default_impl, adapted to Go's constructor-injection model.
+            let default_impl = format!(
+                "func({placeholder_args}) {ret_ty} {{ panic(\"helper '{}' passed nil to Execute — pass a non-nil func({}) {} argument\") }}",
+                h.name,
+                params_ty.join(", "),
+                ret_ty,
+            );
+            serde_json::json!({
+                "id": escaped_id,
+                "function_type": function_type,
+                "default_impl": default_impl,
             })
         })
         .collect();
@@ -4554,6 +4784,7 @@ fn render_procedure_go(
         event_enum => minijinja::Value::from_serialize(&common.event_enum),
         input_fields => minijinja::Value::from_serialize(&input_fields),
         internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        helper_fields => minijinja::Value::from_serialize(&helper_fields),
         initial_state => common.initial_state,
         final_states => minijinja::Value::from_serialize(&common.final_states),
         states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
@@ -4613,6 +4844,23 @@ fn render_procedure_python(
     for (k, v) in &python_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
+    // <sce:helper> rename entries — Python instance-method-level helpers use
+    // the standard `self._name` prefix, matching the datamodel field naming
+    // convention. Bare `computeKey(x)` inside a method body would not resolve
+    // to a class field, so the rename is load-bearing.
+    let python_helper_rename_pairs: Vec<(String, String)> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            (
+                h.name.clone(),
+                format!("self._{}", filters::to_snake_case(h.name.clone())),
+            )
+        })
+        .collect();
+    for (k, v) in &python_helper_rename_pairs {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -4629,6 +4877,42 @@ fn render_procedure_python(
                 "snake_id": snake_id,
                 "py_type": python_type(&f.sce_type),
                 "default_value": python_default(&f.sce_type),
+            })
+        })
+        .collect();
+
+    // <sce:helper> DI closure members (Python typing.Callable). Initialised
+    // to a fail-fast sentinel produced by the module-level
+    // `_unset_helper_raiser` factory that the template emits when helpers
+    // are present — Python lambdas cannot contain a raise statement, so the
+    // factory returns a nested `def` that raises RuntimeError with context.
+    // Matches the Rust / C++ / Go / Kotlin fail-fast rationale.
+    let helper_fields: Vec<serde_json::Value> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            let snake = filters::to_snake_case(h.name.clone());
+            let setter_name = format!("set_{}", snake);
+            let params_ty: Vec<String> = h
+                .args
+                .iter()
+                .map(|a| python_type(a).to_string())
+                .collect();
+            let ret_ty = python_type(&h.returns);
+            let callable_type = format!(
+                "Callable[[{}], {}]",
+                params_ty.join(", "),
+                ret_ty,
+            );
+            let default_impl = format!(
+                "_unset_helper_raiser({:?}, {:?})",
+                h.name, setter_name,
+            );
+            serde_json::json!({
+                "snake_id": snake,
+                "setter_name": setter_name,
+                "callable_type": callable_type,
+                "default_impl": default_impl,
             })
         })
         .collect();
@@ -4698,6 +4982,7 @@ fn render_procedure_python(
         event_enum => minijinja::Value::from_serialize(&common.event_enum),
         input_fields => minijinja::Value::from_serialize(&input_fields),
         internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        helper_fields => minijinja::Value::from_serialize(&helper_fields),
         initial_state => common.initial_state,
         final_states => minijinja::Value::from_serialize(&common.final_states),
         states_with_entry => minijinja::Value::from_serialize(&states_with_entry),

@@ -43,15 +43,26 @@ import (
 // fail at compile time if the oracle shape ever drifts.
 
 type reference struct {
-	Version         int                      `json:"version"`
-	FloatTolerance  float64                  `json:"float_tolerance"`
-	PureFunctions   map[string]pureSpec      `json:"pure_functions"`
-	StatefulFilters map[string]filterSpec    `json:"stateful_filters"`
-	Observers       map[string]observerSpec  `json:"observers"`
-	Validators      map[string]validatorSpec `json:"validators"`
-	Codecs          map[string]codecSpec     `json:"codecs"`
+	Version         int                        `json:"version"`
+	FloatTolerance  float64                    `json:"float_tolerance"`
+	// Pure-function section is stored as raw JSON per fixture so that
+	// different kinds sharing `pure_functions` (interpolation / transform /
+	// condition / lookup / procedure) can parse the same entry through
+	// different case structs — procedures need `handler_response_data`
+	// that other kinds don't care about, and baking it into a shared
+	// `pureCase` would leak procedure-specific fields into every pure-kind
+	// accessor. Each per-kind accessor below re-unmarshals its fixture's
+	// RawMessage into the kind-specific spec type.
+	PureFunctions   map[string]json.RawMessage `json:"pure_functions"`
+	StatefulFilters map[string]filterSpec      `json:"stateful_filters"`
+	Observers       map[string]observerSpec    `json:"observers"`
+	Validators      map[string]validatorSpec   `json:"validators"`
+	Codecs          map[string]codecSpec       `json:"codecs"`
 }
 
+// pureSpec / pureCase cover non-procedure pure-function kinds (interpolation,
+// transform, condition, lookup). Procedure kind has its own pair below
+// because it carries extra per-case fields that the other kinds don't.
 type pureSpec struct {
 	Cases []pureCase `json:"cases"`
 }
@@ -59,6 +70,22 @@ type pureSpec struct {
 type pureCase struct {
 	Args     []json.RawMessage `json:"args"`
 	Expected json.RawMessage   `json:"expected"`
+}
+
+// procedureSpec / procedureCase live under the same `pure_functions` section
+// of the oracle but carry `handler_response_data` — an optional per-case
+// string that seeds the conformance handler's response data field so the
+// state machine's `<assign location="..." expr="_event.data"/>` transitions
+// populate bytes fields. Absent for procedures that don't consume
+// `_event.data`.
+type procedureSpec struct {
+	Cases []procedureCase `json:"cases"`
+}
+
+type procedureCase struct {
+	Args                []json.RawMessage `json:"args"`
+	Expected            json.RawMessage   `json:"expected"`
+	HandlerResponseData *string           `json:"handler_response_data,omitempty"`
 }
 
 type filterSpec struct {
@@ -105,15 +132,40 @@ type codecCase struct {
 // pureCases looks up pure-function cases by the manifest's ref_section
 // name. Each kind fragment passes the section name from f.ref_section so
 // that drift between fixtures.json and this harness fails loudly at test
-// time instead of silently reading the wrong section.
+// time instead of silently reading the wrong section. The second-stage
+// json.Unmarshal into pureSpec lets the shared `pure_functions` map host
+// per-kind case shapes (procedure uses procedureCases instead).
 func (r *reference) pureCases(t *testing.T, section, fixture string) []pureCase {
 	t.Helper()
 	if section != "pure_functions" {
 		t.Fatalf("fixture %q: pure-function kinds require ref_section=pure_functions, got %q", fixture, section)
 	}
-	spec, ok := r.PureFunctions[fixture]
+	raw, ok := r.PureFunctions[fixture]
 	if !ok {
 		t.Fatalf("fixture %q: missing entry in pure_functions", fixture)
+	}
+	var spec pureSpec
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("fixture %q: cannot decode pureSpec: %v", fixture, err)
+	}
+	return spec.Cases
+}
+
+// procedureCases is the procedure-kind analog of pureCases. Same
+// `pure_functions` section, different case struct — procedureCase adds
+// `handler_response_data` which only procedure fragments consume.
+func (r *reference) procedureCases(t *testing.T, section, fixture string) []procedureCase {
+	t.Helper()
+	if section != "pure_functions" {
+		t.Fatalf("fixture %q: procedure kind requires ref_section=pure_functions, got %q", fixture, section)
+	}
+	raw, ok := r.PureFunctions[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in pure_functions", fixture)
+	}
+	var spec procedureSpec
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("fixture %q: cannot decode procedureSpec: %v", fixture, err)
 	}
 	return spec.Cases
 }

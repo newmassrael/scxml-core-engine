@@ -18,6 +18,10 @@
 
 #include <cstdint>
 #include <cstddef>
+{% if helper_fields %}
+#include <functional>
+#include <stdexcept>
+{% endif %}
 #include <map>
 #include <optional>
 #include <string>
@@ -67,6 +71,15 @@ public:
     void setServiceHandler(SCE::Forge::ProcedureServiceHandler handler) {
         serviceHandler_ = std::move(handler);
     }
+{% if helper_fields %}
+
+{% for h in helper_fields %}
+    /// Set the <sce:helper name="{{ h.id }}"> DI closure.
+    void set{{ h.setter_name }}({{ h.function_type }} fn) {
+        {{ h.member_name }} = std::move(fn);
+    }
+{% endfor %}
+{% endif %}
 
     /// Set input parameters before calling runToCompletion().
 {% for f in input_fields %}
@@ -248,6 +261,15 @@ private:
     // ── Service handler (for <send sce:service>) ─────────────────
     SCE::Forge::ProcedureServiceHandler serviceHandler_;
 
+{% if helper_fields %}
+    // ── Helper DI closures (for <sce:helper> declarations) ───────
+    // Default-initialised to fail-fast throwing lambdas; the user must call
+    // the matching set*() setter before runToCompletion().
+{% for h in helper_fields %}
+    {{ h.function_type }} {{ h.member_name }} = {{ h.default_impl }};
+{% endfor %}
+
+{% endif %}
     // ── Done data storage ────────────────────────────────────────
     std::map<std::string, std::string> doneData_;
 
@@ -258,10 +280,14 @@ private:
 // ── Convenience wrapper function ─────────────────────────────────
 
 inline SCE::Forge::ProcedureRunResult execute(
-    SCE::Forge::ProcedureServiceHandler handler{% for f in input_fields %},
+    SCE::Forge::ProcedureServiceHandler handler{% for h in helper_fields %},
+    {{ h.function_type }} {{ h.id }}{% endfor %}{% for f in input_fields %},
     {{ f.cpp_param_type }} {{ f.id }}{% endfor %}) {
     {{ class_name }} sm;
     sm.setServiceHandler(std::move(handler));
+{% for h in helper_fields %}
+    sm.set{{ h.setter_name }}(std::move({{ h.id }}));
+{% endfor %}
 {% for f in input_fields %}
     sm.set{{ f.setter_name }}({{ f.id }});
 {% endfor %}
