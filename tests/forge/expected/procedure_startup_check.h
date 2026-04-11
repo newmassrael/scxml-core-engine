@@ -118,7 +118,7 @@ struct ProcedureStartupCheckPolicy {
     // ── Entry actions (service sends + done data) ────────────────
 
     template<typename Engine>
-    void executeEntryActions(State state, Engine& engine) {
+    void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
         switch (state) {
             default:
                 break;

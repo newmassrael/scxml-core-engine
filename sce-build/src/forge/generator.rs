@@ -3338,8 +3338,8 @@ fn render_procedure_cpp(
     // Build the typed context once — every expression in this render
     // function (internal defaults, guards, assigns, sends, donedata) sees
     // the same set of procedure inputs/internals as identifiers.
-    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
-    let l2_empty_renames = std::collections::HashMap::new();
+    let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let empty_procedure_renames = std::collections::HashMap::new();
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
@@ -3349,8 +3349,8 @@ fn render_procedure_cpp(
                 expr::transpile_typed(
                     e,
                     ExprTarget::Cpp,
-                    &l2_type_ctx,
-                    &l2_empty_renames,
+                    &procedure_type_ctx,
+                    &empty_procedure_renames,
                     expected,
                 )
                 .unwrap_or_else(|_| e.clone())
@@ -3427,19 +3427,19 @@ fn render_procedure_cpp(
                 .iter()
                 .map(|send| {
                     let addr_expr = send.addr.as_ref().map(|a| {
-                        transpile_l2_expr(
+                        transpile_procedure_expr(
                             a,
                             ExprTarget::Cpp,
-                            &l2_type_ctx,
+                            &procedure_type_ctx,
                             &rename_map,
                             crate::forge::types::InferredType::Unknown,
                         )
                     });
                     let payload_expr = send.payload.as_ref().map(|p| {
-                        transpile_l2_expr(
+                        transpile_procedure_expr(
                             p,
                             ExprTarget::Cpp,
-                            &l2_type_ctx,
+                            &procedure_type_ctx,
                             &rename_map,
                             crate::forge::types::InferredType::Unknown,
                         )
@@ -3471,10 +3471,10 @@ fn render_procedure_cpp(
                 .done_params
                 .iter()
                 .map(|p| {
-                    let transpiled = transpile_l2_expr(
+                    let transpiled = transpile_procedure_expr(
                         &p.expr,
                         ExprTarget::Cpp,
-                        &l2_type_ctx,
+                        &procedure_type_ctx,
                         &rename_map,
                         crate::forge::types::InferredType::Unknown,
                     );
@@ -3509,10 +3509,10 @@ fn render_procedure_cpp(
                             .unwrap_or_else(|| filters::to_pascal_case(ev.clone()))
                     });
                     let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        transpile_l2_expr(
+                        transpile_procedure_expr(
                             c,
                             ExprTarget::Cpp,
-                            &l2_type_ctx,
+                            &procedure_type_ctx,
                             &rename_map,
                             crate::forge::types::InferredType::Bool,
                         )
@@ -3564,10 +3564,10 @@ fn render_procedure_cpp(
                                 .get(a.location.as_str())
                                 .map(|t| crate::forge::types::InferredType::from_sce_type(t))
                                 .unwrap_or(crate::forge::types::InferredType::Unknown);
-                            let transpiled = transpile_l2_expr(
+                            let transpiled = transpile_procedure_expr(
                                 &a.expr,
                                 ExprTarget::Cpp,
-                                &l2_type_ctx,
+                                &procedure_type_ctx,
                                 &assign_rename_map,
                                 expected,
                             );
@@ -3734,7 +3734,7 @@ fn stateful_import_method_renames(
 /// guard conditions, the target field type for assignments, and
 /// `InferredType::Unknown` for payloads/sends where the consumer accepts
 /// any value.
-fn transpile_l2_expr(
+fn transpile_procedure_expr(
     raw: &str,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -3752,7 +3752,7 @@ fn transpile_l2_expr(
 // ── Procedure: shared helpers ───────────────────────────────
 
 /// Common procedure data shared across all language renderers.
-struct L2Common {
+struct ProcedureCommon {
     state_enum: Vec<serde_json::Value>,
     event_enum: Vec<serde_json::Value>,
     event_name_map: std::collections::BTreeMap<String, String>,
@@ -3763,7 +3763,7 @@ struct L2Common {
 }
 
 /// Build language-independent procedure data (state/event enums, final states).
-fn build_l2_common(m: &ProcedureModel) -> L2Common {
+fn build_procedure_common(m: &ProcedureModel) -> ProcedureCommon {
     let state_enum: Vec<serde_json::Value> = m
         .states
         .iter()
@@ -3826,7 +3826,7 @@ fn build_l2_common(m: &ProcedureModel) -> L2Common {
         .collect();
     let has_external_deps = !payload_exprs.is_empty();
 
-    L2Common {
+    ProcedureCommon {
         state_enum,
         event_enum,
         event_name_map: event_raw_to_pascal,
@@ -3837,8 +3837,8 @@ fn build_l2_common(m: &ProcedureModel) -> L2Common {
     }
 }
 
-/// Build non-final state transition data for L2 templates.
-fn build_l2_non_final_states(
+/// Build non-final state transition data for procedure templates.
+fn build_procedure_non_final_states(
     m: &ProcedureModel,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -3861,7 +3861,7 @@ fn build_l2_non_final_states(
                             .unwrap_or_else(|| filters::to_pascal_case(ev.clone()))
                     });
                     let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        transpile_l2_expr(
+                        transpile_procedure_expr(
                             c,
                             target,
                             type_ctx,
@@ -3889,8 +3889,8 @@ fn build_l2_non_final_states(
         .collect()
 }
 
-/// Build states with onentry sends for L2 templates.
-fn build_l2_states_with_entry(
+/// Build states with onentry sends for procedure templates.
+fn build_procedure_states_with_entry(
     m: &ProcedureModel,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -3907,7 +3907,7 @@ fn build_l2_states_with_entry(
                 .iter()
                 .map(|send| {
                     let addr_expr = send.addr.as_ref().map(|a| {
-                        transpile_l2_expr(
+                        transpile_procedure_expr(
                             a,
                             target,
                             type_ctx,
@@ -3916,7 +3916,7 @@ fn build_l2_states_with_entry(
                         )
                     });
                     let payload_expr = send.payload.as_ref().map(|p| {
-                        transpile_l2_expr(
+                        transpile_procedure_expr(
                             p,
                             target,
                             type_ctx,
@@ -3942,8 +3942,8 @@ fn build_l2_states_with_entry(
         .collect()
 }
 
-/// Build final states with donedata for L2 templates.
-fn build_l2_final_states_with_donedata(
+/// Build final states with donedata for procedure templates.
+fn build_procedure_final_states_with_donedata(
     m: &ProcedureModel,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -3957,7 +3957,7 @@ fn build_l2_final_states_with_donedata(
                 .done_params
                 .iter()
                 .map(|p| {
-                    let transpiled = transpile_l2_expr(
+                    let transpiled = transpile_procedure_expr(
                         &p.expr,
                         target,
                         type_ctx,
@@ -3978,8 +3978,8 @@ fn build_l2_final_states_with_donedata(
         .collect()
 }
 
-/// Build states that have transitions with assigns for L2 templates.
-fn build_l2_states_with_assigns(
+/// Build states that have transitions with assigns for procedure templates.
+fn build_procedure_states_with_assigns(
     m: &ProcedureModel,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -4006,7 +4006,7 @@ fn build_l2_states_with_assigns(
                                 .get(a.location.as_str())
                                 .map(|t| crate::forge::types::InferredType::from_sce_type(t))
                                 .unwrap_or(crate::forge::types::InferredType::Unknown);
-                            let transpiled = transpile_l2_expr(
+                            let transpiled = transpile_procedure_expr(
                                 &a.expr,
                                 target,
                                 type_ctx,
@@ -4040,7 +4040,7 @@ fn build_l2_states_with_assigns(
 }
 
 /// Build the type map (variable name → SceType) for assign type checking.
-fn build_l2_type_map<'a>(m: &'a ProcedureModel) -> std::collections::HashMap<&'a str, &'a SceType> {
+fn build_procedure_type_map<'a>(m: &'a ProcedureModel) -> std::collections::HashMap<&'a str, &'a SceType> {
     m.inputs
         .iter()
         .chain(m.internals.iter())
@@ -4098,7 +4098,7 @@ fn render_procedure_kotlin(
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
-    let common = build_l2_common(m);
+    let common = build_procedure_common(m);
 
     // Input fields
     let input_fields: Vec<serde_json::Value> = m
@@ -4114,8 +4114,8 @@ fn render_procedure_kotlin(
         })
         .collect();
 
-    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
-    let l2_empty_renames = std::collections::HashMap::new();
+    let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let empty_procedure_renames = std::collections::HashMap::new();
 
     // Internal fields
     let internal_fields: Vec<serde_json::Value> = m
@@ -4129,8 +4129,8 @@ fn render_procedure_kotlin(
                 .map(|e| expr::transpile_typed(
                     e,
                     ExprTarget::Kotlin,
-                    &l2_type_ctx,
-                    &l2_empty_renames,
+                    &procedure_type_ctx,
+                    &empty_procedure_renames,
                     expected,
                 ).unwrap_or_else(|_| e.clone()))
                 .unwrap_or_else(|| kotlin_default(&f.sce_type).to_string());
@@ -4162,24 +4162,24 @@ fn render_procedure_kotlin(
     // Build assign rename map (same as rename_map for Kotlin)
     let assign_rename_map = rename_map.clone();
 
-    let type_map = build_l2_type_map(m);
+    let type_map = build_procedure_type_map(m);
     let states_with_entry =
-        build_l2_states_with_entry(m, ExprTarget::Kotlin, &l2_type_ctx, &rename_map, None);
+        build_procedure_states_with_entry(m, ExprTarget::Kotlin, &procedure_type_ctx, &rename_map, None);
     let final_states_with_donedata =
-        build_l2_final_states_with_donedata(m, ExprTarget::Kotlin, &l2_type_ctx, &rename_map);
+        build_procedure_final_states_with_donedata(m, ExprTarget::Kotlin, &procedure_type_ctx, &rename_map);
 
-    let non_final_states = build_l2_non_final_states(
+    let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Kotlin,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &rename_map,
         &common.event_name_map,
     );
 
-    let states_with_assigns = build_l2_states_with_assigns(
+    let states_with_assigns = build_procedure_states_with_assigns(
         m,
         ExprTarget::Kotlin,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &assign_rename_map,
         &type_map,
         |loc| loc.to_string(),
@@ -4226,7 +4226,7 @@ fn render_procedure_rust(
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
-    let common = build_l2_common(m);
+    let common = build_procedure_common(m);
 
     // Build rename map: varName → self.var_name
     let var_name_strings: Vec<String> = m
@@ -4289,8 +4289,8 @@ fn render_procedure_rust(
         })
         .collect();
 
-    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
-    let l2_empty_renames = std::collections::HashMap::new();
+    let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let empty_procedure_renames = std::collections::HashMap::new();
 
     // Internal fields
     let internal_fields: Vec<serde_json::Value> = m
@@ -4305,8 +4305,8 @@ fn render_procedure_rust(
                 .map(|e| expr::transpile_typed(
                     e,
                     ExprTarget::Rust,
-                    &l2_type_ctx,
-                    &l2_empty_renames,
+                    &procedure_type_ctx,
+                    &empty_procedure_renames,
                     expected,
                 ).unwrap_or_else(|_| e.clone()))
                 .unwrap_or_else(|| rust_default(&f.sce_type).to_string());
@@ -4318,7 +4318,7 @@ fn render_procedure_rust(
         })
         .collect();
 
-    let type_map = build_l2_type_map(m);
+    let type_map = build_procedure_type_map(m);
 
     // Payload rename map: borrow Bytes/String fields to prevent move in fn args.
     // e.g., computeKey(self.seed) → computeKey(&self.seed) for Vec<u8> fields.
@@ -4353,26 +4353,26 @@ fn render_procedure_rust(
         .map(|(k, v)| (*k, v.as_str()))
         .collect();
 
-    let states_with_entry = build_l2_states_with_entry(
+    let states_with_entry = build_procedure_states_with_entry(
         m,
         ExprTarget::Rust,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &rename_map,
         Some(&payload_rename_map),
     );
     let final_states_with_donedata =
-        build_l2_final_states_with_donedata(m, ExprTarget::Rust, &l2_type_ctx, &rename_map);
-    let non_final_states = build_l2_non_final_states(
+        build_procedure_final_states_with_donedata(m, ExprTarget::Rust, &procedure_type_ctx, &rename_map);
+    let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Rust,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &rename_map,
         &common.event_name_map,
     );
-    let states_with_assigns = build_l2_states_with_assigns(
+    let states_with_assigns = build_procedure_states_with_assigns(
         m,
         ExprTarget::Rust,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &assign_rename_map,
         &type_map,
         |loc| format!("self.{}", filters::to_snake_case(loc.to_string())),
@@ -4418,7 +4418,7 @@ fn render_procedure_go(
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
-    let common = build_l2_common(m);
+    let common = build_procedure_common(m);
 
     // Build rename map: varName → p.varName (Go struct field access)
     let var_name_strings: Vec<String> = m
@@ -4487,8 +4487,8 @@ fn render_procedure_go(
         })
         .collect();
 
-    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
-    let l2_empty_renames = std::collections::HashMap::new();
+    let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let empty_procedure_renames = std::collections::HashMap::new();
 
     // Internal fields
     let internal_fields: Vec<serde_json::Value> = m
@@ -4501,8 +4501,8 @@ fn render_procedure_go(
                 expr::transpile_typed(
                     e,
                     ExprTarget::Go,
-                    &l2_type_ctx,
-                    &l2_empty_renames,
+                    &procedure_type_ctx,
+                    &empty_procedure_renames,
                     expected,
                 )
                 .unwrap_or_else(|_| e.clone())
@@ -4516,22 +4516,22 @@ fn render_procedure_go(
         })
         .collect();
 
-    let type_map = build_l2_type_map(m);
+    let type_map = build_procedure_type_map(m);
     let states_with_entry =
-        build_l2_states_with_entry(m, ExprTarget::Go, &l2_type_ctx, &rename_map, None);
+        build_procedure_states_with_entry(m, ExprTarget::Go, &procedure_type_ctx, &rename_map, None);
     let final_states_with_donedata =
-        build_l2_final_states_with_donedata(m, ExprTarget::Go, &l2_type_ctx, &rename_map);
-    let non_final_states = build_l2_non_final_states(
+        build_procedure_final_states_with_donedata(m, ExprTarget::Go, &procedure_type_ctx, &rename_map);
+    let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Go,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &rename_map,
         &common.event_name_map,
     );
-    let states_with_assigns = build_l2_states_with_assigns(
+    let states_with_assigns = build_procedure_states_with_assigns(
         m,
         ExprTarget::Go,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &assign_rename_map,
         &type_map,
         |loc| format!("p.{}", go_escape_builtin(loc)),
@@ -4579,7 +4579,7 @@ fn render_procedure_python(
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
-    let common = build_l2_common(m);
+    let common = build_procedure_common(m);
 
     // Build rename map: varName → self._var_name
     let var_name_strings: Vec<String> = m
@@ -4633,8 +4633,8 @@ fn render_procedure_python(
         })
         .collect();
 
-    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
-    let l2_empty_renames = std::collections::HashMap::new();
+    let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let empty_procedure_renames = std::collections::HashMap::new();
 
     // Internal fields
     let internal_fields: Vec<serde_json::Value> = m
@@ -4649,8 +4649,8 @@ fn render_procedure_python(
                 .map(|e| expr::transpile_typed(
                     e,
                     ExprTarget::Python,
-                    &l2_type_ctx,
-                    &l2_empty_renames,
+                    &procedure_type_ctx,
+                    &empty_procedure_renames,
                     expected,
                 ).unwrap_or_else(|_| e.clone()))
                 .unwrap_or_else(|| python_default(&f.sce_type).to_string());
@@ -4662,22 +4662,22 @@ fn render_procedure_python(
         })
         .collect();
 
-    let type_map = build_l2_type_map(m);
+    let type_map = build_procedure_type_map(m);
     let states_with_entry =
-        build_l2_states_with_entry(m, ExprTarget::Python, &l2_type_ctx, &rename_map, None);
+        build_procedure_states_with_entry(m, ExprTarget::Python, &procedure_type_ctx, &rename_map, None);
     let final_states_with_donedata =
-        build_l2_final_states_with_donedata(m, ExprTarget::Python, &l2_type_ctx, &rename_map);
-    let non_final_states = build_l2_non_final_states(
+        build_procedure_final_states_with_donedata(m, ExprTarget::Python, &procedure_type_ctx, &rename_map);
+    let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Python,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &rename_map,
         &common.event_name_map,
     );
-    let states_with_assigns = build_l2_states_with_assigns(
+    let states_with_assigns = build_procedure_states_with_assigns(
         m,
         ExprTarget::Python,
-        &l2_type_ctx,
+        &procedure_type_ctx,
         &assign_rename_map,
         &type_map,
         |loc| format!("self._{}", filters::to_snake_case(loc.to_string())),

@@ -144,7 +144,7 @@ struct {{ policy_name }} {
     // ── Entry actions (service sends + done data) ────────────────
 
     template<typename Engine>
-    void executeEntryActions(State state, Engine& engine) {
+    void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
         switch (state) {
 {% for s in states_with_entry %}
             case State::{{ s.name }}: {
