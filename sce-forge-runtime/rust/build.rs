@@ -6,8 +6,8 @@
 // Two code-generation steps, both in-process via sce_build:
 //
 //   1. For every fixture listed in tests/forge/conformance/fixtures.json,
-//      invoke compile_forge_with_imports_validated() on the SCXML file and
-//      write the generated Rust fixture code into OUT_DIR.
+//      invoke compile_forge_with_imports() on the SCXML file and write the
+//      generated Rust fixture code into OUT_DIR.
 //
 //   2. Render the per-fixture test harness from
 //      tools/codegen/templates/forge/rust/conformance/harness.rs.jinja2 and
@@ -19,9 +19,10 @@
 // conformance template.
 
 use sce_build::{
-    compile_forge_with_imports_validated,
+    compile_forge_with_imports,
     conformance::{self, Manifest},
     generator::Language,
+    ForgeCompileOptions,
 };
 use std::path::Path;
 
@@ -56,16 +57,18 @@ fn main() {
         .unwrap_or_else(|e| panic!("load conformance manifest: {e}"));
 
     // Step 2: generate each fixture's Rust code into OUT_DIR.
+    let options = ForgeCompileOptions::default();
     for fixture in &manifest.fixtures {
         let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
         let content = std::fs::read_to_string(&scxml_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", scxml_path.display()));
 
-        let output = compile_forge_with_imports_validated(
+        let output = compile_forge_with_imports(
             &content,
             &fixture.name,
             Language::Rust,
             &resource_dir,
+            &options,
         )
         .unwrap_or_else(|e| panic!("sce-build codegen failed for {}: {e}", fixture.name));
 

@@ -235,51 +235,45 @@ pub fn compile_forge_from_string(
     }
 }
 
-/// Compile a forge SCXML with cross-file import resolution.
+/// Options that steer forge cross-file codegen beyond the plain
+/// `(content, name, language, base_dir)` tuple. New language-specific
+/// knobs get added as fields here so `compile_forge_with_imports`
+/// itself never grows a second parameter.
+#[derive(Default, Clone, Debug)]
+pub struct ForgeCompileOptions {
+    /// Go module path under which the generated package directories live
+    /// (e.g. `github.com/newmassrael/sce-forge-runtime/conformance/generated`).
+    /// When set, every `<sce:import>` emits `import "{prefix}/{snake}"` in
+    /// Go output. Go cross-file imports are only valid inside a Go
+    /// module, so `resolve_imports` hard-errors when imports are present
+    /// for `Language::Go` but this field is `None` — no silent fallback.
+    pub go_module_prefix: Option<String>,
+}
+
+/// Compile a forge SCXML with cross-file import resolution, validation,
+/// and language-specific codegen.
 ///
-/// Uses `parse_forge_with_imports` to extract `<sce:import>` declarations,
-/// resolves them to per-language import contexts, and passes them to templates.
-/// Import validation (file existence, kind matching) is skipped — use
-/// `compile_forge_with_imports_validated` for full validation.
+/// For each `<sce:import>`, validates the file exists relative to
+/// `base_dir` and that its declared `kind` matches the actual kind in
+/// the file, then renders the forge document for `language` with the
+/// supplied `options`. This is the single entry point for crossfile
+/// forge codegen — the CLI, test harness, and in-process build scripts
+/// all go through here.
 pub fn compile_forge_with_imports(
     content: &str,
     name: &str,
     language: generator::Language,
-) -> Result<generator::GeneratedOutput, String> {
-    compile_forge_with_imports_impl(content, name, language, None)
-}
-
-/// Compile a forge SCXML with cross-file import validation.
-///
-/// When `base_dir` is provided, validates each `<sce:import>`:
-/// 1. The referenced `src` file exists relative to `base_dir`
-/// 2. The file is a valid forge document
-/// 3. The declared `kind` matches the actual kind in the file
-pub fn compile_forge_with_imports_validated(
-    content: &str,
-    name: &str,
-    language: generator::Language,
     base_dir: &Path,
-) -> Result<generator::GeneratedOutput, String> {
-    compile_forge_with_imports_impl(content, name, language, Some(base_dir))
-}
-
-fn compile_forge_with_imports_impl(
-    content: &str,
-    name: &str,
-    language: generator::Language,
-    base_dir: Option<&Path>,
+    options: &ForgeCompileOptions,
 ) -> Result<generator::GeneratedOutput, String> {
     let parsed = forge::parser::parse_forge_with_imports(content, name)?
         .ok_or("Not a forge document (statechart or no sce:kind)")?;
 
     let template_base = find_template_base();
-    let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language);
+    let mut import_ctx =
+        forge::generator::resolve_imports(&parsed.imports, &language, options)?;
 
-    // Validate and enrich imports in a single pass (one file read per import)
-    if let Some(dir) = base_dir {
-        validate_and_enrich_imports(&mut import_ctx, &parsed.imports, dir, &language)?;
-    }
+    validate_and_enrich_imports(&mut import_ctx, &parsed.imports, base_dir, &language)?;
 
     match language {
         generator::Language::Cpp => {

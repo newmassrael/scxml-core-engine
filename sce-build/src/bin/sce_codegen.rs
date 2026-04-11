@@ -49,6 +49,13 @@ enum Commands {
         /// Write CMake DEPFILE for incremental builds
         #[arg(long)]
         write_deps: Option<String>,
+        /// Go module path hosting the generated forge packages, e.g.
+        /// `github.com/acme/proj/generated`. When set, each Go
+        /// `<sce:import>` emits `import "{prefix}/{snake}"` instead of
+        /// the bare `"{snake}"` form (invalid outside GOPATH). Required
+        /// for any Go crossfile fixture; ignored for other languages.
+        #[arg(long)]
+        go_module_prefix: Option<String>,
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
@@ -126,7 +133,15 @@ fn main() {
             output_dir,
             as_child,
             write_deps,
-        } => cmd_generate(&scxml, &language, &output_dir, as_child, write_deps.as_deref()),
+            go_module_prefix,
+        } => cmd_generate(
+            &scxml,
+            &language,
+            &output_dir,
+            as_child,
+            write_deps.as_deref(),
+            go_module_prefix.as_deref(),
+        ),
         Commands::GenerateW3c {
             language,
             registry,
@@ -149,7 +164,14 @@ fn main() {
 
 // ── Subcommand: generate ────────────────────────────────────────
 
-fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bool, depfile_path: Option<&str>) {
+fn cmd_generate(
+    scxml_path: &str,
+    language: &str,
+    output_dir: &str,
+    as_child: bool,
+    depfile_path: Option<&str>,
+    go_module_prefix: Option<&str>,
+) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
         eprintln!("Unknown language: {language}. Use rust, cpp, kotlin, or go.");
         std::process::exit(1);
@@ -171,7 +193,16 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
         let base_dir = Path::new(scxml_path)
             .parent()
             .unwrap_or_else(|| Path::new("."));
-        match sce_build::compile_forge_with_imports_validated(&scxml_content, input_stem, lang, base_dir) {
+        let forge_opts = sce_build::ForgeCompileOptions {
+            go_module_prefix: go_module_prefix.map(str::to_owned),
+        };
+        match sce_build::compile_forge_with_imports(
+            &scxml_content,
+            input_stem,
+            lang,
+            base_dir,
+            &forge_opts,
+        ) {
             Ok(output) => {
                 let out = Path::new(output_dir);
                 for (filename, code) in &output.files {

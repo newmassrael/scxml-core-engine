@@ -27,6 +27,30 @@ fn expected_dir() -> std::path::PathBuf {
     project_root().join("tests/forge/expected")
 }
 
+/// Placeholder Go module prefix used for every product-golden Go test.
+/// Picked from the IANA-reserved `example.com` domain so generated
+/// `import "example.com/sce-forge/..."` lines are unmistakably synthetic
+/// and deterministic. Real consumers (the sce-forge-runtime Go harness)
+/// pass their own module root via `--go-module-prefix`.
+const GOLDEN_GO_MODULE_PREFIX: &str = "example.com/sce-forge";
+
+/// Per-language defaults for product-golden forge codegen.
+///
+/// Each language gets its own branch here so that when
+/// `ForgeCompileOptions` grows a new knob (e.g. a future
+/// `rust_crate_prefix`), the only edit needed is one line in this
+/// factory — individual test cases do not care about option
+/// construction and never need to be touched.
+fn golden_options(
+    language: sce_build::generator::Language,
+) -> sce_build::ForgeCompileOptions {
+    let mut opts = sce_build::ForgeCompileOptions::default();
+    if matches!(language, sce_build::generator::Language::Go) {
+        opts.go_module_prefix = Some(GOLDEN_GO_MODULE_PREFIX.to_string());
+    }
+    opts
+}
+
 /// Generate code from a standalone forge SCXML for a specific language and compare
 /// against expected output.
 fn assert_standalone_forge_lang(
@@ -40,8 +64,15 @@ fn assert_standalone_forge_lang(
 
     let stem = scxml_name;
     let base_dir = scxml_path.parent().unwrap();
-    let output = sce_build::compile_forge_with_imports_validated(&content, stem, language, base_dir)
-        .unwrap_or_else(|e| panic!("Forge codegen failed for {scxml_name} ({language:?}): {e}"));
+    let options = golden_options(language);
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        stem,
+        language,
+        base_dir,
+        &options,
+    )
+    .unwrap_or_else(|e| panic!("Forge codegen failed for {scxml_name} ({language:?}): {e}"));
 
     assert!(!output.files.is_empty(), "No output for {scxml_name}");
 
@@ -1135,4 +1166,74 @@ fn forge_generate_golden() {
         std::fs::write(&py_path, py_code).unwrap();
         println!("  Py: {}", py_path.display());
     }
+}
+
+// ── Negative tests: ForgeCompileOptions validation ──────────────
+//
+// These guard the fail-fast contract of `resolve_imports`: when Go
+// cross-file codegen is asked for but `go_module_prefix` is missing or
+// malformed, `compile_forge_with_imports` must return `Err` rather than
+// silently emitting broken `import "bare_name"` lines. Every case
+// drives the real `crossfile_procedure_codec.scxml` fixture (which has
+// an `<sce:import>`) through the public entry point so the tests catch
+// regressions in either the validator or its call site.
+
+fn crossfile_scxml() -> (String, std::path::PathBuf) {
+    let scxml_path = resource_dir().join("crossfile_procedure_codec.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
+    (content, scxml_path)
+}
+
+/// Run Go crossfile codegen against a fixture with `<sce:import>` and
+/// return the expected `Err` message. Panics if codegen unexpectedly
+/// succeeds, since `GeneratedOutput` deliberately does not implement
+/// `Debug` (which rules out `Result::expect_err`).
+fn expect_go_crossfile_err(options: sce_build::ForgeCompileOptions, test_label: &str) -> String {
+    let (content, scxml_path) = crossfile_scxml();
+    let base_dir = scxml_path.parent().unwrap();
+    match sce_build::compile_forge_with_imports(
+        &content,
+        "crossfile_procedure_codec",
+        sce_build::generator::Language::Go,
+        base_dir,
+        &options,
+    ) {
+        Ok(_) => panic!("{test_label}: Go crossfile codegen should have failed but succeeded"),
+        Err(e) => e,
+    }
+}
+
+#[test]
+fn forge_go_crossfile_rejects_missing_module_prefix() {
+    let options = sce_build::ForgeCompileOptions::default();
+    let err = expect_go_crossfile_err(options, "missing prefix");
+    assert!(
+        err.contains("go_module_prefix"),
+        "error should mention go_module_prefix, got: {err}"
+    );
+}
+
+#[test]
+fn forge_go_crossfile_rejects_empty_module_prefix() {
+    let options = sce_build::ForgeCompileOptions {
+        go_module_prefix: Some("///".to_string()),
+    };
+    let err = expect_go_crossfile_err(options, "empty prefix");
+    assert!(
+        err.contains("empty"),
+        "error should mention empty prefix, got: {err}"
+    );
+}
+
+#[test]
+fn forge_go_crossfile_rejects_whitespace_in_module_prefix() {
+    let options = sce_build::ForgeCompileOptions {
+        go_module_prefix: Some("github.com/acme/proj generated".to_string()),
+    };
+    let err = expect_go_crossfile_err(options, "whitespace prefix");
+    assert!(
+        err.contains("whitespace"),
+        "error should mention whitespace, got: {err}"
+    );
 }

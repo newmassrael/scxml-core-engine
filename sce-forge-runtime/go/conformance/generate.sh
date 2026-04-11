@@ -29,6 +29,21 @@ RESOURCE_DIR="$REPO_ROOT/tests/forge/resources"
 MANIFEST="$REPO_ROOT/tests/forge/conformance/fixtures.json"
 OUT_DIR="$SCRIPT_DIR/generated"
 
+# Derive the Go module prefix from go.mod so there is a single source
+# of truth for the module path. The module root on disk is
+# `sce-forge-runtime/go/` (that's where go.mod lives), and every
+# generated fixture ends up in `<root>/conformance/generated/<fixture>/`,
+# so the prefix sce-codegen has to prepend to each `<sce:import>` is
+# `<module>/conformance/generated`. Parsing it out of go.mod means the
+# value cannot drift when the module path changes.
+GO_MOD_FILE="$REPO_ROOT/sce-forge-runtime/go/go.mod"
+GO_MODULE_ROOT="$(awk '$1 == "module" { print $2; exit }' "$GO_MOD_FILE")"
+if [[ -z "$GO_MODULE_ROOT" ]]; then
+    echo "error: could not parse 'module' directive from $GO_MOD_FILE" >&2
+    exit 1
+fi
+GO_MODULE_PREFIX="$GO_MODULE_ROOT/conformance/generated"
+
 # Rebuild sce-codegen from the current sce-build sources when the Rust
 # toolchain is available (local dev). Cargo's incremental build makes this a
 # near-instant no-op when nothing has changed; the value is eliminating the
@@ -61,7 +76,8 @@ for fixture in $FIXTURES; do
     "$SCE_CODEGEN" generate \
         "$RESOURCE_DIR/$fixture.scxml" \
         --language go \
-        --output-dir "$pkg_dir/" >/dev/null
+        --output-dir "$pkg_dir/" \
+        --go-module-prefix "$GO_MODULE_PREFIX" >/dev/null
 done
 
 # Render the test harness itself from the shared template.
@@ -71,3 +87,12 @@ done
     --output-dir "$SCRIPT_DIR" >/dev/null
 
 echo "Generated $(echo $FIXTURES | wc -w) Go fixtures and harness under $OUT_DIR"
+
+# Smoke check: every generated package must compile. Byte-goldens
+# cannot catch semantic bugs that only surface at `go build` time — see
+# feedback memory `byte_goldens_not_compile.md`. Running `go build` on
+# the freshly generated tree turns silent drift into a hard error in
+# the same script that produced the drift.
+echo "Compiling generated Go packages..."
+(cd "$REPO_ROOT/sce-forge-runtime/go" && go build ./conformance/...)
+echo "go build ./conformance/... OK"

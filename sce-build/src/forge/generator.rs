@@ -71,12 +71,77 @@ pub struct ImportContext {
     pub member_field_types: Vec<(String, SceType)>,
 }
 
-/// Resolve a list of ForgeImport into template-ready ImportContext.
-pub fn resolve_imports(
+/// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
+///
+/// Uses `options` to pick up language-specific knobs (today only
+/// `go_module_prefix`). Returns `Err` when an invariant required by the
+/// emitter is missing or when a supplied option has an invalid shape —
+/// see `validate_options` for the full rule set. Other languages
+/// currently ignore `options`.
+pub(crate) fn resolve_imports(
     imports: &[ForgeImport],
     lang: &crate::generator::Language,
-) -> Vec<ImportContext> {
-    imports.iter().map(|imp| resolve_single_import(imp, lang)).collect()
+    options: &crate::ForgeCompileOptions,
+) -> Result<Vec<ImportContext>, String> {
+    validate_options(imports, lang, options)?;
+    Ok(imports
+        .iter()
+        .map(|imp| resolve_single_import(imp, lang, options))
+        .collect())
+}
+
+/// Single source of truth for normalizing `go_module_prefix`. Strips
+/// the trailing `/` (harmless duplication in user input like
+/// `"github.com/acme/generated/"`) and returns the canonical form. Both
+/// the validator and the Go emitter go through this helper so the trim
+/// rule is expressed exactly once.
+fn normalized_go_prefix(options: &crate::ForgeCompileOptions) -> Option<&str> {
+    options
+        .go_module_prefix
+        .as_deref()
+        .map(|p| p.trim_end_matches('/'))
+}
+
+/// Validate `options` against the per-language invariants the emitter
+/// relies on. Keeps all option-rejection logic in one place so the
+/// `resolve_single_import` arms can treat their inputs as already-sane.
+fn validate_options(
+    imports: &[ForgeImport],
+    lang: &crate::generator::Language,
+    options: &crate::ForgeCompileOptions,
+) -> Result<(), String> {
+    if matches!(lang, crate::generator::Language::Go) && !imports.is_empty() {
+        match normalized_go_prefix(options) {
+            None => {
+                return Err(
+                    "<sce:import> with language=go requires \
+                     ForgeCompileOptions.go_module_prefix. Go module-qualified \
+                     imports have no valid bare form; set this field to the \
+                     go.mod module path that hosts the generated packages \
+                     (e.g. \"github.com/acme/project/generated\")."
+                        .to_string(),
+                );
+            }
+            Some(trimmed) if trimmed.is_empty() => {
+                return Err(
+                    "ForgeCompileOptions.go_module_prefix is empty; \
+                     supply a non-empty Go module path such as \
+                     \"github.com/acme/project/generated\"."
+                        .to_string(),
+                );
+            }
+            Some(trimmed) if trimmed.chars().any(char::is_whitespace) => {
+                let raw = options.go_module_prefix.as_deref().unwrap_or("");
+                return Err(format!(
+                    "ForgeCompileOptions.go_module_prefix {raw:?} \
+                     contains whitespace; Go import paths may not \
+                     contain spaces or tabs."
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
 }
 
 /// Build template-ready import data from resolved import contexts.
@@ -97,6 +162,7 @@ fn build_template_imports(
 fn resolve_single_import(
     imp: &ForgeImport,
     lang: &crate::generator::Language,
+    options: &crate::ForgeCompileOptions,
 ) -> ImportContext {
     let stem = Path::new(&imp.src)
         .file_stem()
@@ -183,20 +249,19 @@ fn resolve_single_import(
             }
         }
         crate::generator::Language::Go => {
-            // Go requires full module-qualified import paths; the bare
-            // `"<snake>"` form is invalid outside a GOPATH-style monorepo.
-            // Resolving this needs a --go-module-prefix CLI flag so build
-            // scripts (e.g. sce-forge-runtime/go/conformance/generate.sh)
-            // can supply their module root; product goldens would then
-            // render against a fixed placeholder prefix. Left as-is for
-            // stateful-import call sites where sce-forge-runtime/go is
-            // happy with package-relative references; stateless crossfile
-            // imports for Go remain unresolved until the flag lands.
+            // `resolve_imports` rejects Go imports without a module
+            // prefix up front, so reaching this branch with `None` is an
+            // internal invariant violation — unwrap with an explicit
+            // message so the panic carries the bug's location rather
+            // than an opaque `Option::unwrap` trace.
+            let prefix = normalized_go_prefix(options)
+                .expect("resolve_imports must validate go_module_prefix before reaching Go arm");
+            let import_path = format!("{prefix}/{snake}");
             let go_pascal = filters::to_pascal_case(imp.alias.to_string());
             ImportContext {
                 alias: imp.alias.clone(),
                 kind: imp.kind.to_string(),
-                include_stmt: format!("\t\"{snake}\""),
+                include_stmt: format!("\t\"{import_path}\""),
                 type_name: pascal.clone(),
                 is_stateful,
                 member_name: go_pascal,

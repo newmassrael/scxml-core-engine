@@ -4,7 +4,7 @@
 package crossfile_validator_transform
 
 import (
-	"transform_temperature"
+	"example.com/sce-forge/transform_temperature"
 )
 
 // ValidationResult holds the outcome of a validation check.

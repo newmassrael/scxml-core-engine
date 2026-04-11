@@ -17,7 +17,7 @@ name = "sce_forge_runtime"
 path = "src/lib.rs"
 
 # Cross-language numerical conformance harness. build.rs invokes
-# sce_build::compile_forge_with_imports_validated() at build time to generate
+# sce_build::compile_forge_with_imports() at build time to generate
 # Rust fixtures into OUT_DIR from the SCXML sources in tests/forge/resources.
 # The test binary then includes those OUT_DIR files and runs them against
 # tests/forge/conformance/numerical_reference.json. Single source of truth =

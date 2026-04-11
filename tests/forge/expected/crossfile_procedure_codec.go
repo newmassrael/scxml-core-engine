@@ -10,7 +10,7 @@
 package crossfile_procedure_codec
 
 import (
-	"codec_simple_frame"
+	"example.com/sce-forge/codec_simple_frame"
 	"fmt"
 	"github.com/newmassrael/sce-go-runtime/forge"
 )
