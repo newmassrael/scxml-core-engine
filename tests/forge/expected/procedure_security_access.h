@@ -1,7 +1,7 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Do not edit — regenerate from the source SCXML file.
 //
-// Event-driven state machine using StaticExecutionEngine.
+// Event-driven state machine driven by SCE::Forge::run_procedure().
 // Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
 // Pure decision trees (no events/sends) execute via Event::NONE transitions.
 //
@@ -13,13 +13,16 @@
 #define SCE_FORGE_PROCEDURE_SECURITY_ACCESS_L2_H
 
 #include <cstdint>
-#include <functional>
+#include <cstddef>
 #include <map>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
-#include "static/StaticExecutionEngine.h"
+
 #include "sce/forge/ProcedureServiceTypes.h"
+#include "sce/forge/ProcedureStateMachine.h"
 
 namespace SCE::Generated::ProcedureSecurityAccess {
 
@@ -40,44 +43,42 @@ enum class Event : uint8_t {
     Ok = 2
 };
 
-// ── State Policy ─────────────────────────────────────────────────
+// ── State machine class ──────────────────────────────────────────
 
-struct ProcedureSecurityAccessPolicy {
+class ProcedureSecurityAccess {
+public:
     using State = ::SCE::Generated::ProcedureSecurityAccess::State;
     using Event = ::SCE::Generated::ProcedureSecurityAccess::Event;
 
-    static constexpr bool HAS_PARALLEL_STATES = false;
-    static constexpr bool NEEDS_SCRIPT_ENGINE = false;
+    ProcedureSecurityAccess() = default;
 
-    // ── Datamodel members ────────────────────────────────────────
-    uint32_t ecuAddr_{};
-    std::vector<uint8_t> seed_;
-    int32_t maxRetries_ = 3;
-    int32_t retryCount_ = 0;
+    // ── Public setters ───────────────────────────────────────────
 
-    // ── Service handler (for <send sce:service>) ─────────────────
-    SCE::Forge::ProcedureServiceHandler serviceHandler_;
+    /// Set the service handler for <send sce:service> actions.
+    void setServiceHandler(SCE::Forge::ProcedureServiceHandler handler) {
+        serviceHandler_ = std::move(handler);
+    }
 
-    // ── Done data storage ────────────────────────────────────────
-    mutable std::map<std::string, std::string> doneData_;
+    /// Set input parameters before calling runToCompletion().
+    void setEcuAddr(uint32_t value) {
+        ecuAddr_ = value;
+    }
 
-    // ── Event metadata (populated by engine via populatePolicyFromMetadata) ──
-    // W3C SCXML 5.10: _event.data binding — written by engine's processEventQueues()
-    mutable std::string pendingEventData_;
+    /// Run the procedure to completion (blocking). Delegates to the
+    /// shared event loop in sce-forge-runtime/cpp, which mirrors the
+    /// return-event shape used by Rust / Python / Kotlin / Go.
+    SCE::Forge::ProcedureRunResult runToCompletion() {
+        return SCE::Forge::run_procedure(*this);
+    }
 
-    // ── Transition tracking (required by StaticExecutionEngine) ──
-    mutable State lastTransitionSourceState_{};
-    mutable bool lastTransitionIsInternal_ = false;
-    mutable bool lastTransitionIsTargetless_ = false;
-    mutable size_t lastTransitionIndex_ = 0;
-    mutable bool hasTransitionActions_ = false;
-
-    ProcedureSecurityAccessPolicy() = default;
-
-    // ── Hierarchy (flat — no parent states) ──────────────────────
+    // ── Static policy metadata ───────────────────────────────────
 
     [[nodiscard]] static constexpr State initialState() noexcept {
         return State::SendTesterPresent;
+    }
+
+    [[nodiscard]] static constexpr Event noneEvent() noexcept {
+        return Event::NONE;
     }
 
     [[nodiscard]] static constexpr bool isFinalState(State state) noexcept {
@@ -88,42 +89,23 @@ struct ProcedureSecurityAccessPolicy {
         }
     }
 
-    [[nodiscard]] static constexpr std::optional<State> getParent([[maybe_unused]] State state) noexcept {
-        return std::nullopt;
-    }
-
-    [[nodiscard]] static constexpr bool isCompoundState([[maybe_unused]] State state) noexcept {
-        return false;
-    }
-
-    static State getInitialChild(State state) { return state; }
-
-    static std::vector<State> getInitialChildren(State state) { return {state}; }
-
-    State getInitialOrHistoryChild(State state) const { return state; }
-
-    // ── Event name conversion ────────────────────────────────────
-
-    [[nodiscard]] static constexpr const char* getEventName(Event event) noexcept {
-        switch (event) {
-            case Event::NONE: return "";
-            case Event::Fail: return "fail";
-            case Event::Ok: return "ok";
+    [[nodiscard]] static constexpr const char* finalStateName(State state) noexcept {
+        switch (state) {
+            case State::Done: return "done";
+            case State::Error: return "error";
             default: return "";
         }
     }
 
-    [[nodiscard]] static std::optional<Event> getEventFromName(const std::string& name) noexcept {
-        if (name.empty()) return std::nullopt;
-        if (name == "fail") return Event::Fail;
-        if (name == "ok") return Event::Ok;
-        return std::nullopt;
-    }
-
     // ── Entry actions (service sends + done data) ────────────────
+    //
+    // Returns the event raised by this state's <send sce:service> (if
+    // any) along with its response data string, matching the shape of
+    // the Rust / Python / Kotlin / Go runtimes. A state without a send
+    // returns (Event::NONE, "") so that the loop falls through to
+    // eventless transitions.
 
-    template<typename Engine>
-    void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
+    std::pair<Event, std::string> executeEntryActions(State state) {
         switch (state) {
             case State::SendTesterPresent: {
                 // <send sce:service="TesterPresent" sce:addr="...">
@@ -132,8 +114,7 @@ struct ProcedureSecurityAccessPolicy {
                     req.service = "TesterPresent";
                     req.addr = std::to_string(ecuAddr_);
                     auto resp = serviceHandler_(req);
-                    engine.raise(typename Engine::EventWithMetadata(
-                        resp.success ? Event::Ok : Event::Fail, resp.data));
+                    return { resp.success ? Event::Ok : Event::Fail, resp.data };
                 }
                 break;
             }
@@ -144,8 +125,7 @@ struct ProcedureSecurityAccessPolicy {
                     req.service = "SecurityAccess";
                     req.subfunc = std::string("0x01");
                     auto resp = serviceHandler_(req);
-                    engine.raise(typename Engine::EventWithMetadata(
-                        resp.success ? Event::Ok : Event::Fail, resp.data));
+                    return { resp.success ? Event::Ok : Event::Fail, resp.data };
                 }
                 break;
             }
@@ -157,8 +137,7 @@ struct ProcedureSecurityAccessPolicy {
                     req.subfunc = std::string("0x02");
                     req.payload = computeKey(seed_);
                     auto resp = serviceHandler_(req);
-                    engine.raise(typename Engine::EventWithMetadata(
-                        resp.success ? Event::Ok : Event::Fail, resp.data));
+                    return { resp.success ? Event::Ok : Event::Fail, resp.data };
                 }
                 break;
             }
@@ -175,189 +154,113 @@ struct ProcedureSecurityAccessPolicy {
             default:
                 break;
         }
-    }
-
-    // ── Exit actions (none for procedures) ───────────────────────
-
-    template<typename Engine>
-    static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine,
-                                   [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+        return { Event::NONE, std::string() };
     }
 
     // ── Transition processing ────────────────────────────────────
+    //
+    // Returns the next state, transition index, and whether the
+    // transition has <assign> actions, or std::nullopt if no
+    // transition fires. The caller applies assigns via
+    // executeTransitionActions(source, trIndex).
 
-    template<typename Engine>
-    bool processTransition(State& currentState, Event event, [[maybe_unused]] Engine& engine) {
-        bool transitionTaken = false;
-
-        switch (currentState) {
+    [[nodiscard]] std::optional<std::tuple<State, std::size_t, bool>>
+    processTransition(State state, Event event) const {
+        switch (state) {
             case State::SendTesterPresent:
                 // Event-driven transition: event="ok"
                 if (event == Event::Ok) {
-                    lastTransitionSourceState_ = currentState;
-                    lastTransitionIsInternal_ = false;
-                    lastTransitionIsTargetless_ = false;
-                    lastTransitionIndex_ = 0;
-                    hasTransitionActions_ = false;
-                    currentState = State::RequestSeed;
-                    transitionTaken = true;
+                    return std::make_tuple(State::RequestSeed, std::size_t{ 0 }, false);
                 }
-                if (transitionTaken) return true;
                 // Event-driven transition: event="fail"
                 if (event == Event::Fail) {
-                    lastTransitionSourceState_ = currentState;
-                    lastTransitionIsInternal_ = false;
-                    lastTransitionIsTargetless_ = false;
-                    lastTransitionIndex_ = 1;
-                    hasTransitionActions_ = false;
-                    currentState = State::Error;
-                    transitionTaken = true;
+                    return std::make_tuple(State::Error, std::size_t{ 1 }, false);
                 }
-                if (transitionTaken) return true;
-                return false;
+                return std::nullopt;
             case State::RequestSeed:
                 // Event-driven transition: event="ok"
                 if (event == Event::Ok) {
-                    lastTransitionSourceState_ = currentState;
-                    lastTransitionIsInternal_ = false;
-                    lastTransitionIsTargetless_ = false;
-                    lastTransitionIndex_ = 0;
-                    hasTransitionActions_ = true;
-                    currentState = State::SendKey;
-                    transitionTaken = true;
+                    return std::make_tuple(State::SendKey, std::size_t{ 0 }, true);
                 }
-                if (transitionTaken) return true;
                 // Event-driven transition: event="fail"
                 if (event == Event::Fail) {
-                    lastTransitionSourceState_ = currentState;
-                    lastTransitionIsInternal_ = false;
-                    lastTransitionIsTargetless_ = false;
-                    lastTransitionIndex_ = 1;
-                    hasTransitionActions_ = false;
-                    currentState = State::Retry;
-                    transitionTaken = true;
+                    return std::make_tuple(State::Retry, std::size_t{ 1 }, false);
                 }
-                if (transitionTaken) return true;
-                return false;
+                return std::nullopt;
             case State::SendKey:
                 // Event-driven transition: event="ok"
                 if (event == Event::Ok) {
-                    lastTransitionSourceState_ = currentState;
-                    lastTransitionIsInternal_ = false;
-                    lastTransitionIsTargetless_ = false;
-                    lastTransitionIndex_ = 0;
-                    hasTransitionActions_ = false;
-                    currentState = State::Done;
-                    transitionTaken = true;
+                    return std::make_tuple(State::Done, std::size_t{ 0 }, false);
                 }
-                if (transitionTaken) return true;
                 // Event-driven transition: event="fail"
                 if (event == Event::Fail) {
-                    lastTransitionSourceState_ = currentState;
-                    lastTransitionIsInternal_ = false;
-                    lastTransitionIsTargetless_ = false;
-                    lastTransitionIndex_ = 1;
-                    hasTransitionActions_ = false;
-                    currentState = State::Retry;
-                    transitionTaken = true;
+                    return std::make_tuple(State::Retry, std::size_t{ 1 }, false);
                 }
-                if (transitionTaken) return true;
-                return false;
+                return std::nullopt;
             case State::Retry:
                 // Eventless transition (guard: retryCount_ < maxRetries_)
                 if (event == Event::NONE) {
                     if (retryCount_ < maxRetries_) {
-                        lastTransitionSourceState_ = currentState;
-                        lastTransitionIsInternal_ = false;
-                        lastTransitionIsTargetless_ = false;
-                        lastTransitionIndex_ = 0;
-                        hasTransitionActions_ = true;
-                        currentState = State::RequestSeed;
-                        transitionTaken = true;
+                        return std::make_tuple(State::RequestSeed, std::size_t{ 0 }, true);
                     }
                 }
-                if (transitionTaken) return true;
                 // Eventless transition (guard: retryCount_ >= maxRetries_)
                 if (event == Event::NONE) {
                     if (retryCount_ >= maxRetries_) {
-                        lastTransitionSourceState_ = currentState;
-                        lastTransitionIsInternal_ = false;
-                        lastTransitionIsTargetless_ = false;
-                        lastTransitionIndex_ = 1;
-                        hasTransitionActions_ = false;
-                        currentState = State::Error;
-                        transitionTaken = true;
+                        return std::make_tuple(State::Error, std::size_t{ 1 }, false);
                     }
                 }
-                if (transitionTaken) return true;
-                return false;
+                return std::nullopt;
             default:
-                return false;
+                return std::nullopt;
         }
     }
 
     // ── Transition actions (<assign> in transitions) ─────────────
 
-    template<typename Engine>
-    void executeTransitionActions([[maybe_unused]] Engine& engine) {
-        if (!hasTransitionActions_) return;
-        if (lastTransitionSourceState_ == State::RequestSeed) {
-            if (lastTransitionIndex_ == 0) {
+    void executeTransitionActions([[maybe_unused]] State source, [[maybe_unused]] std::size_t trIndex) {
+        if (source == State::RequestSeed) {
+            if (trIndex == 0) {
                 seed_ = std::vector<uint8_t>(pendingEventData_.begin(), pendingEventData_.end());
             }
         }
-        if (lastTransitionSourceState_ == State::Retry) {
-            if (lastTransitionIndex_ == 0) {
+        if (source == State::Retry) {
+            if (trIndex == 0) {
                 retryCount_ = retryCount_ + 1;
             }
         }
-        hasTransitionActions_ = false;
     }
 
-};
+    // ── Engine-visible datamodel slots (called by run_procedure) ──
 
-// ── State machine class ──────────────────────────────────────────
-
-class ProcedureSecurityAccess : public ::SCE::Static::StaticExecutionEngine<ProcedureSecurityAccessPolicy> {
-public:
-    using PolicyType = ProcedureSecurityAccessPolicy;
-    using Result = SCE::Forge::ProcedureRunResult;
-
-    ProcedureSecurityAccess() = default;
-
-    /// Set the service handler for <send sce:service> actions.
-    void setServiceHandler(SCE::Forge::ProcedureServiceHandler handler) {
-        getPolicy().serviceHandler_ = std::move(handler);
+    void setPendingEventData(std::string data) {
+        pendingEventData_ = std::move(data);
     }
 
-    /// Set input parameters before calling runToCompletion().
-    void setEcuAddr(uint32_t value) {
-        getPolicy().ecuAddr_ = value;
+    [[nodiscard]] const std::map<std::string, std::string>& doneData() const {
+        return doneData_;
     }
 
-    /// Run the procedure to completion (blocking).
-    /// Drives the state machine from initial state through service sends
-    /// until a <final> state is reached.
-    Result runToCompletion() {
-        initialize();
-        Result result;
-        result.completed = isInFinalState();
-        if (result.completed) {
-            // Extract state name from enum
-            switch (getCurrentState()) {
-                case State::Done: result.final_state = "done"; break;
-                case State::Error: result.final_state = "error"; break;
-                default: break;
-            }
-            result.done_data = getPolicy().doneData_;
-        }
-        return result;
-    }
+private:
+    // ── Datamodel members ────────────────────────────────────────
+    uint32_t ecuAddr_{};
+    std::vector<uint8_t> seed_;
+    int32_t maxRetries_ = 3;
+    int32_t retryCount_ = 0;
+
+    // ── Service handler (for <send sce:service>) ─────────────────
+    SCE::Forge::ProcedureServiceHandler serviceHandler_;
+
+    // ── Done data storage ────────────────────────────────────────
+    std::map<std::string, std::string> doneData_;
+
+    // ── W3C SCXML 5.10: _event.data binding ──────────────────────
+    std::string pendingEventData_;
 };
 
 // ── Convenience wrapper function ─────────────────────────────────
 
-inline ProcedureSecurityAccess::Result execute(
+inline SCE::Forge::ProcedureRunResult execute(
     SCE::Forge::ProcedureServiceHandler handler,
     uint32_t ecuAddr) {
     ProcedureSecurityAccess sm;
@@ -365,12 +268,6 @@ inline ProcedureSecurityAccess::Result execute(
     sm.setEcuAddr(ecuAddr);
     return sm.runToCompletion();
 }
-
-// ── Compile-time verification ────────────────────────────────────
-#if __cpp_concepts >= 202002L
-static_assert(::SCE::Core::EventNamingPolicy<ProcedureSecurityAccessPolicy>,
-    "Generated ProcedureSecurityAccessPolicy must satisfy EventNamingPolicy concept");
-#endif
 
 }  // namespace SCE::Generated::ProcedureSecurityAccess
 
