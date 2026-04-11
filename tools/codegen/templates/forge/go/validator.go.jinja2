@@ -42,22 +42,22 @@ func (v *{{ struct_name }}) Validate({{ params }}) ValidationResult {
 {% for rule in range_rules %}
 {% if rule.has_min and rule.has_max %}
 	if {{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }} {
-		return ValidationResult{Valid: false, Reason: "{{ rule.id }}_out_of_range"}
+		return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_out_of_range"}
 	}
 {% elif rule.has_min %}
 	if {{ rule.id }} < {{ rule.min }} {
-		return ValidationResult{Valid: false, Reason: "{{ rule.id }}_out_of_range"}
+		return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_out_of_range"}
 	}
 {% elif rule.has_max %}
 	if {{ rule.id }} > {{ rule.max }} {
-		return ValidationResult{Valid: false, Reason: "{{ rule.id }}_out_of_range"}
+		return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_out_of_range"}
 	}
 {% endif %}
 {% endfor %}
 {% for rule in roc_rules %}
 {% if rule.is_float %}
 	if math.Abs(float64({{ rule.id }})-float64(v.{{ rule.prev_name }})) > {{ rule.max_delta }} {
-		return ValidationResult{Valid: false, Reason: "{{ rule.id }}_rate_of_change_exceeded"}
+		return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_rate_of_change_exceeded"}
 	}
 {% elif rule.is_signed %}
 	{
@@ -66,7 +66,7 @@ func (v *{{ struct_name }}) Validate({{ params }}) ValidationResult {
 			delta = -delta
 		}
 		if delta > {{ rule.max_delta }} {
-			return ValidationResult{Valid: false, Reason: "{{ rule.id }}_rate_of_change_exceeded"}
+			return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_rate_of_change_exceeded"}
 		}
 	}
 {% else %}
@@ -78,7 +78,7 @@ func (v *{{ struct_name }}) Validate({{ params }}) ValidationResult {
 			delta = v.{{ rule.prev_name }} - {{ rule.id }}
 		}
 		if delta > {{ rule.max_delta }} {
-			return ValidationResult{Valid: false, Reason: "{{ rule.id }}_rate_of_change_exceeded"}
+			return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_rate_of_change_exceeded"}
 		}
 	}
 {% endif %}

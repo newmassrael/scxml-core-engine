@@ -44,15 +44,15 @@ impl {{ struct_name }} {
 {% for rule in range_rules %}
 {% if rule.has_min and rule.has_max %}
         if {{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }} {
-            return ValidationResult { valid: false, reason: "{{ rule.id }}_out_of_range".to_string() };
+            return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_out_of_range".to_string() };
         }
 {% elif rule.has_min %}
         if {{ rule.id }} < {{ rule.min }} {
-            return ValidationResult { valid: false, reason: "{{ rule.id }}_out_of_range".to_string() };
+            return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_out_of_range".to_string() };
         }
 {% elif rule.has_max %}
         if {{ rule.id }} > {{ rule.max }} {
-            return ValidationResult { valid: false, reason: "{{ rule.id }}_out_of_range".to_string() };
+            return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_out_of_range".to_string() };
         }
 {% endif %}
 {% endfor %}
@@ -61,21 +61,21 @@ impl {{ struct_name }} {
         {
             let delta = if {{ rule.id }} > self.{{ rule.prev_name }} { {{ rule.id }} - self.{{ rule.prev_name }} } else { self.{{ rule.prev_name }} - {{ rule.id }} };
             if delta > {{ rule.max_delta }} {
-                return ValidationResult { valid: false, reason: "{{ rule.id }}_rate_of_change_exceeded".to_string() };
+                return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_rate_of_change_exceeded".to_string() };
             }
         }
 {% elif rule.is_float %}
         {
             let delta = ({{ rule.id }} - self.{{ rule.prev_name }}).abs();
             if delta > {{ rule.max_delta }} {
-                return ValidationResult { valid: false, reason: "{{ rule.id }}_rate_of_change_exceeded".to_string() };
+                return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_rate_of_change_exceeded".to_string() };
             }
         }
 {% else %}
         {
             let delta = ({{ rule.id }} - self.{{ rule.prev_name }}).unsigned_abs();
             if delta > {{ rule.max_delta }} {
-                return ValidationResult { valid: false, reason: "{{ rule.id }}_rate_of_change_exceeded".to_string() };
+                return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_rate_of_change_exceeded".to_string() };
             }
         }
 {% endif %}

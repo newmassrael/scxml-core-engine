@@ -926,6 +926,27 @@ struct ResolvedRoc {
     max_delta: String,
 }
 
+impl ResolvedRange {
+    /// Canonical (snake_case) form of the rule's identifier, used as the
+    /// fragment in error reason strings (`{reason_id}_out_of_range`). Lives
+    /// here on the resolved struct rather than at each generator call site
+    /// so the cross-language byte-parity invariant — every language emits
+    /// the same reason string for the same rule — is enforced in one place.
+    fn canonical_reason_id(&self) -> String {
+        filters::to_snake_case(self.id.clone())
+    }
+}
+
+impl ResolvedRoc {
+    /// Canonical (snake_case) form of the rule's identifier, used as the
+    /// fragment in error reason strings
+    /// (`{reason_id}_rate_of_change_exceeded`). See
+    /// [`ResolvedRange::canonical_reason_id`] for the cross-language rationale.
+    fn canonical_reason_id(&self) -> String {
+        filters::to_snake_case(self.id.clone())
+    }
+}
+
 /// Validator model with rule-to-field associations pre-resolved.
 /// Eliminates repeated `inputs.iter().find()` across 5 language renderers.
 struct ResolvedValidator {
@@ -998,9 +1019,15 @@ fn render_validator_cpp(
         }))
         .collect();
 
+    // `id` stays in source (target-language) case for the local parameter
+    // reference; `reason_id` is the canonical snake_case form derived in one
+    // place (`ResolvedRange::canonical_reason_id`) so the cross-language
+    // byte-parity invariant on reason strings is enforced at the model edge
+    // rather than duplicated across 5 generator arms.
     let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
         .map(|r| serde_json::json!({
             "id": r.id,
+            "reason_id": r.canonical_reason_id(),
             "min": r.min, "max": r.max,
             "has_min": r.min.is_some(), "has_max": r.max.is_some(),
         }))
@@ -1009,6 +1036,7 @@ fn render_validator_cpp(
     let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
         .map(|roc| serde_json::json!({
             "id": roc.id,
+            "reason_id": roc.canonical_reason_id(),
             "max_delta": roc.max_delta,
             "prev_name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
             "type": cpp_type(&roc.sce_type),
@@ -1514,11 +1542,15 @@ fn render_validator_kotlin(
         })
         .collect();
 
+    // `reason_id` is the canonical reason-string fragment derived from
+    // `ResolvedRange::canonical_reason_id` — single source of truth shared
+    // across all 5 languages.
     let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
         .map(|r| {
             let conv = kotlin_unsigned_conversion(&r.sce_type).unwrap_or("");
             serde_json::json!({
                 "id": r.id,
+                "reason_id": r.canonical_reason_id(),
                 "min": r.min, "max": r.max,
                 "has_min": r.min.is_some(), "has_max": r.max.is_some(),
                 "conv": conv, "needs_conv": !conv.is_empty(),
@@ -1531,6 +1563,7 @@ fn render_validator_kotlin(
             let conv = kotlin_unsigned_conversion(&roc.sce_type).unwrap_or("");
             serde_json::json!({
                 "id": roc.id,
+                "reason_id": roc.canonical_reason_id(),
                 "max_delta": roc.max_delta,
                 "prev_name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
                 "conv": conv, "needs_conv": !conv.is_empty(),
@@ -2060,19 +2093,29 @@ fn render_validator_rust(
         })
         .collect();
 
+    // Rust local-var convention is snake_case, which happens to coincide
+    // with the canonical reason fragment — but they remain semantically
+    // distinct fields so the template renders the same `rule.reason_id`
+    // expression as the other 4 languages and `ResolvedRange` stays the
+    // single source of truth for reason-string casing.
     let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
-        .map(|r| serde_json::json!({
-            "id": filters::to_snake_case(r.id.clone()),
-            "min": r.min, "max": r.max,
-            "has_min": r.min.is_some(), "has_max": r.max.is_some(),
-        }))
+        .map(|r| {
+            let snake = filters::to_snake_case(r.id.clone());
+            serde_json::json!({
+                "id": snake,
+                "reason_id": r.canonical_reason_id(),
+                "min": r.min, "max": r.max,
+                "has_min": r.min.is_some(), "has_max": r.max.is_some(),
+            })
+        })
         .collect();
 
     let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
         .map(|roc| {
             let snake = filters::to_snake_case(roc.id.clone());
             serde_json::json!({
-                "id": snake,
+                "id": snake.clone(),
+                "reason_id": roc.canonical_reason_id(),
                 "max_delta": roc.max_delta,
                 "prev_name": format!("prev_{snake}"),
                 "is_unsigned": roc.sce_type.is_unsigned(),
@@ -2632,9 +2675,14 @@ fn render_validator_go(
         })
         .collect();
 
+    // Go's `id` stays in source case (camelCase, escaped against Go builtins)
+    // for the local parameter reference; `reason_id` is the canonical form
+    // from `ResolvedRange::canonical_reason_id`. Single source of truth, no
+    // per-language drift possible.
     let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
         .map(|r| serde_json::json!({
             "id": go_escape_builtin(&r.id),
+            "reason_id": r.canonical_reason_id(),
             "min": r.min, "max": r.max,
             "has_min": r.min.is_some(), "has_max": r.max.is_some(),
         }))
@@ -2645,6 +2693,7 @@ fn render_validator_go(
             let safe = go_escape_builtin(&roc.id);
             serde_json::json!({
                 "id": safe,
+                "reason_id": roc.canonical_reason_id(),
                 "max_delta": roc.max_delta,
                 "prev_name": format!("prev{}", filters::to_pascal_case(safe.clone())),
                 "type": go_type(&roc.sce_type),
@@ -3173,19 +3222,29 @@ fn render_validator_python(
         })
         .collect();
 
+    // Python local-var convention is snake_case, which happens to coincide
+    // with the canonical reason fragment — but they remain semantically
+    // distinct fields so the template's `rule.reason_id` use is uniform
+    // across all 5 languages and `ResolvedRange` stays the single source of
+    // truth for reason-string casing.
     let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
-        .map(|r| serde_json::json!({
-            "id": filters::to_snake_case(r.id.clone()),
-            "min": r.min, "max": r.max,
-            "has_min": r.min.is_some(), "has_max": r.max.is_some(),
-        }))
+        .map(|r| {
+            let snake = filters::to_snake_case(r.id.clone());
+            serde_json::json!({
+                "id": snake,
+                "reason_id": r.canonical_reason_id(),
+                "min": r.min, "max": r.max,
+                "has_min": r.min.is_some(), "has_max": r.max.is_some(),
+            })
+        })
         .collect();
 
     let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
         .map(|roc| {
             let snake = filters::to_snake_case(roc.id.clone());
             serde_json::json!({
-                "id": snake,
+                "id": snake.clone(),
+                "reason_id": roc.canonical_reason_id(),
                 "max_delta": roc.max_delta,
                 "prev_name": format!("prev_{snake}"),
             })

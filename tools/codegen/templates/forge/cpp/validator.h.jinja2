@@ -36,13 +36,13 @@ struct {{ struct_name }} {
 {% for rule in range_rules %}
 {% if rule.has_min and rule.has_max %}
         if ({{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }})
-            return {false, "{{ rule.id }}_out_of_range"};
+            return {false, "{{ rule.reason_id }}_out_of_range"};
 {% elif rule.has_min %}
         if ({{ rule.id }} < {{ rule.min }})
-            return {false, "{{ rule.id }}_out_of_range"};
+            return {false, "{{ rule.reason_id }}_out_of_range"};
 {% elif rule.has_max %}
         if ({{ rule.id }} > {{ rule.max }})
-            return {false, "{{ rule.id }}_out_of_range"};
+            return {false, "{{ rule.reason_id }}_out_of_range"};
 {% endif %}
 {% endfor %}
 {% for rule in roc_rules %}
@@ -51,20 +51,20 @@ struct {{ struct_name }} {
             {{ rule.type }} delta = ({{ rule.id }} - {{ rule.prev_name }}_);
             if (delta < 0) delta = -delta;
             if (delta > {{ rule.max_delta }})
-                return {false, "{{ rule.id }}_rate_of_change_exceeded"};
+                return {false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
         }
 {% elif rule.is_unsigned %}
         {
             {{ rule.type }} delta = ({{ rule.id }} > {{ rule.prev_name }}_) ? ({{ rule.id }} - {{ rule.prev_name }}_) : ({{ rule.prev_name }}_ - {{ rule.id }});
             if (delta > {{ rule.max_delta }})
-                return {false, "{{ rule.id }}_rate_of_change_exceeded"};
+                return {false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
         }
 {% else %}
         {
             auto delta = static_cast<int64_t>({{ rule.id }}) - static_cast<int64_t>({{ rule.prev_name }}_);
             if (delta < 0) delta = -delta;
             if (delta > {{ rule.max_delta }})
-                return {false, "{{ rule.id }}_rate_of_change_exceeded"};
+                return {false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
         }
 {% endif %}
 {% endfor %}

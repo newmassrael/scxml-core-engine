@@ -42,19 +42,19 @@ class {{ struct_name }}:
 {% for rule in range_rules %}
 {% if rule.has_min and rule.has_max %}
         if {{ rule.id }} < {{ rule.min }} or {{ rule.id }} > {{ rule.max }}:
-            return ValidationResult(False, "{{ rule.id }}_out_of_range")
+            return ValidationResult(False, "{{ rule.reason_id }}_out_of_range")
 {% elif rule.has_min %}
         if {{ rule.id }} < {{ rule.min }}:
-            return ValidationResult(False, "{{ rule.id }}_out_of_range")
+            return ValidationResult(False, "{{ rule.reason_id }}_out_of_range")
 {% elif rule.has_max %}
         if {{ rule.id }} > {{ rule.max }}:
-            return ValidationResult(False, "{{ rule.id }}_out_of_range")
+            return ValidationResult(False, "{{ rule.reason_id }}_out_of_range")
 {% endif %}
 {% endfor %}
 {% for rule in roc_rules %}
         delta = abs({{ rule.id }} - self.{{ rule.prev_name }})
         if delta > {{ rule.max_delta }}:
-            return ValidationResult(False, "{{ rule.id }}_rate_of_change_exceeded")
+            return ValidationResult(False, "{{ rule.reason_id }}_rate_of_change_exceeded")
 {% endfor %}
 {% if plausibility_expr %}
         if not ({{ plausibility_expr }}):
