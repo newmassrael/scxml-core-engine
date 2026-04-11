@@ -1,7 +1,7 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 // Do not edit — regenerate from the source SCXML file.
 
-use super::transform_temperature::TransformTemperature;
+use super::transform_temperature;
 
 #[derive(Debug)]
 #[allow(dead_code)]

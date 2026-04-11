@@ -2,6 +2,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package com.sce.generated.crossfile_validator_transform
+import com.sce.generated.transform_temperature.*
 
 data class ValidationResult(val valid: Boolean, val reason: String)
 

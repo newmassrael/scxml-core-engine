@@ -24,13 +24,17 @@ class {{ struct_name }}:
         self.{{ pv.name }} = 0
 {% endif %}
 {% endfor %}
-{% if has_imports %}
+{% if imports %}
         # Imported kinds (cross-file composition)
 {% for imp in imports %}
         self.{{ imp.member_name }}: {{ imp.member_type }} = {{ imp.member_type }}()
 {% endfor %}
 {% endif %}
-{% if not prev_vars and not has_imports %}
+{# `imports` is the stateful-only subset; `all_imports` contains stateless
+   imports that only emit module-level statements. So if there are no
+   prev_vars and no stateful imports, the __init__ body is empty and needs
+   `pass` to stay valid Python — regardless of whether stateless imports exist. #}
+{% if not prev_vars and not imports %}
         pass
 {% endif %}
 

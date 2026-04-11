@@ -128,13 +128,22 @@ fn resolve_single_import(
             }
         }
         crate::generator::Language::Kotlin => {
-            // Kotlin: same package assumed — no import statement needed.
-            // If cross-package imports become necessary, this must generate
-            // `import com.sce.generated.{package}.{Type}` statements.
+            // Stateful imports assume same package (the importing file lives in
+            // `com.sce.generated.<name>`, the importee in a sibling package);
+            // the `<alias>: <pascal>` member declaration forces the class name
+            // into scope via `member_type`. Stateless imports need explicit
+            // package-level access because they expose free functions — use a
+            // wildcard import so the call site can stay bare (matches the
+            // `build_qualified_call` output of just `funcName`).
+            let include_stmt = if is_stateful {
+                String::new()
+            } else {
+                format!("import com.sce.generated.{snake}.*")
+            };
             ImportContext {
                 alias: imp.alias.clone(),
                 kind: imp.kind.to_string(),
-                include_stmt: String::new(),
+                include_stmt,
                 type_name: pascal.clone(),
                 is_stateful,
                 member_name: imp.alias.clone(),
@@ -147,10 +156,21 @@ fn resolve_single_import(
             }
         }
         crate::generator::Language::Rust => {
+            // Stateful kinds generate a Pascal-named struct — import the type
+            // directly so the `<alias>: PascalType` member declaration resolves.
+            // Stateless kinds generate free functions (`pub fn compute_*`) with
+            // no type wrapper; importing `use super::snake::Pascal;` would pull
+            // in a non-existent symbol. Import the module path instead so the
+            // `build_qualified_call` output `snake::compute_*(...)` resolves.
+            let include_stmt = if is_stateful {
+                format!("use super::{snake}::{pascal};")
+            } else {
+                format!("use super::{snake};")
+            };
             ImportContext {
                 alias: imp.alias.clone(),
                 kind: imp.kind.to_string(),
-                include_stmt: format!("use super::{snake}::{pascal};"),
+                include_stmt,
                 type_name: pascal.clone(),
                 is_stateful,
                 member_name: imp.alias.clone(),
@@ -163,6 +183,15 @@ fn resolve_single_import(
             }
         }
         crate::generator::Language::Go => {
+            // Go requires full module-qualified import paths; the bare
+            // `"<snake>"` form is invalid outside a GOPATH-style monorepo.
+            // Resolving this needs a --go-module-prefix CLI flag so build
+            // scripts (e.g. sce-forge-runtime/go/conformance/generate.sh)
+            // can supply their module root; product goldens would then
+            // render against a fixed placeholder prefix. Left as-is for
+            // stateful-import call sites where sce-forge-runtime/go is
+            // happy with package-relative references; stateless crossfile
+            // imports for Go remain unresolved until the flag lands.
             let go_pascal = filters::to_pascal_case(imp.alias.to_string());
             ImportContext {
                 alias: imp.alias.clone(),
@@ -180,10 +209,21 @@ fn resolve_single_import(
             }
         }
         crate::generator::Language::Python => {
+            // Stateful kinds expose a dataclass — a `from .snake import Pascal`
+            // brings the class name into scope for the `self.alias: Pascal =
+            // Pascal()` member declaration. Stateless kinds only emit free
+            // functions; the Pascal name has no class. Import the module
+            // instead so the `build_qualified_call` output `snake.func(...)`
+            // resolves at the call site.
+            let include_stmt = if is_stateful {
+                format!("from .{snake} import {pascal}")
+            } else {
+                format!("from . import {snake}")
+            };
             ImportContext {
                 alias: imp.alias.clone(),
                 kind: imp.kind.to_string(),
-                include_stmt: format!("from .{snake} import {pascal}"),
+                include_stmt,
                 type_name: pascal.clone(),
                 is_stateful,
                 member_name: imp.alias.clone(),

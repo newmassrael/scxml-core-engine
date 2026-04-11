@@ -541,6 +541,23 @@ fn discover_primary_function(
 }
 
 /// Build a language-specific qualified function call from function name + namespace.
+///
+/// For stateless kinds the callsite replaces the user's alias (e.g.
+/// `tempConvert(rawTemp)`) with a qualified path that resolves against the
+/// `include_stmt` emitted by `resolve_single_import`. The pairings are:
+///
+/// * C++: `SCE::Generated::Pascal::funcName` — resolved by the `#include`
+///   plus the fully-qualified namespace.
+/// * Rust: `snake::func_name` — resolved by `use super::snake;` which brings
+///   the imported file's module into scope.
+/// * Go: `snake.FuncName` — package-qualified; import path itself is still
+///   unresolved (see the `Go` branch of `resolve_single_import`).
+/// * Python: `snake.func_name` — resolved by `from . import snake` which
+///   exposes the module object as a local binding.
+/// * Kotlin: bare `funcName` — the `import com.sce.generated.snake.*`
+///   wildcard from `resolve_single_import` pulls every top-level function in
+///   the imported package into scope, so a qualifier is unnecessary and
+///   would in fact fail because Kotlin has no file-level namespace selector.
 fn build_qualified_call(
     func_name: &str,
     namespace: &str,
@@ -548,10 +565,10 @@ fn build_qualified_call(
 ) -> String {
     match language {
         generator::Language::Cpp => format!("{namespace}::{func_name}"),
-        generator::Language::Kotlin => func_name.to_string(), // Same package
+        generator::Language::Kotlin => func_name.to_string(),
         generator::Language::Rust => format!("{namespace}::{func_name}"),
         generator::Language::Go => format!("{namespace}.{func_name}"),
-        generator::Language::Python => func_name.to_string(), // Direct import
+        generator::Language::Python => format!("{namespace}.{func_name}"),
     }
 }
 
