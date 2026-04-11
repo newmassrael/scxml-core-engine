@@ -2,6 +2,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 #[allow(dead_code)]
+#[derive(Default)]
 pub struct CodecSubbyte {
     pub priority: u8,
     pub channel: u8,
@@ -10,6 +11,14 @@ pub struct CodecSubbyte {
 
 #[allow(dead_code)]
 impl CodecSubbyte {
+    /// Construct an instance with every field zero-initialized via
+    /// [`Default`]. Generated procedure_l2 code stores codec instances
+    /// as owned members and needs an infallible constructor to
+    /// initialize them before any `encode()` or `decode()` call.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn decode(raw: &[u8]) -> Option<Self> {
         if raw.len() < 1 {
             return None;

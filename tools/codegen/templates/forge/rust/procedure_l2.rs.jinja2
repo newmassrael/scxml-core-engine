@@ -136,19 +136,9 @@ impl ProcedurePolicy for {{ struct_name }} {
                 if let Some(ref handler) = self.service_handler {
                     let req = ProcedureServiceRequest {
                         service: "{{ send.service }}".to_string(),
-                        subfunc: {% if send.subfunc %}"{{ send.subfunc }}"{% else %}""{% endif %}.to_string(),
-{% if send.has_addr or send.payload %}
-                        params: HashMap::from([
-{% if send.has_addr %}
-                            ("addr".to_string(), {{ send.addr_expr }}.to_string()),
-{% endif %}
-{% if send.payload %}
-                            ("payload".to_string(), {{ send.payload_expr }}.to_string()),
-{% endif %}
-                        ]),
-{% else %}
-                        params: HashMap::new(),
-{% endif %}
+                        subfunc: {% if send.subfunc %}Some("{{ send.subfunc }}".to_string()){% else %}None{% endif %},
+                        addr: {% if send.has_addr %}Some(({{ send.addr_expr }}).to_string()){% else %}None{% endif %},
+                        payload: {% if send.payload %}Some({{ send.payload_expr }}){% else %}None{% endif %},
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };

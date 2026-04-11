@@ -56,23 +56,31 @@ class ProcedureSecurityAccess : ProcedureStateMachine<State, Event>() {
         when (state) {
             State.SendTesterPresent -> {
                 serviceHandler?.let { handler ->
-                    val req = ProcedureServiceRequest(service = "TesterPresent")
-                    req.params["addr"] = ecuAddr.toString()
+                    val req = ProcedureServiceRequest(
+                        service = "TesterPresent",
+                        addr = (ecuAddr).toString(),
+                    )
                     val resp = handler(req)
                     return Pair(if (resp.success) Event.Ok else Event.Fail, resp.data)
                 }
             }
             State.RequestSeed -> {
                 serviceHandler?.let { handler ->
-                    val req = ProcedureServiceRequest(service = "SecurityAccess", subfunc = "0x01")
+                    val req = ProcedureServiceRequest(
+                        service = "SecurityAccess",
+                        subfunc = "0x01",
+                    )
                     val resp = handler(req)
                     return Pair(if (resp.success) Event.Ok else Event.Fail, resp.data)
                 }
             }
             State.SendKey -> {
                 serviceHandler?.let { handler ->
-                    val req = ProcedureServiceRequest(service = "SecurityAccess", subfunc = "0x02")
-                    req.params["payload"] = computeKey(seed)
+                    val req = ProcedureServiceRequest(
+                        service = "SecurityAccess",
+                        subfunc = "0x02",
+                        payload = computeKey(seed),
+                    )
                     val resp = handler(req)
                     return Pair(if (resp.success) Event.Ok else Event.Fail, resp.data)
                 }

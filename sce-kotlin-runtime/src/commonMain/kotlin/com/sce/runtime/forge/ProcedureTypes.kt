@@ -3,14 +3,34 @@
 
 package com.sce.runtime.forge
 
-/** Request sent to a service handler during procedure execution. */
+/**
+ * Request sent to a service handler during procedure execution.
+ *
+ * Fields map 1:1 to the four `<send>` attributes in the SCXML source:
+ *
+ * ```
+ * <send sce:service="Diag" sce:subfunc="0x02"
+ *       sce:addr="ecuAddr" sce:payload="frame.encode()"/>
+ * ```
+ *
+ * `service` is always present; the other three use nullable types so that
+ * absent attributes are distinguishable from empty values. `payload` is
+ * typed as `ByteArray` because its semantic role is a raw wire-format data
+ * blob originating from codec `encode()` calls. `subfunc` and `addr`
+ * remain textual since the user may reference datamodel variables of any
+ * SCE type.
+ */
+// Uses `class` rather than `data class` because Kotlin's generated equals()
+// for a data class with a ByteArray field uses reference equality on the
+// array, which would silently break test comparisons. We do not rely on
+// structural equality for ProcedureServiceRequest today; if a future test
+// needs it, override equals/hashCode to call contentEquals on payload.
 class ProcedureServiceRequest(
-    val service: String = "",
-    val subfunc: String = "",
-) {
-    /** Mutable parameters (addr, payload, etc.) — not part of constructor to avoid shallow-copy issues. */
-    val params: MutableMap<String, String> = mutableMapOf()
-}
+    val service: String,
+    val subfunc: String? = null,
+    val addr: String? = null,
+    val payload: ByteArray? = null,
+)
 
 /** Response received from a service handler. */
 data class ProcedureServiceResponse(

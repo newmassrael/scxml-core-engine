@@ -129,8 +129,8 @@ struct CrossfileProcedureCodecPolicy {
                 if (serviceHandler_) {
                     SCE::Forge::ProcedureServiceRequest req;
                     req.service = "Diag";
-                    req.params.push_back({"addr", std::to_string(ecuAddr_)});
-                    req.params.push_back({"payload", frame_.encode()});
+                    req.addr = std::to_string(ecuAddr_);
+                    req.payload = frame_.encode();
                     auto resp = serviceHandler_(req);
                     engine.raise(typename Engine::EventWithMetadata(
                         resp.success ? Event::Ok : Event::Fail, resp.data));

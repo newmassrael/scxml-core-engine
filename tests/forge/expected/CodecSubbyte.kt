@@ -3,10 +3,14 @@
 
 package com.sce.generated.codec_subbyte
 
+// Default-valued primary constructor: the generated procedure_l2 code
+// holds codec instances as owned members and initializes them with
+// `CodecSubbyte()` before any encode()/decode() call. Defaults
+// mirror the zero-initialized shape that decode() fills in on success.
 data class CodecSubbyte(
-    val priority: UByte,
-    val channel: UByte,
-    val direction: UByte
+    val priority: UByte = 0.toUByte(),
+    val channel: UByte = 0.toUByte(),
+    val direction: UByte = 0.toUByte()
 ) {
     fun encode(): ByteArray = byteArrayOf(
         ((priority.toInt() and 0x07 shl 5) or (channel.toInt() and 0x07 shl 2) or (direction.toInt() and 0x03 shl 0)).toByte()

@@ -79,13 +79,18 @@ class {{ class_name }} : ProcedureStateMachine<State, Event>() {
             State.{{ s.name }} -> {
 {% for send in s.sends %}
                 serviceHandler?.let { handler ->
-                    val req = ProcedureServiceRequest(service = "{{ send.service }}"{% if send.subfunc %}, subfunc = "{{ send.subfunc }}"{% endif %})
+                    val req = ProcedureServiceRequest(
+                        service = "{{ send.service }}",
+{% if send.subfunc %}
+                        subfunc = "{{ send.subfunc }}",
+{% endif %}
 {% if send.has_addr %}
-                    req.params["addr"] = {{ send.addr_expr }}.toString()
+                        addr = ({{ send.addr_expr }}).toString(),
 {% endif %}
 {% if send.payload %}
-                    req.params["payload"] = {{ send.payload_expr }}
+                        payload = {{ send.payload_expr }},
 {% endif %}
+                    )
                     val resp = handler(req)
                     return Pair(if (resp.success) Event.Ok else Event.Fail, resp.data)
                 }

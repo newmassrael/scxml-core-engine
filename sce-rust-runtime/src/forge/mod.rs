@@ -9,13 +9,31 @@ use std::collections::HashMap;
 // ── Service types ───────────────────────────────────────────────
 
 /// Request sent to a service handler during procedure execution.
+///
+/// Each field maps 1:1 to a `<send>` attribute in the SCXML source:
+///
+/// ```xml
+/// <send sce:service="Diag" sce:subfunc="0x02"
+///       sce:addr="ecuAddr" sce:payload="frame.encode()"/>
+/// ```
+///
+/// The `service` field always carries the dispatch identifier. The other
+/// three are `Option` to track attribute presence distinct from empty
+/// strings. `payload` is typed as raw bytes (not stringified) because
+/// that is its semantic role — a wire-format data blob whose content
+/// originates from a codec `encode()` call or equivalent byte producer.
+/// `subfunc` and `addr` remain textual representations since the user
+/// may reference datamodel variables of any SCE type (u8, u16, u32,
+/// u64, String) and the handler-side interpretation varies per protocol.
 pub struct ProcedureServiceRequest {
-    /// Service name from sce:service attribute.
+    /// Dispatch identifier (sce:service attribute, always present).
     pub service: String,
-    /// Sub-function from sce:subfunc attribute.
-    pub subfunc: String,
-    /// Additional parameters (addr, payload, etc.).
-    pub params: HashMap<String, String>,
+    /// Sub-function identifier (sce:subfunc attribute). `None` if absent.
+    pub subfunc: Option<String>,
+    /// Address identifier (sce:addr attribute). `None` if absent.
+    pub addr: Option<String>,
+    /// Payload bytes (sce:payload attribute). `None` if absent.
+    pub payload: Option<Vec<u8>>,
 }
 
 /// Response received from a service handler.

@@ -107,11 +107,9 @@ impl ProcedurePolicy for CrossfileProcedureCodec {
                 if let Some(ref handler) = self.service_handler {
                     let req = ProcedureServiceRequest {
                         service: "Diag".to_string(),
-                        subfunc: "".to_string(),
-                        params: HashMap::from([
-                            ("addr".to_string(), self.ecu_addr.to_string()),
-                            ("payload".to_string(), self.frame.encode().to_string()),
-                        ]),
+                        subfunc: None,
+                        addr: Some((self.ecu_addr).to_string()),
+                        payload: Some(self.frame.encode()),
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };

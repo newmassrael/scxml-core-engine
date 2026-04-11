@@ -8,6 +8,7 @@
 //   frame.encode()
 
 package com.sce.generated.crossfile_procedure_codec
+import com.sce.generated.codec_simple_frame.*
 
 import com.sce.runtime.forge.*
 
@@ -55,9 +56,11 @@ class CrossfileProcedureCodec : ProcedureStateMachine<State, Event>() {
         when (state) {
             State.SendRequest -> {
                 serviceHandler?.let { handler ->
-                    val req = ProcedureServiceRequest(service = "Diag")
-                    req.params["addr"] = ecuAddr.toString()
-                    req.params["payload"] = frame.encode()
+                    val req = ProcedureServiceRequest(
+                        service = "Diag",
+                        addr = (ecuAddr).toString(),
+                        payload = frame.encode(),
+                    )
                     val resp = handler(req)
                     return Pair(if (resp.success) Event.Ok else Event.Fail, resp.data)
                 }

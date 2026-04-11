@@ -16,23 +16,39 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace SCE::Forge {
 
-/// Service request dispatched by procedure <send sce:service> actions.
-/// SCE_FORGE.md Section 4.5: sce:service and sce:subfunc are codegen hints
-/// mapped to method calls on the runtime's service interface.
+/// Service request dispatched by procedure `<send sce:service>` actions.
+///
+/// Each field maps 1:1 to a `<send>` attribute in the SCXML source:
+///
+/// ```xml
+/// <send sce:service="Diag" sce:subfunc="0x02"
+///       sce:addr="ecuAddr" sce:payload="frame.encode()"/>
+/// ```
+///
+/// `service` is always present; the other three are `std::optional` so
+/// absent attributes are distinguishable from empty values. `payload` is
+/// typed as raw bytes (`std::vector<uint8_t>`) because its semantic role
+/// is a wire-format data blob originating from codec `encode()` calls.
+/// `subfunc` and `addr` remain textual since the user may reference
+/// datamodel variables of any SCE type (uint8..uint64, std::string).
 struct ProcedureServiceRequest {
-    /// Service name (sce:service attribute value).
+    /// Dispatch identifier (sce:service, always present).
     std::string service;
-    /// Sub-function code (sce:subfunc attribute value). Empty if not specified.
-    std::string subfunc;
-    /// Key-value parameters (sce:addr, sce:payload, etc.).
-    std::vector<std::pair<std::string, std::string>> params;
+    /// Sub-function identifier (sce:subfunc). `std::nullopt` if absent.
+    std::optional<std::string> subfunc;
+    /// Address identifier (sce:addr). `std::nullopt` if absent.
+    std::optional<std::string> addr;
+    /// Payload bytes (sce:payload). `std::nullopt` if absent.
+    std::optional<std::vector<std::uint8_t>> payload;
 };
 
 /// Response from a procedure service handler.

@@ -8,9 +8,13 @@ package com.sce.generated.{{ package }}
 {% endif %}
 {% endfor %}
 
+// Default-valued primary constructor: the generated procedure_l2 code
+// holds codec instances as owned members and initializes them with
+// `{{ struct_name }}()` before any encode()/decode() call. Defaults
+// mirror the zero-initialized shape that decode() fills in on success.
 data class {{ struct_name }}(
 {% for field in fields %}
-    val {{ field.id }}: {{ field.kt_type }}{{ "," if not loop.last else "" }}
+    val {{ field.id }}: {{ field.kt_type }} = {{ field.kt_default }}{{ "," if not loop.last else "" }}
 {% endfor %}
 ) {
     fun encode(): ByteArray = byteArrayOf(

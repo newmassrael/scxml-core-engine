@@ -9,10 +9,22 @@ package forge
 // ── Service types ───────────────────────────────────────────────
 
 // ProcedureServiceRequest represents a service call during procedure execution.
+//
+// Fields map 1:1 to the four <send> attributes in the SCXML source:
+//
+//	<send sce:service="Diag" sce:subfunc="0x02"
+//	      sce:addr="ecuAddr" sce:payload="frame.encode()"/>
+//
+// Service is always present. The other three use pointer types so absent
+// attributes are distinguishable from empty strings. Payload is typed as
+// raw bytes — it carries wire-format data from codec encode() calls. The
+// stringy fields (Subfunc, Addr) remain textual to accommodate datamodel
+// variables of any SCE type.
 type ProcedureServiceRequest struct {
 	Service string
-	Subfunc string
-	Params  map[string]string
+	Subfunc *string
+	Addr    *string
+	Payload []byte
 }
 
 // ProcedureServiceResponse represents the result of a service call.

@@ -129,7 +129,7 @@ struct ProcedureSecurityAccessPolicy {
                 if (serviceHandler_) {
                     SCE::Forge::ProcedureServiceRequest req;
                     req.service = "TesterPresent";
-                    req.params.push_back({"addr", std::to_string(ecuAddr_)});
+                    req.addr = std::to_string(ecuAddr_);
                     auto resp = serviceHandler_(req);
                     engine.raise(typename Engine::EventWithMetadata(
                         resp.success ? Event::Ok : Event::Fail, resp.data));
@@ -141,7 +141,7 @@ struct ProcedureSecurityAccessPolicy {
                 if (serviceHandler_) {
                     SCE::Forge::ProcedureServiceRequest req;
                     req.service = "SecurityAccess";
-                    req.subfunc = "0x01";
+                    req.subfunc = std::string("0x01");
                     auto resp = serviceHandler_(req);
                     engine.raise(typename Engine::EventWithMetadata(
                         resp.success ? Event::Ok : Event::Fail, resp.data));
@@ -153,8 +153,8 @@ struct ProcedureSecurityAccessPolicy {
                 if (serviceHandler_) {
                     SCE::Forge::ProcedureServiceRequest req;
                     req.service = "SecurityAccess";
-                    req.subfunc = "0x02";
-                    req.params.push_back({"payload", computeKey(seed_)});
+                    req.subfunc = std::string("0x02");
+                    req.payload = computeKey(seed_);
                     auto resp = serviceHandler_(req);
                     engine.raise(typename Engine::EventWithMetadata(
                         resp.success ? Event::Ok : Event::Fail, resp.data));

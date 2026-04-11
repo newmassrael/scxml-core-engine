@@ -3,10 +3,14 @@
 
 package com.sce.generated.codec_simple_frame
 
+// Default-valued primary constructor: the generated procedure_l2 code
+// holds codec instances as owned members and initializes them with
+// `CodecSimpleFrame()` before any encode()/decode() call. Defaults
+// mirror the zero-initialized shape that decode() fills in on success.
 data class CodecSimpleFrame(
-    val msgId: UByte,
-    val length: UByte,
-    val payload: UShort
+    val msgId: UByte = 0.toUByte(),
+    val length: UByte = 0.toUByte(),
+    val payload: UShort = 0.toUShort()
 ) {
     fun encode(): ByteArray = byteArrayOf(
         msgId.toByte(),

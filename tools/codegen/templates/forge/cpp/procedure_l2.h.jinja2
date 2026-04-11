@@ -153,13 +153,13 @@ struct {{ policy_name }} {
                     SCE::Forge::ProcedureServiceRequest req;
                     req.service = "{{ send.service }}";
 {% if send.subfunc %}
-                    req.subfunc = "{{ send.subfunc }}";
+                    req.subfunc = std::string("{{ send.subfunc }}");
 {% endif %}
 {% if send.has_addr %}
-                    req.params.push_back({"addr", std::to_string({{ send.addr_expr }})});
+                    req.addr = std::to_string({{ send.addr_expr }});
 {% endif %}
 {% if send.payload %}
-                    req.params.push_back({"payload", {{ send.payload_expr }}});
+                    req.payload = {{ send.payload_expr }};
 {% endif %}
                     auto resp = serviceHandler_(req);
                     engine.raise(typename Engine::EventWithMetadata(

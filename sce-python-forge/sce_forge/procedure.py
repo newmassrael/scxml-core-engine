@@ -13,10 +13,24 @@ from typing import Callable, Dict, Optional, Tuple
 
 @dataclass
 class ProcedureServiceRequest:
-    """Request sent to a service handler during procedure execution."""
+    """Request sent to a service handler during procedure execution.
+
+    Each field maps 1:1 to a ``<send>`` attribute in the SCXML source::
+
+        <send sce:service="Diag" sce:subfunc="0x02"
+              sce:addr="ecuAddr" sce:payload="frame.encode()"/>
+
+    ``service`` is always present; the other three are ``Optional`` so
+    absent attributes are distinguishable from empty values. ``payload``
+    is typed as raw ``bytes`` because its semantic role is a wire-format
+    data blob originating from codec ``encode()`` calls. ``subfunc`` and
+    ``addr`` remain textual since the user may reference datamodel
+    variables of any SCE type.
+    """
     service: str = ""
-    subfunc: str = ""
-    params: Dict[str, str] = field(default_factory=dict)
+    subfunc: Optional[str] = None
+    addr: Optional[str] = None
+    payload: Optional[bytes] = None
 
 
 @dataclass

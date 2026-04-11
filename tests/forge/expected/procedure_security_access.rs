@@ -108,10 +108,9 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
                 if let Some(ref handler) = self.service_handler {
                     let req = ProcedureServiceRequest {
                         service: "TesterPresent".to_string(),
-                        subfunc: "".to_string(),
-                        params: HashMap::from([
-                            ("addr".to_string(), self.ecu_addr.to_string()),
-                        ]),
+                        subfunc: None,
+                        addr: Some((self.ecu_addr).to_string()),
+                        payload: None,
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };
@@ -122,8 +121,9 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
                 if let Some(ref handler) = self.service_handler {
                     let req = ProcedureServiceRequest {
                         service: "SecurityAccess".to_string(),
-                        subfunc: "0x01".to_string(),
-                        params: HashMap::new(),
+                        subfunc: Some("0x01".to_string()),
+                        addr: None,
+                        payload: None,
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };
@@ -134,10 +134,9 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
                 if let Some(ref handler) = self.service_handler {
                     let req = ProcedureServiceRequest {
                         service: "SecurityAccess".to_string(),
-                        subfunc: "0x02".to_string(),
-                        params: HashMap::from([
-                            ("payload".to_string(), compute_key(&self.seed).to_string()),
-                        ]),
+                        subfunc: Some("0x02".to_string()),
+                        addr: None,
+                        payload: Some(compute_key(&self.seed)),
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };

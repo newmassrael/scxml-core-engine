@@ -104,19 +104,24 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 	case state{{ s.name }}:
 {% for send in s.sends %}
 		if p.serviceHandler != nil {
+{% if send.subfunc %}
+			subfuncVal := "{{ send.subfunc }}"
+{% endif %}
+{% if send.has_addr %}
+			addrVal := fmt.Sprint({{ send.addr_expr }})
+{% endif %}
 			req := forge.ProcedureServiceRequest{
 				Service: "{{ send.service }}",
 {% if send.subfunc %}
-				Subfunc: "{{ send.subfunc }}",
+				Subfunc: &subfuncVal,
 {% endif %}
-				Params:  make(map[string]string),
-			}
 {% if send.has_addr %}
-			req.Params["addr"] = fmt.Sprint({{ send.addr_expr }})
+				Addr: &addrVal,
 {% endif %}
 {% if send.payload %}
-			req.Params["payload"] = fmt.Sprint({{ send.payload_expr }})
+				Payload: {{ send.payload_expr }},
 {% endif %}
+			}
 			resp := p.serviceHandler(req)
 			if resp.Success {
 				return eventOk, resp.Data

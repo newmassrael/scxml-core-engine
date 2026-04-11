@@ -194,18 +194,15 @@ fn resolve_single_import(
             }
         }
         crate::generator::Language::Kotlin => {
-            // Stateful imports assume same package (the importing file lives in
-            // `com.sce.generated.<name>`, the importee in a sibling package);
-            // the `<alias>: <pascal>` member declaration forces the class name
-            // into scope via `member_type`. Stateless imports need explicit
-            // package-level access because they expose free functions — use a
-            // wildcard import so the call site can stay bare (matches the
-            // `build_qualified_call` output of just `funcName`).
-            let include_stmt = if is_stateful {
-                String::new()
-            } else {
-                format!("import com.sce.generated.{snake}.*")
-            };
+            // Every imported kind lives in its own sibling package
+            // (`com.sce.generated.<snake>`), so both stateful and stateless
+            // imports need an explicit import statement — a wildcard import
+            // brings the class name (for stateful) or free functions (for
+            // stateless) into unqualified scope. The earlier "stateful imports
+            // assume same package" assumption silently produced uncompilable
+            // Kotlin goldens because the generated procedure file referenced
+            // the imported class by bare name with no import in scope.
+            let include_stmt = format!("import com.sce.generated.{snake}.*");
             ImportContext {
                 alias: imp.alias.clone(),
                 kind: imp.kind.to_string(),
@@ -1336,6 +1333,7 @@ fn render_codec_kotlin(
             serde_json::json!({
                 "id": f.id,
                 "kt_type": kotlin_type(&f.sce_type),
+                "kt_default": kotlin_default(&f.sce_type),
                 "decode_expr": generate_decode_expr_kotlin(f, m.default_endian),
             })
         })
@@ -5033,12 +5031,15 @@ fn render_procedure_l2_go(
         .collect();
     let assign_rename_map = rename_map.clone();
 
-    // Determine if fmt import is needed (for addr string conversion)
+    // Determine if fmt import is needed. The Go template uses fmt.Sprint()
+    // only for addr stringification; payload now flows through as raw
+    // `[]byte` without any conversion, so payload-only procedures no
+    // longer pull in fmt.
     let needs_fmt = m
         .states
         .iter()
         .flat_map(|s| s.on_entry_sends.iter())
-        .any(|send| send.addr.is_some() || send.payload.is_some());
+        .any(|send| send.addr.is_some());
 
     // Input fields
     let input_fields: Vec<serde_json::Value> = m

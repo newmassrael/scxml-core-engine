@@ -93,15 +93,17 @@ class {{ class_name }}(ProcedureStateMachine):
 {% for send in s.sends %}
             if self._service_handler is not None:
                 req = ProcedureServiceRequest(
-                    service="{{ send.service }}"{% if send.subfunc %},
-                    subfunc="{{ send.subfunc }}"{% endif %},
-                )
+                    service="{{ send.service }}",
+{% if send.subfunc %}
+                    subfunc="{{ send.subfunc }}",
+{% endif %}
 {% if send.has_addr %}
-                req.params["addr"] = str({{ send.addr_expr }})
+                    addr=str({{ send.addr_expr }}),
 {% endif %}
 {% if send.payload %}
-                req.params["payload"] = str({{ send.payload_expr }})
+                    payload={{ send.payload_expr }},
 {% endif %}
+                )
                 resp = self._service_handler(req)
                 event = Event.Ok if resp.success else Event.Fail
                 return (event, resp.data)

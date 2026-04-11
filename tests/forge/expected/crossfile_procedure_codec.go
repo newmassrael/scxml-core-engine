@@ -79,12 +79,12 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 	switch s {
 	case stateSendRequest:
 		if p.serviceHandler != nil {
+			addrVal := fmt.Sprint(p.ecuAddr)
 			req := forge.ProcedureServiceRequest{
 				Service: "Diag",
-				Params:  make(map[string]string),
+				Addr: &addrVal,
+				Payload: p.Frame.Encode(),
 			}
-			req.Params["addr"] = fmt.Sprint(p.ecuAddr)
-			req.Params["payload"] = fmt.Sprint(p.Frame.Encode())
 			resp := p.serviceHandler(req)
 			if resp.Success {
 				return eventOk, resp.Data

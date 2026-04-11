@@ -82,11 +82,11 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 	switch s {
 	case stateSendTesterPresent:
 		if p.serviceHandler != nil {
+			addrVal := fmt.Sprint(p.ecuAddr)
 			req := forge.ProcedureServiceRequest{
 				Service: "TesterPresent",
-				Params:  make(map[string]string),
+				Addr: &addrVal,
 			}
-			req.Params["addr"] = fmt.Sprint(p.ecuAddr)
 			resp := p.serviceHandler(req)
 			if resp.Success {
 				return eventOk, resp.Data
@@ -95,10 +95,10 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 		}
 	case stateRequestSeed:
 		if p.serviceHandler != nil {
+			subfuncVal := "0x01"
 			req := forge.ProcedureServiceRequest{
 				Service: "SecurityAccess",
-				Subfunc: "0x01",
-				Params:  make(map[string]string),
+				Subfunc: &subfuncVal,
 			}
 			resp := p.serviceHandler(req)
 			if resp.Success {
@@ -108,12 +108,12 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 		}
 	case stateSendKey:
 		if p.serviceHandler != nil {
+			subfuncVal := "0x02"
 			req := forge.ProcedureServiceRequest{
 				Service: "SecurityAccess",
-				Subfunc: "0x02",
-				Params:  make(map[string]string),
+				Subfunc: &subfuncVal,
+				Payload: computeKey(p.seed),
 			}
-			req.Params["payload"] = fmt.Sprint(computeKey(p.seed))
 			resp := p.serviceHandler(req)
 			if resp.Success {
 				return eventOk, resp.Data

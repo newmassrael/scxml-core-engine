@@ -75,8 +75,8 @@ class ProcedureSecurityAccess(ProcedureStateMachine):
             if self._service_handler is not None:
                 req = ProcedureServiceRequest(
                     service="TesterPresent",
+                    addr=str(self._ecu_addr),
                 )
-                req.params["addr"] = str(self._ecu_addr)
                 resp = self._service_handler(req)
                 event = Event.Ok if resp.success else Event.Fail
                 return (event, resp.data)
@@ -94,8 +94,8 @@ class ProcedureSecurityAccess(ProcedureStateMachine):
                 req = ProcedureServiceRequest(
                     service="SecurityAccess",
                     subfunc="0x02",
+                    payload=compute_key(self._seed),
                 )
-                req.params["payload"] = str(compute_key(self._seed))
                 resp = self._service_handler(req)
                 event = Event.Ok if resp.success else Event.Fail
                 return (event, resp.data)
