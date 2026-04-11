@@ -3616,6 +3616,15 @@ fn render_procedure_l2_cpp(
             owned_rename_map.insert(&imp.alias, imp.member_name.clone());
         }
     }
+    // Method-level rename entries for stateful imports: `frame.encode` →
+    // `frame_.encode` (C++). Site-owned Vec keeps the qualified keys alive so
+    // the `HashMap<&str, String>` can borrow them. See
+    // `stateful_import_method_renames` for the rationale.
+    let cpp_method_renames =
+        stateful_import_method_renames(imports, &generator::Language::Cpp);
+    for (k, v) in &cpp_method_renames {
+        owned_rename_map.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_map
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -3872,6 +3881,82 @@ fn build_rename_map<'a>(var_names: &'a [&'a str]) -> std::collections::HashMap<&
         .iter()
         .map(|name| (*name, format!("{}_", name)))
         .collect()
+}
+
+/// Compute method-level rename entries for every stateful import, so the
+/// expression rename pass can collapse `alias.method` Member nodes into a
+/// target-language-native call fragment.
+///
+/// **Why this exists**: `rename_identifiers` handles `Member{Ident(obj), prop}`
+/// by looking up the full `"obj.prop"` path in the rename map, and only
+/// falls back to renaming `obj` alone when the qualified path is absent.
+/// Without qualified entries for each imported kind's public methods, the
+/// property name (`encode`, `decode`, `update`, ...) flows through verbatim,
+/// which is wrong for Go (PascalCase exports: `Encode`, `Decode`) and any
+/// future language whose stateful kind method names diverge from the
+/// source-level SCXML spelling. The 4 languages that happen to use
+/// lowercase method names emit byte-identical output with or without this
+/// helper; Go's Encode/Decode is the motivating consumer.
+///
+/// Returns `(qualified_source_path, target_expansion)` pairs whose
+/// qualified paths (e.g. `"frame.encode"`) match the shape the rename pass
+/// forms from `Member{Ident("frame"), "encode"}`. Callers own the returned
+/// `Vec<(String, String)>` so its borrowed keys can feed into the existing
+/// `HashMap<&str, String>` rename maps at each procedure generator site.
+fn stateful_import_method_renames(
+    imports: &[ImportContext],
+    language: &generator::Language,
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for imp in imports {
+        if !imp.is_stateful {
+            continue;
+        }
+        match imp.kind.as_str() {
+            "codec" => {
+                // Codec exposes `encode()` on an instance; `decode(raw)` is a
+                // package-level free function in Go (`DecodeCodecSimpleFrame`)
+                // and a static/class method in C++/Kotlin/Python/Rust, so the
+                // mapping shape diverges per language. Until a fixture
+                // actually uses `alias.decode(...)`, we only emit `encode`
+                // entries — adding `decode` without a load-bearing consumer
+                // risks baking the wrong Go expansion into the helper. Grow
+                // this list when the first decode-using fixture lands.
+                for method in ["encode"] {
+                    let qualified_key = format!("{}.{}", imp.alias, method);
+                    // Per-language expansions mirror the member-access
+                    // prefix each procedure template actually emits:
+                    //   C++      `{member}_.method()`        no `this->`
+                    //   Kotlin   `{member}.method()`         no prefix
+                    //   Rust     `self.{member}.method()`    `self.`
+                    //   Go       `p.{Member}.Method()`       `p.`, PascalCase
+                    //   Python   `self.{member}.method()`    `self.`
+                    let expansion = match language {
+                        generator::Language::Cpp | generator::Language::Kotlin => {
+                            format!("{}.{}", imp.member_name, method)
+                        }
+                        generator::Language::Rust | generator::Language::Python => {
+                            format!("self.{}.{}", imp.member_name, method)
+                        }
+                        generator::Language::Go => {
+                            let target_method = filters::to_pascal_case(method.to_string());
+                            format!("p.{}.{}", imp.member_name, target_method)
+                        }
+                    };
+                    out.push((qualified_key, expansion));
+                }
+            }
+            // Other stateful kinds (filter, observer, validator, procedure)
+            // expose their own method APIs (`update`, `validate`, ...), but
+            // no conformance fixture currently imports them as stateful
+            // aliases inside another kind. Adding entries here without a
+            // load-bearing consumer would be dormant infrastructure — grow
+            // this arm when a future fixture imports a filter/observer
+            // method call and the byte golden fails to compile.
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Transpile a Level 2 procedure expression with a pre-built rename map and
@@ -4629,9 +4714,18 @@ fn render_procedure_l2_kotlin(
         })
         .collect();
 
-    // Rename map: Kotlin only renames _event.data → pendingEventData
-    let owned_rename: std::collections::HashMap<&str, String> =
+    // Rename map: Kotlin only renames _event.data → pendingEventData, plus
+    // stateful-import method entries so `alias.encode` collapses cleanly
+    // (byte-identical to the current verbatim path for codec, since Kotlin
+    // codec methods are already lowercase — the entries exist so future
+    // Kotlin-specific method casing has a single source of truth).
+    let mut owned_rename: std::collections::HashMap<&str, String> =
         std::collections::HashMap::from([("_event.data", "pendingEventData".to_string())]);
+    let kotlin_method_renames =
+        stateful_import_method_renames(imports, &generator::Language::Kotlin);
+    for (k, v) in &kotlin_method_renames {
+        owned_rename.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -4731,6 +4825,13 @@ fn render_procedure_l2_rust(
         }
     }
     owned_rename_with_event.insert("_event.data", "self.pending_event_data".to_string());
+    // Method-level rename entries for stateful imports (Rust expansion:
+    // `self.{member}.{method}`). Site-owned Vec keeps qualified keys alive.
+    let rust_method_renames =
+        stateful_import_method_renames(imports, &generator::Language::Rust);
+    for (k, v) in &rust_method_renames {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -4812,6 +4913,12 @@ fn render_procedure_l2_rust(
             owned_payload_rename
                 .insert(&imp.alias, format!("self.{}", imp.member_name));
         }
+    }
+    // Method-level rename entries for stateful imports (same Rust expansion
+    // as `rename_map` — `rust_method_renames` is reused so the key strings
+    // outlive both HashMaps).
+    for (k, v) in &rust_method_renames {
+        owned_payload_rename.insert(k.as_str(), v.clone());
     }
     let payload_rename_map: std::collections::HashMap<&str, &str> = owned_payload_rename
         .iter()
@@ -4910,6 +5017,16 @@ fn render_procedure_l2_go(
         }
     }
     owned_rename_with_event.insert("_event.data", "p.pendingEventData".to_string());
+    // Method-level rename entries for stateful imports. Go is the only
+    // language whose codec methods are PascalCase exports (`Encode` /
+    // `Decode`), so this is the load-bearing consumer for the helper: the
+    // existing byte golden `p.Frame.encode()` fails to compile and must
+    // become `p.Frame.Encode()`.
+    let go_method_renames =
+        stateful_import_method_renames(imports, &generator::Language::Go);
+    for (k, v) in &go_method_renames {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -5058,6 +5175,13 @@ fn render_procedure_l2_python(
         }
     }
     owned_rename_with_event.insert("_event.data", "self._pending_event_data".to_string());
+    // Method-level rename entries for stateful imports (Python expansion:
+    // `self.{member}.{method}`).
+    let python_method_renames =
+        stateful_import_method_renames(imports, &generator::Language::Python);
+    for (k, v) in &python_method_renames {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
         .map(|(k, v)| (*k, v.as_str()))

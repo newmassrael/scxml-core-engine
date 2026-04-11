@@ -84,7 +84,7 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 				Params:  make(map[string]string),
 			}
 			req.Params["addr"] = fmt.Sprint(p.ecuAddr)
-			req.Params["payload"] = fmt.Sprint(p.Frame.encode())
+			req.Params["payload"] = fmt.Sprint(p.Frame.Encode())
 			resp := p.serviceHandler(req)
 			if resp.Success {
 				return eventOk, resp.Data
