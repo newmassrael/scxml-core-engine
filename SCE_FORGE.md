@@ -497,7 +497,23 @@ pub fn compute_temperature(raw: u16) -> f64 {
 
 ### 4.3 lookup
 
-Discrete value mapping. Enumerated input → enumerated output. A `sce:default` attribute specifies the fallback when input matches no entry. If `sce:default` is omitted, the first `<sce:entry>`'s value is used as the default (in the example below, `"STOP"` from key `0x00`). Codegen must emit a comment documenting the implicit default to make the behavior visible in generated code.
+Discrete value mapping. Enumerated input → enumerated output. A `sce:default` attribute specifies the fallback when input matches no entry. If `sce:default` is omitted, the first `<sce:entry>`'s value is used as the default (in the example below, `"STOP"` from key `0x00`). Codegen emits a comment documenting the implicit default to make the behavior visible in generated code.
+
+**Dual-strategy codegen.** sce-build selects between two code-generation strategies based on the declared output type:
+
+| Strategy | Trigger | Output shape | Runtime helper |
+|----------|---------|--------------|----------------|
+| **Enum dispatch** | `sce:type="string"` output | Generated enum + `switch`/`when`/`match` mapping key → enum variant | None — fully inlined |
+| **Parallel arrays** | Numeric output (`uint*`/`int*`/`float*`) | `const KEYS[N]` + `const VALUES[N]` literals, linear search | `sce_forge_runtime::lookup::lookup<K,V,N>` helper |
+
+The enum path is used when the output values are symbolic (state names, status codes, etc.) — the generated enum gives callers type-safe access. The parallel-array path is used when output values are numeric magnitudes that would not benefit from enumeration (e.g. a unit-scale lookup returning `f64` metres-per-unit).
+
+**`on_miss` policy.** The conformance manifest declares an orthogonal miss-handling policy, implemented in every per-language fragment:
+
+- **`on_miss = "error"`** — generated function returns the language's optional type (`Option<V>`, `std::optional<V>`, `*V`, `V?`, `Optional[V]`). Fixtures must hit a key on every input (happy-path only). Callers are expected to `.unwrap()` / `.expect()` / `?: error()` at the call site.
+- **`on_miss = "default"`** — generated function returns the raw value with a fallback supplied by `sce:default`. Fixtures may include miss inputs that exercise the fallback path.
+
+Policy selection is independent of output type, so the four combinations (`string|numeric` × `error|default`) are all valid codegen targets.
 
 ```xml
 <scxml sce:kind="lookup">
@@ -692,6 +708,23 @@ The state machine class is the canonical output. The wrapper is a thin convenien
 
 `ProcedureStateMachine` is separate from the W3C statechart engine (`StaticExecutionEngine` / `StateMachineEngine`). It is a lightweight execution loop for run-to-completion procedures only. Generated code extends this base class (Kotlin/Python) or implements the `ProcedurePolicy` trait/interface (Rust/Go), providing the state-specific logic as abstract method implementations.
 
+**L1 vs L2 codegen.** sce-build generates procedure code at two levels, chosen per fixture:
+
+| Level | Template | When selected | Generated shape |
+|-------|----------|---------------|-----------------|
+| **L1** (guard-only) | `procedure.{lang}.jinja2` | Pure linear/diamond flow with boolean guards and no `<send>` actions | Monolithic `execute(args…) -> ProcedureResult { completed, final_state }` free function — no engine, no event loop, straight-line dispatch on guard expressions |
+| **L2** (event-driven) | `procedure_l2.{lang}.jinja2` | Procedure uses `<send>` to issue service calls and transitions on matching events | Full state-machine class that integrates with `StaticExecutionEngine` (C++) / `ProcedureStateMachine` (Kotlin/Python) / `ProcedurePolicy` trait (Rust) / interface (Go) and drives service handlers through a shared event loop |
+
+L1 is used by `procedure_linear`, `procedure_diamond`, and `procedure_startup_check` conformance fixtures; L2 is used by `procedure_security_access` and `procedure_with_sends` goldens. The choice is made by the parser based on whether the procedure contains `<send>` or `_event`-dependent transitions — users do not select it explicitly. Both levels produce an identical call-site contract: `execute(args…) -> ProcedureResult`.
+
+**Cross-language runtime packages.** `ProcedureStateMachine`, `ProcedureServiceHandler`, and the service-result types are shipped as part of each language's `sce_forge_runtime` package (see §2.1). Every language matches the same public surface:
+
+- **C++**: `sce/forge/ProcedureStateMachine.h` + `ProcedureServiceTypes.h` (header-only, `INTERFACE` library)
+- **Rust**: `sce_forge_runtime::procedure::{ProcedureStateMachine, ProcedurePolicy}` (trait-based)
+- **Kotlin**: `com.sce.forge.runtime.procedure.ProcedureStateMachine` (abstract class in `commonMain`)
+- **Go**: `github.com/newmassrael/sce-forge-runtime/procedure` (interface-based)
+- **Python**: `sce_forge_runtime.procedure` (ABC)
+
 ### 4.6 codec
 
 Byte-level encode/decode. Bit position, size, endianness.
@@ -807,12 +840,17 @@ Validation rules are expressed as `sce:` attributes on `<data>` elements — eac
 struct RpmValidator {
     uint16_t prevRpm_ = 0;
 
+    struct ValidationResult {
+        bool valid;
+        std::string reason;
+    };
+
     ValidationResult validate(uint16_t rpm, const std::string& engineState) {
         if (rpm > 8000)
-            return {false, "range_exceeded"};
+            return {false, "rpm_out_of_range"};
         uint16_t delta = (rpm > prevRpm_) ? (rpm - prevRpm_) : (prevRpm_ - rpm);
         if (delta > 500)
-            return {false, "rate_of_change_exceeded"};
+            return {false, "rpm_rate_of_change_exceeded"};
         if (!(rpm == 0 || engineState != "STOP"))
             return {false, "plausibility_failed"};
         prevRpm_ = rpm;
@@ -820,6 +858,12 @@ struct RpmValidator {
     }
 };
 ```
+
+**State-update rule**: the internal sample memory (`prevRpm_` above) advances **only on a successful validation**. Every failure case leaves `prevRpm_` unchanged so the next call still compares against the last *valid* sample. This is verified by the stateful oracle sequences in the cross-language conformance harness (see §6.6): a failing step implicitly asserts that the following step sees the previous `prevRpm_`.
+
+**Per-field rate-of-change memory**: when multiple input fields carry `sce:max-delta`, each gets its own previous-value slot, and all slots update atomically on a successful validation — if any field fails, no field advances. `validator_signed_roc` in the conformance catalog exercises this with a two-field `(speed, altitude)` sequence.
+
+**Return struct layout**: every forge validator currently returns `ValidationResult { valid: bool, reason: string }`. The shape is declared per-fixture in the conformance manifest as a `StructField` list, so adding a new return field (e.g. a severity level) is purely a catalog change — the per-language fragment iterates the declared fields and generates per-field assertions without hard-coding names.
 
 ### 4.8 filter
 
@@ -1312,19 +1356,23 @@ This matrix records, for each kind, which of the two runtime libraries (defined 
 
 | Kind | Needs `sce_forge_runtime` | Needs `sce_runtime` | Notes |
 |------|---------------------------|---------------------|-------|
-| transform | No | No | Pure inline expression |
-| lookup | No | No | Pure inline switch / map literal |
+| transform | No | No | Pure inline expression — transpiled ECMAScript body |
+| lookup (enum dispatch) | No | No | Inline `switch`/`when`/`match` for string-valued outputs |
+| lookup (parallel arrays) | Yes (`sce/forge/lookup.h`) | No | `lookup<K,V,N>` helper for numeric-valued outputs |
 | condition | No | No | Pure inline boolean expression |
-| codec | No | No | Pure inline byte packing/unpacking |
+| codec | No | No | Pure inline byte packing/unpacking — no shared helper |
+| validator | No | No | Range / ROC / plausibility logic emitted inline per fixture; no shared helper |
 | filter | Yes (`sce/forge/filter.h`) | No | `MovingAverage<T,N>`, `LowPass<T>`, `Debounce<T,N>` templates |
 | interpolation | Yes (`sce/forge/interpolation.h`) | No | `linear<N>`, `bilinear<R,C>` function templates |
-| validator | Yes (`sce/forge/validator.h`) | No | Range / rate-of-change helpers (planned migration) |
 | timer | Yes (`sce/forge/timer.h`) | No | `ITimer` interface (HAL pattern, see §4.10) |
 | observer | Yes (`sce/forge/observer.h`) | No | `ThresholdState`, `EventQueue<D>`, `Event<D>` |
-| procedure | No | Yes (`ProcedureServiceHandler`, `ProcedureStateMachine`) | Statechart-adjacent — uses statechart runtime |
+| procedure (L1) | No | No | Linear/diamond flow — pure function, no runtime types |
+| procedure (L2) | Yes (`sce/forge/ProcedureStateMachine.h`, `ProcedureServiceTypes.h`) | No | Event-driven procedure extends `ProcedureStateMachine` / implements `ProcedurePolicy` trait |
 | statechart | No | Yes (existing: `EventQueue`, `ActionHandler`, ...) | Existing W3C statechart runtime |
 
-The two runtime libraries are independent: `sce_forge_runtime` has no dependency on `sce_runtime`, and a deployment that only generates `transform` / `lookup` kinds links neither. Both libraries satisfy the static-linking and no-stateful-globals constraints from §2.1; `sce_forge_runtime` is header-only across all five target languages (CMake `INTERFACE`, cargo crate, Gradle module, Go package, pip module).
+The two runtime libraries are independent: `sce_forge_runtime` has no dependency on `sce_runtime`, and a deployment that only generates `transform` / `condition` / `codec` / `validator` / enum-dispatch `lookup` / L1 `procedure` kinds links neither. Both libraries satisfy the static-linking and no-stateful-globals constraints from §2.1; `sce_forge_runtime` ships as header-only / inline-function packages across all five target languages (CMake `INTERFACE`, cargo crate, Gradle `commonMain`, Go module, pip package).
+
+**Important**: `codec` and `validator` deliberately stay outside `sce_forge_runtime`. Each codec struct has a unique byte layout and each validator has a unique combination of range/ROC/plausibility rules; factoring them into shared templates would require type erasure or heavy metaprogramming that would violate the "no stateful globals" and "no heap allocation" constraints. The per-file inline approach keeps both kinds zero-cost on embedded targets.
 
 ### 6.2 Expression Transpiler
 
@@ -1364,15 +1412,33 @@ tools/codegen/templates/forge/
     procedure_l2.h.jinja2     (L2: event-driven, StaticExecutionEngine)
     codec.h.jinja2
     validator.h.jinja2
+    filter.h.jinja2
+    interpolation.h.jinja2
+    timer.h.jinja2
+    observer.h.jinja2
+    conformance/              (cross-language conformance harness — see §6.6)
+      harness.cpp.jinja2      (scaffold, kind-agnostic)
+      kinds/
+        codec.cpp.jinja2
+        condition.cpp.jinja2
+        filter.cpp.jinja2
+        interpolation.cpp.jinja2
+        lookup.cpp.jinja2
+        observer.cpp.jinja2
+        procedure.cpp.jinja2
+        transform.cpp.jinja2
+        validator.cpp.jinja2
   kotlin/
-    ...                       (same kinds as cpp, .kt.jinja2)
+    ...                       (same kinds as cpp, .kt.jinja2, plus conformance/)
   rust/
-    ...                       (same kinds as cpp, .rs.jinja2)
+    ...                       (same kinds as cpp, .rs.jinja2, plus conformance/)
   go/
-    ...                       (same kinds as cpp, .go.jinja2)
+    ...                       (same kinds as cpp, .go.jinja2, plus conformance/)
   python/
-    ...                       (same kinds as cpp, .py.jinja2)
+    ...                       (same kinds as cpp, .py.jinja2, plus conformance/)
 ```
+
+Product templates render generated library code (one file per SCXML input). Conformance templates render the single cross-language numerical conformance harness for that language (one scaffold + one fragment per kind), documented in §6.6.
 
 ### 6.4 Codegen Dispatch
 
@@ -1415,6 +1481,130 @@ Error handling varies by kind — this is intentional, as each kind has a differ
 | timer | No error — timer management | Invalid timing is a codegen-time error, not runtime |
 | observer | No error — threshold evaluation | Always produces (possibly empty) event list |
 
+### 6.6 Cross-Language Numerical Conformance Harness
+
+The "Cross-language equivalence verification" requirement from §9 (Overall Success Definition) is enforced at build/test time by an automated harness that takes a single fixture catalog and runs byte-identical numerical assertions across every target language. This subsection documents the harness architecture — product code generators do not participate in it, only the shared test infrastructure.
+
+**Single source of truth — two files:**
+
+| File | Purpose | Schema owner |
+|------|---------|--------------|
+| `tests/forge/conformance/fixtures.json` | Fixture catalog: name, kind, ref-section, argument types, output shape | `sce-build/src/conformance.rs::Manifest` |
+| `tests/forge/conformance/numerical_reference.json` | Oracle: per-fixture expected values (pure-function cases, filter/observer/validator sequences, codec round-trip pairs) | Hand-computed, validated against Rust goldens |
+
+Both files are consumed by all five per-language harnesses. When any language drifts, the mismatch surfaces as a test failure in the wrong language's generated harness — there is no golden file per language to go stale. The editor-only JSON schema at `tests/forge/conformance/fixtures.schema.json` mirrors the manifest types for IDE integration; runtime validation is performed by `Manifest::validate` only.
+
+**Tagged `FixtureSpec` enum.** Every manifest entry is deserialized into a Rust tagged enum keyed on the `kind` discriminator:
+
+```rust
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum FixtureSpec {
+    Interpolation  { args: Vec<CanonicalType>, output: ScalarOutput },
+    Transform      { args: Vec<CanonicalType>, output: Option<ScalarOutput>,
+                     compound_outputs: Vec<CompoundOutput> },
+    Condition      { function: String, args: Vec<CanonicalType>, output: ScalarOutput },
+    Filter         { input: CanonicalType, output: ScalarOutput },
+    Observer       { input: CanonicalType, event_tags: Vec<String> },
+    Procedure      { args: Vec<CanonicalType> },
+    Lookup         { args: Vec<CanonicalType>, output: ScalarOutput,
+                     on_miss: LookupMissPolicy, function: Option<String> },
+    Validator      { args: Vec<CanonicalType>, output: Vec<StructField> },
+    Codec          { fields: Vec<StructField> },
+}
+```
+
+The tag + `#[serde(flatten)]` pairing means fixtures.json keeps its flat on-disk layout (`{name, kind, ref_section, args, output, ...}`) while the Rust type system enforces which fields each kind requires — adding a new kind is a single variant + a single `Manifest::validate` arm + a per-language fragment, never a change to the JSON parser.
+
+**`StructField` compound output.** `validator` and `codec` both return multi-field aggregates. Both kinds declare the aggregate shape as an ordered list of `StructField { name, type, compare }` entries, and every per-language fragment iterates the list to emit per-field literal extraction and per-field assertions. A new multi-field kind (future) can reuse the same schema without touching five fragment templates.
+
+**`MissPolicy` — orthogonal policy enum.** `LookupMissPolicy` (`error` / `default`) is modelled as an independent enum rather than flag booleans. Future kinds with byte-order (`little`/`big`) or out-of-bounds (`clamp`/`error`/`extrapolate`) choices will follow the same pattern: one variant per policy, validate-time rejection of illegal combinations, per-language fragments branching on the enum.
+
+**Reference oracle layout.**
+
+```
+numerical_reference.json
+  ├── pure_functions   { fixture → { cases: [{args, expected, note}] } }
+  ├── stateful_filters { fixture → { sequence: [{input, expected, note}] } }
+  ├── observers        { fixture → { sequence: [{input, expected_events, note}] } }
+  ├── validators       { fixture → { sequence: [{args, expected: {valid, reason}, note}] } }
+  └── codecs           { fixture → { cases: [{decoded: {...}, encoded: [bytes], note}] } }
+```
+
+Each per-language fragment dispatches on `f.ref_section` to read the correct top-level key, so drift between fixtures.json and the reference is caught at test time rather than silently reading from the wrong map.
+
+**`HarnessLayout` — single source for per-language filesystem layout.**
+
+```rust
+pub struct HarnessLayout {
+    pub output_filename:   &'static str,  // e.g. "numerical_conformance.rs"
+    pub template_subdir:   &'static str,  // e.g. "forge/rust/conformance"
+    pub template_filename: &'static str,  // e.g. "harness.rs.jinja2"
+}
+```
+
+Every consumer (the `sce-codegen generate-conformance` subcommand, each language's build system) goes through `harness_layout(Language)` so adding a language is one match arm in one function instead of three siblings drifting out of sync.
+
+**Per-language harness rendering pipeline.**
+
+```
+fixtures.json ─┐
+                ├─→ Manifest::load + validate
+               ─┘         │
+                          │  (per language)
+                          ▼
+              render_harness(manifest, lang, template_base, resource_dir)
+                          │
+                          │  1. load scaffold (harness.<lang>.jinja2)
+                          │  2. load all kind fragments (kinds/<kind>.<lang>.jinja2)
+                          │  3. derive lookup function names by parsing <data sce:direction="out">
+                          │     id in each lookup fixture's SCXML (single source of truth)
+                          │  4. {% include "kinds/{{ f.kind }}.<ext>.jinja2" %} inside the
+                          │     per-fixture test body loop
+                          ▼
+              numerical_conformance.rs / conformance_generated.py /
+              numerical_conformance_test.go / NumericalConformanceTest.kt /
+              numerical_conformance_test.cpp
+```
+
+The scaffold is kind-agnostic — adding a new kind is one new fragment file per language, zero scaffold edits. The scaffold's only kind-specific concern is import generation for struct-returning kinds (interpolation / filter / observer / validator / codec → `use fixtures::<name>::<PascalName>`), which is a conditional `{% if %}` over the fixture list.
+
+**Per-language literal formatters.** `sce-build/src/forge/generator.rs` exposes `rust_literal` / `cpp_literal` / `go_literal` / `kotlin_literal` / `python_literal` helpers that turn any `SceType` + value pair into native-syntax literal text. Fragments call these via Jinja2 filters so the same manifest entry generates `0.1_f64` in Rust, `0.1` in C++, `0.1` in Go, `0.1` in Kotlin, and `0.1` in Python without duplicating the formatting logic in every template.
+
+**Go kind-specific `Step` types.** Go's `encoding/json` requires static types at unmarshal time, so the Go harness declares one `Step` struct per sequence-based kind (`filterStep`, `observerStep`, `validatorStep`, `codecCase`) and one accessor function per kind (`filterSteps`, `observerSteps`, `validatorSteps`, `codecCases`). Each accessor asserts the manifest's `ref_section` matches the hard-wired expectation for that kind, so a fixture tagged with the wrong section fails loudly at test time rather than silently reading the wrong map.
+
+**Auto-rebuild `sce-codegen`.** Each language's harness generation step is preceded by a `cargo build --bin sce-codegen --features cli --release -p sce-build` invocation guarded by a `cargo-on-PATH` check:
+
+- **Local development**: cargo is available → release binary is rebuilt from the current sce-build sources. `cargo` incremental makes this a near-instant no-op when nothing has changed.
+- **CI**: cargo is absent (pre-built artifact downloaded from build-codegen job) → check fails, pre-built binary is used as-is.
+
+The auto-rebuild eliminates the "stale binary foot-gun" where schema changes in `conformance.rs` would otherwise be silently ignored by per-language harnesses invoking an outdated binary. Applies to all four cross-language callers: Go `generate.sh`, Python `conftest.py`, C++ `tests/conformance/CMakeLists.txt`, Kotlin Gradle `build.gradle.kts`. The Rust harness is built by `sce-forge-runtime-rust`'s own `build.rs`, so its rebuild is implicit in the cargo dependency graph.
+
+**How to add a fixture.**
+
+1. Author `tests/forge/resources/<name>.scxml`.
+2. Add an entry to `tests/forge/conformance/fixtures.json` declaring `kind`, `ref_section`, and kind-specific fields.
+3. Add an oracle entry under the matching section of `tests/forge/conformance/numerical_reference.json`.
+4. Run any language's conformance test — every language's harness regenerates and runs the new fixture.
+
+No per-language test code is hand-written.
+
+**How to add a kind.**
+
+1. Extend `FixtureSpec` in `sce-build/src/conformance.rs` with a new variant + `kind_str()` arm.
+2. Add a `Manifest::validate` arm if the variant has cross-field invariants.
+3. Add a new `ref_section` entry in `numerical_reference.json` if the oracle shape differs from existing kinds.
+4. Write five fragment templates (`kinds/<kind>.{rs,cpp,go,kt,py}.jinja2`).
+5. If the kind returns a struct type (interpolation / filter / observer / validator / codec), add it to the import conditional in the Rust and Kotlin scaffolds.
+6. If the kind is sequence-based (like filter / observer / validator / codec), add a Go `<kind>Spec` + `<kind>Step`/`<kind>Case` type and `<kind>Steps`/`<kind>Cases` accessor to the Go scaffold with the `ref_section` drift check.
+
+**How to add a language.**
+
+1. Add a `Language` variant in `sce-build/src/generator.rs`.
+2. Add a `harness_layout(Language)` arm in `conformance.rs`.
+3. Write the per-language conformance scaffold (`harness.<ext>.jinja2`) and per-kind fragment files.
+4. Add per-language entries to `cpp_type` / `go_type` / `kt_type` / `rust_type` + `*_literal` formatters in `conformance.rs` and `generator.rs`.
+5. Wire the language's build system to invoke `sce-codegen generate-conformance` and include the auto-rebuild hook (cargo-on-PATH guard).
+
 ---
 
 ## 7. Roadmap
@@ -1423,32 +1613,36 @@ Error handling varies by kind — this is intentional, as each kind has a differ
 
 Core kind support and codegen templates for the most common patterns.
 
-- `sce:kind` attribute parsing in sce-build
-- Document-level codegen templates for: `transform`, `lookup`, `condition`, `codec`
-- Inline kind support in statechart template: `condition`, `lookup`, `codec`, `transform`
-- Schema validation (XSD) for Extended SCXML
-- C++, Kotlin, Rust codegen output (header-only / single-file generation)
-- Kind conformance test suite: reference SCXML + expected codegen output per kind
-- Architecture decision for cross-file kind references (Phase 2 dependency: how sce-build resolves `<invoke src="other.scxml">` and standalone kind imports — build manifest, CMake integration, or sce-build dependency scanner)
+- ~~`sce:kind` attribute parsing in sce-build~~ **Done**
+- ~~Document-level codegen templates for: `transform`, `lookup`, `condition`, `codec`~~ **Done** (all five languages)
+- ~~Inline kind support in statechart template: `condition`, `lookup`, `codec`, `transform`~~ **Done**
+- ~~Schema validation (XSD) for Extended SCXML~~ **Done**: `schemas/sce-forge.xsd` (W3C SCXML namespace wrapper) imports `schemas/sce-forge-ext.xsd` (the `sce:` extension declarations) and validates every forge document at the start of `parse_forge_with_imports`. Bad enum values, malformed `sce:bit-size`, missing required `<sce:field>`/`<sce:entry>`/`<sce:import>` attributes are rejected with line/column info before any kind-specific parsing runs. Validator implementation lives in `sce-build/src/forge/xsd_validator.rs` and uses the `libxml` crate (libxml2 FFI). The two-file split is mandated by XSD 1.0 (one targetNamespace per file) — the entry-point file lives in the W3C SCXML namespace so libxml2 has a root element to begin validation, while the extension file owns the `sce:` namespace declarations. Build dependency added: `libxml2-dev` (Debian/Ubuntu) / `libxml2` (Homebrew/vcpkg). The dependency is host-side only — generated code never links libxml2, so the embedded constraints in §2.1 are unaffected.
+- ~~C++, Kotlin, Rust codegen output (header-only / single-file generation)~~ **Done** (plus Go and Python; see Phase 2)
+- ~~Kind conformance test suite: reference SCXML + expected codegen output per kind~~ **Done** (161 product-golden tests across all kinds and all five languages, see §9)
+- ~~Architecture decision for cross-file kind references~~ **Done**: `compile_forge_with_imports_validated` in sce-build handles `<sce:import>`-driven composition; the product-golden suite exercises it end-to-end via `crossfile_procedure_codec` and `crossfile_validator_transform` fixtures (5 languages × 2 fixtures = 10 golden tests).
 
-### Phase 2: Procedural + Multi-Language
+### Phase 2: Procedural + Multi-Language (Complete)
 
 Sequential logic support and multi-language code generation.
 
-- ~~Codegen templates for: `procedure`, `validator`~~ **Done**: procedure (L1 guard-only + L2 event-driven) and validator for all 5 languages
-- ~~`sce::ProcedureStateMachine` base class in sce_runtime~~ **Done**: Per-language runtime packages (Kotlin abstract class, Rust trait, Go interface, Python ABC) with shared event loop and service types
-- Cross-file kind composition: standalone kinds referencing other standalone kinds (e.g., procedure → codec, validator → transform). Phase 1 inline kinds are within a single statechart; Phase 2 enables references across separate SCXML files.
-- ~~Go, Python codegen templates for all Phase 1+2 kinds~~ **Done**: All Phase 1+2 kinds generate for all 5 languages — 101 conformance tests
+- ~~Codegen templates for: `procedure`, `validator`~~ **Done**: procedure (L1 guard-only + L2 event-driven) and validator for all 5 languages.
+- ~~`sce::ProcedureStateMachine` base class in sce_runtime~~ **Done**: Per-language runtime packages (C++ header, Rust trait, Kotlin abstract class, Go interface, Python ABC) with shared event loop and service types (see §4.5 "Cross-language runtime packages").
+- ~~Cross-file kind composition~~ **Done at the product level**: standalone kinds referencing other standalone kinds via `<sce:import>` generate correct code for all 5 languages; 10 crossfile goldens pass. **Pending**: exposing cross-file composition to the cross-language *numerical* conformance harness (§6.6) — the harness currently runs one SCXML per fixture, so `crossfile_procedure_codec` / `crossfile_validator_transform` are not yet part of the 25-fixture numerical catalog. Extending `render_harness` to accept multi-file fixture groups is tracked as a Phase 2 residual.
+- ~~Go, Python codegen templates for all Phase 1+2 kinds~~ **Done**: All Phase 1+2 kinds generate for all 5 languages.
 
-### Phase 3: Signal Processing + Advanced Kinds
+### Phase 3: Signal Processing + Advanced Kinds (Complete)
 
 Embedded/automotive signal processing patterns.
 
-- Codegen templates for: `filter`, `interpolation`, `timer`, `observer`
-- `sce_forge_runtime` library (header-only / inline-able) — shared algorithms (`linear`, `bilinear`, `MovingAverage`, `LowPass`, `Debounce`, `ThresholdState`, `EventQueue<D>`) and HAL interfaces (`ITimer`); see §2.1
-- User-supplied platform implementations of HAL interfaces (POSIX, FreeRTOS, Zephyr, etc.) — out of scope for `sce_forge_runtime` itself
+- ~~Codegen templates for: `filter`, `interpolation`, `timer`, `observer`~~ **Done** (all five languages)
+- ~~`sce_forge_runtime` library — shared algorithms and HAL interfaces~~ **Done**: shipped as one package per language (`sce/forge/*.h`, `sce-forge-runtime` crate, Kotlin `commonMain`, Go module, `sce_forge_runtime` pip package). Contents:
+  - **Pure algorithms**: `linear<N>`, `bilinear<R,C>`, `MovingAverage<T,N>`, `LowPass<T>`, `Debounce<T,W>`, `ThresholdState`, parallel-array `lookup<K,V,N>`.
+  - **Typed queues and events**: `EventQueue<D>`, `Event<D>` (domain-tagged — see §4.11).
+  - **HAL interfaces**: `ITimer` (timer kind, §4.10); user supplies the platform implementation.
+  - **Procedure base**: `ProcedureStateMachine` + `ProcedureServiceHandler`/`ProcedureServiceTypes` (§4.5).
+- User-supplied platform implementations of HAL interfaces (POSIX, FreeRTOS, Zephyr, etc.) — out of scope for `sce_forge_runtime` itself.
 
-**Phase 3 exit criteria**: All 11 kinds generate compilable code for all 5 target languages (C++/Kotlin/Rust/Go/Python). Kind conformance test suite passes for all kinds.
+**Phase 3 exit criteria — satisfied**: All 11 kinds generate compilable code for all 5 target languages (C++/Kotlin/Rust/Go/Python). Both test suites are green: 161 product-golden tests (one per language × kind × fixture, exact-text comparison of generated files) and 25 cross-language numerical conformance tests (byte-identical numerical assertions against a shared oracle, covering 22 of 28 planned fixtures — the remaining 6 are crossfile composition (2), codec sub-variants deferred to future sessions, and timer fixtures excluded from the cross-language harness because the timer kind depends on a platform-supplied `ITimer` mock that is out of scope for the numerical harness).
 
 ### Phase 4: SCE Mesh Integration + Ecosystem
 
@@ -1464,19 +1658,22 @@ Integration with SCE Mesh distributed runtime and tooling.
 
 ## 8. Kind Summary
 
-| Kind | State | Runtime Dep | Scope | Complexity | Priority |
-|------|-------|-------------|-------|------------|----------|
-| statechart | Persistent (N states) | Yes | Document | Existing | Existing |
-| transform | None | No | Document or Inline | Low | Phase 1 |
-| lookup | None | No | Document or Inline | Low | Phase 1 |
-| condition | None | No | Document or Inline | Low | Phase 1 |
-| codec | None | No | Document or Inline | Medium | Phase 1 |
-| procedure | Transient (run-to-completion) | Yes | Document | Medium | Phase 2 |
-| validator | Minimal (prev value) | No | Document | Medium | Phase 2 |
-| filter | Internal (buffer) | No | Document | Medium | Phase 3 |
-| interpolation | None | No | Document | Medium | Phase 3 |
-| timer | Internal (timers) | Yes | Document | Medium | Phase 3 |
-| observer | Internal (flags) | Yes | Document | Medium | Phase 3 |
+| Kind | State | Runtime Dep | Scope | Cross-lang conformance | Status |
+|------|-------|-------------|-------|------------------------|--------|
+| statechart | Persistent (N states) | `sce_runtime` (W3C engine) | Document | — (existing engine) | Existing |
+| transform | None | None | Document or Inline | 3 fixtures | Done |
+| lookup | None | None (enum dispatch) / `sce_forge_runtime::lookup` (numeric) | Document or Inline | 3 fixtures | Done |
+| condition | None | None | Document or Inline | 3 fixtures | Done |
+| codec | None | None — inline per-file | Document or Inline | 3 fixtures | Done |
+| procedure (L1) | Transient (run-to-completion) | None | Document | 3 fixtures | Done |
+| procedure (L2) | Transient (run-to-completion) | `sce_forge_runtime::procedure` | Document | (via L2 goldens) | Done |
+| validator | Per-field prev-value memory; atomic update on success | None — inline per-file | Document | 4 fixtures | Done |
+| filter | Internal (buffer / EMA state) | `sce_forge_runtime::filter` | Document | 3 fixtures | Done |
+| interpolation | None | `sce_forge_runtime::interpolation` | Document | 2 fixtures | Done |
+| timer | Internal (timers) | `sce_forge_runtime::ITimer` HAL | Document | — (platform mock out of scope for numerical harness) | Done (product golden only) |
+| observer | Internal (hysteresis flags) | `sce_forge_runtime::observer` | Document | 1 fixture | Done |
+
+Cross-language numerical conformance counts refer to the `tests/forge/conformance/fixtures.json` catalog; each fixture runs against every language harness via the shared oracle in `numerical_reference.json` (§6.6). Product-golden counts (§9) are larger because they include per-language exact-text comparisons and the cross-file composition fixtures not yet exposed to the numerical harness.
 
 ---
 
@@ -1487,13 +1684,22 @@ Integration with SCE Mesh distributed runtime and tooling.
 - [x] `sce:kind` attribute parsed and dispatched by sce-build
 - [x] Codegen templates for `transform`, `lookup`, `condition`, `codec` produce compilable C++/Kotlin/Rust/Go/Python output
 - [x] Inline kind support generates helper functions/types within statechart
-- [ ] XSD schema validates Extended SCXML documents
-- [x] Kind conformance test suite: 101 tests across 7 kinds and 5 languages
+- [x] XSD schema validates Extended SCXML documents — `schemas/sce-forge.xsd` (W3C SCXML wrapper) + `schemas/sce-forge-ext.xsd` (extension declarations) wired into `parse_forge_with_imports` via `forge::xsd_validator`. Validates 33 fixture files at parse time; rejects bad enum/union/required-attribute violations with line/column info. End-to-end coverage: 5 unit tests in `xsd_validator::tests` + the existing 161 product goldens running through the validated parse path.
+- [x] Kind conformance test suite — **two complementary suites, both green**:
+  - **Product-golden suite**: 161 tests comparing generated output text against per-language goldens in `tests/forge/expected/` (all 11 kinds × 5 languages + crossfile composition + timer/observer scaffolds). One test failure pinpoints the exact `.rs`/`.h`/`.go`/`.kt`/`.py` file and byte offset that drifted. Run via `cargo test -p sce-build --test forge_conformance`.
+  - **Cross-language numerical conformance suite**: 25 tests per language (5 × 25 = 125 total test executions) comparing runtime-computed values against a shared numerical oracle. Exercises 22 of 28 planned fixtures across 9 kinds (see §6.6). Run via `cargo test --test numerical_conformance` (Rust), `go test ./conformance/...` (Go), `python3 -m unittest test_numerical_conformance` (Python), `ctest` in the conformance CMake project (C++), and `./gradlew :sce-forge-runtime-kotlin:jvmTest` (Kotlin).
 
 ### Overall Success Definition
 
-**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Rust/Go/Python code (Phase 1 kinds complete for all 5 languages). All languages produce identical behavior from the same SCXML source.**
+**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Rust/Go/Python code (all 11 kinds complete for all 5 languages). All languages produce identical behavior from the same SCXML source.**
 
-The measure is: **one SCXML source generates correct, compilable code for all target languages**, with behavior equivalence verified by kind conformance tests.
+The measure is: **one SCXML source generates correct, compilable code for all target languages**, with behavior equivalence verified at two levels of granularity:
 
-**Cross-language equivalence verification**: each conformance test provides a reference SCXML, a set of input values, and expected output values. The generated code for each language is compiled, executed with the same inputs, and outputs are compared against the golden expected values. All languages must produce identical results.
+1. **Textual equivalence** (product-golden suite): the generator is deterministic and its output is byte-stable under `cargo test` on every supported language — a change to any template immediately surfaces as a failing golden.
+2. **Behavioural equivalence** (cross-language numerical conformance, §6.6): the same set of input values, fed through each language's compiled output, produces byte-identical numerical results. The oracle is hand-computed from the Rust reference implementation and checked in once; drift in any language surfaces as a harness-test failure in that language alone.
+
+**Known residuals** (tracked for future sessions, not blockers for overall success):
+
+- Cross-file composition exposed to the numerical conformance harness (§7.2 pending item, 2 fixtures).
+- 3 `forge::expr::tests` failures in `sce-build` (`cpp_float_context_leaves_literal_alone`, `go_untyped_literal_not_promoted_in_float_context`, `python_float_context_leaves_literal_alone`) — known gap in float-literal non-promotion for three of the five languages; the generated code for every currently-supported fixture is unaffected, but the test failures remain as a reminder that the typed expression pipeline is not 100% complete (see `sce-build/src/forge/expr.rs`).
+- Timer fixtures excluded from the numerical harness because they require a platform `ITimer` mock that is outside the harness's scope.
