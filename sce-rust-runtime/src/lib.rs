@@ -68,12 +68,6 @@
 
 pub mod engine;
 pub mod event;
-/// Backward-compatibility re-exports for the SCE Forge procedure kind.
-///
-/// The runtime types and execution engine now live in
-/// [`sce_forge_runtime::procedure`]; this module forwards them so existing
-/// `sce_rust_runtime::forge::*` imports keep compiling.
-pub mod forge;
 pub mod helpers;
 pub mod http;
 pub mod invoke;

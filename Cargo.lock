@@ -1372,7 +1372,6 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "log",
- "sce-forge-runtime",
  "thiserror",
 ]
 
