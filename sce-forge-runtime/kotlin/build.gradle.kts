@@ -6,6 +6,7 @@
 // Section 2.1 for the runtime library policy.
 
 import java.io.ByteArrayOutputStream
+import java.io.File
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
@@ -124,7 +125,51 @@ abstract class GenerateForgeFixtures : DefaultTask() {
     }
 }
 
+// Rebuild sce-codegen from the current sce-build sources when the Rust
+// toolchain is available (local dev). Gradle's up-to-date check via
+// inputs/outputs short-circuits the task when nothing changed; cargo's
+// own incremental build handles any drift Gradle's input tracking misses.
+// The value is eliminating the stale-binary foot-gun where a schema
+// change in conformance.rs would otherwise be silently ignored by the
+// Kotlin jvmTest calling the old binary.
+//
+// In CI, the conformance-kotlin job downloads a pre-built artifact from
+// the build-codegen job and has no Rust toolchain; the `onlyIf` check
+// evaluates PATH at task-execution time and skips this task, so
+// GenerateForgeFixtures consumes the downloaded binary directly.
+//
+// The cargo-on-PATH check is inlined inside `onlyIf` on purpose: a top-
+// level `fun` or `val` would be a script-level reference that Gradle's
+// configuration cache refuses to serialize.
+val buildSceCodegen by tasks.registering(Exec::class) {
+    workingDir = rootProject.projectDir
+    commandLine(
+        "cargo", "build",
+        "--bin", "sce-codegen",
+        "--features", "cli",
+        "--release",
+        "-p", "sce-build",
+    )
+    inputs.dir(rootProject.layout.projectDirectory.dir("sce-build/src"))
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.layout.projectDirectory.file("sce-build/Cargo.toml"))
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    outputs.file(rootProject.layout.projectDirectory.file("target/release/sce-codegen"))
+    onlyIf {
+        val path = System.getenv("PATH") ?: return@onlyIf false
+        val sep = File.pathSeparator
+        for (dir in path.split(sep)) {
+            val candidate = File(dir, "cargo")
+            if (candidate.exists() && candidate.canExecute()) {
+                return@onlyIf true
+            }
+        }
+        false
+    }
+}
+
 val generateForgeFixtures by tasks.registering(GenerateForgeFixtures::class) {
+    dependsOn(buildSceCodegen)
     sceCodegen.set(rootProject.layout.projectDirectory.file("target/release/sce-codegen"))
     resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
     manifest.set(rootProject.layout.projectDirectory.file("tests/forge/conformance/fixtures.json"))

@@ -35,6 +35,41 @@ set(CONFORMANCE_TEMPLATE_DIR "${REPO_ROOT}/tools/codegen/templates/forge/cpp/con
 set(RUNTIME_INCLUDE_DIR "${REPO_ROOT}/sce-forge-runtime/cpp/include")
 set(NLOHMANN_JSON_INCLUDE_DIR "${REPO_ROOT}/third_party/nlohmann_json/include")
 
+# Rebuild sce-codegen from the current sce-build sources when the Rust
+# toolchain is available (local dev). Cargo's incremental build makes this
+# a near-instant no-op when nothing has changed; the value is eliminating
+# the stale-binary foot-gun where a schema change in conformance.rs would
+# otherwise be silently ignored by a C++ test invoking the old binary.
+#
+# The `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)` call tracks sce-build
+# sources as configure-time inputs, so CMake re-runs configure — and thus
+# re-executes the cargo build below — whenever any .rs file changes. In CI
+# the conformance-cpp job downloads a pre-built artifact from the build-
+# codegen job and has no Rust toolchain; `find_program` returns NOTFOUND
+# and the configure-time rebuild is skipped, falling through to the
+# existence check.
+find_program(CARGO_EXECUTABLE cargo)
+if(CARGO_EXECUTABLE)
+    file(GLOB_RECURSE _sce_build_sources CONFIGURE_DEPENDS
+        "${REPO_ROOT}/sce-build/src/*.rs"
+        "${REPO_ROOT}/sce-build/Cargo.toml"
+    )
+    execute_process(
+        COMMAND "${CARGO_EXECUTABLE}" build
+                --bin sce-codegen
+                --features cli
+                --release
+                -p sce-build
+        WORKING_DIRECTORY "${REPO_ROOT}"
+        RESULT_VARIABLE _cargo_rc
+    )
+    if(NOT _cargo_rc EQUAL 0)
+        message(FATAL_ERROR
+            "cargo build of sce-codegen failed (rc=${_cargo_rc})"
+        )
+    endif()
+endif()
+
 if(NOT EXISTS "${SCE_CODEGEN}")
     message(FATAL_ERROR
         "sce-codegen binary not found at ${SCE_CODEGEN}. "

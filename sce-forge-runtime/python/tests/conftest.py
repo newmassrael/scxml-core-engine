@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import fcntl
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +36,31 @@ SCE_CODEGEN = REPO_ROOT / "target" / "release" / "sce-codegen"
 
 
 def _ensure_codegen() -> None:
+    """Rebuild sce-codegen from the current sce-build sources when the Rust
+    toolchain is available (local dev). Cargo's incremental build makes this
+    a near-instant no-op when nothing has changed; the value is eliminating
+    the stale-binary foot-gun where a schema change in conformance.rs would
+    otherwise be silently ignored by Python tests calling the old binary.
+
+    In CI, the Python job downloads a pre-built artifact from the build-
+    codegen job and has no Rust toolchain — shutil.which returns None and
+    we fall through to the binary-exists check below."""
+    if shutil.which("cargo") is not None:
+        subprocess.run(
+            [
+                "cargo",
+                "build",
+                "--bin",
+                "sce-codegen",
+                "--features",
+                "cli",
+                "--release",
+                "-p",
+                "sce-build",
+            ],
+            cwd=str(REPO_ROOT),
+            check=True,
+        )
     if not SCE_CODEGEN.exists():
         raise RuntimeError(
             f"sce-codegen binary not found at {SCE_CODEGEN}. "

@@ -29,6 +29,18 @@ RESOURCE_DIR="$REPO_ROOT/tests/forge/resources"
 MANIFEST="$REPO_ROOT/tests/forge/conformance/fixtures.json"
 OUT_DIR="$SCRIPT_DIR/generated"
 
+# Rebuild sce-codegen from the current sce-build sources when the Rust
+# toolchain is available (local dev). Cargo's incremental build makes this a
+# near-instant no-op when nothing has changed; the value is eliminating the
+# stale-binary foot-gun where a schema change in conformance.rs would
+# otherwise be silently ignored by a test still calling the old binary. In
+# CI, the Go job downloads a pre-built artifact from the build-codegen job
+# and cargo is not on PATH — this branch is skipped and the existence check
+# below catches any misconfiguration.
+if command -v cargo >/dev/null 2>&1; then
+    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli --release -p sce-build)
+fi
+
 if [[ ! -x "$SCE_CODEGEN" ]]; then
     echo "error: sce-codegen binary not found at $SCE_CODEGEN" >&2
     echo "  Build it first: cargo build --bin sce-codegen --features cli --release -p sce-build" >&2
