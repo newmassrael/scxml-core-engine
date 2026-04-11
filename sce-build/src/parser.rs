@@ -47,6 +47,19 @@ impl SCXMLParser {
         name: &str,
         base_dir: Option<&Path>,
     ) -> Result<SCXMLModel, String> {
+        // W3C SCXML + sce: namespace schema validation. Runs before any
+        // structural parsing so malformed documents fail fast at the
+        // system boundary with libxml2's line/column diagnostics. The
+        // schema (`schemas/sce-forge.xsd`) is permissive for W3C SCXML
+        // structural elements (xs:any lax) and strict for sce:* — pure
+        // statechart documents pass through trivially while inline forge
+        // kinds on <data> still get their sce: attributes validated.
+        // Silently skipped if the schemas/ directory is unreachable
+        // (downstream vendoring without the schemas) — see
+        // `forge::xsd_validator::validate_or_skip`.
+        crate::forge::xsd_validator::validate_or_skip(content, name)
+            .map_err(|errs| format!("XSD validation failed for {name}:\n{errs}"))?;
+
         let doc = roxmltree::Document::parse(content)
             .map_err(|e| format!("XML parse error: {e}"))?;
         let root = doc.root_element();

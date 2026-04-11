@@ -230,4 +230,57 @@ mod tests {
             failures.join("\n---\n")
         );
     }
+
+    /// Sweep every statechart fixture under `resources/` through the same
+    /// XSD validator that `parser::SCXMLParser::parse_impl` now invokes at
+    /// the system boundary. Catches drift between the schema's permissive
+    /// W3C SCXML wrapper (xs:any lax) and any `sce:*` attribute a fixture
+    /// introduces without declaring it in `sce-forge-ext.xsd`.
+    ///
+    /// Runs against the entire W3C conformance corpus (~200 fixtures), so
+    /// it doubles as a smoke test: if a new sce: attribute lands in one
+    /// statechart test and the ext schema hasn't been updated, this test
+    /// fails with a concrete file + line pointer.
+    #[test]
+    fn all_statechart_fixtures_validate() {
+        let schema = schema();
+        let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources");
+        assert!(
+            resources.exists(),
+            "statechart resources dir missing: {}",
+            resources.display()
+        );
+        let mut total = 0usize;
+        let mut failures = Vec::new();
+        for top in std::fs::read_dir(&resources).expect("resources dir") {
+            let top = top.unwrap();
+            if !top.file_type().unwrap().is_dir() {
+                continue;
+            }
+            for entry in std::fs::read_dir(top.path()).expect("fixture subdir") {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("scxml") {
+                    continue;
+                }
+                total += 1;
+                let xml = std::fs::read_to_string(&path).unwrap();
+                let label = path
+                    .strip_prefix(&resources)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                if let Err(errs) = validate(&xml, &label, &schema) {
+                    failures.push(format!("{label}:\n{errs}"));
+                }
+            }
+        }
+        assert!(total > 0, "no statechart fixtures found to sweep");
+        assert!(
+            failures.is_empty(),
+            "{} of {total} statechart fixtures failed XSD validation:\n{}",
+            failures.len(),
+            failures.join("\n---\n")
+        );
+    }
 }
