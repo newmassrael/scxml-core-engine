@@ -429,16 +429,17 @@ public:
      * @param event Event to raise externally
      * @param eventData Optional event data as JSON string (W3C SCXML 5.10)
      */
-    void raiseExternal(Event event, const std::string &eventData = "", const std::string &origin = "") {
-        // W3C SCXML C.1: Enqueue event with metadata (origin, data, sendid, type, originType)
-        // W3C SCXML 5.10.1: Set originType to SCXML Event I/O Processor for parent-child communication
-        externalQueue_.raise(
-            EventWithMetadata(event, eventData, origin, "", "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE));
-
-        // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
-        if constexpr (SCE::Core::HasExternalEventFlag<StatePolicy>) {
-            policy_.nextEventIsExternal_ = true;
-        }
+    void raiseExternal(Event event, const std::string &eventData = "", const std::string &origin = "",
+                       const std::string &target = "") {
+        // W3C SCXML C.1: Enqueue event with metadata (origin, data, sendid, type, originType, target)
+        // Delegates to the full-metadata overload so that the target attribute is
+        // preserved on EventWithMetadata. The prior implementation constructed
+        // metadata inline and dropped `target`, which meant downstream consumers
+        // (e.g. autoforward routing, mesh target dispatch) never saw it.
+        EventWithMetadata meta(event, eventData, origin, "", "external",
+                               SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+        meta.target = target;
+        raiseExternal(meta);
     }
 
     /**

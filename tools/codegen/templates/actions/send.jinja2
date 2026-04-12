@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {
 {% if action.id %}
 std::string sendId = "{{ action.id }}";
@@ -525,7 +528,7 @@ if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
     meta.typedData = typedData;
     engine.raiseExternal(std::move(meta));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% else %}
@@ -539,7 +542,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
     meta.typedData = typedData;
     engine.raiseExternal(std::move(meta));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% endif %}
@@ -555,7 +558,7 @@ if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
     meta.typedData = typedData;
     engine.raiseExternal(std::move(meta));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% else %}
@@ -569,7 +572,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
     meta.typedData = typedData;
     engine.raiseExternal(std::move(meta));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% endif %}
@@ -591,7 +594,7 @@ if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
     meta.typedData = typedData;
     engine.raiseExternal(std::move(meta));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, contentData);
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, contentData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% else %}
@@ -605,7 +608,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
     meta.typedData = typedData;
     engine.raiseExternal(std::move(meta));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, contentData);
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, contentData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% endif %}
@@ -621,7 +624,7 @@ if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
     meta.typedData = typedData;
     engine.raiseExternal(std::move(meta));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, contentData);
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, contentData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% else %}
@@ -635,7 +638,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
     meta.typedData = typedData;
     engine.raiseExternal(std::move(meta));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, contentData);
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, contentData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% endif %}
@@ -663,7 +666,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% if model.needs_script_engine or model.needs_event_origin %}
         engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
-        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
     }
 {% else %}
@@ -673,7 +676,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% if model.needs_script_engine or model.needs_event_origin %}
         engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
-        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
     }
 {% endif %}
@@ -685,7 +688,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% if model.needs_script_engine or model.needs_event_origin %}
         engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
-        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
     }
 {% else %}
@@ -695,7 +698,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% if model.needs_script_engine or model.needs_event_origin %}
         engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
-        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
     }
 {% endif %}
@@ -711,7 +714,7 @@ if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
 {% if model.needs_script_engine or model.needs_event_origin %}
     engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% else %}
@@ -721,7 +724,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% if model.needs_script_engine or model.needs_event_origin %}
     engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% endif %}
@@ -733,7 +736,7 @@ if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
 {% if model.needs_script_engine or model.needs_event_origin %}
     engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% else %}
@@ -743,7 +746,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% if model.needs_script_engine or model.needs_event_origin %}
     engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
-    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
 {% endif %}
 }
 {% endif %}
