@@ -25,18 +25,18 @@
     // W3C SCXML 3.6: Get initial children of compound state (supports space-separated descendant targets)
     static std::vector<State> getInitialChildren(State state) {
         switch (state) {
-            {% for state_id, state in model.states | dictsort %}
-            {% if state.initial_children %}
-            case State::{{ state_id | capitalize }}:
-                return {
-                    {%- for child in state.initial_children -%}
-                    State::{{ child | capitalize }}{{ ", " if not loop.last else "" }}
-                    {%- endfor -%}
-                };
-            {% endif %}
-            {% endfor %}
-            default:
-                return {};  // Not compound or no initial child
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.initial_children %}
+        case State::{{ state_id | capitalize }}:
+            return {
+                {%- for child in state.initial_children -%}
+                State::{{ child | capitalize }}{{ ", " if not loop.last else "" }}
+                {%- endfor -%}
+            };
+        {% endif %}
+        {% endfor %}
+        default:
+            return {};  // Not compound or no initial child
         }
     }
 
@@ -50,28 +50,28 @@
     // Non-static version that checks history before returning initial child
     State getInitialOrHistoryChild(State state) const {
         switch (state) {
-            {% for state_id, state in model.states | dictsort %}
-            {% if state.initial_history_id %}
-            case State::{{ state_id | capitalize }}:
-                // W3C SCXML 3.11: Check history for {{ state.initial_history_id }}
-                if (history_{{ state.initial_history_id }}.has_value() && !history_{{ state.initial_history_id }}->empty()) {
-                    return history_{{ state.initial_history_id }}->front();  // Restore to first state in history
-                }
-                return getInitialChild(State::{{ state_id | capitalize }});  // No history, use default
-            {% elif state.initial_children %}
-            case State::{{ state_id | capitalize }}:
-                return getInitialChild(State::{{ state_id | capitalize }});
-            {% endif %}
-            {% endfor %}
-            default:
-                return state;  // Not compound or no initial child
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.initial_history_id %}
+        case State::{{ state_id | capitalize }}:
+            // W3C SCXML 3.11: Check history for {{ state.initial_history_id }}
+            if (history_{{ state.initial_history_id }}.has_value() && !history_{{ state.initial_history_id }}->empty()) {
+                return history_{{ state.initial_history_id }}->front();  // Restore to first state in history
+            }
+            return getInitialChild(State::{{ state_id | capitalize }});  // No history, use default
+        {% elif state.initial_children %}
+        case State::{{ state_id | capitalize }}:
+            return getInitialChild(State::{{ state_id | capitalize }});
+        {% endif %}
+        {% endfor %}
+        default:
+            return state;  // Not compound or no initial child
         }
     }
 
     // W3C SCXML 3.6: Enter deep initial targets (delegate to StateEntryHelper)
     {% for state_id, state in model.states | dictsort %}
     {% if state.initial_children and state.initial_children|length > 0 %}
-    template<typename Engine>
+    template <typename Engine>
     void enterDeepInitialTargets_{{ state_id | capitalize }}(Engine& engine) {
         // W3C SCXML 3.6: Deep initial targets for {{ state_id }}: initial="{{ state.initial }}"
         // Delegate to StateEntryHelper (ARCHITECTURE.md Zero Duplication Principle)
@@ -92,26 +92,26 @@
     // W3C SCXML 3.4: Check if state is a parallel state
     static bool isParallelState(State state) {
         switch (state) {
-            {% for state_id, state in model.states | dictsort %}
-            {% if state.is_parallel %}
-            case State::{{ state_id | capitalize }}:
-                return true;
-            {% endif %}
-            {% endfor %}
-            default:
-                return false;
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.is_parallel %}
+        case State::{{ state_id | capitalize }}:
+            return true;
+        {% endif %}
+        {% endfor %}
+        default:
+            return false;
         }
     }
 
     // W3C SCXML 3.4: Get child regions of a parallel state
     static ::std::vector<State> getParallelRegions(State state) {
         switch (state) {
-            {% for parallel_id, regions in model.parallel_regions | dictsort %}
-            case State::{{ parallel_id | capitalize }}:
-                return { {% for region in regions %}State::{{ region | capitalize }}{{ ", " if not loop.last }}{% endfor %} };
-            {% endfor %}
-            default:
-                return {};
+        {% for parallel_id, regions in model.parallel_regions | dictsort %}
+        case State::{{ parallel_id | capitalize }}:
+            return { {% for region in regions %}State::{{ region | capitalize }}{{ ", " if not loop.last }}{% endfor %} };
+        {% endfor %}
+        default:
+            return {};
         }
     }
 
@@ -124,12 +124,12 @@
     // W3C SCXML 3.13: Get document order for exit order tie-breaking
     static int getDocumentOrder(State state) {
         switch (state) {
-            {% for state_id, state in model.states | dictsort %}
-            case State::{{ state_id | capitalize }}:
-                return {{ state.document_order }};
-            {% endfor %}
-            default:
-                return 0;
+        {% for state_id, state in model.states | dictsort %}
+        case State::{{ state_id | capitalize }}:
+            return {{ state.document_order }};
+        {% endfor %}
+        default:
+            return 0;
         }
     }
 {% endif %}

@@ -211,7 +211,9 @@ fn render_cpp(
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;
+    let header_code = postprocess_cpp_header(&header_code);
     let inl_code = inl_tmpl.render(inl_ctx).map_err(render_error)?;
+    let inl_code = postprocess_cpp_inl(&inl_code);
 
     Ok(GeneratedOutput {
         files: vec![
@@ -519,4 +521,201 @@ fn load_templates_recursive(
         }
     }
     Ok(())
+}
+
+// ── C++ post-processing ────────────────────────────────────────
+//
+// Responsibility: structural corrections that templates cannot express
+// (dedent, include sort, blank-line collapse, orphaned-line re-indent).
+//
+// Style-level formatting (pointer alignment, line wrapping, macro alignment,
+// brace insertion) is delegated to clang-format via the CMake build system.
+// This keeps a clean separation: codegen → structure → style.
+
+/// Post-process generated C++ header (.h) to match clang-format style.
+fn postprocess_cpp_header(code: &str) -> String {
+    let lines: Vec<&str> = code.lines().collect();
+    let mut out = Vec::with_capacity(lines.len());
+
+    // Sort include blocks and fix preprocessor indentation.
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+
+        // Sort contiguous #include blocks alphabetically.
+        if line.trim_start().starts_with("#include") {
+            let mut include_block = vec![line.to_string()];
+            i += 1;
+            while i < lines.len() && lines[i].trim_start().starts_with("#include") {
+                include_block.push(lines[i].to_string());
+                i += 1;
+            }
+            include_block.sort();
+            for inc in include_block {
+                out.push(inc);
+            }
+            continue;
+        }
+
+        // Strip indent inside #ifndef preprocessor guards.
+        if line.starts_with("    #define ") || line.starts_with("    #define\t") {
+            out.push(line.trim_start().to_string());
+            i += 1;
+            continue;
+        }
+        if line == "    // Debug logging disabled in release builds" {
+            out.push(line.trim_start().to_string());
+            i += 1;
+            continue;
+        }
+
+        // Namespace closing: `} //` → `}  //`
+        if line.starts_with("} // namespace") {
+            out.push(line.replacen("} // ", "}  // ", 1));
+            i += 1;
+            continue;
+        }
+
+        out.push(line.to_string());
+        i += 1;
+    }
+
+    // Collapse consecutive blank lines, remove trailing blanks.
+    collapse_blank_lines(&out)
+}
+
+/// Collapse consecutive blank lines to single blank line, trim trailing.
+fn collapse_blank_lines(lines: &[String]) -> String {
+    let mut result = String::new();
+    let mut prev_blank = false;
+    for line in lines {
+        let is_blank = line.trim().is_empty();
+        if is_blank && prev_blank {
+            continue;
+        }
+        prev_blank = is_blank;
+        result.push_str(line);
+        result.push('\n');
+    }
+    let trimmed = result.trim_end();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    format!("{trimmed}\n")
+}
+
+/// Post-process generated C++ .inl file to match the project clang-format style.
+///
+/// The .inl file is `#include`d inside a struct body, so templates produce code
+/// with a 4-space base indent. Additionally, action templates (raise, script, etc.)
+/// emit code at column 0 regardless of their nesting context (Jinja2 limitation).
+///
+/// This function:
+/// 1. Strips the 4-space base indent from all lines (the template's struct-level indent).
+/// 2. Re-indents orphaned lines (lines at 0 indent inside a nested block) by
+///    tracking brace depth — a lightweight structural re-indenter.
+/// 3. Collapses consecutive blank lines to one.
+fn postprocess_cpp_inl(code: &str) -> String {
+    // The .inl template uses 4-space indent for all top-level code.
+    const BASE_INDENT: usize = 4;
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut brace_depth: i32 = 0;
+
+    for raw_line in code.lines() {
+        let is_blank = raw_line.trim().is_empty();
+        if is_blank {
+            lines.push(String::new());
+            continue;
+        }
+
+        // Strip the base indent (4 spaces) from lines that have it.
+        let line = if raw_line.len() >= BASE_INDENT
+            && raw_line[..BASE_INDENT].chars().all(|c| c == ' ')
+        {
+            raw_line[BASE_INDENT..].to_string()
+        } else {
+            // Line has less than BASE_INDENT leading spaces (e.g., orphaned action code at col 0).
+            // Will be re-indented below based on brace depth.
+            raw_line.to_string()
+        };
+
+        let trimmed = line.trim().to_string();
+        if trimmed.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+
+        // Count braces to track nesting depth, excluding braces in string
+        // literals and comments.
+        let opens: i32 = count_braces(&trimmed, '{');
+        let closes: i32 = count_braces(&trimmed, '}');
+
+        // A line starting with '}' reduces depth BEFORE indentation.
+        let effective_depth = if trimmed.starts_with('}') {
+            (brace_depth - closes + opens).max(0)
+        } else {
+            brace_depth
+        };
+
+        // The line's own indent (after base stripping).
+        let line_indent = line.len() - trimmed.len();
+
+        // If this line is at 0 indent but should be deeper (orphaned action code),
+        // re-indent it to match the current brace depth.
+        let output_line = if line_indent == 0 && effective_depth > 0 {
+            let indent_str: String =
+                std::iter::repeat(' ').take(effective_depth as usize * 4).collect();
+            format!("{indent_str}{trimmed}")
+        } else {
+            line
+        };
+
+        lines.push(output_line);
+
+        // Update brace depth for the NEXT line.
+        if trimmed.starts_with('}') {
+            brace_depth = (brace_depth - closes + opens).max(0);
+        } else {
+            brace_depth = (brace_depth + opens - closes).max(0);
+        }
+    }
+
+    collapse_blank_lines(&lines)
+}
+
+/// Count occurrences of a brace character, skipping string literals and comments.
+fn count_braces(line: &str, brace: char) -> i32 {
+    let mut count = 0i32;
+    let mut in_string = false;
+    let mut in_char = false;
+    let mut prev = '\0';
+    let bytes = line.as_bytes();
+
+    for (i, &b) in bytes.iter().enumerate() {
+        let c = b as char;
+        if in_string {
+            if c == '"' && prev != '\\' {
+                in_string = false;
+            }
+        } else if in_char {
+            if c == '\'' && prev != '\\' {
+                in_char = false;
+            }
+        } else {
+            // Check for line comment
+            if c == '/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                break; // Rest of line is comment
+            }
+            if c == '"' {
+                in_string = true;
+            } else if c == '\'' {
+                in_char = true;
+            } else if c == brace {
+                count += 1;
+            }
+        }
+        prev = c;
+    }
+    count
 }

@@ -10,6 +10,9 @@ if(POLICY CMP0116)
     cmake_policy(SET CMP0116 NEW)
 endif()
 
+# clang-format integration for generated C++ code
+include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
+
 # Find sce-codegen binary (built via: cargo build --bin sce-codegen --features cli --release -p sce-build)
 find_program(SCE_CODEGEN sce-codegen
     PATHS "${CMAKE_SOURCE_DIR}/target/release" "${CMAKE_SOURCE_DIR}/target/debug"
@@ -151,9 +154,16 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
 
         # Generate C++ code for sub SCXML (as invoked child)
         set(SUB_INL_FILE "${OUTPUT_DIR}/${SUB_TXML_NAME}_sm.inl")
+        # clang-format post-processing (no-op if not available)
+        if(SCE_CLANG_FORMAT_FOUND)
+            set(_SUB_FORMAT_CMD COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}" -i "${SUB_HEADER_FILE}" "${SUB_INL_FILE}")
+        else()
+            set(_SUB_FORMAT_CMD "")
+        endif()
         add_custom_command(
             OUTPUT "${SUB_HEADER_FILE}"
             COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
+            ${_SUB_FORMAT_CMD}
             DEPENDS "${SUB_SCXML_FILE}" "${SCE_CODEGEN}"
             DEPFILE "${SUB_HEADER_FILE}.d"
             BYPRODUCTS "${SUB_INL_FILE}"
@@ -249,10 +259,17 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         endif()
     ")
 
+    # clang-format post-processing (no-op if not available)
+    if(SCE_CLANG_FORMAT_FOUND)
+        set(_PARENT_FORMAT_CMD COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}" -i "${GENERATED_HEADER}" "${GENERATED_INL}")
+    else()
+        set(_PARENT_FORMAT_CMD "")
+    endif()
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
         COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --write-deps "${GENERATED_HEADER}.d"
         COMMAND ${CMAKE_COMMAND} -P "${PROCESS_CHILDREN_SCRIPT}"
+        ${_PARENT_FORMAT_CMD}
         DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} "${SCE_CODEGEN}"
         DEPFILE "${GENERATED_HEADER}.d"
         BYPRODUCTS "${GENERATED_INL}"

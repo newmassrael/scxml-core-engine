@@ -113,7 +113,7 @@
 {% endif %}
 {% endmacro %}
 
-    template<typename Engine>
+    template <typename Engine>
     // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ via tryTransitionInState)
     [[gnu::hot]]
     bool processTransition(State& currentState, [[maybe_unused]] Event event, [[maybe_unused]] Engine& engine) {
@@ -346,7 +346,7 @@ private:
     // W3C SCXML Appendix D.2: Execute microstep with proper ordering
     // ARCHITECTURE.MD: Zero Duplication Principle - Uses ParallelTransitionHelper (Single Source of Truth)
     // Exit all → Transition content all → Enter all
-    template<typename Engine>
+    template <typename Engine>
     void executeMicrostep(const ::std::vector<TransitionInfo>& transitions,
                          [[maybe_unused]] State& currentState,
                          bool& transitionTaken,
@@ -518,7 +518,7 @@ private:
     // - collectMode = nullptr: Immediate execution (traditional behavior)
     // - collectMode = vector: Collection only (for optimal transition set)
 {% endif %}
-    template<typename Engine>
+    template <typename Engine>
     [[gnu::hot]]
     bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Event event,
                               [[maybe_unused]] State& currentState, [[maybe_unused]] bool& transitionTaken,
@@ -711,7 +711,7 @@ private:
 
 public:
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    template<typename Engine>
+    template <typename Engine>
     void executeTransitionActions([[maybe_unused]] Engine& engine) {
 {% if model.has_transition_actions %}
         if (!hasTransitionActions_) {

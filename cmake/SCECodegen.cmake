@@ -33,6 +33,9 @@ endif()
 
 message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 
+# clang-format integration for generated C++ code
+include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
+
 #[=============================================================================[
 sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir] [LANGUAGE lang])
 
@@ -109,11 +112,20 @@ function(sce_add_state_machine)
         set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
     endif()
 
+    # clang-format post-processing for C++ output (no-op if not available or non-C++)
+    if(SCE_CLANG_FORMAT_FOUND AND SCE_LANGUAGE STREQUAL "cpp")
+        set(_SCE_INL_OUTPUT "${SCE_OUTPUT_DIR}/${SCXML_NAME}_sm.inl")
+        set(_SCE_FORMAT_CMD COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}" -i "${GENERATED_OUTPUT}" "${_SCE_INL_OUTPUT}")
+    else()
+        set(_SCE_FORMAT_CMD "")
+    endif()
+
     # Add custom command to generate state machine code
     # Uses DEPFILE for fine-grained template dependency tracking
     add_custom_command(
         OUTPUT "${GENERATED_OUTPUT}"
         COMMAND ${_SCE_CODEGEN_CMD}
+        ${_SCE_FORMAT_CMD}
         DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN}"
         DEPFILE "${_SCE_DEPFILE}"
         COMMENT "SCE: Generating ${SCXML_NAME} (${SCE_LANGUAGE}) from SCXML"

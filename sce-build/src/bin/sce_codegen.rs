@@ -56,6 +56,13 @@ enum Commands {
         /// for any Go crossfile fixture; ignored for other languages.
         #[arg(long)]
         go_module_prefix: Option<String>,
+        /// Path to a .clang-format file for C++ output formatting.
+        /// When omitted, the built-in default style is used.
+        #[arg(long)]
+        format_style: Option<String>,
+        /// Disable clang-format post-processing on C++ output.
+        #[arg(long)]
+        no_format: bool,
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
@@ -77,6 +84,13 @@ enum Commands {
         /// List tests without generating
         #[arg(long)]
         list: bool,
+        /// Path to a .clang-format file for C++ output formatting.
+        /// When omitted, the built-in default style is used.
+        #[arg(long)]
+        format_style: Option<String>,
+        /// Disable clang-format post-processing on C++ output.
+        #[arg(long)]
+        no_format: bool,
     },
     /// Fix SCXML name attribute (ensure <scxml name="testXXX">)
     FixScxmlName {
@@ -134,6 +148,8 @@ fn main() {
             as_child,
             write_deps,
             go_module_prefix,
+            format_style,
+            no_format,
         } => cmd_generate(
             &scxml,
             &language,
@@ -141,6 +157,8 @@ fn main() {
             as_child,
             write_deps.as_deref(),
             go_module_prefix.as_deref(),
+            format_style.as_deref(),
+            no_format,
         ),
         Commands::GenerateW3c {
             language,
@@ -149,7 +167,18 @@ fn main() {
             test,
             clean,
             list,
-        } => cmd_generate_w3c(&language, registry.as_deref(), resources.as_deref(), test.as_deref(), clean, list),
+            format_style,
+            no_format,
+        } => cmd_generate_w3c(
+            &language,
+            registry.as_deref(),
+            resources.as_deref(),
+            test.as_deref(),
+            clean,
+            list,
+            format_style.as_deref(),
+            no_format,
+        ),
         Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
@@ -171,11 +200,16 @@ fn cmd_generate(
     as_child: bool,
     depfile_path: Option<&str>,
     go_module_prefix: Option<&str>,
+    format_style: Option<&str>,
+    no_format: bool,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
         eprintln!("Unknown language: {language}. Use rust, cpp, kotlin, or go.");
         std::process::exit(1);
     });
+
+    // C++ formatter: created once and reused for all output files.
+    let cpp_formatter = create_cpp_formatter(lang, format_style, no_format);
 
     // SCE Forge: detect non-statechart kind and route to forge pipeline.
     // Read the file once; the same content is reused for both detection and compilation.
@@ -204,8 +238,9 @@ fn cmd_generate(
             &forge_opts,
         ) {
             Ok(output) => {
+                let files = maybe_format_files(output.files, &cpp_formatter);
                 let out = Path::new(output_dir);
-                for (filename, code) in &output.files {
+                for (filename, code) in &files {
                     let path = out.join(filename);
                     fs::write(&path, code).unwrap_or_else(|e| {
                         eprintln!("Write error: {e}");
@@ -215,8 +250,7 @@ fn cmd_generate(
                 }
                 if let Some(dep_path) = depfile_path {
                     let out = Path::new(output_dir);
-                    let targets: Vec<String> = output
-                        .files
+                    let targets: Vec<String> = files
                         .iter()
                         .map(|(f, _)| out.join(f).display().to_string())
                         .collect();
@@ -374,8 +408,9 @@ fn cmd_generate(
         std::process::exit(1);
     });
 
+    let files = maybe_format_files(output.files, &cpp_formatter);
     let mut output_paths = Vec::new();
-    for (filename, code) in &output.files {
+    for (filename, code) in &files {
         let file_path = out_path.join(filename);
         fs::write(&file_path, code).unwrap_or_else(|e| {
             eprintln!("Cannot write {}: {e}", file_path.display());
@@ -597,7 +632,16 @@ struct TestMetadata {
     specnum: String,
 }
 
-fn cmd_generate_w3c(language: &str, registry: Option<&str>, resources: Option<&str>, single_test: Option<&str>, clean: bool, list: bool) {
+fn cmd_generate_w3c(
+    language: &str,
+    registry: Option<&str>,
+    resources: Option<&str>,
+    single_test: Option<&str>,
+    clean: bool,
+    list: bool,
+    format_style: Option<&str>,
+    no_format: bool,
+) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
         eprintln!("Unknown language: {language}. Use cpp, rust, kotlin, or go.");
         std::process::exit(1);
@@ -623,7 +667,10 @@ fn cmd_generate_w3c(language: &str, registry: Option<&str>, resources: Option<&s
         }
     };
 
-    generate_w3c_unified(backend.as_ref(), &resources_dir, &cmake_file, single_test, clean, list);
+    // C++ formatter: created once and reused for all generated tests.
+    let cpp_formatter = create_cpp_formatter(lang, format_style, no_format);
+
+    generate_w3c_unified(backend.as_ref(), &resources_dir, &cmake_file, single_test, clean, list, &cpp_formatter);
 }
 
 fn find_project_root() -> PathBuf {
@@ -992,6 +1039,7 @@ fn generate_w3c_unified(
     single_test: Option<&str>,
     clean: bool,
     list: bool,
+    cpp_formatter: &Option<sce_build::formatter::CppFormatter>,
 ) {
     if clean {
         backend.clean();
@@ -1053,6 +1101,9 @@ fn generate_w3c_unified(
 
                 match backend.generate_sm(&model, input_stem) {
                     Ok(files) => {
+                        // Format C++ output before writing to disk
+                        let files = maybe_format_files(files, cpp_formatter);
+
                         // Determine write directory: per-test subdir or flat output dir
                         let test_mod_dir = if backend.uses_per_test_subdirs() {
                             backend.sm_output_base().join(format!("test{test_id}"))
@@ -1835,6 +1886,46 @@ fn cmd_list_fixtures(manifest_path: &str, format: &str) {
 /// Resolve SCXML source path to project-relative path (delegates to lib).
 fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &Path) {
     sce_build::resolve_source_path(model, scxml_path.to_str().unwrap_or(""));
+}
+
+/// Create a C++ formatter if language is C++ and formatting is not disabled.
+/// Returns `None` for non-C++ languages, when `--no-format` is set, or when
+/// `clang-format` is not available on PATH.
+fn create_cpp_formatter(
+    lang: Language,
+    format_style: Option<&str>,
+    no_format: bool,
+) -> Option<sce_build::formatter::CppFormatter> {
+    if lang != Language::Cpp || no_format {
+        return None;
+    }
+    match sce_build::formatter::CppFormatter::new(format_style.map(Path::new)) {
+        Ok(f) => Some(f),
+        Err(sce_build::formatter::FormatError::NotFound) => {
+            eprintln!("  Note: clang-format not found on PATH, skipping C++ formatting");
+            None
+        }
+        Err(sce_build::formatter::FormatError::StyleNotFound(p)) => {
+            eprintln!("  Error: --format-style file not found: {p}");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("  Warning: formatter init failed: {e}");
+            None
+        }
+    }
+}
+
+/// Format generated file contents through the C++ formatter, if available.
+/// Non-C++ files (by extension) pass through unchanged.
+fn maybe_format_files(
+    files: Vec<(String, String)>,
+    formatter: &Option<sce_build::formatter::CppFormatter>,
+) -> Vec<(String, String)> {
+    let Some(fmt) = formatter else {
+        return files;
+    };
+    fmt.format_output(files)
 }
 
 /// Write file only if content differs (preserves timestamps).

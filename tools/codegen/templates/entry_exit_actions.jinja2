@@ -44,7 +44,7 @@
       Verification: Test 527 (donedata content expr) passes with _event.data == 'foo' guard evaluation
 #}
 
-    template<typename Engine>
+    template <typename Engine>
 {% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% endif %}
@@ -70,7 +70,7 @@
 {% if model.has_entry_actions %}
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
-            case State::{{ state_id | capitalize }}:
+        case State::{{ state_id | capitalize }}:
 {% if state.datamodel or state.on_entry_blocks or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
@@ -298,8 +298,8 @@
 {% endif %}
                 break;
 {% endfor %}
-            default:
-                break;
+        default:
+            break;
         }
 {% endif %}{# model.has_entry_actions #}
 {% if model.has_parallel_states %}
@@ -330,16 +330,16 @@
         if (isCompoundState(state) && !isParallelState(state)) {
             // W3C SCXML 3.6: Check if state has multiple or deep initial targets
             switch (state) {
-                {% for state_id, state in model.states | dictsort %}
-                {% if state.initial_children and state.initial_children|length > 0 %}
-                case State::{{ state_id | capitalize }}:
-                    AOT_DEBUG("AOT executeEntryActions: State {} has initial children, delegating to StateEntryHelper",
-                             static_cast<int>(state));
-                    enterDeepInitialTargets_{{ state_id | capitalize }}(engine);
-                    break;
-                {% endif %}
-                {% endfor %}
-                default:
+            {% for state_id, state in model.states | dictsort %}
+            {% if state.initial_children and state.initial_children|length > 0 %}
+            case State::{{ state_id | capitalize }}:
+                AOT_DEBUG("AOT executeEntryActions: State {} has initial children, delegating to StateEntryHelper",
+                         static_cast<int>(state));
+                enterDeepInitialTargets_{{ state_id | capitalize }}(engine);
+                break;
+            {% endif %}
+            {% endfor %}
+            default:
                     // No explicit initial children - use single initial child
                     State initialChild = getInitialChild(state);
                     if (initialChild != state) {
@@ -353,7 +353,7 @@
 {% endif %}
     }
 
-    template<typename Engine>
+    template <typename Engine>
 {% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
@@ -432,7 +432,7 @@
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
-            case State::{{ state_id | capitalize }}:
+        case State::{{ state_id | capitalize }}:
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
 {% if state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
                 {
@@ -496,8 +496,8 @@
                 break;
 {% endif %}{# state has exit actions #}
 {% endfor %}
-            default:
-                break;
+        default:
+            break;
         }
 {% endif %}{# model.has_exit_actions #}
     }

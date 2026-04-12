@@ -24,6 +24,8 @@ pub mod kotlin;
 pub mod lua_transformer;
 pub mod conformance;
 pub mod forge;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod formatter;
 #[cfg(feature = "wasm")]
 mod wasm;
 

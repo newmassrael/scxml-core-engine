@@ -169,7 +169,7 @@ namespace SCE::Generated::{{ model.name }} {
 
 {# Forward declaration #}
 {% if _has_sm_tpl %}
-template<{{ _sm_tpl_params | join(', ') }}>
+template <{{ _sm_tpl_params | join(', ') }}>
 {% endif %}
 class {{ model.name }};
 
@@ -212,7 +212,7 @@ struct TransitionInfo {
 {# Policy class #}
 // State policy for {{ model.name }}
 {% if _has_tpl %}
-template<{{ _tpl_params | join(', ') }}>
+template <{{ _tpl_params | join(', ') }}>
 {% endif %}
 struct {{ model.name }}Policy {
     using State = ::SCE::Generated::{{ model.name }}::State;
@@ -428,42 +428,42 @@ struct {{ model.name }}Policy {
 
     [[nodiscard]] static constexpr bool isFinalState(State state) noexcept {
         switch (state) {
-            {% for state_id, state in model.states | dictsort %}
-            {% if state.is_final %}
-            case State::{{ state_id | capitalize }}:
-                return true;
-            {% endif %}
-            {% endfor %}
-            default:
-                return false;
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.is_final %}
+        case State::{{ state_id | capitalize }}:
+            return true;
+        {% endif %}
+        {% endfor %}
+        default:
+            return false;
         }
     }
 
     // W3C SCXML 3.3: Parent state mapping (for HierarchicalStateHelper)
     [[nodiscard]] static constexpr std::optional<State> getParent(State state) noexcept {
         switch (state) {
-            {% for state_id, state in model.states | dictsort %}
-            {% if state.parent %}
-            case State::{{ state_id | capitalize }}:
-                return State::{{ state.parent | capitalize }};
-            {% endif %}
-            {% endfor %}
-            default:
-                return std::nullopt;  // Root state
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.parent %}
+        case State::{{ state_id | capitalize }}:
+            return State::{{ state.parent | capitalize }};
+        {% endif %}
+        {% endfor %}
+        default:
+            return std::nullopt;  // Root state
         }
     }
 
     // W3C SCXML 3.3: Check if state is compound (has initial child)
     [[nodiscard]] static constexpr bool isCompoundState(State state) noexcept {
         switch (state) {
-            {% for state_id, state in model.states | dictsort %}
-            {% if state.initial %}
-            case State::{{ state_id | capitalize }}:
-                return true;
-            {% endif %}
-            {% endfor %}
-            default:
-                return false;
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.initial %}
+        case State::{{ state_id | capitalize }}:
+            return true;
+        {% endif %}
+        {% endfor %}
+        default:
+            return false;
         }
     }
 
@@ -476,7 +476,7 @@ struct {{ model.name }}Policy {
 
 // User-facing state machine class
 {% if _has_sm_tpl %}
-template<{{ _sm_tpl_params | join(', ') }}>
+template <{{ _sm_tpl_params | join(', ') }}>
 {% endif %}
 {% set _pol_inst = model.name + 'Policy' %}
 {% if _sm_tpl_args %}

@@ -16,7 +16,7 @@
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // Uses InvokeHelper defer/cancel/execute pattern (ARCHITECTURE.md Zero Duplication)
-    template<typename Engine>
+    template <typename Engine>
     void executePendingInvokes(Engine& engine) {
 
         if (pendingInvokes_.empty()) {
@@ -240,7 +240,7 @@
 
     // W3C SCXML 6.4: Tick all active child state machines to process their events
     // Child state machines need to run independently during parent's event loop
-    template<typename Engine>
+    template <typename Engine>
     void tickChildren([[maybe_unused]] Engine& engine) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.static_invokes %}
@@ -262,7 +262,7 @@
 
     // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
     // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent
-    template<typename Engine>
+    template <typename Engine>
     void forwardToAutoforwardChildren([[maybe_unused]] const std::string& eventName, [[maybe_unused]] Engine& engine) {
 
         {% for state_id, state in model.states | dictsort %}
@@ -292,7 +292,7 @@
 {% if model.static_invokes %}
     // W3C SCXML 6.5: Execute finalize for events from invoked children
     // Finalize runs BEFORE the event is processed, with _event set to child's event
-    template<typename Engine>
+    template <typename Engine>
     void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, [[maybe_unused]] Engine& engine) {
 
         // W3C SCXML 6.5: Only execute finalize for events from child invokes

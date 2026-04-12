@@ -1,7 +1,7 @@
 {% if model.needs_script_engine %}
     // W3C SCXML 5.9: Safe guard evaluation with error.execution on failure
     // ARCHITECTURE.md: Zero Duplication - Wraps shared GuardHelper with AOT-specific error handling
-    template<typename Engine>
+    template <typename Engine>
     bool safeEvaluateGuard(::SCE::IScriptEngine& jsEngine, const std::string& sessionId,
                            const std::string& guardExpr, Engine& engine) const {
         AOT_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);

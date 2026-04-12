@@ -69,7 +69,7 @@
     // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with Interpreter)
     // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution if failed
     // Called during StaticExecutionEngine::initialize() to ensure proper error event timing
-    template<typename Engine>
+    template <typename Engine>
     void initializeDataModel([[maybe_unused]] Engine& engine) {
         if (scriptEngineInitialized_) return;
         ensureSessionId();
