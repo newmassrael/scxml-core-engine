@@ -8,6 +8,7 @@
 // Usage:
 //   sce-codegen manifest <dir>
 
+use crate::forge::error::{ForgeError, ManifestError};
 use crate::forge::model::{ForgeKind, ForgeManifest, ManifestEntry};
 use crate::forge::parser;
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,7 +19,7 @@ use std::path::Path;
 /// Returns `ForgeManifest` with:
 /// - `entries`: all forge documents found (with their imports)
 /// - `build_order`: topologically sorted file list (leaves first)
-pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, String> {
+pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, ForgeError> {
     let mut entries = Vec::new();
 
     // Scan for .scxml files
@@ -26,7 +27,10 @@ pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, String> {
 
     for path in &scxml_files {
         let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+            .map_err(|e| ManifestError::Io {
+                context: format!("cannot read {}", path.display()),
+                source: e,
+            })?;
 
         // Detect if forge document
         let kind = match parser::detect_kind(&content)? {
@@ -56,6 +60,7 @@ pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, String> {
         entries.push(ManifestEntry {
             src,
             name: stem,
+            runtime_dep: kind.max_runtime_dep(),
             kind,
             imports,
         });
@@ -75,13 +80,18 @@ pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, String> {
 /// Intentionally non-recursive: forge projects are expected to use flat directory
 /// layouts. For nested structures, call `build_manifest` on each subdirectory
 /// separately or use `<sce:import src="subdir/file.scxml">` relative paths.
-fn collect_scxml_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, String> {
-    let rd = std::fs::read_dir(dir)
-        .map_err(|e| format!("Cannot read directory {}: {e}", dir.display()))?;
+fn collect_scxml_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, ManifestError> {
+    let rd = std::fs::read_dir(dir).map_err(|e| ManifestError::Io {
+        context: format!("cannot read directory {}", dir.display()),
+        source: e,
+    })?;
 
     let mut files = Vec::new();
     for entry in rd {
-        let entry = entry.map_err(|e| format!("Directory entry error: {e}"))?;
+        let entry = entry.map_err(|e| ManifestError::Io {
+            context: "directory entry error".to_string(),
+            source: e,
+        })?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("scxml") {
             files.push(path);
@@ -96,7 +106,7 @@ fn collect_scxml_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, String> {
 ///
 /// Uses Kahn's algorithm with reverse adjacency list for O(V+E) complexity.
 /// BTreeMap/BTreeSet ensure deterministic output order.
-fn topological_sort(entries: &[ManifestEntry]) -> Result<Vec<String>, String> {
+fn topological_sort(entries: &[ManifestEntry]) -> Result<Vec<String>, ManifestError> {
     let src_set: BTreeSet<&str> = entries.iter().map(|e| e.src.as_str()).collect();
 
     // in_degree[node] = number of dependencies this node has
@@ -154,15 +164,12 @@ fn topological_sort(entries: &[ManifestEntry]) -> Result<Vec<String>, String> {
 
     if result.len() != src_set.len() {
         let processed: BTreeSet<&str> = result.iter().map(|s| s.as_str()).collect();
-        let remaining: Vec<&str> = src_set
+        let remaining: Vec<String> = src_set
             .iter()
             .filter(|s| !processed.contains(**s))
-            .copied()
+            .map(|s| s.to_string())
             .collect();
-        return Err(format!(
-            "Circular dependency detected among: {}",
-            remaining.join(", ")
-        ));
+        return Err(ManifestError::CircularDependency(remaining));
     }
 
     Ok(result)
@@ -171,7 +178,7 @@ fn topological_sort(entries: &[ManifestEntry]) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::ForgeImport;
+    use crate::forge::model::{ForgeImport, RuntimeDep};
 
     #[test]
     fn topological_sort_no_deps() {
@@ -180,12 +187,14 @@ mod tests {
                 src: "a.scxml".to_string(),
                 name: "a".to_string(),
                 kind: ForgeKind::Codec,
+                runtime_dep: RuntimeDep::None,
                 imports: vec![],
             },
             ManifestEntry {
                 src: "b.scxml".to_string(),
                 name: "b".to_string(),
                 kind: ForgeKind::Transform,
+                runtime_dep: RuntimeDep::None,
                 imports: vec![],
             },
         ];
@@ -200,12 +209,14 @@ mod tests {
                 src: "codec.scxml".to_string(),
                 name: "codec".to_string(),
                 kind: ForgeKind::Codec,
+                runtime_dep: RuntimeDep::None,
                 imports: vec![],
             },
             ManifestEntry {
                 src: "procedure.scxml".to_string(),
                 name: "procedure".to_string(),
                 kind: ForgeKind::Procedure,
+                runtime_dep: RuntimeDep::ForgeRuntime,
                 imports: vec![ForgeImport {
                     src: "codec.scxml".to_string(),
                     kind: ForgeKind::Codec,
@@ -224,6 +235,7 @@ mod tests {
                 src: "a.scxml".to_string(),
                 name: "a".to_string(),
                 kind: ForgeKind::Codec,
+                runtime_dep: RuntimeDep::None,
                 imports: vec![ForgeImport {
                     src: "b.scxml".to_string(),
                     kind: ForgeKind::Transform,
@@ -234,6 +246,7 @@ mod tests {
                 src: "b.scxml".to_string(),
                 name: "b".to_string(),
                 kind: ForgeKind::Transform,
+                runtime_dep: RuntimeDep::None,
                 imports: vec![ForgeImport {
                     src: "a.scxml".to_string(),
                     kind: ForgeKind::Codec,
@@ -242,7 +255,9 @@ mod tests {
             },
         ];
         let result = topological_sort(&entries);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Circular dependency"));
+        assert!(matches!(
+            result.unwrap_err(),
+            ManifestError::CircularDependency(_)
+        ));
     }
 }

@@ -1225,7 +1225,7 @@ fn expect_go_crossfile_err(options: sce_build::ForgeCompileOptions, test_label: 
         &options,
     ) {
         Ok(_) => panic!("{test_label}: Go crossfile codegen should have failed but succeeded"),
-        Err(e) => e,
+        Err(e) => e.to_string(),
     }
 }
 

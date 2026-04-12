@@ -31,17 +31,9 @@ use libxml::schemas::{SchemaParserContext, SchemaValidationContext};
 /// human-readable line including the source filename, line number, and
 /// the validator's diagnostic message — the same format an editor's
 /// "go to error" feature can parse.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{}", .0.join("\n"))]
 pub struct XsdErrors(pub Vec<String>);
-
-impl std::fmt::Display for XsdErrors {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for line in &self.0 {
-            writeln!(f, "{line}")?;
-        }
-        Ok(())
-    }
-}
 
 /// Resolve the absolute path of `schemas/sce-forge.xsd`.
 ///

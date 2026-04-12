@@ -6,6 +6,7 @@
 // language. Type mappings live here (not in the model) to preserve SRP.
 
 use crate::filters;
+use crate::forge::error::{ForgeError, GenerateError};
 use crate::forge::expr::{self, ExprTarget};
 use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
@@ -95,7 +96,7 @@ pub(crate) fn resolve_imports(
     imports: &[ForgeImport],
     lang: &crate::generator::Language,
     options: &crate::ForgeCompileOptions,
-) -> Result<Vec<ImportContext>, String> {
+) -> Result<Vec<ImportContext>, ForgeError> {
     validate_options(imports, lang, options)?;
     Ok(imports
         .iter()
@@ -122,34 +123,37 @@ fn validate_options(
     imports: &[ForgeImport],
     lang: &crate::generator::Language,
     options: &crate::ForgeCompileOptions,
-) -> Result<(), String> {
+) -> Result<(), ForgeError> {
     if matches!(lang, crate::generator::Language::Go) && !imports.is_empty() {
         match normalized_go_prefix(options) {
             None => {
-                return Err(
+                return Err(GenerateError::InvalidConfig(
                     "<sce:import> with language=go requires \
                      ForgeCompileOptions.go_module_prefix. Go module-qualified \
                      imports have no valid bare form; set this field to the \
                      go.mod module path that hosts the generated packages \
                      (e.g. \"github.com/acme/project/generated\")."
                         .to_string(),
-                );
+                )
+                .into());
             }
             Some(trimmed) if trimmed.is_empty() => {
-                return Err(
+                return Err(GenerateError::InvalidConfig(
                     "ForgeCompileOptions.go_module_prefix is empty; \
                      supply a non-empty Go module path such as \
                      \"github.com/acme/project/generated\"."
                         .to_string(),
-                );
+                )
+                .into());
             }
             Some(trimmed) if trimmed.chars().any(char::is_whitespace) => {
                 let raw = options.go_module_prefix.as_deref().unwrap_or("");
-                return Err(format!(
+                return Err(GenerateError::InvalidConfig(format!(
                     "ForgeCompileOptions.go_module_prefix {raw:?} \
                      contains whitespace; Go import paths may not \
                      contain spaces or tabs."
-                ));
+                ))
+                .into());
             }
             Some(_) => {}
         }
@@ -496,10 +500,18 @@ fn python_literal(text: &str, ty: &SceType) -> String {
     }
 }
 
+// ── Runtime dependency annotation ────────────────────────────────
+
+/// Inject `runtime_dep` into the Jinja2 environment so every template can
+/// reference `{{ runtime_dep }}` in its header comment.
+fn inject_runtime_dep_global(env: &mut minijinja::Environment, doc: &ForgeDocument) {
+    env.add_global("runtime_dep", doc.runtime_dep().to_string());
+}
+
 // ── Public API ─────────────────────────────────────────────────
 
 /// Generate code from a ForgeDocument for C++ using Jinja2 templates.
-pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
     generate_cpp_with_imports(doc, template_dir, &[])
 }
 
@@ -508,10 +520,11 @@ pub fn generate_cpp_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
-) -> Result<GeneratedOutput, String> {
+) -> Result<GeneratedOutput, ForgeError> {
     let forge_dir = template_dir.join("forge/cpp");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
+    inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform_cpp(&env, m, imports)?,
@@ -538,7 +551,7 @@ fn render_transform_cpp(
     env: &minijinja::Environment,
     m: &TransformModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
 
@@ -570,11 +583,11 @@ fn render_transform_cpp(
                 "expr": expr_cpp,
             }))
         })
-        .collect::<Result<_, String>>()?;
+        .collect::<Result<_, ForgeError>>()?;
 
     let tmpl = env
         .get_template("transform.h.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -587,7 +600,7 @@ fn render_transform_cpp(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Lookup rendering ───────────────────────────────────────────
@@ -596,7 +609,7 @@ fn render_lookup_cpp(
     env: &minijinja::Environment,
     m: &LookupModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
     let enum_name = filters::to_pascal_case(m.output.id.clone());
@@ -643,7 +656,7 @@ fn render_lookup_cpp(
 
     let tmpl = env
         .get_template("lookup.h.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -669,7 +682,7 @@ fn render_lookup_cpp(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Condition rendering ────────────────────────────────────────
@@ -678,7 +691,7 @@ fn render_condition_cpp(
     env: &minijinja::Environment,
     m: &ConditionModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
     let func_name = filters::to_camel_case(m.name.clone());
@@ -701,7 +714,7 @@ fn render_condition_cpp(
 
     let tmpl = env
         .get_template("condition.h.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -716,7 +729,7 @@ fn render_condition_cpp(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Codec rendering ────────────────────────────────────────────
@@ -725,7 +738,7 @@ fn render_codec_cpp(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -747,7 +760,7 @@ fn render_codec_cpp(
 
     let tmpl = env
         .get_template("codec.h.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -763,7 +776,7 @@ fn render_codec_cpp(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Codec expression generation ────────────────────────────────
@@ -1009,7 +1022,7 @@ fn render_validator_cpp(
     env: &minijinja::Environment,
     m: &ValidatorModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let rv = resolve_validator(m);
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
@@ -1075,7 +1088,7 @@ fn render_validator_cpp(
 
     let tmpl = env
         .get_template("validator.h.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -1092,7 +1105,7 @@ fn render_validator_cpp(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1100,7 +1113,7 @@ fn render_validator_cpp(
 // ══════════════════════════════════════════════════════════════
 
 /// Generate code from a ForgeDocument for Kotlin using Jinja2 templates.
-pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
     generate_kotlin_with_imports(doc, template_dir, &[])
 }
 
@@ -1109,10 +1122,11 @@ pub fn generate_kotlin_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
-) -> Result<GeneratedOutput, String> {
+) -> Result<GeneratedOutput, ForgeError> {
     let forge_dir = template_dir.join("forge/kotlin");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
+    inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform_kotlin(&env, m, imports)?,
@@ -1139,7 +1153,7 @@ fn render_transform_kotlin(
     env: &minijinja::Environment,
     m: &TransformModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let package = filters::to_snake_case(m.name.clone());
 
     let type_ctx = crate::forge::type_ctx::transform(m, imports);
@@ -1171,11 +1185,11 @@ fn render_transform_kotlin(
                 "expr": final_expr,
             }))
         })
-        .collect::<Result<_, String>>()?;
+        .collect::<Result<_, ForgeError>>()?;
 
     let tmpl = env
         .get_template("transform.kt.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -1187,7 +1201,7 @@ fn render_transform_kotlin(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Kotlin: Lookup ────────────────────────────────────────────
@@ -1196,7 +1210,7 @@ fn render_lookup_kotlin(
     env: &minijinja::Environment,
     m: &LookupModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let package = filters::to_snake_case(m.name.clone());
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     let func_name = format!("lookup{}", filters::to_pascal_case(m.output.id.clone()));
@@ -1248,7 +1262,7 @@ fn render_lookup_kotlin(
 
     let tmpl = env
         .get_template("lookup.kt.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -1274,7 +1288,7 @@ fn render_lookup_kotlin(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Kotlin: Condition ─────────────────────────────────────────
@@ -1283,7 +1297,7 @@ fn render_condition_kotlin(
     env: &minijinja::Environment,
     m: &ConditionModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let package = filters::to_snake_case(m.name.clone());
     let func_name = filters::to_camel_case(m.name.clone());
 
@@ -1305,7 +1319,7 @@ fn render_condition_kotlin(
 
     let tmpl = env
         .get_template("condition.kt.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -1319,7 +1333,7 @@ fn render_condition_kotlin(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Kotlin: Codec ─────────────────────────────────────────────
@@ -1328,7 +1342,7 @@ fn render_codec_kotlin(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
 
@@ -1349,7 +1363,7 @@ fn render_codec_kotlin(
 
     let tmpl = env
         .get_template("codec.kt.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -1364,7 +1378,7 @@ fn render_codec_kotlin(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Kotlin codec expression generation ────────────────────────
@@ -1524,7 +1538,7 @@ fn render_validator_kotlin(
     env: &minijinja::Environment,
     m: &ValidatorModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let rv = resolve_validator(m);
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -1598,7 +1612,7 @@ fn render_validator_kotlin(
 
     let tmpl = env
         .get_template("validator.kt.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -1615,7 +1629,7 @@ fn render_validator_kotlin(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 /// Default value for Kotlin types.
@@ -1641,7 +1655,7 @@ fn kotlin_default_value(kt_type: &str) -> &'static str {
 // ══════════════════════════════════════════════════════════════
 
 /// Generate code from a ForgeDocument for Rust using Jinja2 templates.
-pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
     generate_rust_with_imports(doc, template_dir, &[])
 }
 
@@ -1650,10 +1664,11 @@ pub fn generate_rust_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
-) -> Result<GeneratedOutput, String> {
+) -> Result<GeneratedOutput, ForgeError> {
     let forge_dir = template_dir.join("forge/rust");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
+    inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform_rust(&env, m, imports)?,
@@ -1680,7 +1695,7 @@ fn render_transform_rust(
     env: &minijinja::Environment,
     m: &TransformModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let type_ctx = crate::forge::type_ctx::transform(m, imports);
     let empty_renames = std::collections::HashMap::new();
 
@@ -1717,11 +1732,11 @@ fn render_transform_rust(
                 "expr": expr_rs,
             }))
         })
-        .collect::<Result<_, String>>()?;
+        .collect::<Result<_, ForgeError>>()?;
 
     let tmpl = env
         .get_template("transform.rs.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -1732,7 +1747,7 @@ fn render_transform_rust(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Rust: Lookup ──────────────────────────────────────────────
@@ -1741,7 +1756,7 @@ fn render_lookup_rust(
     env: &minijinja::Environment,
     m: &LookupModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
     let input_id_snake = filters::to_snake_case(m.input.id.clone());
@@ -1799,7 +1814,7 @@ fn render_lookup_rust(
 
     let tmpl = env
         .get_template("lookup.rs.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -1823,7 +1838,7 @@ fn render_lookup_rust(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Rust: Condition ───────────────────────────────────────────
@@ -1832,7 +1847,7 @@ fn render_condition_rust(
     env: &minijinja::Environment,
     m: &ConditionModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let func_name = filters::to_snake_case(m.name.clone());
 
     let params = m
@@ -1859,7 +1874,7 @@ fn render_condition_rust(
 
     let tmpl = env
         .get_template("condition.rs.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -1872,7 +1887,7 @@ fn render_condition_rust(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Rust: Codec ───────────────────────────────────────────────
@@ -1881,7 +1896,7 @@ fn render_codec_rust(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let struct_name = filters::to_pascal_case(m.name.clone());
 
     let fields: Vec<serde_json::Value> = m
@@ -1900,7 +1915,7 @@ fn render_codec_rust(
 
     let tmpl = env
         .get_template("codec.rs.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -1914,7 +1929,7 @@ fn render_codec_rust(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Rust codec expression generation ──────────────────────────
@@ -2071,7 +2086,7 @@ fn render_validator_rust(
     env: &minijinja::Environment,
     m: &ValidatorModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let rv = resolve_validator(m);
     let struct_name = filters::to_pascal_case(m.name.clone());
 
@@ -2143,7 +2158,7 @@ fn render_validator_rust(
 
     let tmpl = env
         .get_template("validator.rs.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -2160,7 +2175,7 @@ fn render_validator_rust(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2203,7 +2218,7 @@ fn go_escape_builtin(name: &str) -> String {
 }
 
 /// Generate code from a ForgeDocument for Go using Jinja2 templates.
-pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
     generate_go_with_imports(doc, template_dir, &[])
 }
 
@@ -2212,10 +2227,11 @@ pub fn generate_go_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
-) -> Result<GeneratedOutput, String> {
+) -> Result<GeneratedOutput, ForgeError> {
     let forge_dir = template_dir.join("forge/go");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
+    inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform_go(&env, m, imports)?,
@@ -2242,7 +2258,7 @@ fn render_transform_go(
     env: &minijinja::Environment,
     m: &TransformModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let package = filters::to_snake_case(m.name.clone());
 
     // Rename map: SCXML id → Go-safe parameter name (for builtins like `len`, `new`)
@@ -2287,11 +2303,11 @@ fn render_transform_go(
                 "expr": expr_go,
             }))
         })
-        .collect::<Result<_, String>>()?;
+        .collect::<Result<_, ForgeError>>()?;
 
     let tmpl = env
         .get_template("transform.go.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -2303,7 +2319,7 @@ fn render_transform_go(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Go: Lookup ───────────────────────────────────────────────
@@ -2312,7 +2328,7 @@ fn render_lookup_go(
     env: &minijinja::Environment,
     m: &LookupModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let package = filters::to_snake_case(m.name.clone());
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     let func_name = format!("Lookup{}", filters::to_pascal_case(m.output.id.clone()));
@@ -2359,7 +2375,7 @@ fn render_lookup_go(
 
     let tmpl = env
         .get_template("lookup.go.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -2384,7 +2400,7 @@ fn render_lookup_go(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Go: Condition ────────────────────────────────────────────
@@ -2393,7 +2409,7 @@ fn render_condition_go(
     env: &minijinja::Environment,
     m: &ConditionModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let package = filters::to_snake_case(m.name.clone());
     let func_name = filters::to_pascal_case(m.name.clone());
 
@@ -2426,7 +2442,7 @@ fn render_condition_go(
 
     let tmpl = env
         .get_template("condition.go.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -2440,7 +2456,7 @@ fn render_condition_go(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Go: Codec ────────────────────────────────────────────────
@@ -2449,7 +2465,7 @@ fn render_codec_go(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
 
@@ -2469,7 +2485,7 @@ fn render_codec_go(
 
     let tmpl = env
         .get_template("codec.go.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -2484,7 +2500,7 @@ fn render_codec_go(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Go codec expression generation ──────────────────────────
@@ -2641,7 +2657,7 @@ fn render_validator_go(
     env: &minijinja::Environment,
     m: &ValidatorModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let rv = resolve_validator(m);
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -2723,7 +2739,7 @@ fn render_validator_go(
 
     let tmpl = env
         .get_template("validator.go.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -2741,7 +2757,7 @@ fn render_validator_go(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2767,7 +2783,7 @@ fn python_type(ty: &SceType) -> &'static str {
 }
 
 /// Generate code from a ForgeDocument for Python using Jinja2 templates.
-pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
     generate_python_with_imports(doc, template_dir, &[])
 }
 
@@ -2776,10 +2792,11 @@ pub fn generate_python_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
-) -> Result<GeneratedOutput, String> {
+) -> Result<GeneratedOutput, ForgeError> {
     let forge_dir = template_dir.join("forge/python");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
+    inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform_python(&env, m, imports)?,
@@ -2806,7 +2823,7 @@ fn render_transform_python(
     env: &minijinja::Environment,
     m: &TransformModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let type_ctx = crate::forge::type_ctx::transform(m, imports);
     let empty_renames = std::collections::HashMap::new();
 
@@ -2843,11 +2860,11 @@ fn render_transform_python(
                 "expr": expr_py,
             }))
         })
-        .collect::<Result<_, String>>()?;
+        .collect::<Result<_, ForgeError>>()?;
 
     let tmpl = env
         .get_template("transform.py.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -2858,7 +2875,7 @@ fn render_transform_python(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Python: Lookup ───────────────────────────────────────────
@@ -2867,7 +2884,7 @@ fn render_lookup_python(
     env: &minijinja::Environment,
     m: &LookupModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
     let input_id_snake = filters::to_snake_case(m.input.id.clone());
@@ -2922,7 +2939,7 @@ fn render_lookup_python(
 
     let tmpl = env
         .get_template("lookup.py.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -2946,7 +2963,7 @@ fn render_lookup_python(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Python: Condition ────────────────────────────────────────
@@ -2955,7 +2972,7 @@ fn render_condition_python(
     env: &minijinja::Environment,
     m: &ConditionModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let func_name = filters::to_snake_case(m.name.clone());
 
     let params = m
@@ -2982,7 +2999,7 @@ fn render_condition_python(
 
     let tmpl = env
         .get_template("condition.py.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -2995,7 +3012,7 @@ fn render_condition_python(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Python: Codec ────────────────────────────────────────────
@@ -3004,7 +3021,7 @@ fn render_codec_python(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let struct_name = filters::to_pascal_case(m.name.clone());
 
     let fields: Vec<serde_json::Value> = m
@@ -3024,7 +3041,7 @@ fn render_codec_python(
 
     let tmpl = env
         .get_template("codec.py.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -3038,7 +3055,7 @@ fn render_codec_python(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Python codec expression generation ──────────────────────
@@ -3189,7 +3206,7 @@ fn render_validator_python(
     env: &minijinja::Environment,
     m: &ValidatorModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let rv = resolve_validator(m);
     let struct_name = filters::to_pascal_case(m.name.clone());
 
@@ -3259,7 +3276,7 @@ fn render_validator_python(
 
     let tmpl = env
         .get_template("validator.py.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -3276,7 +3293,7 @@ fn render_validator_python(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Procedure: C++ ──────────────────────────────────────────
@@ -3285,7 +3302,7 @@ fn render_procedure_cpp(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_L2_H", to_upper_snake(&m.name));
     let policy_name = format!("{}Policy", &pascal);
@@ -3630,7 +3647,7 @@ fn render_procedure_cpp(
 
     let tmpl = env
         .get_template("procedure.h.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports: stateful imports become member variables
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -3659,7 +3676,7 @@ fn render_procedure_cpp(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 /// Build a rename map from datamodel variable names to policy member names.
@@ -4202,7 +4219,7 @@ fn render_procedure_kotlin(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
     let common = build_procedure_common(m);
@@ -4341,7 +4358,7 @@ fn render_procedure_kotlin(
 
     let tmpl = env
         .get_template("procedure.kt.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -4368,7 +4385,7 @@ fn render_procedure_kotlin(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Procedure: Rust ─────────────────────────────────────────
@@ -4377,7 +4394,7 @@ fn render_procedure_rust(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
     let common = build_procedure_common(m);
@@ -4608,7 +4625,7 @@ fn render_procedure_rust(
 
     let tmpl = env
         .get_template("procedure.rs.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -4634,7 +4651,7 @@ fn render_procedure_rust(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Procedure: Go ───────────────────────────────────────────
@@ -4643,7 +4660,7 @@ fn render_procedure_go(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
     let common = build_procedure_common(m);
@@ -4825,7 +4842,7 @@ fn render_procedure_go(
 
     let tmpl = env
         .get_template("procedure.go.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -4853,7 +4870,7 @@ fn render_procedure_go(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Procedure: Python ───────────────────────────────────────
@@ -4862,7 +4879,7 @@ fn render_procedure_python(
     env: &minijinja::Environment,
     m: &ProcedureModel,
     imports: &[ImportContext],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
     let common = build_procedure_common(m);
@@ -5026,7 +5043,7 @@ fn render_procedure_python(
 
     let tmpl = env
         .get_template("procedure.py.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -5052,7 +5069,7 @@ fn render_procedure_python(
         all_imports => all_imports,
     };
 
-    tmpl.render(ctx).map_err(generator::render_error)
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Inline kind rendering (policy struct member functions) ─────
@@ -5065,7 +5082,7 @@ fn render_procedure_python(
 /// Output is indented for embedding inside a struct body.
 pub fn render_inline_kinds_cpp(
     kinds: &[InlineKind],
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let mut fragments = Vec::new();
     for kind in kinds {
         let code = render_single_inline_kind_member(kind)?;
@@ -5075,7 +5092,7 @@ pub fn render_inline_kinds_cpp(
 }
 
 /// Render a single inline kind as a policy struct member.
-fn render_single_inline_kind_member(kind: &InlineKind) -> Result<String, String> {
+fn render_single_inline_kind_member(kind: &InlineKind) -> Result<String, ForgeError> {
     match &kind.data {
         InlineKindData::Transform { inputs: _, expr, output_type } => {
             render_inline_transform_member(&kind.id, expr, output_type)
@@ -5103,7 +5120,7 @@ fn render_inline_transform_member(
     id: &str,
     raw_expr: &str,
     output_type: &SceType,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let empty_ctx = crate::forge::type_ctx::empty();
     let empty_renames = std::collections::HashMap::new();
     let expected = crate::forge::types::InferredType::from_sce_type(output_type);
@@ -5131,7 +5148,7 @@ fn render_inline_lookup_member(
     input_id: &str,
     entries: &[LookupEntry],
     default_value: &str,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let enum_name = filters::to_pascal_case(id.to_string());
     let func_name = format!("lookup{}", filters::to_pascal_case(id.to_string()));
 
@@ -5186,7 +5203,7 @@ fn render_inline_lookup_member(
 fn render_inline_condition_member(
     id: &str,
     raw_expr: &str,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let empty_ctx = crate::forge::type_ctx::empty();
     let empty_renames = std::collections::HashMap::new();
     let expr_cpp = expr::transpile_typed(
@@ -5211,7 +5228,7 @@ fn render_inline_codec_member(
     id: &str,
     codec_fields: &[CodecField],
     default_endian: Endian,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let struct_name = filters::to_pascal_case(id.to_string());
 
     // Compute min frame bytes
@@ -5361,12 +5378,12 @@ fn render_phase3(
     env: &minijinja::Environment,
     template_name: &str,
     ctx: serde_json::Map<String, serde_json::Value>,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let tmpl = env
         .get_template(template_name)
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
     let value = minijinja::Value::from_serialize(&ctx);
-    tmpl.render(value).map_err(generator::render_error)
+    Ok(tmpl.render(value).map_err(generator::render_error)?)
 }
 
 // ── Filter (unified) ──────────────────────────────────────────
@@ -5376,7 +5393,7 @@ fn render_filter(
     m: &FilterModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let l = Phase3Lang::new(lang);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -5401,7 +5418,7 @@ fn render_interpolation(
     m: &InterpolationModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let l = Phase3Lang::new(lang);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -5446,7 +5463,7 @@ fn render_timer(
     m: &TimerModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let l = Phase3Lang::new(lang);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
@@ -5508,7 +5525,7 @@ fn render_observer(
     m: &ObserverModel,
     imports: &[ImportContext],
     lang: crate::generator::Language,
-) -> Result<String, String> {
+) -> Result<String, ForgeError> {
     let l = Phase3Lang::new(lang);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);

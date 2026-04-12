@@ -4,6 +4,7 @@
 // Supports Rust, C++, and Kotlin code generation.
 
 use crate::filters;
+use crate::forge::error::GenerateError;
 use crate::model::SCXMLModel;
 use minijinja::Environment;
 use std::path::Path;
@@ -70,7 +71,7 @@ fn license_config() -> serde_json::Value {
     })
 }
 
-pub(crate) fn render_error(e: minijinja::Error) -> String {
+pub(crate) fn render_error(e: minijinja::Error) -> GenerateError {
     use std::error::Error;
     let mut msg = format!("Template render error: {e}");
     let mut source: Option<&dyn Error> = e.source();
@@ -81,13 +82,13 @@ pub(crate) fn render_error(e: minijinja::Error) -> String {
     if let Some(detail) = e.detail() {
         msg.push_str(&format!("\n  detail: {detail}"));
     }
-    msg
+    GenerateError::TemplateRender(msg)
 }
 
 // ── Rust generator ───────────────────────────────────────────────
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
-pub fn generate(model: &SCXMLModel, template_dir: &Path) -> Result<String, String> {
+pub fn generate(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_filters(&mut env);
@@ -98,18 +99,18 @@ pub fn generate(model: &SCXMLModel, template_dir: &Path) -> Result<String, Strin
 pub fn generate_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
-) -> Result<String, String> {
+) -> Result<String, GenerateError> {
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_filters(&mut env);
     render_rust(&env, model)
 }
 
-fn render_rust(env: &Environment, model: &SCXMLModel) -> Result<String, String> {
+fn render_rust(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
     let tmpl = env
         .get_template("state_machine.rs.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
@@ -125,7 +126,7 @@ pub fn generate_cpp(
     model: &SCXMLModel,
     template_dir: &Path,
     input_stem: &str,
-) -> Result<GeneratedOutput, String> {
+) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_cpp_filters(&mut env);
@@ -137,7 +138,7 @@ pub fn generate_cpp_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
     input_stem: &str,
-) -> Result<GeneratedOutput, String> {
+) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_cpp_filters(&mut env);
@@ -148,7 +149,7 @@ fn render_cpp(
     env: &Environment,
     model: &SCXMLModel,
     input_stem: &str,
-) -> Result<GeneratedOutput, String> {
+) -> Result<GeneratedOutput, GenerateError> {
     let inl_filename = format!("{input_stem}_sm.inl");
     // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -158,17 +159,18 @@ fn render_cpp(
 
     // SCE Forge: render inline kind declarations as C++ code fragment.
     let inline_kind_code = if !model.inline_kinds.is_empty() {
-        crate::forge::generator::render_inline_kinds_cpp(&model.inline_kinds)?
+        crate::forge::generator::render_inline_kinds_cpp(&model.inline_kinds)
+            .map_err(|e| GenerateError::TemplateRender(e.to_string()))?
     } else {
         String::new()
     };
 
     let header_tmpl = env
         .get_template("state_machine.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
     let inl_tmpl = env
         .get_template("state_machine_inl.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
     let model_val = minijinja::Value::from_serialize(model);
     let license_val = minijinja::Value::from_serialize(&license_config());
@@ -200,7 +202,7 @@ fn render_cpp(
 // ── Kotlin generator ─────────────────────────────────────────────
 
 /// Generate Kotlin code from an analyzed SCXMLModel (filesystem-based).
-pub fn generate_kotlin(model: &SCXMLModel, template_dir: &Path) -> Result<String, String> {
+pub fn generate_kotlin(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
@@ -212,7 +214,7 @@ pub fn generate_kotlin(model: &SCXMLModel, template_dir: &Path) -> Result<String
 pub fn generate_kotlin_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
-) -> Result<String, String> {
+) -> Result<String, GenerateError> {
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
@@ -249,7 +251,7 @@ fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
     );
 }
 
-fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, String> {
+fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     use crate::{analyzer, kotlin};
 
     let machine_name = filters::to_pascal_case(model.name.clone());
@@ -284,7 +286,7 @@ fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, String
 
     let tmpl = env
         .get_template("state_machine.kt.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(model),
@@ -384,7 +386,7 @@ impl minijinja::value::Object for KotlinDefaultFn {
 // ── Go generator ────────────────────────────────────────────────
 
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
-pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, String> {
+pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_go_filters(&mut env);
@@ -395,18 +397,18 @@ pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, St
 pub fn generate_go_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
-) -> Result<String, String> {
+) -> Result<String, GenerateError> {
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_go_filters(&mut env);
     render_go(&env, model)
 }
 
-fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, String> {
+fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
     let tmpl = env
         .get_template("state_machine.go.jinja2")
-        .map_err(|e| format!("Template load error: {e}"))?;
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
@@ -421,18 +423,21 @@ fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, String> {
 fn load_template_strings(
     env: &mut Environment<'_>,
     templates: &[(&str, &str)],
-) -> Result<(), String> {
+) -> Result<(), GenerateError> {
     for (name, content) in templates {
         env.add_template_owned(name.to_string(), content.to_string())
-            .map_err(|e| format!("Template parse error in {name}: {e}"))?;
+            .map_err(|e| GenerateError::TemplateLoad(format!("Template parse error in {name}: {e}")))?;
     }
     Ok(())
 }
 
 /// Recursively load all .jinja2 templates from a directory.
-pub fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), String> {
+pub fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), GenerateError> {
     if !dir.exists() {
-        return Err(format!("Template directory not found: {}", dir.display()));
+        return Err(GenerateError::TemplateLoad(format!(
+            "Template directory not found: {}",
+            dir.display()
+        )));
     }
     load_templates_recursive(env, dir, dir)
 }
@@ -441,24 +446,24 @@ fn load_templates_recursive(
     env: &mut Environment<'_>,
     base_dir: &Path,
     current_dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), GenerateError> {
     let entries = std::fs::read_dir(current_dir)
-        .map_err(|e| format!("Cannot read {}: {e}", current_dir.display()))?;
+        .map_err(|e| GenerateError::TemplateLoad(format!("Cannot read {}: {e}", current_dir.display())))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("Dir entry error: {e}"))?;
+        let entry = entry.map_err(|e| GenerateError::TemplateLoad(format!("Dir entry error: {e}")))?;
         let path = entry.path();
         if path.is_dir() {
             load_templates_recursive(env, base_dir, &path)?;
         } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2") {
             let rel = path
                 .strip_prefix(base_dir)
-                .map_err(|e| format!("Path error: {e}"))?;
+                .map_err(|e| GenerateError::TemplateLoad(format!("Path error: {e}")))?;
             let template_name = rel.to_string_lossy().replace('\\', "/");
             let content = std::fs::read_to_string(&path)
-                .map_err(|e| format!("Cannot read template {}: {e}", path.display()))?;
+                .map_err(|e| GenerateError::TemplateLoad(format!("Cannot read template {}: {e}", path.display())))?;
             env.add_template_owned(template_name, content)
-                .map_err(|e| format!("Template parse error in {}: {e}", path.display()))?;
+                .map_err(|e| GenerateError::TemplateLoad(format!("Template parse error in {}: {e}", path.display())))?;
         }
     }
     Ok(())

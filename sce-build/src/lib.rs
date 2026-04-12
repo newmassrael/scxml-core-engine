@@ -104,7 +104,7 @@ pub fn compile_scxml(scxml_files: &[&str]) {
 /// This is the core API — parses SCXML, analyzes model, renders templates.
 pub fn compile_scxml_to_string(scxml_path: &str, template_dir: &Path) -> Result<String, String> {
     let model = compile_model(scxml_path)?;
-    generator::generate(&model, template_dir)
+    generator::generate(&model, template_dir).map_err(|e| e.to_string())
 }
 
 /// Compile SCXML content string to Rust code (no filesystem access).
@@ -116,7 +116,7 @@ pub fn compile_from_string(
     templates: &[(&str, &str)],
 ) -> Result<String, String> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
-    generator::generate_with_templates(&model, templates)
+    generator::generate_with_templates(&model, templates).map_err(|e| e.to_string())
 }
 
 /// Compile SCXML content string for a specific language (WASM-compatible).
@@ -130,22 +130,26 @@ pub fn compile_from_string_lang(
 
     match language {
         generator::Language::Rust => {
-            let code = generator::generate_with_templates(&model, templates)?;
+            let code = generator::generate_with_templates(&model, templates)
+                .map_err(|e| e.to_string())?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.rs"), code)],
             })
         }
         generator::Language::Cpp => {
             generator::generate_cpp_with_templates(&model, templates, scxml_name)
+                .map_err(|e| e.to_string())
         }
         generator::Language::Kotlin => {
-            let code = generator::generate_kotlin_with_templates(&model, templates)?;
+            let code = generator::generate_kotlin_with_templates(&model, templates)
+                .map_err(|e| e.to_string())?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}Sm.kt"), code)],
             })
         }
         generator::Language::Go => {
-            let code = generator::generate_go_with_templates(&model, templates)?;
+            let code = generator::generate_go_with_templates(&model, templates)
+                .map_err(|e| e.to_string())?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.go"), code)],
             })
@@ -171,20 +175,24 @@ pub fn compile_scxml_lang(
 
     match language {
         generator::Language::Rust => {
-            let code = generator::generate(&model, template_dir)?;
+            let code = generator::generate(&model, template_dir)
+                .map_err(|e| e.to_string())?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
             })
         }
-        generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem),
+        generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem)
+            .map_err(|e| e.to_string()),
         generator::Language::Kotlin => {
-            let code = generator::generate_kotlin(&model, template_dir)?;
+            let code = generator::generate_kotlin(&model, template_dir)
+                .map_err(|e| e.to_string())?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
             })
         }
         generator::Language::Go => {
-            let code = generator::generate_go(&model, template_dir)?;
+            let code = generator::generate_go(&model, template_dir)
+                .map_err(|e| e.to_string())?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
             })
@@ -220,19 +228,23 @@ pub fn compile_forge_from_string(
     content: &str,
     name: &str,
     language: generator::Language,
-) -> Result<generator::GeneratedOutput, String> {
+) -> Result<generator::GeneratedOutput, forge::error::ForgeError> {
     let doc = forge::parser::parse_forge(content, name)?
-        .ok_or("Not a forge document (statechart or no sce:kind)")?;
+        .ok_or(forge::error::ForgeError::Validation(
+            forge::error::ValidationError::WrongPipeline {
+                kind: forge::model::ForgeKind::Statechart,
+            },
+        ))?;
 
     let template_base = find_template_base();
 
-    match language {
+    Ok(match language {
         generator::Language::Cpp => forge::generator::generate_cpp(&doc, &template_base),
         generator::Language::Kotlin => forge::generator::generate_kotlin(&doc, &template_base),
         generator::Language::Rust => forge::generator::generate_rust(&doc, &template_base),
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
-    }
+    }?)
 }
 
 /// Options that steer forge cross-file codegen beyond the plain
@@ -265,9 +277,13 @@ pub fn compile_forge_with_imports(
     language: generator::Language,
     base_dir: &Path,
     options: &ForgeCompileOptions,
-) -> Result<generator::GeneratedOutput, String> {
+) -> Result<generator::GeneratedOutput, forge::error::ForgeError> {
     let parsed = forge::parser::parse_forge_with_imports(content, name)?
-        .ok_or("Not a forge document (statechart or no sce:kind)")?;
+        .ok_or(forge::error::ForgeError::Validation(
+            forge::error::ValidationError::WrongPipeline {
+                kind: forge::model::ForgeKind::Statechart,
+            },
+        ))?;
 
     let template_base = find_template_base();
     let mut import_ctx =
@@ -275,7 +291,7 @@ pub fn compile_forge_with_imports(
 
     validate_and_enrich_imports(&mut import_ctx, &parsed.imports, base_dir, &language)?;
 
-    match language {
+    Ok(match language {
         generator::Language::Cpp => {
             forge::generator::generate_cpp_with_imports(&parsed.document, &template_base, &import_ctx)
         }
@@ -291,7 +307,7 @@ pub fn compile_forge_with_imports(
         generator::Language::Python => {
             forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx)
         }
-    }
+    }?)
 }
 
 /// Validate and enrich `<sce:import>` declarations in a single pass.
@@ -306,37 +322,45 @@ fn validate_and_enrich_imports(
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
     language: &generator::Language,
-) -> Result<(), String> {
+) -> Result<(), forge::error::ForgeError> {
+    use forge::error::ImportError;
+
     for (ctx, imp) in import_ctx.iter_mut().zip(imports.iter()) {
         let src_path = base_dir.join(&imp.src);
 
         // 1. Existence
         if !src_path.exists() {
-            return Err(format!(
-                "<sce:import src=\"{}\">: file not found (searched: {})",
-                imp.src,
-                src_path.display()
-            ));
+            return Err(ImportError::FileNotFound {
+                src: imp.src.clone(),
+                searched: src_path.display().to_string(),
+            }
+            .into());
         }
 
         // Read once
         let content = std::fs::read_to_string(&src_path)
-            .map_err(|e| format!("<sce:import src=\"{}\">: cannot read: {e}", imp.src))?;
+            .map_err(|e| {
+                forge::error::ForgeError::Import(ImportError::ReadError {
+                    src: imp.src.clone(),
+                    source: e,
+                })
+            })?;
 
         // 2. Kind validation
         let actual_kind = forge::parser::detect_kind(&content)?
             .ok_or_else(|| {
-                format!(
-                    "<sce:import src=\"{}\">: not a forge document (no sce:kind)",
-                    imp.src
-                )
+                forge::error::ForgeError::Import(ImportError::NotForge {
+                    src: imp.src.clone(),
+                })
             })?;
 
         if actual_kind != imp.kind {
-            return Err(format!(
-                "<sce:import src=\"{}\" kind=\"{}\">: actual kind is '{}' (mismatch)",
-                imp.src, imp.kind, actual_kind
-            ));
+            return Err(ImportError::KindMismatch {
+                src: imp.src.clone(),
+                declared: imp.kind.to_string(),
+                actual: actual_kind.to_string(),
+            }
+            .into());
         }
 
         // 3. API enrichment (reuse already-read content). We parse the
@@ -604,7 +628,7 @@ fn build_qualified_call(
 ///
 /// Scans `dir` for `.scxml` files, extracts `sce:kind` and `<sce:import>`,
 /// and produces a JSON-serializable manifest with topological build order.
-pub fn build_forge_manifest(dir: &std::path::Path) -> Result<forge::model::ForgeManifest, String> {
+pub fn build_forge_manifest(dir: &std::path::Path) -> Result<forge::model::ForgeManifest, forge::error::ForgeError> {
     forge::manifest::build_manifest(dir)
 }
 

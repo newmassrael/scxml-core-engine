@@ -318,7 +318,7 @@ impl SCXMLParser {
                     if child.tag_name().name() == "field"
                         && child.tag_name().namespace() == Some(SCE_NAMESPACE)
                     {
-                        fields.push(crate::forge::parser::parse_codec_field_from_node(&child)?);
+                        fields.push(crate::forge::parser::parse_codec_field_from_node(&child).map_err(|e| e.to_string())?);
                     }
                 }
                 if fields.is_empty() {
@@ -1583,8 +1583,16 @@ impl SCXMLParser {
 
                 let child_scxml_path = scxml_dir.join(format!("{child_name}.scxml"));
 
-                // Write inline SCXML to file
-                let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_text}");
+                // Write inline SCXML to file.
+                // W3C SCXML 6.4: Inline <scxml> inside <content> inherits
+                // the parent document's namespace, but as a standalone file
+                // it needs an explicit xmlns declaration for XSD validation.
+                let inline_with_ns = if !inline_text.contains("xmlns=") {
+                    inline_text.replacen("<scxml", "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"", 1)
+                } else {
+                    inline_text.clone()
+                };
+                let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
                 if let Err(e) = std::fs::write(&child_scxml_path, &xml_content) {
                     eprintln!("Warning: Cannot write inline SCXML {}: {e}", child_scxml_path.display());
                 }

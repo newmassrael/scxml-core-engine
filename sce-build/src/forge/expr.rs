@@ -57,6 +57,7 @@
 //   so `>>>` maps to `>>`. SCXML authors must ensure operands are unsigned or
 //   use explicit masking. Kotlin has `ushr` and Python promotes to big-int.
 
+use crate::forge::error::ExprError;
 use crate::forge::types::{join_arith, join_int, InferredType, TypeCtx};
 use std::collections::HashMap;
 use std::fmt;
@@ -102,10 +103,10 @@ pub fn transpile_typed(
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     expected: InferredType,
-) -> Result<String, String> {
+) -> Result<String, ExprError> {
     let expr = expr.trim();
     if expr.is_empty() {
-        return Err("Empty expression".to_string());
+        return Err(ExprError::Empty { what: "expression" });
     }
 
     let tokens = tokenize(expr)?;
@@ -164,17 +165,15 @@ pub fn transpile_lvalue(
     target: ExprTarget,
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
-) -> Result<(String, InferredType), String> {
+) -> Result<(String, InferredType), ExprError> {
     let trimmed = location.trim();
     if trimmed.is_empty() {
-        return Err("Empty assign location".to_string());
+        return Err(ExprError::Empty { what: "assign location" });
     }
 
     let tokens = tokenize(trimmed)?;
     let mut ast = Parser::new(&tokens).parse_expression()?;
-    validate_lvalue_shape(&ast.kind).map_err(|e| {
-        format!("assign location {trimmed:?} is not an lvalue: {e}")
-    })?;
+    validate_lvalue_shape(&ast.kind, trimmed)?;
 
     // Same ordering as `transpile_typed`: infer first so Ident/Member leaves
     // can still bind their type from the user-visible name before rename
@@ -200,21 +199,25 @@ pub fn transpile_lvalue(
 
 /// Validate that a parsed expression's shape is a legal assignment target.
 /// See [`transpile_lvalue`] for the full rule set.
-fn validate_lvalue_shape(kind: &ExprKind) -> Result<(), String> {
-    match kind {
-        ExprKind::Ident(_) => Ok(()),
+fn validate_lvalue_shape(kind: &ExprKind, location: &str) -> Result<(), ExprError> {
+    let detail = match kind {
+        ExprKind::Ident(_) => return Ok(()),
         ExprKind::Member { object, .. } => match &object.kind {
-            ExprKind::Ident(_) => Ok(()),
-            other => Err(format!(
+            ExprKind::Ident(_) => return Ok(()),
+            other => format!(
                 "member access object must be a bare identifier, got: {}",
                 shape_name(other),
-            )),
+            ),
         },
-        other => Err(format!(
+        other => format!(
             "must be an identifier or one-level member access, got: {}",
             shape_name(other),
-        )),
-    }
+        ),
+    };
+    Err(ExprError::InvalidLvalue {
+        location: location.to_string(),
+        detail,
+    })
 }
 
 /// Human-readable shape name for diagnostic messages.
@@ -394,7 +397,7 @@ impl fmt::Display for Token {
 // Tokenizer
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-fn tokenize(input: &str) -> Result<Vec<Token>, String> {
+fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
     let mut tokens = Vec::new();
     let bytes = input.as_bytes();
     let len = bytes.len();
@@ -418,7 +421,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 i += 1;
             }
             if i >= len {
-                return Err(format!("Unterminated string literal starting at position {start}"));
+                return Err(ExprError::Lex { position: start, detail: "unterminated string literal".to_string() });
             }
             let value = input[start..i].to_string();
             i += 1;
@@ -486,39 +489,19 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
         // Reject unsupported multi-char constructs with clear diagnostics.
         if i + 1 < len && &input[i..i + 2] == "=>" {
-            return Err(
-                "Unsupported ECMAScript construct: arrow function (=>). \
-                 Extended SCXML expressions must use the stateless subset."
-                    .to_string(),
-            );
+            return Err(ExprError::UnsupportedConstruct { construct: "arrow function (=>)".to_string() });
         }
         if i + 1 < len && &input[i..i + 2] == "??" {
-            return Err(
-                "Unsupported ECMAScript construct: nullish coalescing (??). \
-                 Extended SCXML expressions must use the stateless subset."
-                    .to_string(),
-            );
+            return Err(ExprError::UnsupportedConstruct { construct: "nullish coalescing (??)".to_string() });
         }
         if i + 1 < len && &input[i..i + 2] == "?." {
-            return Err(
-                "Unsupported ECMAScript construct: optional chaining (?.). \
-                 Extended SCXML expressions must use the stateless subset."
-                    .to_string(),
-            );
+            return Err(ExprError::UnsupportedConstruct { construct: "optional chaining (?.)".to_string() });
         }
         if i + 2 < len && &input[i..i + 3] == "..." {
-            return Err(
-                "Unsupported ECMAScript construct: spread/rest (...). \
-                 Extended SCXML expressions must use the stateless subset."
-                    .to_string(),
-            );
+            return Err(ExprError::UnsupportedConstruct { construct: "spread/rest (...)".to_string() });
         }
         if bytes[i] == b'`' {
-            return Err(
-                "Unsupported ECMAScript construct: template literal (`). \
-                 Extended SCXML expressions must use the stateless subset."
-                    .to_string(),
-            );
+            return Err(ExprError::UnsupportedConstruct { construct: "template literal (`)".to_string() });
         }
 
         // Multi-char operators (longest match first)
@@ -535,18 +518,16 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             let two = &input[i..i + 2];
             let tok = match two {
                 "==" => {
-                    return Err(
-                        "Loose equality '==' is not permitted in Extended SCXML. \
-                         Use '===' (strict equality) instead."
-                            .to_string(),
-                    );
+                    return Err(ExprError::StrictEquality {
+                        operator: "==",
+                        strict: "===",
+                    });
                 }
                 "!=" => {
-                    return Err(
-                        "Loose inequality '!=' is not permitted in Extended SCXML. \
-                         Use '!==' (strict inequality) instead."
-                            .to_string(),
-                    );
+                    return Err(ExprError::StrictEquality {
+                        operator: "!=",
+                        strict: "!==",
+                    });
                 }
                 "&&" => Some(Token::AmpAmp),
                 "||" => Some(Token::PipePipe),
@@ -572,7 +553,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             b'.' => Token::Dot, b',' => Token::Comma,
             b'(' => Token::LParen, b')' => Token::RParen,
             b'[' => Token::LBracket, b']' => Token::RBracket,
-            ch => return Err(format!("Unexpected character: '{}'", ch as char)),
+            ch => return Err(ExprError::Lex { position: i, detail: format!("unexpected character: '{}'", ch as char) }),
         };
         tokens.push(tok);
         i += 1;
@@ -582,7 +563,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
-fn validate_keyword(word: &str) -> Result<(), String> {
+fn validate_keyword(word: &str) -> Result<(), ExprError> {
     const REJECTED: &[(&str, &str)] = &[
         ("new", "new"), ("delete", "delete"), ("typeof", "typeof"),
         ("instanceof", "instanceof"), ("this", "this"), ("eval", "eval()"),
@@ -593,10 +574,7 @@ fn validate_keyword(word: &str) -> Result<(), String> {
     ];
     for &(kw, desc) in REJECTED {
         if word == kw {
-            return Err(format!(
-                "Unsupported ECMAScript construct: {desc}. \
-                 Extended SCXML expressions must use the stateless subset."
-            ));
+            return Err(ExprError::UnsupportedConstruct { construct: desc.to_string() });
         }
     }
     Ok(())
@@ -639,21 +617,21 @@ impl<'a> Parser<'a> {
         tok
     }
 
-    fn expect(&mut self, expected: &Token) -> Result<(), String> {
+    fn expect(&mut self, expected: &Token) -> Result<(), ExprError> {
         let tok = self.advance().clone();
         if &tok == expected { Ok(()) }
-        else { Err(format!("Expected '{expected}', got '{tok}'")) }
+        else { Err(ExprError::ParseMismatch { expected: format!("'{expected}'"), got: tok.to_string() }) }
     }
 
-    fn parse_expression(&mut self) -> Result<TypedExpr, String> {
+    fn parse_expression(&mut self) -> Result<TypedExpr, ExprError> {
         let expr = self.parse_conditional()?;
         if *self.peek() != Token::Eof {
-            return Err(format!("Unexpected token after expression: '{}'", self.peek()));
+            return Err(ExprError::UnexpectedToken { token: self.peek().to_string() });
         }
         Ok(expr)
     }
 
-    fn parse_conditional(&mut self) -> Result<TypedExpr, String> {
+    fn parse_conditional(&mut self) -> Result<TypedExpr, ExprError> {
         let expr = self.parse_logical_or()?;
         if *self.peek() == Token::Question {
             self.advance();
@@ -669,7 +647,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_logical_or(&mut self) -> Result<TypedExpr, String> {
+    fn parse_logical_or(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_logical_and()?;
         while *self.peek() == Token::PipePipe {
             self.advance();
@@ -681,7 +659,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_logical_and(&mut self) -> Result<TypedExpr, String> {
+    fn parse_logical_and(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_bitwise_or()?;
         while *self.peek() == Token::AmpAmp {
             self.advance();
@@ -693,7 +671,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_or(&mut self) -> Result<TypedExpr, String> {
+    fn parse_bitwise_or(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_bitwise_xor()?;
         while *self.peek() == Token::Pipe {
             self.advance();
@@ -705,7 +683,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_xor(&mut self) -> Result<TypedExpr, String> {
+    fn parse_bitwise_xor(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_bitwise_and()?;
         while *self.peek() == Token::Caret {
             self.advance();
@@ -717,7 +695,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_and(&mut self) -> Result<TypedExpr, String> {
+    fn parse_bitwise_and(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_equality()?;
         while *self.peek() == Token::Amp {
             self.advance();
@@ -729,7 +707,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_equality(&mut self) -> Result<TypedExpr, String> {
+    fn parse_equality(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_relational()?;
         loop {
             let op = match self.peek() {
@@ -746,7 +724,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_relational(&mut self) -> Result<TypedExpr, String> {
+    fn parse_relational(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_shift()?;
         loop {
             let op = match self.peek() {
@@ -763,7 +741,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_shift(&mut self) -> Result<TypedExpr, String> {
+    fn parse_shift(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_additive()?;
         loop {
             let op = match self.peek() {
@@ -779,7 +757,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_additive(&mut self) -> Result<TypedExpr, String> {
+    fn parse_additive(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_multiplicative()?;
         loop {
             let op = match self.peek() {
@@ -795,7 +773,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_multiplicative(&mut self) -> Result<TypedExpr, String> {
+    fn parse_multiplicative(&mut self) -> Result<TypedExpr, ExprError> {
         let mut left = self.parse_unary()?;
         loop {
             let op = match self.peek() {
@@ -811,7 +789,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<TypedExpr, String> {
+    fn parse_unary(&mut self) -> Result<TypedExpr, ExprError> {
         let op = match self.peek() {
             Token::Minus => Some(UnaryOp::Neg), Token::Plus => Some(UnaryOp::Pos),
             Token::Bang => Some(UnaryOp::Not), Token::Tilde => Some(UnaryOp::BitNot),
@@ -827,7 +805,7 @@ impl<'a> Parser<'a> {
         self.parse_postfix()
     }
 
-    fn parse_postfix(&mut self) -> Result<TypedExpr, String> {
+    fn parse_postfix(&mut self) -> Result<TypedExpr, ExprError> {
         let mut expr = self.parse_primary()?;
         loop {
             match self.peek() {
@@ -835,7 +813,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let prop = match self.advance().clone() {
                         Token::Ident(s) => s,
-                        other => return Err(format!("Expected property name after '.', got '{other}'")),
+                        other => return Err(ExprError::ParseMismatch { expected: "property name after '.'".into(), got: other.to_string() }),
                     };
                     expr = TypedExpr::new(ExprKind::Member {
                         object: Box::new(expr), property: prop,
@@ -870,7 +848,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_primary(&mut self) -> Result<TypedExpr, String> {
+    fn parse_primary(&mut self) -> Result<TypedExpr, ExprError> {
         match self.advance().clone() {
             Token::Number(n) => Ok(TypedExpr::new(ExprKind::NumberLit(n))),
             Token::String { value, quote } => {
@@ -885,7 +863,7 @@ impl<'a> Parser<'a> {
                 self.expect(&Token::RParen)?;
                 Ok(inner)
             }
-            other => Err(format!("Unexpected token: '{other}'")),
+            other => Err(ExprError::UnexpectedToken { token: other.to_string() }),
         }
     }
 }
@@ -1636,7 +1614,7 @@ fn wrap_dotcall(raw: String, node: &TypedExpr, method: &str) -> String {
 //   `expr as iN` when widening is necessary.
 // * Hex/bin/oct literal in float context: hard error.
 
-fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, String> {
+fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
     // Push-down: for arithmetic binary ops with a concrete-float expected
     // type, emit operands at the expected type directly. Without this, a
     // mixed expression like `raw * 0.1` (raw: UInt16, expected: Float64)
@@ -1684,7 +1662,7 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, String>
     rust_coerce(raw, expr.ty, expected, expr)
 }
 
-fn rust_emit_node(expr: &TypedExpr) -> Result<String, String> {
+fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -1768,7 +1746,7 @@ fn rust_coerce(
     from: InferredType,
     to: InferredType,
     node: &TypedExpr,
-) -> Result<String, String> {
+) -> Result<String, ExprError> {
     use InferredType::*;
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return Ok(raw);
@@ -1781,11 +1759,14 @@ fn rust_coerce(
                     return Ok(format!("{raw}.0"));
                 }
                 // Hex/bin/oct literal in float context — textbook strict: error.
-                return Err(format!(
-                    "cannot coerce integer literal '{text}' to float: \
-                     hex/binary/octal literals are not promotable. \
-                     Use a decimal float literal (e.g. `1.0`, `255.0`) instead.",
-                ));
+                return Err(ExprError::TypeCoercion {
+                    lang: "Rust",
+                    detail: format!(
+                        "cannot coerce integer literal '{text}' to float: \
+                         hex/binary/octal literals are not promotable. \
+                         Use a decimal float literal (e.g. `1.0`, `255.0`) instead."
+                    ),
+                });
             }
             // Computed subtree: explicit cast.
             let target = match to {
@@ -1846,14 +1827,9 @@ fn rust_int_type(signed: bool, bits: u8) -> &'static str {
 // Integer widening: `int64(x)`. Ternary does not exist — we reject it at
 // emit time with a clear error.
 
-fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, String> {
+fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
     if has_ternary(expr) {
-        return Err(
-            "Cannot transpile ternary expression to Go: Go has no conditional \
-             expression. Rewrite the SCXML expression using explicit if/else \
-             or move the logic into the state machine."
-                .to_string(),
-        );
+        return Err(ExprError::GoTernary);
     }
     // Push-down: see emit_rust for rationale.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
@@ -1895,7 +1871,7 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, String> {
     Ok(go_coerce(raw, expr.ty, expected, expr))
 }
 
-fn go_emit_node(expr: &TypedExpr) -> Result<String, String> {
+fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -2188,7 +2164,7 @@ mod tests {
     }
 
     fn tp_err(expr: &str, target: ExprTarget) -> String {
-        transpile_typed(expr, target, &empty_ctx(), &empty_renames(), InferredType::Unknown).unwrap_err()
+        transpile_typed(expr, target, &empty_ctx(), &empty_renames(), InferredType::Unknown).unwrap_err().to_string()
     }
 
     fn float(bits: u8) -> InferredType { InferredType::Float { bits } }
@@ -2390,13 +2366,13 @@ mod tests {
     #[test]
     fn reject_loose_equality() {
         let e = tp_err("x == y", ExprTarget::Cpp);
-        assert!(e.contains("Loose equality"));
+        assert!(e.contains("loose =="));
     }
 
     #[test]
     fn reject_loose_inequality() {
         let e = tp_err("x != y", ExprTarget::Cpp);
-        assert!(e.contains("Loose inequality"));
+        assert!(e.contains("loose !="));
     }
 
     #[test]
@@ -2497,7 +2473,7 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap_err();
+        ).unwrap_err().to_string();
         assert!(err.contains("hex/binary/octal"), "error: {err}");
     }
 
@@ -2831,34 +2807,34 @@ mod tests {
     fn lvalue_rejects_call() {
         let err = transpile_lvalue("foo()", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
         assert!(err.is_err());
-        assert!(err.unwrap_err().contains("call expression"));
+        assert!(err.unwrap_err().to_string().contains("call expression"));
     }
 
     #[test]
     fn lvalue_rejects_binary() {
         let err = transpile_lvalue("a + b", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
         assert!(err.is_err());
-        assert!(err.unwrap_err().contains("binary operation"));
+        assert!(err.unwrap_err().to_string().contains("binary operation"));
     }
 
     #[test]
     fn lvalue_rejects_index() {
         let err = transpile_lvalue("arr[0]", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
         assert!(err.is_err());
-        assert!(err.unwrap_err().contains("index expression"));
+        assert!(err.unwrap_err().to_string().contains("index expression"));
     }
 
     #[test]
     fn lvalue_rejects_nested_member() {
         let err = transpile_lvalue("a.b.c", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
         assert!(err.is_err());
-        assert!(err.unwrap_err().contains("must be a bare identifier"));
+        assert!(err.unwrap_err().to_string().contains("must be a bare identifier"));
     }
 
     #[test]
     fn lvalue_rejects_empty() {
         let err = transpile_lvalue("", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
         assert!(err.is_err());
-        assert!(err.unwrap_err().contains("Empty"));
+        assert!(err.unwrap_err().to_string().contains("empty"));
     }
 }
