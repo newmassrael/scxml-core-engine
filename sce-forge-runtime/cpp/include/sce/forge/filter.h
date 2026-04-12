@@ -11,7 +11,7 @@
 #include <array>
 #include <cstddef>
 
-namespace sce::forge {
+namespace SCE::Forge {
 
 template <typename T, std::size_t Window>
 class MovingAverage {
@@ -117,4 +117,4 @@ private:
     T output_ = T{};
 };
 
-} // namespace sce::forge
+} // namespace SCE::Forge

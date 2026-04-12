@@ -294,7 +294,7 @@ For each `<send>` target in an SCXML document, sce-build generates a target-spec
 
 ```cpp
 // [generated] brake_transport.h
-namespace sce::generated::brake {
+namespace SCE::Generated::brake {
 
 // deploy.yaml: "#motor" → transport: dds, topic: "motor/cmd", qos: { ... }
 void send_to_motor(const EventDescriptor& event) {
@@ -320,7 +320,7 @@ void route_send(const char* target, const EventDescriptor& event) {
     else if (__builtin_strcmp(target, "#dashboard") == 0) send_to_dashboard(event);
 }
 
-}  // namespace sce::generated::brake
+}  // namespace SCE::Generated::brake
 ```
 
 #### Error Propagation Contract
@@ -404,7 +404,7 @@ deploy.yaml bindings are resolved at build time. Generated code contains compile
 
 ```cpp
 // [generated] brake_routing.h — no runtime lookup
-namespace sce::generated::brake {
+namespace SCE::Generated::brake {
 constexpr auto route_target(const char* target) {
     if (eq(target, "#motor"))     return &send_to_motor;
     if (eq(target, "#dashboard")) return &send_to_dashboard;
@@ -705,13 +705,13 @@ Generated application code:
 ```cpp
 int main() {
     // Scheduler is the only runtime component — OS-dependent timing
-    sce::RealTimeScheduler scheduler{.cycle_ms = 1};
+    SCE::Mesh::RealTimeScheduler scheduler{.cycle_ms = 1};
 
     // Transport init is generated — calls vsomeip/SocketCAN APIs directly
-    sce::generated::brake::init_transports();
+    SCE::Generated::brake::init_transports();
 
     // SM + routing are generated — no runtime abstraction
-    sce::generated::brake::BrakeSM sm;
+    SCE::Generated::brake::BrakeSM sm;
     scheduler.run([&](auto events) {
         sm.processEvents(events);
     });
@@ -878,7 +878,7 @@ Each target binding generates a dedicated send function that calls the transport
 
 ```cpp
 // [generated] brake_transport.h
-namespace sce::generated::brake {
+namespace SCE::Generated::brake {
 
 // Generated from someip_transport.h.jinja2
 // deploy.yaml: "#motor" → { transport: someip, service: 0x1001, ... }
@@ -906,7 +906,7 @@ void route_send(const char* target, const EventDescriptor& event) {
     if (eq(target, "#dashboard")) return send_to_dashboard(event);
 }
 
-}  // namespace sce::generated::brake
+}  // namespace SCE::Generated::brake
 ```
 
 ### 7.5 Generated Event Serialization
@@ -983,24 +983,24 @@ Generated code example (buffer-based transport, types from `events.yaml`):
 
 ```cpp
 // [generated] brake_events.h — types derived from events.yaml
-namespace sce::generated::brake::events {
+namespace SCE::Generated::brake::events {
 
 struct MotorCutPower {
     static constexpr auto NAME = "motor.cut_power";
     float brake_force;    // from events.yaml: float32
 
-    void serialize(sce::Buffer& buf) const;
-    static MotorCutPower deserialize(sce::BufferView buf);
+    void serialize(SCE::Mesh::Buffer& buf) const;
+    static MotorCutPower deserialize(SCE::Mesh::BufferView buf);
 };
 
-}  // namespace sce::generated::brake::events
+}  // namespace SCE::Generated::brake::events
 ```
 
 Generated code example (CAN signal-based transport, types from `.dbc`):
 
 ```cpp
 // [generated] brake_can_signals.h — layout derived from vehicle.dbc
-namespace sce::generated::brake::signals {
+namespace SCE::Generated::brake::signals {
 
 struct MotorCutPower {
     static constexpr auto NAME = "motor.cut_power";
@@ -1014,7 +1014,7 @@ struct MotorCutPower {
     static MotorCutPower unpack(const uint8_t frame[8]);
 };
 
-}  // namespace sce::generated::brake::signals
+}  // namespace SCE::Generated::brake::signals
 ```
 
 ### 7.6 What Developers Write
@@ -1026,13 +1026,13 @@ struct MotorCutPower {
 
 int main() {
     // Scheduler is the only runtime component — OS timing is not codegen-able
-    sce::RealTimeScheduler scheduler{.cycle_ms = 1};
+    SCE::Mesh::RealTimeScheduler scheduler{.cycle_ms = 1};
 
     // Transport initialization is generated — calls vsomeip/SocketCAN/etc. directly
-    sce::generated::brake::init_transports();
+    SCE::Generated::brake::init_transports();
 
     // SM is generated (existing), routing is generated (new)
-    sce::generated::brake::BrakeSM sm;
+    SCE::Generated::brake::BrakeSM sm;
     scheduler.run([&](auto events) {
         sm.processEvents(events);
     });
@@ -1191,13 +1191,13 @@ Queue overflow policies are configured per-scheduler:
 ```cpp
 RealTimeScheduler{
     .cycle_ms = 1,
-    .overflow_policy = sce::OverflowPolicy::ERROR,  // signal to sender
+    .overflow_policy = SCE::Mesh::OverflowPolicy::ERROR,  // signal to sender
     .max_queue_depth = 64
 };
 
 GameLoopScheduler{
     .tick_rate = 60,
-    .overflow_policy = sce::OverflowPolicy::DROP_OLDEST,
+    .overflow_policy = SCE::Mesh::OverflowPolicy::DROP_OLDEST,
     .max_queue_depth = 1024
 };
 ```
@@ -1354,7 +1354,7 @@ Extend sce-codegen with `--deploy` option and generate the trivial case (same-pr
 - **Scheduler concepts** in `sce_mesh_common`: `TickScheduling`, `EventDrivenScheduling` (C++20 concepts, C++17 fallback — same pattern as existing `StatePolicyConcepts.h`)
 - **MPSC EventQueue bridge** in `sce_mesh_common`: thread-safe event queue for cross-thread event injection
 - **Build-time validation**: topology completeness (all targets resolve), event coverage (all sent events have receivers), QoS intent/config consistency check
-- **Verification**: existing single-process tests pass with `--mesh` codegen path, generated code is functionally identical to non-mesh AOT output
+- **Verification**: existing single-process tests pass with `--deploy` codegen path, generated code is functionally identical to non-deploy AOT output
 
 ### Phase 2: Shared Memory Transport (first cross-process)
 
@@ -1807,7 +1807,7 @@ CMake integration — generated code links directly against zenoh-c:
 # User's CMakeLists.txt links the generated target against zenoh:
 find_package(zenohc REQUIRED)
 target_link_libraries(brake_app
-    PRIVATE sce::generated::brake    # generated transport code
+    PRIVATE SCE::Generated::brake    # generated transport code
     PRIVATE zenohc::lib              # user provides zenoh library
 )
 

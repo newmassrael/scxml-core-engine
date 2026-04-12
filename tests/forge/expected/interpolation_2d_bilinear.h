@@ -23,7 +23,7 @@ struct Interpolation2dBilinear {
     };
 
     static double lookup(uint16_t rpm, uint8_t load) {
-        return sce::forge::bilinear(
+        return SCE::Forge::bilinear(
             AXIS_RPM, AXIS_LOAD, VALUES,
             static_cast<double>(rpm),
             static_cast<double>(load));

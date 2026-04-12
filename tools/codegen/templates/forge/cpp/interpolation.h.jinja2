@@ -34,12 +34,12 @@ struct {{ struct_name }} {
 
     static {{ output_type }} lookup({{ params }}) {
 {% if is_bilinear %}
-        return sce::forge::bilinear(
+        return SCE::Forge::bilinear(
             {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,
             static_cast<{{ output_type }}>({{ axes[0].input_id }}),
             static_cast<{{ output_type }}>({{ axes[1].input_id }}));
 {% else %}
-        return sce::forge::linear(
+        return SCE::Forge::linear(
             {{ axes[0].var_name }}, VALUES,
             static_cast<{{ output_type }}>({{ axes[0].input_id }}));
 {% endif %}

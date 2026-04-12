@@ -16,7 +16,7 @@ constexpr int32_t KEYS[5] = { 100, 200, 300, 400, 500 };
 constexpr int32_t VALUES[5] = { 1, 2, 3, 2, 4 };
 
 inline std::optional<int32_t> lookupSeverity(int32_t code) {
-    return sce::forge::lookup(KEYS, VALUES, code);
+    return SCE::Forge::lookup(KEYS, VALUES, code);
 }
 
 }  // namespace SCE::Generated::LookupAlarmCode

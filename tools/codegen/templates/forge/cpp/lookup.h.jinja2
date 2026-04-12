@@ -40,11 +40,11 @@ constexpr {{ value_type }} VALUES[{{ n }}] = { {{ values_literal | join(", ") }}
 
 {% if on_miss_error %}
 inline std::optional<{{ value_type }}> {{ func_name }}({{ input_type }} {{ input_id }}) {
-    return sce::forge::lookup(KEYS, VALUES, {{ input_id }});
+    return SCE::Forge::lookup(KEYS, VALUES, {{ input_id }});
 }
 {% else %}
 inline {{ value_type }} {{ func_name }}({{ input_type }} {{ input_id }}) {
-    return sce::forge::lookup(KEYS, VALUES, {{ input_id }}).value_or({{ default_literal }});
+    return SCE::Forge::lookup(KEYS, VALUES, {{ input_id }}).value_or({{ default_literal }});
 }
 {% endif %}
 {% endif %}

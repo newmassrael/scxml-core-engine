@@ -12,7 +12,7 @@
 namespace SCE::Generated::FilterDebounce {
 
 struct FilterDebounce {
-    sce::forge::Debounce<bool, 3> impl_;
+    SCE::Forge::Debounce<bool, 3> impl_;
 
     bool update(bool rawButton) {
         return impl_.update(static_cast<bool>(rawButton));

@@ -8,38 +8,38 @@
 // Runtime engine dependency: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // Full license: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 #pragma once
-#include <cstdint>
-#include <string>
-#include <string_view>
-#include <memory>
-#include "static/StaticExecutionEngine.h"
-#include "common/FinalizeHelper.h"
-#include "core/TransitionHelper.h"
-#include "core/HistoryHelper.h"
-#include "core/StateEntryHelper.h"
-#include "core/EntryExitHelper.h"
-#include "common/EventDataHelper.h"
-#include "common/InPredicateHelper.h"
-#include <optional>
-#include <vector>
-#include <cstring>
-#include "common/DataModelInitHelper.h"
-#include "common/EventTypeHelper.h"
-#include "common/Logger.h"
-#include "scripting/ScriptEngineProvider.h"
-#include "scripting/ScriptResultUtils.h"
 #include "common/AssignHelper.h"
 #include "common/AssignmentExecutionHelper.h"
+#include "common/DataModelInitHelper.h"
+#include "common/EventDataHelper.h"
+#include "common/EventTypeHelper.h"
+#include "common/FinalizeHelper.h"
 #include "common/ForeachValidator.h"
-#include "core/ForeachHelper.h"
 #include "common/GuardHelper.h"
+#include "common/InPredicateHelper.h"
+#include "common/Logger.h"
+#include "core/EntryExitHelper.h"
+#include "core/ForeachHelper.h"
+#include "core/HistoryHelper.h"
+#include "core/StateEntryHelper.h"
+#include "core/TransitionHelper.h"
+#include "scripting/ScriptEngineProvider.h"
+#include "scripting/ScriptResultUtils.h"
+#include "static/StaticExecutionEngine.h"
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 // Conditional debug logging for generated code
 #ifndef NDEBUG
-    #define AOT_DEBUG(...)  SCE_LOG_DEBUG(__VA_ARGS__)
+#define AOT_DEBUG(...)  SCE_LOG_DEBUG(__VA_ARGS__)
 #else
-    // Debug logging disabled in release builds
-    #define AOT_DEBUG(...)
+// Debug logging disabled in release builds
+#define AOT_DEBUG(...)
 #endif
 
 // Transition execution macro - compresses repetitive transition code
@@ -55,7 +55,6 @@
         currentState = TGT; \
         transitionTaken = true; \
     } while(0)
-
 
 namespace SCE::Generated::inline_mixed {
 
@@ -73,7 +72,6 @@ enum class Event : uint8_t {
     Stop
 };
 
-
 // State policy for inline_mixed
 struct inline_mixedPolicy {
     using State = ::SCE::Generated::inline_mixed::State;
@@ -84,7 +82,6 @@ struct inline_mixedPolicy {
 
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
     static constexpr bool NEEDS_SCRIPT_ENGINE = true;
-
 
     // Datamodel variables
     int rpm = 0;
@@ -142,7 +139,6 @@ struct inline_mixedPolicy {
     // Default constructor (lazy initialization, no immediate resource allocation)
     inline_mixedPolicy() = default;
 
-
     // Destructor: Clean up resources (RAII pattern)
     ~inline_mixedPolicy() {
         if (sessionId_.has_value()) {
@@ -163,24 +159,24 @@ struct inline_mixedPolicy {
 
     [[nodiscard]] static constexpr bool isFinalState(State state) noexcept {
         switch (state) {
-            default:
-                return false;
+        default:
+            return false;
         }
     }
 
     // W3C SCXML 3.3: Parent state mapping (for HierarchicalStateHelper)
     [[nodiscard]] static constexpr std::optional<State> getParent(State state) noexcept {
         switch (state) {
-            default:
-                return std::nullopt;  // Root state
+        default:
+            return std::nullopt;  // Root state
         }
     }
 
     // W3C SCXML 3.3: Check if state is compound (has initial child)
     [[nodiscard]] static constexpr bool isCompoundState(State state) noexcept {
         switch (state) {
-            default:
-                return false;
+        default:
+            return false;
         }
     }
 
@@ -189,7 +185,6 @@ struct inline_mixedPolicy {
     // are generated into the .inl file and textually included here.
 #include "inline_mixed_sm.inl"
 };
-
 
 // User-facing state machine class
 class inline_mixed : public ::SCE::Static::StaticExecutionEngine<inline_mixedPolicy> {
@@ -212,4 +207,4 @@ static_assert(::SCE::Core::EventNamingPolicy<inline_mixedPolicy>,
     "Generated inline_mixedPolicy must satisfy EventNamingPolicy concept");
 #endif
 
-} // namespace SCE::Generated::inline_mixed
+}  // namespace SCE::Generated::inline_mixed

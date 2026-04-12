@@ -10,7 +10,7 @@
 #include <array>
 #include <cstddef>
 
-namespace sce::forge {
+namespace SCE::Forge {
 
 /// Models a 1-bit hysteresis state machine. The generated update() loop calls
 /// `enterIf(highCondition)` and `leaveIf(lowCondition)`; both methods return
@@ -86,4 +86,4 @@ private:
     std::size_t size_ = 0;
 };
 
-} // namespace sce::forge
+} // namespace SCE::Forge

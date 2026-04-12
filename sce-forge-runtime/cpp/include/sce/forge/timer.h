@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-namespace sce::forge {
+namespace SCE::Forge {
 
 /// C-style callback signature. Avoids std::function (heap allocation) and
 /// maps 1:1 to native RTOS timer APIs.
@@ -26,4 +26,4 @@ public:
     virtual void cancel() = 0;
 };
 
-} // namespace sce::forge
+} // namespace SCE::Forge

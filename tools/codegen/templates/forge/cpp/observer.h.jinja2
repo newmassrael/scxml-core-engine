@@ -44,8 +44,8 @@ struct ForgeDomain {
 
 class {{ struct_name }} {
 public:
-    sce::forge::EventQueue<ForgeDomain> update({{ params }}) {
-        sce::forge::EventQueue<ForgeDomain> events;
+    SCE::Forge::EventQueue<ForgeDomain> update({{ params }}) {
+        SCE::Forge::EventQueue<ForgeDomain> events;
 {% for mon in monitors %}
         if ({{ mon.id }}_.enterIf({{ mon.enter_expr }})) {
             events.push(ForgeDomain::{{ mon.event_enter }});
@@ -67,7 +67,7 @@ public:
 
 private:
 {% for mon in monitors %}
-    sce::forge::ThresholdState {{ mon.id }}_;
+    SCE::Forge::ThresholdState {{ mon.id }}_;
 {% endfor %}
 };
 

@@ -12,7 +12,7 @@
 namespace SCE::Generated::FilterLowPass {
 
 struct FilterLowPass {
-    sce::forge::LowPass<double> impl_{static_cast<double>(0.1)};
+    SCE::Forge::LowPass<double> impl_{static_cast<double>(0.1)};
 
     double update(double rawSignal) {
         return impl_.update(static_cast<double>(rawSignal));

@@ -18,11 +18,11 @@ namespace SCE::Generated::{{ namespace }} {
 
 struct {{ struct_name }} {
 {% if filter_type == "moving_average" %}
-    sce::forge::MovingAverage<{{ output_type }}, {{ window }}> impl_;
+    SCE::Forge::MovingAverage<{{ output_type }}, {{ window }}> impl_;
 {% elif filter_type == "low_pass" %}
-    sce::forge::LowPass<{{ output_type }}> impl_{static_cast<{{ output_type }}>({{ alpha }})};
+    SCE::Forge::LowPass<{{ output_type }}> impl_{static_cast<{{ output_type }}>({{ alpha }})};
 {% elif filter_type == "debounce" %}
-    sce::forge::Debounce<{{ output_type }}, {{ window }}> impl_;
+    SCE::Forge::Debounce<{{ output_type }}, {{ window }}> impl_;
 {% endif %}
 
     {{ output_type }} update({{ input_type }} {{ input_id }}) {

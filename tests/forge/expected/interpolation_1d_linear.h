@@ -17,7 +17,7 @@ struct Interpolation1dLinear {
     static constexpr double VALUES[] = { 120.0, 145.0, 200.0, 230.0, 210.0, 180.0 };
 
     static double lookup(uint16_t rpm) {
-        return sce::forge::linear(
+        return SCE::Forge::linear(
             AXIS_RPM, VALUES,
             static_cast<double>(rpm));
     }

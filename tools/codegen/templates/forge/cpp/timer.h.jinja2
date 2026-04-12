@@ -32,7 +32,7 @@ namespace SCE::Generated::{{ namespace }} {
 template <typename Handler>
 class {{ struct_name }} {
 public:
-    {{ struct_name }}(Handler& handler{% for timer in timers %}, sce::forge::ITimer& {{ timer.id }}Timer{% endfor %})
+    {{ struct_name }}(Handler& handler{% for timer in timers %}, SCE::Forge::ITimer& {{ timer.id }}Timer{% endfor %})
         : handler_(handler){% for timer in timers %}, {{ timer.id }}Timer_({{ timer.id }}Timer){% endfor %} {}
 {% for timer in timers %}
 
@@ -52,7 +52,7 @@ public:
 private:
     Handler& handler_;
 {% for timer in timers %}
-    sce::forge::ITimer& {{ timer.id }}Timer_;
+    SCE::Forge::ITimer& {{ timer.id }}Timer_;
 {% endfor %}
 
 {% for cb in unique_callbacks %}

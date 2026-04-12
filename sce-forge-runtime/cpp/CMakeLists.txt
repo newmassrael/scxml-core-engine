@@ -9,7 +9,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 add_library(sce_forge_runtime INTERFACE)
-add_library(sce::forge_runtime ALIAS sce_forge_runtime)
+add_library(SCE::forge_runtime ALIAS sce_forge_runtime)
 
 target_include_directories(sce_forge_runtime INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

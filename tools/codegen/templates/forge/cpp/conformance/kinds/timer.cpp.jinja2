@@ -2,13 +2,13 @@
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     const auto &oracle_timers = spec["timers"];
 
-    struct Reg { std::string type; std::uint32_t ms; sce::forge::TimerCallback cb; void *ctx; };
-    struct RecTimer : sce::forge::ITimer {
+    struct Reg { std::string type; std::uint32_t ms; SCE::Forge::TimerCallback cb; void *ctx; };
+    struct RecTimer : SCE::Forge::ITimer {
         Reg reg{};
-        void startPeriodic(std::uint32_t ms, sce::forge::TimerCallback cb, void *ctx) override {
+        void startPeriodic(std::uint32_t ms, SCE::Forge::TimerCallback cb, void *ctx) override {
             reg = {"periodic", ms, cb, ctx};
         }
-        void startOneShot(std::uint32_t ms, sce::forge::TimerCallback cb, void *ctx) override {
+        void startOneShot(std::uint32_t ms, SCE::Forge::TimerCallback cb, void *ctx) override {
             reg = {"one_shot", ms, cb, ctx};
         }
         void cancel() override {}

@@ -12,7 +12,7 @@
 namespace SCE::Generated::FilterMovingAverage {
 
 struct FilterMovingAverage {
-    sce::forge::MovingAverage<double, 5> impl_;
+    SCE::Forge::MovingAverage<double, 5> impl_;
 
     double update(double rawTemp) {
         return impl_.update(static_cast<double>(rawTemp));

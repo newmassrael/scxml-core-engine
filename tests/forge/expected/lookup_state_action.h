@@ -16,7 +16,7 @@ constexpr int32_t KEYS[4] = { 0, 1, 2, 3 };
 constexpr int32_t VALUES[4] = { 10, 20, 30, 40 };
 
 inline std::optional<int32_t> lookupAction(int32_t state) {
-    return sce::forge::lookup(KEYS, VALUES, state);
+    return SCE::Forge::lookup(KEYS, VALUES, state);
 }
 
 }  // namespace SCE::Generated::LookupStateAction

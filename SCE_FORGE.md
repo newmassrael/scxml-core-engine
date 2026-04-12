@@ -111,9 +111,9 @@ SCE Forge generated code may depend on **runtime libraries**, subject to two non
 Within those constraints, the following **are explicitly permitted and preferred**:
 
 - **Header-only template libraries** (`sce_forge_runtime`) for shared algorithms — linear/bilinear interpolation, moving average, low-pass, debounce, hysteresis tracking. One algorithm, one implementation per language, instantiated at compile time with the SCXML-derived configuration.
-- **Abstract interface declarations** (HAL pattern) that the user implements to inject platform services. Example: `sce::forge::ITimer` declares `startPeriodic`/`startOneShot`/`cancel`; the platform implementation (POSIX, FreeRTOS, Zephyr, etc.) is a user-supplied subclass injected by reference. Generated code holds an `ITimer&` member, never owns the timer object. This is the textbook Dependency Inversion Principle applied at the language boundary.
+- **Abstract interface declarations** (HAL pattern) that the user implements to inject platform services. Example: `SCE::Forge::ITimer` declares `startPeriodic`/`startOneShot`/`cancel`; the platform implementation (POSIX, FreeRTOS, Zephyr, etc.) is a user-supplied subclass injected by reference. Generated code holds an `ITimer&` member, never owns the timer object. This is the textbook Dependency Inversion Principle applied at the language boundary.
 - **C-style callback signatures** (`void(*)(void* ctx)` plus a `void* ctx` argument) for any callback the runtime invokes. This avoids `std::function`-style type erasure (which can heap-allocate) and maps 1:1 to native RTOS APIs (`pthread_create`, `xTimerCreate`, `k_timer_init`). Generated code uses static member functions as trampolines to bridge into instance methods.
-- **Generic tagged types** parameterized by user-declared domains (e.g., `sce::forge::Event<MyDomain>`) for cross-unit composition while preserving type safety.
+- **Generic tagged types** parameterized by user-declared domains (e.g., `SCE::Forge::Event<MyDomain>`) for cross-unit composition while preserving type safety.
 
 **What stays per-file generated:**
 
@@ -674,7 +674,7 @@ Sequential procedure with branching, retry, and error handling.
 **Primary output** — state machine class (compatible with W3C `<invoke>`):
 ```cpp
 // securityAccess_sm.h — invocable as child state machine
-class SecurityAccessSM : public sce::StateMachine {
+class SecurityAccessSM : public SCE::StateMachine {
     uint32_t ecuAddr_;
     std::vector<uint8_t> seed_;
     int retryCount_ = 0;
@@ -910,7 +910,7 @@ Signal filtering — moving average, low-pass, debounce. Filter configuration is
 #include <sce/forge/filter.h>
 
 struct TempFilter {
-    sce::forge::MovingAverage<double, 5> impl_;
+    SCE::Forge::MovingAverage<double, 5> impl_;
 
     double update(double rawTemp) { return impl_.update(rawTemp); }
     void reset()                  { impl_.reset(); }
@@ -976,7 +976,7 @@ struct InjectionMap {
     static constexpr double VALUES[6][5] = { /* ... */ };
 
     static double lookup(uint16_t rpm, uint8_t load) {
-        return sce::forge::bilinear(AXIS_RPM, AXIS_LOAD, VALUES,
+        return SCE::Forge::bilinear(AXIS_RPM, AXIS_LOAD, VALUES,
                                     static_cast<double>(rpm),
                                     static_cast<double>(load));
     }
@@ -1018,8 +1018,8 @@ Periodic, delayed, and timeout task timing. Each timer is a `<data>` element wit
 
 class DiagScheduler {
 public:
-    DiagScheduler(sce::forge::ITimer& testerTimer,
-                  sce::forge::ITimer& responseTimer)
+    DiagScheduler(SCE::Forge::ITimer& testerTimer,
+                  SCE::Forge::ITimer& responseTimer)
         : testerPresentTimer_(testerTimer),
           responseTimeout_(responseTimer) {}
 
@@ -1028,8 +1028,8 @@ public:
     void onResponse()   { responseTimeout_.cancel(); }
 
 private:
-    sce::forge::ITimer& testerPresentTimer_;
-    sce::forge::ITimer& responseTimeout_;
+    SCE::Forge::ITimer& testerPresentTimer_;
+    SCE::Forge::ITimer& responseTimeout_;
 
     // Trampolines: bridge C-style callbacks back into instance methods (no std::function, no heap)
     static void onTesterTick(void* ctx)      { static_cast<DiagScheduler*>(ctx)->emitTesterPresent(); }
@@ -1043,7 +1043,7 @@ private:
 The corresponding interface in `sce_forge_runtime`:
 
 ```cpp
-namespace sce::forge {
+namespace SCE::Forge {
     using TimerCallback = void(*)(void* ctx);
 
     class ITimer {
@@ -1056,7 +1056,7 @@ namespace sce::forge {
 }
 ```
 
-> **Runtime dependency**: The `sce::forge::ITimer` interface is declared once in `sce_forge_runtime` (header-only). The user supplies a concrete implementation (POSIX `timer_create`, FreeRTOS `xTimerCreate`, Zephyr `k_timer`, std::thread, etc.) and injects it into the generated struct's constructor. The C-style `void(*)(void*)` + `void* ctx` callback shape avoids `std::function` heap allocation and maps 1:1 to native RTOS timer APIs. This is the textbook Hardware Abstraction Layer pattern; see §2.1 for the runtime library policy.
+> **Runtime dependency**: The `SCE::Forge::ITimer` interface is declared once in `sce_forge_runtime` (header-only). The user supplies a concrete implementation (POSIX `timer_create`, FreeRTOS `xTimerCreate`, Zephyr `k_timer`, std::thread, etc.) and injects it into the generated struct's constructor. The C-style `void(*)(void*)` + `void* ctx` callback shape avoids `std::function` heap allocation and maps 1:1 to native RTOS timer APIs. This is the textbook Hardware Abstraction Layer pattern; see §2.1 for the runtime library policy.
 
 ### 4.11 observer
 
@@ -1092,10 +1092,10 @@ Observer events typically participate in cross-file composition: a statechart re
 **With explicit domain (recommended for any composition use case):**
 
 - Declare a domain on the `<scxml>` root: `sce:event-domain="VehicleAlerts"`
-- All observers (and statecharts) referencing the same domain share a common event type: `sce::forge::Event<VehicleAlerts>`
+- All observers (and statecharts) referencing the same domain share a common event type: `SCE::Forge::Event<VehicleAlerts>`
 - `VehicleAlerts` is a user-meaningful tag type, generated once per domain by whichever translation unit `#include`s `<sce/forge/observer.h>` and declares the domain via the `SCE_FORGE_EVENT_DOMAIN` macro
 - Event names derived from `sce:on-enter` / `sce:on-leave` are aggregated across all files in the domain into a single typed enumeration
-- Generated observer code emits `sce::forge::EventQueue<VehicleAlerts>` from `update()`; downstream consumers (statecharts, other observers) receive the same type and dispatch on it
+- Generated observer code emits `SCE::Forge::EventQueue<VehicleAlerts>` from `update()`; downstream consumers (statecharts, other observers) receive the same type and dispatch on it
 
 **Without a domain:**
 
@@ -1116,8 +1116,8 @@ Observer events typically participate in cross-file composition: a statechart re
 
 class CoolantMonitor {
 public:
-    sce::forge::EventQueue<VehicleAlerts> update(double coolantTemp) {
-        sce::forge::EventQueue<VehicleAlerts> events;
+    SCE::Forge::EventQueue<VehicleAlerts> update(double coolantTemp) {
+        SCE::Forge::EventQueue<VehicleAlerts> events;
 
         if      (warning_.enterIf(coolantTemp > 110.0)) events.push(VehicleAlerts::EMIT_WARNING);
         else if (warning_.leaveIf(coolantTemp < 100.0)) events.push(VehicleAlerts::CLEAR_WARNING);
@@ -1129,12 +1129,12 @@ public:
     }
 
 private:
-    sce::forge::ThresholdState warning_;   // hysteresis bookkeeping (one bool, header-only)
-    sce::forge::ThresholdState critical_;
+    SCE::Forge::ThresholdState warning_;   // hysteresis bookkeeping (one bool, header-only)
+    SCE::Forge::ThresholdState critical_;
 };
 ```
 
-`sce::forge::ThresholdState` (a `bool` wrapper exposing `enterIf`/`leaveIf`), `sce::forge::EventQueue<D>` (a fixed-capacity queue parameterized by domain), and the `Event<D>` tagged type all live in `sce_forge_runtime`. The hysteresis state-transition logic exists in exactly one place per language; the generated file contains only the per-monitor thresholds and the per-domain event tags. See §2.1.
+`SCE::Forge::ThresholdState` (a `bool` wrapper exposing `enterIf`/`leaveIf`), `SCE::Forge::EventQueue<D>` (a fixed-capacity queue parameterized by domain), and the `Event<D>` tagged type all live in `sce_forge_runtime`. The hysteresis state-transition logic exists in exactly one place per language; the generated file contains only the per-monitor thresholds and the per-domain event tags. See §2.1.
 
 ---
 
@@ -1308,7 +1308,7 @@ inline bool canEnterProgramming(EngineStatus es, bool ign) {
 // #include "securityAccess_sm.h" (generated from securityAccess.scxml)
 
 // From statechart kind — orchestrates all above
-class DiagSession : public sce::StateMachine {
+class DiagSession : public SCE::StateMachine {
     EngineStatus engineStatus_ = EngineStatus::STOP;
     bool ignition_ = false;
 
@@ -1634,7 +1634,7 @@ Core kind support and codegen templates for the most common patterns.
 Sequential logic support and multi-language code generation.
 
 - ~~Codegen templates for: `procedure`, `validator`~~ **Done**: procedure (L1 guard-only + L2 event-driven) and validator for all 5 languages.
-- ~~`sce::ProcedureStateMachine` base class in sce_runtime~~ **Done**: Per-language runtime packages (C++ header, Rust trait, Kotlin abstract class, Go interface, Python ABC) with shared event loop and service types (see §4.5 "Cross-language runtime packages").
+- ~~`SCE::Forge::ProcedureStateMachine` base class in sce_runtime~~ **Done**: Per-language runtime packages (C++ header, Rust trait, Kotlin abstract class, Go interface, Python ABC) with shared event loop and service types (see §4.5 "Cross-language runtime packages").
 - ~~Cross-file kind composition~~ **Done at the product level**: standalone kinds referencing other standalone kinds via `<sce:import>` generate correct code for all 5 languages; 10 crossfile goldens pass. **Pending**: exposing cross-file composition to the cross-language *numerical* conformance harness (§6.6) — the harness currently runs one SCXML per fixture, so `crossfile_procedure_codec` / `crossfile_validator_transform` are not yet part of the 25-fixture numerical catalog. Extending `render_harness` to accept multi-file fixture groups is tracked as a Phase 2 residual.
 - ~~Go, Python codegen templates for all Phase 1+2 kinds~~ **Done**: All Phase 1+2 kinds generate for all 5 languages.
 
@@ -1657,7 +1657,7 @@ Embedded/automotive signal processing patterns.
 Integration with SCE Mesh distributed runtime and tooling.
 
 - **codec → ISerializer bridge**: Forge `codec` kinds generate encode/decode structs. SCE Mesh's `ISerializer` wraps these generated structs to provide event serialization for transport. When a `codec` kind exists for an event payload type, the build tool generates an `ISerializer` adapter instead of requiring a separate `events.yaml` declaration. This makes the codec SCXML the single source of truth for both local parsing and remote serialization.
-- **procedure → remote invoke**: Forge `procedure` kinds generate `sce::StateMachine`-compatible classes. SCE Mesh's remote `<invoke>` (Section 9) executes these across device boundaries unchanged. No additional codegen required — the procedure class is the same whether invoked locally or remotely.
+- **procedure → remote invoke**: Forge `procedure` kinds generate `SCE::StateMachine`-compatible classes. SCE Mesh's remote `<invoke>` (Section 9) executes these across device boundaries unchanged. No additional codegen required — the procedure class is the same whether invoked locally or remotely.
 - **observer → EventRouter**: Forge `observer` kinds generate threshold events. SCE Mesh's `EventRouter` routes these events to remote state machines via the configured `ITransport`. The observer kind remains transport-agnostic; routing is determined by `deploy.yaml`.
 - VS Code extension for Extended SCXML editing with kind-aware autocomplete
 - Unified XSD schema covering both Forge and Mesh `sce:` attributes

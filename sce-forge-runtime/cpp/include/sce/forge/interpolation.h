@@ -5,7 +5,7 @@
 
 #include <cstddef>
 
-namespace sce::forge {
+namespace SCE::Forge {
 
 /// 1D linear interpolation. Axis must be strictly increasing.
 /// Out-of-range x is clamped (extrapolate / error policies are applied by
@@ -97,4 +97,4 @@ constexpr double bilinear(const double (&axis_x)[Rows],
     return v0 + ty * (v1 - v0);
 }
 
-} // namespace sce::forge
+} // namespace SCE::Forge

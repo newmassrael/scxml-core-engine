@@ -25,8 +25,8 @@ struct ForgeDomain {
 
 class ObserverCoolant {
 public:
-    sce::forge::EventQueue<ForgeDomain> update(double coolantTemp) {
-        sce::forge::EventQueue<ForgeDomain> events;
+    SCE::Forge::EventQueue<ForgeDomain> update(double coolantTemp) {
+        SCE::Forge::EventQueue<ForgeDomain> events;
         if (warning_.enterIf(coolantTemp > 110.0)) {
             events.push(ForgeDomain::EMIT_WARNING);
         }
@@ -43,8 +43,8 @@ public:
     }
 
 private:
-    sce::forge::ThresholdState warning_;
-    sce::forge::ThresholdState critical_;
+    SCE::Forge::ThresholdState warning_;
+    SCE::Forge::ThresholdState critical_;
 };
 
 }  // namespace SCE::Generated::ObserverCoolant

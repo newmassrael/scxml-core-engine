@@ -27,7 +27,7 @@ namespace SCE::Generated::TimerDiagScheduler {
 template <typename Handler>
 class TimerDiagScheduler {
 public:
-    TimerDiagScheduler(Handler& handler, sce::forge::ITimer& testerPresentTimer, sce::forge::ITimer& responseTimeoutTimer, sce::forge::ITimer& retryDelayTimer)
+    TimerDiagScheduler(Handler& handler, SCE::Forge::ITimer& testerPresentTimer, SCE::Forge::ITimer& responseTimeoutTimer, SCE::Forge::ITimer& retryDelayTimer)
         : handler_(handler), testerPresentTimer_(testerPresentTimer), responseTimeoutTimer_(responseTimeoutTimer), retryDelayTimer_(retryDelayTimer) {}
 
     void startTesterPresent() {
@@ -56,9 +56,9 @@ public:
 
 private:
     Handler& handler_;
-    sce::forge::ITimer& testerPresentTimer_;
-    sce::forge::ITimer& responseTimeoutTimer_;
-    sce::forge::ITimer& retryDelayTimer_;
+    SCE::Forge::ITimer& testerPresentTimer_;
+    SCE::Forge::ITimer& responseTimeoutTimer_;
+    SCE::Forge::ITimer& retryDelayTimer_;
 
     static void onTesterPresent(void* ctx) {
         static_cast<TimerDiagScheduler*>(ctx)->handler_.fireTesterPresent();

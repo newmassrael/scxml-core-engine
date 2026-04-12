@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <optional>
 
-namespace sce::forge {
+namespace SCE::Forge {
 
 /// Exact-match lookup over parallel key/value arrays. Returns the value at
 /// the first index where `keys[i] == needle`, otherwise `std::nullopt`.
@@ -24,4 +24,4 @@ constexpr std::optional<V> lookup(const K (&keys)[N],
     return std::nullopt;
 }
 
-} // namespace sce::forge
+} // namespace SCE::Forge
