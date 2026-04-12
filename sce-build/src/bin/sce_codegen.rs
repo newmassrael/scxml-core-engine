@@ -63,6 +63,11 @@ enum Commands {
         /// Disable clang-format post-processing on C++ output.
         #[arg(long)]
         no_format: bool,
+        /// Path to deploy.yaml for SCE Mesh transport codegen.
+        /// When provided, generates transport routing code alongside
+        /// the state machine code. SM output remains identical.
+        #[arg(long)]
+        deploy: Option<String>,
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
@@ -150,6 +155,7 @@ fn main() {
             go_module_prefix,
             format_style,
             no_format,
+            deploy,
         } => cmd_generate(
             &scxml,
             &language,
@@ -159,6 +165,7 @@ fn main() {
             go_module_prefix.as_deref(),
             format_style.as_deref(),
             no_format,
+            deploy.as_deref(),
         ),
         Commands::GenerateW3c {
             language,
@@ -202,6 +209,7 @@ fn cmd_generate(
     go_module_prefix: Option<&str>,
     format_style: Option<&str>,
     no_format: bool,
+    deploy_path: Option<&str>,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
         eprintln!("Unknown language: {language}. Use rust, cpp, kotlin, or go.");
@@ -438,6 +446,39 @@ fn cmd_generate(
     // the *source* directory; the build system expects them in OUTPUT_DIR.
     copy_static_invoke_children(&model, Path::new(scxml_path), out_path);
     generate_hybrid_child_scxmls(&model, Path::new(scxml_path), out_path);
+
+    // SCE Mesh: generate transport routing code when --deploy is provided.
+    // Uses the public API (compile_mesh_transport) so CLI, tests, and build.rs
+    // share the same entry point. SM output remains byte-identical.
+    if let Some(deploy_file) = deploy_path {
+        let mut warnings = Vec::new();
+        match sce_build::compile_mesh_transport(
+            &model,
+            Path::new(deploy_file),
+            lang,
+            &mut warnings,
+        ) {
+            Ok(mesh_output) => {
+                for w in &warnings {
+                    eprintln!("Warning: {w}");
+                }
+                let mesh_files = maybe_format_files(mesh_output.files, &cpp_formatter);
+                for (filename, code) in &mesh_files {
+                    let file_path = out_path.join(filename);
+                    fs::write(&file_path, code).unwrap_or_else(|e| {
+                        eprintln!("Cannot write {}: {e}", file_path.display());
+                        std::process::exit(1);
+                    });
+                    println!("  Generated: {}", file_path.display());
+                    output_paths.push(file_path);
+                }
+            }
+            Err(e) => {
+                eprintln!("Mesh error: {e}");
+                std::process::exit(e.exit_code());
+            }
+        }
+    }
 
     // Write DEPFILE for CMake incremental builds
     if let Some(depfile) = depfile_path {

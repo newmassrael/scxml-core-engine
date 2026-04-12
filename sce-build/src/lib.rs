@@ -24,6 +24,7 @@ pub mod kotlin;
 pub mod lua_transformer;
 pub mod conformance;
 pub mod forge;
+pub mod mesh;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod formatter;
 #[cfg(feature = "wasm")]
@@ -632,6 +633,42 @@ fn build_qualified_call(
 /// and produces a JSON-serializable manifest with topological build order.
 pub fn build_forge_manifest(dir: &std::path::Path) -> Result<forge::model::ForgeManifest, forge::error::ForgeError> {
     forge::manifest::build_manifest(dir)
+}
+
+/// Generate mesh transport routing code for an SCXML model.
+///
+/// This is the single public API for the mesh pipeline — CLI, test harness,
+/// and build.rs all go through here. The pipeline:
+///   1. Parse deploy.yaml
+///   2. Collect <send> targets from the model
+///   3. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
+///   4. Resolve targets against deploy.yaml bindings
+///   5. Generate transport-native routing code
+///
+/// Returns `Ok(output)` with generated transport files, or `Err(MeshError)`.
+/// `warnings` receives any build-time warnings about dynamic targets.
+pub fn compile_mesh_transport(
+    model: &SCXMLModel,
+    deploy_path: &Path,
+    language: generator::Language,
+    warnings: &mut Vec<mesh::topology::TopologyWarning>,
+) -> Result<generator::GeneratedOutput, mesh::error::MeshError> {
+    // Stage 1: deploy.yaml parsing
+    let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+
+    // Stage 2a: collect dynamic target warnings
+    *warnings = mesh::topology::collect_dynamic_target_warnings(model);
+
+    // Stage 2b: resolve static targets against deploy.yaml bindings
+    let resolved = mesh::topology::resolve_targets(model, &deploy_cfg, &model.name)?;
+
+    if resolved.is_empty() {
+        return Ok(generator::GeneratedOutput { files: vec![] });
+    }
+
+    // Stage 3: transport codegen
+    let template_base = find_template_base();
+    Ok(mesh::codegen::generate_mesh(&model.name, &resolved, language, &template_base)?)
 }
 
 /// Detect if an SCXML file uses a non-statechart `sce:kind`.
