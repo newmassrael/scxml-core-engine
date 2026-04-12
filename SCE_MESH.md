@@ -16,17 +16,21 @@ Distributed systems require state machines that span multiple devices, processes
 SCE Mesh extends the SCXML Core Engine with **location-transparent state machine communication**. The same SCXML that runs locally runs across devices, processes, and clouds — unchanged.
 
 ```
-SCXML Author sees:           Runtime handles:
-  <send target="#motor"/>      Local? → direct call
-                               Remote? → serialize → transport → deserialize
-                               Same ECU? → shared memory
-                               Different ECU? → SOME/IP, Zenoh, CAN
-                               Cloud? → gRPC
+SCXML Author sees:           sce-build generates:
+  <send target="#motor"/>      Local? → direct call (inlined)
+                               Remote? → transport-native API call
+                               Same ECU? → shared memory write
+                               Different ECU? → SOME/IP, Zenoh, CAN native call
+                               Cloud? → gRPC stub call
 ```
 
 ### Core Principle
 
-**SCXML authors write business logic. Platform engineers write transport plugins. Neither needs to know the other's domain.** The contract between them is three interfaces: `IScheduler`, `ITransport`, `IDiscovery`.
+**SCXML authors write business logic. Platform engineers configure deploy.yaml. Neither needs to know the other's domain.** SCXML declares behavioral intent; deploy.yaml declares platform-specific realization; sce-build generates transport-native code that directly calls each middleware's API — no runtime abstraction layer, no feature loss.
+
+### Design Principle: Build-Time Resolution
+
+SCE's core philosophy is: **resolve at build time what can be resolved at build time.** The AOT engine compiles state machines into switch/case at build time. The expression transpiler compiles ECMAScript expressions into target-language code at build time. Transport dispatch follows the same principle — `deploy.yaml` determines routing at build time, and sce-build generates code that calls transport APIs directly. No runtime indirection, no vtable overhead, and no loss of transport-native features (DDS QoS policies, SOME/IP service model, D-Bus object paths, etc.).
 
 ### Positioning
 
@@ -56,63 +60,103 @@ Value SCE Mesh adds on top of existing middleware:
 |                      SCXML Documents                             |
 |              (design-time, domain-agnostic)                      |
 +-----------------------------------------------------------------+
-|                      AOT Code Generator                          |
-|                (C++ / Rust / C per target)                       |
+|                      deploy.yaml                                 |
+|        (deployment-time, transport-native configuration)         |
 +=================================================================+
 |                                                                  |
 |   +-------------------------------------------------------+     |
-|   |                SCE Core (invariant layer)              |     |
+|   |          sce-build (AOT Code Generator)                |     |
 |   |                                                        |     |
-|   |  +----------+  +----------+  +--------------------+   |     |
-|   |  | SM Engine |  | Event    |  | Data Model         |   |     |
-|   |  | (AOT)    |  | Router   |  | (Lua/ECMA/C)       |   |     |
-|   |  +----------+  +----------+  +--------------------+   |     |
-|   +------------------------+------------------------------+     |
-|                            |                                     |
-|   +------------------------v------------------------------+     |
-|   |           Platform Abstraction Layer                   |     |
-|   |                                                        |     |
-|   |  +------------+  +------------+  +-----------------+  |     |
-|   |  | IScheduler |  | ITransport |  | IDiscovery      |  |     |
-|   |  | (when)     |  | (how)      |  | (where)         |  |     |
-|   |  +------------+  +------------+  +-----------------+  |     |
+|   |  +---------------+  +--------------------------------+|     |
+|   |  | SM Codegen    |  | Transport Codegen               ||     |
+|   |  | (existing)    |  | (NEW — per-transport templates) ||     |
+|   |  +---------------+  +--------------------------------+|     |
+|   |  +---------------+  +--------------------------------+|     |
+|   |  | Forge Codegen |  | Topology Analyzer               ||     |
+|   |  | (existing)    |  | (NEW — deploy.yaml → routing)  ||     |
+|   |  +---------------+  +--------------------------------+|     |
 |   +-------------------------------------------------------+     |
 |                            |                                     |
-|   +--------+--------+--------+--------+--------+---------+      |
-|   | Game   |Vehicle |IntraECU| Cloud  | Robot  | Custom  |      |
-|   |Profile |Profile |Profile |Profile |Profile | Profile |      |
-|   +--------+--------+--------+--------+--------+---------+      |
+|                    generates                                     |
+|                            v                                     |
+|   +-------------------------------------------------------+     |
+|   |           Generated Code (per device)                  |     |
+|   |                                                        |     |
+|   |  +----------+  +-----------+  +--------------------+  |     |
+|   |  | SM Code  |  | Transport |  | Routing Table      |  |     |
+|   |  | (AOT)    |  | Code      |  | (constexpr)        |  |     |
+|   |  |          |  | (native   |  |                    |  |     |
+|   |  |          |  |  API call)|  |                    |  |     |
+|   |  +----------+  +-----------+  +--------------------+  |     |
+|   +-------------------------------------------------------+     |
+|                            |                                     |
+|                      links against                               |
+|                            v                                     |
+|   +-------------------------------------------------------+     |
+|   |           Transport Libraries (user-provided)          |     |
+|   |                                                        |     |
+|   |  +--------+  +-------+  +-----+  +------+  +------+  |     |
+|   |  | Zenoh  |  |vsomeip|  | DDS |  | gRPC |  | SHM  |  |     |
+|   |  +--------+  +-------+  +-----+  +------+  +------+  |     |
+|   +-------------------------------------------------------+     |
 |                                                                  |
+|   +-------------------------------------------------------+     |
+|   |           sce_mesh_common (minimal shared runtime)     |     |
+|   |                                                        |     |
+|   |  +------------+  +-------------------+                 |     |
+|   |  | IScheduler |  | EventQueueBridge  |                 |     |
+|   |  | (concept)  |  | (MPSC queue)      |                 |     |
+|   |  +------------+  +-------------------+                 |     |
+|   +-------------------------------------------------------+     |
 +-----------------------------------------------------------------+
 ```
 
 ### Dependency Rule
 
-- Upper layers depend only on interfaces, never on implementations
-- Implementations are injected through Profiles
-- SCXML documents reference no platform code
-- Transport implementations are unaware of each other
-- Cross-transport bridging (e.g., SOME/IP <-> gRPC) is handled by a dedicated `ITransportBridge` — an `ITransport` implementation that wraps two `ITransport` instances and translates events between them. Bridged transports remain unaware of each other; only the bridge knows both
+- SCXML documents reference no platform code and no transport specifics
+- deploy.yaml contains all transport-native configuration (QoS, addresses, protocol settings)
+- sce-build reads both and generates code that directly calls transport APIs — no runtime indirection
+- Generated transport code links against the user-provided transport library (zenoh-c, vsomeip, etc.)
+- `sce_mesh_common` provides only the minimal runtime components that cannot be codegen'd: scheduler concepts (OS-dependent timing) and the MPSC event queue bridge (thread synchronization)
+- Cross-transport bridging is handled at codegen time: sce-build generates a bridge function that calls both transport APIs, translating events between wire formats. No runtime bridge abstraction needed
 
 ### Relationship to Existing SCE Architecture
 
-SCE Mesh extends the existing 4-tier library architecture:
+SCE Mesh extends the existing codegen pipeline within sce-build, following the same pattern as SCE Forge:
 
 ```
-sce_core          (existing — AOT engine, W3C algorithms)
+sce-build (existing Rust binary)
    |
-sce_base          (existing — utilities, logging)
-   |
-sce_scripting     (existing — Lua/JS engines)
-   |
-sce_runtime       (existing — interpreter)
-   |
-sce_mesh          (NEW — ITransport, IScheduler, IDiscovery, Profiles)
-   |
-sce_mesh_plugins  (NEW — protocol implementations)
+   +-- SM codegen     (existing — SCXML → state machine code)
+   +-- Forge codegen  (existing — sce:kind → transform/codec/... code)
+   +-- Mesh codegen   (NEW — SCXML + deploy.yaml → transport-native code)
+
+Runtime libraries:
+sce_core           (existing — AOT engine, W3C algorithms)
+sce_base           (existing — utilities, logging)
+sce_scripting      (existing — Lua/JS engines)
+sce_runtime        (existing — interpreter)
+sce_mesh_common    (NEW — scheduler concepts, MPSC queue, event bridge)
 ```
 
-`sce_mesh` depends on `sce_core` (for AOT) and optionally on `sce_runtime` (for interpreter mode). It does not modify existing tiers.
+`sce_mesh_common` is a thin runtime library (~500-1000 LOC) providing only what cannot be determined at build time: OS-level scheduling and thread-safe event queue bridging. All transport dispatch, routing, serialization, and QoS configuration are resolved at build time by sce-build.
+
+**Consistency with SCE Forge**: Forge adds kind-specific Jinja2 templates to sce-build. Mesh adds transport-specific Jinja2 templates to sce-build. Both follow the same pattern: domain-specific SCXML extensions → build-time analysis → target-language code generation.
+
+```
+tools/codegen/templates/
+  forge/
+    cpp/codec.h.jinja2            # Forge: kind × language templates
+    cpp/transform.h.jinja2
+    ...
+  mesh/
+    cpp/shm_transport.h.jinja2    # Mesh: transport × language templates
+    cpp/someip_transport.h.jinja2
+    cpp/dds_transport.h.jinja2
+    cpp/zenoh_transport.h.jinja2
+    cpp/dbus_transport.h.jinja2
+    ...
+```
 
 ### Relationship to SCE Forge
 
@@ -124,24 +168,23 @@ SCE Mesh   = extends WHERE generated code can execute (transports: SOME/IP, Zeno
 ```
 
 Key integration points:
-- **Forge `codec` kind → Mesh `ISerializer`**: Codec-generated encode/decode structs are wrapped as transport serializers (see Section 7.5)
-- **Forge `procedure` kind → Mesh remote `<invoke>`**: Procedure state machine classes work unchanged with Mesh's remote invoke protocol (see Section 9)
-- **Forge `observer` kind → Mesh `EventRouter`**: Observer-generated threshold events are routed via configured transports
-- **Shared `sce:` namespace**: Both use `http://sce.dev/ext` with build-time vs runtime attribute ownership (see Section 5)
+- **Forge `codec` kind → Mesh serialization**: Codec-generated `encode()`/`decode()` are called directly in transport-generated serialization code — single source of truth for wire format (see Section 7.5)
+- **Forge `procedure` kind → Mesh remote `<invoke>`**: Procedure state machine classes work unchanged with Mesh's remote invoke codegen (see Section 9)
+- **Forge `observer` kind → Mesh routing**: Observer-generated threshold events are routed via generated transport code
+- **Shared `sce:` namespace**: Both use `http://sce.dev/ext`, both processed at build time by sce-build (see Section 5)
+- **Same codegen pattern**: Forge adds kind-specific Jinja2 templates. Mesh adds transport-specific Jinja2 templates. Both are sce-build extensions
 
-**CMake integration** follows the existing feature flag pattern (`SCE_ENABLE_QUICKJS`, `SCE_ENABLE_LUA`):
+**CMake integration**: Generated transport code links against user-provided transport libraries. `sce_mesh_common` provides only the scheduler concepts and MPSC event queue:
 
 ```cmake
-option(SCE_ENABLE_MESH "Build sce_mesh distributed runtime" OFF)
-option(SCE_MESH_WITH_INTERPRETER "Include interpreter support in sce_mesh" OFF)
+option(SCE_ENABLE_MESH "Build sce_mesh_common (scheduler + event bridge)" OFF)
 
-# sce_mesh always links sce_core (header-only, no cost)
-# sce_mesh optionally links sce_runtime when SCE_MESH_WITH_INTERPRETER=ON
-# sce_mesh_plugins are individually toggleable:
-option(SCE_MESH_PLUGIN_SHM "Shared memory transport" ON)
-option(SCE_MESH_PLUGIN_SOMEIP "SOME/IP transport" OFF)
-option(SCE_MESH_PLUGIN_ZENOH "Zenoh transport" OFF)
-option(SCE_MESH_PLUGIN_CAN "CAN bus transport" OFF)
+# sce_mesh_common is a thin library (~500-1000 LOC):
+#   - Scheduler concepts (TickScheduling, EventDrivenScheduling)
+#   - MPSC event queue bridge (thread-safe event injection)
+# Generated transport code links against:
+#   - sce_mesh_common (scheduler)
+#   - User-provided transport libraries (zenoh-c, vsomeip, etc.)
 ```
 
 ---
@@ -175,26 +218,30 @@ concept EventDrivenScheduling = requires(S& s, Instance& inst, Event event) {
 
 Concept names use the `-ing` suffix (`TickScheduling`, `EventDrivenScheduling`) to avoid collision with implementation class names (`GameLoopScheduler`, `EventDrivenScheduler`).
 
-The Runtime is templated on the scheduler type, enabling compile-time dispatch with zero overhead:
+The scheduler is the only runtime component in `sce_mesh_common` — OS timing primitives (RTOS periodic tasks, epoll, game loop timers) cannot be resolved at build time. Generated transport and routing code is wired to the scheduler at the application level:
 
 ```cpp
-template<typename Scheduler, typename Transport, typename Discovery>
-class Runtime {
-    void run() {
-        if constexpr (TickScheduling<Scheduler>) {
-            while (running_) {
-                auto events = transport_.collect();
-                scheduler_.tick(instances_, events);
-            }
-        } else if constexpr (EventDrivenScheduling<Scheduler>) {
-            transport_.subscribe("*", [this](Event e) {
-                auto& inst = discovery_.resolve(e.target);
-                scheduler_.onEvent(inst, e);
-            });
-            transport_.run();
+// Generated mesh_main.h provides the wiring
+// Scheduler is the only template parameter — transport/routing are fully codegen'd
+template<typename Scheduler>
+void run_mesh(Scheduler& scheduler) {
+    // Generated: init transport connections (native API calls)
+    init_transports();
+
+    if constexpr (TickScheduling<Scheduler>) {
+        while (running_) {
+            // Generated: collect events from all configured transports
+            auto events = collect_transport_events();
+            scheduler.tick(instances_, events);
         }
+    } else if constexpr (EventDrivenScheduling<Scheduler>) {
+        // Generated: register callbacks on each transport's native notification mechanism
+        register_transport_callbacks([&](Event e) {
+            scheduler.onEvent(resolve_instance(e.target), e);
+        });
+        scheduler.run();
     }
-};
+}
 
 // Mismatched calls are compile errors, not runtime errors
 ```
@@ -220,38 +267,81 @@ using AnyScheduler = std::variant<
 | `EventDrivenScheduler` | `EventDrivenScheduling` | Process on event arrival (epoll/kqueue) | Cloud, microservices |
 | `CooperativeScheduler` | `TickScheduling` | Single-thread round-robin | Bare-metal MCU, AUTOSAR Runnable |
 
-### 3.2 ITransport — How to Deliver
+### 3.2 Transport Codegen — How to Deliver
 
-Delivers events between state machine instances.
+Transport dispatch is resolved at **build time**, not runtime. sce-build reads `deploy.yaml` bindings and generates code that directly calls each transport's native API. There is no `ITransport` runtime interface — each transport has a dedicated **Jinja2 codegen template** that emits transport-native code.
+
+#### Template Architecture
 
 ```
-+--------------------------------------------------------------+
-|  ITransport                                                   |
-+--------------------------------------------------------------+
-|  name()                        -> "someip" | "zenoh" | ...   |
-|  send(event, target, qos)      -> deliver event              |
-|  subscribe(pattern, callback)  -> register receiver           |
-|  capabilities()                -> supported QoS set          |
-|  onError(callback)             -> register error handler     |
-+--------------------------------------------------------------+
+tools/codegen/templates/mesh/
+  cpp/
+    shm_transport.h.jinja2       # POSIX shared memory ring buffer
+    someip_transport.h.jinja2    # vsomeip native API calls
+    dds_transport.h.jinja2       # Cyclone DDS / RTI Connext native API
+    zenoh_transport.h.jinja2     # zenoh-c / zenoh-pico native API
+    can_transport.h.jinja2       # SocketCAN / AUTOSAR CAN native API
+    dbus_transport.h.jinja2      # GDBus / sd-bus native API
+    grpc_transport.h.jinja2      # gRPC stub calls
+    local_transport.h.jinja2     # same-process direct call (inlined away)
+```
+
+Each template receives the full transport-native configuration from deploy.yaml and generates code that uses 100% of the target transport's features — no abstraction loss.
+
+#### Generated Code Pattern
+
+For each `<send>` target in an SCXML document, sce-build generates a target-specific send function:
+
+```cpp
+// [generated] brake_transport.h
+namespace sce::generated::brake {
+
+// deploy.yaml: "#motor" → transport: dds, topic: "motor/cmd", qos: { ... }
+void send_to_motor(const EventDescriptor& event) {
+    // DDS native API — full QoS preserved
+    static dds_qos_t* qos = make_motor_qos();  // all 22 DDS QoS policies
+    auto payload = serialize_event(event);
+    dds_write(motor_writer_, &payload);
+}
+
+// deploy.yaml: "#dashboard" → transport: can, address: "can0:0x100"
+void send_to_dashboard(const EventDescriptor& event) {
+    // CAN native API — frame packing, priority
+    struct can_frame frame;
+    frame.can_id = 0x100;
+    pack_event_to_can(event, frame.data, &frame.can_dlc);
+    write(can_socket_, &frame, sizeof(frame));
+}
+
+// Routing: compile-time dispatch
+void route_send(const char* target, const EventDescriptor& event) {
+    // constexpr hash or if-else chain — no vtable, no map lookup
+    if (__builtin_strcmp(target, "#motor") == 0) send_to_motor(event);
+    else if (__builtin_strcmp(target, "#dashboard") == 0) send_to_dashboard(event);
+}
+
+}  // namespace sce::generated::brake
 ```
 
 #### Error Propagation Contract
 
-Transport errors must be surfaced to the SCXML state machine as W3C-compliant `error.communication` events. The propagation path is:
+Transport errors must be surfaced to the SCXML state machine as W3C-compliant `error.communication` events. Each transport template generates error handling code that converts transport-native errors into SCXML events:
 
 ```
 Protocol error (e.g., SOME/IP TIMEOUT, CAN bus-off, gRPC UNAVAILABLE)
     |
     v
-ITransport.onError callback fires
+Generated error handler (transport-native):
+    DDS:     on_subscription_matched(0)
+    vsomeip: availability_handler(NOT_AVAILABLE)
+    CAN:     read() returns -1, errno == ENETDOWN
     |
     v
-EventRouter creates SCXML event:
+Generated code creates SCXML event:
     name:   "error.communication"        (W3C SCXML 4.9.1)
-    data:   { transport: "someip",
+    data:   { transport: "dds",
               target: "#motor",
-              reason: "TIMEOUT",
+              reason: "PEER_LOST",
               original_event: "brake.activate" }
     |
     v
@@ -261,78 +351,78 @@ Event enters external event queue of the sending state machine
 SCXML <transition event="error.communication"> handles it
 ```
 
-QoS violation behavior:
+QoS violation behavior is generated per-transport from deploy.yaml configuration:
 
-| Situation | Behavior |
+| Situation | Generated Behavior |
 |-----------|----------|
-| `sce:qos="reliable"` send fails | Retry according to transport policy, then `error.communication` |
-| `sce:deadline` exceeded | `error.communication` with `reason: "DEADLINE_EXCEEDED"` |
-| Transport disconnected | `error.communication` immediately, instance lifecycle -> DRAINING |
+| `sce:qos="reliable"` send fails | Transport-native retry (DDS: reliability QoS, SOME/IP: method retry), then `error.communication` |
+| `sce:deadline` exceeded | Timer-based enforcement in generated code, `error.communication` with `reason: "DEADLINE_EXCEEDED"` |
+| Transport disconnected | Transport-native disconnect detection, `error.communication`, instance lifecycle → DRAINING |
 | `sce:qos="best-effort"` send fails | Silent drop, no error event (fire-and-forget semantics) |
 
-Implementations by domain:
+#### Supported Transports
 
 **Intra-ECU (same device, different processes)**
 
-| Transport | Mechanism | Latency |
-|-----------|-----------|---------|
-| `SharedMemTransport` | Zero-copy shared memory | < 1 us |
-| `PosixMqTransport` | POSIX message queue | < 10 us |
-| `PipeTransport` | Unix pipe / named pipe | < 10 us |
-| `DBusTransport` | D-Bus session/system bus | < 100 us |
+| Template | Mechanism | Latency | Native Features Preserved |
+|----------|-----------|---------|---------------------------|
+| `shm_transport` | Ring buffer in shared memory | < 1 us | Zero-copy, lock-free MPSC |
+| `dbus_transport` | D-Bus session/system bus | < 100 us | Object paths, interfaces, signals, method calls |
 
 **Vehicle Network (ECU to ECU)**
 
-| Transport | Mechanism | Latency |
-|-----------|-----------|---------|
-| `SomeIpTransport` | SOME/IP over Ethernet | < 1 ms |
-| `ZenohTransport` | Zenoh pub/sub + query | < 1 ms |
-| `CanTransport` | CAN bus frames | < 1 ms |
-| `LinTransport` | LIN bus (low-speed sensors) | < 10 ms |
+| Template | Mechanism | Latency | Native Features Preserved |
+|----------|-----------|---------|---------------------------|
+| `someip_transport` | SOME/IP over Ethernet | < 1 ms | Service model, event groups, SD, method call/fire-and-forget |
+| `zenoh_transport` | Zenoh pub/sub + query | < 1 ms | Key expressions, SHM, QoS reliability/congestion, scouting |
+| `can_transport` | CAN bus frames | < 1 ms | Frame ID priority, DBC signal packing, CAN FD support |
+| `dds_transport` | DDS (Cyclone/Connext) | < 1 ms | **All 22 QoS policies**, typed topics, content filters, partitions |
 
-**Game / Cloud**
+**Cloud / Game / IoT**
 
-| Transport | Mechanism | Latency |
-|-----------|-----------|---------|
-| `UdpTransport` | Raw UDP (game servers) | < 1 ms LAN |
-| `GrpcTransport` | gRPC (service-to-service) | < 10 ms |
-| `NatsTransport` | NATS pub/sub | < 1 ms |
-| `MqttTransport` | MQTT (lightweight IoT) | variable |
+| Template | Mechanism | Latency | Native Features Preserved |
+|----------|-----------|---------|---------------------------|
+| `grpc_transport` | gRPC stubs | < 10 ms | Unary/streaming RPCs, metadata, interceptors, TLS |
+| `zenoh_transport` | Zenoh (reusable) | < 1 ms | Peer/client/router modes, key wildcards |
 
-**IoT / Robotics**
+### 3.3 Discovery — Where to Find
 
-| Transport | Mechanism | Latency |
-|-----------|-----------|---------|
-| `ZenohTransport` | Zenoh (reusable across domains) | < 1 ms |
-| `DdsTransport` | DDS (real-time pub/sub) | < 1 ms |
-| `Ros2Transport` | ROS2 topics/services | < 10 ms |
+Discovery determines how logical `#target` IDs are resolved to physical addresses. Like transport, discovery follows the build-time-first principle:
 
-### 3.3 IDiscovery — Where to Find
+**Static Discovery (codegen'd):** deploy.yaml bindings are compiled into `constexpr` routing tables. Zero runtime overhead. This is the primary mode for Phase 1-3.
 
-Resolves logical instance IDs to physical addresses.
+**Dynamic Discovery (runtime):** For environments where targets appear/disappear at runtime (cloud auto-scaling, game zone migration), a minimal `IDiscovery` runtime concept is provided in `sce_mesh_common`. This is Phase 5 scope.
 
 ```
-+--------------------------------------------------------------+
-|  IDiscovery                                                   |
-+--------------------------------------------------------------+
-|  resolve(target_id)            -> physical address            |
-|  announce(instance_id, meta)   -> advertise presence          |
-|  watch(pattern, callback)      -> observe changes             |
-+--------------------------------------------------------------+
+Phase 1-3: Static (build-time) — constexpr routing tables
+Phase 5:   Dynamic (runtime)   — IDiscovery concept for runtime resolution
 ```
 
-Implementations:
+#### Static Discovery (Phase 1-3)
 
-| Discovery | Mechanism | Domain |
-|-----------|-----------|--------|
-| `StaticRegistry` | Compile-time routing table | Safety-critical automotive |
-| `LocalRegistry` | In-process HashMap | Same process |
-| `SharedMemRegistry` | Shared memory segment | Same ECU, cross-process |
-| `SomeIpSd` | SOME/IP Service Discovery | Vehicle network |
-| `ZenohDiscovery` | Zenoh scouting | Vehicle + IoT |
-| `ZoneRouter` | Game zone routing table | MMORPG |
-| `MdnsDiscovery` | mDNS/DNS-SD | LAN auto-discovery |
-| `ConsulDiscovery` | Consul/etcd | Datacenter |
+deploy.yaml bindings are resolved at build time. Generated code contains compile-time constant routing:
+
+```cpp
+// [generated] brake_routing.h — no runtime lookup
+namespace sce::generated::brake {
+constexpr auto route_target(const char* target) {
+    if (eq(target, "#motor"))     return &send_to_motor;
+    if (eq(target, "#dashboard")) return &send_to_dashboard;
+    return &send_error_unknown_target;
+}
+}
+```
+
+#### Dynamic Discovery (Phase 5, Deferred)
+
+For dynamic environments, `sce_mesh_common` provides a minimal discovery concept:
+
+| Discovery Strategy | Mechanism | Domain |
+|--------------------|-----------|--------|
+| Transport-native SD | SOME/IP-SD, Zenoh scouting, mDNS | Each transport's built-in discovery |
+| External registry | Consul, etcd | Datacenter |
+
+Dynamic discovery generates code that calls the transport's native discovery API (e.g., `vsomeip::request_service()`, `zenoh::scout()`), preserving transport-specific discovery features. The codegen template emits callbacks that update the routing table at runtime when services appear/disappear.
 
 ---
 
@@ -424,7 +514,7 @@ Event deduplication applies **only when the discovery mode or transport can prod
 **When enabled** (Dynamic mode, or explicit `sce:qos="reliable"` with failover):
 
 ```
-SCE Event Header (optional, added by transport layer):
+SCE Event Header (optional, added by generated transport code):
   source:     instance_id
   seq:        per-source sequence number (lightweight counter)
 ```
@@ -452,43 +542,108 @@ Events arriving before READY are buffered (configurable timeout).
 
 ---
 
-## 5. QoS Annotations
+## 5. QoS Model: Intent vs Realization
 
-SCXML extension namespace `sce:` for transport-level quality-of-service:
+SCE Mesh separates QoS into two layers:
+
+1. **SCXML (`sce:qos`, `sce:deadline`, `sce:priority`)** — behavioral intent. "This message needs reliable delivery." Stays transport-agnostic. Used for build-time validation.
+2. **deploy.yaml (transport-native QoS)** — platform realization. "Reliable on DDS means Reliability::Reliable + Durability::TransientLocal + History::KeepLast(5)." Full transport-native feature access.
+
+### SCXML QoS Attributes (Intent Layer)
 
 ```xml
 <scxml xmlns:sce="http://sce.dev/ext">
 
-  <!-- Hard real-time, must deliver, 1ms deadline -->
+  <!-- Intent: must deliver, within 1ms, highest priority -->
   <send event="brake.activate" target="#brake_ecu"
         sce:qos="reliable"
         sce:deadline="1ms"
         sce:priority="critical"/>
 
-  <!-- Best-effort, loss acceptable, fast delivery -->
+  <!-- Intent: loss acceptable, fast delivery -->
   <send event="npc.move" target="zone://forest"
         sce:qos="best-effort"
         sce:priority="normal"/>
 
-  <!-- Zero-copy, immediate delivery -->
-  <send event="sensor.frame" target="proc://perception"
-        sce:qos="zero-copy"/>
-
-
 </scxml>
 ```
 
-### Core QoS Attributes (Phase 1-3)
+| Attribute | Values | Role |
+|-----------|--------|------|
+| `sce:qos` | `reliable`, `best-effort` | Build-time validation hint |
+| `sce:deadline` | Duration (e.g. `1ms`, `16ms`) | Build-time validation hint |
+| `sce:priority` | `critical`, `high`, `normal`, `low` | Build-time validation hint |
 
-Transport-level hints that map naturally to existing protocol QoS mechanisms:
+These attributes **do not directly control generated code**. They are validation hints — sce-build checks that the deploy.yaml QoS configuration for each binding is consistent with the SCXML intent. For example, if SCXML declares `sce:qos="reliable"` but deploy.yaml configures `reliability: BEST_EFFORT`, sce-build emits a **build-time warning**.
 
-| Attribute | Values | Description |
-|-----------|--------|-------------|
-| `sce:qos` | `reliable`, `best-effort`, `zero-copy` | Delivery guarantee |
-| `sce:deadline` | Duration (e.g. `1ms`, `16ms`) | Maximum delivery latency |
-| `sce:priority` | `critical`, `high`, `normal`, `low` | Scheduling priority |
+If `sce:qos` attributes are omitted, no validation occurs — deploy.yaml QoS is used as-is.
 
-These are the only QoS attributes in the initial specification. They are simple transport hints — the runtime maps them to protocol-native QoS (e.g., `sce:qos="reliable"` -> SOME/IP reliable method call, Zenoh reliable publication).
+### deploy.yaml QoS (Realization Layer)
+
+Transport-native QoS configuration with full feature access:
+
+```yaml
+topology:
+  brake_ecu:
+    machines:
+      brake:
+        bindings:
+          "#motor":
+            transport: dds
+            topic: "vehicle/powertrain/motor/cmd"
+            qos:
+              # Full DDS QoS — all 22 policies available
+              reliability: RELIABLE
+              durability: TRANSIENT_LOCAL
+              deadline: 10ms
+              liveliness: AUTOMATIC
+              lease_duration: 1s
+              history:
+                kind: KEEP_LAST
+                depth: 5
+              resource_limits:
+                max_samples: 100
+                max_instances: 1
+              transport_priority: 7
+
+          "#dashboard":
+            transport: someip
+            service: 0x1001
+            instance: 0x01
+            # Full SOME/IP settings — service model preserved
+            protocol: TCP          # TCP for reliable, UDP for fire-and-forget
+            serializer: someip
+            event_group: 0x01
+```
+
+sce-build reads the native QoS and generates code that passes these values directly to the transport API:
+
+```cpp
+// [generated] — DDS QoS applied natively, not mapped through abstraction
+static dds_qos_t* make_motor_qos() {
+    auto* q = dds_create_qos();
+    dds_qset_reliability(q, DDS_RELIABILITY_RELIABLE, DDS_MSECS(100));
+    dds_qset_durability(q, DDS_DURABILITY_TRANSIENT_LOCAL);
+    dds_qset_deadline(q, DDS_MSECS(10));
+    dds_qset_liveliness(q, DDS_LIVELINESS_AUTOMATIC, DDS_SECS(1));
+    dds_qset_history(q, DDS_HISTORY_KEEP_LAST, 5);
+    dds_qset_resource_limits(q, 100, 1, DDS_LENGTH_UNLIMITED);
+    dds_qset_transport_priority(q, 7);
+    return q;
+}
+```
+
+### Build-Time Validation
+
+sce-build cross-references SCXML intent with deploy.yaml realization:
+
+| SCXML Intent | deploy.yaml Check | Result |
+|-------------|-------------------|--------|
+| `sce:qos="reliable"` | DDS `reliability: BEST_EFFORT` | **Warning**: intent/config mismatch |
+| `sce:deadline="1ms"` | DDS `deadline: 100ms` | **Warning**: deadline exceeds intent |
+| `sce:qos="reliable"` | SOME/IP `protocol: TCP` | OK — TCP provides reliability |
+| `sce:qos="best-effort"` | CAN (inherently best-effort) | OK — matches |
+| No `sce:qos` attribute | Any config | OK — no validation, user takes responsibility |
 
 ### Shared `sce:` Namespace with SCE Forge
 
@@ -497,10 +652,10 @@ SCE Mesh and SCE Forge share the unified `sce:` extension namespace (`http://sce
 ```xml
 <send sce:service="SecurityAccess" sce:subfunc="0x01"
       sce:qos="reliable" sce:deadline="5ms"/>
-<!--   ^^^^^^^ Forge (codegen)  ^^^^^^^ Mesh (runtime) -->
+<!--   ^^^^^^^ Forge (codegen)  ^^^^^^^ Mesh (codegen) -->
 ```
 
-**Ownership rule**: SCE Forge attributes (`sce:kind`, `sce:type`, `sce:service`, `sce:subfunc`, `sce:addr`, `sce:payload`, `sce:byte`, `sce:bit-*`, `sce:direction`, `sce:unit`, `sce:default-endian`) are processed at **build time** by the codegen. SCE Mesh attributes (`sce:qos`, `sce:deadline`, `sce:priority`) are processed at **runtime** by the transport layer. Neither subsystem reads the other's attributes. See SCE_FORGE.md Section 3.6 for the full attribute classification table.
+**Ownership rule**: All `sce:` attributes are now processed at **build time**. SCE Forge attributes (`sce:kind`, `sce:type`, `sce:service`, etc.) control Forge codegen output. SCE Mesh attributes (`sce:qos`, `sce:deadline`, `sce:priority`) serve as build-time validation hints cross-referenced against deploy.yaml. Neither subsystem reads the other's attributes. See SCE_FORGE.md Section 3.6 for the full attribute classification table.
 
 ### Future Direction: Distributed Transaction Patterns
 
@@ -513,93 +668,131 @@ These are orchestration-layer concerns, not state machine concerns. Mixing them 
 
 ---
 
-## 6. Profiles
+## 6. Build Profiles
 
-A Profile is a pre-configured combination of Scheduler + Transport(s) + Discovery + default QoS. Profiles use `sce::make_runtime()` which deduces template parameters from the provided types — scheduler concept satisfaction is checked at compile time.
-
-`TransportSet` is a variadic template (`TransportSet<Ts...>`) holding a `std::tuple` of transport instances, where each `Ts` must satisfy the transport concept. The EventRouter iterates over the tuple at compile time to register subscriptions and route outgoing events based on the routing table. Exact implementation is a Phase 1 deliverable.
+A Build Profile is a deploy.yaml configuration that selects a Scheduler type and declares transport bindings. sce-build reads the profile and generates all transport-specific code. The scheduler remains a runtime concept (OS-dependent timing); transport dispatch is fully codegen'd.
 
 ### 6.1 Vehicle Profile
 
+```yaml
+# deploy.yaml
+profile: vehicle
+scheduler:
+  type: real_time
+  cycle_ms: 1
+
+topology:
+  brake_ecu:
+    platform: qnx
+    target: aarch64
+    machines:
+      brake:
+        bindings:
+          "#motor":     { transport: someip, service: 0x1001, instance: 0x01 }
+          "#dashboard": { transport: can, address: "can0:0x100" }
+
+discovery:
+  mode: static
+
+qos:
+  defaults:
+    qos: reliable
+    deadline: 10ms
 ```
-Scheduler:   RealTimeScheduler (TickScheduling concept)
-Transport:   SOME/IP + CAN + Zenoh (configurable)
-Discovery:   Static (build-time) or SOME/IP-SD
-QoS default: reliable, deadline=10ms, priority=high
-Safety:      ASIL-B/D aware
-```
+
+Generated application code:
 
 ```cpp
-auto runtime = sce::make_runtime(
-    RealTimeScheduler{.cycle_ms = 1, .safety_level = sce::ASIL_D},
-    TransportSet{SomeIpTransport{cfg}, CanTransport{"can0"}},
-    StaticRegistry{deploy_yaml}
-);
+int main() {
+    // Scheduler is the only runtime component — OS-dependent timing
+    sce::RealTimeScheduler scheduler{.cycle_ms = 1};
+
+    // Transport init is generated — calls vsomeip/SocketCAN APIs directly
+    sce::generated::brake::init_transports();
+
+    // SM + routing are generated — no runtime abstraction
+    sce::generated::brake::BrakeSM sm;
+    scheduler.run([&](auto events) {
+        sm.processEvents(events);
+    });
+}
 ```
 
-### 6.2 Game Profile
+### 6.2 IntraECU Profile
 
-```
-Scheduler:   GameLoopScheduler (TickScheduling concept)
-Transport:   UDP (zone-to-zone) + gRPC (gateway)
-Discovery:   ZoneRouter + dynamic scaling
-QoS default: best-effort, priority=normal
-```
+```yaml
+profile: intra_ecu
+scheduler:
+  type: event_driven
 
-```cpp
-auto runtime = sce::make_runtime(
-    GameLoopScheduler{.tick_rate = 60, .max_entities = 500'000},
-    TransportSet{UdpTransport{7777}, GrpcTransport{}},
-    ZoneRouter{.zones = 16}
-);
-```
+topology:
+  this_machine:
+    machines:
+      brake:
+        bindings:
+          "#motor": { transport: shm, address: "/sce_motor", size: "4MB" }
 
-### 6.3 IntraECU Profile
-
-```
-Scheduler:   EventDrivenScheduler (EventDrivenScheduling concept)
-Transport:   SharedMemory + POSIX MQ
-Discovery:   LocalRegistry or SharedMemRegistry
-QoS default: zero-copy, priority=high
+discovery:
+  mode: static
 ```
 
-```cpp
-auto runtime = sce::make_runtime(
-    sce::EventDrivenScheduler{},
-    TransportSet{SharedMemTransport{"/sce_events", 4_MB}},
-    LocalRegistry{}
-);
+### 6.3 DDS Profile (Full QoS)
+
+```yaml
+profile: dds_vehicle
+scheduler:
+  type: real_time
+  cycle_ms: 5
+
+topology:
+  brake_ecu:
+    machines:
+      brake:
+        bindings:
+          "#motor":
+            transport: dds
+            topic: "vehicle/powertrain/motor/cmd"
+            domain: 0
+            qos:
+              reliability: RELIABLE
+              durability: TRANSIENT_LOCAL
+              deadline: 10ms
+              liveliness: AUTOMATIC
+              lease_duration: 1s
+              history: { kind: KEEP_LAST, depth: 5 }
+              resource_limits: { max_samples: 100 }
+              transport_priority: 7
+              # All 22 DDS QoS policies available here
+
+discovery:
+  mode: static
 ```
 
-### 6.4 Cloud Profile
+sce-build generates code that calls `dds_create_qos()` with every specified policy — no feature loss.
+
+### 6.4 Custom Transport
+
+To add a new transport, create a Jinja2 codegen template:
 
 ```
-Scheduler:   EventDrivenScheduler (EventDrivenScheduling concept)
-Transport:   gRPC + NATS
-Discovery:   Consul / etcd
-QoS default: reliable, priority=normal
+tools/codegen/templates/mesh/cpp/my_transport.h.jinja2
 ```
 
-```cpp
-auto runtime = sce::make_runtime(
-    sce::EventDrivenScheduler{},
-    TransportSet{GrpcTransport{}, NatsTransport{}},
-    ConsulDiscovery{"consul.local:8500"}
-);
+The template receives:
+- `bindings`: list of target bindings from deploy.yaml
+- `qos`: transport-native QoS configuration
+- `transport_config`: any transport-specific settings from deploy.yaml
+
+And emits:
+- `init_transports()`: transport initialization code
+- `send_to_<target>()`: per-target send functions calling native API
+- `subscribe_<pattern>()`: subscription setup calling native API
+- `on_error_<target>()`: error handler generating `error.communication` events
+
 ```
-
-### 6.5 Custom Profile
-
-```cpp
-// Any types satisfying the correct concepts work
-auto runtime = sce::make_runtime(
-    MyScheduler{},           // must satisfy TickScheduling or EventDrivenScheduling
-    TransportSet{MyTransport{}},  // must satisfy ITransport concept
-    MyDiscovery{}            // must satisfy IDiscovery concept
-);
-
-// Compile error if concept not satisfied:
-// "MyScheduler satisfies neither TickScheduling nor EventDrivenScheduling"
+// Compile error if template is missing:
+// "No codegen template found for transport 'my_transport'. 
+//  Expected: tools/codegen/templates/mesh/cpp/my_transport.h.jinja2"
 ```
 
 ---
@@ -640,11 +833,20 @@ Step 3: Apply deployment map (deploy.yaml)
   device_c: [dashboard]
 
 Step 4: Boundary analysis
-  brake->motor:     cross-device -> generate proxy + serialization
-  brake->dashboard: cross-device -> generate proxy + serialization
-  (same-device targets: direct call, no proxy needed)
+  brake->motor:     cross-device -> generate transport-native send code
+  brake->dashboard: cross-device -> generate transport-native send code
+  (same-device targets: generate direct call, inlined away)
 
-Step 5: Generate per-device artifacts
+Step 5: Select codegen template per transport
+  brake->motor (someip):    someip_transport.h.jinja2
+  brake->dashboard (can):   can_transport.h.jinja2
+
+Step 6: Generate per-device artifacts (SM + transport + serialization)
+
+Step 7: Build-time validation
+  - All <send> targets resolve in deploy.yaml
+  - sce:qos intent matches deploy.yaml QoS config
+  - Event coverage: every sent event has at least one receiver
 ```
 
 ### 7.3 Outputs
@@ -653,66 +855,74 @@ Step 5: Generate per-device artifacts
 generated/
   device_a/
     brake_sm.h              # AOT state machine (existing codegen)
-    brake_routing.h         # compile-time routing table
+    brake_transport.h       # transport-native send/subscribe (generated from templates)
     brake_events.h          # event serialization/deserialization
-    brake_mesh_init.h       # transport + discovery auto-config
+    brake_mesh_main.h       # transport init + scheduler wiring
 
   device_b/
     motor_sm.h
-    motor_routing.h
+    motor_transport.h
     motor_events.h
-    motor_mesh_init.h
+    motor_mesh_main.h
 
   device_c/
     dashboard_sm.h
-    dashboard_routing.h
+    dashboard_transport.h
     dashboard_events.h
-    dashboard_mesh_init.h
+    dashboard_mesh_main.h
 ```
 
-### 7.4 Generated Routing Table
+### 7.4 Generated Transport Code
+
+Each target binding generates a dedicated send function that calls the transport API directly:
 
 ```cpp
-// [generated] brake_routing.h
+// [generated] brake_transport.h
 namespace sce::generated::brake {
 
-constexpr RoutingEntry ROUTES[] = {
-    { "#motor",     Transport::SOMEIP, someip::Address{0x1001, 0x01} },
-    { "#dashboard", Transport::CAN,    can::Address{"can0", 0x100} },
-};
+// Generated from someip_transport.h.jinja2
+// deploy.yaml: "#motor" → { transport: someip, service: 0x1001, ... }
+void send_to_motor(const EventDescriptor& event) {
+    auto msg = vsomeip::runtime::get()->create_request(/*reliable=*/true);
+    msg->set_service(0x1001);
+    msg->set_instance(0x01);
+    msg->set_method(0x01);
+    msg->set_payload(serialize_event(event));
+    app_->send(msg);
+}
+
+// Generated from can_transport.h.jinja2
+// deploy.yaml: "#dashboard" → { transport: can, address: "can0:0x100" }
+void send_to_dashboard(const EventDescriptor& event) {
+    struct can_frame frame;
+    frame.can_id = 0x100;
+    pack_event_to_can(event, frame.data, &frame.can_dlc);
+    write(can_socket_, &frame, sizeof(frame));
+}
+
+// Compile-time routing — no map lookup, no vtable
+void route_send(const char* target, const EventDescriptor& event) {
+    if (eq(target, "#motor"))     return send_to_motor(event);
+    if (eq(target, "#dashboard")) return send_to_dashboard(event);
+}
 
 }  // namespace sce::generated::brake
 ```
 
 ### 7.5 Generated Event Serialization
 
-Serialization is not one-size-fits-all. Different transports have fundamentally different data encoding requirements:
+Serialization is generated per-transport. Different transports have fundamentally different data encoding requirements:
 
-- **Buffer-based** (gRPC, SOME/IP, UDP, SharedMem): Variable-length byte streams
-- **Signal-based** (CAN, LIN): Bit-level packing into fixed-size frames (8 bytes CAN classic, 64 bytes CAN FD)
+- **Buffer-based** (gRPC, SOME/IP, SharedMem): Variable-length byte streams
+- **Signal-based** (CAN, LIN): Bit-level packing into fixed-size frames
 
-The build tool generates transport-appropriate serialization via the `ISerializer` interface:
-
-```
-+--------------------------------------------------------------+
-|  ISerializer                                                  |
-+--------------------------------------------------------------+
-|  serialize(event, target_transport) -> bytes                  |
-|  deserialize(bytes, source_transport) -> event                |
-+--------------------------------------------------------------+
-        |
-        +-- BufferSerializer      (gRPC, SOME/IP, UDP, SHM)
-        |     Variable-length, self-describing format
-        |
-        +-- SignalSerializer      (CAN, LIN)
-              Bit-packed, DBC/ARXML-compatible layout
-```
+Each transport template generates serialization code appropriate to the wire format — no runtime `ISerializer` interface:
 
 #### Type Information Source
 
 W3C SCXML is typeless — `<param name="brake_force" expr="brakeForce"/>` carries no type information. The build tool requires an external type source to generate serialization code. Three sources are supported, in priority order:
 
-1. **SCE Forge `codec` kind** (preferred when available): If an event payload has a corresponding `sce:kind="codec"` SCXML file, the build tool generates an `ISerializer` adapter that wraps the codec's `encode()`/`decode()` methods. The codec SCXML becomes the single source of truth for both local byte parsing and remote event serialization. No `events.yaml` entry is needed for codec-backed payloads.
+1. **SCE Forge `codec` kind** (preferred when available): If an event payload has a corresponding `sce:kind="codec"` SCXML file, the transport template generates serialization code that directly calls the codec's `encode()`/`decode()` methods. The codec SCXML becomes the single source of truth for both local byte parsing and remote event serialization. No `events.yaml` entry is needed for codec-backed payloads.
 2. **Buffer-based transports**: Types are declared in an **event schema file** (`events.yaml`) alongside `deploy.yaml`. This is the fallback for payloads without a codec kind definition.
 3. **Signal-based transports (CAN, LIN)**: Types, scaling, offsets, and bit layouts are imported from standard automotive database files (`.dbc`, `.arxml`, AUTOSAR system description). This is Phase 3 scope.
 
@@ -723,19 +933,16 @@ Type resolution priority:
   3. .dbc / .arxml                              → automotive signal database
 ```
 
-**SCE Forge codec integration**: When the build tool detects that a `<send>` event payload matches a Forge codec kind (by matching the codec's `<data id>` against the event's `<param>` structure), it generates an `ISerializer` adapter:
+**SCE Forge codec integration**: When the build tool detects that a `<send>` event payload matches a Forge codec kind (by matching the codec's `<data id>` against the event's `<param>` structure), the transport template generates serialization code that calls the Forge-generated codec directly:
 
 ```cpp
-// [generated] adapter wrapping Forge-generated codec
-template<>
-struct EventSerializer<events::MotorCutPower> {
-    static void serialize(const MotorCutPower& event, sce::Buffer& buf) {
-        buf.write(MotorCutPowerCodec::encode(event));  // Forge-generated encode
-    }
-    static MotorCutPower deserialize(sce::BufferView buf) {
-        return MotorCutPowerCodec::decode(buf.data(), buf.size());  // Forge-generated decode
-    }
-};
+// [generated] — transport template calls Forge-generated codec directly
+void send_to_motor(const EventDescriptor& event) {
+    // Forge-generated encode — single source of truth for wire format
+    auto payload = MotorCutPowerCodec::encode(event.params());
+    // Transport-native send — no serialization abstraction layer
+    vsomeip_send(motor_service_, payload.data(), payload.size());
+}
 ```
 
 This eliminates type duplication between `events.yaml` and codec SCXML files. When both exist for the same event, the codec kind takes precedence and the build tool emits a warning about the redundant `events.yaml` entry.
@@ -813,16 +1020,26 @@ struct MotorCutPower {
 ### 7.6 What Developers Write
 
 ```cpp
+#include "generated/brake_sm.h"           // existing AOT state machine
+#include "generated/brake_transport.h"    // generated transport code (native API calls)
+#include "generated/brake_mesh_main.h"    // generated init + scheduler wiring
+
 int main() {
-    auto runtime = sce::make_runtime(
-        RealTimeScheduler{.cycle_ms = 1},
-        TransportSet{SomeIpTransport{config}, CanTransport{"can0"}},
-        StaticRegistry{generated::brake::ROUTES}
-    );
-    runtime.load<generated::brake::BrakeSM>();
-    runtime.run();
+    // Scheduler is the only runtime component — OS timing is not codegen-able
+    sce::RealTimeScheduler scheduler{.cycle_ms = 1};
+
+    // Transport initialization is generated — calls vsomeip/SocketCAN/etc. directly
+    sce::generated::brake::init_transports();
+
+    // SM is generated (existing), routing is generated (new)
+    sce::generated::brake::BrakeSM sm;
+    scheduler.run([&](auto events) {
+        sm.processEvents(events);
+    });
 }
 ```
+
+No `TransportSet`, no `StaticRegistry`, no `make_runtime()`. The generated code handles transport initialization, routing, serialization, and error propagation. The developer only provides the scheduler and wires the SM.
 
 ### 7.7 Build-Time Verification
 
@@ -841,7 +1058,7 @@ The build tool performs conservative static analysis across all SCXML documents.
 
 ## 8. Protocol Mapping
 
-How SCXML concepts map to each transport protocol:
+How SCXML concepts map to each transport protocol. Each cell represents the native API call that the corresponding transport codegen template generates:
 
 | SCXML Concept | SOME/IP | Zenoh | DDS | gRPC | CAN | Shared Mem |
 |--------------|---------|-------|-----|------|-----|------------|
@@ -865,7 +1082,7 @@ How SCXML concepts map to each transport protocol:
 |--------|-----------------|-------------------|
 | Child creation | Same process, new SM instance | Remote process, coordinated via transport |
 | Session ID | Runtime-assigned, in-memory | Globally unique, shared across devices |
-| `<param>` passing | Direct memory reference | Serialized via ISerializer |
+| `<param>` passing | Direct memory reference | Serialized via generated transport code |
 | `<finalize>` data | Direct memory access | Deserialized from transport payload |
 | `done.invoke.*` | Internal event queue | Transport-delivered event |
 | `<cancel>` | Direct call to child | Transport-delivered cancel request |
@@ -893,7 +1110,7 @@ Session ID format: `<origin_device>:<parent_machine>:<counter>` — deterministi
 ### 9.3 Remote Invoke Lifecycle
 
 ```
-Parent sends INVOKE_REQUEST via ITransport
+Parent sends INVOKE_REQUEST via generated transport code
     |
     v
 Child device receives INVOKE_REQUEST
@@ -908,7 +1125,7 @@ Child device receives INVOKE_REQUEST
         |   -> error.execution with reason: "INVOKE_CHILD_INIT_FAILED"
         |      + done.invoke.<id> (child never reached a stable state)
         |
-        +-- Child SM runs normally, sends events back to parent via ITransport
+        +-- Child SM runs normally, sends events back to parent via generated transport code
             |
             v
         Parent receives child events into external queue, <finalize> processes them
@@ -1038,14 +1255,18 @@ These numbers represent the pure state machine transition cost, **excluding** tr
 
 ### 11.2 Transport Overhead (Added to Local Cost)
 
-| Transport | Best Case | Worst Case | Notes |
-|-----------|-----------|------------|-------|
-| Direct call (same process) | 0 ns | 0 ns | No transport layer |
-| Shared memory | 100 ns | 5 us | Worst: futex contention |
-| SOME/IP (same network) | 50 us | 2 ms | Worst: network congestion |
-| CAN bus | 100 us | 10 ms | Worst: bus arbitration, low priority |
-| UDP (LAN) | 50 us | 1 ms | Worst: packet loss + retransmit |
-| gRPC (WAN) | 1 ms | 100 ms | Worst: cross-region, TLS handshake |
+Since transport code is generated as direct API calls (no runtime abstraction layer), the overhead is the transport library's native cost only — no vtable dispatch, no routing map lookup, no type erasure.
+
+| Transport | Best Case | Worst Case | Mesh Abstraction Overhead | Notes |
+|-----------|-----------|------------|--------------------------|-------|
+| Direct call (same process) | 0 ns | 0 ns | **0 ns** (inlined away) | Codegen emits direct function call |
+| Shared memory | 100 ns | 5 us | **0 ns** | Generated code calls shm_write directly |
+| SOME/IP (same network) | 50 us | 2 ms | **0 ns** | Generated code calls vsomeip::send directly |
+| DDS (same network) | 50 us | 2 ms | **0 ns** | Generated code calls dds_write with native QoS |
+| CAN bus | 100 us | 10 ms | **0 ns** | Generated code calls SocketCAN write directly |
+| gRPC (WAN) | 1 ms | 100 ms | **0 ns** | Generated code calls gRPC stub directly |
+
+The "Mesh Abstraction Overhead" column is always 0 because there is no runtime abstraction — sce-build generates code that calls each transport's native API as if hand-written. The only overhead compared to hand-written transport code is the routing dispatch (constexpr if-chain), which the compiler eliminates for single-target cases.
 
 ### 11.3 Throughput at 60Hz Game Tick (16.6ms)
 
@@ -1106,13 +1327,15 @@ Based on **local transitions only** (no transport). Real throughput depends on r
 </scxml>
 ```
 
-The same SCXML runs in all three domains:
+The same SCXML generates different transport code depending on deploy.yaml:
 
-| Domain | Scheduler | Transport | `#actuator` resolves to |
-|--------|-----------|-----------|------------------------|
-| Game (dungeon door) | GameLoop 60Hz | UDP | Object in same zone |
-| Vehicle (car door) | RealTime 10ms | CAN | Motor ECU on CAN bus |
-| Simulator | EventDriven | SharedMem | Motor model in same process |
+| Domain | deploy.yaml scheduler | deploy.yaml transport | Generated `send_to_actuator()` calls |
+|--------|----------------------|----------------------|--------------------------------------|
+| Game (dungeon door) | `game_loop` (60Hz) | `udp` | `sendto(udp_socket_, ...)` |
+| Vehicle (car door) | `real_time` (10ms) | `can` | `write(can_socket_, &frame, ...)` |
+| Simulator | `event_driven` | `local` | `actuator_sm.processEvent(...)` (inlined) |
+
+**The SCXML is identical across all three. Only deploy.yaml changes.**
 
 ---
 
@@ -1120,58 +1343,64 @@ The same SCXML runs in all three domains:
 
 **Scope commitment**: Phase 1-2 are the concrete implementation target. Phase 3-5 are directional plans that will be refined after Phase 2 delivers an end-to-end working demo. The first milestone is: **two processes on the same machine communicating via SCXML through shared memory, with no changes to the SCXML documents themselves.**
 
-### Phase 1: Core Interfaces
+### Phase 1: Codegen Infrastructure + Local Transport
 
-Define the three abstraction interfaces and Profile system. Refactor existing LocalBus into ITransport.
+Build the Mesh codegen pipeline in sce-build and generate the trivial case (same-process direct call).
 
-- `IScheduler`, `ITransport`, `IDiscovery` interface definitions
-- `Profile` configuration structure
-- `EventRouter` with routing table support
-- `LocalTransport` as reference implementation (existing behavior, unchanged)
+- **sce-build `--mesh` subcommand**: parse deploy.yaml + SCXML, topology analysis, transport template selection
+- **deploy.yaml parser** (serde_yaml in Rust): topology, bindings, scheduler, QoS schema
+- **Topology analyzer**: collect `<send>` targets from SCXML, match against deploy.yaml bindings, detect same-device vs cross-device boundaries
+- **`local_transport` template**: same-process targets generate inlined direct calls (zero overhead, existing behavior preserved)
+- **Scheduler concepts** in `sce_mesh_common`: `TickScheduling`, `EventDrivenScheduling` (C++20 concepts, C++17 fallback — same pattern as existing `StatePolicyConcepts.h`)
+- **MPSC EventQueue bridge** in `sce_mesh_common`: thread-safe event queue for cross-thread event injection
+- **Build-time validation**: topology completeness (all targets resolve), event coverage (all sent events have receivers), QoS intent/config consistency check
+- **Verification**: existing single-process tests pass with `--mesh` codegen path, generated code is functionally identical to non-mesh AOT output
 
-### Phase 2: Intra-ECU (simplest remote case)
+### Phase 2: Shared Memory Transport (first cross-process)
 
-First cross-process communication using shared memory.
+First transport template that crosses a process boundary.
 
-- `SharedMemTransport` implementation
-- `SharedMemRegistry` for cross-process discovery
-- Event serialization framework (`ISerializer` interface + `BufferSerializer`)
-- **SCE Forge codec integration**: `ISerializer` adapter generation for Forge `codec` kinds (see Section 7.5). This is parallel-safe with Forge Phase 1 which delivers `codec` kind codegen.
-- Verification: two processes on same machine communicating via SCXML
+- **`shm_transport` Jinja2 template**: generates ring-buffer shared memory code (POSIX `shm_open` / `mmap`)
+- **Event serialization codegen**: per-transport serialization — SHM gets binary event encoding (not JSON)
+- **SCE Forge codec integration**: if event payload matches a Forge `codec` kind, generated serialization wraps the codec's `encode()`/`decode()`. Single source of truth for both local byte parsing and remote event serialization
+- **Receive-side codegen**: generated subscriber code that polls/waits on SHM ring buffer, deserializes events, injects into instance's EventQueue via MPSC bridge
+- **Instance lifecycle**: REGISTERED → READY → ACTIVE → DRAINING → GONE (state machine for each deployed instance)
+- **Error propagation codegen**: SHM failures (segment not found, peer crash) generate `error.communication` events
+- **Verification**: two processes on same machine communicating via SCXML through generated shared memory code. SCXML documents are unchanged
 
-### Phase 3: Vehicle Network (Directional — refined after Phase 2)
+### Phase 3: Vehicle Network Transport Templates (Directional — refined after Phase 2)
 
-Automotive transport plugins with static discovery.
+Transport templates for automotive protocols. Each template generates code that calls the protocol's native API directly, preserving all protocol-specific features.
 
-- `SomeIpTransport` + `SomeIpSd`
-- `CanTransport`
-- `ZenohTransport` (reusable for IoT/robotics)
-- Static discovery mode (build-time routing tables)
-- `deploy.yaml` schema and build tool integration
-- QoS annotation support (`sce:deadline`, `sce:priority`)
-- **SCE Forge procedure integration**: Forge `procedure` kinds (Forge Phase 2) generate `sce::StateMachine`-compatible classes. Mesh remote `<invoke>` executes these across device boundaries. No additional Mesh-side work required beyond the Phase 2 remote invoke protocol.
+- **`someip_transport` template**: generates vsomeip API calls — service offer/find, method call/fire-and-forget, event group subscription. Full SOME/IP service model preserved
+- **`can_transport` template**: generates SocketCAN API calls — frame TX/RX, DBC signal packing. CAN FD support
+- **`zenoh_transport` template**: generates zenoh-c/zenoh-pico API calls — put/subscribe, key expressions, SHM mode. Reusable for IoT/robotics
+- **`dds_transport` template**: generates Cyclone DDS API calls — **all 22 QoS policies** from deploy.yaml passed through natively. Typed topics, content filters, partitions
+- **deploy.yaml native QoS**: each transport section in deploy.yaml carries the full transport-native QoS configuration. sce-build passes it directly to the template without abstraction
+- **Remote `<invoke>` codegen**: invoke request/response/cancel as generated send/receive pairs over configured transport
+- **SCE Forge procedure integration**: Forge `procedure` kinds generate SM-compatible classes. Mesh remote `<invoke>` codegen executes these across device boundaries
+- **Build-time verification**: interface match (sender event names == receiver transition triggers), cross-transport ordering warnings
 
 ### Phase 4: Game Scale (Directional — refined after Phase 3)
 
 High-throughput batch processing for massive entity counts.
 
 - `GameLoopScheduler` with SoA (Structure of Arrays) layout
-- `UdpTransport` + `ZoneRouter`
+- `udp_transport` + `grpc_transport` templates
 - Batch event processing (group by event type)
 - Zero-allocation event pool (arena allocator)
 - ECS integration API
 - Delta state synchronization (changed-state-only client updates)
-- **Codegen trade-off**: SoA layout requires a second codegen mode alongside the existing per-instance AoS generation. This is significant codegen complexity — the decision to implement SoA vs. optimize AoS (cache-line alignment, prefetching) will be evaluated based on Phase 3 benchmarks
+- **Codegen trade-off**: SoA layout requires a second codegen mode alongside the existing per-instance AoS generation. Evaluated based on Phase 3 benchmarks
 
-### Phase 5: Cloud + Hybrid (Directional — refined after Phase 4)
+### Phase 5: Dynamic Discovery + Cloud (Directional — refined after Phase 4)
 
-Multi-transport environments and dynamic scaling.
+Dynamic environments where targets appear/disappear at runtime.
 
-- `GrpcTransport` + `NatsTransport`
-- `ConsulDiscovery`
-- Dynamic discovery mode with priority-based resolution
-- `ITransportBridge` for cross-protocol bridging (e.g., vehicle SOME/IP <-> cloud gRPC), keeping transports mutually unaware
-- Build-time verification: remaining checks — circular dependency detection, reachability analysis (see Section 7.7 for phase mapping of all checks)
+- **`IDiscovery` runtime concept** in `sce_mesh_common` — minimal runtime discovery for dynamic environments
+- Dynamic discovery codegen: templates generate code that calls transport-native discovery (SOME/IP-SD, Zenoh scouting, Consul) and updates routing table at runtime
+- Cross-transport bridging codegen: sce-build generates bridge functions that convert events between wire formats (e.g., SOME/IP payload → gRPC protobuf)
+- Build-time verification: circular dependency detection, reachability analysis
 
 ### Future Direction (Beyond Phase 5)
 
@@ -1190,41 +1419,36 @@ The following capabilities are explicitly deferred. They will be evaluated after
 # SCE Mesh Deployment Descriptor
 version: "1.0"
 
+scheduler:
+  type: event_driven | real_time | game_loop | cooperative
+  # Scheduler-specific settings (passed to scheduler constructor)
+  cycle_ms: <integer>              # real_time, cooperative
+  tick_rate: <integer>             # game_loop
+
 topology:
   <device_name>:
     platform: linux | qnx | autosar | windows
     target: x86_64 | aarch64 | arm32
     machines:
       <scxml_name>:
-        bindings:                          # Static mode
+        bindings:
           "<target_id>":
-            transport: someip | can | zenoh | shm | udp | grpc | ...
-            address: <transport-specific address>
-            signals: <path to .dbc/.arxml>  # Signal-based transports only
+            transport: someip | can | zenoh | shm | dds | dbus | grpc | ...
+            # Transport-specific settings — passed directly to codegen template
+            # Each transport defines its own schema (see examples below)
+            qos:
+              # Transport-NATIVE QoS — full feature access
+              # Schema depends on transport type (DDS: 22 policies, SOME/IP: protocol, etc.)
+              <transport-native-key>: <value>
 
 events: <path to events.yaml>              # Event payload type definitions
 
-transport:
-  default: <transport_name>                # Default for unspecified bindings
-  overrides:
-    "<source> -> <target>": <transport>    # Per-path override
-
 discovery:
-  mode: static | scoped | dynamic
-  scopes:                                  # Scoped mode
-    <transport>: "<uri_pattern>"
-  resolution:                              # Dynamic mode
-    strategy: priority | first
-    priority_order: [local, shm, someip, zenoh, udp, grpc]
-  dedup:
-    key: instance_id
-    ttl: <duration>
+  mode: static | dynamic                   # static = build-time, dynamic = Phase 5
 
-qos:
-  defaults:
-    qos: reliable | best-effort
-    deadline: <duration>
-    priority: critical | high | normal | low
+# Transport-global configuration (optional)
+<transport_name>:                          # e.g., zenoh:, someip:
+  <transport-global-settings>              # Shared across all bindings of this type
 ```
 
 ### Example: Automotive
@@ -1239,8 +1463,16 @@ topology:
     machines:
       brake:
         bindings:
-          "#motor":     { transport: someip, address: "service:0x1001" }
-          "#dashboard": { transport: can,    address: "can0:0x100" }
+          "#motor":
+            transport: someip
+            service: 0x1001
+            instance: 0x01
+            method: 0x01
+            protocol: TCP                    # SOME/IP native: TCP for reliable
+          "#dashboard":
+            transport: can
+            address: "can0:0x100"
+            signals: "vehicle.dbc"           # CAN native: DBC signal layout
 
   motor_ecu:
     platform: qnx
@@ -1248,7 +1480,10 @@ topology:
     machines:
       motor:
         bindings:
-          "#brake": { transport: someip, address: "service:0x1002" }
+          "#brake":
+            transport: someip
+            service: 0x1002
+            instance: 0x01
 
   dashboard_ecu:
     platform: linux
@@ -1257,16 +1492,17 @@ topology:
       dashboard:
         bindings:
           "#brake": { transport: can, address: "can0:0x101" }
-          "#cloud": { transport: grpc, address: "telemetry.oem.com:443" }
+          "#cloud":
+            transport: grpc
+            address: "telemetry.oem.com:443"
+            tls: true                        # gRPC native: TLS config
 
 discovery:
   mode: static
 
-qos:
-  defaults:
-    qos: reliable
-    deadline: 10ms
-    priority: high
+someip:
+  application_name: "sce_vehicle"
+  routing_manager: "brake_ecu"               # SOME/IP native: routing config
 ```
 
 ### Example: MMORPG
@@ -1309,9 +1545,9 @@ qos:
 
 ---
 
-## 15. Zenoh Transport Specification
+## 15. Zenoh Transport Template Specification
 
-Zenoh is the primary Phase 3 transport target. This section defines the complete Zenoh integration, covering key mapping, session management, QoS translation, deployment topology, and the relationship with existing SCE Mesh transports.
+Zenoh is a primary Phase 3 transport target. This section defines the `zenoh_transport` codegen template — how deploy.yaml Zenoh configuration maps to generated code that calls zenoh-c/zenoh-pico APIs directly.
 
 ### 15.1 Key Expression Mapping
 
@@ -1363,63 +1599,88 @@ The build tool generates subscribe patterns from the topology map — if machine
 
 ### 15.2 Session Management
 
-A single Zenoh session is shared across all state machine instances on the same device. The Runtime owns the session; transports hold a reference.
+A single Zenoh session is shared across all state machine instances on the same device. The `zenoh_transport` template generates an `init_zenoh_session()` function that creates one session, and all per-target send functions share it:
 
 ```
-Runtime (per device)
+Generated code (per device):
     |
-    +-- Zenoh Session (one per Runtime)
+    +-- init_zenoh_session()  (one session per device)
         |
-        +-- ZenohTransport for brake.scxml  (shared session reference)
-        +-- ZenohTransport for abs.scxml    (shared session reference)
-        +-- ZenohTransport for esc.scxml    (shared session reference)
+        +-- send_to_motor()   (uses shared session)
+        +-- send_to_dashboard() (uses shared session)
+        +-- subscribe_brake()  (uses shared session)
 ```
 
 ```cpp
-// Runtime creates session once
-auto session = zenoh::Session::open(std::move(config));
+// [generated] zenoh session initialization
+static z_owned_session_t session_;
 
-// Each transport receives a shared reference
-ZenohTransport brake_transport{session, generated::brake::ROUTES};
-ZenohTransport abs_transport{session, generated::abs::ROUTES};
+void init_zenoh_session() {
+    z_config_t config = z_config_default();
+    // deploy.yaml zenoh config applied here
+    z_config_insert(config, Z_CONFIG_MODE_KEY, "peer");
+    z_config_insert(config, Z_CONFIG_CONNECT_KEY, "tcp/192.168.1.1:7447");
+    session_ = z_open(z_move(config));
+}
+
+// All send functions use the shared session
+void send_to_motor(const EventDescriptor& event) {
+    z_put(z_loan(session_), motor_key_, payload, len, &opts);
+}
 ```
 
 Rationale: Zenoh sessions manage peer discovery, connection pooling, and resource allocation. Multiple sessions on the same device waste resources and can cause discovery conflicts.
 
-### 15.3 QoS Mapping
+### 15.3 QoS Configuration (deploy.yaml → Generated Code)
 
-#### sce:qos → Zenoh Reliability + Congestion Control
+Zenoh QoS is configured in deploy.yaml using Zenoh-native terminology. The `zenoh_transport` template generates code that applies these settings directly:
 
-| `sce:qos` | Zenoh Reliability | Zenoh CongestionControl | Notes |
-|-----------|-------------------|------------------------|-------|
-| `reliable` | `Reliability::Reliable` | `CongestionControl::Block` | Sender blocks if subscriber is slow |
-| `best-effort` | `Reliability::BestEffort` | `CongestionControl::Drop` | Sender drops if subscriber is slow |
-| `zero-copy` | `Reliability::Reliable` | `CongestionControl::Block` | + Zenoh SHM enabled (see 15.5) |
-
-#### sce:priority → Zenoh Priority
-
-| `sce:priority` | Zenoh Priority | Value |
-|----------------|---------------|-------|
-| `critical` | `Priority::RealTime` | 1 |
-| `high` | `Priority::InteractiveHigh` | 2 |
-| `normal` | `Priority::Data` | 5 |
-| `low` | `Priority::Background` | 7 |
-
-#### sce:deadline → Timer-Based Enforcement
-
-Zenoh does not natively support delivery deadlines. SCE Mesh implements deadline enforcement at the transport layer:
-
-```
-send(event, target, qos={deadline: 1ms})
-    |
-    +-- start timer(1ms)
-    +-- zenoh.put(key, payload)
-    |
-    +-- [ack received before timer] -> success, cancel timer
-    +-- [timer fires] -> onError(DEADLINE_EXCEEDED)
+```yaml
+# deploy.yaml — Zenoh-native QoS, not abstracted
+bindings:
+  "#motor":
+    transport: zenoh
+    key: "vehicle/powertrain/motor/cmd"
+    qos:
+      reliability: reliable           # Zenoh native: Reliable / BestEffort
+      congestion_control: block       # Zenoh native: Block / Drop
+      priority: real_time             # Zenoh native: 1-7 priority levels
+      express: true                   # Zenoh native: skip batching
 ```
 
-For `sce:qos="best-effort"`, deadline violations are silently ignored (consistent with fire-and-forget semantics). For `sce:qos="reliable"`, deadline violations trigger `error.communication` with `reason: "DEADLINE_EXCEEDED"`.
+Generated code applies Zenoh QoS natively:
+
+```cpp
+// [generated] — Zenoh API called directly, all QoS preserved
+void send_to_motor(const EventDescriptor& event) {
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+    opts.congestion_control = Z_CONGESTION_CONTROL_BLOCK;
+    opts.priority = Z_PRIORITY_REAL_TIME;
+    opts.express = true;
+    z_put(session_, z_keyexpr("vehicle/powertrain/motor/cmd"),
+          payload, payload_len, &opts);
+}
+```
+
+**sce:qos validation**: If the SCXML declares `sce:qos="reliable"` but deploy.yaml sets `reliability: best_effort`, sce-build emits a build-time warning. The deploy.yaml value takes precedence for code generation.
+
+#### Deadline Enforcement
+
+Zenoh does not natively support delivery deadlines. The codegen template generates timer-based enforcement:
+
+```cpp
+// [generated] — deadline enforcement for sce:deadline="1ms"
+void send_to_motor_with_deadline(const EventDescriptor& event) {
+    auto timer = start_deadline_timer(std::chrono::milliseconds(1));
+    z_put(session_, motor_key_, payload, len, &opts);
+    if (timer.expired()) {
+        inject_error_communication(event, "DEADLINE_EXCEEDED");
+    }
+}
+```
+
+For `sce:qos="best-effort"`, deadline violations are silently ignored (consistent with fire-and-forget semantics).
 
 ### 15.4 Deployment Topology
 
@@ -1466,21 +1727,20 @@ zenoh:
       enabled: true                     # peer discovery via multicast
 ```
 
-### 15.5 Zenoh SHM and SharedMemTransport Relationship
+### 15.5 Zenoh SHM and `shm_transport` Template Relationship
 
-Zenoh has built-in shared memory support for same-host communication. This overlaps with Phase 2's `SharedMemTransport`.
+Zenoh has built-in shared memory support for same-host communication. This overlaps with Phase 2's `shm_transport` template.
 
-**Rule**: when Zenoh is the transport, use Zenoh SHM. Do not run both mechanisms.
+**Rule**: when deploy.yaml specifies `transport: zenoh` for a same-host binding, the `zenoh_transport` template generates code that uses Zenoh SHM automatically. Do not use `transport: shm` and `transport: zenoh` for the same target.
 
-| Scenario | Transport | SHM Provider |
-|----------|-----------|-------------|
-| Same process | Direct call | None (no transport) |
-| Same ECU, no Zenoh | `SharedMemTransport` | SCE Phase 2 SHM |
-| Same ECU, Zenoh enabled | `ZenohTransport` | Zenoh SHM (`shmem: true`) |
-| Cross ECU | `ZenohTransport` | None (network) |
-| Cross ECU to cloud | `ZenohTransport` | None (network) |
+| Scenario | deploy.yaml transport | Generated code uses |
+|----------|----------------------|---------------------|
+| Same process | `local` | Direct function call (inlined) |
+| Same ECU, no Zenoh | `shm` | POSIX shared memory ring buffer |
+| Same ECU, Zenoh enabled | `zenoh` | Zenoh SHM (automatic, same API) |
+| Cross ECU | `zenoh` | Zenoh network |
 
-Zenoh SHM is transparent — the same `zenoh.put()` / `zenoh.subscribe()` API works regardless of whether the subscriber is on the same host (SHM) or remote (network). This means `ZenohTransport` code does not change; only the Zenoh session config enables SHM.
+Zenoh SHM is transparent — the generated `z_put()` / `z_subscriber()` calls work identically whether the subscriber is on the same host (SHM) or remote (network). The `zenoh_transport` template generates the same code either way; only the deploy.yaml Zenoh session config enables SHM:
 
 ```yaml
 # deploy.yaml — same ECU processes use Zenoh SHM automatically
@@ -1488,7 +1748,7 @@ zenoh:
   shmem: true    # Zenoh detects same-host subscribers and uses SHM
 ```
 
-This eliminates the need for Discovery to choose between `SharedMemTransport` and `ZenohTransport` on the same host — Zenoh handles it internally.
+This eliminates the need for routing logic to choose between SHM and network paths — Zenoh handles it internally at the protocol level.
 
 ### 15.6 SCXML Concept → Zenoh Primitive Mapping
 
@@ -1540,20 +1800,20 @@ Parent (brake) invokes child (motor_control):
 | AUTOSAR Classic | `zenoh-pico` | Pure C, no allocator required, no_std |
 | AUTOSAR Adaptive | `zenoh-c` | POSIX-compatible |
 
-CMake integration:
+CMake integration — generated code links directly against zenoh-c:
 
 ```cmake
-# SCE_MESH_PLUGIN_ZENOH=ON triggers:
-if(SCE_MESH_PLUGIN_ZENOH)
-    find_package(zenohc REQUIRED)            # or FetchContent
-    target_link_libraries(sce_mesh_zenoh
-        PUBLIC sce_mesh
-        PRIVATE zenohc::lib
-    )
-endif()
+# When deploy.yaml uses transport: zenoh, generated code requires zenoh-c
+# User's CMakeLists.txt links the generated target against zenoh:
+find_package(zenohc REQUIRED)
+target_link_libraries(brake_app
+    PRIVATE sce::generated::brake    # generated transport code
+    PRIVATE zenohc::lib              # user provides zenoh library
+)
 
 # For resource-constrained targets:
-option(SCE_MESH_ZENOH_PICO "Use zenoh-pico instead of zenoh-c" OFF)
+# deploy.yaml: zenoh: { implementation: pico }
+# Generated code calls zenoh-pico API instead of zenoh-c
 ```
 
 ### 15.8 Example: Complete Automotive deploy.yaml with Zenoh
