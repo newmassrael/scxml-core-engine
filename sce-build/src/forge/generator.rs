@@ -738,12 +738,12 @@ fn render_codec_cpp(
             serde_json::json!({
                 "id": f.id,
                 "cpp_type": cpp_type(&f.sce_type),
-                "decode_expr": generate_decode_expr(f, m.default_endian),
+                "decode_expr": generate_decode_expr_cpp(f, m.default_endian),
             })
         })
         .collect();
 
-    let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian);
+    let encode_exprs = generate_encode_exprs_cpp(&m.fields, m.default_endian);
 
     let tmpl = env
         .get_template("codec.h.jinja2")
@@ -769,7 +769,7 @@ fn render_codec_cpp(
 // ── Codec expression generation ────────────────────────────────
 
 /// Generate C++ decode expression for a single codec field.
-fn generate_decode_expr(field: &CodecField, default_endian: Endian) -> String {
+fn generate_decode_expr_cpp(field: &CodecField, default_endian: Endian) -> String {
     let byte_off = field.byte_offset;
     let bit_off = field.bit_offset.unwrap_or(0);
     let endian = field.effective_endian(default_endian);
@@ -838,7 +838,7 @@ fn decode_multibyte(byte_off: u32, byte_count: u32, endian: Endian) -> String {
 }
 
 /// Generate C++ encode byte expressions for all codec fields.
-fn generate_encode_exprs(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
+fn generate_encode_exprs_cpp(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
     let mut exprs = Vec::new();
 
     // Group fields by byte position for sub-byte field merging
@@ -5243,13 +5243,13 @@ fn render_inline_codec_member(
          \x20           return {struct_name}{{\n"
     ));
     for f in codec_fields {
-        let decode = generate_decode_expr(f, default_endian);
+        let decode = generate_decode_expr_cpp(f, default_endian);
         code.push_str(&format!("                .{} = {},\n", f.id, decode));
     }
     code.push_str("            };\n        }\n");
 
     // encode
-    let encode_exprs = generate_encode_exprs(codec_fields, default_endian);
+    let encode_exprs = generate_encode_exprs_cpp(codec_fields, default_endian);
     code.push_str("\n        std::vector<uint8_t> encode() const {\n            return {\n");
     for (i, expr_str) in encode_exprs.iter().enumerate() {
         let comma = if i < encode_exprs.len() - 1 { "," } else { "" };

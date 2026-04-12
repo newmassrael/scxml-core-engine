@@ -1027,7 +1027,7 @@ fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             // Ident (i.e. a pre-rename, pre-collapse access), we form
             // `"{obj}.{prop}"` and consult `ctx.vars`. Stateful import
             // aliases register their fields under exactly this key shape
-            // (see `forge::type_ctx::insert_stateful_import_aliases`), so
+            // (see `forge::type_ctx::insert_stateful_imports`), so
             // this path recovers the concrete field type for expressions
             // like `frame.payload` where `frame` is an imported codec.
             //
@@ -1059,7 +1059,7 @@ fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             // signature table, we know the return type. For member calls
             // like `frame.encode()`, form the qualified key `"{obj}.{method}"`
             // and look it up — stateful import methods are registered there
-            // by `insert_stateful_import_aliases`.
+            // by `insert_stateful_imports`.
             if let ExprKind::Ident(name) = &callee.kind {
                 if let Some(sig) = ctx.lookup_func(name.as_str()) {
                     sig.ret

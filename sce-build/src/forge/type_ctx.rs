@@ -72,7 +72,7 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
 /// `Member{object: Ident(obj), property: prop}` it forms `"{obj}.{prop}"`
 /// and calls `ctx.lookup_var`, which returns the field's concrete type if
 /// registered here.
-fn insert_stateful_import_aliases<'a>(
+fn insert_stateful_imports<'a>(
     ctx: &mut TypeCtx<'a>,
     imports: &'a [ImportContext],
 ) {
@@ -106,7 +106,7 @@ pub fn transform<'a>(m: &'a TransformModel, imports: &'a [ImportContext]) -> Typ
     let mut ctx = TypeCtx::new();
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
-    insert_stateful_import_aliases(&mut ctx, imports);
+    insert_stateful_imports(&mut ctx, imports);
     ctx
 }
 
@@ -117,7 +117,7 @@ pub fn condition<'a>(m: &'a ConditionModel, imports: &'a [ImportContext]) -> Typ
     let mut ctx = TypeCtx::new();
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
-    insert_stateful_import_aliases(&mut ctx, imports);
+    insert_stateful_imports(&mut ctx, imports);
     ctx
 }
 
@@ -128,7 +128,7 @@ pub fn validator<'a>(m: &'a ValidatorModel, imports: &'a [ImportContext]) -> Typ
     let mut ctx = TypeCtx::new();
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
-    insert_stateful_import_aliases(&mut ctx, imports);
+    insert_stateful_imports(&mut ctx, imports);
     ctx
 }
 
@@ -137,7 +137,7 @@ pub fn lookup<'a>(m: &'a LookupModel, imports: &'a [ImportContext]) -> TypeCtx<'
     let mut ctx = TypeCtx::new();
     ctx.insert_var(m.input.id.as_str(), InferredType::from_sce_type(&m.input.sce_type));
     insert_stateless_imports(&mut ctx, imports);
-    insert_stateful_import_aliases(&mut ctx, imports);
+    insert_stateful_imports(&mut ctx, imports);
     ctx
 }
 
@@ -147,7 +147,7 @@ pub fn filter<'a>(m: &'a FilterModel, imports: &'a [ImportContext]) -> TypeCtx<'
     let mut ctx = TypeCtx::new();
     ctx.insert_var(m.input.id.as_str(), InferredType::from_sce_type(&m.input.sce_type));
     insert_stateless_imports(&mut ctx, imports);
-    insert_stateful_import_aliases(&mut ctx, imports);
+    insert_stateful_imports(&mut ctx, imports);
     ctx
 }
 
@@ -157,7 +157,7 @@ pub fn observer<'a>(m: &'a ObserverModel, imports: &'a [ImportContext]) -> TypeC
     let mut ctx = TypeCtx::new();
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
-    insert_stateful_import_aliases(&mut ctx, imports);
+    insert_stateful_imports(&mut ctx, imports);
     ctx
 }
 
@@ -189,7 +189,7 @@ pub fn procedure<'a>(m: &'a ProcedureModel, imports: &'a [ImportContext]) -> Typ
     insert_fields(&mut ctx, &m.internals);
     insert_procedure_helpers(&mut ctx, &m.helpers);
     insert_stateless_imports(&mut ctx, imports);
-    insert_stateful_import_aliases(&mut ctx, imports);
+    insert_stateful_imports(&mut ctx, imports);
     ctx
 }
 
@@ -202,7 +202,7 @@ pub fn codec<'a>(m: &'a CodecModel, imports: &'a [ImportContext]) -> TypeCtx<'a>
         ctx.insert_var(f.id.as_str(), InferredType::from_sce_type(&f.sce_type));
     }
     insert_stateless_imports(&mut ctx, imports);
-    insert_stateful_import_aliases(&mut ctx, imports);
+    insert_stateful_imports(&mut ctx, imports);
     ctx
 }
 
