@@ -1,3 +1,4 @@
+{% if f.output.type != "string" %}
 {# Lookup kind — finite key→value mapping. on_miss=error returns Optional[V]
    (None is a hard failure since happy-path fixtures hit every key);
    on_miss=default returns raw V via fallback. #}
@@ -12,4 +13,12 @@
             self.assertAlmostEqual(actual, expected, delta=self.tol, msg="{{ f.name }}")
 {% else %}
             self.assertEqual(actual, expected, "{{ f.name }}")
+{% endif %}
+{% else %}
+{# String-output lookup — enum .name comparison. #}
+        for case in spec["cases"]:
+            args = case["args"]
+            expected = case["expected"]
+            actual = {{ f.name }}.{{ f.function }}(*args)
+            self.assertEqual(actual.name, expected, "{{ f.name }}")
 {% endif %}

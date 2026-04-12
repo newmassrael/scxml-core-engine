@@ -58,6 +58,8 @@ type reference struct {
 	Observers       map[string]observerSpec    `json:"observers"`
 	Validators      map[string]validatorSpec   `json:"validators"`
 	Codecs          map[string]codecSpec       `json:"codecs"`
+	Timers          map[string]timerSpec            `json:"timers"`
+	StringLookups   map[string]stringLookupSpec    `json:"string_lookups"`
 }
 
 // pureSpec / pureCase cover non-procedure pure-function kinds (interpolation,
@@ -127,6 +129,29 @@ type codecSpec struct {
 type codecCase struct {
 	Decoded json.RawMessage `json:"decoded"`
 	Encoded []int           `json:"encoded"`
+}
+
+type timerSpec struct {
+	Timers []timerEntry `json:"timers"`
+}
+
+type timerEntry struct {
+	Type       string `json:"type"`
+	IntervalMs uint32 `json:"interval_ms"`
+	Callback   string `json:"callback"`
+}
+
+// stringLookupSpec / stringLookupCase cover lookups whose output is a
+// language-level enum. The oracle stores the expected value as a string
+// (the variant name); the fragment converts the generated enum to a string
+// via a per-fixture helper and compares against the oracle.
+type stringLookupSpec struct {
+	Cases []stringLookupCase `json:"cases"`
+}
+
+type stringLookupCase struct {
+	Args     []json.RawMessage `json:"args"`
+	Expected string            `json:"expected"`
 }
 
 // pureCases looks up pure-function cases by the manifest's ref_section
@@ -229,6 +254,35 @@ func (r *reference) codecCases(t *testing.T, section, fixture string) []codecCas
 	return spec.Cases
 }
 
+// timerEntries — see filterSteps for the drift-detection contract. Timer
+// entries are ordered registration descriptors, not a sequence of steps.
+func (r *reference) timerEntries(t *testing.T, section, fixture string) []timerEntry {
+	t.Helper()
+	if section != "timers" {
+		t.Fatalf("fixture %q: timer kind requires ref_section=timers, got %q", fixture, section)
+	}
+	spec, ok := r.Timers[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in timers", fixture)
+	}
+	return spec.Timers
+}
+
+// stringLookupCases looks up cases for string-output lookups from the
+// string_lookups oracle section.
+func (r *reference) stringLookupCases(t *testing.T, section, fixture string) []stringLookupCase {
+	t.Helper()
+	raw, ok := r.StringLookups[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in string_lookups", fixture)
+	}
+	var spec stringLookupSpec
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("fixture %q: cannot decode stringLookupSpec: %v", fixture, err)
+	}
+	return spec.Cases
+}
+
 func repoRoot(t *testing.T) string {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -272,6 +326,17 @@ func {{ f.name | to_camel_case }}TagName(tag {{ f.name }}.ForgeDomainTag) string
 {% for tag in f.event_tags %}
 	case {{ f.name }}.ForgeDomainTag{{ tag | lower | to_pascal_case }}:
 		return "{{ tag }}"
+{% endfor %}
+	}
+	return "unknown"
+}
+{% endif %}
+{% if f.kind == "lookup" and f.output.type == "string" %}
+func {{ f.name | to_camel_case }}ValueName(v {{ f.name }}.{{ f.output_id | to_pascal_case }}) string {
+	switch v {
+{% for ev in f.enum_values %}
+	case {{ f.name }}.{{ f.output_id | to_pascal_case }}{{ ev }}:
+		return "{{ ev }}"
 {% endfor %}
 	}
 	return "unknown"

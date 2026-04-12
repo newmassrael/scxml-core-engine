@@ -1,0 +1,40 @@
+{# Timer kind — verify registration metadata and callback dispatch via recording mocks. #}
+	type recTimer struct {
+		regType string
+		regMs   uint32
+		regCb   func()
+	}
+	func (r *recTimer) StartPeriodic(ms uint32, cb func()) { r.regType = "periodic"; r.regMs = ms; r.regCb = cb }
+	func (r *recTimer) StartOneShot(ms uint32, cb func()) { r.regType = "one_shot"; r.regMs = ms; r.regCb = cb }
+	func (r *recTimer) Cancel() {}
+
+	type recHandler struct{ lastCall string }
+{% for t in f.timers %}
+	func (h *recHandler) {{ t.callback | to_pascal_case }}() { h.lastCall = "{{ t.callback }}" }
+{% endfor %}
+
+	handler := &recHandler{}
+{% for t in f.timers %}
+	timer{{ t.id | to_pascal_case }} := &recTimer{}
+{% endfor %}
+	scheduler := {{ f.name }}.New{{ f.name | to_pascal_case }}(
+		handler{% for t in f.timers %}, timer{{ t.id | to_pascal_case }}{% endfor %})
+{% for t in f.timers %}
+	scheduler.Start{{ t.id | to_pascal_case }}()
+{% endfor %}
+
+	oracleTimers := ref.timerEntries(t, "{{ f.ref_section }}", "{{ f.name }}")
+	recTimers := []*recTimer{ {% for t in f.timers %}timer{{ t.id | to_pascal_case }}{% if not loop.last %}, {% endif %}{% endfor %} }
+	for ti, ot := range oracleTimers {
+		rec := recTimers[ti]
+		if rec.regType != ot.Type {
+			t.Errorf("{{ f.name }}: timer %d type got %q want %q", ti, rec.regType, ot.Type)
+		}
+		if rec.regMs != ot.IntervalMs {
+			t.Errorf("{{ f.name }}: timer %d interval got %d want %d", ti, rec.regMs, ot.IntervalMs)
+		}
+		rec.regCb()
+		if handler.lastCall != ot.Callback {
+			t.Errorf("{{ f.name }}: timer %d callback got %q want %q", ti, handler.lastCall, ot.Callback)
+		}
+	}

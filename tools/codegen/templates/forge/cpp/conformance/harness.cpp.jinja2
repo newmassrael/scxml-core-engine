@@ -79,6 +79,18 @@ const char *{{ f.name | to_camel_case }}_tag_name(
     return "unknown";
 }
 {% endif %}
+{% if f.kind == "lookup" and f.output.type == "string" %}
+std::string {{ f.name | to_camel_case }}_value_name(
+    SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.output_id | to_pascal_case }} v) {
+    switch (v) {
+{% for ev in f.enum_values %}
+    case SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.output_id | to_pascal_case }}::{{ ev }}:
+        return "{{ ev }}";
+{% endfor %}
+    }
+    return "unknown";
+}
+{% endif %}
 {% endfor %}
 
 {% for f in fixtures %}

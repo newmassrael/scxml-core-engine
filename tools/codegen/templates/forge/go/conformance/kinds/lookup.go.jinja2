@@ -1,3 +1,4 @@
+{% if f.output.type != "string" %}
 {# Lookup kind — finite key→value mapping. on_miss=error generates (V, bool)
    (false on miss is a hard failure since happy-path fixtures hit every key);
    on_miss=default generates raw V via fallback. #}
@@ -25,3 +26,19 @@
 		}
 {% endif %}
 	}
+{% else %}
+{# String-output lookup — enum-to-string via helper. #}
+	cases := ref.stringLookupCases(t, "{{ f.ref_section }}", "{{ f.name }}")
+	for _, c := range cases {
+{% for arg_ty in f.args %}
+		var arg{{ loop.index0 }} {{ arg_ty | go_type }}
+		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
+{% endfor %}
+		expected := c.Expected
+		actual := {{ f.name }}.{{ f.function | to_pascal_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actualStr := {{ f.name | to_camel_case }}ValueName(actual)
+		if actualStr != expected {
+			t.Errorf("{{ f.name }}: actual=%s expected=%s", actualStr, expected)
+		}
+	}
+{% endif %}

@@ -263,6 +263,13 @@
                 "$ref": "#/definitions/CanonicalType"
               }
             },
+            "enum_values": {
+              "description": "Derived at harness-rendering time for string-output lookups: the unique enum variant names in declaration order. The harness scaffold generates an enum-to-string conversion helper from this list. Empty for numeric-output lookups.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "function": {
               "description": "Derived at harness-rendering time from the SCXML `<data sce:direction=\"out\">` id. Must be absent in the manifest JSON — `Manifest::validate` rejects any user-supplied value so the SCXML stays the single source of truth.",
               "type": [
@@ -281,6 +288,13 @@
             },
             "output": {
               "$ref": "#/definitions/ScalarOutput"
+            },
+            "output_id": {
+              "description": "Derived at harness-rendering time: the raw SCXML output field id (e.g. `\"status\"`). Used by harness scaffolds to reference the generated enum type (e.g. `Status` in PascalCase). Must be absent in the manifest JSON.",
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },
@@ -332,6 +346,28 @@
               "enum": [
                 "codec"
               ]
+            }
+          }
+        },
+        {
+          "description": "Timer scheduler. Generated struct wraps N timer HAL instances and exposes `start<Timer>()` / `cancel<Timer>()` pairs. The conformance fragment creates recording mocks that implement the timer HAL interface, starts each timer, and verifies the recorded registration (type + interval_ms) against the oracle. Callback dispatch is verified by triggering the mock's stored callback and checking that the recording handler received the expected call.",
+          "type": "object",
+          "required": [
+            "kind",
+            "timers"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "timer"
+              ]
+            },
+            "timers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TimerFixtureEntry"
+              }
             }
           }
         }
@@ -441,6 +477,32 @@
           }
         }
       ]
+    },
+    "TimerFixtureEntry": {
+      "description": "Timer entry descriptor for conformance testing. Each entry maps to one `<data sce:timer=\"...\">` in the SCXML source. The conformance fragment creates a recording timer mock, starts the timer, and verifies the registered interval and type against the oracle.",
+      "type": "object",
+      "required": [
+        "callback",
+        "id",
+        "interval_ms",
+        "timer_type"
+      ],
+      "properties": {
+        "callback": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "interval_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "timer_type": {
+          "type": "string"
+        }
+      }
     }
   }
 }

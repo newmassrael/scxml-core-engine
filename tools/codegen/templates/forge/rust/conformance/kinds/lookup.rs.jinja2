@@ -1,3 +1,4 @@
+{% if f.output.type != "string" %}
 {# Lookup kind — finite key→value mapping. on_miss=error generates Option<V>
    (unwrapped here since happy-path fixtures hit every key); on_miss=default
    generates raw V via fallback (used as-is). #}
@@ -18,3 +19,16 @@
         assert_eq!(actual, expected, "{{ f.name }}");
 {% endif %}
     }
+{% else %}
+{# String-output lookup — enum-to-string via Debug derive. #}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for case in spec["cases"].as_array().expect("cases must be array") {
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% endfor %}
+        let expected = case["expected"].as_str().expect("expected string");
+        let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        let actual_str = format!("{:?}", actual);
+        assert_eq!(actual_str, expected, "{{ f.name }}");
+    }
+{% endif %}

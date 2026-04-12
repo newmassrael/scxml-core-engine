@@ -14,8 +14,11 @@
 
 import com.sce.forge.runtime.EventQueue
 {% for f in fixtures %}
-{% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" or f.kind == "validator" or f.kind == "codec" %}
+{% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" or f.kind == "validator" or f.kind == "codec" or f.kind == "timer" %}
 import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}
+{% endif %}
+{% if f.kind == "timer" %}
+import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}Handler
 {% endif %}
 {% if f.kind == "observer" %}
 import com.sce.generated.{{ f.name }}.ForgeDomainTag as {{ f.name | to_pascal_case }}Tag
@@ -38,6 +41,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.long
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive

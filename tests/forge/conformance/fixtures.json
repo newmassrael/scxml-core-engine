@@ -9,7 +9,8 @@
     "filter":        "Stateful signal filter. Instance::update(input) -> output, one output per sequence step. Reference section: stateful_filters.",
     "observer":      "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
     "procedure":     "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions.",
-    "lookup":        "Finite key→value mapping with on-miss=error policy. Free function lookup_<name>(key) -> Option<V>. Numeric output only — string outputs go through the existing enum-dispatch lookup path tested by forge_conformance goldens. Reference section: pure_functions.",
+    "lookup":        "Finite key→value mapping. Free function lookup_<name>(key) -> V|Option<V>. Numeric outputs use direct comparison; string outputs return language-specific enums verified via oracle string matching. Reference section: pure_functions (numeric) or string_lookups (enum).",
+    "timer":         "Timer scheduler. Generated struct wraps N timer HAL instances. Conformance verifies registration metadata (type, interval_ms) and callback dispatch via recording mocks. Reference section: timers.",
     "validator":     "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators.",
     "codec":         "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional). Oracle cases are `{decoded, encoded}` pairs exercising round-trip symmetry in both directions. Field layout lives in SCXML (sce:byte, sce:bit-offset, sce:bit-size, sce:default-endian); the manifest entry only mirrors field names and canonical types so fragments can iterate them. Field names use SCXML source case (camelCase) as the canonical key across oracle and manifest; each per-language fragment applies its own case filter (Rust/Python snake_case, Go PascalCase, C++/Kotlin as-is camelCase). Reference section: codecs."
   },
@@ -261,6 +262,26 @@
         {"name": "channel",   "type": "u8", "compare": "equality"},
         {"name": "direction", "type": "u8", "compare": "equality"}
       ]
+    },
+
+    {
+      "name": "timer_diag_scheduler",
+      "kind": "timer",
+      "ref_section": "timers",
+      "timers": [
+        {"id": "testerPresent", "timer_type": "periodic", "interval_ms": 2000, "callback": "fireTesterPresent"},
+        {"id": "responseTimeout", "timer_type": "one_shot", "interval_ms": 5000, "callback": "fireHandleTimeout"},
+        {"id": "retryDelay", "timer_type": "one_shot", "interval_ms": 10000, "callback": "fireRetrySecurityAccess"}
+      ]
+    },
+
+    {
+      "name": "lookup_engine_status",
+      "kind": "lookup",
+      "ref_section": "string_lookups",
+      "on_miss": "default",
+      "args": ["u8"],
+      "output": {"type": "string", "compare": "equality"}
     }
   ]
 }

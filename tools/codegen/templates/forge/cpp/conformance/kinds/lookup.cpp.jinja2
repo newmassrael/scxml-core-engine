@@ -1,3 +1,4 @@
+{% if f.output.type != "string" %}
 {# Lookup kind — finite key→value mapping. on_miss=error generates
    std::optional<V> (unwrapped here since happy-path fixtures hit every key);
    on_miss=default generates raw V via fallback. #}
@@ -22,3 +23,17 @@
               static_cast<long long>(actual), static_cast<long long>(expected));
 {% endif %}
     }
+{% else %}
+{# String-output lookup — enum-to-string comparison via oracle string matching. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    for (const auto &c : spec["cases"]) {
+{% for arg_ty in f.args %}
+        auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
+{% endfor %}
+        auto expected = c["expected"].get<std::string>();
+        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        auto actual_str = {{ f.name | to_camel_case }}_value_name(actual);
+        CHECK(actual_str == expected, "{{ f.name }}: actual=%s expected=%s",
+              actual_str.c_str(), expected.c_str());
+    }
+{% endif %}

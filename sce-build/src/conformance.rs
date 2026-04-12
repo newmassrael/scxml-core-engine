@@ -140,6 +140,19 @@ pub struct StructField {
     pub compare: CompareMode,
 }
 
+/// Timer entry descriptor for conformance testing. Each entry maps to one
+/// `<data sce:timer="...">` in the SCXML source. The conformance fragment
+/// creates a recording timer mock, starts the timer, and verifies the
+/// registered interval and type against the oracle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TimerFixtureEntry {
+    pub id: String,
+    pub timer_type: String,
+    pub interval_ms: u64,
+    pub callback: String,
+}
+
 /// One fixture entry. `name` and `ref_section` are common to every kind;
 /// kind-specific data lives in the `spec` tagged enum below. The
 /// `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat
@@ -224,6 +237,18 @@ pub enum FixtureSpec {
         /// the SCXML stays the single source of truth.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         function: Option<String>,
+        /// Derived at harness-rendering time: the raw SCXML output field id
+        /// (e.g. `"status"`). Used by harness scaffolds to reference the
+        /// generated enum type (e.g. `Status` in PascalCase). Must be absent
+        /// in the manifest JSON.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output_id: Option<String>,
+        /// Derived at harness-rendering time for string-output lookups:
+        /// the unique enum variant names in declaration order. The harness
+        /// scaffold generates an enum-to-string conversion helper from
+        /// this list. Empty for numeric-output lookups.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        enum_values: Vec<String>,
     },
     /// Stateful data validator. Generated struct exposes
     /// `validate(args...) -> <ReturnStruct>` where `<ReturnStruct>` has the
@@ -261,6 +286,16 @@ pub enum FixtureSpec {
     Codec {
         fields: Vec<StructField>,
     },
+    /// Timer scheduler. Generated struct wraps N timer HAL instances and
+    /// exposes `start<Timer>()` / `cancel<Timer>()` pairs. The conformance
+    /// fragment creates recording mocks that implement the timer HAL
+    /// interface, starts each timer, and verifies the recorded registration
+    /// (type + interval_ms) against the oracle. Callback dispatch is
+    /// verified by triggering the mock's stored callback and checking that
+    /// the recording handler received the expected call.
+    Timer {
+        timers: Vec<TimerFixtureEntry>,
+    },
 }
 
 impl FixtureSpec {
@@ -279,6 +314,7 @@ impl FixtureSpec {
             FixtureSpec::Lookup { .. } => "lookup",
             FixtureSpec::Validator { .. } => "validator",
             FixtureSpec::Codec { .. } => "codec",
+            FixtureSpec::Timer { .. } => "timer",
         }
     }
 
@@ -494,11 +530,25 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Lookup { function, .. } => {
+                FixtureSpec::Lookup { function, output_id, enum_values, .. } => {
                     if function.is_some() {
                         return Err(format!(
                             "fixture {}: lookup `function` is derived from \
                              the SCXML output id; remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                    if output_id.is_some() {
+                        return Err(format!(
+                            "fixture {}: lookup `output_id` is derived from \
+                             the SCXML; remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                    if !enum_values.is_empty() {
+                        return Err(format!(
+                            "fixture {}: lookup `enum_values` is derived from \
+                             the SCXML entries; remove it from fixtures.json",
                             f.name
                         ));
                     }
@@ -531,6 +581,16 @@ impl Manifest {
                             "fixture {}: procedure `helpers_ordered` is \
                              derived from the SCXML at harness-rendering \
                              time; remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                }
+                FixtureSpec::Timer { timers, .. } => {
+                    if timers.is_empty() {
+                        return Err(format!(
+                            "fixture {}: timer requires at least one `timers` \
+                             entry — an empty timer list would render an \
+                             assertion-free test body",
                             f.name
                         ));
                     }
@@ -672,6 +732,38 @@ fn read_lookup_output_id(scxml_path: &Path) -> Result<String, String> {
     ))
 }
 
+/// Parse a `<scxml sce:kind="lookup">` source file with string output and
+/// return the unique entry values in declaration order. Used by the harness
+/// to generate an enum-to-string conversion helper for string-output lookups
+/// without duplicating the values in fixtures.json.
+fn read_lookup_enum_values(scxml_path: &Path) -> Result<Vec<String>, String> {
+    let text = std::fs::read_to_string(scxml_path)
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
+    let doc = roxmltree::Document::parse(&text)
+        .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
+    let scxml_ns = "http://www.w3.org/2005/07/scxml";
+    let sce_ns = crate::forge::model::SCE_NAMESPACE;
+    let datamodel = doc
+        .root_element()
+        .children()
+        .find(|n| n.is_element() && n.tag_name().name() == "datamodel" && n.tag_name().namespace() == Some(scxml_ns))
+        .ok_or_else(|| format!("{}: missing <datamodel>", scxml_path.display()))?;
+    let mut values = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for entry in datamodel.descendants().filter(|n| {
+        n.is_element()
+            && n.tag_name().name() == "entry"
+            && n.tag_name().namespace() == Some(sce_ns)
+    }) {
+        if let Some(val) = entry.attribute("value") {
+            if seen.insert(val.to_string()) {
+                values.push(val.to_string());
+            }
+        }
+    }
+    Ok(values)
+}
+
 /// Render the per-language conformance harness from a manifest, returning
 /// the rendered source code.
 ///
@@ -728,16 +820,19 @@ pub fn render_harness(
     for f in fixtures.iter_mut() {
         let fixture_name = f.name.clone();
         match &mut f.spec {
-            FixtureSpec::Lookup { function, .. } => {
+            FixtureSpec::Lookup { function, output_id, output, enum_values, .. } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
-                let output_id = read_lookup_output_id(&scxml_path)?;
-                // Function naming convention: lookup_<output_id_snake>.
-                // Per-language case conversion (camel/pascal) is applied by
-                // template filters.
+                let raw_output_id = read_lookup_output_id(&scxml_path)?;
                 *function = Some(format!(
                     "lookup_{}",
-                    crate::filters::to_snake_case(output_id)
+                    crate::filters::to_snake_case(raw_output_id.clone())
                 ));
+                *output_id = Some(raw_output_id);
+                // String-output lookups: derive enum variant names from SCXML
+                // entries so the harness can generate enum-to-string helpers.
+                if output.ty == CanonicalType::String {
+                    *enum_values = read_lookup_enum_values(&scxml_path)?;
+                }
             }
             FixtureSpec::Procedure {
                 helpers,
@@ -794,10 +889,14 @@ pub fn render_harness(
     let has_procedure = fixtures
         .iter()
         .any(|f| matches!(f.spec, FixtureSpec::Procedure { .. }));
+    let has_timer = fixtures
+        .iter()
+        .any(|f| matches!(f.spec, FixtureSpec::Timer { .. }));
 
     let ctx = minijinja::context! {
         fixtures => minijinja::Value::from_serialize(&fixtures),
         has_procedure => has_procedure,
+        has_timer => has_timer,
     };
 
     tmpl.render(ctx)
@@ -862,5 +961,60 @@ mod tests {
              UPDATE_EXPECT=1 cargo test -p sce-build schema_drift_guard\n\
              and commit the regenerated file.\n"
         );
+    }
+
+    /// Render the conformance harness for every target language and verify
+    /// that template rendering succeeds.
+    ///
+    /// This catches:
+    /// - Missing `kinds/<kind>.*.jinja2` fragment for any fixture kind
+    /// - Undefined template variable references (e.g. `{{ f.output_id }}`)
+    /// - SCXML parse failures during derive-at-render (lookup function,
+    ///   procedure helpers, enum values)
+    /// - Fixture/template schema mismatches
+    ///
+    /// It does **not** compile the generated source — that requires each
+    /// language's toolchain. But it guarantees the template layer is
+    /// internally consistent across all 5 languages for every fixture in
+    /// the manifest.
+    #[test]
+    fn render_harness_all_languages() {
+        let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path)
+            .expect("manifest must load and validate");
+
+        let template_base = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/resources");
+
+        let languages = [
+            Language::Cpp,
+            Language::Rust,
+            Language::Python,
+            Language::Go,
+            Language::Kotlin,
+        ];
+
+        for lang in &languages {
+            let result = render_harness(&manifest, *lang, &template_base, &resource_dir);
+            match result {
+                Ok(rendered) => {
+                    assert!(
+                        !rendered.is_empty(),
+                        "{lang:?}: render_harness returned empty output"
+                    );
+                }
+                Err(e) => {
+                    panic!(
+                        "{lang:?}: render_harness failed: {e}\n\
+                         This usually means a conformance template references \
+                         an undefined variable or a kinds/ fragment is missing \
+                         for a fixture kind in fixtures.json."
+                    );
+                }
+            }
+        }
     }
 }

@@ -419,5 +419,33 @@
         {"decoded": {"priority": 4, "channel": 5, "direction": 0}, "encoded": [148], "note": "(4<<5)|(5<<2)|0 = 128|20|0 = 148"}
       ]
     }
+  },
+
+  "timers": {
+    "timer_diag_scheduler": {
+      "fixture": "TimerDiagScheduler",
+      "signature": "start(handler, timers...) -> registrations",
+      "description": "Diagnostic scheduler: periodic tester-present at 2s, response timeout at 5s, delayed retry at 10s. Conformance verifies that calling start<Timer>() registers the correct timer type and interval with the HAL mock, and that the stored callback dispatches to the correct handler method.",
+      "timers": [
+        {"id": "testerPresent", "type": "periodic", "interval_ms": 2000, "callback": "fireTesterPresent"},
+        {"id": "responseTimeout", "type": "one_shot", "interval_ms": 5000, "callback": "fireHandleTimeout"},
+        {"id": "retryDelay", "type": "one_shot", "interval_ms": 10000, "callback": "fireRetrySecurityAccess"}
+      ]
+    }
+  },
+  "string_lookups": {
+    "lookup_engine_status": {
+      "fixture": "lookup_engine_status",
+      "signature": "(engSta: u8) -> Status",
+      "description": "Engine status code to status enum. Input is a uint8 diagnostic status byte; output is one of {STOP, RUNNING, FAULT}. Default miss policy returns STOP for any unrecognized input.",
+      "cases": [
+        {"args": [0],   "expected": "STOP",    "note": "explicit STOP entry (0x00)"},
+        {"args": [1],   "expected": "STOP",    "note": "explicit STOP entry (0x01)"},
+        {"args": [2],   "expected": "STOP",    "note": "explicit STOP entry (0x02)"},
+        {"args": [3],   "expected": "RUNNING", "note": "explicit RUNNING entry (0x03)"},
+        {"args": [7],   "expected": "FAULT",   "note": "explicit FAULT entry (0x07)"},
+        {"args": [255], "expected": "STOP",    "note": "miss -> default STOP"}
+      ]
+    }
   }
 }
