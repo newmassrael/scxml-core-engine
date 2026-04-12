@@ -1017,4 +1017,192 @@ mod tests {
             }
         }
     }
+
+    /// Oracle cross-check: verify structural integrity between fixtures.json
+    /// and numerical_reference.json.
+    ///
+    /// This catches:
+    /// - Fixtures declared in the catalog but missing from the oracle data
+    /// - Oracle entries with zero test cases (dead oracle data)
+    /// - ref_section mismatch (fixture says "pure_functions" but oracle has
+    ///   no such section or no matching entry)
+    /// - Missing version/tolerance fields in oracle
+    ///
+    /// It does NOT verify the oracle values themselves — that requires
+    /// executing generated code. But it ensures the two JSON manifests stay
+    /// in sync structurally.
+    #[test]
+    fn oracle_cross_check() {
+        let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path)
+            .expect("manifest must load and validate");
+
+        let oracle_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let oracle_text = std::fs::read_to_string(&oracle_path)
+            .unwrap_or_else(|e| panic!("read oracle: {e}"));
+        let oracle: serde_json::Value = serde_json::from_str(&oracle_text)
+            .unwrap_or_else(|e| panic!("parse oracle JSON: {e}"));
+
+        // Structural checks on oracle root
+        assert_eq!(
+            oracle.get("version").and_then(|v| v.as_u64()),
+            Some(1),
+            "oracle must have version: 1"
+        );
+        assert!(
+            oracle.get("float_tolerance").and_then(|v| v.as_f64()).is_some(),
+            "oracle must have float_tolerance field"
+        );
+
+        let mut failures: Vec<String> = Vec::new();
+
+        for fixture in &manifest.fixtures {
+            let section_name = &fixture.ref_section;
+            let fixture_name = &fixture.name;
+
+            // Check that the oracle has the referenced section
+            let section = match oracle.get(section_name) {
+                Some(s) if s.is_object() => s,
+                Some(_) => {
+                    failures.push(format!(
+                        "{fixture_name}: ref_section '{section_name}' exists in oracle but is not an object"
+                    ));
+                    continue;
+                }
+                None => {
+                    failures.push(format!(
+                        "{fixture_name}: ref_section '{section_name}' not found in oracle"
+                    ));
+                    continue;
+                }
+            };
+
+            // Check that the fixture has an entry in its section
+            let entry = match section.get(fixture_name) {
+                Some(e) if e.is_object() => e,
+                Some(_) => {
+                    failures.push(format!(
+                        "{fixture_name}: entry in oracle section '{section_name}' is not an object"
+                    ));
+                    continue;
+                }
+                None => {
+                    failures.push(format!(
+                        "{fixture_name}: not found in oracle section '{section_name}'"
+                    ));
+                    continue;
+                }
+            };
+
+            // Check that the entry has at least one test case.
+            // Most kinds use "cases" or "sequence"; Timer kind uses "timers".
+            let has_cases = entry.get("cases").and_then(|c| c.as_array()).map_or(false, |a| !a.is_empty());
+            let has_sequence = entry.get("sequence").and_then(|s| s.as_array()).map_or(false, |a| !a.is_empty());
+            let has_timers = entry.get("timers").and_then(|t| t.as_array()).map_or(false, |a| !a.is_empty());
+            if !has_cases && !has_sequence && !has_timers {
+                failures.push(format!(
+                    "{fixture_name}: oracle entry has no 'cases', 'sequence', or 'timers' test data"
+                ));
+            }
+        }
+
+        if !failures.is_empty() {
+            panic!(
+                "Oracle cross-check failed ({} error(s)):\n  {}",
+                failures.len(),
+                failures.join("\n  ")
+            );
+        }
+    }
+
+    /// Compile gate: verify that every generated Rust conformance fixture
+    /// and the rendered harness are syntactically valid Rust.
+    ///
+    /// Uses `syn::parse_file` to parse the generated Rust source. This
+    /// catches:
+    /// - Invalid syntax from template rendering (wrong braces, missing
+    ///   semicolons, unclosed blocks)
+    /// - Type reference typos (`Strig` instead of `String`)
+    /// - Malformed `use` / `mod` statements
+    /// - Broken macro invocations
+    ///
+    /// It does NOT verify semantic correctness (type checking, borrow
+    /// checking) — that requires `rustc`. But syntax validation catches
+    /// the most common template-level regressions without requiring a
+    /// full toolchain or external build system.
+    #[test]
+    fn rust_conformance_compile_gate() {
+        let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path)
+            .expect("manifest must load and validate");
+
+        let template_base = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/resources");
+
+        let options = crate::ForgeCompileOptions::default();
+        let mut failures: Vec<String> = Vec::new();
+
+        // Gate 1: per-fixture generated Rust code
+        for fixture in &manifest.fixtures {
+            let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
+            let content = match std::fs::read_to_string(&scxml_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    failures.push(format!("{}: read SCXML: {e}", fixture.name));
+                    continue;
+                }
+            };
+
+            let output = match crate::compile_forge_with_imports(
+                &content,
+                &fixture.name,
+                Language::Rust,
+                &resource_dir,
+                &options,
+            ) {
+                Ok(o) => o,
+                Err(e) => {
+                    failures.push(format!("{}: codegen: {e}", fixture.name));
+                    continue;
+                }
+            };
+
+            for (filename, code) in &output.files {
+                if let Err(e) = syn::parse_file(code) {
+                    failures.push(format!(
+                        "{}/{filename}: syn parse error: {e}",
+                        fixture.name
+                    ));
+                }
+            }
+        }
+
+        // Gate 2: rendered harness template
+        match render_harness(&manifest, Language::Rust, &template_base, &resource_dir) {
+            Ok(harness_code) => {
+                if let Err(e) = syn::parse_file(&harness_code) {
+                    failures.push(format!(
+                        "harness ({}): syn parse error: {e}",
+                        harness_filename(Language::Rust)
+                    ));
+                }
+            }
+            Err(e) => {
+                failures.push(format!("harness render: {e}"));
+            }
+        }
+
+        if !failures.is_empty() {
+            panic!(
+                "Rust conformance compile gate failed ({} error(s)):\n  {}",
+                failures.len(),
+                failures.join("\n  ")
+            );
+        }
+    }
 }

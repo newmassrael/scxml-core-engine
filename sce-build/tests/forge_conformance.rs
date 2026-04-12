@@ -1262,3 +1262,135 @@ fn forge_go_crossfile_rejects_whitespace_in_module_prefix() {
         "error should mention whitespace, got: {err}"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ── Rust golden compile gate ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+// ── Cross-file import combination matrix ─────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/// Dynamically verify that cross-file import combinations produce
+/// syntactically valid code for all 5 languages. No golden files needed —
+/// codegen success + syn parse (for Rust) is the gate.
+///
+/// Tests import patterns beyond the existing 3 golden-backed combos:
+///   - filter → transform (stateful imports stateless)
+///   - observer → condition (stateful imports stateless)
+///   - validator → lookup (stateful imports stateless)
+///
+/// Each combination:
+///   1. Reads the importing kind's SCXML with an <sce:import> reference
+///   2. Runs compile_forge_with_imports for all 5 languages
+///   3. Asserts codegen succeeds and output is non-empty
+///   4. For Rust output, syn::parse_file verifies syntax validity
+fn assert_crossfile_codegen_all_languages(scxml_name: &str) {
+    let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
+    let content = std::fs::read_to_string(&scxml_path)
+        .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
+    let base_dir = scxml_path.parent().unwrap();
+
+    let languages = [
+        sce_build::generator::Language::Cpp,
+        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Rust,
+        sce_build::generator::Language::Go,
+        sce_build::generator::Language::Python,
+    ];
+
+    for lang in &languages {
+        let options = golden_options(*lang);
+        let result = sce_build::compile_forge_with_imports(
+            &content,
+            scxml_name,
+            *lang,
+            base_dir,
+            &options,
+        );
+        match result {
+            Ok(output) => {
+                assert!(
+                    !output.files.is_empty(),
+                    "{scxml_name} ({lang:?}): codegen produced no files"
+                );
+                // Rust-specific: verify syntax with syn
+                if matches!(lang, sce_build::generator::Language::Rust) {
+                    for (filename, code) in &output.files {
+                        if let Err(e) = syn::parse_file(code) {
+                            panic!(
+                                "{scxml_name} ({lang:?}) {filename}: syn parse error: {e}"
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                panic!(
+                    "{scxml_name} ({lang:?}): cross-file codegen failed: {e}"
+                );
+            }
+        }
+    }
+}
+
+/// Existing golden-backed combos, verified here as codegen-all-languages too.
+#[test]
+fn crossfile_matrix_procedure_codec() {
+    assert_crossfile_codegen_all_languages("crossfile_procedure_codec");
+}
+
+#[test]
+fn crossfile_matrix_procedure_codec_mutate() {
+    assert_crossfile_codegen_all_languages("crossfile_procedure_codec_mutate");
+}
+
+#[test]
+fn crossfile_matrix_validator_transform() {
+    assert_crossfile_codegen_all_languages("crossfile_validator_transform");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ── Rust golden compile gate ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/// Verify that every Rust golden file in tests/forge/expected/*.rs is
+/// syntactically valid Rust via `syn::parse_file`.
+///
+/// This catches template regressions that produce byte-identical golden
+/// diffs but broken syntax (e.g. UPDATE_GOLDEN accepts output that
+/// contains a misplaced semicolon). It is faster and cheaper than
+/// standing up rustc, and catches the most common template-layer bugs.
+#[test]
+fn rust_golden_syn_gate() {
+    let dir = expected_dir();
+    let mut failures: Vec<String> = Vec::new();
+    let mut count = 0u32;
+
+    for entry in std::fs::read_dir(&dir).expect("read expected dir") {
+        let entry = entry.expect("dir entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        count += 1;
+        let code = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        if let Err(e) = syn::parse_file(&code) {
+            failures.push(format!(
+                "{}: {e}",
+                path.file_name().unwrap().to_string_lossy()
+            ));
+        }
+    }
+
+    assert!(count > 0, "no .rs golden files found in {}", dir.display());
+
+    if !failures.is_empty() {
+        panic!(
+            "Rust golden syn gate failed ({}/{count} files broken):\n  {}",
+            failures.len(),
+            failures.join("\n  ")
+        );
+    }
+}

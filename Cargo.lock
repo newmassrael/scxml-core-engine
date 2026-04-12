@@ -1345,6 +1345,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "syn",
  "thiserror",
  "wasm-bindgen",
 ]

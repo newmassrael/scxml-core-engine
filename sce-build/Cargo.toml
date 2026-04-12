@@ -52,6 +52,7 @@ cli = ["clap"]
 # checked-in `tests/forge/conformance/fixtures.schema.json` diverges.
 [dev-dependencies]
 schemars = "0.8"
+syn = { version = "2", features = ["parsing", "full"] }
 
 [lib]
 crate-type = ["cdylib", "rlib"]

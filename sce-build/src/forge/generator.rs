@@ -3990,3 +3990,601 @@ fn to_rust_variant(s: &str) -> String {
     }
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── Unit tests ───────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::model::{ForgeKind, SceType};
+
+    // ── Type mapping: cpp ────────────────────────────────────
+
+    #[test]
+    fn cpp_type_all_variants() {
+        assert_eq!(cpp_type(&SceType::Uint8), "uint8_t");
+        assert_eq!(cpp_type(&SceType::Uint16), "uint16_t");
+        assert_eq!(cpp_type(&SceType::Uint32), "uint32_t");
+        assert_eq!(cpp_type(&SceType::Uint64), "uint64_t");
+        assert_eq!(cpp_type(&SceType::Int8), "int8_t");
+        assert_eq!(cpp_type(&SceType::Int16), "int16_t");
+        assert_eq!(cpp_type(&SceType::Int32), "int32_t");
+        assert_eq!(cpp_type(&SceType::Int64), "int64_t");
+        assert_eq!(cpp_type(&SceType::Float32), "float");
+        assert_eq!(cpp_type(&SceType::Float64), "double");
+        assert_eq!(cpp_type(&SceType::Bool), "bool");
+        assert_eq!(cpp_type(&SceType::String), "std::string");
+        assert_eq!(cpp_type(&SceType::Bytes), "std::vector<uint8_t>");
+    }
+
+    #[test]
+    fn cpp_param_type_references_large_types() {
+        assert_eq!(cpp_param_type(&SceType::String), "const std::string&");
+        assert_eq!(cpp_param_type(&SceType::Bytes), "const std::vector<uint8_t>&");
+    }
+
+    #[test]
+    fn cpp_param_type_value_for_primitives() {
+        assert_eq!(cpp_param_type(&SceType::Int32), "int32_t");
+        assert_eq!(cpp_param_type(&SceType::Bool), "bool");
+        assert_eq!(cpp_param_type(&SceType::Float64), "double");
+    }
+
+    // ── Type mapping: kotlin ─────────────────────────────────
+
+    #[test]
+    fn kotlin_type_all_variants() {
+        assert_eq!(kotlin_type(&SceType::Uint8), "UByte");
+        assert_eq!(kotlin_type(&SceType::Uint16), "UShort");
+        assert_eq!(kotlin_type(&SceType::Uint32), "UInt");
+        assert_eq!(kotlin_type(&SceType::Uint64), "ULong");
+        assert_eq!(kotlin_type(&SceType::Int8), "Byte");
+        assert_eq!(kotlin_type(&SceType::Int16), "Short");
+        assert_eq!(kotlin_type(&SceType::Int32), "Int");
+        assert_eq!(kotlin_type(&SceType::Int64), "Long");
+        assert_eq!(kotlin_type(&SceType::Float32), "Float");
+        assert_eq!(kotlin_type(&SceType::Float64), "Double");
+        assert_eq!(kotlin_type(&SceType::Bool), "Boolean");
+        assert_eq!(kotlin_type(&SceType::String), "String");
+        assert_eq!(kotlin_type(&SceType::Bytes), "ByteArray");
+    }
+
+    #[test]
+    fn kotlin_unsigned_conversion_narrowing() {
+        assert_eq!(kotlin_unsigned_conversion(&SceType::Uint8), Some("toInt"));
+        assert_eq!(kotlin_unsigned_conversion(&SceType::Uint16), Some("toInt"));
+        assert_eq!(kotlin_unsigned_conversion(&SceType::Uint32), Some("toLong"));
+        assert_eq!(kotlin_unsigned_conversion(&SceType::Uint64), Some("toLong"));
+    }
+
+    #[test]
+    fn kotlin_unsigned_conversion_none_for_signed() {
+        assert_eq!(kotlin_unsigned_conversion(&SceType::Int32), None);
+        assert_eq!(kotlin_unsigned_conversion(&SceType::Float64), None);
+        assert_eq!(kotlin_unsigned_conversion(&SceType::Bool), None);
+        assert_eq!(kotlin_unsigned_conversion(&SceType::String), None);
+    }
+
+    // ── Type mapping: rust ───────────────────────────────────
+
+    #[test]
+    fn rust_type_all_variants() {
+        assert_eq!(rust_type(&SceType::Uint8), "u8");
+        assert_eq!(rust_type(&SceType::Uint16), "u16");
+        assert_eq!(rust_type(&SceType::Uint32), "u32");
+        assert_eq!(rust_type(&SceType::Uint64), "u64");
+        assert_eq!(rust_type(&SceType::Int8), "i8");
+        assert_eq!(rust_type(&SceType::Int16), "i16");
+        assert_eq!(rust_type(&SceType::Int32), "i32");
+        assert_eq!(rust_type(&SceType::Int64), "i64");
+        assert_eq!(rust_type(&SceType::Float32), "f32");
+        assert_eq!(rust_type(&SceType::Float64), "f64");
+        assert_eq!(rust_type(&SceType::Bool), "bool");
+        assert_eq!(rust_type(&SceType::String), "String");
+        assert_eq!(rust_type(&SceType::Bytes), "Vec<u8>");
+    }
+
+    #[test]
+    fn rust_param_type_borrows_heap_types() {
+        assert_eq!(rust_param_type(&SceType::String), "&str");
+        assert_eq!(rust_param_type(&SceType::Bytes), "&[u8]");
+    }
+
+    #[test]
+    fn rust_param_type_value_for_primitives() {
+        assert_eq!(rust_param_type(&SceType::Int32), "i32");
+        assert_eq!(rust_param_type(&SceType::Float64), "f64");
+        assert_eq!(rust_param_type(&SceType::Bool), "bool");
+    }
+
+    // ── Type mapping: go ─────────────────────────────────────
+
+    #[test]
+    fn go_type_all_variants() {
+        assert_eq!(go_type(&SceType::Uint8), "uint8");
+        assert_eq!(go_type(&SceType::Uint16), "uint16");
+        assert_eq!(go_type(&SceType::Uint32), "uint32");
+        assert_eq!(go_type(&SceType::Uint64), "uint64");
+        assert_eq!(go_type(&SceType::Int8), "int8");
+        assert_eq!(go_type(&SceType::Int16), "int16");
+        assert_eq!(go_type(&SceType::Int32), "int32");
+        assert_eq!(go_type(&SceType::Int64), "int64");
+        assert_eq!(go_type(&SceType::Float32), "float32");
+        assert_eq!(go_type(&SceType::Float64), "float64");
+        assert_eq!(go_type(&SceType::Bool), "bool");
+        assert_eq!(go_type(&SceType::String), "string");
+        assert_eq!(go_type(&SceType::Bytes), "[]byte");
+    }
+
+    // ── Type mapping: python ─────────────────────────────────
+
+    #[test]
+    fn python_type_collapses_integers() {
+        assert_eq!(python_type(&SceType::Uint8), "int");
+        assert_eq!(python_type(&SceType::Int64), "int");
+        assert_eq!(python_type(&SceType::Uint64), "int");
+    }
+
+    #[test]
+    fn python_type_collapses_floats() {
+        assert_eq!(python_type(&SceType::Float32), "float");
+        assert_eq!(python_type(&SceType::Float64), "float");
+    }
+
+    #[test]
+    fn python_type_special() {
+        assert_eq!(python_type(&SceType::Bool), "bool");
+        assert_eq!(python_type(&SceType::String), "str");
+        assert_eq!(python_type(&SceType::Bytes), "bytes");
+    }
+
+    // ── go_escape_builtin ────────────────────────────────────
+
+    #[test]
+    fn go_escape_builtins() {
+        assert_eq!(go_escape_builtin("byte"), "byte_");
+        assert_eq!(go_escape_builtin("string"), "string_");
+        assert_eq!(go_escape_builtin("int"), "int_");
+        assert_eq!(go_escape_builtin("len"), "len_");
+        assert_eq!(go_escape_builtin("make"), "make_");
+        assert_eq!(go_escape_builtin("true"), "true_");
+        assert_eq!(go_escape_builtin("nil"), "nil_");
+        assert_eq!(go_escape_builtin("iota"), "iota_");
+    }
+
+    #[test]
+    fn go_escape_non_builtin_unchanged() {
+        assert_eq!(go_escape_builtin("myVar"), "myVar");
+        assert_eq!(go_escape_builtin("temperature"), "temperature");
+        assert_eq!(go_escape_builtin("rpm"), "rpm");
+    }
+
+    // ── looks_like_int ───────────────────────────────────────
+
+    #[test]
+    fn looks_like_int_positive() {
+        assert!(looks_like_int("100"));
+        assert!(looks_like_int("0"));
+        assert!(looks_like_int("-42"));
+    }
+
+    #[test]
+    fn looks_like_int_negative() {
+        assert!(!looks_like_int("1.5"));
+        assert!(!looks_like_int("1e10"));
+        assert!(!looks_like_int("2E3"));
+        assert!(!looks_like_int("0.0"));
+    }
+
+    // ── Literal formatters ───────────────────────────────────
+
+    #[test]
+    fn rust_literal_float32_from_int() {
+        assert_eq!(rust_literal("100", &SceType::Float32), "100.0_f32");
+    }
+
+    #[test]
+    fn rust_literal_float32_from_float() {
+        assert_eq!(rust_literal("1.5", &SceType::Float32), "1.5_f32");
+    }
+
+    #[test]
+    fn rust_literal_float64_from_int() {
+        assert_eq!(rust_literal("100", &SceType::Float64), "100.0");
+    }
+
+    #[test]
+    fn rust_literal_float64_from_float() {
+        assert_eq!(rust_literal("1.5", &SceType::Float64), "1.5");
+    }
+
+    #[test]
+    fn rust_literal_integer_passthrough() {
+        assert_eq!(rust_literal("42", &SceType::Int32), "42");
+    }
+
+    #[test]
+    fn cpp_literal_float32_from_int() {
+        assert_eq!(cpp_literal("100", &SceType::Float32), "100.0f");
+    }
+
+    #[test]
+    fn cpp_literal_float32_from_float() {
+        assert_eq!(cpp_literal("1.5", &SceType::Float32), "1.5f");
+    }
+
+    #[test]
+    fn cpp_literal_float64_from_int() {
+        assert_eq!(cpp_literal("100", &SceType::Float64), "100.0");
+    }
+
+    #[test]
+    fn cpp_literal_integer_passthrough() {
+        assert_eq!(cpp_literal("42", &SceType::Int32), "42");
+    }
+
+    #[test]
+    fn go_literal_float_from_int() {
+        assert_eq!(go_literal("100", &SceType::Float32), "100.0");
+        assert_eq!(go_literal("100", &SceType::Float64), "100.0");
+    }
+
+    #[test]
+    fn go_literal_float_from_float() {
+        assert_eq!(go_literal("1.5", &SceType::Float64), "1.5");
+    }
+
+    #[test]
+    fn go_literal_integer_passthrough() {
+        assert_eq!(go_literal("42", &SceType::Int32), "42");
+    }
+
+    #[test]
+    fn kotlin_literal_unsigned_types() {
+        assert_eq!(kotlin_literal("100", &SceType::Uint8), "100u.toUByte()");
+        assert_eq!(kotlin_literal("200", &SceType::Uint16), "200u.toUShort()");
+        assert_eq!(kotlin_literal("300", &SceType::Uint32), "300u.toUInt()");
+        assert_eq!(kotlin_literal("400", &SceType::Uint64), "400u.toULong()");
+    }
+
+    #[test]
+    fn kotlin_literal_signed_narrow() {
+        assert_eq!(kotlin_literal("42", &SceType::Int8), "(42).toByte()");
+        assert_eq!(kotlin_literal("42", &SceType::Int16), "(42).toShort()");
+    }
+
+    #[test]
+    fn kotlin_literal_long() {
+        assert_eq!(kotlin_literal("100", &SceType::Int64), "100L");
+    }
+
+    #[test]
+    fn kotlin_literal_float() {
+        assert_eq!(kotlin_literal("100", &SceType::Float32), "100.0f");
+        assert_eq!(kotlin_literal("1.5", &SceType::Float32), "1.5f");
+        assert_eq!(kotlin_literal("100", &SceType::Float64), "100.0");
+    }
+
+    #[test]
+    fn kotlin_literal_string() {
+        assert_eq!(kotlin_literal("hello", &SceType::String), "\"hello\"");
+    }
+
+    #[test]
+    fn python_literal_float_from_int() {
+        assert_eq!(python_literal("100", &SceType::Float32), "100.0");
+        assert_eq!(python_literal("100", &SceType::Float64), "100.0");
+    }
+
+    #[test]
+    fn python_literal_string() {
+        assert_eq!(python_literal("hello", &SceType::String), "'hello'");
+    }
+
+    #[test]
+    fn python_literal_bool() {
+        assert_eq!(python_literal("true", &SceType::Bool), "True");
+        assert_eq!(python_literal("false", &SceType::Bool), "False");
+    }
+
+    #[test]
+    fn python_literal_integer_passthrough() {
+        assert_eq!(python_literal("42", &SceType::Int32), "42");
+    }
+
+    // ── normalized_go_prefix ─────────────────────────────────
+
+    #[test]
+    fn go_prefix_strips_trailing_slash() {
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: Some("github.com/acme/gen/".to_string()),
+        };
+        assert_eq!(normalized_go_prefix(&opts), Some("github.com/acme/gen"));
+    }
+
+    #[test]
+    fn go_prefix_no_trailing_slash() {
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: Some("github.com/acme/gen".to_string()),
+        };
+        assert_eq!(normalized_go_prefix(&opts), Some("github.com/acme/gen"));
+    }
+
+    #[test]
+    fn go_prefix_none() {
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: None,
+        };
+        assert_eq!(normalized_go_prefix(&opts), None);
+    }
+
+    #[test]
+    fn go_prefix_multiple_trailing_slashes() {
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: Some("github.com/acme///".to_string()),
+        };
+        assert_eq!(normalized_go_prefix(&opts), Some("github.com/acme"));
+    }
+
+    // ── validate_options ─────────────────────────────────────
+
+    #[test]
+    fn validate_go_with_imports_missing_prefix() {
+        let imports = vec![ForgeImport {
+            src: "transform.scxml".to_string(),
+            kind: ForgeKind::Transform,
+            alias: "t".to_string(),
+        }];
+        let opts = crate::ForgeCompileOptions { go_module_prefix: None };
+        let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_go_with_imports_empty_prefix() {
+        let imports = vec![ForgeImport {
+            src: "transform.scxml".to_string(),
+            kind: ForgeKind::Transform,
+            alias: "t".to_string(),
+        }];
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: Some("".to_string()),
+        };
+        let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_go_with_imports_whitespace_prefix() {
+        let imports = vec![ForgeImport {
+            src: "transform.scxml".to_string(),
+            kind: ForgeKind::Transform,
+            alias: "t".to_string(),
+        }];
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: Some("github.com/acme /gen".to_string()),
+        };
+        let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_go_with_imports_valid_prefix() {
+        let imports = vec![ForgeImport {
+            src: "transform.scxml".to_string(),
+            kind: ForgeKind::Transform,
+            alias: "t".to_string(),
+        }];
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: Some("github.com/acme/gen".to_string()),
+        };
+        let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_go_no_imports_no_prefix_ok() {
+        let opts = crate::ForgeCompileOptions { go_module_prefix: None };
+        let result = validate_options(&[], &crate::generator::Language::Go, &opts);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_non_go_ignores_prefix() {
+        let imports = vec![ForgeImport {
+            src: "transform.scxml".to_string(),
+            kind: ForgeKind::Transform,
+            alias: "t".to_string(),
+        }];
+        let opts = crate::ForgeCompileOptions { go_module_prefix: None };
+        let result = validate_options(&imports, &crate::generator::Language::Cpp, &opts);
+        assert!(result.is_ok());
+    }
+
+    // ── resolve_single_import ────────────────────────────────
+
+    fn test_import() -> ForgeImport {
+        ForgeImport {
+            src: "temperature_transform.scxml".to_string(),
+            kind: ForgeKind::Transform,
+            alias: "temp".to_string(),
+        }
+    }
+
+    fn stateful_import() -> ForgeImport {
+        ForgeImport {
+            src: "simple_codec.scxml".to_string(),
+            kind: ForgeKind::Codec,
+            alias: "frame".to_string(),
+        }
+    }
+
+    #[test]
+    fn resolve_import_cpp_stateless() {
+        let imp = test_import();
+        let opts = crate::ForgeCompileOptions::default();
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Cpp, &opts);
+        assert_eq!(ctx.alias, "temp");
+        assert_eq!(ctx.include_stmt, "#include \"temperature_transform.h\"");
+        assert!(!ctx.is_stateful);
+        assert_eq!(ctx.namespace, "SCE::Generated::TemperatureTransform");
+    }
+
+    #[test]
+    fn resolve_import_cpp_stateful() {
+        let imp = stateful_import();
+        let opts = crate::ForgeCompileOptions::default();
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Cpp, &opts);
+        assert!(ctx.is_stateful);
+        assert_eq!(ctx.member_name, "frame_");
+        assert_eq!(ctx.member_type, "::SCE::Generated::SimpleCodec::SimpleCodec");
+    }
+
+    #[test]
+    fn resolve_import_kotlin() {
+        let imp = test_import();
+        let opts = crate::ForgeCompileOptions::default();
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Kotlin, &opts);
+        assert_eq!(ctx.include_stmt, "import com.sce.generated.temperature_transform.*");
+        assert_eq!(ctx.type_name, "TemperatureTransform");
+    }
+
+    #[test]
+    fn resolve_import_rust_stateless() {
+        let imp = test_import();
+        let opts = crate::ForgeCompileOptions::default();
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Rust, &opts);
+        // Stateless: import module path, not type
+        assert_eq!(ctx.include_stmt, "use super::temperature_transform;");
+        assert!(!ctx.is_stateful);
+    }
+
+    #[test]
+    fn resolve_import_rust_stateful() {
+        let imp = stateful_import();
+        let opts = crate::ForgeCompileOptions::default();
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Rust, &opts);
+        // Stateful: import the type directly
+        assert_eq!(ctx.include_stmt, "use super::simple_codec::SimpleCodec;");
+        assert!(ctx.is_stateful);
+    }
+
+    #[test]
+    fn resolve_import_go() {
+        let imp = test_import();
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: Some("github.com/acme/gen".to_string()),
+        };
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Go, &opts);
+        assert_eq!(
+            ctx.include_stmt,
+            "\t\"github.com/acme/gen/temperature_transform\""
+        );
+        assert_eq!(ctx.namespace, "temperature_transform");
+    }
+
+    #[test]
+    fn resolve_import_python_stateless() {
+        let imp = test_import();
+        let opts = crate::ForgeCompileOptions::default();
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Python, &opts);
+        assert_eq!(ctx.include_stmt, "from . import temperature_transform");
+    }
+
+    #[test]
+    fn resolve_import_python_stateful() {
+        let imp = stateful_import();
+        let opts = crate::ForgeCompileOptions::default();
+        let ctx = resolve_single_import(&imp, &crate::generator::Language::Python, &opts);
+        assert_eq!(ctx.include_stmt, "from .simple_codec import SimpleCodec");
+    }
+
+    // ── to_upper_snake ───────────────────────────────────────
+
+    #[test]
+    fn upper_snake_from_pascal() {
+        assert_eq!(to_upper_snake("EngineStart"), "ENGINE_START");
+    }
+
+    #[test]
+    fn upper_snake_from_camel() {
+        assert_eq!(to_upper_snake("gearPosition"), "GEAR_POSITION");
+    }
+
+    #[test]
+    fn upper_snake_from_snake() {
+        assert_eq!(to_upper_snake("gear_position"), "GEAR_POSITION");
+    }
+
+    // ── to_rust_variant ──────────────────────────────────────
+
+    #[test]
+    fn rust_variant_from_uppercase() {
+        assert_eq!(to_rust_variant("STOP"), "Stop");
+        assert_eq!(to_rust_variant("RUNNING"), "Running");
+        assert_eq!(to_rust_variant("ENGINE_START"), "EngineStart");
+    }
+
+    #[test]
+    fn rust_variant_from_mixed_case() {
+        assert_eq!(to_rust_variant("engineStart"), "EngineStart");
+    }
+
+    #[test]
+    fn rust_variant_single_char() {
+        assert_eq!(to_rust_variant("A"), "A");
+    }
+
+    #[test]
+    fn rust_variant_with_digits() {
+        assert_eq!(to_rust_variant("GEAR_1"), "Gear1");
+    }
+
+    // ── build_template_imports ────────────────────────────────
+
+    #[test]
+    fn template_imports_empty() {
+        let (has, _all, _stateful) = build_template_imports(&[]);
+        assert!(!has);
+    }
+
+    #[test]
+    fn template_imports_stateful_filter() {
+        let imports = vec![
+            ImportContext {
+                alias: "t".to_string(),
+                kind: "transform".to_string(),
+                is_stateful: false,
+                include_stmt: String::new(),
+                type_name: String::new(),
+                member_name: String::new(),
+                member_type: String::new(),
+                namespace: String::new(),
+                qualified_call: String::new(),
+                param_types: Vec::new(),
+                ret_type: None,
+                member_field_types: Vec::new(),
+                member_method_sigs: Vec::new(),
+            },
+            ImportContext {
+                alias: "c".to_string(),
+                kind: "codec".to_string(),
+                is_stateful: true,
+                include_stmt: String::new(),
+                type_name: String::new(),
+                member_name: String::new(),
+                member_type: String::new(),
+                namespace: String::new(),
+                qualified_call: String::new(),
+                param_types: Vec::new(),
+                ret_type: None,
+                member_field_types: Vec::new(),
+                member_method_sigs: Vec::new(),
+            },
+        ];
+        let (has, _all, _stateful) = build_template_imports(&imports);
+        assert!(has);
+    }
+}
+
