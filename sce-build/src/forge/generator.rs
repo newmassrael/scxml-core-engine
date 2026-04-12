@@ -69,6 +69,19 @@ pub struct ImportContext {
     /// `ValidatorModel.inputs`, `FilterModel.output` + `FilterModel.input`).
     #[serde(skip)]
     pub member_field_types: Vec<(String, SceType)>,
+
+    /// For stateful kinds: member method signatures, keyed by qualified
+    /// `"{alias}.{method}"` name. Each entry carries parameter types and a
+    /// return type so that `infer_types` can propagate return types through
+    /// member-call expressions like `frame.encode()`.
+    ///
+    /// Populated by `validate_and_enrich_imports` from the imported
+    /// ForgeDocument's kind-specific method inventory (e.g. Codec →
+    /// `encode()` returns `Bytes`). Only instance methods are registered
+    /// here; static factory methods like `decode(raw)` are type-level calls
+    /// and do not appear as `alias.method()` in user expressions.
+    #[serde(skip)]
+    pub member_method_sigs: Vec<(String, Vec<SceType>, SceType)>,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -191,6 +204,7 @@ fn resolve_single_import(
                 param_types: Vec::new(),
                 ret_type: None,
                 member_field_types: Vec::new(),
+                member_method_sigs: Vec::new(),
             }
         }
         crate::generator::Language::Kotlin => {
@@ -216,6 +230,7 @@ fn resolve_single_import(
                 param_types: Vec::new(),
                 ret_type: None,
                 member_field_types: Vec::new(),
+                member_method_sigs: Vec::new(),
             }
         }
         crate::generator::Language::Rust => {
@@ -243,6 +258,7 @@ fn resolve_single_import(
                 param_types: Vec::new(),
                 ret_type: None,
                 member_field_types: Vec::new(),
+                member_method_sigs: Vec::new(),
             }
         }
         crate::generator::Language::Go => {
@@ -268,6 +284,7 @@ fn resolve_single_import(
                 param_types: Vec::new(),
                 ret_type: None,
                 member_field_types: Vec::new(),
+                member_method_sigs: Vec::new(),
             }
         }
         crate::generator::Language::Python => {
@@ -295,6 +312,7 @@ fn resolve_single_import(
                 param_types: Vec::new(),
                 ret_type: None,
                 member_field_types: Vec::new(),
+                member_method_sigs: Vec::new(),
             }
         }
     }

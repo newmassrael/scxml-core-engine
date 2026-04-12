@@ -1056,10 +1056,24 @@ fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 infer_types(a, ctx);
             }
             // If the callee is a bare identifier registered in the function
-            // signature table, we know the return type. Otherwise opaque.
+            // signature table, we know the return type. For member calls
+            // like `frame.encode()`, form the qualified key `"{obj}.{method}"`
+            // and look it up — stateful import methods are registered there
+            // by `insert_stateful_import_aliases`.
             if let ExprKind::Ident(name) = &callee.kind {
                 if let Some(sig) = ctx.lookup_func(name.as_str()) {
                     sig.ret
+                } else {
+                    InferredType::Unknown
+                }
+            } else if let ExprKind::Member { object, property } = &callee.kind {
+                if let ExprKind::Ident(obj_name) = &object.kind {
+                    let qualified = format!("{}.{}", obj_name, property);
+                    if let Some(sig) = ctx.lookup_func(&qualified) {
+                        sig.ret
+                    } else {
+                        InferredType::Unknown
+                    }
                 } else {
                     InferredType::Unknown
                 }
@@ -2649,6 +2663,30 @@ mod tests {
             float(64),
         ).unwrap();
         assert_eq!(out, "temp_xform(raw) * 2.0 + 1.0");
+    }
+
+    #[test]
+    fn member_call_return_type_propagates_bytes() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("frame", InferredType::Unknown);
+        ctx.insert_func(
+            "frame.encode",
+            FuncSig { params: vec![], ret: InferredType::Bytes },
+        );
+        // frame.encode()[0] should infer Index on Bytes → u8
+        let tokens = tokenize("frame.encode()[0]").unwrap();
+        let mut ast = Parser::new(&tokens).parse_expression().unwrap();
+        infer_types(&mut ast, &ctx);
+        assert_eq!(ast.ty, int(false, 8));
+    }
+
+    #[test]
+    fn member_call_unknown_when_not_registered() {
+        let ctx = TypeCtx::new();
+        let tokens = tokenize("frame.encode()").unwrap();
+        let mut ast = Parser::new(&tokens).parse_expression().unwrap();
+        infer_types(&mut ast, &ctx);
+        assert_eq!(ast.ty, InferredType::Unknown);
     }
 
     // ── Rename map ──────────────────────────────────────────────

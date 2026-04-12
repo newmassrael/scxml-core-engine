@@ -84,6 +84,13 @@ fn insert_stateful_import_aliases<'a>(
         for (qualified_key, fty) in &imp.member_field_types {
             ctx.insert_var(qualified_key.as_str(), InferredType::from_sce_type(fty));
         }
+        for (qualified_key, param_tys, ret_ty) in &imp.member_method_sigs {
+            let params = param_tys.iter().map(InferredType::from_sce_type).collect();
+            ctx.insert_func(
+                qualified_key.as_str(),
+                FuncSig { params, ret: InferredType::from_sce_type(ret_ty) },
+            );
+        }
     }
 }
 
