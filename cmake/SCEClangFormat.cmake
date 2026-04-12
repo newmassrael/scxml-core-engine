@@ -23,7 +23,8 @@ endif()
 
 # Default style file path
 if(NOT SCE_CLANG_FORMAT_STYLE)
-    set(SCE_CLANG_FORMAT_STYLE "${CMAKE_SOURCE_DIR}/tools/codegen/default.clang-format"
+    get_filename_component(_SCE_CF_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
+    set(SCE_CLANG_FORMAT_STYLE "${_SCE_CF_ROOT}/tools/codegen/default.clang-format"
         CACHE FILEPATH "clang-format style file for generated C++ code")
 endif()
 

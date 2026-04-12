@@ -1,7 +1,7 @@
 {# Codec kind — round-trip { decoded, encoded } cases. Each case binds the
-   per-field oracle values under an `input_<field>` prefix, then inlines
-   the struct literal into the `encode()` call so no intermediate variable
-   can shadow a user-declared field name. `round_tripped` holds the
+   per-field oracle values under an `input_<field>` prefix, assigns them
+   to a `_codec_val` temporary via member access (C++17-safe, no designated
+   initializers), then calls `encode()`. `round_tripped` holds the
    `decode()` result for reverse-direction assertions.
 
    Naming convention matches the Rust/Kotlin/Python codec fragments — any
@@ -19,12 +19,11 @@
             expected_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
         }
 
-        auto encoded = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}{
+        SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{};
 {% for field in f.fields %}
-            .{{ field.name }} = input_{{ field.name }}{% if not loop.last %},{% endif %}
+        _codec_val.{{ field.name }} = input_{{ field.name }};
 {% endfor %}
-        }
-        .encode();
+        auto encoded = _codec_val.encode();
         CHECK(encoded == expected_bytes,
               "{{ f.name }} case %d encode: size actual=%zu expected=%zu",
               i, encoded.size(), expected_bytes.size());

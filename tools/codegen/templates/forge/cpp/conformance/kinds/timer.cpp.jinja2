@@ -13,10 +13,10 @@
         }
         void cancel() override {}
     };
-    struct RecHandler : SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}Handler {
+    struct RecHandler {
         std::string last_call;
 {% for t in f.timers %}
-        void {{ t.callback | to_camel_case }}() override { last_call = "{{ t.callback }}"; }
+        void {{ t.callback | to_camel_case }}() { last_call = "{{ t.callback }}"; }
 {% endfor %}
     };
 
