@@ -1,0 +1,9 @@
+# SCE Mesh compile verification — local transport binding
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        bindings:
+          "#motor":
+            transport: local

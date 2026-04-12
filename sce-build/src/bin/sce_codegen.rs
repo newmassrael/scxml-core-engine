@@ -451,18 +451,19 @@ fn cmd_generate(
     // Uses the public API (compile_mesh_transport) so CLI, tests, and build.rs
     // share the same entry point. SM output remains byte-identical.
     if let Some(deploy_file) = deploy_path {
-        let mut warnings = Vec::new();
         match sce_build::compile_mesh_transport(
             &model,
             Path::new(deploy_file),
             lang,
-            &mut warnings,
         ) {
-            Ok(mesh_output) => {
-                for w in &warnings {
+            Ok(result) => {
+                for w in &result.dynamic_target_warnings {
                     eprintln!("Warning: {w}");
                 }
-                let mesh_files = maybe_format_files(mesh_output.files, &cpp_formatter);
+                for w in &result.qos_warnings {
+                    eprintln!("Warning: {w}");
+                }
+                let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
                 for (filename, code) in &mesh_files {
                     let file_path = out_path.join(filename);
                     fs::write(&file_path, code).unwrap_or_else(|e| {

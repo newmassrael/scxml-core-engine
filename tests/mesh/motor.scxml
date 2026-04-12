@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh compile verification: motor controller (receiver) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="motor" initial="running">
+    <state id="running">
+        <transition event="brake.activate" target="stopped"/>
+    </state>
+    <state id="stopped">
+        <transition event="resume" target="running"/>
+    </state>
+</scxml>

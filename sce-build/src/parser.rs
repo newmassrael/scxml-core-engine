@@ -901,6 +901,13 @@ impl SCXMLParser {
         {
             model.needs_http_send = true;
         }
+
+        // SCE Mesh: QoS intent attribute (sce:qos="reliable"|"best-effort")
+        use crate::forge::model::SCE_NAMESPACE;
+        action.mesh_qos = elem
+            .attribute((SCE_NAMESPACE, "qos"))
+            .unwrap_or("")
+            .to_string();
     }
 
     fn parse_if_action(

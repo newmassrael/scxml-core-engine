@@ -635,6 +635,17 @@ pub fn build_forge_manifest(dir: &std::path::Path) -> Result<forge::model::Forge
     forge::manifest::build_manifest(dir)
 }
 
+/// Result of a mesh transport compilation — generated files plus all
+/// build-time warnings collected during the pipeline.
+pub struct MeshResult {
+    /// Generated transport routing files.
+    pub output: generator::GeneratedOutput,
+    /// Dynamic target warnings (targetexpr cannot be statically resolved).
+    pub dynamic_target_warnings: Vec<mesh::topology::TopologyWarning>,
+    /// QoS intent/config mismatch warnings.
+    pub qos_warnings: Vec<mesh::topology::QosWarning>,
+}
+
 /// Generate mesh transport routing code for an SCXML model.
 ///
 /// This is the single public API for the mesh pipeline — CLI, test harness,
@@ -643,32 +654,61 @@ pub fn build_forge_manifest(dir: &std::path::Path) -> Result<forge::model::Forge
 ///   2. Collect <send> targets from the model
 ///   3. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
 ///   4. Resolve targets against deploy.yaml bindings
-///   5. Generate transport-native routing code
+///   5. QoS intent/config consistency validation
+///   6. Generate transport-native routing code
 ///
-/// Returns `Ok(output)` with generated transport files, or `Err(MeshError)`.
-/// `warnings` receives any build-time warnings about dynamic targets.
+/// Returns `Ok(MeshResult)` with generated files and all warnings,
+/// or `Err(MeshError)` on hard failure.
 pub fn compile_mesh_transport(
     model: &SCXMLModel,
     deploy_path: &Path,
     language: generator::Language,
-    warnings: &mut Vec<mesh::topology::TopologyWarning>,
-) -> Result<generator::GeneratedOutput, mesh::error::MeshError> {
+) -> Result<MeshResult, mesh::error::MeshError> {
     // Stage 1: deploy.yaml parsing
     let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
 
     // Stage 2a: collect dynamic target warnings
-    *warnings = mesh::topology::collect_dynamic_target_warnings(model);
+    let dynamic_target_warnings = mesh::topology::collect_dynamic_target_warnings(model);
 
     // Stage 2b: resolve static targets against deploy.yaml bindings
     let resolved = mesh::topology::resolve_targets(model, &deploy_cfg, &model.name)?;
 
+    // Stage 2c: QoS intent/config consistency validation
+    let qos_warnings = mesh::topology::validate_qos_consistency(model, &deploy_cfg, &model.name);
+
     if resolved.is_empty() {
-        return Ok(generator::GeneratedOutput { files: vec![] });
+        return Ok(MeshResult {
+            output: generator::GeneratedOutput { files: vec![] },
+            dynamic_target_warnings,
+            qos_warnings,
+        });
     }
 
     // Stage 3: transport codegen
     let template_base = find_template_base();
-    Ok(mesh::codegen::generate_mesh(&model.name, &resolved, language, &template_base)?)
+    let output = mesh::codegen::generate_mesh(&model.name, &resolved, language, &template_base)?;
+    Ok(MeshResult {
+        output,
+        dynamic_target_warnings,
+        qos_warnings,
+    })
+}
+
+/// Validate event coverage across multiple SCXML models in a deployment.
+///
+/// Multi-model API: takes all models referenced by deploy.yaml and
+/// cross-references send events against receiver transitions. Separate
+/// from `compile_mesh_transport` because it requires all models in the
+/// topology, while codegen operates per-model.
+///
+/// Returns warnings (not errors) for events that have no matching handler
+/// in the target machine.
+pub fn validate_mesh_event_coverage(
+    models: &[(&str, &SCXMLModel)],
+    deploy_path: &Path,
+) -> Result<Vec<mesh::topology::EventCoverageWarning>, mesh::error::MeshError> {
+    let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+    Ok(mesh::topology::validate_event_coverage(models, &deploy_cfg))
 }
 
 /// Detect if an SCXML file uses a non-statechart `sce:kind`.

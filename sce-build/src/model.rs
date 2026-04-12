@@ -131,6 +131,12 @@ pub struct Action {
     pub is_cpp_function: bool,
     #[serde(default)]
     pub is_kt_function: bool,
+
+    // SCE Mesh: QoS intent attribute (sce:qos="reliable"|"best-effort")
+    // Parsed from <send sce:qos="reliable"/>
+    // Validated against deploy.yaml transport config at build time.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mesh_qos: String,
 }
 
 /// W3C SCXML if/elseif branch

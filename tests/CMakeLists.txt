@@ -1192,6 +1192,74 @@ add_dependencies(comprehensive_interactive_test sce_runtime)
 
 
 # ============================================================================
+# SCE Mesh compile verification test (Phase 1)
+# ============================================================================
+# Validates that generated mesh transport code compiles against generated SM
+# headers. Compilation success = test pass (runtime assertions in Phase 2).
+if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
+    set(MESH_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mesh")
+    set(MESH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_generated")
+
+    # Generate brake_sm.h from brake.scxml
+    add_custom_command(
+        OUTPUT "${MESH_OUTPUT_DIR}/brake_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh: Generating brake_sm.h"
+        VERBATIM
+    )
+
+    # Generate motor_sm.h from motor.scxml
+    add_custom_command(
+        OUTPUT "${MESH_OUTPUT_DIR}/motor_sm.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh: Generating motor_sm.h"
+        VERBATIM
+    )
+
+    # Generate brake_transport.h from brake.scxml + deploy.yaml
+    # DEPENDS on brake_sm.h to serialize after the first codegen run —
+    # --deploy also regenerates brake_sm.h as a side effect, so parallel
+    # builds must not race with the standalone brake_sm.h command above.
+    add_custom_command(
+        OUTPUT "${MESH_OUTPUT_DIR}/brake_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy.yaml"
+        DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy.yaml"
+                "${SCE_CODEGEN}" "${MESH_OUTPUT_DIR}/brake_sm.h"
+        COMMENT "Mesh: Generating brake_transport.h (local transport)"
+        VERBATIM
+    )
+
+    add_executable(mesh_compile_test
+        mesh/test_mesh_local.cpp
+        "${MESH_OUTPUT_DIR}/brake_sm.h"
+        "${MESH_OUTPUT_DIR}/motor_sm.h"
+        "${MESH_OUTPUT_DIR}/brake_transport.h"
+    )
+
+    target_include_directories(mesh_compile_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_compile_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_compile_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_compile_test)
+
+    add_test(NAME mesh_compile_verification COMMAND mesh_compile_test)
+endif()
+
+# ============================================================================
 # Note: Code generation handled by sce-codegen (Rust binary from sce-build crate)
 # Integration tests run via StaticCodegenIntegrationTest (in integration_tests)
 # ============================================================================

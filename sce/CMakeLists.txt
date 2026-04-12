@@ -6,6 +6,7 @@
 
 # Build options
 option(SCE_ENABLE_HTTP "Enable HTTP/BasicHTTPEventProcessor support (requires cpp-httplib)" ON)
+option(SCE_ENABLE_MESH "Enable SCE Mesh distributed transport layer (EventQueueBridge, SchedulerConcepts)" OFF)
 
 # XML Parser Infrastructure (Unified)
 # All platforms: pugixml (lightweight, W3C compliant, header-only)
@@ -97,6 +98,27 @@ target_include_directories(sce_core
 )
 
 target_compile_features(sce_core INTERFACE cxx_std_17)
+
+# ============================================================================
+# sce_mesh_common: Header-only mesh transport abstractions (optional)
+# ============================================================================
+# Contains: SchedulerConcepts, EventQueueBridge
+# Phase 1: concept definitions + MPSC queue. Phase 2+ adds concrete schedulers.
+# Consumers: generated transport routing code, mesh integration tests.
+if(SCE_ENABLE_MESH)
+    add_library(sce_mesh_common INTERFACE)
+
+    target_include_directories(sce_mesh_common
+        INTERFACE
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    )
+
+    target_link_libraries(sce_mesh_common INTERFACE sce_core)
+
+    target_compile_features(sce_mesh_common INTERFACE cxx_std_17)
+
+    message(STATUS "SCE: Mesh transport layer enabled (sce_mesh_common)")
+endif()
 
 # ============================================================================
 # sce_base: Compiled base utilities for AOT (no script engine dependency)
