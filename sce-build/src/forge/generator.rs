@@ -527,11 +527,11 @@ pub fn generate_cpp_with_imports(
     inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_cpp(&env, m, imports)?,
-        ForgeDocument::Lookup(m) => render_lookup_cpp(&env, m, imports)?,
-        ForgeDocument::Condition(m) => render_condition_cpp(&env, m, imports)?,
-        ForgeDocument::Codec(m) => render_codec_cpp(&env, m, imports)?,
-        ForgeDocument::Validator(m) => render_validator_cpp(&env, m, imports)?,
+        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Procedure(m) => render_procedure_cpp(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Cpp)?,
@@ -545,88 +545,128 @@ pub fn generate_cpp_with_imports(
     })
 }
 
-// ── Transform rendering ────────────────────────────────────────
+// ── Transform rendering (unified) ─────────────────────────────
 
-fn render_transform_cpp(
+fn render_transform(
     env: &minijinja::Environment,
     m: &TransformModel,
     imports: &[ImportContext],
+    lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let ns = filters::to_pascal_case(m.name.clone());
-    let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
+    use crate::generator::Language;
+    let l = LangCtx::new(lang);
+
+    let go_renames = l.go_rename_pairs(m.inputs.iter().map(|f| f.id.as_str()));
+    let renames = rename_map(&go_renames);
 
     let type_ctx = crate::forge::type_ctx::transform(m, imports);
-    let empty_renames = std::collections::HashMap::new();
+    let params = l.param_str(&m.inputs);
 
     let functions: Vec<serde_json::Value> = m
         .outputs
         .iter()
         .map(|out| {
             let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
-            let expr_cpp = expr::transpile_typed(
+            let expr_val = expr::transpile_typed(
                 out.expr.as_deref().unwrap_or("0"),
-                ExprTarget::Cpp,
+                l.expr_target(),
                 &type_ctx,
-                &empty_renames,
+                &renames,
                 expected,
             )?;
-            let params = m
-                .inputs
-                .iter()
-                .map(|inp| format!("{} {}", cpp_param_type(&inp.sce_type), inp.id))
-                .collect::<Vec<_>>()
-                .join(", ");
-            Ok(serde_json::json!({
-                "ret_type": cpp_type(&out.sce_type),
-                "name": format!("compute{}", filters::to_pascal_case(out.id.clone())),
-                "params": params,
-                "expr": expr_cpp,
-            }))
+
+            let fn_name = match lang {
+                Language::Go =>
+                    format!("Compute{}", filters::to_pascal_case(out.id.clone())),
+                Language::Rust | Language::Python =>
+                    format!("compute_{}", filters::to_snake_case(out.id.clone())),
+                _ =>
+                    format!("compute{}", filters::to_pascal_case(out.id.clone())),
+            };
+
+            let mut obj = serde_json::Map::new();
+            obj.insert("ret_type".into(), l.type_name(&out.sce_type).into());
+            obj.insert("name".into(), fn_name.into());
+            obj.insert("params".into(), params.clone().into());
+            obj.insert("expr".into(), expr_val.into());
+            if matches!(lang, Language::Go) {
+                obj.insert("orig_name".into(), out.id.clone().into());
+            }
+
+            Ok(serde_json::Value::Object(obj))
         })
         .collect::<Result<_, ForgeError>>()?;
 
-    let tmpl = env
-        .get_template("transform.h.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("functions".into(), serde_json::json!(functions));
+    l.insert_imports(&mut ctx, imports);
 
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        guard => guard,
-        namespace => ns,
-        functions => minijinja::Value::from_serialize(&functions),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
+    l.render(env, "transform", ctx)
 }
 
-// ── Lookup rendering ───────────────────────────────────────────
+// ── Lookup rendering (unified) ────────────────────────────────
 
-fn render_lookup_cpp(
+fn render_lookup(
     env: &minijinja::Environment,
     m: &LookupModel,
     imports: &[ImportContext],
+    lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let ns = filters::to_pascal_case(m.name.clone());
-    let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
+    use crate::generator::Language;
+    let l = LangCtx::new(lang);
+
     let enum_name = filters::to_pascal_case(m.output.id.clone());
-    let func_name = format!("lookup{}", filters::to_pascal_case(m.output.id.clone()));
+    let func_name = match lang {
+        Language::Go =>
+            format!("Lookup{}", filters::to_pascal_case(m.output.id.clone())),
+        Language::Rust | Language::Python =>
+            format!("lookup_{}", filters::to_snake_case(m.output.id.clone())),
+        _ =>
+            format!("lookup{}", filters::to_pascal_case(m.output.id.clone())),
+    };
+    let input_id = l.local_id(&m.input.id);
 
     let output_is_string = m.output_is_string();
     let on_miss_error = m.miss_policy.is_error();
 
+    // String-enum strategy: entries grouped by output value.
     let (entries_by_value, unique_values, default_value) = if output_is_string {
-        let ebv: Vec<serde_json::Value> = m
-            .entries_by_value()
-            .into_iter()
-            .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
-            .collect();
-        let uv = m.unique_values();
+        let raw_ebv = m.entries_by_value();
+
+        let ebv: Vec<serde_json::Value> = match lang {
+            Language::Python => {
+                // Python template expects a `condition` expression per group.
+                raw_ebv.into_iter().map(|(value, keys)| {
+                    let condition = if keys.len() == 1 {
+                        format!("{input_id} == {}", keys[0])
+                    } else {
+                        format!("{input_id} in ({})", keys.join(", "))
+                    };
+                    serde_json::json!({"value": value, "condition": condition})
+                }).collect()
+            }
+            Language::Rust => {
+                raw_ebv.into_iter().map(|(value, keys)| {
+                    serde_json::json!({"value": to_rust_variant(&value), "keys": keys})
+                }).collect()
+            }
+            _ => {
+                raw_ebv.into_iter()
+                    .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
+                    .collect()
+            }
+        };
+
+        let uv: Vec<String> = match lang {
+            Language::Rust => m.unique_values().into_iter().map(|v| to_rust_variant(&v)).collect(),
+            _ => m.unique_values(),
+        };
+
         let dv = match &m.miss_policy {
-            MissPolicy::Default(s) => s.clone(),
+            MissPolicy::Default(s) => match lang {
+                Language::Rust => to_rust_variant(s),
+                _ => s.clone(),
+            },
             MissPolicy::Error => String::new(),
         };
         (ebv, uv, dv)
@@ -634,19 +674,16 @@ fn render_lookup_cpp(
         (Vec::new(), Vec::new(), String::new())
     };
 
+    // Numeric strategy: parallel key/value arrays with language-specific literals.
     let (keys_literal, values_literal, default_literal) = if !output_is_string {
-        let kl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| cpp_literal(&e.key, &m.input.sce_type))
+        let kl: Vec<String> = m.entries.iter()
+            .map(|e| l.literal(&e.key, &m.input.sce_type))
             .collect();
-        let vl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| cpp_literal(&e.value, &m.output.sce_type))
+        let vl: Vec<String> = m.entries.iter()
+            .map(|e| l.literal(&e.value, &m.output.sce_type))
             .collect();
         let dl = match &m.miss_policy {
-            MissPolicy::Default(s) => cpp_literal(s, &m.output.sce_type),
+            MissPolicy::Default(s) => l.literal(s, &m.output.sce_type),
             MissPolicy::Error => String::new(),
         };
         (kl, vl, dl)
@@ -654,135 +691,124 @@ fn render_lookup_cpp(
         (Vec::new(), Vec::new(), String::new())
     };
 
-    let tmpl = env
-        .get_template("lookup.h.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("enum_name".into(), enum_name.into());
+    ctx.insert("func_name".into(), func_name.into());
+    ctx.insert("input_type".into(), l.param_type(&m.input.sce_type).into());
+    ctx.insert("value_type".into(), l.param_type(&m.output.sce_type).into());
+    ctx.insert("input_id".into(), input_id.into());
+    ctx.insert("unique_values".into(), serde_json::json!(unique_values));
+    ctx.insert("entries_by_value".into(), serde_json::json!(entries_by_value));
+    ctx.insert("default_value".into(), default_value.into());
+    ctx.insert("default_literal".into(), default_literal.into());
+    ctx.insert("output_is_string".into(), output_is_string.into());
+    ctx.insert("on_miss_error".into(), on_miss_error.into());
+    ctx.insert("keys_literal".into(), serde_json::json!(keys_literal));
+    ctx.insert("values_literal".into(), serde_json::json!(values_literal));
+    ctx.insert("n".into(), m.entries.len().into());
 
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+    // Kotlin-specific: unsigned-to-signed conversion for when-match expressions.
+    if matches!(lang, Language::Kotlin) {
+        let match_suffix = match kotlin_unsigned_conversion(&m.input.sce_type) {
+            Some(conv) => format!(".{conv}()"),
+            None => String::new(),
+        };
+        ctx.insert("match_suffix".into(), match_suffix.into());
+    }
 
-    let ctx = minijinja::context! {
-        guard => guard,
-        namespace => ns,
-        enum_name => enum_name,
-        func_name => func_name,
-        input_type => cpp_param_type(&m.input.sce_type),
-        value_type => cpp_param_type(&m.output.sce_type),
-        input_id => &m.input.id,
-        unique_values => minijinja::Value::from_serialize(&unique_values),
-        entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => default_value,
-        default_literal => default_literal,
-        output_is_string => output_is_string,
-        on_miss_error => on_miss_error,
-        keys_literal => minijinja::Value::from_serialize(&keys_literal),
-        values_literal => minijinja::Value::from_serialize(&values_literal),
-        n => m.entries.len(),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
+    l.insert_imports(&mut ctx, imports);
+    l.render(env, "lookup", ctx)
 }
 
-// ── Condition rendering ────────────────────────────────────────
+// ── Condition rendering (unified) ─────────────────────────────
 
-fn render_condition_cpp(
+fn render_condition(
     env: &minijinja::Environment,
     m: &ConditionModel,
     imports: &[ImportContext],
+    lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let ns = filters::to_pascal_case(m.name.clone());
-    let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
-    let func_name = filters::to_camel_case(m.name.clone());
+    use crate::generator::Language;
+    let l = LangCtx::new(lang);
 
-    let params = m
-        .inputs
-        .iter()
-        .map(|inp| format!("{} {}", cpp_param_type(&inp.sce_type), inp.id))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let go_renames = l.go_rename_pairs(m.inputs.iter().map(|f| f.id.as_str()));
+    let renames = rename_map(&go_renames);
+
+    let func_name = match lang {
+        Language::Go => filters::to_pascal_case(m.name.clone()),
+        Language::Rust | Language::Python => filters::to_snake_case(m.name.clone()),
+        _ => filters::to_camel_case(m.name.clone()),
+    };
+
+    let params = l.param_str(&m.inputs);
 
     let type_ctx = crate::forge::type_ctx::condition(m, imports);
-    let expr_cpp = expr::transpile_typed(
+    let expr_val = expr::transpile_typed(
         &m.expr,
-        ExprTarget::Cpp,
+        l.expr_target(),
         &type_ctx,
-        &std::collections::HashMap::new(),
+        &renames,
         crate::forge::types::InferredType::Bool,
     )?;
 
-    let tmpl = env
-        .get_template("condition.h.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("func_name".into(), func_name.into());
+    ctx.insert("params".into(), params.into());
+    ctx.insert("expr".into(), expr_val.into());
+    l.insert_imports(&mut ctx, imports);
 
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        guard => guard,
-        namespace => ns,
-        func_name => func_name,
-        params => params,
-        expr => expr_cpp,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
+    l.render(env, "condition", ctx)
 }
 
-// ── Codec rendering ────────────────────────────────────────────
+// ── Codec rendering (unified) ─────────────────────────────────
 
-fn render_codec_cpp(
+fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
+    lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let ns = filters::to_pascal_case(m.name.clone());
-    let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
-    let struct_name = filters::to_pascal_case(m.name.clone());
+    let l = LangCtx::new(lang);
+    let type_key = l.codec_type_key();
 
-    // Pre-compute field info for template
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
         .map(|f| {
-            serde_json::json!({
-                "id": f.id,
-                "cpp_type": cpp_type(&f.sce_type),
-                "decode_expr": generate_decode_expr_cpp(f, m.default_endian),
-            })
+            let mut obj = serde_json::Map::new();
+            obj.insert("id".into(), l.codec_field_id(&f.id).into());
+            obj.insert(type_key.into(), l.type_name(&f.sce_type).into());
+            obj.insert("decode_expr".into(), generate_decode_expr(f, m.default_endian, lang).into());
+            if matches!(lang, crate::generator::Language::Kotlin) {
+                obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
+            }
+            if matches!(lang, crate::generator::Language::Python) {
+                obj.insert("default_value".into(), python_default(&f.sce_type).into());
+            }
+            serde_json::Value::Object(obj)
         })
         .collect();
 
-    let encode_exprs = generate_encode_exprs_cpp(&m.fields, m.default_endian);
+    let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian, lang);
 
-    let tmpl = env
-        .get_template("codec.h.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("fields".into(), serde_json::json!(fields));
+    ctx.insert("min_bytes".into(), m.min_frame_bytes().into());
+    ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
+    l.insert_imports(&mut ctx, imports);
 
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        guard => guard,
-        namespace => ns,
-        struct_name => struct_name,
-        fields => minijinja::Value::from_serialize(&fields),
-        min_bytes => m.min_frame_bytes(),
-        encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
+    l.render(env, "codec", ctx)
 }
 
-// ── Codec expression generation ────────────────────────────────
+// ── Codec expression generation (unified) ─────────────────────
 
-/// Generate C++ decode expression for a single codec field.
-fn generate_decode_expr_cpp(field: &CodecField, default_endian: Endian) -> String {
+/// Generate decode expression for a single codec field.
+fn generate_decode_expr(
+    field: &CodecField,
+    default_endian: Endian,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
     let byte_off = field.byte_offset;
     let bit_off = field.bit_offset.unwrap_or(0);
     let endian = field.effective_endian(default_endian);
@@ -791,102 +817,171 @@ fn generate_decode_expr_cpp(field: &CodecField, default_endian: Endian) -> Strin
         BitSize::Fixed { bits } => {
             if bit_off > 0 || *bits < 8 {
                 let mask = (1u64 << bits) - 1;
-                format!("static_cast<uint8_t>((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})")
+                match lang {
+                    Language::Cpp =>
+                        format!("static_cast<uint8_t>((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})"),
+                    Language::Kotlin =>
+                        format!("((raw[{byte_off}].toInt() ushr {bit_off}) and 0x{mask:02X}).toUByte()"),
+                    _ =>
+                        format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}"),
+                }
             } else {
                 match bits {
-                    8 => format!("raw[{byte_off}]"),
-                    16 => decode_multibyte(byte_off, 2, endian),
-                    24 => decode_multibyte(byte_off, 3, endian),
-                    32 => decode_multibyte(byte_off, 4, endian),
-                    _ => format!("/* unsupported {bits}-bit decode */"),
+                    8 => match lang {
+                        Language::Kotlin => format!("raw[{byte_off}].toUByte()"),
+                        _ => format!("raw[{byte_off}]"),
+                    },
+                    16 => decode_multibyte_unified(byte_off, 2, endian, lang),
+                    24 => decode_multibyte_unified(byte_off, 3, endian, lang),
+                    32 => decode_multibyte_unified(byte_off, 4, endian, lang),
+                    _ => match lang {
+                        Language::Python => format!("# unsupported {bits}-bit decode"),
+                        _ => format!("/* unsupported {bits}-bit decode */"),
+                    },
                 }
             }
         }
-        BitSize::Tail => {
-            format!("std::vector<uint8_t>(raw + {byte_off}, raw + len)")
-        }
+        BitSize::Tail => match lang {
+            Language::Cpp =>
+                format!("std::vector<uint8_t>(raw + {byte_off}, raw + len)"),
+            Language::Kotlin =>
+                format!("raw.copyOfRange({byte_off}, raw.size)"),
+            Language::Rust =>
+                format!("raw[{byte_off}..].to_vec()"),
+            Language::Go | Language::Python =>
+                format!("raw[{byte_off}:]"),
+        },
         BitSize::LengthRef => {
             let len_field = field.length_field.as_deref().unwrap_or("0");
-            format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + {len_field})")
+            match lang {
+                Language::Cpp =>
+                    format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + {len_field})"),
+                Language::Kotlin =>
+                    format!("raw.copyOfRange({byte_off}, {byte_off} + {len_field}.toInt())"),
+                Language::Rust =>
+                    format!("raw[{byte_off}..{byte_off} + {len_field} as usize].to_vec()"),
+                Language::Go =>
+                    format!("raw[{byte_off}:{byte_off}+int({len_field})]"),
+                Language::Python =>
+                    format!("raw[{byte_off}:{byte_off} + {len_field}]"),
+            }
         }
     }
 }
 
 /// Generate multi-byte decode expression with endianness handling.
-fn decode_multibyte(byte_off: u32, byte_count: u32, endian: Endian) -> String {
-    let target_type = match byte_count {
-        2 => "uint16_t",
-        3 | 4 => "uint32_t",
-        _ => "uint64_t",
+fn decode_multibyte_unified(
+    byte_off: u32,
+    byte_count: u32,
+    endian: Endian,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+
+    // Build shift expressions for the appropriate endian ordering.
+    let make_shifts = |le: bool| -> Vec<String> {
+        (0..byte_count)
+            .map(|i| {
+                let shift = if le { i * 8 } else { (byte_count - 1 - i) * 8 };
+                let off = byte_off + i;
+                match lang {
+                    Language::Cpp => {
+                        let target = match byte_count { 2 => "uint16_t", 3 | 4 => "uint32_t", _ => "uint64_t" };
+                        if shift == 0 { format!("raw[{off}]") }
+                        else { format!("(static_cast<{target}>(raw[{off}]) << {shift})") }
+                    }
+                    Language::Kotlin => {
+                        if shift == 0 { format!("(raw[{off}].toInt() and 0xFF)") }
+                        else { format!("((raw[{off}].toInt() and 0xFF) shl {shift})") }
+                    }
+                    Language::Rust => {
+                        let target = match byte_count { 2 => "u16", 3 | 4 => "u32", _ => "u64" };
+                        if shift == 0 { format!("raw[{off}] as {target}") }
+                        else { format!("((raw[{off}] as {target}) << {shift})") }
+                    }
+                    Language::Go => {
+                        let target = match byte_count { 2 => "uint16", 3 | 4 => "uint32", _ => "uint64" };
+                        if shift == 0 { format!("{target}(raw[{off}])") }
+                        else { format!("{target}(raw[{off}])<<{shift}") }
+                    }
+                    Language::Python => {
+                        if shift == 0 { format!("raw[{off}]") }
+                        else { format!("(raw[{off}] << {shift})") }
+                    }
+                }
+            })
+            .collect()
     };
 
-    let big_endian_shifts: Vec<String> = (0..byte_count)
-        .map(|i| {
-            let shift = (byte_count - 1 - i) * 8;
-            let off = byte_off + i;
-            if shift == 0 {
-                format!("raw[{off}]")
-            } else {
-                format!("(static_cast<{target_type}>(raw[{off}]) << {shift})")
-            }
-        })
-        .collect();
+    let shifts = match endian {
+        Endian::Big | Endian::Native => make_shifts(false),
+        Endian::Little => make_shifts(true),
+    };
 
-    let little_endian_shifts: Vec<String> = (0..byte_count)
-        .map(|i| {
-            let shift = i * 8;
-            let off = byte_off + i;
-            if shift == 0 {
-                format!("raw[{off}]")
-            } else {
-                format!("(static_cast<{target_type}>(raw[{off}]) << {shift})")
-            }
-        })
-        .collect();
+    let sep = match lang {
+        Language::Kotlin => " or ",
+        _ => " | ",
+    };
 
-    match endian {
-        Endian::Big | Endian::Native => big_endian_shifts.join(" | "),
-        Endian::Little => little_endian_shifts.join(" | "),
+    let joined = shifts.join(sep);
+
+    // Kotlin wraps in conversion call.
+    if matches!(lang, Language::Kotlin) {
+        let to_type = match byte_count {
+            2 => "toUShort",
+            3 | 4 => "toUInt",
+            _ => "toULong",
+        };
+        format!("({joined}).{to_type}()")
+    } else {
+        joined
     }
 }
 
-/// Generate C++ encode byte expressions for all codec fields.
-fn generate_encode_exprs_cpp(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
+/// Generate encode byte expressions for all codec fields.
+fn generate_encode_exprs(
+    fields: &[CodecField],
+    default_endian: Endian,
+    lang: crate::generator::Language,
+) -> Vec<String> {
+    let l = LangCtx::new(lang);
     let mut exprs = Vec::new();
 
-    // Group fields by byte position for sub-byte field merging
     let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
         std::collections::BTreeMap::new();
 
     for field in fields {
         if field.is_variable_length() {
-            // Variable-length fields appended via insert for encode
-            exprs.push(format!(
-                "/* variable-length field '{}' requires manual encode */",
-                field.id
+            exprs.push(l.codec_comment(
+                &format!("variable-length field '{}' requires manual encode", field.id)
             ));
         } else {
-            byte_groups
-                .entry(field.byte_offset)
-                .or_default()
-                .push(field);
+            byte_groups.entry(field.byte_offset).or_default().push(field);
         }
     }
 
     for (_, group) in &byte_groups {
         if group.len() == 1 {
-            let field = group[0];
-            encode_single_field(field, default_endian, &mut exprs);
+            encode_single_field_unified(group[0], default_endian, &mut exprs, lang);
         } else {
-            // Multiple sub-byte fields at same byte offset — merge with bitwise OR
             let mut parts = Vec::new();
             for field in group {
                 let bit_off = field.bit_offset.unwrap_or(0);
                 let bits = field.fixed_bits().unwrap_or(8);
                 let mask = (1u64 << bits) - 1;
-                parts.push(format!("(({} & 0x{mask:02X}) << {bit_off})", field.id));
+                let field_ref = l.codec_field_ref(&l.codec_field_id(&field.id));
+                match lang {
+                    crate::generator::Language::Kotlin =>
+                        parts.push(format!("({field_ref}.toInt() and 0x{mask:02X} shl {bit_off})")),
+                    crate::generator::Language::Cpp | crate::generator::Language::Rust =>
+                        parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})")),
+                    _ =>
+                        parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}")),
+                }
             }
-            exprs.push(format!("static_cast<uint8_t>({})", parts.join(" | ")));
+            let sep = match lang { crate::generator::Language::Kotlin => " or ", _ => " | " };
+            let merged = parts.join(sep);
+            exprs.push(l.codec_to_byte(&merged));
         }
     }
 
@@ -894,20 +989,38 @@ fn generate_encode_exprs_cpp(fields: &[CodecField], default_endian: Endian) -> V
 }
 
 /// Generate encode expressions for a single non-sub-byte field.
-fn encode_single_field(field: &CodecField, default_endian: Endian, exprs: &mut Vec<String>) {
+fn encode_single_field_unified(
+    field: &CodecField,
+    default_endian: Endian,
+    exprs: &mut Vec<String>,
+    lang: crate::generator::Language,
+) {
+    use crate::generator::Language;
+    let l = LangCtx::new(lang);
+    let name = l.codec_field_id(&field.id);
+    let field_ref = l.codec_field_ref(&name);
     let bit_off = field.bit_offset.unwrap_or(0);
     let endian = field.effective_endian(default_endian);
 
     match field.fixed_bits() {
         Some(8) if bit_off == 0 => {
-            exprs.push(field.id.clone());
+            match lang {
+                Language::Cpp => exprs.push(field_ref),
+                Language::Kotlin => exprs.push(format!("{field_ref}.toByte()")),
+                Language::Rust => exprs.push(field_ref),
+                Language::Go => exprs.push(format!("byte({field_ref})")),
+                Language::Python => exprs.push(format!("{field_ref} & 0xFF")),
+            }
         }
         Some(bits) if bits < 8 || bit_off > 0 => {
             let mask = (1u64 << bits) - 1;
-            exprs.push(format!(
-                "static_cast<uint8_t>(({} & 0x{mask:02X}) << {bit_off})",
-                field.id
-            ));
+            let inner = match lang {
+                Language::Kotlin =>
+                    format!("{field_ref}.toInt() and 0x{mask:02X} shl {bit_off}"),
+                _ =>
+                    format!("({field_ref} & 0x{mask:02X}) << {bit_off}"),
+            };
+            exprs.push(l.codec_to_byte(&inner));
         }
         Some(byte_count @ (16 | 24 | 32)) => {
             let n_bytes = byte_count / 8;
@@ -917,17 +1030,47 @@ fn encode_single_field(field: &CodecField, default_endian: Endian, exprs: &mut V
             };
             for shift_byte in shifts {
                 let shift = shift_byte * 8;
-                if shift == 0 {
-                    exprs.push(format!("static_cast<uint8_t>({} & 0xFF)", field.id));
-                } else {
-                    exprs.push(format!(
-                        "static_cast<uint8_t>(({} >> {shift}) & 0xFF)",
-                        field.id
-                    ));
-                }
+                let expr = match lang {
+                    Language::Cpp => {
+                        if shift == 0 {
+                            format!("static_cast<uint8_t>({field_ref} & 0xFF)")
+                        } else {
+                            format!("static_cast<uint8_t>(({field_ref} >> {shift}) & 0xFF)")
+                        }
+                    }
+                    Language::Kotlin => {
+                        if shift == 0 {
+                            format!("({field_ref}.toInt() and 0xFF).toByte()")
+                        } else {
+                            format!("({field_ref}.toInt() ushr {shift} and 0xFF).toByte()")
+                        }
+                    }
+                    Language::Rust => {
+                        if shift == 0 {
+                            format!("(self.{name} & 0xFF) as u8")
+                        } else {
+                            format!("(self.{name} >> {shift} & 0xFF) as u8")
+                        }
+                    }
+                    Language::Go => {
+                        if shift == 0 {
+                            format!("byte(s.{name} & 0xFF)")
+                        } else {
+                            format!("byte(s.{name} >> {shift} & 0xFF)")
+                        }
+                    }
+                    Language::Python => {
+                        if shift == 0 {
+                            format!("self.{name} & 0xFF")
+                        } else {
+                            format!("(self.{name} >> {shift}) & 0xFF")
+                        }
+                    }
+                };
+                exprs.push(expr);
             }
         }
-        _ => exprs.push(format!("/* encode {} */", field.id)),
+        _ => exprs.push(l.codec_comment(&format!("encode {name}"))),
     }
 }
 
@@ -1016,96 +1159,118 @@ fn resolve_validator(m: &ValidatorModel) -> ResolvedValidator {
     }
 }
 
-// ── Validator rendering ───────────────────────────────────────
+// ── Validator rendering (unified) ────────────────────────────
 
-fn render_validator_cpp(
+fn render_validator(
     env: &minijinja::Environment,
     m: &ValidatorModel,
     imports: &[ImportContext],
+    lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let l = LangCtx::new(lang);
     let rv = resolve_validator(m);
-    let ns = filters::to_pascal_case(m.name.clone());
-    let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
-    let struct_name = filters::to_pascal_case(m.name.clone());
 
-    let params = rv.inputs.iter()
-        .map(|inp| format!("{} {}", cpp_param_type(&inp.sce_type), inp.id))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let params = l.param_str(&rv.inputs);
 
+    // prev_vars: superset of all per-language fields.
     let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| serde_json::json!({
-            "type": cpp_type(&roc.sce_type),
-            "name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
-            "id": roc.id,
-        }))
+        .map(|roc| {
+            let local = l.local_id(&roc.id);
+            let ty_str = l.type_name(&roc.sce_type);
+            let mut obj = serde_json::Map::new();
+            obj.insert("type".into(), ty_str.into());
+            obj.insert("name".into(), l.prev_name(&roc.id).into());
+            obj.insert("id".into(), local.into());
+            obj.insert("is_float".into(), roc.sce_type.is_float().into());
+            if matches!(lang, Language::Kotlin) {
+                obj.insert("default".into(), kotlin_default_value(ty_str).into());
+            }
+            serde_json::Value::Object(obj)
+        })
         .collect();
 
-    // `id` stays in source (target-language) case for the local parameter
-    // reference; `reason_id` is the canonical snake_case form derived in one
-    // place (`ResolvedRange::canonical_reason_id`) so the cross-language
-    // byte-parity invariant on reason strings is enforced at the model edge
-    // rather than duplicated across 5 generator arms.
+    // range_rules: `reason_id` from single source of truth (ResolvedRange).
     let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
-        .map(|r| serde_json::json!({
-            "id": r.id,
-            "reason_id": r.canonical_reason_id(),
-            "min": r.min, "max": r.max,
-            "has_min": r.min.is_some(), "has_max": r.max.is_some(),
-        }))
+        .map(|r| {
+            let mut obj = serde_json::Map::new();
+            obj.insert("id".into(), l.local_id(&r.id).into());
+            obj.insert("reason_id".into(), r.canonical_reason_id().into());
+            obj.insert("min".into(), serde_json::json!(r.min));
+            obj.insert("max".into(), serde_json::json!(r.max));
+            obj.insert("has_min".into(), r.min.is_some().into());
+            obj.insert("has_max".into(), r.max.is_some().into());
+            if matches!(lang, Language::Kotlin) {
+                let conv = kotlin_unsigned_conversion(&r.sce_type).unwrap_or("");
+                obj.insert("conv".into(), conv.into());
+                obj.insert("needs_conv".into(), (!conv.is_empty()).into());
+            }
+            serde_json::Value::Object(obj)
+        })
         .collect();
 
+    // roc_rules: superset of per-language fields; Kotlin conv folded in.
     let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| serde_json::json!({
-            "id": roc.id,
-            "reason_id": roc.canonical_reason_id(),
-            "max_delta": roc.max_delta,
-            "prev_name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
-            "type": cpp_type(&roc.sce_type),
-            "is_float": roc.sce_type.is_float(),
-            "is_unsigned": roc.sce_type.is_unsigned(),
-        }))
+        .map(|roc| {
+            let local = l.local_id(&roc.id);
+            let mut obj = serde_json::Map::new();
+            obj.insert("id".into(), local.into());
+            obj.insert("reason_id".into(), roc.canonical_reason_id().into());
+            obj.insert("max_delta".into(), roc.max_delta.clone().into());
+            obj.insert("prev_name".into(), l.prev_name(&roc.id).into());
+            obj.insert("type".into(), l.type_name(&roc.sce_type).into());
+            obj.insert("is_float".into(), roc.sce_type.is_float().into());
+            obj.insert("is_unsigned".into(), roc.sce_type.is_unsigned().into());
+            obj.insert("is_signed".into(), roc.sce_type.is_signed().into());
+            if matches!(lang, Language::Kotlin) {
+                let conv = kotlin_unsigned_conversion(&roc.sce_type).unwrap_or("");
+                obj.insert("conv".into(), conv.into());
+                obj.insert("needs_conv".into(), (!conv.is_empty()).into());
+            }
+            serde_json::Value::Object(obj)
+        })
         .collect();
 
-    // Build import alias rename map for expressions (stateless → qualified call)
+    // Build import alias rename map for expressions (stateless → qualified call).
     let import_renames: std::collections::HashMap<&str, &str> = imports
         .iter()
         .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
         .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
         .collect();
 
+    // Go: merge import renames with builtin escape renames.
+    let go_renames = l.go_rename_pairs(rv.inputs.iter().map(|f| f.id.as_str()));
+    let mut combined_renames = rename_map(&go_renames);
+    for (k, v) in &import_renames {
+        combined_renames.insert(*k, *v);
+    }
+    let expr_renames = if matches!(lang, Language::Go) {
+        &combined_renames
+    } else {
+        &import_renames
+    };
+
     let type_ctx = crate::forge::type_ctx::validator(m, imports);
     let plausibility_expr = match &rv.plausibility {
         Some(e) => Some(expr::transpile_typed(
             e,
-            ExprTarget::Cpp,
+            l.expr_target(),
             &type_ctx,
-            &import_renames,
+            expr_renames,
             crate::forge::types::InferredType::Bool,
         )?),
         None => None,
     };
 
-    let tmpl = env
-        .get_template("validator.h.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("params".into(), params.into());
+    ctx.insert("prev_vars".into(), serde_json::json!(prev_vars));
+    ctx.insert("range_rules".into(), serde_json::json!(range_rules));
+    ctx.insert("roc_rules".into(), serde_json::json!(roc_rules));
+    ctx.insert("plausibility_expr".into(), serde_json::json!(plausibility_expr));
+    l.insert_imports(&mut ctx, imports);
 
-    // Cross-file imports
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        guard => guard, namespace => ns, struct_name => struct_name,
-        params => params,
-        prev_vars => minijinja::Value::from_serialize(&prev_vars),
-        range_rules => minijinja::Value::from_serialize(&range_rules),
-        roc_rules => minijinja::Value::from_serialize(&roc_rules),
-        plausibility_expr => plausibility_expr,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
+    l.render(env, "validator", ctx)
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1129,11 +1294,11 @@ pub fn generate_kotlin_with_imports(
     inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_kotlin(&env, m, imports)?,
-        ForgeDocument::Lookup(m) => render_lookup_kotlin(&env, m, imports)?,
-        ForgeDocument::Condition(m) => render_condition_kotlin(&env, m, imports)?,
-        ForgeDocument::Codec(m) => render_codec_kotlin(&env, m, imports)?,
-        ForgeDocument::Validator(m) => render_validator_kotlin(&env, m, imports)?,
+        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Procedure(m) => render_procedure_kotlin(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Kotlin)?,
@@ -1145,491 +1310,6 @@ pub fn generate_kotlin_with_imports(
     Ok(GeneratedOutput {
         files: vec![(filename, code)],
     })
-}
-
-// ── Kotlin: Transform ─────────────────────────────────────────
-
-fn render_transform_kotlin(
-    env: &minijinja::Environment,
-    m: &TransformModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let package = filters::to_snake_case(m.name.clone());
-
-    let type_ctx = crate::forge::type_ctx::transform(m, imports);
-    let empty_renames = std::collections::HashMap::new();
-
-    let functions: Vec<serde_json::Value> = m
-        .outputs
-        .iter()
-        .map(|out| {
-            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
-            let final_expr = expr::transpile_typed(
-                out.expr.as_deref().unwrap_or("0"),
-                ExprTarget::Kotlin,
-                &type_ctx,
-                &empty_renames,
-                expected,
-            )?;
-            let params = m
-                .inputs
-                .iter()
-                .map(|inp| format!("{}: {}", inp.id, kotlin_type(&inp.sce_type)))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            Ok(serde_json::json!({
-                "ret_type": kotlin_type(&out.sce_type),
-                "name": format!("compute{}", filters::to_pascal_case(out.id.clone())),
-                "params": params,
-                "expr": final_expr,
-            }))
-        })
-        .collect::<Result<_, ForgeError>>()?;
-
-    let tmpl = env
-        .get_template("transform.kt.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        functions => minijinja::Value::from_serialize(&functions),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Kotlin: Lookup ────────────────────────────────────────────
-
-fn render_lookup_kotlin(
-    env: &minijinja::Environment,
-    m: &LookupModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let package = filters::to_snake_case(m.name.clone());
-    let enum_name = filters::to_pascal_case(m.output.id.clone());
-    let func_name = format!("lookup{}", filters::to_pascal_case(m.output.id.clone()));
-
-    // Unsigned types need .toInt() for when-matching against Int literals
-    let match_suffix = match kotlin_unsigned_conversion(&m.input.sce_type) {
-        Some(conv) => format!(".{conv}()"),
-        None => String::new(),
-    };
-
-    let output_is_string = m.output_is_string();
-    let on_miss_error = m.miss_policy.is_error();
-
-    let (entries_by_value, unique_values, default_value) = if output_is_string {
-        let ebv: Vec<serde_json::Value> = m
-            .entries_by_value()
-            .into_iter()
-            .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
-            .collect();
-        let uv = m.unique_values();
-        let dv = match &m.miss_policy {
-            MissPolicy::Default(s) => s.clone(),
-            MissPolicy::Error => String::new(),
-        };
-        (ebv, uv, dv)
-    } else {
-        (Vec::new(), Vec::new(), String::new())
-    };
-
-    let (keys_literal, values_literal, default_literal) = if !output_is_string {
-        let kl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| kotlin_literal(&e.key, &m.input.sce_type))
-            .collect();
-        let vl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| kotlin_literal(&e.value, &m.output.sce_type))
-            .collect();
-        let dl = match &m.miss_policy {
-            MissPolicy::Default(s) => kotlin_literal(s, &m.output.sce_type),
-            MissPolicy::Error => String::new(),
-        };
-        (kl, vl, dl)
-    } else {
-        (Vec::new(), Vec::new(), String::new())
-    };
-
-    let tmpl = env
-        .get_template("lookup.kt.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        enum_name => enum_name,
-        func_name => func_name,
-        input_type => kotlin_type(&m.input.sce_type),
-        value_type => kotlin_type(&m.output.sce_type),
-        input_id => &m.input.id,
-        match_suffix => match_suffix,
-        unique_values => minijinja::Value::from_serialize(&unique_values),
-        entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => default_value,
-        default_literal => default_literal,
-        output_is_string => output_is_string,
-        on_miss_error => on_miss_error,
-        keys_literal => minijinja::Value::from_serialize(&keys_literal),
-        values_literal => minijinja::Value::from_serialize(&values_literal),
-        n => m.entries.len(),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Kotlin: Condition ─────────────────────────────────────────
-
-fn render_condition_kotlin(
-    env: &minijinja::Environment,
-    m: &ConditionModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let package = filters::to_snake_case(m.name.clone());
-    let func_name = filters::to_camel_case(m.name.clone());
-
-    let params = m
-        .inputs
-        .iter()
-        .map(|inp| format!("{}: {}", inp.id, kotlin_type(&inp.sce_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let type_ctx = crate::forge::type_ctx::condition(m, imports);
-    let expr_kt = expr::transpile_typed(
-        &m.expr,
-        ExprTarget::Kotlin,
-        &type_ctx,
-        &std::collections::HashMap::new(),
-        crate::forge::types::InferredType::Bool,
-    )?;
-
-    let tmpl = env
-        .get_template("condition.kt.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        func_name => func_name,
-        params => params,
-        expr => expr_kt,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Kotlin: Codec ─────────────────────────────────────────────
-
-fn render_codec_kotlin(
-    env: &minijinja::Environment,
-    m: &CodecModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let package = filters::to_snake_case(m.name.clone());
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let fields: Vec<serde_json::Value> = m
-        .fields
-        .iter()
-        .map(|f| {
-            serde_json::json!({
-                "id": f.id,
-                "kt_type": kotlin_type(&f.sce_type),
-                "kt_default": kotlin_default(&f.sce_type),
-                "decode_expr": generate_decode_expr_kotlin(f, m.default_endian),
-            })
-        })
-        .collect();
-
-    let encode_exprs = generate_encode_exprs_kotlin(&m.fields, m.default_endian);
-
-    let tmpl = env
-        .get_template("codec.kt.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        struct_name => struct_name,
-        fields => minijinja::Value::from_serialize(&fields),
-        min_bytes => m.min_frame_bytes(),
-        encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Kotlin codec expression generation ────────────────────────
-
-fn generate_decode_expr_kotlin(field: &CodecField, default_endian: Endian) -> String {
-    let byte_off = field.byte_offset;
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
-
-    match &field.bit_size {
-        BitSize::Fixed { bits } => {
-            if bit_off > 0 || *bits < 8 {
-                let mask = (1u64 << bits) - 1;
-                format!(
-                    "((raw[{byte_off}].toInt() ushr {bit_off}) and 0x{mask:02X}).toUByte()"
-                )
-            } else {
-                match bits {
-                    8 => format!("raw[{byte_off}].toUByte()"),
-                    16 => decode_multibyte_kotlin(byte_off, 2, endian),
-                    24 => decode_multibyte_kotlin(byte_off, 3, endian),
-                    32 => decode_multibyte_kotlin(byte_off, 4, endian),
-                    _ => format!("/* unsupported {bits}-bit decode */"),
-                }
-            }
-        }
-        BitSize::Tail => {
-            format!("raw.copyOfRange({byte_off}, raw.size)")
-        }
-        BitSize::LengthRef => {
-            let len_field = field.length_field.as_deref().unwrap_or("0");
-            format!("raw.copyOfRange({byte_off}, {byte_off} + {len_field}.toInt())")
-        }
-    }
-}
-
-fn decode_multibyte_kotlin(byte_off: u32, byte_count: u32, endian: Endian) -> String {
-    let to_type = match byte_count {
-        2 => "toUShort",
-        3 | 4 => "toUInt",
-        _ => "toULong",
-    };
-
-    let shifts: Vec<String> = match endian {
-        Endian::Big | Endian::Native => (0..byte_count)
-            .map(|i| {
-                let shift = (byte_count - 1 - i) * 8;
-                let off = byte_off + i;
-                if shift == 0 {
-                    format!("(raw[{off}].toInt() and 0xFF)")
-                } else {
-                    format!("((raw[{off}].toInt() and 0xFF) shl {shift})")
-                }
-            })
-            .collect(),
-        Endian::Little => (0..byte_count)
-            .map(|i| {
-                let shift = i * 8;
-                let off = byte_off + i;
-                if shift == 0 {
-                    format!("(raw[{off}].toInt() and 0xFF)")
-                } else {
-                    format!("((raw[{off}].toInt() and 0xFF) shl {shift})")
-                }
-            })
-            .collect(),
-    };
-
-    format!("({}).{to_type}()", shifts.join(" or "))
-}
-
-fn generate_encode_exprs_kotlin(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
-    let mut exprs = Vec::new();
-
-    let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
-        std::collections::BTreeMap::new();
-
-    for field in fields {
-        if field.is_variable_length() {
-            exprs.push(format!(
-                "/* variable-length field '{}' requires manual encode */",
-                field.id
-            ));
-        } else {
-            byte_groups
-                .entry(field.byte_offset)
-                .or_default()
-                .push(field);
-        }
-    }
-
-    for (_, group) in &byte_groups {
-        if group.len() == 1 {
-            encode_single_field_kotlin(group[0], default_endian, &mut exprs);
-        } else {
-            let mut parts = Vec::new();
-            for field in group {
-                let bit_off = field.bit_offset.unwrap_or(0);
-                let bits = field.fixed_bits().unwrap_or(8);
-                let mask = (1u64 << bits) - 1;
-                parts.push(format!(
-                    "({}.toInt() and 0x{mask:02X} shl {bit_off})",
-                    field.id
-                ));
-            }
-            exprs.push(format!("({}).toByte()", parts.join(" or ")));
-        }
-    }
-
-    exprs
-}
-
-fn encode_single_field_kotlin(
-    field: &CodecField,
-    default_endian: Endian,
-    exprs: &mut Vec<String>,
-) {
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
-
-    match field.fixed_bits() {
-        Some(8) if bit_off == 0 => {
-            exprs.push(format!("{}.toByte()", field.id));
-        }
-        Some(bits) if bits < 8 || bit_off > 0 => {
-            let mask = (1u64 << bits) - 1;
-            exprs.push(format!(
-                "({}.toInt() and 0x{mask:02X} shl {bit_off}).toByte()",
-                field.id
-            ));
-        }
-        Some(byte_count @ (16 | 24 | 32)) => {
-            let n_bytes = byte_count / 8;
-            let shifts: Vec<u32> = match endian {
-                Endian::Big | Endian::Native => (0..n_bytes).rev().collect(),
-                Endian::Little => (0..n_bytes).collect(),
-            };
-            for shift_byte in shifts {
-                let shift = shift_byte * 8;
-                if shift == 0 {
-                    exprs.push(format!("({}.toInt() and 0xFF).toByte()", field.id));
-                } else {
-                    exprs.push(format!(
-                        "({}.toInt() ushr {shift} and 0xFF).toByte()",
-                        field.id
-                    ));
-                }
-            }
-        }
-        _ => exprs.push(format!("/* encode {} */", field.id)),
-    }
-}
-
-// ── Kotlin: Validator ────────────────────────────────────────
-
-fn render_validator_kotlin(
-    env: &minijinja::Environment,
-    m: &ValidatorModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let rv = resolve_validator(m);
-    let package = filters::to_snake_case(m.name.clone());
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let params = rv.inputs.iter()
-        .map(|inp| format!("{}: {}", inp.id, kotlin_type(&inp.sce_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| {
-            let kt_ty = kotlin_type(&roc.sce_type);
-            serde_json::json!({
-                "type": kt_ty,
-                "name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
-                "id": roc.id,
-                "default": kotlin_default_value(kt_ty),
-            })
-        })
-        .collect();
-
-    // `reason_id` is the canonical reason-string fragment derived from
-    // `ResolvedRange::canonical_reason_id` — single source of truth shared
-    // across all 5 languages.
-    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
-        .map(|r| {
-            let conv = kotlin_unsigned_conversion(&r.sce_type).unwrap_or("");
-            serde_json::json!({
-                "id": r.id,
-                "reason_id": r.canonical_reason_id(),
-                "min": r.min, "max": r.max,
-                "has_min": r.min.is_some(), "has_max": r.max.is_some(),
-                "conv": conv, "needs_conv": !conv.is_empty(),
-            })
-        })
-        .collect();
-
-    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| {
-            let conv = kotlin_unsigned_conversion(&roc.sce_type).unwrap_or("");
-            serde_json::json!({
-                "id": roc.id,
-                "reason_id": roc.canonical_reason_id(),
-                "max_delta": roc.max_delta,
-                "prev_name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
-                "conv": conv, "needs_conv": !conv.is_empty(),
-                "is_float": roc.sce_type.is_float(),
-                "is_signed": roc.sce_type.is_signed(),
-            })
-        })
-        .collect();
-
-    // Build import alias rename map for expressions (stateless → qualified call)
-    let import_renames: std::collections::HashMap<&str, &str> = imports
-        .iter()
-        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
-        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
-        .collect();
-
-    let type_ctx = crate::forge::type_ctx::validator(m, imports);
-    let plausibility_expr = match &rv.plausibility {
-        Some(e) => Some(expr::transpile_typed(
-            e,
-            ExprTarget::Kotlin,
-            &type_ctx,
-            &import_renames,
-            crate::forge::types::InferredType::Bool,
-        )?),
-        None => None,
-    };
-
-    let tmpl = env
-        .get_template("validator.kt.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    // Cross-file imports
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package, struct_name => struct_name,
-        params => params,
-        prev_vars => minijinja::Value::from_serialize(&prev_vars),
-        range_rules => minijinja::Value::from_serialize(&range_rules),
-        roc_rules => minijinja::Value::from_serialize(&roc_rules),
-        plausibility_expr => plausibility_expr,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 /// Default value for Kotlin types.
@@ -1671,11 +1351,11 @@ pub fn generate_rust_with_imports(
     inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_rust(&env, m, imports)?,
-        ForgeDocument::Lookup(m) => render_lookup_rust(&env, m, imports)?,
-        ForgeDocument::Condition(m) => render_condition_rust(&env, m, imports)?,
-        ForgeDocument::Codec(m) => render_codec_rust(&env, m, imports)?,
-        ForgeDocument::Validator(m) => render_validator_rust(&env, m, imports)?,
+        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Procedure(m) => render_procedure_rust(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Rust)?,
@@ -1687,495 +1367,6 @@ pub fn generate_rust_with_imports(
     Ok(GeneratedOutput {
         files: vec![(filename, code)],
     })
-}
-
-// ── Rust: Transform ───────────────────────────────────────────
-
-fn render_transform_rust(
-    env: &minijinja::Environment,
-    m: &TransformModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let type_ctx = crate::forge::type_ctx::transform(m, imports);
-    let empty_renames = std::collections::HashMap::new();
-
-    let functions: Vec<serde_json::Value> = m
-        .outputs
-        .iter()
-        .map(|out| {
-            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
-            let expr_rs = expr::transpile_typed(
-                out.expr.as_deref().unwrap_or("0"),
-                ExprTarget::Rust,
-                &type_ctx,
-                &empty_renames,
-                expected,
-            )?;
-
-            let params = m
-                .inputs
-                .iter()
-                .map(|inp| {
-                    format!(
-                        "{}: {}",
-                        filters::to_snake_case(inp.id.clone()),
-                        rust_param_type(&inp.sce_type)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            Ok(serde_json::json!({
-                "ret_type": rust_type(&out.sce_type),
-                "name": format!("compute_{}", filters::to_snake_case(out.id.clone())),
-                "params": params,
-                "expr": expr_rs,
-            }))
-        })
-        .collect::<Result<_, ForgeError>>()?;
-
-    let tmpl = env
-        .get_template("transform.rs.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        functions => minijinja::Value::from_serialize(&functions),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Rust: Lookup ──────────────────────────────────────────────
-
-fn render_lookup_rust(
-    env: &minijinja::Environment,
-    m: &LookupModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let enum_name = filters::to_pascal_case(m.output.id.clone());
-    let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
-    let input_id_snake = filters::to_snake_case(m.input.id.clone());
-
-    let output_is_string = m.output_is_string();
-    let on_miss_error = m.miss_policy.is_error();
-
-    // Per-strategy bindings: only the chosen branch's data is computed; the
-    // unused branch passes empty placeholders that the template's
-    // {% if output_is_string %} gate never reads.
-    let (unique_values, entries_by_value, default_value) = if output_is_string {
-        let uv: Vec<String> = m
-            .unique_values()
-            .into_iter()
-            .map(|v| to_rust_variant(&v))
-            .collect();
-        let ebv: Vec<serde_json::Value> = m
-            .entries_by_value()
-            .into_iter()
-            .map(|(value, keys)| {
-                serde_json::json!({
-                    "value": to_rust_variant(&value),
-                    "keys": keys,
-                })
-            })
-            .collect();
-        let dv = match &m.miss_policy {
-            MissPolicy::Default(s) => to_rust_variant(s),
-            MissPolicy::Error => String::new(),
-        };
-        (uv, ebv, dv)
-    } else {
-        (Vec::new(), Vec::new(), String::new())
-    };
-
-    let (keys_literal, values_literal, default_literal) = if !output_is_string {
-        let kl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| rust_literal(&e.key, &m.input.sce_type))
-            .collect();
-        let vl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| rust_literal(&e.value, &m.output.sce_type))
-            .collect();
-        let dl = match &m.miss_policy {
-            MissPolicy::Default(s) => rust_literal(s, &m.output.sce_type),
-            MissPolicy::Error => String::new(),
-        };
-        (kl, vl, dl)
-    } else {
-        (Vec::new(), Vec::new(), String::new())
-    };
-
-    let tmpl = env
-        .get_template("lookup.rs.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        enum_name => enum_name,
-        func_name => func_name,
-        input_type => rust_param_type(&m.input.sce_type),
-        value_type => rust_param_type(&m.output.sce_type),
-        input_id => input_id_snake,
-        unique_values => minijinja::Value::from_serialize(&unique_values),
-        entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => default_value,
-        default_literal => default_literal,
-        output_is_string => output_is_string,
-        on_miss_error => on_miss_error,
-        keys_literal => minijinja::Value::from_serialize(&keys_literal),
-        values_literal => minijinja::Value::from_serialize(&values_literal),
-        n => m.entries.len(),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Rust: Condition ───────────────────────────────────────────
-
-fn render_condition_rust(
-    env: &minijinja::Environment,
-    m: &ConditionModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let func_name = filters::to_snake_case(m.name.clone());
-
-    let params = m
-        .inputs
-        .iter()
-        .map(|inp| {
-            format!(
-                "{}: {}",
-                filters::to_snake_case(inp.id.clone()),
-                rust_param_type(&inp.sce_type)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let type_ctx = crate::forge::type_ctx::condition(m, imports);
-    let expr_rs = expr::transpile_typed(
-        &m.expr,
-        ExprTarget::Rust,
-        &type_ctx,
-        &std::collections::HashMap::new(),
-        crate::forge::types::InferredType::Bool,
-    )?;
-
-    let tmpl = env
-        .get_template("condition.rs.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        func_name => func_name,
-        params => params,
-        expr => expr_rs,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Rust: Codec ───────────────────────────────────────────────
-
-fn render_codec_rust(
-    env: &minijinja::Environment,
-    m: &CodecModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let fields: Vec<serde_json::Value> = m
-        .fields
-        .iter()
-        .map(|f| {
-            serde_json::json!({
-                "id": filters::to_snake_case(f.id.clone()),
-                "rs_type": rust_type(&f.sce_type),
-                "decode_expr": generate_decode_expr_rust(f, m.default_endian),
-            })
-        })
-        .collect();
-
-    let encode_exprs: Vec<String> = generate_encode_exprs_rust(&m.fields, m.default_endian);
-
-    let tmpl = env
-        .get_template("codec.rs.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        struct_name => struct_name,
-        fields => minijinja::Value::from_serialize(&fields),
-        min_bytes => m.min_frame_bytes(),
-        encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Rust codec expression generation ──────────────────────────
-
-fn generate_decode_expr_rust(field: &CodecField, default_endian: Endian) -> String {
-    let byte_off = field.byte_offset;
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
-
-    match &field.bit_size {
-        BitSize::Fixed { bits } => {
-            if bit_off > 0 || *bits < 8 {
-                let mask = (1u64 << bits) - 1;
-                format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
-            } else {
-                match bits {
-                    8 => format!("raw[{byte_off}]"),
-                    16 => decode_multibyte_rust(byte_off, 2, endian),
-                    24 => decode_multibyte_rust(byte_off, 3, endian),
-                    32 => decode_multibyte_rust(byte_off, 4, endian),
-                    _ => format!("/* unsupported {bits}-bit decode */"),
-                }
-            }
-        }
-        BitSize::Tail => {
-            format!("raw[{byte_off}..].to_vec()")
-        }
-        BitSize::LengthRef => {
-            let len_field = field.length_field.as_deref().unwrap_or("0");
-            format!("raw[{byte_off}..{byte_off} + {len_field} as usize].to_vec()")
-        }
-    }
-}
-
-fn decode_multibyte_rust(byte_off: u32, byte_count: u32, endian: Endian) -> String {
-    let target_type = match byte_count {
-        2 => "u16",
-        3 | 4 => "u32",
-        _ => "u64",
-    };
-
-    let shifts: Vec<String> = match endian {
-        Endian::Big | Endian::Native => (0..byte_count)
-            .map(|i| {
-                let shift = (byte_count - 1 - i) * 8;
-                let off = byte_off + i;
-                if shift == 0 {
-                    format!("raw[{off}] as {target_type}")
-                } else {
-                    format!("((raw[{off}] as {target_type}) << {shift})")
-                }
-            })
-            .collect(),
-        Endian::Little => (0..byte_count)
-            .map(|i| {
-                let shift = i * 8;
-                let off = byte_off + i;
-                if shift == 0 {
-                    format!("raw[{off}] as {target_type}")
-                } else {
-                    format!("((raw[{off}] as {target_type}) << {shift})")
-                }
-            })
-            .collect(),
-    };
-
-    shifts.join(" | ")
-}
-
-fn generate_encode_exprs_rust(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
-    let mut exprs = Vec::new();
-
-    let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
-        std::collections::BTreeMap::new();
-
-    for field in fields {
-        if field.is_variable_length() {
-            exprs.push(format!(
-                "/* variable-length field '{}' requires manual encode */",
-                filters::to_snake_case(field.id.clone())
-            ));
-        } else {
-            byte_groups
-                .entry(field.byte_offset)
-                .or_default()
-                .push(field);
-        }
-    }
-
-    for (_, group) in &byte_groups {
-        if group.len() == 1 {
-            encode_single_field_rust(group[0], default_endian, &mut exprs);
-        } else {
-            let mut parts = Vec::new();
-            for field in group {
-                let bit_off = field.bit_offset.unwrap_or(0);
-                let bits = field.fixed_bits().unwrap_or(8);
-                let mask = (1u64 << bits) - 1;
-                let name = filters::to_snake_case(field.id.clone());
-                parts.push(format!(
-                    "((self.{name} & 0x{mask:02X}) << {bit_off})"
-                ));
-            }
-            exprs.push(format!("({}) as u8", parts.join(" | ")));
-        }
-    }
-
-    exprs
-}
-
-fn encode_single_field_rust(
-    field: &CodecField,
-    default_endian: Endian,
-    exprs: &mut Vec<String>,
-) {
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
-    let name = filters::to_snake_case(field.id.clone());
-
-    match field.fixed_bits() {
-        Some(8) if bit_off == 0 => {
-            exprs.push(format!("self.{name}"));
-        }
-        Some(bits) if bits < 8 || bit_off > 0 => {
-            let mask = (1u64 << bits) - 1;
-            exprs.push(format!(
-                "((self.{name} & 0x{mask:02X}) << {bit_off}) as u8"
-            ));
-        }
-        Some(byte_count @ (16 | 24 | 32)) => {
-            let n_bytes = byte_count / 8;
-            let shifts: Vec<u32> = match endian {
-                Endian::Big | Endian::Native => (0..n_bytes).rev().collect(),
-                Endian::Little => (0..n_bytes).collect(),
-            };
-            for shift_byte in shifts {
-                let shift = shift_byte * 8;
-                if shift == 0 {
-                    exprs.push(format!("(self.{name} & 0xFF) as u8"));
-                } else {
-                    exprs.push(format!(
-                        "(self.{name} >> {shift} & 0xFF) as u8"
-                    ));
-                }
-            }
-        }
-        _ => exprs.push(format!("/* encode {name} */")),
-    }
-}
-
-// ── Rust: Validator ──────────────────────────────────────────
-
-fn render_validator_rust(
-    env: &minijinja::Environment,
-    m: &ValidatorModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let rv = resolve_validator(m);
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let params = rv.inputs.iter()
-        .map(|f| format!("{}: {}", filters::to_snake_case(f.id.clone()), rust_param_type(&f.sce_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| {
-            let snake = filters::to_snake_case(roc.id.clone());
-            serde_json::json!({
-                "type": rust_type(&roc.sce_type),
-                "name": format!("prev_{snake}"),
-                "id": snake,
-            })
-        })
-        .collect();
-
-    // Rust local-var convention is snake_case, which happens to coincide
-    // with the canonical reason fragment — but they remain semantically
-    // distinct fields so the template renders the same `rule.reason_id`
-    // expression as the other 4 languages and `ResolvedRange` stays the
-    // single source of truth for reason-string casing.
-    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
-        .map(|r| {
-            let snake = filters::to_snake_case(r.id.clone());
-            serde_json::json!({
-                "id": snake,
-                "reason_id": r.canonical_reason_id(),
-                "min": r.min, "max": r.max,
-                "has_min": r.min.is_some(), "has_max": r.max.is_some(),
-            })
-        })
-        .collect();
-
-    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| {
-            let snake = filters::to_snake_case(roc.id.clone());
-            serde_json::json!({
-                "id": snake.clone(),
-                "reason_id": roc.canonical_reason_id(),
-                "max_delta": roc.max_delta,
-                "prev_name": format!("prev_{snake}"),
-                "is_unsigned": roc.sce_type.is_unsigned(),
-                "is_float": roc.sce_type.is_float(),
-            })
-        })
-        .collect();
-
-    // Build import alias rename map for expressions (stateless → qualified call)
-    let import_renames: std::collections::HashMap<&str, &str> = imports
-        .iter()
-        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
-        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
-        .collect();
-
-    let type_ctx = crate::forge::type_ctx::validator(m, imports);
-    let plausibility_expr = match &rv.plausibility {
-        Some(e) => Some(expr::transpile_typed(
-            e,
-            ExprTarget::Rust,
-            &type_ctx,
-            &import_renames,
-            crate::forge::types::InferredType::Bool,
-        )?),
-        None => None,
-    };
-
-    let tmpl = env
-        .get_template("validator.rs.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    // Cross-file imports
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        struct_name => struct_name,
-        params => params,
-        prev_vars => minijinja::Value::from_serialize(&prev_vars),
-        range_rules => minijinja::Value::from_serialize(&range_rules),
-        roc_rules => minijinja::Value::from_serialize(&roc_rules),
-        plausibility_expr => plausibility_expr,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2234,11 +1425,11 @@ pub fn generate_go_with_imports(
     inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_go(&env, m, imports)?,
-        ForgeDocument::Lookup(m) => render_lookup_go(&env, m, imports)?,
-        ForgeDocument::Condition(m) => render_condition_go(&env, m, imports)?,
-        ForgeDocument::Codec(m) => render_codec_go(&env, m, imports)?,
-        ForgeDocument::Validator(m) => render_validator_go(&env, m, imports)?,
+        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Procedure(m) => render_procedure_go(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Go)?,
@@ -2250,514 +1441,6 @@ pub fn generate_go_with_imports(
     Ok(GeneratedOutput {
         files: vec![(filename, code)],
     })
-}
-
-// ── Go: Transform ────────────────────────────────────────────
-
-fn render_transform_go(
-    env: &minijinja::Environment,
-    m: &TransformModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let package = filters::to_snake_case(m.name.clone());
-
-    // Rename map: SCXML id → Go-safe parameter name (for builtins like `len`, `new`)
-    let go_rename_strings: Vec<(String, String)> = m
-        .inputs
-        .iter()
-        .map(|inp| (inp.id.clone(), go_escape_builtin(&inp.id)))
-        .filter(|(f, t)| f != t)
-        .collect();
-    let go_renames: std::collections::HashMap<&str, &str> = go_rename_strings
-        .iter()
-        .map(|(f, t)| (f.as_str(), t.as_str()))
-        .collect();
-
-    let type_ctx = crate::forge::type_ctx::transform(m, imports);
-
-    let functions: Vec<serde_json::Value> = m
-        .outputs
-        .iter()
-        .map(|out| {
-            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
-            let expr_go = expr::transpile_typed(
-                out.expr.as_deref().unwrap_or("0"),
-                ExprTarget::Go,
-                &type_ctx,
-                &go_renames,
-                expected,
-            )?;
-
-            let params = m
-                .inputs
-                .iter()
-                .map(|inp| format!("{} {}", go_escape_builtin(&inp.id), go_type(&inp.sce_type)))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            Ok(serde_json::json!({
-                "ret_type": go_type(&out.sce_type),
-                "name": format!("Compute{}", filters::to_pascal_case(out.id.clone())),
-                "orig_name": out.id,
-                "params": params,
-                "expr": expr_go,
-            }))
-        })
-        .collect::<Result<_, ForgeError>>()?;
-
-    let tmpl = env
-        .get_template("transform.go.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        functions => minijinja::Value::from_serialize(&functions),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Go: Lookup ───────────────────────────────────────────────
-
-fn render_lookup_go(
-    env: &minijinja::Environment,
-    m: &LookupModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let package = filters::to_snake_case(m.name.clone());
-    let enum_name = filters::to_pascal_case(m.output.id.clone());
-    let func_name = format!("Lookup{}", filters::to_pascal_case(m.output.id.clone()));
-    let input_id_safe = go_escape_builtin(&m.input.id);
-
-    let output_is_string = m.output_is_string();
-    let on_miss_error = m.miss_policy.is_error();
-
-    let (entries_by_value, unique_values, default_value) = if output_is_string {
-        let ebv: Vec<serde_json::Value> = m
-            .entries_by_value()
-            .into_iter()
-            .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
-            .collect();
-        let uv = m.unique_values();
-        let dv = match &m.miss_policy {
-            MissPolicy::Default(s) => s.clone(),
-            MissPolicy::Error => String::new(),
-        };
-        (ebv, uv, dv)
-    } else {
-        (Vec::new(), Vec::new(), String::new())
-    };
-
-    let (keys_literal, values_literal, default_literal) = if !output_is_string {
-        let kl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| go_literal(&e.key, &m.input.sce_type))
-            .collect();
-        let vl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| go_literal(&e.value, &m.output.sce_type))
-            .collect();
-        let dl = match &m.miss_policy {
-            MissPolicy::Default(s) => go_literal(s, &m.output.sce_type),
-            MissPolicy::Error => String::new(),
-        };
-        (kl, vl, dl)
-    } else {
-        (Vec::new(), Vec::new(), String::new())
-    };
-
-    let tmpl = env
-        .get_template("lookup.go.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        enum_name => enum_name,
-        func_name => func_name,
-        input_type => go_type(&m.input.sce_type),
-        value_type => go_type(&m.output.sce_type),
-        input_id => input_id_safe,
-        unique_values => minijinja::Value::from_serialize(&unique_values),
-        entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => default_value,
-        default_literal => default_literal,
-        output_is_string => output_is_string,
-        on_miss_error => on_miss_error,
-        keys_literal => minijinja::Value::from_serialize(&keys_literal),
-        values_literal => minijinja::Value::from_serialize(&values_literal),
-        n => m.entries.len(),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Go: Condition ────────────────────────────────────────────
-
-fn render_condition_go(
-    env: &minijinja::Environment,
-    m: &ConditionModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let package = filters::to_snake_case(m.name.clone());
-    let func_name = filters::to_pascal_case(m.name.clone());
-
-    let go_rename_strings: Vec<(String, String)> = m
-        .inputs
-        .iter()
-        .map(|inp| (inp.id.clone(), go_escape_builtin(&inp.id)))
-        .filter(|(f, t)| f != t)
-        .collect();
-    let go_renames: std::collections::HashMap<&str, &str> = go_rename_strings
-        .iter()
-        .map(|(f, t)| (f.as_str(), t.as_str()))
-        .collect();
-
-    let params = m
-        .inputs
-        .iter()
-        .map(|inp| format!("{} {}", go_escape_builtin(&inp.id), go_type(&inp.sce_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let type_ctx = crate::forge::type_ctx::condition(m, imports);
-    let expr_go = expr::transpile_typed(
-        &m.expr,
-        ExprTarget::Go,
-        &type_ctx,
-        &go_renames,
-        crate::forge::types::InferredType::Bool,
-    )?;
-
-    let tmpl = env
-        .get_template("condition.go.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        func_name => func_name,
-        params => params,
-        expr => expr_go,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Go: Codec ────────────────────────────────────────────────
-
-fn render_codec_go(
-    env: &minijinja::Environment,
-    m: &CodecModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let package = filters::to_snake_case(m.name.clone());
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let fields: Vec<serde_json::Value> = m
-        .fields
-        .iter()
-        .map(|f| {
-            serde_json::json!({
-                "id": filters::to_pascal_case(f.id.clone()),
-                "go_type": go_type(&f.sce_type),
-                "decode_expr": generate_decode_expr_go(f, m.default_endian),
-            })
-        })
-        .collect();
-
-    let encode_exprs = generate_encode_exprs_go(&m.fields, m.default_endian);
-
-    let tmpl = env
-        .get_template("codec.go.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        struct_name => struct_name,
-        fields => minijinja::Value::from_serialize(&fields),
-        min_bytes => m.min_frame_bytes(),
-        encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Go codec expression generation ──────────────────────────
-
-fn generate_decode_expr_go(field: &CodecField, default_endian: Endian) -> String {
-    let byte_off = field.byte_offset;
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
-
-    match &field.bit_size {
-        BitSize::Fixed { bits } => {
-            if bit_off > 0 || *bits < 8 {
-                let mask = (1u64 << bits) - 1;
-                format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
-            } else {
-                match bits {
-                    8 => format!("raw[{byte_off}]"),
-                    16 => decode_multibyte_go(byte_off, 2, endian),
-                    24 => decode_multibyte_go(byte_off, 3, endian),
-                    32 => decode_multibyte_go(byte_off, 4, endian),
-                    _ => format!("/* unsupported {bits}-bit decode */"),
-                }
-            }
-        }
-        BitSize::Tail => {
-            format!("raw[{byte_off}:]")
-        }
-        BitSize::LengthRef => {
-            let len_field = field.length_field.as_deref().unwrap_or("0");
-            format!("raw[{byte_off}:{byte_off}+int({len_field})]")
-        }
-    }
-}
-
-fn decode_multibyte_go(byte_off: u32, byte_count: u32, endian: Endian) -> String {
-    let target_type = match byte_count {
-        2 => "uint16",
-        3 | 4 => "uint32",
-        _ => "uint64",
-    };
-
-    let shifts: Vec<String> = match endian {
-        Endian::Big | Endian::Native => (0..byte_count)
-            .map(|i| {
-                let shift = (byte_count - 1 - i) * 8;
-                let off = byte_off + i;
-                if shift == 0 {
-                    format!("{target_type}(raw[{off}])")
-                } else {
-                    format!("{target_type}(raw[{off}])<<{shift}")
-                }
-            })
-            .collect(),
-        Endian::Little => (0..byte_count)
-            .map(|i| {
-                let shift = i * 8;
-                let off = byte_off + i;
-                if shift == 0 {
-                    format!("{target_type}(raw[{off}])")
-                } else {
-                    format!("{target_type}(raw[{off}])<<{shift}")
-                }
-            })
-            .collect(),
-    };
-
-    shifts.join(" | ")
-}
-
-fn generate_encode_exprs_go(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
-    let mut exprs = Vec::new();
-
-    let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
-        std::collections::BTreeMap::new();
-
-    for field in fields {
-        if field.is_variable_length() {
-            exprs.push(format!(
-                "/* variable-length field '{}' requires manual encode */",
-                field.id
-            ));
-        } else {
-            byte_groups
-                .entry(field.byte_offset)
-                .or_default()
-                .push(field);
-        }
-    }
-
-    for (_, group) in &byte_groups {
-        if group.len() == 1 {
-            encode_single_field_go(group[0], default_endian, &mut exprs);
-        } else {
-            let mut parts = Vec::new();
-            for field in group {
-                let bit_off = field.bit_offset.unwrap_or(0);
-                let bits = field.fixed_bits().unwrap_or(8);
-                let mask = (1u64 << bits) - 1;
-                let go_field = filters::to_pascal_case(field.id.clone());
-                parts.push(format!(
-                    "(s.{go_field} & 0x{mask:02X}) << {bit_off}"
-                ));
-            }
-            exprs.push(format!("byte({})", parts.join(" | ")));
-        }
-    }
-
-    exprs
-}
-
-fn encode_single_field_go(
-    field: &CodecField,
-    default_endian: Endian,
-    exprs: &mut Vec<String>,
-) {
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
-    let go_field = filters::to_pascal_case(field.id.clone());
-
-    match field.fixed_bits() {
-        Some(8) if bit_off == 0 => {
-            exprs.push(format!("byte(s.{go_field})"));
-        }
-        Some(bits) if bits < 8 || bit_off > 0 => {
-            let mask = (1u64 << bits) - 1;
-            exprs.push(format!(
-                "byte((s.{go_field} & 0x{mask:02X}) << {bit_off})"
-            ));
-        }
-        Some(byte_count @ (16 | 24 | 32)) => {
-            let n_bytes = byte_count / 8;
-            let shifts: Vec<u32> = match endian {
-                Endian::Big | Endian::Native => (0..n_bytes).rev().collect(),
-                Endian::Little => (0..n_bytes).collect(),
-            };
-            for shift_byte in shifts {
-                let shift = shift_byte * 8;
-                if shift == 0 {
-                    exprs.push(format!("byte(s.{go_field} & 0xFF)"));
-                } else {
-                    exprs.push(format!(
-                        "byte(s.{go_field} >> {shift} & 0xFF)"
-                    ));
-                }
-            }
-        }
-        _ => exprs.push(format!("/* encode {} */", field.id)),
-    }
-}
-
-// ── Go: Validator ────────────────────────────────────────────
-
-fn render_validator_go(
-    env: &minijinja::Environment,
-    m: &ValidatorModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let rv = resolve_validator(m);
-    let package = filters::to_snake_case(m.name.clone());
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let go_rename_strings: Vec<(String, String)> = rv.inputs.iter()
-        .map(|f| (f.id.clone(), go_escape_builtin(&f.id)))
-        .filter(|(f, t)| f != t)
-        .collect();
-
-    let params = rv.inputs.iter()
-        .map(|f| format!("{} {}", go_escape_builtin(&f.id), go_type(&f.sce_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| {
-            let safe = go_escape_builtin(&roc.id);
-            serde_json::json!({
-                "type": go_type(&roc.sce_type),
-                "name": format!("prev{}", filters::to_pascal_case(safe.clone())),
-                "id": safe,
-            })
-        })
-        .collect();
-
-    // Go's `id` stays in source case (camelCase, escaped against Go builtins)
-    // for the local parameter reference; `reason_id` is the canonical form
-    // from `ResolvedRange::canonical_reason_id`. Single source of truth, no
-    // per-language drift possible.
-    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
-        .map(|r| serde_json::json!({
-            "id": go_escape_builtin(&r.id),
-            "reason_id": r.canonical_reason_id(),
-            "min": r.min, "max": r.max,
-            "has_min": r.min.is_some(), "has_max": r.max.is_some(),
-        }))
-        .collect();
-
-    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| {
-            let safe = go_escape_builtin(&roc.id);
-            serde_json::json!({
-                "id": safe,
-                "reason_id": roc.canonical_reason_id(),
-                "max_delta": roc.max_delta,
-                "prev_name": format!("prev{}", filters::to_pascal_case(safe.clone())),
-                "type": go_type(&roc.sce_type),
-                "is_float": roc.sce_type.is_float(),
-                "is_signed": roc.sce_type.is_signed(),
-            })
-        })
-        .collect();
-
-    // Build import alias rename map for expressions (stateless → qualified call)
-    let import_renames: std::collections::HashMap<&str, &str> = imports
-        .iter()
-        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
-        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
-        .collect();
-
-    let type_ctx = crate::forge::type_ctx::validator(m, imports);
-    let mut combined_renames: std::collections::HashMap<&str, &str> = go_rename_strings
-        .iter()
-        .map(|(f, t)| (f.as_str(), t.as_str()))
-        .collect();
-    for (k, v) in &import_renames {
-        combined_renames.insert(*k, *v);
-    }
-    let plausibility_expr = match &rv.plausibility {
-        Some(e) => Some(expr::transpile_typed(
-            e,
-            ExprTarget::Go,
-            &type_ctx,
-            &combined_renames,
-            crate::forge::types::InferredType::Bool,
-        )?),
-        None => None,
-    };
-
-    let tmpl = env
-        .get_template("validator.go.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    // Cross-file imports
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        package => package,
-        struct_name => struct_name,
-        params => params,
-        prev_vars => minijinja::Value::from_serialize(&prev_vars),
-        range_rules => minijinja::Value::from_serialize(&range_rules),
-        roc_rules => minijinja::Value::from_serialize(&roc_rules),
-        plausibility_expr => plausibility_expr,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2799,11 +1482,11 @@ pub fn generate_python_with_imports(
     inject_runtime_dep_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_python(&env, m, imports)?,
-        ForgeDocument::Lookup(m) => render_lookup_python(&env, m, imports)?,
-        ForgeDocument::Condition(m) => render_condition_python(&env, m, imports)?,
-        ForgeDocument::Codec(m) => render_codec_python(&env, m, imports)?,
-        ForgeDocument::Validator(m) => render_validator_python(&env, m, imports)?,
+        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Procedure(m) => render_procedure_python(&env, m, imports)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Python)?,
@@ -2815,485 +1498,6 @@ pub fn generate_python_with_imports(
     Ok(GeneratedOutput {
         files: vec![(filename, code)],
     })
-}
-
-// ── Python: Transform ────────────────────────────────────────
-
-fn render_transform_python(
-    env: &minijinja::Environment,
-    m: &TransformModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let type_ctx = crate::forge::type_ctx::transform(m, imports);
-    let empty_renames = std::collections::HashMap::new();
-
-    let functions: Vec<serde_json::Value> = m
-        .outputs
-        .iter()
-        .map(|out| {
-            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
-            let expr_py = expr::transpile_typed(
-                out.expr.as_deref().unwrap_or("0"),
-                ExprTarget::Python,
-                &type_ctx,
-                &empty_renames,
-                expected,
-            )?;
-
-            let params = m
-                .inputs
-                .iter()
-                .map(|inp| {
-                    format!(
-                        "{}: {}",
-                        filters::to_snake_case(inp.id.clone()),
-                        python_type(&inp.sce_type)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            Ok(serde_json::json!({
-                "ret_type": python_type(&out.sce_type),
-                "name": format!("compute_{}", filters::to_snake_case(out.id.clone())),
-                "params": params,
-                "expr": expr_py,
-            }))
-        })
-        .collect::<Result<_, ForgeError>>()?;
-
-    let tmpl = env
-        .get_template("transform.py.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        functions => minijinja::Value::from_serialize(&functions),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Python: Lookup ───────────────────────────────────────────
-
-fn render_lookup_python(
-    env: &minijinja::Environment,
-    m: &LookupModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let enum_name = filters::to_pascal_case(m.output.id.clone());
-    let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
-    let input_id_snake = filters::to_snake_case(m.input.id.clone());
-
-    let output_is_string = m.output_is_string();
-    let on_miss_error = m.miss_policy.is_error();
-
-    // Pre-compute condition expression per group: `==` for single key, `in (...)` for multiple.
-    // Single-element tuples need a trailing comma in Python: `(0x07,)`.
-    let (entries_by_value, unique_values, default_value) = if output_is_string {
-        let ebv: Vec<serde_json::Value> = m
-            .entries_by_value()
-            .into_iter()
-            .map(|(value, keys)| {
-                let condition = if keys.len() == 1 {
-                    format!("{} == {}", input_id_snake, keys[0])
-                } else {
-                    format!("{} in ({})", input_id_snake, keys.join(", "))
-                };
-                serde_json::json!({"value": value, "condition": condition})
-            })
-            .collect();
-        let uv = m.unique_values();
-        let dv = match &m.miss_policy {
-            MissPolicy::Default(s) => s.clone(),
-            MissPolicy::Error => String::new(),
-        };
-        (ebv, uv, dv)
-    } else {
-        (Vec::new(), Vec::new(), String::new())
-    };
-
-    let (keys_literal, values_literal, default_literal) = if !output_is_string {
-        let kl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| python_literal(&e.key, &m.input.sce_type))
-            .collect();
-        let vl: Vec<String> = m
-            .entries
-            .iter()
-            .map(|e| python_literal(&e.value, &m.output.sce_type))
-            .collect();
-        let dl = match &m.miss_policy {
-            MissPolicy::Default(s) => python_literal(s, &m.output.sce_type),
-            MissPolicy::Error => String::new(),
-        };
-        (kl, vl, dl)
-    } else {
-        (Vec::new(), Vec::new(), String::new())
-    };
-
-    let tmpl = env
-        .get_template("lookup.py.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        enum_name => enum_name,
-        func_name => func_name,
-        input_type => python_type(&m.input.sce_type),
-        value_type => python_type(&m.output.sce_type),
-        input_id => input_id_snake,
-        unique_values => minijinja::Value::from_serialize(&unique_values),
-        entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => default_value,
-        default_literal => default_literal,
-        output_is_string => output_is_string,
-        on_miss_error => on_miss_error,
-        keys_literal => minijinja::Value::from_serialize(&keys_literal),
-        values_literal => minijinja::Value::from_serialize(&values_literal),
-        n => m.entries.len(),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Python: Condition ────────────────────────────────────────
-
-fn render_condition_python(
-    env: &minijinja::Environment,
-    m: &ConditionModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let func_name = filters::to_snake_case(m.name.clone());
-
-    let params = m
-        .inputs
-        .iter()
-        .map(|inp| {
-            format!(
-                "{}: {}",
-                filters::to_snake_case(inp.id.clone()),
-                python_type(&inp.sce_type)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let type_ctx = crate::forge::type_ctx::condition(m, imports);
-    let expr_py = expr::transpile_typed(
-        &m.expr,
-        ExprTarget::Python,
-        &type_ctx,
-        &std::collections::HashMap::new(),
-        crate::forge::types::InferredType::Bool,
-    )?;
-
-    let tmpl = env
-        .get_template("condition.py.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        func_name => func_name,
-        params => params,
-        expr => expr_py,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Python: Codec ────────────────────────────────────────────
-
-fn render_codec_python(
-    env: &minijinja::Environment,
-    m: &CodecModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let fields: Vec<serde_json::Value> = m
-        .fields
-        .iter()
-        .map(|f| {
-            serde_json::json!({
-                "id": filters::to_snake_case(f.id.clone()),
-                "py_type": python_type(&f.sce_type),
-                "default_value": python_default(&f.sce_type),
-                "decode_expr": generate_decode_expr_python(f, m.default_endian),
-            })
-        })
-        .collect();
-
-    let encode_exprs: Vec<String> = generate_encode_exprs_python(&m.fields, m.default_endian);
-
-    let tmpl = env
-        .get_template("codec.py.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        struct_name => struct_name,
-        fields => minijinja::Value::from_serialize(&fields),
-        min_bytes => m.min_frame_bytes(),
-        encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
-}
-
-// ── Python codec expression generation ──────────────────────
-
-fn generate_decode_expr_python(field: &CodecField, default_endian: Endian) -> String {
-    let byte_off = field.byte_offset;
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
-
-    match &field.bit_size {
-        BitSize::Fixed { bits } => {
-            if bit_off > 0 || *bits < 8 {
-                let mask = (1u64 << bits) - 1;
-                format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
-            } else {
-                match bits {
-                    8 => format!("raw[{byte_off}]"),
-                    16 => decode_multibyte_python(byte_off, 2, endian),
-                    24 => decode_multibyte_python(byte_off, 3, endian),
-                    32 => decode_multibyte_python(byte_off, 4, endian),
-                    _ => format!("# unsupported {bits}-bit decode"),
-                }
-            }
-        }
-        BitSize::Tail => {
-            format!("raw[{byte_off}:]")
-        }
-        BitSize::LengthRef => {
-            let len_field = field.length_field.as_deref().unwrap_or("0");
-            format!("raw[{byte_off}:{byte_off} + {len_field}]")
-        }
-    }
-}
-
-fn decode_multibyte_python(byte_off: u32, byte_count: u32, endian: Endian) -> String {
-    let shifts: Vec<String> = match endian {
-        Endian::Big | Endian::Native => (0..byte_count)
-            .map(|i| {
-                let shift = (byte_count - 1 - i) * 8;
-                let off = byte_off + i;
-                if shift == 0 {
-                    format!("raw[{off}]")
-                } else {
-                    format!("(raw[{off}] << {shift})")
-                }
-            })
-            .collect(),
-        Endian::Little => (0..byte_count)
-            .map(|i| {
-                let shift = i * 8;
-                let off = byte_off + i;
-                if shift == 0 {
-                    format!("raw[{off}]")
-                } else {
-                    format!("(raw[{off}] << {shift})")
-                }
-            })
-            .collect(),
-    };
-
-    shifts.join(" | ")
-}
-
-fn generate_encode_exprs_python(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
-    let mut exprs = Vec::new();
-
-    let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
-        std::collections::BTreeMap::new();
-
-    for field in fields {
-        if field.is_variable_length() {
-            exprs.push(format!(
-                "# variable-length field '{}' requires manual encode",
-                filters::to_snake_case(field.id.clone())
-            ));
-        } else {
-            byte_groups
-                .entry(field.byte_offset)
-                .or_default()
-                .push(field);
-        }
-    }
-
-    for (_, group) in &byte_groups {
-        if group.len() == 1 {
-            encode_single_field_python(group[0], default_endian, &mut exprs);
-        } else {
-            let mut parts = Vec::new();
-            for field in group {
-                let bit_off = field.bit_offset.unwrap_or(0);
-                let bits = field.fixed_bits().unwrap_or(8);
-                let mask = (1u64 << bits) - 1;
-                let name = filters::to_snake_case(field.id.clone());
-                parts.push(format!(
-                    "(self.{name} & 0x{mask:02X}) << {bit_off}"
-                ));
-            }
-            exprs.push(format!("({}) & 0xFF", parts.join(" | ")));
-        }
-    }
-
-    exprs
-}
-
-fn encode_single_field_python(
-    field: &CodecField,
-    default_endian: Endian,
-    exprs: &mut Vec<String>,
-) {
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
-    let name = filters::to_snake_case(field.id.clone());
-
-    match field.fixed_bits() {
-        Some(8) if bit_off == 0 => {
-            exprs.push(format!("self.{name} & 0xFF"));
-        }
-        Some(bits) if bits < 8 || bit_off > 0 => {
-            let mask = (1u64 << bits) - 1;
-            exprs.push(format!(
-                "(self.{name} & 0x{mask:02X}) << {bit_off} & 0xFF"
-            ));
-        }
-        Some(byte_count @ (16 | 24 | 32)) => {
-            let n_bytes = byte_count / 8;
-            let shifts: Vec<u32> = match endian {
-                Endian::Big | Endian::Native => (0..n_bytes).rev().collect(),
-                Endian::Little => (0..n_bytes).collect(),
-            };
-            for shift_byte in shifts {
-                let shift = shift_byte * 8;
-                if shift == 0 {
-                    exprs.push(format!("self.{name} & 0xFF"));
-                } else {
-                    exprs.push(format!(
-                        "(self.{name} >> {shift}) & 0xFF"
-                    ));
-                }
-            }
-        }
-        _ => exprs.push(format!("# encode {name}")),
-    }
-}
-
-// ── Python: Validator ────────────────────────────────────────
-
-fn render_validator_python(
-    env: &minijinja::Environment,
-    m: &ValidatorModel,
-    imports: &[ImportContext],
-) -> Result<String, ForgeError> {
-    let rv = resolve_validator(m);
-    let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let params = rv.inputs.iter()
-        .map(|f| format!("{}: {}", filters::to_snake_case(f.id.clone()), python_type(&f.sce_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| {
-            let snake = filters::to_snake_case(roc.id.clone());
-            serde_json::json!({
-                "name": format!("prev_{snake}"),
-                "id": snake,
-                "is_float": roc.sce_type.is_float(),
-            })
-        })
-        .collect();
-
-    // Python local-var convention is snake_case, which happens to coincide
-    // with the canonical reason fragment — but they remain semantically
-    // distinct fields so the template's `rule.reason_id` use is uniform
-    // across all 5 languages and `ResolvedRange` stays the single source of
-    // truth for reason-string casing.
-    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
-        .map(|r| {
-            let snake = filters::to_snake_case(r.id.clone());
-            serde_json::json!({
-                "id": snake,
-                "reason_id": r.canonical_reason_id(),
-                "min": r.min, "max": r.max,
-                "has_min": r.min.is_some(), "has_max": r.max.is_some(),
-            })
-        })
-        .collect();
-
-    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
-        .map(|roc| {
-            let snake = filters::to_snake_case(roc.id.clone());
-            serde_json::json!({
-                "id": snake.clone(),
-                "reason_id": roc.canonical_reason_id(),
-                "max_delta": roc.max_delta,
-                "prev_name": format!("prev_{snake}"),
-            })
-        })
-        .collect();
-
-    // Build import alias rename map for expressions (stateless → qualified call)
-    let import_renames: std::collections::HashMap<&str, &str> = imports
-        .iter()
-        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
-        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
-        .collect();
-
-    let type_ctx = crate::forge::type_ctx::validator(m, imports);
-    let plausibility_expr = match &rv.plausibility {
-        Some(e) => Some(expr::transpile_typed(
-            e,
-            ExprTarget::Python,
-            &type_ctx,
-            &import_renames,
-            crate::forge::types::InferredType::Bool,
-        )?),
-        None => None,
-    };
-
-    let tmpl = env
-        .get_template("validator.py.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
-    // Cross-file imports
-    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
-
-    let ctx = minijinja::context! {
-        struct_name => struct_name,
-        params => params,
-        prev_vars => minijinja::Value::from_serialize(&prev_vars),
-        range_rules => minijinja::Value::from_serialize(&range_rules),
-        roc_rules => minijinja::Value::from_serialize(&roc_rules),
-        plausibility_expr => plausibility_expr,
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
-    };
-
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
 // ── Procedure: C++ ──────────────────────────────────────────
@@ -5260,13 +3464,13 @@ fn render_inline_codec_member(
          \x20           return {struct_name}{{\n"
     ));
     for f in codec_fields {
-        let decode = generate_decode_expr_cpp(f, default_endian);
+        let decode = generate_decode_expr(f, default_endian, crate::generator::Language::Cpp);
         code.push_str(&format!("                .{} = {},\n", f.id, decode));
     }
     code.push_str("            };\n        }\n");
 
     // encode
-    let encode_exprs = generate_encode_exprs_cpp(codec_fields, default_endian);
+    let encode_exprs = generate_encode_exprs(codec_fields, default_endian, crate::generator::Language::Cpp);
     code.push_str("\n        std::vector<uint8_t> encode() const {\n            return {\n");
     for (i, expr_str) in encode_exprs.iter().enumerate() {
         let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
@@ -5285,11 +3489,15 @@ fn render_inline_codec_member(
 
 /// Language-specific helpers for Phase 3 kind rendering.
 /// Eliminates per-language duplication across filter/interpolation/timer/observer.
-struct Phase3Lang {
+/// Language-aware helper for template context construction.
+///
+/// Centralises type mapping, identifier casing, parameter formatting, and
+/// template routing so that per-kind render functions are language-agnostic.
+struct LangCtx {
     lang: crate::generator::Language,
 }
 
-impl Phase3Lang {
+impl LangCtx {
     fn new(lang: crate::generator::Language) -> Self {
         Self { lang }
     }
@@ -5304,24 +3512,50 @@ impl Phase3Lang {
         }
     }
 
+    /// Parameter type for function signatures (uses references/borrows for
+    /// heap-allocated types in C++ and Rust).
+    fn param_type(&self, ty: &SceType) -> String {
+        match self.lang {
+            crate::generator::Language::Cpp => cpp_param_type(ty),
+            crate::generator::Language::Rust => rust_param_type(ty),
+            _ => self.type_name(ty).to_string(),
+        }
+    }
+
+    /// Format a full parameter list string from fields.
     fn param_str(&self, fields: &[ForgeField]) -> String {
         fields.iter()
-            .map(|f| {
-                let id = match self.lang {
-                    crate::generator::Language::Rust | crate::generator::Language::Python =>
-                        filters::to_snake_case(f.id.clone()),
-                    _ => f.id.clone(),
-                };
-                match self.lang {
-                    crate::generator::Language::Cpp => format!("{} {}", cpp_param_type(&f.sce_type), id),
-                    crate::generator::Language::Kotlin => format!("{}: {}", id, kotlin_type(&f.sce_type)),
-                    crate::generator::Language::Rust => format!("{}: {}", id, rust_type(&f.sce_type)),
-                    crate::generator::Language::Go => format!("{} {}", id, go_type(&f.sce_type)),
-                    crate::generator::Language::Python => format!("{}: {}", id, python_type(&f.sce_type)),
-                }
-            })
+            .map(|f| self.format_param(&f.id, &f.sce_type))
             .collect::<Vec<_>>()
             .join(", ")
+    }
+
+    /// Format a single parameter: handles language-specific id casing, type
+    /// placement order, and reference/borrow semantics.
+    fn format_param(&self, id: &str, ty: &SceType) -> String {
+        match self.lang {
+            crate::generator::Language::Cpp =>
+                format!("{} {}", cpp_param_type(ty), id),
+            crate::generator::Language::Kotlin =>
+                format!("{}: {}", id, kotlin_type(ty)),
+            crate::generator::Language::Rust =>
+                format!("{}: {}", filters::to_snake_case(id.to_string()), rust_param_type(ty)),
+            crate::generator::Language::Go =>
+                format!("{} {}", go_escape_builtin(id), go_type(ty)),
+            crate::generator::Language::Python =>
+                format!("{}: {}", filters::to_snake_case(id.to_string()), python_type(ty)),
+        }
+    }
+
+    /// Language-specific identifier for local variables / parameters.
+    fn local_id(&self, id: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Rust | crate::generator::Language::Python =>
+                filters::to_snake_case(id.to_string()),
+            crate::generator::Language::Go =>
+                go_escape_builtin(id),
+            _ => id.to_string(),
+        }
     }
 
     fn template_ext(&self) -> &'static str {
@@ -5344,7 +3578,7 @@ impl Phase3Lang {
         }
     }
 
-    /// Base context fields common to all Phase 3 kinds.
+    /// Base context fields common to all kinds (guard, namespace, package).
     fn base_context(&self, name: &str) -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
         let struct_name = filters::to_pascal_case(name.to_string());
@@ -5355,7 +3589,7 @@ impl Phase3Lang {
                 m.insert("namespace".into(), struct_name.into());
             }
             crate::generator::Language::Go => {
-                m.insert("package_name".into(), filters::to_snake_case(name.to_string()).into());
+                m.insert("package".into(), filters::to_snake_case(name.to_string()).into());
             }
             crate::generator::Language::Kotlin => {
                 m.insert("package".into(), filters::to_snake_case(name.to_string()).into());
@@ -5372,6 +3606,136 @@ impl Phase3Lang {
             _ => to_upper_snake(s),
         }
     }
+
+    /// Build Go rename pairs for builtin-colliding identifiers.
+    /// Returns empty vec for non-Go languages.
+    fn go_rename_pairs<'a, I: Iterator<Item = &'a str>>(&self, ids: I) -> Vec<(String, String)> {
+        if !matches!(self.lang, crate::generator::Language::Go) {
+            return Vec::new();
+        }
+        ids.map(|id| (id.to_string(), go_escape_builtin(id)))
+            .filter(|(f, t)| f != t)
+            .collect()
+    }
+
+
+    /// Language-specific literal formatting for typed constant arrays.
+    fn literal(&self, val: &str, ty: &SceType) -> String {
+        match self.lang {
+            crate::generator::Language::Cpp => cpp_literal(val, ty),
+            crate::generator::Language::Kotlin => kotlin_literal(val, ty),
+            crate::generator::Language::Rust => rust_literal(val, ty),
+            crate::generator::Language::Go => go_literal(val, ty),
+            crate::generator::Language::Python => python_literal(val, ty),
+        }
+    }
+
+    /// Load a kind template by name (e.g. "transform" → "transform.h.jinja2").
+    fn load_template<'a>(
+        &self,
+        env: &'a minijinja::Environment,
+        kind: &str,
+    ) -> Result<minijinja::Template<'a, 'a>, ForgeError> {
+        let name = format!("{}.{}.jinja2", kind, self.template_ext());
+        env.get_template(&name).map_err(|e| GenerateError::TemplateLoad(e.to_string()).into())
+    }
+
+    /// Render a template from a serde_json::Map context.
+    fn render(
+        &self,
+        env: &minijinja::Environment,
+        kind: &str,
+        ctx: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<String, ForgeError> {
+        let tmpl = self.load_template(env, kind)?;
+        let value = minijinja::Value::from_serialize(&ctx);
+        Ok(tmpl.render(value).map_err(generator::render_error)?)
+    }
+
+    /// Insert standard import fields into a context map.
+    fn insert_imports(
+        &self,
+        ctx: &mut serde_json::Map<String, serde_json::Value>,
+        imports: &[ImportContext],
+    ) {
+        let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+        ctx.insert("has_imports".into(), has_imports.into());
+        ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
+        ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+    }
+
+    // ── Codec-specific helpers ──────────────────────────────────
+
+    /// Template-facing type key for codec fields (e.g. "cpp_type", "kt_type").
+    fn codec_type_key(&self) -> &'static str {
+        match self.lang {
+            crate::generator::Language::Cpp => "cpp_type",
+            crate::generator::Language::Kotlin => "kt_type",
+            crate::generator::Language::Rust => "rs_type",
+            crate::generator::Language::Go => "go_type",
+            crate::generator::Language::Python => "py_type",
+        }
+    }
+
+    /// Codec field ID: Go PascalCase, Rust/Python snake_case, others as-is.
+    fn codec_field_id(&self, id: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Go => filters::to_pascal_case(id.to_string()),
+            crate::generator::Language::Rust | crate::generator::Language::Python =>
+                filters::to_snake_case(id.to_string()),
+            _ => id.to_string(),
+        }
+    }
+
+    /// Self/receiver prefix for codec encode field references.
+    fn codec_field_ref(&self, name: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Rust | crate::generator::Language::Python =>
+                format!("self.{name}"),
+            crate::generator::Language::Go =>
+                format!("s.{name}"),
+            _ => name.to_string(),
+        }
+    }
+
+    /// Cast expression to byte (uint8) for encode.
+    fn codec_to_byte(&self, expr: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Cpp =>
+                format!("static_cast<uint8_t>({expr})"),
+            crate::generator::Language::Kotlin =>
+                format!("({expr}).toByte()"),
+            crate::generator::Language::Rust =>
+                format!("({expr}) as u8"),
+            crate::generator::Language::Go =>
+                format!("byte({expr})"),
+            crate::generator::Language::Python =>
+                format!("({expr}) & 0xFF"),
+        }
+    }
+
+    /// Comment syntax for unsupported/manual code.
+    fn codec_comment(&self, text: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Python => format!("# {text}"),
+            _ => format!("/* {text} */"),
+        }
+    }
+
+    /// Validator previous-value variable name per language convention.
+    fn prev_name(&self, id: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Rust | crate::generator::Language::Python =>
+                format!("prev_{}", filters::to_snake_case(id.to_string())),
+            _ =>
+                format!("prev{}", filters::to_pascal_case(self.local_id(id))),
+        }
+    }
+}
+
+/// Build a rename HashMap from pre-computed (original, escaped) pairs.
+fn rename_map(pairs: &[(String, String)]) -> std::collections::HashMap<&str, &str> {
+    pairs.iter().map(|(f, t)| (f.as_str(), t.as_str())).collect()
 }
 
 fn render_phase3(
@@ -5394,7 +3758,7 @@ fn render_filter(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = Phase3Lang::new(lang);
+    let l = LangCtx::new(lang);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -5419,7 +3783,7 @@ fn render_interpolation(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = Phase3Lang::new(lang);
+    let l = LangCtx::new(lang);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -5464,7 +3828,7 @@ fn render_timer(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = Phase3Lang::new(lang);
+    let l = LangCtx::new(lang);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -5526,7 +3890,7 @@ fn render_observer(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = Phase3Lang::new(lang);
+    let l = LangCtx::new(lang);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
