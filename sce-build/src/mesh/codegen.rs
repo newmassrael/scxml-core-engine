@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCE Mesh codegen dispatcher — selects transport template and generates code.
 //
-// Phase 1 supports C++ local transport only. Future phases add
-// shm, someip, dds, zenoh templates following the same pattern.
+// Supported transports:
+//   local — same-process direct call (Phase 1)
+//   shm   — shared memory cross-process via EventQueueBridge (Phase 2)
 
 use crate::filters;
 use crate::generator::{GeneratedOutput, Language};
@@ -33,7 +35,6 @@ struct TargetContext {
 /// Generate mesh transport code for a machine's resolved targets.
 ///
 /// Returns generated files to be written alongside the SM output.
-/// Currently only C++ local transport is supported (Phase 1).
 pub fn generate_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
@@ -55,17 +56,33 @@ fn generate_cpp_mesh(
     targets: &[ResolvedTarget],
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
-    // All targets must be "local" transport in Phase 1
-    for t in targets {
-        if t.transport != "local" {
-            return Err(CodegenError::UnsupportedTransport {
-                transport: t.transport.clone(),
-                target: t.target.clone(),
+    // Determine transport type — all targets must agree
+    let transport = &targets[0].transport;
+    for t in &targets[1..] {
+        if t.transport != *transport {
+            let mut seen: Vec<String> = targets.iter().map(|t| t.transport.clone()).collect();
+            seen.sort();
+            seen.dedup();
+            return Err(CodegenError::MixedTransports {
+                machine: machine_name.to_string(),
+                transports: seen,
             });
         }
     }
 
-    let template_path = template_base.join("mesh/cpp/local_transport.h.jinja2");
+    // Select template by transport type
+    let template_name = match transport.as_str() {
+        "local" => "mesh/cpp/local_transport.h.jinja2",
+        "shm" => "mesh/cpp/shm_transport.h.jinja2",
+        other => {
+            return Err(CodegenError::UnsupportedTransport {
+                transport: other.to_string(),
+                target: targets[0].target.clone(),
+            });
+        }
+    };
+
+    let template_path = template_base.join(template_name);
     let template_content =
         std::fs::read_to_string(&template_path).map_err(|e| CodegenError::TemplateRead {
             path: template_path.display().to_string(),
@@ -91,11 +108,12 @@ fn generate_cpp_mesh(
     let machine_pascal = filters::to_pascal_case(machine_name.to_string());
 
     let mut env = minijinja::Environment::new();
-    env.add_template("local_transport.h.jinja2", &template_content)
+    let tpl_file_name = template_name.rsplit('/').next().unwrap_or(template_name);
+    env.add_template(tpl_file_name, &template_content)
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
 
     let tmpl = env
-        .get_template("local_transport.h.jinja2")
+        .get_template(tpl_file_name)
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
 
     let ctx = minijinja::context! {

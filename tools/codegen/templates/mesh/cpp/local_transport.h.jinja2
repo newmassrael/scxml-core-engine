@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# SCE Mesh — local transport (same-process direct call).
    Phase 1: all targets are in the same process.
    Generated send functions are direct calls that the compiler can inline.
@@ -13,6 +16,8 @@
 
 #include <cassert>
 #include <cstring>
+#include <type_traits>
+#include "mesh/MeshSendRequest.h"
 {% for target in targets %}
 #include "{{ target.target_stem }}_sm.h"
 {% endfor %}
@@ -63,6 +68,29 @@ struct TransportRouter {
             // Reaching here means the SCXML was modified after codegen.
             assert(false && "SCE Mesh: unresolved send target (rebuild with --deploy)");
         }
+    }
+
+    /// Wire this router to a sender StaticExecutionEngine's mesh-send callback.
+    ///
+    /// After this call, <send target="#<machine>"/> in the sender machine is
+    /// automatically dispatched through the router — no manual event-loop
+    /// glue is needed. Declines unknown targets so the engine may fall back
+    /// to the external queue (preserving W3C behavior for non-mesh sends).
+    template <typename SenderEngine>
+    void wireTo(SenderEngine& engine) {
+        engine.setMeshSendCallback(
+            [this](const SCE::Mesh::MeshSendRequest& req) -> bool {
+{% for target in targets %}
+                {% if not loop.first %}else {% endif %}if (req.target == "{{ target.target }}") {
+                    using TargetPolicy = std::decay_t<decltype({{ target.target_snake }}_.getPolicy())>;
+                    auto ev = TargetPolicy::getEventFromName(req.eventName.c_str());
+                    if (!ev) return false;
+                    {{ target.target_snake }}_.processEvent(*ev);
+                    return true;
+                }
+{% endfor %}
+                return false;  // unknown target — let engine fall back to raiseExternal
+            });
     }
 };
 

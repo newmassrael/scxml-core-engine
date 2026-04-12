@@ -184,6 +184,38 @@ public:
     }
 
     /**
+     * @brief Check if target routes through SCE Mesh (cross-machine transport)
+     *
+     * Single Source of Truth for mesh target detection.
+     * ARCHITECTURE.md: Zero Duplication — used by both Interpreter and AOT engines.
+     *
+     * SCE Mesh deploy.yaml binds `#<machine-name>` targets to transports
+     * (local, shm, someip, …). Targets with the `#_` prefix are reserved
+     * for W3C SCXML semantics (`#_internal`, `#_parent`, `#_child`,
+     * `#_<invokeid>`, `#_scxml_<sessionid>`) and never route through mesh.
+     *
+     * Examples:
+     *   "#motor"            → mesh target      (true)
+     *   "#brake_sensor"     → mesh target      (true)
+     *   "#_internal"        → internal queue   (false)
+     *   "#_parent"          → parent           (false)
+     *   "#_invokedChild"    → child invoke     (false)
+     *   "http://host/path"  → HTTP             (false)
+     *   ""                  → no target        (false)
+     *
+     * @param target Target string (e.g., from <send target="...">)
+     * @return true if the target matches the `#<non-underscore-name>` shape
+     */
+    static bool isMeshTarget(const std::string &target) {
+        // Must start with '#' and have at least one character after it
+        if (target.size() < 2 || target[0] != '#') {
+            return false;
+        }
+        // '#_' prefix is reserved for W3C SCXML built-in routing
+        return target[1] != '_';
+    }
+
+    /**
      * @brief Validate send target according to W3C SCXML 6.2
      *
      * W3C SCXML 6.2 (tests 159, 194): Invalid target values (e.g., starting with "!")

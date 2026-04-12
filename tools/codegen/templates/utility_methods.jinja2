@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {% if model.needs_script_engine %}
     // W3C SCXML 5.9: Safe guard evaluation with error.execution on failure
     // ARCHITECTURE.md: Zero Duplication - Wraps shared GuardHelper with AOT-specific error handling
@@ -48,6 +51,16 @@
         if (eventName.empty()) return std::nullopt;
 {% for event_name in model.events | sort %}
         if (eventName == "{{ event_name }}") return Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }};
+{% endfor %}
+        return std::nullopt;
+    }
+
+    // Zero-allocation overload for SCE Mesh shared memory transport.
+    // Avoids std::string construction in the lock-free drain path.
+    [[nodiscard]] static std::optional<Event> getEventFromName(const char* eventName) noexcept {
+        if (!eventName || eventName[0] == '\0') return std::nullopt;
+{% for event_name in model.events | sort %}
+        if (std::strcmp(eventName, "{{ event_name }}") == 0) return Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }};
 {% endfor %}
         return std::nullopt;
     }

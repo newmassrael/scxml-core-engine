@@ -1,0 +1,9 @@
+# SCE Mesh compile verification — shared memory transport binding
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        bindings:
+          "#motor":
+            transport: shm

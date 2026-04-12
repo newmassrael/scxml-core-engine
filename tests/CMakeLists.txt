@@ -1257,6 +1257,131 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     apply_sce_test_policies(mesh_compile_test)
 
     add_test(NAME mesh_compile_verification COMMAND mesh_compile_test)
+
+    # ── Phase 2: shm_transport compile verification ──────────────
+    set(MESH_SHM_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_shm_generated")
+
+    # Generate brake_sm.h for shm test (reuse motor_sm.h from above)
+    add_custom_command(
+        OUTPUT "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh shm: Generating brake_sm.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SHM_OUTPUT_DIR}/motor_sm.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh shm: Generating motor_sm.h"
+        VERBATIM
+    )
+
+    # Generate brake_transport.h with shm transport
+    add_custom_command(
+        OUTPUT "${MESH_SHM_OUTPUT_DIR}/brake_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_shm.yaml"
+        DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_shm.yaml"
+                "${SCE_CODEGEN}" "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
+        COMMENT "Mesh shm: Generating brake_transport.h (shm transport)"
+        VERBATIM
+    )
+
+    add_executable(mesh_shm_compile_test
+        mesh/test_mesh_shm.cpp
+        "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
+        "${MESH_SHM_OUTPUT_DIR}/motor_sm.h"
+        "${MESH_SHM_OUTPUT_DIR}/brake_transport.h"
+    )
+
+    target_include_directories(mesh_shm_compile_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SHM_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_shm_compile_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_shm_compile_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_shm_compile_test)
+
+    add_test(NAME mesh_shm_compile_verification COMMAND mesh_shm_compile_test)
+
+    # ── Phase 2: local_transport runtime verification ────────────
+    # Exercises the full send chain: brake <send target="#motor"/>
+    # → engine.raiseExternal → onMeshSend → router.wireTo lambda
+    # → motor.processEvent. Compile-only tests cannot catch a missing
+    # callback wire-up; this one fails if the chain regresses.
+    add_executable(mesh_local_runtime_test
+        mesh/test_mesh_local_runtime.cpp
+        "${MESH_OUTPUT_DIR}/brake_sm.h"
+        "${MESH_OUTPUT_DIR}/motor_sm.h"
+        "${MESH_OUTPUT_DIR}/brake_transport.h"
+    )
+
+    target_include_directories(mesh_local_runtime_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_local_runtime_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_local_runtime_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_local_runtime_test)
+
+    add_test(NAME mesh_local_runtime_verification COMMAND mesh_local_runtime_test)
+
+    # ── Phase 2: shm_transport runtime verification (fork-based) ──
+    # Parent sends via router; child opens shm and drains. Proves
+    # READY_MAGIC handshake, end-to-end event delivery, and
+    # shm_unlink ownership across process boundary.
+    add_executable(mesh_shm_runtime_test
+        mesh/test_mesh_shm_runtime.cpp
+        "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
+        "${MESH_SHM_OUTPUT_DIR}/motor_sm.h"
+        "${MESH_SHM_OUTPUT_DIR}/brake_transport.h"
+    )
+
+    target_include_directories(mesh_shm_runtime_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SHM_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_shm_runtime_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+            rt       # POSIX shm_open / shm_unlink
+            pthread
+    )
+
+    target_compile_features(mesh_shm_runtime_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_shm_runtime_test)
+
+    add_test(NAME mesh_shm_runtime_verification COMMAND mesh_shm_runtime_test)
+    set_tests_properties(mesh_shm_runtime_verification PROPERTIES
+        TIMEOUT 30
+        # The channel name "/sce_brake_motor" is fixed by the test's
+        # deploy_shm.yaml, so parallel ctest invocations would collide
+        # on a single POSIX shm object. Real deployments assign unique
+        # names per binding; for testing we serialize with RESOURCE_LOCK.
+        RESOURCE_LOCK sce_mesh_shm_brake_motor)
 endif()
 
 # ============================================================================

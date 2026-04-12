@@ -25,6 +25,7 @@
 #include "core/StatePolicyConcepts.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
+#include "mesh/MeshSendRequest.h"
 #include "common/SendSchedulingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
@@ -52,6 +53,12 @@ struct HttpSendRequest {
     std::map<std::string, std::vector<std::string>> params;
     std::string sendId;
 };
+
+/// MeshSendRequest lives in sce/include/mesh/MeshSendRequest.h so that
+/// generated TransportRouter code can include it without dragging in the
+/// full static engine header. Imported via the include at the top of
+/// this file and re-exported into SCE::Static for HTTP-callback symmetry.
+using SCE::Mesh::MeshSendRequest;
 
 /**
  * @brief Template-based SCXML execution engine for static code generation
@@ -394,6 +401,7 @@ private:
     bool isRunning_ = false;
     std::function<void()> completionCallback_;  // W3C SCXML 6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // W3C SCXML C.2: BasicHTTP callback
+    std::function<bool(const MeshSendRequest &)> onMeshSend_;  // SCE Mesh: cross-machine callback
     SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
 protected:
@@ -432,10 +440,11 @@ public:
     void raiseExternal(Event event, const std::string &eventData = "", const std::string &origin = "",
                        const std::string &target = "") {
         // W3C SCXML C.1: Enqueue event with metadata (origin, data, sendid, type, originType, target)
-        // Delegates to the full-metadata overload so that the target attribute is
-        // preserved on EventWithMetadata. The prior implementation constructed
-        // metadata inline and dropped `target`, which meant downstream consumers
-        // (e.g. autoforward routing, mesh target dispatch) never saw it.
+        // Delegates to the full-metadata overload so that SCE Mesh target
+        // routing and W3C SCXML 6.4.6 autoforward both see the event. Prior
+        // to this delegation the simple (datamodel="null") codepath dropped
+        // the target attribute, which meant mesh-declared targets silently
+        // hit the external queue instead of the mesh callback.
         EventWithMetadata meta(event, eventData, origin, "", "external",
                                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
         meta.target = target;
@@ -470,6 +479,21 @@ public:
      * @param eventWithMetadata Event with metadata (including invokeid)
      */
     void raiseExternal(const EventWithMetadata &eventWithMetadata) {
+        // SCE Mesh: route cross-machine targets through the mesh callback before
+        // they reach the external queue. Matches the W3C SCXML C.2 BasicHTTP
+        // split — HTTP targets are dispatched via performHttpSend(), mesh
+        // targets via performMeshSend(). Applications that do not wire a mesh
+        // transport leave onMeshSend_ unset and the event falls through to
+        // the external queue (legacy behavior, preserves W3C conformance).
+        if (::SCE::SendHelper::isMeshTarget(eventWithMetadata.target)) {
+            if (performMeshSend(MeshSendRequest{eventWithMetadata.target,
+                                                policy_.getEventName(eventWithMetadata.event),
+                                                eventWithMetadata.data,
+                                                eventWithMetadata.sendId})) {
+                return;  // handled by mesh transport — do not enqueue locally
+            }
+        }
+
         // Normal internal/external queue processing
         SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
                   static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
@@ -1046,6 +1070,36 @@ public:
         if (onHttpSend_) {
             onHttpSend_(HttpSendRequest{target, eventName, content, params, sendId});
         }
+    }
+
+    /**
+     * @brief Register a SCE Mesh send callback (cross-machine transport)
+     *
+     * Mirrors setHttpSendCallback(). The callback receives a MeshSendRequest
+     * for every external <send target="#<machine>"/>. It must return true
+     * when the send was accepted by the transport and false to fall through
+     * to the external queue (legacy W3C behavior, useful for targets that
+     * the transport does not recognize).
+     *
+     * Applications typically do not call this directly — the generated
+     * TransportRouter's wireTo() method registers itself here.
+     */
+    void setMeshSendCallback(std::function<bool(const MeshSendRequest &)> callback) {
+        onMeshSend_ = std::move(callback);
+    }
+
+    /**
+     * @brief Dispatch a mesh send via the registered callback
+     *
+     * @return true if the callback accepted the send (do not re-enqueue);
+     *         false if no callback is wired or it declined the target
+     *         (caller should fall back to the external queue).
+     */
+    bool performMeshSend(const MeshSendRequest &request) {
+        if (onMeshSend_) {
+            return onMeshSend_(request);
+        }
+        return false;
     }
 
     /**

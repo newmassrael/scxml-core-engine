@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // Structured error hierarchy for the SCE Mesh pipeline.
 //
@@ -82,12 +83,20 @@ pub enum CodegenError {
     #[error("mesh codegen not yet supported for language '{0}'")]
     UnsupportedLanguage(String),
 
-    /// Transport type is not yet implemented (Phase 1 = local only).
-    #[error("transport '{transport}' not yet supported (target '{target}', \
-             Phase 1 supports 'local' only)")]
+    /// Transport type is not yet implemented.
+    #[error("transport '{transport}' not yet supported (target '{target}')")]
     UnsupportedTransport {
         transport: String,
         target: String,
+    },
+
+    /// All targets for a machine must use the same transport type.
+    #[error("machine '{machine}' has mixed transport types: {transports}. \
+             All <send> targets must use the same transport in deploy.yaml",
+             transports = .transports.join(", "))]
+    MixedTransports {
+        machine: String,
+        transports: Vec<String>,
     },
 
     /// Cannot read the mesh Jinja2 template file.

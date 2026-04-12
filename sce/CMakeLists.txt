@@ -115,6 +115,11 @@ if(SCE_ENABLE_MESH)
 
     target_link_libraries(sce_mesh_common INTERFACE sce_core)
 
+    # POSIX shared memory requires -lrt on Linux (shm_open, shm_unlink)
+    if(NOT APPLE)
+        target_link_libraries(sce_mesh_common INTERFACE rt)
+    endif()
+
     target_compile_features(sce_mesh_common INTERFACE cxx_std_17)
 
     message(STATUS "SCE: Mesh transport layer enabled (sce_mesh_common)")
