@@ -815,7 +815,7 @@ project/
 ### 7.2 Build Tool Analysis
 
 ```
-sce-build --mesh deploy.yaml scxml/*.scxml
+sce-codegen generate scxml/*.scxml --deploy deploy.yaml -o generated/
 
 Step 1: Parse all SCXML documents
   brake.scxml   -> name="brake"
@@ -1345,9 +1345,9 @@ The same SCXML generates different transport code depending on deploy.yaml:
 
 ### Phase 1: Codegen Infrastructure + Local Transport
 
-Build the Mesh codegen pipeline in sce-build and generate the trivial case (same-process direct call).
+Extend sce-codegen with `--deploy` option and generate the trivial case (same-process direct call).
 
-- **sce-build `--mesh` subcommand**: parse deploy.yaml + SCXML, topology analysis, transport template selection
+- **`--deploy` option for sce-codegen**: when `--deploy deploy.yaml` is provided, sce-codegen parses topology + bindings alongside SCXML and generates transport code in addition to SM code. Without `--deploy`, existing behavior is unchanged
 - **deploy.yaml parser** (serde_yaml in Rust): topology, bindings, scheduler, QoS schema
 - **Topology analyzer**: collect `<send>` targets from SCXML, match against deploy.yaml bindings, detect same-device vs cross-device boundaries
 - **`local_transport` template**: same-process targets generate inlined direct calls (zero overhead, existing behavior preserved)
