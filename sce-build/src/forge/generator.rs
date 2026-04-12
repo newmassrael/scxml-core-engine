@@ -3437,9 +3437,11 @@ fn render_procedure_cpp(
     for (k, v) in &cpp_method_renames {
         owned_rename_map.insert(k.as_str(), v.clone());
     }
-    // <sce:helper> rename entries — each declared helper call site collapses
-    // to `helperName_(...)` (member std::function with trailing-underscore
-    // naming that matches the existing datamodel / import member convention).
+    let cpp_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::Cpp);
+    for (k, v) in &cpp_field_renames {
+        owned_rename_map.insert(k.as_str(), v.clone());
+    }
     let cpp_helper_rename_pairs: Vec<(String, String)> = m
         .helpers
         .iter()
@@ -3592,68 +3594,12 @@ fn render_procedure_cpp(
         })
         .collect();
 
-    // Build type map for assign type checking (variable name → SceType)
-    let type_map: std::collections::HashMap<&str, &SceType> = m
-        .inputs
-        .iter()
-        .chain(m.internals.iter())
-        .map(|f| (f.id.as_str(), &f.sce_type))
-        .collect();
-
-    // States that have transitions with assigns
-    let states_with_assigns: Vec<serde_json::Value> = m
-        .states
-        .iter()
-        .filter(|s| s.transitions.iter().any(|tr| !tr.assigns.is_empty()))
-        .map(|s| {
-            let assign_transitions: Vec<serde_json::Value> = s
-                .transitions
-                .iter()
-                .enumerate()
-                .filter(|(_, tr)| !tr.assigns.is_empty())
-                .map(|(idx, tr)| {
-                    let assigns: Vec<serde_json::Value> = tr
-                        .assigns
-                        .iter()
-                        .map(|a| {
-                            let expected = type_map
-                                .get(a.location.as_str())
-                                .map(|t| crate::forge::types::InferredType::from_sce_type(t))
-                                .unwrap_or(crate::forge::types::InferredType::Unknown);
-                            let transpiled = transpile_procedure_expr(
-                                &a.expr,
-                                ExprTarget::Cpp,
-                                &procedure_type_ctx,
-                                &assign_rename_map,
-                                expected,
-                            );
-                            // Type-aware wrapping: if target is bytes and source is string-like,
-                            // generate explicit conversion
-                            let wrapped = match type_map.get(a.location.as_str()) {
-                                Some(SceType::Bytes) if a.expr.trim() == "_event.data" => {
-                                    // string → vector<uint8_t> conversion (exact _event.data match only)
-                                    format!("std::vector<uint8_t>({transpiled}.begin(), {transpiled}.end())")
-                                }
-                                _ => transpiled,
-                            };
-                            serde_json::json!({
-                                "location": a.location,
-                                "expr": wrapped,
-                            })
-                        })
-                        .collect();
-                    serde_json::json!({
-                        "index": idx,
-                        "assigns": assigns,
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "name": filters::to_pascal_case(s.id.clone()),
-                "assign_transitions": assign_transitions,
-            })
-        })
-        .collect();
+    let states_with_assigns = build_procedure_states_with_assigns(
+        m,
+        ExprTarget::Cpp,
+        &procedure_type_ctx,
+        &assign_rename_map,
+    );
 
     // Collect raw sce:payload expressions for header dependency comment (CR#6)
     let payload_exprs: Vec<String> = m
@@ -3778,6 +3724,58 @@ fn stateful_import_method_renames(
             // this arm when a future fixture imports a filter/observer
             // method call and the byte golden fails to compile.
             _ => {}
+        }
+    }
+    out
+}
+
+/// Compute per-field rename entries for every stateful import's publicly
+/// accessible data members. This is the field-access counterpart to
+/// [`stateful_import_method_renames`] which handles method calls.
+///
+/// For each `(alias, field)` pair discovered via enrichment in
+/// [`validate_and_enrich_imports`], the helper produces a
+/// `"{alias}.{field}"` → `"<target-specific member access>"` entry so the
+/// rename pass collapses `Member{Ident(alias), field}` into a `Raw` node
+/// with the correct target-language spelling (snake_case for Rust/Python,
+/// PascalCase for Go, verbatim for C++/Kotlin).
+fn stateful_import_field_renames(
+    imports: &[ImportContext],
+    language: &generator::Language,
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for imp in imports {
+        if !imp.is_stateful {
+            continue;
+        }
+        for (qualified_key, _) in &imp.member_field_types {
+            // qualified_key is already `"alias.field"` (see lib.rs enrichment).
+            // Extract the bare field name for per-language case conversion.
+            let field = match qualified_key.split_once('.') {
+                Some((_, f)) => f,
+                None => continue,
+            };
+            let expansion = match language {
+                generator::Language::Cpp => {
+                    format!("{}.{}", imp.member_name, field)
+                }
+                generator::Language::Kotlin => {
+                    format!("{}.{}", imp.member_name, field)
+                }
+                generator::Language::Rust => {
+                    let snake_field = filters::to_snake_case(field.to_string());
+                    format!("self.{}.{}", imp.member_name, snake_field)
+                }
+                generator::Language::Go => {
+                    let pascal_field = filters::to_pascal_case(field.to_string());
+                    format!("p.{}.{}", imp.member_name, pascal_field)
+                }
+                generator::Language::Python => {
+                    let snake_field = filters::to_snake_case(field.to_string());
+                    format!("self.{}.{}", imp.member_name, snake_field)
+                }
+            };
+            out.push((qualified_key.clone(), expansion));
         }
     }
     out
@@ -4036,14 +4034,24 @@ fn build_procedure_final_states_with_donedata(
 }
 
 /// Build states that have transitions with assigns for procedure templates.
+///
+/// Both sides of every assignment flow through the expression pipeline:
+///   * **LHS** (`a.location`): via [`expr::transpile_lvalue`] — validates
+///     the shape is a legal lvalue (bare ident or single-level member),
+///     runs the full `tokenize → parse → infer → rename → emit` pass, and
+///     returns the inferred type.
+///   * **RHS** (`a.expr`): via [`transpile_procedure_expr`] as before, using
+///     the LHS's inferred type as the `expected` parameter to drive coercion.
+///
+/// This replaces the earlier design where LHS was transformed by per-language
+/// closures (`location_transform`) operating on the raw string — a path that
+/// bypassed inference, renaming, and emission, and broke on any location
+/// grammar beyond bare top-level identifiers.
 fn build_procedure_states_with_assigns(
     m: &ProcedureModel,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     assign_rename_map: &std::collections::HashMap<&str, &str>,
-    type_map: &std::collections::HashMap<&str, &SceType>,
-    location_transform: impl Fn(&str) -> String,
-    bytes_wrap: impl Fn(&str, &str) -> String,
 ) -> Vec<serde_json::Value> {
     m.states
         .iter()
@@ -4059,25 +4067,34 @@ fn build_procedure_states_with_assigns(
                         .assigns
                         .iter()
                         .map(|a| {
-                            let expected = type_map
-                                .get(a.location.as_str())
-                                .map(|t| crate::forge::types::InferredType::from_sce_type(t))
-                                .unwrap_or(crate::forge::types::InferredType::Unknown);
+                            let (location_emitted, lhs_ty) = expr::transpile_lvalue(
+                                &a.location,
+                                target,
+                                type_ctx,
+                                assign_rename_map,
+                            )
+                            .unwrap_or_else(|e| {
+                                (
+                                    format!("/* SCE_LVALUE_ERROR: {} */ {}", e, a.location),
+                                    crate::forge::types::InferredType::Unknown,
+                                )
+                            });
                             let transpiled = transpile_procedure_expr(
                                 &a.expr,
                                 target,
                                 type_ctx,
                                 assign_rename_map,
-                                expected,
+                                lhs_ty,
                             );
-                            let wrapped = match type_map.get(a.location.as_str()) {
-                                Some(SceType::Bytes) if a.expr.trim() == "_event.data" => {
-                                    bytes_wrap(&transpiled, &a.location)
-                                }
-                                _ => transpiled,
+                            let wrapped = if matches!(lhs_ty, crate::forge::types::InferredType::Bytes)
+                                && a.expr.trim() == "_event.data"
+                            {
+                                bytes_wrap_for(target, &transpiled)
+                            } else {
+                                transpiled
                             };
                             serde_json::json!({
-                                "location": location_transform(&a.location),
+                                "location": location_emitted,
                                 "expr": wrapped,
                             })
                         })
@@ -4094,6 +4111,21 @@ fn build_procedure_states_with_assigns(
             })
         })
         .collect()
+}
+
+/// Language-specific wrapping for `_event.data` assignment to a Bytes-typed
+/// lvalue. Each target language has its own idiom for converting a string
+/// (the pending event data) into the native byte container.
+fn bytes_wrap_for(target: ExprTarget, transpiled: &str) -> String {
+    match target {
+        ExprTarget::Cpp => {
+            format!("std::vector<uint8_t>({transpiled}.begin(), {transpiled}.end())")
+        }
+        ExprTarget::Kotlin => format!("{transpiled}.toByteArray()"),
+        ExprTarget::Rust => format!("{transpiled}.as_bytes().to_vec()"),
+        ExprTarget::Go => format!("[]byte({transpiled})"),
+        ExprTarget::Python => format!("{transpiled}.encode()"),
+    }
 }
 
 /// Build the type map (variable name → SceType) for assign type checking.
@@ -4257,15 +4289,18 @@ fn render_procedure_kotlin(
     for (k, v) in &kotlin_method_renames {
         owned_rename.insert(k.as_str(), v.clone());
     }
+    let kotlin_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::Kotlin);
+    for (k, v) in &kotlin_field_renames {
+        owned_rename.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
         .collect();
 
-    // Build assign rename map (same as rename_map for Kotlin)
     let assign_rename_map = rename_map.clone();
 
-    let type_map = build_procedure_type_map(m);
     let states_with_entry =
         build_procedure_states_with_entry(m, ExprTarget::Kotlin, &procedure_type_ctx, &rename_map, None);
     let final_states_with_donedata =
@@ -4284,9 +4319,6 @@ fn render_procedure_kotlin(
         ExprTarget::Kotlin,
         &procedure_type_ctx,
         &assign_rename_map,
-        &type_map,
-        |loc| loc.to_string(),
-        |transpiled, _| format!("{transpiled}.toByteArray()"),
     );
 
     let tmpl = env
@@ -4362,6 +4394,11 @@ fn render_procedure_rust(
     let rust_method_renames =
         stateful_import_method_renames(imports, &generator::Language::Rust);
     for (k, v) in &rust_method_renames {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
+    let rust_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::Rust);
+    for (k, v) in &rust_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
     // <sce:helper> rename entries: every declared helper call site collapses
@@ -4517,7 +4554,9 @@ fn render_procedure_rust(
     for (k, v) in &rust_method_renames {
         owned_payload_rename.insert(k.as_str(), v.clone());
     }
-    // <sce:helper> rename entries, same shape as `rename_map` above.
+    for (k, v) in &rust_field_renames {
+        owned_payload_rename.insert(k.as_str(), v.clone());
+    }
     for (k, v) in &helper_rename_pairs {
         owned_payload_rename.insert(k.as_str(), v.clone());
     }
@@ -4547,9 +4586,6 @@ fn render_procedure_rust(
         ExprTarget::Rust,
         &procedure_type_ctx,
         &assign_rename_map,
-        &type_map,
-        |loc| format!("self.{}", filters::to_snake_case(loc.to_string())),
-        |transpiled, _| format!("{transpiled}.as_bytes().to_vec()"),
     );
 
     let tmpl = env
@@ -4627,6 +4663,11 @@ fn render_procedure_go(
     let go_method_renames =
         stateful_import_method_renames(imports, &generator::Language::Go);
     for (k, v) in &go_method_renames {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
+    let go_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::Go);
+    for (k, v) in &go_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
     // <sce:helper> rename entries — Go func-field members accessed via the
@@ -4746,7 +4787,6 @@ fn render_procedure_go(
         })
         .collect();
 
-    let type_map = build_procedure_type_map(m);
     let states_with_entry =
         build_procedure_states_with_entry(m, ExprTarget::Go, &procedure_type_ctx, &rename_map, None);
     let final_states_with_donedata =
@@ -4763,9 +4803,6 @@ fn render_procedure_go(
         ExprTarget::Go,
         &procedure_type_ctx,
         &assign_rename_map,
-        &type_map,
-        |loc| format!("p.{}", go_escape_builtin(loc)),
-        |transpiled, _| format!("[]byte({transpiled})"),
     );
 
     let tmpl = env
@@ -4842,6 +4879,11 @@ fn render_procedure_python(
     let python_method_renames =
         stateful_import_method_renames(imports, &generator::Language::Python);
     for (k, v) in &python_method_renames {
+        owned_rename_with_event.insert(k.as_str(), v.clone());
+    }
+    let python_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::Python);
+    for (k, v) in &python_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
     // <sce:helper> rename entries — Python instance-method-level helpers use
@@ -4946,7 +4988,6 @@ fn render_procedure_python(
         })
         .collect();
 
-    let type_map = build_procedure_type_map(m);
     let states_with_entry =
         build_procedure_states_with_entry(m, ExprTarget::Python, &procedure_type_ctx, &rename_map, None);
     let final_states_with_donedata =
@@ -4963,9 +5004,6 @@ fn render_procedure_python(
         ExprTarget::Python,
         &procedure_type_ctx,
         &assign_rename_map,
-        &type_map,
-        |loc| format!("self._{}", filters::to_snake_case(loc.to_string())),
-        |transpiled, _| format!("{transpiled}.encode()"),
     );
 
     let tmpl = env

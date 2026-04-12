@@ -224,7 +224,7 @@ public:
 {% for tr in s.assign_transitions %}
             if (trIndex == {{ tr.index }}) {
 {% for a in tr.assigns %}
-                {{ a.location }}_ = {{ a.expr }};
+                {{ a.location }} = {{ a.expr }};
 {% endfor %}
             }
 {% endfor %}

@@ -132,6 +132,109 @@ pub fn transpile_typed(
     }
 }
 
+/// Transpile an assignment *left-hand side* (an SCXML `<assign location="…"/>`
+/// attribute) to the target language, using the same pipeline as
+/// [`transpile_typed`] for right-hand-side expressions.
+///
+/// The point of this function is symmetry: LHS and RHS share a single
+/// `tokenize → parse → infer → rename → emit` path. A previous implementation
+/// fed `location` through ad-hoc per-language string surgery (snake-casing,
+/// prepending `self.`, appending `_`, …) which drifted out of step with the
+/// RHS emitter the moment grammar extended beyond bare identifiers. This
+/// helper forces every future grammar extension — dotted codec field access,
+/// indexed writes, whatever — to flow through one pipeline.
+///
+/// Shape is restricted to the subset permitted as an SCXML assign location:
+///
+/// * `Ident(name)` — bare datamodel variable
+/// * `Member { object: Ident(alias), property: field }` — one level of
+///   member access, typically a stateful imported codec's field
+///
+/// Everything else (`Call`, `Index`, `Binary`, nested `Member`, literals, …)
+/// is rejected with a descriptive error — writing to a function result or a
+/// computed index makes no sense as an lvalue and we do not want to silently
+/// emit broken code.
+///
+/// Returns `(emitted, inferred_type)`. The inferred type flows back to the
+/// caller so it can drive the RHS's `expected` parameter (enabling type-aware
+/// coercion around the assignment) and make type-dependent post-processing
+/// decisions such as bytes-wrapping.
+pub fn transpile_lvalue(
+    location: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+) -> Result<(String, InferredType), String> {
+    let trimmed = location.trim();
+    if trimmed.is_empty() {
+        return Err("Empty assign location".to_string());
+    }
+
+    let tokens = tokenize(trimmed)?;
+    let mut ast = Parser::new(&tokens).parse_expression()?;
+    validate_lvalue_shape(&ast.kind).map_err(|e| {
+        format!("assign location {trimmed:?} is not an lvalue: {e}")
+    })?;
+
+    // Same ordering as `transpile_typed`: infer first so Ident/Member leaves
+    // can still bind their type from the user-visible name before rename
+    // collapses them into `Raw` fragments.
+    infer_types(&mut ast, ctx);
+    let ty = ast.ty;
+    if !renames.is_empty() {
+        rename_identifiers(&mut ast, renames);
+    }
+
+    // LHS has no top-down coercion context — it is a storage location, not a
+    // value being shoved into an expected type. Pass `Unknown` so the
+    // per-language emitter emits the identifier/member path verbatim.
+    let emitted = match target {
+        ExprTarget::Cpp => emit_cpp(&ast, InferredType::Unknown),
+        ExprTarget::Kotlin => emit_kotlin(&ast, InferredType::Unknown),
+        ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?,
+        ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
+        ExprTarget::Python => emit_python(&ast, InferredType::Unknown),
+    };
+    Ok((emitted, ty))
+}
+
+/// Validate that a parsed expression's shape is a legal assignment target.
+/// See [`transpile_lvalue`] for the full rule set.
+fn validate_lvalue_shape(kind: &ExprKind) -> Result<(), String> {
+    match kind {
+        ExprKind::Ident(_) => Ok(()),
+        ExprKind::Member { object, .. } => match &object.kind {
+            ExprKind::Ident(_) => Ok(()),
+            other => Err(format!(
+                "member access object must be a bare identifier, got: {}",
+                shape_name(other),
+            )),
+        },
+        other => Err(format!(
+            "must be an identifier or one-level member access, got: {}",
+            shape_name(other),
+        )),
+    }
+}
+
+/// Human-readable shape name for diagnostic messages.
+fn shape_name(kind: &ExprKind) -> &'static str {
+    match kind {
+        ExprKind::NumberLit(_) => "number literal",
+        ExprKind::StringLit { .. } => "string literal",
+        ExprKind::BoolLit(_) => "boolean literal",
+        ExprKind::NullLit => "null literal",
+        ExprKind::Ident(_) => "identifier",
+        ExprKind::Raw(_) => "pre-rendered fragment",
+        ExprKind::Binary { .. } => "binary operation",
+        ExprKind::Unary { .. } => "unary operation",
+        ExprKind::Conditional { .. } => "conditional",
+        ExprKind::Member { .. } => "member access",
+        ExprKind::Index { .. } => "index expression",
+        ExprKind::Call { .. } => "call expression",
+    }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Typed AST
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2576,5 +2679,148 @@ mod tests {
             InferredType::Unknown,
         ).unwrap();
         assert_eq!(out, "retryCount_ + 1");
+    }
+
+    // ── transpile_lvalue ───────────────────────────────────────
+
+    #[test]
+    fn lvalue_bare_ident_cpp() {
+        let mut renames = HashMap::new();
+        renames.insert("retryCount", "retryCount_");
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("retryCount", int(true, 32));
+        let (emitted, ty) = transpile_lvalue("retryCount", ExprTarget::Cpp, &ctx, &renames).unwrap();
+        assert_eq!(emitted, "retryCount_");
+        assert_eq!(ty, int(true, 32));
+    }
+
+    #[test]
+    fn lvalue_bare_ident_rust() {
+        let mut renames = HashMap::new();
+        renames.insert("seed", "self.seed");
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("seed", InferredType::Bytes);
+        let (emitted, ty) = transpile_lvalue("seed", ExprTarget::Rust, &ctx, &renames).unwrap();
+        assert_eq!(emitted, "self.seed");
+        assert_eq!(ty, InferredType::Bytes);
+    }
+
+    #[test]
+    fn lvalue_member_access_with_rename() {
+        let mut renames = HashMap::new();
+        renames.insert("frame.msgId", "self.frame.msg_id");
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("frame", InferredType::Unknown);
+        ctx.insert_var("frame.msgId", int(false, 32));
+        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Rust, &ctx, &renames).unwrap();
+        assert_eq!(emitted, "self.frame.msg_id");
+        assert_eq!(ty, int(false, 32));
+    }
+
+    // ── field_renames expansion per language ─────────────────
+    //
+    // These verify the rename map entries that stateful_import_field_renames
+    // produces for each language. The function itself lives in generator.rs
+    // but its output feeds into transpile_lvalue via the rename map — so the
+    // end-to-end proof that "frame.msgId" emits the correct target-language
+    // member path goes through this pipeline. Without these tests, the 5
+    // language branches of stateful_import_field_renames have zero coverage
+    // (no fixture currently accesses codec fields directly).
+
+    /// Helper: build a TypeCtx + rename map that simulates a stateful codec
+    /// import with alias "frame" and field "msgId: uint32", using the rename
+    /// expansion that stateful_import_field_renames would produce for the
+    /// given language.
+    fn codec_field_ctx_and_renames<'a>(
+        alias_rename: &'a str,
+        field_rename: &'a str,
+    ) -> (TypeCtx<'static>, HashMap<&'a str, &'a str>) {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("frame", InferredType::Unknown);
+        ctx.insert_var("frame.msgId", int(false, 32));
+        let mut renames = HashMap::new();
+        renames.insert("frame", alias_rename);
+        renames.insert("frame.msgId", field_rename);
+        (ctx, renames)
+    }
+
+    #[test]
+    fn lvalue_field_rename_cpp() {
+        // C++: member_name = "frame_", field verbatim
+        let (ctx, renames) = codec_field_ctx_and_renames("frame_", "frame_.msgId");
+        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Cpp, &ctx, &renames).unwrap();
+        assert_eq!(emitted, "frame_.msgId");
+        assert_eq!(ty, int(false, 32));
+    }
+
+    #[test]
+    fn lvalue_field_rename_kotlin() {
+        // Kotlin: member_name = "frame", field verbatim
+        let (ctx, renames) = codec_field_ctx_and_renames("frame", "frame.msgId");
+        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Kotlin, &ctx, &renames).unwrap();
+        assert_eq!(emitted, "frame.msgId");
+        assert_eq!(ty, int(false, 32));
+    }
+
+    #[test]
+    fn lvalue_field_rename_rust() {
+        // Rust: "self." + member_name + snake_case field
+        let (ctx, renames) = codec_field_ctx_and_renames("self.frame", "self.frame.msg_id");
+        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Rust, &ctx, &renames).unwrap();
+        assert_eq!(emitted, "self.frame.msg_id");
+        assert_eq!(ty, int(false, 32));
+    }
+
+    #[test]
+    fn lvalue_field_rename_go() {
+        // Go: "p." + PascalCase member + PascalCase field
+        let (ctx, renames) = codec_field_ctx_and_renames("p.Frame", "p.Frame.MsgId");
+        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Go, &ctx, &renames).unwrap();
+        assert_eq!(emitted, "p.Frame.MsgId");
+        assert_eq!(ty, int(false, 32));
+    }
+
+    #[test]
+    fn lvalue_field_rename_python() {
+        // Python: "self." + member_name + snake_case field
+        let (ctx, renames) = codec_field_ctx_and_renames("self.frame", "self.frame.msg_id");
+        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Python, &ctx, &renames).unwrap();
+        assert_eq!(emitted, "self.frame.msg_id");
+        assert_eq!(ty, int(false, 32));
+    }
+
+    #[test]
+    fn lvalue_rejects_call() {
+        let err = transpile_lvalue("foo()", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("call expression"));
+    }
+
+    #[test]
+    fn lvalue_rejects_binary() {
+        let err = transpile_lvalue("a + b", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("binary operation"));
+    }
+
+    #[test]
+    fn lvalue_rejects_index() {
+        let err = transpile_lvalue("arr[0]", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("index expression"));
+    }
+
+    #[test]
+    fn lvalue_rejects_nested_member() {
+        let err = transpile_lvalue("a.b.c", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("must be a bare identifier"));
+    }
+
+    #[test]
+    fn lvalue_rejects_empty() {
+        let err = transpile_lvalue("", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("Empty"));
     }
 }
