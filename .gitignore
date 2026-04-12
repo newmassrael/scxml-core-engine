@@ -146,6 +146,14 @@ build_debug_qjs/
 bazel-*/
 MODULE.bazel
 MODULE.bazel.lock
+# Auto-generated BUILD.bazel files from bazel/sce_repo.bzl repository rule.
+# Committing these would conflict with sce_local_repository's ctx.file() writes
+# and go stale against sce_base_sources.cmake (SSOT). embed/BUILD.bazel is the
+# only checked-in variant and lives under the already-ignored embed/ tree.
+/BUILD.bazel
+/sce/BUILD.bazel
+/third_party/BUILD.bazel
+/third_party/*/BUILD.bazel
 
 # SCE embed output (regenerate via: ./scripts/package_embed.sh)
 embed/
