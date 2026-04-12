@@ -8,9 +8,9 @@ package com.sce.generated.codec_little_endian
 // `CodecLittleEndian()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecLittleEndian(
-    val sensorId: UByte = 0.toUByte(),
-    val value: UShort = 0.toUShort(),
-    val status: UByte = 0.toUByte()
+    var sensorId: UByte = 0.toUByte(),
+    var value: UShort = 0.toUShort(),
+    var status: UByte = 0.toUByte()
 ) {
     fun encode(): ByteArray = byteArrayOf(
         sensorId.toByte(),

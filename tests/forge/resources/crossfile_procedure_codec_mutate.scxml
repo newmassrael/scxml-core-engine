@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — procedure mutating codec field -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="init" version="1.0">
+  <sce:import src="codec_simple_frame.scxml" kind="codec" as="frame"/>
+
+  <datamodel>
+    <data id="msgId" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+
+  <state id="init">
+    <transition target="send">
+      <assign location="frame.msgId" expr="msgId"/>
+    </transition>
+  </state>
+
+  <state id="send">
+    <onentry>
+      <send sce:service="transport" sce:payload="frame.encode()"/>
+    </onentry>
+    <transition event="ok" target="done"/>
+    <transition event="fail" target="error"/>
+  </state>
+
+  <final id="done">
+    <donedata><param name="result" expr="'success'"/></donedata>
+  </final>
+  <final id="error">
+    <donedata><param name="result" expr="'failure'"/></donedata>
+  </final>
+</scxml>

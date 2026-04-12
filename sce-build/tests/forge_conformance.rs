@@ -887,6 +887,31 @@ fn forge_crossfile_procedure_codec_python() {
 }
 
 #[test]
+fn forge_crossfile_procedure_codec_mutate_cpp() {
+    assert_standalone_forge("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.h");
+}
+
+#[test]
+fn forge_crossfile_procedure_codec_mutate_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_procedure_codec_mutate", "CrossfileProcedureCodecMutate.kt");
+}
+
+#[test]
+fn forge_crossfile_procedure_codec_mutate_rust() {
+    assert_standalone_forge_rust("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.rs");
+}
+
+#[test]
+fn forge_crossfile_procedure_codec_mutate_go() {
+    assert_standalone_forge_go("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.go");
+}
+
+#[test]
+fn forge_crossfile_procedure_codec_mutate_python() {
+    assert_standalone_forge_python("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.py");
+}
+
+#[test]
 fn forge_crossfile_validator_transform_cpp() {
     assert_standalone_forge("crossfile_validator_transform", "crossfile_validator_transform.h");
 }

@@ -158,6 +158,31 @@
         }
       ]
     },
+    "crossfile_procedure_codec_mutate": {
+      "fixture": "CrossfileProcedureCodecMutate::execute",
+      "signature": "(msg_id: u8) -> ProcedureRunResult{completed, final_state, dispatched_payload_bytes}",
+      "description": "Procedure that imports a codec, mutates one field via <assign location='frame.msgId' expr='msgId'/>, then dispatches frame.encode() through the service handler. Proves end-to-end that the unified LHS pipeline + stateful_import_field_renames correctly wire dotted member assignment into codec mutation across all five languages.",
+      "cases": [
+        {
+          "args": [42],
+          "expected": {
+            "completed": true,
+            "final_state": "done",
+            "dispatched_payload_bytes": [[42, 0, 0, 0]]
+          },
+          "note": "frame.msgId = 42 -> encode -> [42, 0, 0, 0]; length and payload remain default-zero"
+        },
+        {
+          "args": [255],
+          "expected": {
+            "completed": true,
+            "final_state": "done",
+            "dispatched_payload_bytes": [[255, 0, 0, 0]]
+          },
+          "note": "frame.msgId = 255 -> encode -> [255, 0, 0, 0]; max uint8 boundary"
+        }
+      ]
+    },
     "procedure_security_access": {
       "fixture": "ProcedureSecurityAccess::execute",
       "signature": "(ecu_addr: u32) -> ProcedureRunResult{completed, final_state, dispatched_payload_bytes}",

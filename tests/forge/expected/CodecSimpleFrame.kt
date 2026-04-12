@@ -8,9 +8,9 @@ package com.sce.generated.codec_simple_frame
 // `CodecSimpleFrame()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecSimpleFrame(
-    val msgId: UByte = 0.toUByte(),
-    val length: UByte = 0.toUByte(),
-    val payload: UShort = 0.toUShort()
+    var msgId: UByte = 0.toUByte(),
+    var length: UByte = 0.toUByte(),
+    var payload: UShort = 0.toUShort()
 ) {
     fun encode(): ByteArray = byteArrayOf(
         msgId.toByte(),

@@ -102,6 +102,10 @@ coverage/
 tmp/
 temp/
 
+# Core dumps
+core
+core.*
+
 # Documentation generated files
 docs/generated/
 docs/html/

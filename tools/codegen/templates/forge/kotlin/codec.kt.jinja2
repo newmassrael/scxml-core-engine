@@ -14,7 +14,7 @@ package com.sce.generated.{{ package }}
 // mirror the zero-initialized shape that decode() fills in on success.
 data class {{ struct_name }}(
 {% for field in fields %}
-    val {{ field.id }}: {{ field.kt_type }} = {{ field.kt_default }}{{ "," if not loop.last else "" }}
+    var {{ field.id }}: {{ field.kt_type }} = {{ field.kt_default }}{{ "," if not loop.last else "" }}
 {% endfor %}
 ) {
     fun encode(): ByteArray = byteArrayOf(
