@@ -1210,17 +1210,18 @@ fn binary_operand_type(op: BinOp, left: InferredType, right: InferredType) -> In
 // not insert `static_cast` — the compiler warns on narrowing conversions
 // but accepts them. Untyped float literals are emitted verbatim.
 //
-// Untyped decimal integer literals appearing in a float context get a `.0`
-// suffix. The C++ compiler would auto-promote without it, but the explicit
-// form survives manual review and matches the cross-language convention
-// shared with Rust/Kotlin/Go/Python.
+// Untyped decimal integer literals in a float context get a `.0` suffix to
+// prevent C++ integer division: `9 / 5` yields 1 without promotion.  The
+// push-down block below propagates the Float expectation into arithmetic
+// sub-trees so leaf literals reach cpp_coerce with the correct target type.
 //
 // The only other text transformation C++ does is mapping quote characters in
 // string literals (single → double) and emitting `nullptr` for null.
 
 fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
-    // Push-down: arith binary in float context propagates the float expectation
-    // through to the literal leaves so they get the `.0` suffix.
+    // Push-down: propagate Float expectation into arithmetic sub-trees so
+    // cpp_coerce appends `.0` to integer literals, preventing C++ integer
+    // division (e.g. `9 / 5` → `9.0 / 5.0`).
     if let ExprKind::Binary { op, left, right } = &expr.kind {
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
             let l_raw = emit_cpp(left, expected);
@@ -1324,8 +1325,8 @@ fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExp
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }
-    // C++ has wide implicit conversions, so the emitter only needs the cosmetic
-    // float-literal promotion for cross-language consistency.
+    // Promote untyped decimal integer literals in float context to prevent
+    // C++ integer division: `9 / 5` → `9.0 / 5.0`.
     if let (UntypedInt, Float { .. }) = (from, to) {
         if let ExprKind::NumberLit(text) = &node.kind {
             if is_decimal_integer_literal(text) {
@@ -1845,10 +1846,8 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             return Ok(format!("{l} {} {r}", go_binop(*op)));
         }
     }
-    // Push-down: Unary{Neg|Pos} in float context — see emit_rust for the
-    // rationale. Go has untyped constants so `-40` in a `float64` context
-    // already compiles, but we still rewrite it to `-40.0` for cross-
-    // language symmetry with the positive-literal `< 200.0` form.
+    // Push-down: Unary{Neg|Pos} in float context — propagate Float so
+    // go_coerce appends `.0` to the inner literal (e.g. `-40` → `-40.0`).
     if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_go(operand, expected)?;
@@ -1946,10 +1945,8 @@ fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr
         return raw;
     }
     match (from, to) {
-        // Untyped decimal integer literal → float context: append `.0` so the
-        // emitted source is visually unambiguous (Go's untyped constants would
-        // auto-convert at compile time, but the explicit form survives manual
-        // review and matches the cross-language convention).
+        // Promote untyped decimal integer literals in float context to prevent
+        // Go integer division: `9 / 5` → `9.0 / 5.0`.
         (UntypedInt, Float { .. }) => {
             if let ExprKind::NumberLit(text) = &node.kind {
                 if is_decimal_integer_literal(text) {
@@ -2009,14 +2006,14 @@ fn has_ternary(expr: &TypedExpr) -> bool {
 // * Translate literals (`true`/`false` → `True`/`False`, `null` → `None`).
 // * Translate ternary: `X ? Y : Z` → `Y if X else Z`.
 // * Single-quoted string literals (PEP 8 idiomatic style).
-// * Untyped decimal integer literal in float context → append `.0` so the
-//   emitted source survives manual review even though Python's `/` is float
-//   division by default. Matches the cross-language convention shared with
-//   Rust/Kotlin/Go/C++.
+// * No float-literal promotion needed: Python's `/` is always true division
+//   (PEP 238), so `9 / 5` yields 1.8 without an explicit `.0` suffix.
 
 fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
-    // Push-down: arith binary in float context propagates the float expectation
-    // through to the literal leaves so they get the `.0` suffix.
+    // Push-down: propagate Float expectation into arithmetic sub-trees.
+    // Python's `/` is true division so literal promotion is not required,
+    // but the push-down is kept for structural symmetry with the other four
+    // emitters (and python_coerce is a no-op for UntypedInt→Float).
     if let ExprKind::Binary { op, left, right } = &expr.kind {
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
             let l_raw = emit_python(left, expected);
@@ -2030,11 +2027,10 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
             return format!("{l} {} {r}", python_binop(*op));
         }
     }
-    // Push-down: Unary{Neg|Pos} in float context — Python is dynamically
-    // typed and `-40` works at runtime, but we still rewrite to `-40.0` so
-    // the generated source documents the float intent and stays symmetric
-    // with the positive-literal `< 200.0` form. Same shape as the other 4
-    // emitters; see emit_rust for the cross-language rationale.
+    // Push-down: Unary{Neg|Pos} in float context — structural symmetry
+    // with the other four emitters.  python_coerce is a no-op for
+    // UntypedInt→Float, so `-40` stays as `-40` (Python's dynamic typing
+    // and true division make explicit promotion unnecessary).
     if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_python(operand, expected);
@@ -2050,7 +2046,7 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
         }
     }
     let raw = python_emit_node(expr);
-    python_coerce(raw, expr.ty, expected, expr)
+    python_coerce(raw, expr.ty, expected)
 }
 
 fn python_emit_node(expr: &TypedExpr) -> String {
@@ -2117,20 +2113,14 @@ fn python_emit_node(expr: &TypedExpr) -> String {
     }
 }
 
-fn python_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+fn python_coerce(raw: String, from: InferredType, to: InferredType) -> String {
     use InferredType::*;
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }
-    // Python is duck-typed; the only coercion the emitter has to render is the
-    // cosmetic float-literal promotion for cross-language consistency.
-    if let (UntypedInt, Float { .. }) = (from, to) {
-        if let ExprKind::NumberLit(text) = &node.kind {
-            if is_decimal_integer_literal(text) {
-                return format!("{raw}.0");
-            }
-        }
-    }
+    // Python's `/` is true division (PEP 238) and its dynamic typing
+    // handles int→float implicitly.  No `.0` suffix needed — unlike
+    // C++/Go/Kotlin/Rust where integer division would produce wrong results.
     raw
 }
 
@@ -2527,29 +2517,15 @@ mod tests {
         assert_eq!(out, "float64(raw) * 0.1");
     }
 
-    // Known gap — language-conditional literal promotion is not yet wired.
+    // ── Language-conditional literal promotion ─────────────────
     //
-    // The three `*_leaves_literal_alone` / `*_not_promoted` tests below assert
-    // that for languages with implicit int→float conversion (C++, Python, Go),
-    // integer literals should be left as `9 / 5 + 32` rather than promoted to
-    // `9.0 / 5.0 + 32.0`. The current typed-expression pipeline applies the
-    // Kotlin/Rust promotion rule uniformly — Kotlin's
-    // `kotlin_promotes_decimal_literal_to_double_in_float_context` test
-    // depends on this behaviour and still passes, which is why these three
-    // are pinned at `#[ignore]` rather than fixed: the real fix requires
-    // splitting the "promote literals in float context" rule by target
-    // language (Kotlin/Rust keep it, C++/Python/Go drop it).
-    //
-    // Impact on shipped code: none. No current production fixture exercises
-    // this expression shape because mixed int/float literals in a float
-    // context do not appear in any of the 161 product goldens or the 25
-    // cross-language numerical conformance fixtures. The promotion is a
-    // theoretical over-eagerness, not a miscompile of shipped code. These
-    // tests remain as a latent requirement so the day the rule is split, a
-    // regression becomes visible immediately.
+    // C++/Go promote integer literals to `.0` in float context to prevent
+    // integer division (`9 / 5` → 1 without promotion). Python's `/` is
+    // true division (PEP 238), so no promotion needed. Kotlin/Rust require
+    // promotion for type-system reasons.
+
     #[test]
-    #[ignore = "language-conditional literal promotion not wired — see comment above"]
-    fn go_untyped_literal_not_promoted_in_float_context() {
+    fn go_promotes_literal_in_float_context() {
         let ctx = ctx_with_float("celsius");
         let out = transpile_typed(
             "celsius * 9 / 5 + 32",
@@ -2558,8 +2534,21 @@ mod tests {
             &empty_renames(),
             float(64),
         ).unwrap();
-        // Go compiler will promote 9/5/32 implicitly; emitter leaves verbatim.
-        assert_eq!(out, "celsius * 9 / 5 + 32");
+        assert_eq!(out, "celsius * 9.0 / 5.0 + 32.0");
+    }
+
+    #[test]
+    fn go_integer_division_prevented_by_promotion() {
+        // Without promotion, `9 / 5 + celsius` would integer-divide to 1.
+        let ctx = ctx_with_float("celsius");
+        let out = transpile_typed(
+            "9 / 5 + celsius",
+            ExprTarget::Go,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "9.0 / 5.0 + celsius");
     }
 
     // ── Type-aware coercion: Kotlin ─────────────────────────────
@@ -2593,9 +2582,7 @@ mod tests {
     // ── Type-aware coercion: C++ / Python ───────────────────────
 
     #[test]
-    #[ignore = "language-conditional literal promotion not wired — see go_untyped_literal_not_promoted_in_float_context"]
-    fn cpp_float_context_leaves_literal_alone() {
-        // C++ implicit conversion handles it — emitter stays out of the way.
+    fn cpp_promotes_literal_in_float_context() {
         let ctx = ctx_with_float("celsius");
         let out = transpile_typed(
             "celsius * 9 / 5 + 32",
@@ -2604,12 +2591,25 @@ mod tests {
             &empty_renames(),
             float(64),
         ).unwrap();
-        assert_eq!(out, "celsius * 9 / 5 + 32");
+        assert_eq!(out, "celsius * 9.0 / 5.0 + 32.0");
     }
 
     #[test]
-    #[ignore = "language-conditional literal promotion not wired — see go_untyped_literal_not_promoted_in_float_context"]
+    fn cpp_integer_division_prevented_by_promotion() {
+        let ctx = ctx_with_float("celsius");
+        let out = transpile_typed(
+            "9 / 5 + celsius",
+            ExprTarget::Cpp,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "9.0 / 5.0 + celsius");
+    }
+
+    #[test]
     fn python_float_context_leaves_literal_alone() {
+        // Python `/` is true division — no promotion needed.
         let ctx = ctx_with_float("celsius");
         let out = transpile_typed(
             "celsius * 9 / 5 + 32",
@@ -2619,6 +2619,20 @@ mod tests {
             float(64),
         ).unwrap();
         assert_eq!(out, "celsius * 9 / 5 + 32");
+    }
+
+    #[test]
+    fn python_integer_division_safe_without_promotion() {
+        // Python `/` is true division (PEP 238): `9 / 5` yields 1.8.
+        let ctx = ctx_with_float("celsius");
+        let out = transpile_typed(
+            "9 / 5 + celsius",
+            ExprTarget::Python,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "9 / 5 + celsius");
     }
 
     // ── Function signature lookup ───────────────────────────────
