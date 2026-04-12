@@ -1,4 +1,5 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
+// Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.
 //
 // Event-driven state machine using ProcedurePolicy trait.

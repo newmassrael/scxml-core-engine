@@ -15,6 +15,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::forge::model::RuntimeDep;
 use crate::generator::Language;
 
 /// Canonical primitive types used across the manifest. Each per-language
@@ -279,6 +280,18 @@ impl FixtureSpec {
             FixtureSpec::Validator { .. } => "validator",
             FixtureSpec::Codec { .. } => "codec",
         }
+    }
+
+    /// Conservative (upper-bound) runtime dependency for this fixture kind.
+    ///
+    /// Delegates to `ForgeKind::max_runtime_dep()` via `kind_str()` so the
+    /// classification table exists in exactly one place. For the precise
+    /// L1-vs-L2 distinction on actual parsed documents, see
+    /// `ForgeDocument::runtime_dep()`.
+    pub fn runtime_dep(&self) -> RuntimeDep {
+        crate::forge::model::ForgeKind::from_attr(self.kind_str())
+            .expect("all fixture kind_str values are valid ForgeKind names")
+            .max_runtime_dep()
     }
 }
 
@@ -700,7 +713,8 @@ pub fn render_harness(
     // place (see `register_conformance_filters`) instead of being duplicated
     // as inline macros inside each harness template.
     register_conformance_filters(&mut env);
-    crate::generator::load_templates(&mut env, &template_dir)?;
+    crate::generator::load_templates(&mut env, &template_dir)
+        .map_err(|e| e.to_string())?;
 
     let tmpl_name = layout.template_filename;
     let tmpl = env

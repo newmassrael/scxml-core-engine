@@ -1,4 +1,5 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="condition")
+// Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
 pub fn condition_threshold(coolant_temp: f64, oil_temp: f64, max_temp: f64) -> bool {

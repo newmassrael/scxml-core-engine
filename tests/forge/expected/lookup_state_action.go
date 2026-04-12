@@ -1,4 +1,5 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
+// Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.
 
 package lookup_state_action

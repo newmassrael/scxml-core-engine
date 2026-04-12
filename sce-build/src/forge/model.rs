@@ -15,6 +15,53 @@ use serde::Serialize;
 /// Shared by both SCE Forge (kind system) and SCE Mesh (distributed runtime).
 pub const SCE_NAMESPACE: &str = "http://sce.dev/ext";
 
+/// Runtime dependency tier — codifies SCE_FORGE.md §8 Kind Summary.
+///
+/// C1 (static linking only) and C2 (no stateful global services) are the two
+/// non-negotiable embedded deployment constraints defined in §2.1. Every tier
+/// satisfies both by construction: `None` has zero deps, `ForgeRuntime` is
+/// header-only templates, `ForgeRuntimeHal` uses DI-injected interfaces, and
+/// `SceRuntime` is the existing W3C engine (outside forge scope).
+///
+/// The predicates `satisfies_c1()`/`satisfies_c2()` exist as gates: adding a
+/// new kind that violates either constraint forces an explicit policy decision
+/// rather than a silent pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeDep {
+    /// No runtime dependency. Pure inline code.
+    None,
+    /// Depends on `sce_forge_runtime` (header-only templates, static linking).
+    ForgeRuntime,
+    /// Depends on `sce_forge_runtime` HAL interface (user-injected DI).
+    ForgeRuntimeHal,
+    /// Depends on `sce_runtime` (W3C SCXML engine). Outside forge codegen scope.
+    SceRuntime,
+}
+
+// C1/C2 compliance rationale per tier (SCE_FORGE.md §2.1):
+//
+//   None           — no dependency at all; trivially C1+C2.
+//   ForgeRuntime   — header-only templates, static linking (C1),
+//                    pure functions + class templates, no global state (C2).
+//   ForgeRuntimeHal — abstract interface, user-injected DI (C1+C2).
+//   SceRuntime     — W3C engine, static linking, own lifecycle (C1+C2).
+//
+// All current tiers satisfy both constraints by construction. If a future
+// tier violates either, the Rust exhaustive match in max_runtime_dep() and
+// runtime_dep() will force a conscious decision at the addition site.
+
+impl std::fmt::Display for RuntimeDep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::ForgeRuntime => write!(f, "sce_forge_runtime"),
+            Self::ForgeRuntimeHal => write!(f, "sce_forge_runtime::hal"),
+            Self::SceRuntime => write!(f, "sce_runtime"),
+        }
+    }
+}
+
 /// SCE Forge kind — declares what pattern an Extended SCXML document represents.
 /// W3C SCXML Section 3.1 allows foreign namespace attributes on any element.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -83,6 +130,26 @@ impl ForgeKind {
             Self::Transform | Self::Lookup | Self::Condition => false,
             Self::Interpolation => false,
             Self::Statechart => false,
+        }
+    }
+
+    /// Conservative (worst-case) runtime dependency for this kind.
+    ///
+    /// Returns the maximum `RuntimeDep` tier the kind can require. For kinds
+    /// whose dependency varies by document content (e.g. Procedure L1 vs L2),
+    /// this returns the upper bound. Use `ForgeDocument::runtime_dep()` for
+    /// a precise answer after parsing.
+    pub fn max_runtime_dep(&self) -> RuntimeDep {
+        match self {
+            Self::Transform | Self::Condition | Self::Codec
+            | Self::Validator => RuntimeDep::None,
+            // Lookup: string output = None (enum dispatch), numeric = ForgeRuntime.
+            // Procedure: L1 = None, L2 = ForgeRuntime.
+            // Upper bound for both is ForgeRuntime.
+            Self::Lookup | Self::Procedure => RuntimeDep::ForgeRuntime,
+            Self::Filter | Self::Interpolation | Self::Observer => RuntimeDep::ForgeRuntime,
+            Self::Timer => RuntimeDep::ForgeRuntimeHal,
+            Self::Statechart => RuntimeDep::SceRuntime,
         }
     }
 
@@ -486,6 +553,23 @@ pub struct ProcedureModel {
     pub states: Vec<ProcedureState>,
 }
 
+impl ProcedureModel {
+    /// Whether this procedure is Level 2 (event-driven).
+    ///
+    /// A procedure is L2 if it uses any feature that requires the
+    /// `sce_forge_runtime::procedure` execution engine: internal state,
+    /// helper DI points, `<send>` entry actions, or `<donedata>` on final
+    /// states. L1 procedures are pure guard-only diamond flows with zero
+    /// runtime dependency.
+    pub fn is_l2(&self) -> bool {
+        !self.internals.is_empty()
+            || !self.helpers.is_empty()
+            || self.states.iter().any(|s| {
+                !s.on_entry_sends.is_empty() || !s.done_params.is_empty()
+            })
+    }
+}
+
 // ── Codec kind ─────────────────────────────────────────────────
 
 /// Endianness for byte-level operations.
@@ -841,6 +925,9 @@ pub struct ManifestEntry {
     pub src: String,
     pub name: String,
     pub kind: ForgeKind,
+    /// Conservative (upper-bound) runtime dependency derived from `kind`.
+    /// Precise value requires parsing the document (see `ForgeDocument::runtime_dep()`).
+    pub runtime_dep: RuntimeDep,
     pub imports: Vec<ForgeImport>,
 }
 
@@ -946,6 +1033,29 @@ impl ForgeDocument {
             Self::Interpolation(_) => ForgeKind::Interpolation,
             Self::Timer(_) => ForgeKind::Timer,
             Self::Observer(_) => ForgeKind::Observer,
+        }
+    }
+
+    /// Precise runtime dependency for this parsed document.
+    ///
+    /// Unlike `ForgeKind::max_runtime_dep()` which returns the conservative
+    /// upper bound, this inspects the actual parsed model to determine the
+    /// exact tier. Content-dependent kinds:
+    ///   - Procedure: L1 (guard-only) = None, L2 (event-driven) = ForgeRuntime.
+    ///   - Lookup: string output (enum dispatch) = None, numeric = ForgeRuntime.
+    pub fn runtime_dep(&self) -> RuntimeDep {
+        match self {
+            Self::Transform(_) | Self::Condition(_) | Self::Codec(_)
+            | Self::Validator(_) => RuntimeDep::None,
+            Self::Lookup(m) => {
+                if m.output_is_string() { RuntimeDep::None } else { RuntimeDep::ForgeRuntime }
+            }
+            Self::Filter(_) | Self::Interpolation(_)
+            | Self::Observer(_) => RuntimeDep::ForgeRuntime,
+            Self::Timer(_) => RuntimeDep::ForgeRuntimeHal,
+            Self::Procedure(m) => {
+                if m.is_l2() { RuntimeDep::ForgeRuntime } else { RuntimeDep::None }
+            }
         }
     }
 }

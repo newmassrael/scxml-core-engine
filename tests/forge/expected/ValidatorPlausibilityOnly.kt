@@ -1,4 +1,5 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
+// Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
 package com.sce.generated.validator_plausibility_only

@@ -1,4 +1,5 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation")
+// Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.
 
 #pragma once
