@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — validator importing codec -->
+<!-- Validates decoded fields from a codec frame against range constraints. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="codec_simple_frame.scxml" kind="codec" as="frame"/>
+
+  <datamodel>
+    <data id="msgId" sce:type="uint8" sce:direction="in"
+          sce:range-min="0" sce:range-max="255"/>
+    <data id="payload" sce:type="uint16" sce:direction="in"
+          sce:range-min="0" sce:range-max="4095"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="frame.msgId === msgId &amp;&amp; frame.payload === payload"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,6 @@
+// SCE Forge: Inline lookup 'rpmStatus'
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RpmStatus {
+    Off,
+    Running,
+}

@@ -57,6 +57,11 @@ pub enum {{ machine_name }}Event {
     Null,
 }
 
+{% if inline_kind_types %}
+// ── SCE Forge: Inline kind type definitions ──────────────
+{{ inline_kind_types }}
+
+{% endif %}
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -237,6 +242,11 @@ impl {{ machine_name }}Policy {
         }
     }
 
+{% if inline_kind_fns %}
+    // ── SCE Forge: Inline kind member functions ──────────────
+{{ inline_kind_fns }}
+
+{% endif %}
 {% include 'utility_methods.rs.jinja2' %}
 {% include 'scriptengine_helpers.rs.jinja2' %}
 {% include 'invoke_methods.rs.jinja2' %}

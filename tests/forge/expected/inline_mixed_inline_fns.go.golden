@@ -1,0 +1,19 @@
+// SCE Forge: Inline lookup 'rpmStatus'
+func LookupRpmStatus(raw uint32) RpmStatus {
+	switch raw {
+	case 0:
+		return RpmStatusOFF
+	case 1:
+		return RpmStatusRUNNING
+	default:
+		return RpmStatusOFF
+	}
+}
+// SCE Forge: Inline condition 'isReady'
+func (p *InlineMixedPolicy) IsReady() bool {
+	return p.speed == 0 && p.engineOff == true
+}
+// SCE Forge: Inline transform 'toFahrenheit'
+func (p *InlineMixedPolicy) ComputeToFahrenheit() float64 {
+	return p.celsius * 1.8 + 32.0
+}

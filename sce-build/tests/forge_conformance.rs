@@ -15,10 +15,6 @@ fn project_root() -> std::path::PathBuf {
         .to_path_buf()
 }
 
-fn template_dir() -> std::path::PathBuf {
-    project_root().join("tools/codegen/templates")
-}
-
 fn resource_dir() -> std::path::PathBuf {
     project_root().join("tests/forge/resources")
 }
@@ -128,38 +124,36 @@ fn assert_standalone_forge_rust(scxml_name: &str, expected_filename: &str) {
     );
 }
 
-/// Strip the `// From: ...` comment line (path-dependent) for comparison.
+/// Strip path-dependent comment lines for comparison.
+/// Handles `// From: ...` (C++/Rust/Go) and `// Source: ...` (Kotlin).
 fn normalize_for_comparison(code: &str) -> String {
     code.lines()
-        .filter(|line| !line.starts_with("// From:"))
+        .filter(|line| !line.starts_with("// From:") && !line.starts_with("// Source:"))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// Generate C++ from a statechart with inline kinds and verify inline kind code appears.
-fn assert_inline_kinds(scxml_name: &str) {
+/// Generate C++ from a statechart with inline kinds and verify against full-file golden.
+/// C++ uses the pre-existing full-file golden comparison.
+fn assert_inline_kinds_cpp(scxml_name: &str) {
     let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
+    let tdir = sce_build::find_template_dir_for(sce_build::generator::Language::Cpp);
 
     let output = sce_build::compile_scxml_lang(
         scxml_path.to_str().unwrap(),
-        &template_dir(),
+        &tdir,
         sce_build::generator::Language::Cpp,
     )
-    .unwrap_or_else(|e| panic!("Statechart codegen failed for {scxml_name}: {e}"));
+    .unwrap_or_else(|e| panic!("Statechart codegen (Cpp) failed for {scxml_name}: {e}"));
 
     let header = &output.files[0].1;
     assert!(
         header.contains("SCE Forge: Inline"),
-        "Inline kind code missing in {scxml_name} output"
+        "Inline kind code missing in {scxml_name} (Cpp) output"
     );
 
-    // Compare against expected output (path-agnostic)
     let expected_path = expected_dir().join(format!("{scxml_name}_sm.h"));
     if std::env::var("UPDATE_GOLDEN").is_ok() {
-        // Preserve the path-agnostic relative `// From:` line that the
-        // committed golden uses; the live codegen embeds an absolute path
-        // which would otherwise leak into the regenerated golden and be
-        // machine-specific.
         let absolute = scxml_path.to_string_lossy().into_owned();
         let relative = format!("tests/forge/resources/{scxml_name}.scxml");
         let normalized = header.replace(&absolute, &relative);
@@ -172,9 +166,191 @@ fn assert_inline_kinds(scxml_name: &str) {
         assert_eq!(
             normalize_for_comparison(header).trim(),
             normalize_for_comparison(&expected).trim(),
-            "Output mismatch for {scxml_name}\n--- expected: {}\n+++ generated",
+            "Output mismatch for {scxml_name} (Cpp)\n--- expected: {}\n+++ generated",
             expected_path.display()
         );
+    }
+}
+
+// ── Inline kind multi-language test infrastructure ──────────────
+//
+// Three-layer verification:
+//   1. Fragment golden — render_inline_kinds() output compared against
+//      small, stable golden files (~15 lines). Decoupled from template
+//      changes; only breaks when the inline kind renderer itself changes.
+//   2. Structural assertions — language-specific pattern checks that
+//      verify idiomatic output (e.g. Rust `self.` prefix, Go receiver).
+//   3. Compile gate — syn::parse_file() on the full generated Rust
+//      statechart proves the rendered code is syntactically valid when
+//      embedded in a real file context.
+
+/// Render inline kinds directly and compare against fragment goldens,
+/// then verify structural correctness and template integration.
+fn assert_inline_kinds_lang(
+    scxml_name: &str,
+    lang: sce_build::generator::Language,
+) {
+    use sce_build::forge::generator::{render_inline_kinds, InlineKindCode};
+
+    let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
+
+    // ── Parse model ────────────────────────────────────────────
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_file(scxml_path.to_str().unwrap())
+        .unwrap_or_else(|e| panic!("Parse failed for {scxml_name}: {e}"));
+
+    let machine_name = sce_build::filters::to_pascal_case(model.name.clone());
+
+    assert!(
+        !model.inline_kinds.is_empty(),
+        "{scxml_name} must have inline kinds for this test"
+    );
+
+    // ── Layer 1: Fragment golden ───────────────────────────────
+    let InlineKindCode { type_defs, member_fns } =
+        render_inline_kinds(&model.inline_kinds, lang, &machine_name)
+            .unwrap_or_else(|e| panic!("render_inline_kinds({lang:?}) failed: {e}"));
+
+    let lang_tag = match lang {
+        sce_build::generator::Language::Kotlin => "kt",
+        sce_build::generator::Language::Rust => "rs",
+        sce_build::generator::Language::Go => "go",
+        _ => panic!("unsupported language for inline kind lang test"),
+    };
+
+    // Member functions golden (always present)
+    let fns_golden_path = expected_dir().join(format!(
+        "{scxml_name}_inline_fns.{lang_tag}.golden"
+    ));
+    if std::env::var("UPDATE_GOLDEN").is_ok() {
+        std::fs::write(&fns_golden_path, member_fns.trim().to_string() + "\n")
+            .unwrap_or_else(|e| panic!("Cannot write {}: {e}", fns_golden_path.display()));
+    } else if fns_golden_path.exists() {
+        let expected = std::fs::read_to_string(&fns_golden_path).unwrap();
+        assert_eq!(
+            member_fns.trim(),
+            expected.trim(),
+            "Fragment mismatch: member_fns ({lang:?})\n--- expected: {}\n+++ generated",
+            fns_golden_path.display()
+        );
+    } else {
+        panic!(
+            "Fragment golden not found: {}  (run with UPDATE_GOLDEN=1)",
+            fns_golden_path.display()
+        );
+    }
+
+    // Type definitions golden (Rust/Go only)
+    if !type_defs.is_empty() {
+        let types_golden_path = expected_dir().join(format!(
+            "{scxml_name}_inline_types.{lang_tag}.golden"
+        ));
+        if std::env::var("UPDATE_GOLDEN").is_ok() {
+            std::fs::write(&types_golden_path, type_defs.trim().to_string() + "\n")
+                .unwrap_or_else(|e| panic!("Cannot write {}: {e}", types_golden_path.display()));
+        } else if types_golden_path.exists() {
+            let expected = std::fs::read_to_string(&types_golden_path).unwrap();
+            assert_eq!(
+                type_defs.trim(),
+                expected.trim(),
+                "Fragment mismatch: type_defs ({lang:?})\n--- expected: {}\n+++ generated",
+                types_golden_path.display()
+            );
+        } else {
+            panic!(
+                "Fragment golden not found: {}  (run with UPDATE_GOLDEN=1)",
+                types_golden_path.display()
+            );
+        }
+    }
+
+    // ── Layer 2: Structural assertions ─────────────────────────
+    assert_inline_structural(&member_fns, &type_defs, lang);
+
+    // ── Layer 3: Template integration + compile gate ───────────
+    let tdir = sce_build::find_template_dir_for(lang);
+    let output = sce_build::compile_scxml_lang(
+        scxml_path.to_str().unwrap(),
+        &tdir,
+        lang,
+    )
+    .unwrap_or_else(|e| panic!("Statechart codegen ({lang:?}) failed for {scxml_name}: {e}"));
+
+    let full_code = &output.files[0].1;
+
+    // Verify fragments are actually embedded in the generated statechart
+    assert!(
+        full_code.contains("SCE Forge: Inline"),
+        "Inline kind marker missing in full statechart ({lang:?})"
+    );
+
+    // Compile gate: Rust only (syn is available; Go/Kotlin would need external toolchains)
+    if matches!(lang, sce_build::generator::Language::Rust) {
+        syn::parse_file(full_code).unwrap_or_else(|e| {
+            panic!("Generated Rust statechart with inline kinds fails syn parse: {e}")
+        });
+    }
+}
+
+/// Language-specific structural assertions on inline kind output.
+/// Verifies idiomatic patterns that byte-comparison alone cannot catch
+/// (e.g. a missing `self.` prefix would still match a stale golden).
+fn assert_inline_structural(
+    member_fns: &str,
+    type_defs: &str,
+    lang: sce_build::generator::Language,
+) {
+    use sce_build::generator::Language;
+    match lang {
+        Language::Kotlin => {
+            // Nested enum
+            assert!(member_fns.contains("enum class RpmStatus"),
+                "Kotlin: missing nested enum class");
+            // when expression
+            assert!(member_fns.contains("= when ("),
+                "Kotlin: missing when expression in lookup");
+            // Kotlin-idiomatic function signatures
+            assert!(member_fns.contains("fun isReady(): Boolean ="),
+                "Kotlin: missing condition function");
+            assert!(member_fns.contains("fun computeToFahrenheit(): Double ="),
+                "Kotlin: missing transform function");
+        }
+        Language::Rust => {
+            // Module-level enum in type_defs
+            assert!(type_defs.contains("pub enum RpmStatus"),
+                "Rust: missing enum in type_defs");
+            assert!(type_defs.contains("#[derive(Debug, Clone, Copy, PartialEq)]"),
+                "Rust: missing derives on enum");
+            // self. prefix for member access
+            assert!(member_fns.contains("self."),
+                "Rust: missing self. prefix for member access");
+            // Idiomatic signatures
+            assert!(member_fns.contains("pub fn is_ready(&self) -> bool"),
+                "Rust: missing condition function signature");
+            assert!(member_fns.contains("pub fn compute_to_fahrenheit(&self) -> f64"),
+                "Rust: missing transform function signature");
+            // match expression in lookup
+            assert!(member_fns.contains("match raw"),
+                "Rust: missing match in lookup");
+        }
+        Language::Go => {
+            // Package-level type in type_defs
+            assert!(type_defs.contains("type RpmStatus int"),
+                "Go: missing type in type_defs");
+            assert!(type_defs.contains("RpmStatus = iota"),
+                "Go: missing iota const block");
+            // p. receiver prefix for member access
+            assert!(member_fns.contains("p."),
+                "Go: missing p. receiver prefix for member access");
+            // Exported method with receiver
+            assert!(member_fns.contains("func (p *"),
+                "Go: missing receiver method");
+            // Package-level lookup (no receiver)
+            assert!(member_fns.contains("func LookupRpmStatus("),
+                "Go: missing package-level lookup function");
+        }
+        _ => {}
     }
 }
 
@@ -940,7 +1116,22 @@ fn forge_crossfile_validator_transform_python() {
 
 #[test]
 fn forge_inline_mixed() {
-    assert_inline_kinds("inline_mixed");
+    assert_inline_kinds_cpp("inline_mixed");
+}
+
+#[test]
+fn forge_inline_mixed_kotlin() {
+    assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::Kotlin);
+}
+
+#[test]
+fn forge_inline_mixed_rust() {
+    assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::Rust);
+}
+
+#[test]
+fn forge_inline_mixed_go() {
+    assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::Go);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1348,6 +1539,21 @@ fn crossfile_matrix_procedure_codec_mutate() {
 #[test]
 fn crossfile_matrix_validator_transform() {
     assert_crossfile_codegen_all_languages("crossfile_validator_transform");
+}
+
+#[test]
+fn crossfile_matrix_filter_transform() {
+    assert_crossfile_codegen_all_languages("crossfile_filter_transform");
+}
+
+#[test]
+fn crossfile_matrix_observer_condition() {
+    assert_crossfile_codegen_all_languages("crossfile_observer_condition");
+}
+
+#[test]
+fn crossfile_matrix_validator_codec() {
+    assert_crossfile_codegen_all_languages("crossfile_validator_codec");
 }
 
 // ═══════════════════════════════════════════════════════════════

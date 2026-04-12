@@ -337,6 +337,25 @@ pub(crate) enum UnaryOp {
 
 /// Replace the contents of every string literal with spaces of equal length,
 /// preserving expression length and non-string token positions.
+/// Extract unique free identifier names from a raw ECMAScript expression.
+/// Used by inline kind rendering to build member-access renames for languages
+/// that require explicit `self.` / `p.` prefixes (Rust, Go).
+pub fn extract_free_idents(raw_expr: &str) -> Result<Vec<String>, ExprError> {
+    let tokens = tokenize(raw_expr.trim())?;
+    let mut idents = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for token in &tokens {
+        if let Token::Ident(s) = token {
+            // Skip boolean/null literals — they are parsed as Ident by the tokenizer
+            // but are language keywords, not member variable references.
+            if s != "true" && s != "false" && s != "null" && seen.insert(s.clone()) {
+                idents.push(s.clone());
+            }
+        }
+    }
+    Ok(idents)
+}
+
 pub fn strip_string_literals(expr: &str) -> String {
     static RE_STR: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(r#"'[^']*'|"[^"]*""#).unwrap()

@@ -85,6 +85,11 @@ func (e {{ machine_name }}Event) String() string {
 	return "unknown"
 }
 
+{% if inline_kind_types %}
+// ── SCE Forge: Inline kind type definitions ──────────────
+{{ inline_kind_types }}
+
+{% endif %}
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -208,6 +213,11 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 {% include 'scriptengine_helpers.go.jinja2' %}
 {% include 'invoke_methods.go.jinja2' %}
 
+{% if inline_kind_fns %}
+// ── SCE Forge: Inline kind member functions ──────────────
+{{ inline_kind_fns }}
+
+{% endif %}
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================

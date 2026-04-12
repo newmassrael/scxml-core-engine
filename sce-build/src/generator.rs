@@ -108,6 +108,20 @@ pub fn generate_with_templates(
 
 fn render_rust(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
+
+    // SCE Forge: render inline kind declarations as Rust code fragments.
+    let (inline_kind_types, inline_kind_fns) = if !model.inline_kinds.is_empty() {
+        let code = crate::forge::generator::render_inline_kinds(
+            &model.inline_kinds,
+            Language::Rust,
+            &machine_name,
+        )
+        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?;
+        (code.type_defs, code.member_fns)
+    } else {
+        (String::new(), String::new())
+    };
+
     let tmpl = env
         .get_template("state_machine.rs.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -115,6 +129,8 @@ fn render_rust(env: &Environment, model: &SCXMLModel) -> Result<String, Generate
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(&license_config()),
+        inline_kind_types => &inline_kind_types,
+        inline_kind_fns => &inline_kind_fns,
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -159,8 +175,14 @@ fn render_cpp(
 
     // SCE Forge: render inline kind declarations as C++ code fragment.
     let inline_kind_code = if !model.inline_kinds.is_empty() {
-        crate::forge::generator::render_inline_kinds_cpp(&model.inline_kinds)
-            .map_err(|e| GenerateError::TemplateRender(e.to_string()))?
+        let machine_name = filters::to_pascal_case(model.name.clone());
+        crate::forge::generator::render_inline_kinds(
+            &model.inline_kinds,
+            Language::Cpp,
+            &machine_name,
+        )
+        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?
+        .member_fns
     } else {
         String::new()
     };
@@ -284,6 +306,19 @@ fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, Genera
     let event_members =
         kotlin::render_event_tree(&event_tree, &format!("{machine_name}Event"), "    ");
 
+    // SCE Forge: render inline kind declarations as Kotlin code fragment.
+    let inline_kind_code = if !model.inline_kinds.is_empty() {
+        crate::forge::generator::render_inline_kinds(
+            &model.inline_kinds,
+            Language::Kotlin,
+            &machine_name,
+        )
+        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?
+        .member_fns
+    } else {
+        String::new()
+    };
+
     let tmpl = env
         .get_template("state_machine.kt.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -306,6 +341,7 @@ fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, Genera
         invoke_entries => minijinja::Value::from_serialize(&invoke_entries),
         ancestors_with_event_transitions => minijinja::Value::from_serialize(&ancestors_with_event_transitions),
         ancestors_with_null_transitions => minijinja::Value::from_serialize(&ancestors_with_null_transitions),
+        inline_kind_code => &inline_kind_code,
     };
 
     let output = tmpl.render(ctx).map_err(render_error)?;
@@ -406,6 +442,20 @@ pub fn generate_go_with_templates(
 
 fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
+
+    // SCE Forge: render inline kind declarations as Go code fragments.
+    let (inline_kind_types, inline_kind_fns) = if !model.inline_kinds.is_empty() {
+        let code = crate::forge::generator::render_inline_kinds(
+            &model.inline_kinds,
+            Language::Go,
+            &machine_name,
+        )
+        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?;
+        (code.type_defs, code.member_fns)
+    } else {
+        (String::new(), String::new())
+    };
+
     let tmpl = env
         .get_template("state_machine.go.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -413,6 +463,8 @@ fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateEr
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(&license_config()),
+        inline_kind_types => &inline_kind_types,
+        inline_kind_fns => &inline_kind_fns,
     };
     tmpl.render(ctx).map_err(render_error)
 }

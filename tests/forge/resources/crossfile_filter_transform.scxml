@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — filter importing transform -->
+<!-- Filter's raw input is pre-processed through a transform before smoothing. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="filter" version="1.0">
+  <sce:import src="transform_temperature.scxml" kind="transform" as="tempConvert"/>
+
+  <datamodel>
+    <data id="rawSensor" sce:type="uint16" sce:direction="in"/>
+    <data id="smoothed" sce:type="float64" sce:direction="out"
+          sce:filter="moving-average" sce:window="5"
+          sce:pre-transform="tempConvert(rawSensor)"/>
+  </datamodel>
+</scxml>

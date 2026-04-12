@@ -1,0 +1,12 @@
+// SCE Forge: Inline lookup 'rpmStatus'
+    enum class RpmStatus { OFF, RUNNING }
+
+    fun lookupRpmStatus(raw: Int): RpmStatus = when (raw) {
+        0 -> RpmStatus.OFF
+        1 -> RpmStatus.RUNNING
+        else -> RpmStatus.OFF
+    }
+    // SCE Forge: Inline condition 'isReady'
+    fun isReady(): Boolean = speed == 0 && engineOff == true
+    // SCE Forge: Inline transform 'toFahrenheit'
+    fun computeToFahrenheit(): Double = celsius * 1.8 + 32.0

@@ -1,0 +1,16 @@
+// SCE Forge: Inline lookup 'rpmStatus'
+    pub fn lookup_rpm_status(raw: u32) -> RpmStatus {
+        match raw {
+            0 => RpmStatus::Off,
+            1 => RpmStatus::Running,
+            _ => RpmStatus::Off,
+        }
+    }
+    // SCE Forge: Inline condition 'isReady'
+    pub fn is_ready(&self) -> bool {
+        self.speed == 0 && self.engine_off == true
+    }
+    // SCE Forge: Inline transform 'toFahrenheit'
+    pub fn compute_to_fahrenheit(&self) -> f64 {
+        self.celsius * 1.8 + 32.0
+    }

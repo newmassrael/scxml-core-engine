@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — observer importing condition -->
+<!-- Observer's threshold judgment is delegated to an external condition kind. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="observer" version="1.0">
+  <sce:import src="condition_threshold.scxml" kind="condition" as="isOverheat"/>
+
+  <datamodel>
+    <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+    <data id="oilTemp" sce:type="float64" sce:direction="in"/>
+    <data id="alarm" sce:monitor="threshold"
+          sce:enter="isOverheat(coolantTemp, oilTemp, 110.0)"
+          sce:leave="isOverheat(coolantTemp, oilTemp, 120.0) === false"
+          sce:on-enter="raiseAlarm" sce:on-leave="clearAlarm"/>
+  </datamodel>
+</scxml>

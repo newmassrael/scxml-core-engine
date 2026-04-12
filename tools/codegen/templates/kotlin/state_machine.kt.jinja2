@@ -47,6 +47,11 @@ class {{ machine_name }}StateMachine(
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if inline_kind_code %}
+
+    // ── SCE Forge: Inline kind member functions ──────────────
+{{ inline_kind_code }}
+{% endif %}
 
     override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}
 {% if model.needs_script_engine %}
