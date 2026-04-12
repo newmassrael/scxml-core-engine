@@ -228,7 +228,7 @@ fn cmd_generate(
             }
             Err(e) => {
                 eprintln!("Forge codegen error: {e}");
-                std::process::exit(1);
+                std::process::exit(e.exit_code());
             }
         }
     }
@@ -397,6 +397,11 @@ fn cmd_generate(
             std::process::exit(1);
         });
     }
+    // W3C SCXML 6.4: Copy static invoke child SCXML files to the output
+    // directory so CMake's post-processing script can find them next to the
+    // parent. `process_static_invokes` extracts inline <scxml> content to
+    // the *source* directory; the build system expects them in OUTPUT_DIR.
+    copy_static_invoke_children(&model, Path::new(scxml_path), out_path);
     generate_hybrid_child_scxmls(&model, Path::new(scxml_path), out_path);
 
     // Write DEPFILE for CMake incremental builds
@@ -419,6 +424,35 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
         }
     }
     children
+}
+
+/// W3C SCXML 6.4: Copy static invoke children from source to output directory.
+///
+/// `process_static_invokes` in parser.rs extracts inline `<scxml>` content to
+/// the source resource directory (e.g. `resources/338/test338_machineName.scxml`).
+/// CMake's post-processing script expects them in the output directory. This
+/// function bridges the gap by copying any static invoke child SCXML that exists
+/// in the source directory but not yet in the output directory.
+fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir: &Path) {
+    let source_dir = scxml_path.parent().unwrap_or(Path::new("."));
+
+    for invoke in &model.static_invokes {
+        if invoke.child_name.is_empty() {
+            continue;
+        }
+        let child_scxml = format!("{}.scxml", invoke.child_name);
+        let src = source_dir.join(&child_scxml);
+        let dest = output_dir.join(&child_scxml);
+
+        if src.exists() && !dest.exists() {
+            if let Err(e) = std::fs::copy(&src, &dest) {
+                eprintln!(
+                    "Warning: Cannot copy static invoke child {} to output: {e}",
+                    child_scxml
+                );
+            }
+        }
+    }
 }
 
 /// W3C SCXML 6.4: Generate SCXML files for hybrid invoke children (srcexpr/contentexpr).
@@ -1186,7 +1220,8 @@ impl W3cBackend for RustBackend {
     fn test_output_dir(&self) -> &Path { &self.test_dir }
 
     fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
-        let code = sce_build::generator::generate(model, &self.tmpl_dir)?;
+        let code = sce_build::generator::generate(model, &self.tmpl_dir)
+            .map_err(|e| e.to_string())?;
         Ok(vec![(format!("{input_stem}_sm.rs"), code)])
     }
 
@@ -1330,7 +1365,8 @@ impl W3cBackend for GoBackend {
     fn test_output_dir(&self) -> &Path { &self.sm_base } // Go tests live in sm dir
 
     fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
-        let code = sce_build::generator::generate_go(model, &self.tmpl_dir)?;
+        let code = sce_build::generator::generate_go(model, &self.tmpl_dir)
+            .map_err(|e| e.to_string())?;
         Ok(vec![(format!("{input_stem}_sm.go"), code)])
     }
 
@@ -1445,7 +1481,8 @@ impl W3cBackend for KotlinBackend {
     fn test_output_dir(&self) -> &Path { &self.test_dir }
 
     fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
-        let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir)?;
+        let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir)
+            .map_err(|e| e.to_string())?;
         Ok(vec![(format!("{input_stem}Sm.kt"), code)])
     }
 
@@ -1629,7 +1666,8 @@ impl W3cBackend for CppBackend {
     fn test_output_dir(&self) -> &Path { &self.output_dir }
 
     fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
-        let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem)?;
+        let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem)
+            .map_err(|e| e.to_string())?;
         Ok(output.files)
     }
 
@@ -1712,7 +1750,7 @@ fn cmd_manifest(dir: &str) {
 
     let manifest = sce_build::build_forge_manifest(dir_path).unwrap_or_else(|e| {
         eprintln!("ERROR: {e}");
-        std::process::exit(1);
+        std::process::exit(e.exit_code());
     });
 
     let json = serde_json::to_string_pretty(&manifest).unwrap_or_else(|e| {

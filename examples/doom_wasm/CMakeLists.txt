@@ -69,12 +69,15 @@ else()
         file(DOWNLOAD
             "https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad"
             ${DOOM_WAD}
-            SHOW_PROGRESS
             STATUS DOWNLOAD_STATUS
+            TIMEOUT 60
         )
         list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
         if(NOT STATUS_CODE EQUAL 0)
-            message(FATAL_ERROR "Failed to download doom1.wad. Please download manually.")
+            message(FATAL_ERROR
+                "Failed to download doom1.wad (status: ${DOWNLOAD_STATUS}).\n"
+                "Download manually and place at: ${DOOM_WAD}\n"
+                "Source: https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad")
         endif()
     endif()
     message(STATUS "Using shareware: doom1.wad (Episode 1 only)")
