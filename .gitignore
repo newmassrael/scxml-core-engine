@@ -141,3 +141,11 @@ sce-kotlin-tests/src/test/kotlin/com/sce/w3c/Test[0-9]*.kt
 sce-rust-tests/src/generated/test[0-9]*/
 sce-rust-tests/tests/test_[0-9]*.rs
 build_debug_qjs/
+
+# Bazel
+bazel-*/
+MODULE.bazel
+MODULE.bazel.lock
+
+# SCE embed output (regenerate via: ./scripts/package_embed.sh)
+embed/
