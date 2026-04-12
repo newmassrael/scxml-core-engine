@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 // sce_forge_runtime — timer (HAL pattern)
 // Pure-virtual interface that the user implements once per platform
 // (POSIX, FreeRTOS, Zephyr, std::thread, ...). Generated code holds an

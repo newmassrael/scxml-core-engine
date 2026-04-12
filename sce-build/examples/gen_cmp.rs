@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {

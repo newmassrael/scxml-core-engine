@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 #include "traffic_light_sm.h"
 #include "wrappers/AutoProcessStateMachine.h"
 #include <iostream>

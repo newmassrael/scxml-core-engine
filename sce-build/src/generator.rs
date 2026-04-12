@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // Multi-language code generator — renders minijinja templates from SCXMLModel.
 // Supports Rust, C++, and Kotlin code generation.

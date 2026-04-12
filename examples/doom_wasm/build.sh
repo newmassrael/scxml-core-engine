@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
 # DOOM WASM with SCE State Machines - Build Script
 #

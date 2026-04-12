@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 #include "model/DataModelItem.h"
 #include "parsing/IXMLElement.h"
 #include "parsing/IXMLParser.h"

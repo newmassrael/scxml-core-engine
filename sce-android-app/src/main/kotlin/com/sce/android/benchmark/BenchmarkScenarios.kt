@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2025 newmassrael
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCE Android — Port of all JMH benchmark scenarios to Android-compatible lambdas
 //

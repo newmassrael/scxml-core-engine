@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 /**
  * @file sce_sm_internal.h
  * @brief Cross-module interface for SCE state machine modules

@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# Observer kind — stateful observer::update(input) producing an event queue. #}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     let mut observer = {{ f.name | to_pascal_case }}::new();

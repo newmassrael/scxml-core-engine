@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 // Timer Example: Demonstrates TimerManager usage with AOT state machine
 
 #include "timer_example_sm.h"

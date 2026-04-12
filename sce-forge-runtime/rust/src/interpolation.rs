@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 //! 1D linear and 2D bilinear table interpolation. See SCE_FORGE.md Section 4.9.
 //!
 //! Both functions clamp out-of-range inputs (the default `clamp` policy).

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 /**
  * @file sce_sm_enemy.cpp
  * @brief Enemy multi-instance state machine module

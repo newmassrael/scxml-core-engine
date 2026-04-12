@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# W3C SCXML 6.3: Cancel delayed send event #}
 {% if action.sendid %}
 	engine.CancelEvent("{{ action.sendid | escape_go }}")

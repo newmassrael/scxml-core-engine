@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# Validator kind — stateful sm.validate(args...) returning a struct whose field layout is declared in `f.output`. #}
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} validator{};

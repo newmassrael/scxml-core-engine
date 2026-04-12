@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 # SCE Forge: Procedure types and execution engine for Level 2 procedures.
 #
 # Generated code extends ProcedureStateMachine and implements the abstract

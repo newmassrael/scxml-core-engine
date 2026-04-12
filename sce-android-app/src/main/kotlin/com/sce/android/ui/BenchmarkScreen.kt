@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2025 newmassrael
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCE Android — Compose UI for benchmark execution and results display
 

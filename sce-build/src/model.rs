@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // Data structures for SCXML model representation.
 // Ports Python scxml_parser.py dataclasses to Rust structs with serde Serialize

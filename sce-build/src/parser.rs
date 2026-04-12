@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCXML Parser — ports scxml_parser.py using roxmltree.
 // Parses W3C SCXML files into SCXMLModel for code generation.

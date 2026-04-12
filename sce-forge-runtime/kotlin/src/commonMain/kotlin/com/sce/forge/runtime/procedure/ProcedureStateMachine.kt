@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 // SCE Forge: Base class for event-driven (Level 2) procedure state machines.
 //
 // Generated code extends this class and implements the abstract methods.

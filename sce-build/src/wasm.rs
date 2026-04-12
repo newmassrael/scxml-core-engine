@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // WASM entry points for browser-based SCXML code generation.
 // Embeds all Jinja2 templates (Rust, C++, Kotlin) at compile time via include_str!.

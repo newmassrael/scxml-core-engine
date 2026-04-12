@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2025 newmassrael
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCE Android — Custom benchmark harness replacing JMH for Android runtime
 //

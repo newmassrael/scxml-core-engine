@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 # Setup git hooks for the scxml-core-engine project
 # This script installs pre-commit hooks for automatic code formatting

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 """Generate index.html from template with embedded SCXML Base64 data."""
 
 import base64

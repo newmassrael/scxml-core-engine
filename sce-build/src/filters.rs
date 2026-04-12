@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // Jinja2 template filters — multi-language filter registry.
 // Rust, C++, and Kotlin filters registered with minijinja for template rendering.

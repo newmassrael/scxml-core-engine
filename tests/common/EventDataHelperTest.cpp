@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 #include "common/EventDataHelper.h"
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>

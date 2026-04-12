@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 /**
  * @file sce_secret_hint.h
  * @brief Secret and trigger hint system with BFS pathfinding for DOOM

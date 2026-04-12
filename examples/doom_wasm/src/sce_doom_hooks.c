@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 /**
  * @file sce_doom_hooks.c
  * @brief SCE integration hooks implementation for DOOM

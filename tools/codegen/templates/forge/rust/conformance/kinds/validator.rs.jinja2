@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# Validator kind — stateful instance::validate(args...) returning a struct whose field layout is declared in `f.output`. #}
 {% set ns = namespace(needs_tol=false) %}
 {% for field in f.output %}{% if field.compare == "tolerance" %}{% set ns.needs_tol = true %}{% endif %}{% endfor %}

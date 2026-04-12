@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# Validator kind — stateful validator.validate(*args) returning a dataclass whose fields are declared in `f.output`. #}
         validator = {{ f.name }}.{{ f.name | to_pascal_case }}()
         for i, step in enumerate(spec["sequence"]):

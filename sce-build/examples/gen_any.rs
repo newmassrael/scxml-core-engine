@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 // Generate code from any SCXML file:
 //   cargo run --example gen_any -- path/to/file.scxml [rust|cpp|kotlin]
 fn main() {

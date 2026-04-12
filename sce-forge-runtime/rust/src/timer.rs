@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 //! Timer HAL — pure trait that the user implements once per platform.
 //! See SCE_FORGE.md Section 4.10.
 //!

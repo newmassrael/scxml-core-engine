@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2025 newmassrael
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // W3C SCXML C.2: BasicHTTP Event I/O Processor test server.
 // Port of C++ W3CHttpTestServer — lightweight HTTP server for W3C conformance tests.

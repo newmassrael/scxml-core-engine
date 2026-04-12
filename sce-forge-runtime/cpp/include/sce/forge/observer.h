@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 // sce_forge_runtime — observer
 // Building blocks for the observer kind. See SCE_FORGE.md §4.11.
 //

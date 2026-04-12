@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# Validator kind — stateful Validate(args...) returning a struct whose fields are declared in `f.output`. #}
 	steps := ref.validatorSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
 	var validator {{ f.name }}.{{ f.name | to_pascal_case }}

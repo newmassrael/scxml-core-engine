@@ -1,19 +1,6 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of SCE (SCXML Core Engine).
-//
-// Dual Licensed:
-// 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
-// 2. Commercial: For modifications (contact newmassrael@gmail.com)
-//
-// Commercial License:
-//   Individual: $100 cumulative
-//   Enterprise: $500 cumulative
-//   Contact: https://github.com/newmassrael
-//
-// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
-
 // SCE Mesh scheduler concepts — formalizes the two scheduling strategies
 // for multi-machine orchestration.
 //

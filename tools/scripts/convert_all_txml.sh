@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 # Convert all TXML files to SCXML for visualizer deployment
 
 set -e

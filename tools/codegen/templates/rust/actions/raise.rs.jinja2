@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# W3C SCXML 3.8.1: <raise> - Internal event generation #}
 // W3C SCXML 3.8.1: <raise event="{{ action.event }}">
 engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }}));

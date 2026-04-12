@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 /**
  * @file sce_hud.h
  * @brief In-game HUD for SCE systems (combo counter, berserk overlay)

@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+#
 # Main Build Script for SCXML Core Engine
 # Provides interactive menu or command-line selection for different build types
 

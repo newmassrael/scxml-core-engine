@@ -1,3 +1,6 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
 {# Observer kind — stateful Update(input) producing a tag queue per step. #}
 	steps := ref.observerSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
 	var observer {{ f.name }}.{{ f.name | to_pascal_case }}
