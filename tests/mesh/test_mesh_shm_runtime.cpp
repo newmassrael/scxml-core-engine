@@ -91,7 +91,7 @@ int main() {
     SCE::Generated::brake::brake brake;
     brake.initialize();
 
-    SCE::Generated::brake::ShmTransportRouter router;
+    SCE::Generated::brake::TransportRouter router;
     router.wireTo(brake);
 
     // Give the receiver a brief window to reach its drain loop before we

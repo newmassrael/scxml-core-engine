@@ -1,0 +1,16 @@
+# SCE Mesh compile verification — SOME/IP transport binding
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service_id: "0x1234"
+            instance_id: "0x0001"
+            method_id: "0x0421"
+            protocol: udp
+      motor:
+        source: motor.scxml

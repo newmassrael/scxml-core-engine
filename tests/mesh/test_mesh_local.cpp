@@ -14,6 +14,8 @@
 #include "mesh/SchedulerConcepts.h"
 
 #include <cstdio>
+#include <cstring>
+#include <optional>
 
 // Verify EventQueueBridge compiles with a concrete event type
 static_assert(
@@ -21,11 +23,22 @@ static_assert(
     "EventQueueBridge must be instantiable with int");
 
 // Verify TransportRouter template is well-formed by instantiating
-// with a minimal mock engine (avoids full StaticExecutionEngine deps)
+// with a minimal mock engine that provides the getPolicy() API
+// required by the unified per-target dispatch template.
 namespace {
 
 struct MockEngine {
     enum class Event { dummy };
+
+    struct Policy {
+        static std::optional<Event> getEventFromName(const char* name) {
+            if (std::strcmp(name, "dummy") == 0) return Event::dummy;
+            return std::nullopt;
+        }
+    };
+
+    Policy policy_;
+    Policy& getPolicy() { return policy_; }
     void processEvent(Event) {}
 };
 
@@ -41,8 +54,11 @@ int main() {
     MockEngine motor;
     Router router(motor);
 
-    // Verify route_send compiles (runtime path not tested — Phase 2)
-    router.route_send("#motor", MockEngine::Event::dummy);
+    // Verify route_send compiles with MeshSendRequest API
+    SCE::Mesh::MeshSendRequest req;
+    req.target = "#motor";
+    req.eventName = "dummy";
+    (void)router.route_send(req);
 
     // Verify EventQueueBridge push/pop/empty compile
     SCE::Mesh::EventQueueBridge<int, 64> bridge;

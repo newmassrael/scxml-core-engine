@@ -9,8 +9,9 @@
    Search for "NEW TRANSPORT" to find all extension points.
 
    Transport types handled:
-     local — same-process direct call (inlined by compiler)
-     shm   — shared memory cross-process via ShmChannel #}
+     local  — same-process direct call (inlined by compiler)
+     shm    — shared memory cross-process via ShmChannel
+     someip — SOME/IP over Ethernet via vsomeip #}
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 //
 // [generated] SCE Mesh transport routing for {{ machine_name }}
@@ -32,6 +33,10 @@
 {% if "shm" in transport_types %}
 #include "mesh/ShmChannel.h"
 {% endif %}
+{% if "someip" in transport_types %}
+#include <thread>
+#include <vsomeip/vsomeip.hpp>
+{% endif %}
 
 namespace SCE::Generated::{{ machine_name }} {
 
@@ -39,6 +44,24 @@ namespace SCE::Generated::{{ machine_name }} {
 {% if "shm" in transport_types %}
 {% for target in targets if target.transport == "shm" %}
 static constexpr const char* SHM_CHANNEL_{{ target.target_snake | upper }} = "/sce_{{ machine_name }}_{{ target.target_snake }}";
+{% endfor %}
+
+{% endif %}
+{# ── SOME/IP required field validation + service constants ── #}
+{% if "someip" in transport_types %}
+{% for target in targets if target.transport == "someip" %}
+{% if target.extra.service_id is not defined %}
+#error "SCE Mesh: someip transport for '{{ target.target }}' requires 'service_id' in deploy.yaml"
+{% endif %}
+{% if target.extra.instance_id is not defined %}
+#error "SCE Mesh: someip transport for '{{ target.target }}' requires 'instance_id' in deploy.yaml"
+{% endif %}
+{% if target.extra.method_id is not defined %}
+#error "SCE Mesh: someip transport for '{{ target.target }}' requires 'method_id' in deploy.yaml"
+{% endif %}
+static constexpr vsomeip::service_t SOMEIP_SERVICE_{{ target.target_snake | upper }} = {{ target.extra.service_id }};
+static constexpr vsomeip::instance_t SOMEIP_INSTANCE_{{ target.target_snake | upper }} = {{ target.extra.instance_id }};
+static constexpr vsomeip::method_t SOMEIP_METHOD_{{ target.target_snake | upper }} = {{ target.extra.method_id }};
 {% endfor %}
 
 {% endif %}
@@ -66,6 +89,29 @@ inline void send_to_{{ target.target_snake }}(
     return channel.send(event_name);
 }
 
+{% elif target.transport == "someip" %}
+/// Submit event to {{ target.target }} via SOME/IP ({{ target.extra.protocol | default("udp") }}).
+/// Events: {{ target.events | join(", ") }}
+/// @return true if the request was submitted to vsomeip.
+///         Delivery is not guaranteed for fire-and-forget semantics.
+///         Use availability handlers for connection-aware error detection.
+[[nodiscard]] inline bool send_to_{{ target.target_snake }}(
+    vsomeip::application& app,
+    const char* event_name
+) {
+    auto request = vsomeip::runtime::get()->create_request(
+        {% if target.extra.protocol is defined and target.extra.protocol == "tcp" %}true{% else %}false{% endif %});
+    request->set_service(SOMEIP_SERVICE_{{ target.target_snake | upper }});
+    request->set_instance(SOMEIP_INSTANCE_{{ target.target_snake | upper }});
+    request->set_method(SOMEIP_METHOD_{{ target.target_snake | upper }});
+    auto payload = vsomeip::runtime::get()->create_payload(
+        reinterpret_cast<const vsomeip::byte_t*>(event_name),
+        static_cast<uint32_t>(std::strlen(event_name)));
+    request->set_payload(payload);
+    app.send(request);
+    return true;
+}
+
 {% else %}
 #error "SCE Mesh: unsupported transport '{{ target.transport }}' for target '{{ target.target }}'. Update mesh_transport.h.jinja2."
 {% endif %}
@@ -88,6 +134,9 @@ struct TransportRouter {
     {{ target.target_pascal }}Engine& {{ target.target_snake }}_;
 {% elif target.transport == "shm" %}
     SCE::Mesh::ShmChannel<> {{ target.target_snake }}_;
+{% elif target.transport == "someip" %}
+    std::shared_ptr<vsomeip::application> {{ target.target_snake }}_app_;
+    std::thread {{ target.target_snake }}_thread_;
 {% endif %}
 {% endfor %}
 
@@ -104,9 +153,41 @@ struct TransportRouter {
                 {{ target.target_snake }}_({{ target.target_snake }})
             {%- elif target.transport == "shm" -%}
                 {{ target.target_snake }}_(SHM_CHANNEL_{{ target.target_snake | upper }}, SCE::Mesh::ShmChannel<>::Mode::Create)
+            {%- elif target.transport == "someip" -%}
+                {{ target.target_snake }}_app_(vsomeip::runtime::get()->create_application("{{ machine_name }}_{{ target.target_snake }}"))
             {%- endif -%}
             {{ ", " if not loop.last }}
         {%- endfor %} {}
+{% if "someip" in transport_types %}
+
+    /// Initialize all SOME/IP applications and start IO threads.
+    ///
+    /// Must be called before route_send() for SOME/IP targets.
+    /// Calls vsomeip init(), request_service(), and spawns start()
+    /// in a background thread for each SOME/IP target binding.
+    ///
+    /// @return true if all SOME/IP applications initialized successfully.
+    [[nodiscard]] bool init() {
+{% for target in targets if target.transport == "someip" %}
+        if (!{{ target.target_snake }}_app_ || !{{ target.target_snake }}_app_->init()) return false;
+        {{ target.target_snake }}_app_->request_service(
+            SOMEIP_SERVICE_{{ target.target_snake | upper }},
+            SOMEIP_INSTANCE_{{ target.target_snake | upper }});
+        {{ target.target_snake }}_thread_ = std::thread([this]{ {{ target.target_snake }}_app_->start(); });
+{% endfor %}
+        return true;
+    }
+
+    /// Stop all SOME/IP applications and join IO threads.
+    void shutdown() {
+{% for target in targets if target.transport == "someip" %}
+        if ({{ target.target_snake }}_app_) {{ target.target_snake }}_app_->stop();
+        if ({{ target.target_snake }}_thread_.joinable()) {{ target.target_snake }}_thread_.join();
+{% endfor %}
+    }
+
+    ~TransportRouter() { shutdown(); }
+{% endif %}
 
     /// Dispatch a send request to the target identified by the SCXML target string.
     ///
@@ -124,6 +205,11 @@ struct TransportRouter {
             return true;
 {% elif target.transport == "shm" %}
             return {{ target.target_snake }}_.send(req.eventName.c_str());
+{% elif target.transport == "someip" %}
+            if ({{ target.target_snake }}_app_) {
+                return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, req.eventName.c_str());
+            }
+            return false;
 {% endif %}
         }
 {% endfor %}

@@ -1383,6 +1383,71 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         # names per binding; for testing we serialize with RESOURCE_LOCK.
         RESOURCE_LOCK sce_mesh_shm_brake_motor)
 
+    # ── Phase 3: someip_transport compile verification ─────────
+    # Validates that generated SOME/IP transport code compiles against
+    # real vsomeip 3.x headers. Gated on find_package(vsomeip3).
+    find_package(vsomeip3 QUIET)
+    if(vsomeip3_FOUND)
+        set(MESH_SOMEIP_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh someip: Generating brake_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh someip: Generating motor_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_someip.yaml"
+                    "${MESH_TEST_DIR}/motor.scxml"
+                    "${SCE_CODEGEN}" "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
+            COMMENT "Mesh someip: Generating brake_transport.h (someip transport)"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_compile_test
+            mesh/test_mesh_someip.cpp
+            "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
+            "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h"
+            "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h"
+        )
+
+        target_include_directories(mesh_someip_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_someip_compile_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_compile_test PRIVATE cxx_std_17)
+
+        apply_sce_test_policies(mesh_someip_compile_test)
+
+        add_test(NAME mesh_someip_compile_verification COMMAND mesh_someip_compile_test)
+    else()
+        message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
+    endif()
+
     # ── Negative: event coverage violation must fail codegen ────
     # brake_bad.scxml sends "brake.activte" (typo) to #motor. The event
     # has no matching <transition> in motor.scxml, so TopologyError::

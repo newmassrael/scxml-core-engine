@@ -19,9 +19,9 @@
 static_assert(sizeof(SCE::Mesh::ShmEvent) == 64,
               "ShmEvent must be 64 bytes for cache-line alignment");
 
-// Verify ShmTransportRouter type is well-formed
-static_assert(sizeof(SCE::Generated::brake::ShmTransportRouter) > 0,
-              "ShmTransportRouter must be instantiable");
+// Verify TransportRouter type is well-formed (shm-only: no template params)
+static_assert(sizeof(SCE::Generated::brake::TransportRouter) > 0,
+              "TransportRouter must be instantiable");
 
 // Verify channel name constant follows POSIX shm naming
 static_assert(SCE::Generated::brake::SHM_CHANNEL_MOTOR[0] == '/',

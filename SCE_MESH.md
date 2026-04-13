@@ -1393,7 +1393,7 @@ Transport templates for real-world middleware. Each template generates code that
 
 #### Transport templates
 
-- First non-trivial transport template (automotive middleware) — validates the codegen pipeline end-to-end with real protocol
+- `someip_transport`: SOME/IP via real vsomeip 3.7.x — service/instance/method IDs from deploy.yaml `extra`, TCP/UDP protocol selection, build-time pattern capability validation — COMPLETE
 - Second transport template (different middleware) — validates that Communication Pattern Semantics abstraction is correct across middlewares
 - Additional transport templates as demand arises — each is a Jinja2 file following the established template pattern (Section 6.4)
 
@@ -1406,8 +1406,8 @@ Transport templates for real-world middleware. Each template generates code that
 
 #### Entry sequence
 
-1. Communication Pattern event semantics definition (Section 8.1 formalization)
-2. First transport template with real-world validation use case
+1. Communication Pattern event semantics definition (Section 8.1 formalization) — COMPLETE
+2. First transport template: `someip_transport` via real vsomeip 3.7.x — COMPLETE
 3. Forge codec for protocol header serialization
 4. Second transport template — validates abstraction correctness
 5. Application-level test demonstrating deploy.yaml-only middleware switch
