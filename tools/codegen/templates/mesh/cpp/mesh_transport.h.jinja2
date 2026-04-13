@@ -87,7 +87,10 @@
 {% else %}
                 env.pattern = {{ pattern_kind }};
 {% endif %}
-                if (receive_callback_) receive_callback_(env);
+                // Dispatch result ignored intentionally — unknown event
+                // names in the sender policy drop the envelope, which is
+                // the desired behavior for unmatched inbound messages.
+                (void)this->dispatchToSender(env);
             });
 {%- endmacro %}
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
@@ -124,8 +127,12 @@
 #include <vsomeip/vsomeip.hpp>
 {% endif %}
 {% if "zenoh" in transport_types %}
+#include <functional>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <utility>
 #include <zenoh.hxx>
 {% endif %}
 
@@ -287,21 +294,9 @@ inline void send_to_{{ target.target_snake }}(
 }
 
 {% elif target.transport == "zenoh" %}
-/// Send envelope to {{ target.target }} via Zenoh pub/sub (key: {{ target.extra.key }}).
-/// Events: {{ target.events | join(", ") }}
-///
-/// Wire format: canonical CBOR envelope (MeshEnvelopeCodec).
-///
-/// @return true if the put operation was submitted to Zenoh.
-[[nodiscard]] inline bool send_to_{{ target.target_snake }}(
-    zenoh::Session& session,
-    const SCE::Mesh::MeshEnvelope& env
-) {
-    auto buf = SCE::Mesh::encodeEnvelope(env);
-    session.put(zenoh::KeyExpr(ZENOH_KEY_{{ target.target_snake | upper }}),
-                std::string(reinterpret_cast<const char*>(buf.data()), buf.size()));
-    return true;
-}
+{# Zenoh dispatch is a member function on TransportRouter (D6) — it requires
+   access to router state (session, subscriber handle map, receive_callback_)
+   that cannot be passed cleanly as free-function parameters. No emission here. #}
 
 {% else %}
 #error "SCE Mesh: unsupported transport '{{ target.transport }}' for target '{{ target.target }}'. Update codegen::transport_shape() and mesh_transport.h.jinja2."
@@ -312,12 +307,17 @@ inline void send_to_{{ target.target_snake }}(
 /// corresponding transport function. Supports mixed transports
 /// — each target routes through its deploy.yaml-bound transport.
 ///
+/// Construction binds the sender engine at compile time: the ctor
+/// captures it as a const reference and installs the mesh-send
+/// callback on it. There is no post-construction wiring step — the
+/// invariant "sender is bound before init() runs" is enforced by the
+/// type system (sender_ is a `const SenderEngine&` member).
+///
 /// Usage:
-///   {{ machine_name }}::TransportRouter router({% for target in targets if target.transport == "local" %}{{ target.target_snake }}_engine{{ ", " if not loop.last }}{% endfor %});
-///   router.wireTo(sender_engine);
-{% if "local" in transport_types %}
-template<{% for target in targets if target.transport == "local" %}typename {{ target.target_pascal }}Engine{{ ", " if not loop.last }}{% endfor %}>
-{% endif %}
+///   {{ machine_name }}::TransportRouter<SenderEngine{% for target in targets if target.transport == "local" %}, {{ target.target_pascal }}Engine{% endfor %}>
+///       router(sender_engine{% for target in targets if target.transport == "local" %}, {{ target.target_snake }}_engine{% endfor %});
+///   router.init();  // only for transports with a connect/start lifecycle
+template<typename SenderEngine{% for target in targets if target.transport == "local" %}, typename {{ target.target_pascal }}Engine{% endfor %}>
 struct TransportRouter {
 {# ── (D1) Per-target fields ── #}
 {# Data-driven filter: `has_per_target_field` encodes transport shape — #}
@@ -337,9 +337,50 @@ struct TransportRouter {
 {% if "zenoh" in transport_types %}
     // Zenoh: one session per device, shared by all zenoh targets.
     std::optional<zenoh::Session> zenoh_session_;
+    // Active EventSubscribe handles keyed by SCXML target string. Zenoh
+    // subscribers are RAII — destroying the handle undeclares the subscription.
+    // Inserted on PatternKind::EventSubscribe, erased on EventUnsubscribe.
+    //
+    // Concurrency: written only from the owning engine's step thread
+    // (route_send → send_zenoh). Zenoh reply/subscription callbacks on
+    // runtime threads never touch this map — they dispatch through
+    // sender_ directly. No mutex needed; the asymmetry with SOME/IP's
+    // correlation_mutex_ is deliberate (SOME/IP's pending_rpcs_ IS read
+    // on vsomeip callback threads; this map is not).
+    std::unordered_map<std::string, zenoh::Subscriber<void>> zenoh_subscribers_;
 {% endif %}
 
-{# ── (D2b) SOME/IP RPC correlation + receive callback ── #}
+{# ── (D2b) Sender engine — bound by ctor, dispatched to by transport
+   callback threads (vsomeip, zenoh runtime). Storing the reference
+   (instead of a std::function like pre-Session D) keeps the dispatch
+   call direct (no type erasure) and makes "bound exactly once" a
+   compile-time guarantee via `const` — there is no setter to misuse. ── #}
+{% if "someip" in transport_types or "zenoh" in transport_types %}
+    // Sender engine reference. Bound in the ctor and never rebound.
+    //
+    // Thread-safety: the ctor completes-then-publishes the router before
+    // init() spawns any transport callback threads, so the write (ctor
+    // initializer) happens-before any read (callback thread dispatch)
+    // per C++ §32.4.2. `const` prevents accidental reassignment after
+    // construction, which removes the data-race hazard that a mutable
+    // std::function receive callback would carry.
+    //
+    // Lifetime contract (caller-enforced):
+    //   sender_engine   MUST outlive TransportRouter
+    //   TransportRouter MUST outlive any inflight transport operations
+    //
+    // The second part is honored by shutdown():
+    //   - vsomeip::application::stop() joins callback threads before return
+    //   - zenoh::Session dtor (via zenoh_session_.reset()) blocks until
+    //     all query reply/subscription callbacks finish (z_close semantics)
+    // so once shutdown() returns, no callback can still be dispatching
+    // through this->sender_. Violating the first part (destroying the
+    // sender engine before the router) is a caller bug — the codegen
+    // cannot enforce it and there is no runtime check for it.
+    SenderEngine& sender_;
+{% endif %}
+
+{# ── (D2c) SOME/IP RPC correlation table ── #}
 {% if "someip" in transport_types %}
     // RPC correlation table: maps correlation_id → reply event name.
     // Written on send (RpcRequest), consumed on receive (RpcReply).
@@ -375,40 +416,80 @@ struct TransportRouter {
     };
     std::mutex correlation_mutex_;
     std::unordered_map<CorrelationKey, std::string, CorrelationKeyHash> pending_rpcs_;
-
-    // Receive callback: installed by wireTo(), read by vsomeip callback
-    // threads created in init().
-    //
-    // Thread-safety: wireTo() MUST be called before init(). The happens-before
-    // relation is `wireTo() write → std::thread creation in init() → vsomeip
-    // callback thread read` (C++ §32.4.2 makes thread creation a
-    // synchronization point). init() asserts this ordering below for any
-    // target with receive patterns; violating the order after init() produces
-    // a data race on this function object.
-    std::function<bool(const SCE::Mesh::MeshEnvelope&)> receive_callback_;
 {% endif %}
 
-{# ── (D3) Constructor ── #}
-{# Parameters: only local targets (engine references passed by caller). #}
-{# Initializer list: targets with per-target fields are ctor-initialized #}
-{# alongside their declaration; shared-session transports skip. #}
+{# ── (D3) Constructor ──
+   Sender-first binding: the ctor takes the sender engine and any local
+   target engines, wires the mesh-send callback onto the sender in the
+   body, and stores a const reference for dispatch use. The previous
+   two-step `ctor + wireTo()` pattern has been collapsed into this single
+   construction so the invariant "sender is bound before init()" is
+   enforced by the type system, not by caller discipline. #}
     TransportRouter(
+        SenderEngine& sender
         {%- for target in targets if target.transport == "local" -%}
-        {{ target.target_pascal }}Engine& {{ target.target_snake }}{{ ", " if not loop.last }}
+        , {{ target.target_pascal }}Engine& {{ target.target_snake }}
         {%- endfor -%}
     )
+{# Initializer list: collect initializer expressions into a list, then
+   join with ", ". Declarative composition (as opposed to an imperative
+   "is this the first entry?" state machine) makes the ":" / "," layout
+   structurally correct for every transport mix — no fixture matrix
+   needed to prove the combinatorics. New transports add a single
+   `ns.parts` append; separator logic is a fixed `join(", ")`. #}
+{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types -%}
+{%- set ns = namespace(parts=[]) %}
+{%- if emit_sender %}
+{%-   set ns.parts = ns.parts + ["sender_(sender)"] %}
+{%- endif %}
 {%- for target in targets if target.has_per_target_field %}
-{%- if loop.first %}
-        : {% endif -%}
-            {%- if target.transport == "local" -%}
-                {{ target.target_snake }}_({{ target.target_snake }})
-            {%- elif target.transport == "shm" -%}
-                {{ target.target_snake }}_(SHM_CHANNEL_{{ target.target_snake | upper }}, {{ target.target_pascal }}ShmChannel::Mode::Create)
-            {%- elif target.transport == "someip" -%}
-                {{ target.target_snake }}_app_(vsomeip::runtime::get()->create_application("{{ machine_name }}_{{ target.target_snake }}"))
-            {%- endif -%}
-            {{ ", " if not loop.last }}
-{%- endfor %} {}
+{%-   if target.transport == "local" %}
+{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.target_snake ~ ")"] %}
+{%-   elif target.transport == "shm" %}
+{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(SHM_CHANNEL_" ~ (target.target_snake | upper) ~ ", " ~ target.target_pascal ~ "ShmChannel::Mode::Create)"] %}
+{%-   elif target.transport == "someip" %}
+{%-     set ns.parts = ns.parts + [target.target_snake ~ "_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_" ~ target.target_snake ~ "\"))"] %}
+{%-   endif %}
+{%- endfor %}
+{%- if ns.parts %}
+        : {{ ns.parts | join(", ") }}
+{%- endif %}
+    {
+        // Install the outbound dispatch hook on the sender engine. All
+        // `<send target="#machine"/>` invocations on the sender are
+        // rewritten into MeshEnvelopes here and routed to the matching
+        // transport via route_send(). Must happen after member
+        // initialization because the lambda captures `this`.
+        sender.setMeshSendCallback(
+            [this](const std::string& target, const std::string& eventName,
+                   const std::string& data, const std::string& /*sendId*/) -> bool {
+                SCE::Mesh::MeshEnvelope env;
+                env.id = SCE::uuid::v7();
+                env.source = "{{ machine_name }}";
+                env.type = eventName;
+                env.pattern = resolvePattern(eventName);
+                env.datacontenttype = data.empty()
+                    ? SCE::Mesh::PayloadCodec::None
+                    : SCE::Mesh::PayloadCodec::Json;
+                env.data.assign(data.begin(), data.end());
+{% if "someip" in transport_types %}
+                // RPC correlation: generate correlation_id and register reply-event
+                // (SOME/IP-only — Zenoh's session.get on_reply closure correlates
+                // natively without a lookup table).
+                if (env.pattern == SCE::Mesh::PatternKind::RpcRequest) {
+                    auto cid = SCE::uuid::v7();
+                    env.correlation_id = cid;
+                    env.reply_to = "{{ machine_name }}";
+                    const char* reply = resolveReplyEvent(eventName);
+                    if (reply[0] != '\0') {
+                        std::lock_guard<std::mutex> lock(correlation_mutex_);
+                        pending_rpcs_[CorrelationKey{cid}] = reply;
+                    }
+                }
+{% endif %}
+                return route_send(target, env);
+            });
+    }
 {% if "someip" in transport_types or "zenoh" in transport_types %}
 
 {# ── (D4) init() / shutdown() — lifecycle for shared transport resources ── #}
@@ -432,20 +513,12 @@ struct TransportRouter {
     ///         before returning — the router is left in a safe state for
     ///         destruction or a retry.
     [[nodiscard]] bool init() {
-{% if "someip" in transport_types %}
-        // API contract: wireTo() MUST be called before init() whenever any
-        // SOME/IP binding receives (RPC reply, event notify, field notify).
-        // init() spawns vsomeip callback threads; assigning receive_callback_
-        // after that point is a data race (the callback thread may read
-        // while wireTo() writes). The assert fires in debug builds if a
-        // caller forgets; in release builds the thread-creation
-        // happens-before guarantee protects correctly-ordered callers.
-{% for target in targets if target.transport == "someip" and target.has_receive %}
-        assert(receive_callback_ &&
-               "SCE Mesh: wireTo() must be called before init() for target '{{ target.target }}' "
-               "because it has receive patterns (RPC/PubSub/Field).");
-{% endfor %}
-{% endif %}
+        // No sender-binding assertion needed: `sender_` is a non-owning
+        // const reference bound in the ctor initializer list, so any
+        // attempt to reach init() with an unbound sender would have
+        // failed at construction. The happens-before relation between
+        // ctor completion and transport callback thread creation still
+        // holds (sender_ is written in ctor; threads are created below).
 {% for target in targets if target.transport == "someip" %}
         if (!{{ target.target_snake }}_app_ || !{{ target.target_snake }}_app_->init()) {
             shutdown();
@@ -506,6 +579,9 @@ struct TransportRouter {
         if ({{ target.target_snake }}_thread_.joinable()) {{ target.target_snake }}_thread_.join();
 {% endfor %}
 {% if "zenoh" in transport_types %}
+        // Drop subscriber handles before closing session (RAII order matters:
+        // each ~Subscriber calls into zenoh_session_).
+        zenoh_subscribers_.clear();
         zenoh_session_.reset();
 {% endif %}
     }
@@ -539,7 +615,9 @@ struct TransportRouter {
             return false;
 {% elif target.transport == "zenoh" %}
             if (zenoh_session_) {
-                return send_to_{{ target.target_snake }}(*zenoh_session_, env);
+                return send_zenoh(env,
+                                  ZENOH_KEY_{{ target.target_snake | upper }},
+                                  "{{ target.target }}");
             }
             return false;
 {% endif %}
@@ -567,7 +645,7 @@ struct TransportRouter {
         return PK::FireForget;
     }
 
-{% if "someip" in transport_types %}
+{% if "someip" in transport_types or "zenoh" in transport_types %}
     /// Look up the sce:reply-event name for an RPC event (build-time table).
     /// Returns empty string if no reply-event is configured.
     static const char* resolveReplyEvent(const std::string& eventName) {
@@ -581,56 +659,27 @@ struct TransportRouter {
     }
 {% endif %}
 
-    /// Wire this router to a sender StaticExecutionEngine's mesh-send callback.
+{% if "someip" in transport_types or "zenoh" in transport_types %}
+    /// Dispatch an incoming envelope to the sender engine via MeshDispatch.
     ///
-    /// After this call, <send target="#<machine>"/> in the sender machine is
-    /// automatically dispatched through the router. The lambda builds a
-    /// MeshEnvelope from the raw fields and routes it to the target transport.
-    /// For RPC patterns, a correlation_id is generated and stored in the
-    /// pending_rpcs_ table for response matching. Unknown targets are declined
-    /// so the engine may fall back to the external queue (W3C behavior).
-    template <typename SenderEngine>
-    void wireTo(SenderEngine& engine) {
-{% if "someip" in transport_types %}
-        // Install receive callback: incoming SOME/IP responses/notifications
-        // are dispatched to the sender engine via MeshDispatch.
-        using SenderPolicy = std::decay_t<decltype(engine.getPolicy())>;
-        receive_callback_ = [&engine](const SCE::Mesh::MeshEnvelope& env) -> bool {
-            return SCE::Mesh::dispatchEnvelope<SenderPolicy>(env, engine);
-        };
-{% endif %}
-        engine.setMeshSendCallback(
-            [this](const std::string& target, const std::string& eventName,
-                   const std::string& data, const std::string& /*sendId*/) -> bool {
-                SCE::Mesh::MeshEnvelope env;
-                env.id = SCE::uuid::v7();
-                env.source = "{{ machine_name }}";
-                env.type = eventName;
-                env.pattern = resolvePattern(eventName);
-                env.datacontenttype = data.empty()
-                    ? SCE::Mesh::PayloadCodec::None
-                    : SCE::Mesh::PayloadCodec::Json;
-                env.data.assign(data.begin(), data.end());
-{% if "someip" in transport_types %}
-                // RPC correlation: generate correlation_id and register reply-event
-                if (env.pattern == SCE::Mesh::PatternKind::RpcRequest) {
-                    auto cid = SCE::uuid::v7();
-                    env.correlation_id = cid;
-                    env.reply_to = "{{ machine_name }}";
-                    const char* reply = resolveReplyEvent(eventName);
-                    if (reply[0] != '\0') {
-                        std::lock_guard<std::mutex> lock(correlation_mutex_);
-                        pending_rpcs_[CorrelationKey{cid}] = reply;
-                    }
-                }
-{% endif %}
-                return route_send(target, env);
-            });
+    /// Called on transport callback threads (vsomeip application threads,
+    /// zenoh runtime threads). Uses the bound `sender_` reference — no
+    /// type-erased std::function in the hot path. Policy is recovered at
+    /// the call site via `sender_.getPolicy()`, so the header stays
+    /// ignorant of the concrete policy type until instantiation.
+    ///
+    /// @return true if MeshDispatch delivered the envelope
+    [[nodiscard]] bool dispatchToSender(const SCE::Mesh::MeshEnvelope& env) {
+        using SenderPolicy = std::decay_t<decltype(sender_.getPolicy())>;
+        return SCE::Mesh::dispatchEnvelope<SenderPolicy>(env, sender_);
     }
+{% endif %}
 
-    /// Dispatch an incoming envelope to the appropriate handler based on
-    /// its communication pattern. Delegates to MeshDispatch.h — single
-    /// source of truth for pattern-based dispatch logic.
+    /// Dispatch an incoming envelope to an arbitrary receiver engine.
+    ///
+    /// Generic fallback used by out-of-band callers (tests, special
+    /// wiring). Prefer `dispatchToSender` when the target is the
+    /// sender engine bound at construction.
     ///
     /// @tparam Policy Receiver's StatePolicy (generated struct)
     /// @tparam Engine StaticExecutionEngine<Policy>
@@ -639,6 +688,124 @@ struct TransportRouter {
     bool onIncoming(const SCE::Mesh::MeshEnvelope& env, Engine& engine) {
         return SCE::Mesh::dispatchEnvelope<Policy>(env, engine);
     }
+
+{# ── (D6) Zenoh multi-pattern dispatch ──────────────────────────
+   Zenoh realizes all four capability categories through four native API
+   primitives: put (FireForget/FieldWrite), get+reply callback (RpcRequest/
+   FieldRead), declare_subscriber (EventSubscribe), and handle destruction
+   (EventUnsubscribe). Correlation is handled by the zenoh runtime — each
+   get() invocation's on_reply closure captures the per-call reply-event
+   name, so no correlation table is needed.
+
+   Member function (not free) because multi-pattern dispatch requires
+   mutating router state (zenoh_subscribers_) and capturing receive
+   state (receive_callback_) into closures passed to the zenoh API. #}
+{% if "zenoh" in transport_types %}
+    /// Dispatch an outbound envelope through Zenoh using the pattern-matched
+    /// native API. Called by route_send() with the target's key expression.
+    ///
+    /// @param env           outbound envelope (pattern-discriminated)
+    /// @param key_expr_str  Zenoh key expression for the target (null-terminated)
+    /// @param target_name   SCXML target string — key into zenoh_subscribers_
+    /// @return true if the zenoh primitive accepted the operation; false if
+    ///         the pattern is not outbound on this transport (inbound-only
+    ///         patterns like EventNotify are rejected here).
+    [[nodiscard]] bool send_zenoh(const SCE::Mesh::MeshEnvelope& env,
+                                  const char* key_expr_str,
+                                  const std::string& target_name) {
+        using PK = SCE::Mesh::PatternKind;
+        if (!zenoh_session_) return false;
+        zenoh::KeyExpr key(key_expr_str);
+        auto encoded = SCE::Mesh::encodeEnvelope(env);
+
+        switch (env.pattern) {
+        case PK::FireForget:
+        case PK::FieldWrite: {
+            zenoh_session_->put(key, zenoh::Bytes(std::move(encoded)));
+            return true;
+        }
+        case PK::RpcRequest:
+        case PK::FieldRead: {
+            // Capture reply-event (RPC only) and pattern-kind-on-reply. The
+            // on_reply closure runs on a zenoh runtime thread; it decodes the
+            // reply envelope, rewrites type/pattern to the sender's
+            // expectations, and dispatches to the sender engine through
+            // `this->dispatchToSender`. Capturing `this` (rather than a
+            // std::function copy) removes one layer of type erasure and
+            // relies on the same lifetime contract the rest of the router
+            // does — TransportRouter must outlive in-flight operations.
+            const char* reply = (env.pattern == PK::RpcRequest)
+                                    ? resolveReplyEvent(env.type)
+                                    : "";
+            std::string reply_event = reply;
+            const PK reply_pattern = (env.pattern == PK::RpcRequest)
+                                         ? PK::RpcReply
+                                         : PK::FieldNotify;
+
+            zenoh::Session::GetOptions opts;
+            opts.payload = zenoh::Bytes(std::move(encoded));
+            zenoh_session_->get(
+                key, "",
+                [this, reply_event, reply_pattern](const zenoh::Reply& reply_msg) {
+                    if (!reply_msg.is_ok()) return;
+                    const auto& sample = reply_msg.get_ok();
+                    auto bytes = sample.get_payload().as_vector();
+                    SCE::Mesh::MeshEnvelope resp;
+                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) return;
+                    if (!reply_event.empty()) resp.type = reply_event;
+                    resp.pattern = reply_pattern;
+                    // Dispatch result ignored intentionally: MeshDispatch
+                    // returns false for unknown event names, which in a
+                    // reply closure means the sender has no handler for
+                    // this event — the envelope is dropped silently, same
+                    // as any W3C SCXML unmatched external event.
+                    (void)this->dispatchToSender(resp);
+                },
+                // on_drop: fires when zenoh signals query completion (all
+                // replies received or session closed). Per-query state is
+                // self-contained in the reply closure above, so no
+                // teardown work is required on this side.
+                []{},
+                std::move(opts));
+            return true;
+        }
+        case PK::EventSubscribe: {
+            auto sub = zenoh_session_->declare_subscriber(
+                key,
+                [this](const zenoh::Sample& sample) {
+                    auto bytes = sample.get_payload().as_vector();
+                    SCE::Mesh::MeshEnvelope notify;
+                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), notify)) return;
+                    notify.pattern = SCE::Mesh::PatternKind::EventNotify;
+                    (void)this->dispatchToSender(notify);
+                },
+                // on_drop: fires when the Subscriber handle is destroyed
+                // (removed from zenoh_subscribers_ or router shutdown).
+                // Handle lifetime is managed by the map; nothing to do.
+                []{});
+            // Duplicate-subscribe semantics: silent replace (refresh).
+            // SCXML state-entry bindings re-execute on every entry to the
+            // owning state, so re-entering a subscribed state MUST be a
+            // valid no-op-or-refresh, not an error. RAII destruction of
+            // the prior Subscriber undeclares it before the new one is
+            // installed; from the receiver's perspective there is at most
+            // a millisecond gap with no active subscription. Callers that
+            // need at-least-once delivery during a refresh should use
+            // machine-lifetime subscriptions (deploy.yaml, Session E)
+            // instead of state-entry bindings.
+            zenoh_subscribers_.insert_or_assign(target_name, std::move(sub));
+            return true;
+        }
+        case PK::EventUnsubscribe: {
+            zenoh_subscribers_.erase(target_name);  // RAII undeclares
+            return true;
+        }
+        default:
+            // RpcReply, EventNotify, FieldNotify are inbound-only patterns.
+            return false;
+        }
+    }
+{% endif %}
 };
 
 }  // namespace SCE::Generated::{{ machine_name }}

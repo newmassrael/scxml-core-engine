@@ -1,0 +1,15 @@
+# SCE Mesh negative test — SHM transport with RequestReply pattern.
+# Codegen must reject service.request.* over SHM (no RequestReply support —
+# SHM capabilities are {FireForget, FieldAccess} only) with
+# TopologyError::PatternCapabilityViolation.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_shm_request:
+        source: brake_shm_request.scxml
+        bindings:
+          "#motor":
+            transport: shm
+      motor:
+        source: motor.scxml

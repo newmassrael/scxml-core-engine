@@ -6,8 +6,8 @@
 // Exercises the full send path:
 //   brake <send target="#motor" event="brake.activate"/>
 //     → StaticExecutionEngine::raiseExternal (mesh target detected)
-//     → onMeshSend callback (installed by TransportRouter::wireTo)
-//     → TransportRouter::wireTo lambda
+//     → onMeshSend callback (installed by TransportRouter ctor)
+//     → TransportRouter ctor lambda
 //     → motor.processEvent(Brake_activate)
 //     → motor transitions running → stopped
 //
@@ -25,9 +25,12 @@ int main() {
     SCE::Generated::brake::brake brake;
     SCE::Generated::motor::motor motor;
 
+    // Sender-first ctor injection: `brake` (the sender) is bound at
+    // construction and the mesh-send callback is installed on it in
+    // the ctor body — no separate wireTo() step.
+    using BrakeEngine = SCE::Generated::brake::brake;
     using MotorEngine = SCE::Generated::motor::motor;
-    SCE::Generated::brake::TransportRouter<MotorEngine> router(motor);
-    router.wireTo(brake);
+    SCE::Generated::brake::TransportRouter<BrakeEngine, MotorEngine> router(brake, motor);
 
     brake.initialize();
     motor.initialize();

@@ -19,9 +19,11 @@
 static_assert(sizeof(SCE::Mesh::ControlSlot) == 12,
               "ControlSlot must be 12 bytes");
 
-// Verify TransportRouter type is well-formed (shm-only: no template params)
-static_assert(sizeof(SCE::Generated::brake::TransportRouter) > 0,
-              "TransportRouter must be instantiable");
+// TransportRouter is always templated on the sender engine. The
+// generated brake engine exposes setMeshSendCallback, so we instantiate
+// directly on its type.
+static_assert(sizeof(SCE::Generated::brake::TransportRouter<SCE::Generated::brake::brake>) > 0,
+              "TransportRouter<brake> must be instantiable");
 
 // Verify channel name constant follows POSIX shm naming
 static_assert(SCE::Generated::brake::SHM_CHANNEL_MOTOR[0] == '/',

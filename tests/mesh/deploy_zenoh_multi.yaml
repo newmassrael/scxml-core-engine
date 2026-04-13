@@ -1,0 +1,20 @@
+# SCE Mesh Session D: Zenoh multi-pattern compile verification.
+# brake_zenoh_multi.scxml exercises FireForget/RpcRequest/EventSubscribe/
+# FieldRead/FieldWrite; the generated send_zenoh member function must
+# handle every PatternKind on a single Zenoh key expression (native
+# correlation via session.get reply callbacks).
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake_zenoh_multi:
+        source: brake_zenoh_multi.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake/motor"
+      motor:
+        source: motor_zenoh_multi.scxml

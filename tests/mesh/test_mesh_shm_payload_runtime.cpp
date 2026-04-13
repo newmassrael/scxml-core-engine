@@ -104,8 +104,8 @@ int main() {
     SCE::Generated::brake_payload::brake_payload brake;
     brake.initialize();
 
-    SCE::Generated::brake_payload::TransportRouter router;
-    router.wireTo(brake);
+    using BrakeEngine = SCE::Generated::brake_payload::brake_payload;
+    SCE::Generated::brake_payload::TransportRouter<BrakeEngine> router(brake);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 

@@ -14,9 +14,10 @@
 
 #include <cstdio>
 
-// Verify TransportRouter type is well-formed (no template params — someip only)
-static_assert(sizeof(SCE::Generated::brake::TransportRouter) > 0,
-              "TransportRouter must be instantiable");
+// TransportRouter is templated on the sender engine (ctor injection
+// pattern). Instantiate on the generated brake engine type.
+static_assert(sizeof(SCE::Generated::brake::TransportRouter<SCE::Generated::brake::brake>) > 0,
+              "TransportRouter<brake> must be instantiable");
 
 // Verify SOME/IP service constants match deploy_someip.yaml
 static_assert(SCE::Generated::brake::SOMEIP_SERVICE_MOTOR == 0x1234,

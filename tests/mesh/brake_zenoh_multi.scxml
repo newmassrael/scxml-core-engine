@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh Session D: brake controller exercising all 4 Zenoh
+     pattern categories. Event-name prefixes drive pattern detection
+     (see sce-build/src/mesh/pattern.rs reserved_prefixes). The
+     sce:reply-event attribute provides the RPC reply-event name
+     consumed by the generated send_zenoh dispatcher. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       datamodel="null" name="brake_zenoh_multi" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="active"/>
+    </state>
+    <state id="active">
+        <onentry>
+            <!-- FireForget: session.put(key, envelope) -->
+            <send target="#motor" event="service.fire_forget.activate"/>
+            <!-- RpcRequest: session.get(key, params, on_reply, opts{payload}) -->
+            <send target="#motor" event="service.request.compute_force"
+                  sce:reply-event="force.computed"/>
+            <!-- EventSubscribe: declare_subscriber(key, on_sample) -->
+            <send target="#motor" event="event.subscribe.status"/>
+            <!-- FieldWrite: session.put(key, envelope) -->
+            <send target="#motor" event="field.set.position"/>
+            <!-- FieldRead: session.get(key, params, on_reply, opts{payload}) -->
+            <send target="#motor" event="field.get.position"/>
+        </onentry>
+        <!-- Reply paths (RPC response + field response + subscription notify) -->
+        <transition event="force.computed"       target="idle"/>
+        <transition event="event.notification.status" target="idle"/>
+        <transition event="field.notify.position" target="idle"/>
+        <transition event="brake.release"        target="idle"/>
+    </state>
+</scxml>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh negative test: brake controller sending service.request over SHM.
+     SHM is a one-way fire-and-forget transport (no return channel) — it only
+     advertises {FireForget, FieldAccess}. Attempting RequestReply must fail
+     with TopologyError::PatternCapabilityViolation at codegen time.
+
+     This test replaces the earlier zenoh-rejection case (zenoh now supports
+     RequestReply via queryable/query as of Session D). SHM's missing return
+     path makes it the natural stand-in for the negative coverage: pattern
+     validation must stop transports from advertising RPC semantics they
+     cannot fulfill. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_shm_request" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="braking"/>
+    </state>
+    <state id="braking">
+        <onentry>
+            <send target="#motor" event="service.request.motor_status"/>
+        </onentry>
+        <transition event="brake.release" target="idle"/>
+    </state>
+</scxml>

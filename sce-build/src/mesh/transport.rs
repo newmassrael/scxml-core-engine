@@ -136,7 +136,11 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },
-        capabilities: &[FireForget, PubSub, FieldAccess],
+        // Zenoh supports RPC via queryable/query primitives — `session.get()`
+        // against a `declare_queryable()` endpoint. Correlation is handled
+        // natively by the Zenoh runtime (reply callbacks), so no per-router
+        // correlation table is needed.
+        capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &["key"],
     };
@@ -278,10 +282,13 @@ mod tests {
     }
 
     #[test]
-    fn zenoh_no_request_reply() {
+    fn zenoh_supports_all() {
         let d = lookup("zenoh").unwrap();
-        assert!(!d.capabilities.contains(&RequestReply));
+        // Zenoh realizes all four categories: put/get/pub-sub/queryable.
+        assert!(d.capabilities.contains(&RequestReply));
+        assert!(d.capabilities.contains(&FireForget));
         assert!(d.capabilities.contains(&PubSub));
+        assert!(d.capabilities.contains(&FieldAccess));
     }
 
     #[test]

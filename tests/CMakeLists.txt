@@ -1548,8 +1548,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     # ── Phase 3: zenoh_transport compile verification ─────────
     # Validates that generated Zenoh transport code compiles against
     # real zenoh-cpp headers. Gated on find_package(zenohcxx).
+    #
+    # zenoh-cpp's CMake config imports `zenohc::lib` to define the
+    # `zenohcxx::zenohc` target — so zenohc must be discovered first.
+    find_package(zenohc QUIET)
     find_package(zenohcxx QUIET)
-    if(zenohcxx_FOUND)
+    if(zenohc_FOUND AND zenohcxx_FOUND)
         set(MESH_ZENOH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_generated")
 
         add_custom_command(
@@ -1598,7 +1602,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             PRIVATE
                 sce_base
                 sce_mesh_common
-                zenohcxx::lib
+                zenohcxx::zenohc
         )
 
         target_compile_features(mesh_zenoh_compile_test PRIVATE cxx_std_17)
@@ -1606,6 +1610,102 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         apply_sce_test_policies(mesh_zenoh_compile_test)
 
         add_test(NAME mesh_zenoh_compile_verification COMMAND mesh_zenoh_compile_test)
+
+        # ── Session D: zenoh multi-pattern compile verification ──────
+        # brake_zenoh_multi.scxml exercises all four zenoh capability
+        # categories (FireForget/RpcRequest/EventSubscribe/FieldRead/
+        # FieldWrite). Validates that the generated send_zenoh dispatcher
+        # compiles against zenoh-cpp with every switch branch realized.
+        set(MESH_ZENOH_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_multi_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh multi: Generating brake_zenoh_multi_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh multi: Generating motor_zenoh_multi_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
+                    "${MESH_TEST_DIR}/motor_zenoh_multi.scxml"
+                    "${SCE_CODEGEN}" "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
+            COMMENT "Mesh zenoh multi: Generating brake_zenoh_multi_transport.h (multi-pattern)"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_multipattern_compile_test
+            mesh/test_mesh_zenoh_multipattern.cpp
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_multipattern_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_MULTI_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_zenoh_multipattern_compile_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_multipattern_compile_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_multipattern_compile_test)
+        add_test(NAME mesh_zenoh_multipattern_compile_verification
+                 COMMAND mesh_zenoh_multipattern_compile_test)
+
+        # ── Session D: zenoh multi-pattern peer-mode runtime E2E ─────
+        # Exercises the generated send_zenoh dispatcher end-to-end in peer
+        # mode (no daemon). Two zenoh::Session instances in the same
+        # process with explicit locators for deterministic discovery.
+        # Proves: (a) zenoh peer-mode discovery works without routerd;
+        # (b) envelope round-trip across FireForget/RpcRequest/EventSubscribe
+        # preserves PatternKind + payload via CBOR encode/decode;
+        # (c) RPC reply correlation is native (session.get on_reply closure).
+        add_executable(mesh_zenoh_multipattern_runtime_test
+            mesh/test_mesh_zenoh_multipattern_runtime.cpp
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_multipattern_runtime_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_MULTI_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_zenoh_multipattern_runtime_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_multipattern_runtime_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_multipattern_runtime_test)
+        add_test(NAME mesh_zenoh_multipattern_runtime
+                 COMMAND mesh_zenoh_multipattern_runtime_test)
+        # Give peer discovery room even on busy CI nodes.
+        set_tests_properties(mesh_zenoh_multipattern_runtime PROPERTIES TIMEOUT 30)
     else()
         message(STATUS "zenohcxx not found — skipping mesh_zenoh_compile_test")
     endif()
@@ -1630,16 +1730,23 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     )
 
     # ── Negative: pattern capability violation must fail codegen ──
-    # brake_zenoh_request.scxml sends service.request.motor_status to
-    # #motor via Zenoh. Zenoh does not support RequestReply, so
-    # TopologyError::PatternCapabilityViolation must fire.
+    # SHM advertises {FireForget, FieldAccess} only — it is a one-way
+    # transport with no return channel. brake_shm_request.scxml sends
+    # service.request.motor_status to #motor over SHM, which requires
+    # RequestReply. Codegen MUST reject with
+    # TopologyError::PatternCapabilityViolation BEFORE emitting any code.
+    #
+    # This test replaced the earlier zenoh rejection case (Session D made
+    # zenoh a full RequestReply provider via queryable/query). Keeping the
+    # positive coverage live ensures the capability-validation code path
+    # doesn't silently die on future refactors.
     set(MESH_PATTERN_NEG_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_pattern_neg_generated")
     add_test(
         NAME mesh_pattern_capability_rejection
         COMMAND "${MESH_TEST_DIR}/expect_pattern_failure.sh"
                 "${SCE_CODEGEN}"
-                "${MESH_TEST_DIR}/brake_zenoh_request.scxml"
-                "${MESH_TEST_DIR}/deploy_zenoh_request.yaml"
+                "${MESH_TEST_DIR}/brake_shm_request.scxml"
+                "${MESH_TEST_DIR}/deploy_shm_request.yaml"
                 "${MESH_PATTERN_NEG_OUTPUT_DIR}"
     )
 

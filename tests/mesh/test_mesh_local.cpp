@@ -15,7 +15,10 @@
 
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <optional>
+#include <string>
+#include <utility>
 
 // Verify EventQueueBridge compiles with a concrete event type
 static_assert(
@@ -41,9 +44,20 @@ struct MockEngine {
     Policy& getPolicy() { return policy_; }
     void processEvent(Event) {}
     void raiseExternal(Event, const std::string& = {}) {}
+    // TransportRouter's ctor installs the outbound dispatch hook on the
+    // sender engine via this method; the mock just stores the callback
+    // (ignored by this compile test).
+    using MeshSendCb = std::function<bool(const std::string&, const std::string&,
+                                          const std::string&, const std::string&)>;
+    MeshSendCb mesh_send_cb_;
+    void setMeshSendCallback(MeshSendCb cb) { mesh_send_cb_ = std::move(cb); }
 };
 
-using Router = SCE::Generated::brake::TransportRouter<MockEngine>;
+// Sender-first ctor injection: SenderEngine template param precedes
+// per-target engine params, and the sender reference is passed first
+// to the ctor. The sender's MockEngine is the same type as the local
+// target engine here; production code uses different engine types.
+using Router = SCE::Generated::brake::TransportRouter<MockEngine, MockEngine>;
 
 static_assert(sizeof(Router) > 0,
               "TransportRouter must be instantiable");
@@ -51,9 +65,9 @@ static_assert(sizeof(Router) > 0,
 }  // namespace
 
 int main() {
-    // Instantiate TransportRouter with mock engine
+    MockEngine sender;
     MockEngine motor;
-    Router router(motor);
+    Router router(sender, motor);
 
     // Verify route_send compiles with MeshEnvelope API
     SCE::Mesh::MeshEnvelope env;
