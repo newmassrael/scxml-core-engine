@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh negative test: brake controller sending service.request over Zenoh.
+     Zenoh does not support RequestReply — codegen must reject this with
+     TopologyError::PatternCapabilityViolation. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_zenoh_request" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="braking"/>
+    </state>
+    <state id="braking">
+        <onentry>
+            <send target="#motor" event="service.request.motor_status"/>
+        </onentry>
+        <transition event="brake.release" target="idle"/>
+    </state>
+</scxml>

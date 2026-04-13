@@ -60,6 +60,20 @@ pub enum DeployError {
         found: String,
         supported: Vec<&'static str>,
     },
+
+    /// A machine name appears under more than one device in the topology.
+    /// Since machine names are used globally (receiver lookup, `<send
+    /// target="#X"/>` resolution, generated namespace), they must be unique
+    /// across the entire deployment.
+    ///
+    /// Fix: rename one of the machines, or remove the duplicate declaration.
+    #[error("machine '{machine}' is declared on multiple devices: {}. \
+             Machine names must be globally unique across the deployment.",
+             .devices.join(", "))]
+    DuplicateMachine {
+        machine: String,
+        devices: Vec<String>,
+    },
 }
 
 // ── Stage 2: Topology resolution ─────────────────────────────

@@ -1,0 +1,18 @@
+# SCE Mesh negative test — Zenoh transport with RequestReply pattern.
+# Codegen must reject service.request.* over Zenoh (no RequestReply support)
+# with TopologyError::PatternCapabilityViolation.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake_zenoh_request:
+        source: brake_zenoh_request.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake/motor/cmd"
+      motor:
+        source: motor.scxml

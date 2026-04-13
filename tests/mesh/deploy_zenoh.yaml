@@ -1,0 +1,19 @@
+# SCE Mesh compile verification — Zenoh transport binding.
+# Device-shared session config lives under `transports:`; per-target `key:`
+# stays on the binding. The generator emits one zenoh::Session per device,
+# configured from this block.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake/motor/cmd"
+      motor:
+        source: motor.scxml

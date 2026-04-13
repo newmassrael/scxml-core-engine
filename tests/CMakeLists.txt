@@ -1448,6 +1448,71 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
     endif()
 
+    # ── Phase 3: zenoh_transport compile verification ─────────
+    # Validates that generated Zenoh transport code compiles against
+    # real zenoh-cpp headers. Gated on find_package(zenohcxx).
+    find_package(zenohcxx QUIET)
+    if(zenohcxx_FOUND)
+        set(MESH_ZENOH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh: Generating brake_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh: Generating motor_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_zenoh.yaml"
+                    "${MESH_TEST_DIR}/motor.scxml"
+                    "${SCE_CODEGEN}" "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
+            COMMENT "Mesh zenoh: Generating brake_transport.h (zenoh transport)"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_compile_test
+            mesh/test_mesh_zenoh.cpp
+            "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
+            "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h"
+            "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_zenoh_compile_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::lib
+        )
+
+        target_compile_features(mesh_zenoh_compile_test PRIVATE cxx_std_17)
+
+        apply_sce_test_policies(mesh_zenoh_compile_test)
+
+        add_test(NAME mesh_zenoh_compile_verification COMMAND mesh_zenoh_compile_test)
+    else()
+        message(STATUS "zenohcxx not found — skipping mesh_zenoh_compile_test")
+    endif()
+
     # ── Negative: event coverage violation must fail codegen ────
     # brake_bad.scxml sends "brake.activte" (typo) to #motor. The event
     # has no matching <transition> in motor.scxml, so TopologyError::
@@ -1465,6 +1530,38 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 "${MESH_TEST_DIR}/brake_bad.scxml"
                 "${MESH_TEST_DIR}/deploy_bad.yaml"
                 "${MESH_NEG_OUTPUT_DIR}"
+    )
+
+    # ── Negative: pattern capability violation must fail codegen ──
+    # brake_zenoh_request.scxml sends service.request.motor_status to
+    # #motor via Zenoh. Zenoh does not support RequestReply, so
+    # TopologyError::PatternCapabilityViolation must fire.
+    set(MESH_PATTERN_NEG_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_pattern_neg_generated")
+    add_test(
+        NAME mesh_pattern_capability_rejection
+        COMMAND "${MESH_TEST_DIR}/expect_pattern_failure.sh"
+                "${SCE_CODEGEN}"
+                "${MESH_TEST_DIR}/brake_zenoh_request.scxml"
+                "${MESH_TEST_DIR}/deploy_zenoh_request.yaml"
+                "${MESH_PATTERN_NEG_OUTPUT_DIR}"
+    )
+
+    # ── Phase 3 entry #5: deploy.yaml-only middleware switch demo ──────
+    # Proves that the SAME brake.scxml compiles against four different
+    # transports with zero source changes — only the deploy.yaml differs.
+    # Each variant is verified to produce a transport header containing
+    # a transport-specific marker (ensures dispatch actually happened).
+    set(MESH_SWITCH_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_middleware_switch")
+    add_test(
+        NAME mesh_middleware_switch_demo
+        COMMAND "${MESH_TEST_DIR}/mesh_middleware_switch_demo.sh"
+                "${SCE_CODEGEN}"
+                "${MESH_TEST_DIR}/brake.scxml"
+                "${MESH_SWITCH_OUT_DIR}"
+                "local:${MESH_TEST_DIR}/deploy.yaml:motor_.processEvent"
+                "shm:${MESH_TEST_DIR}/deploy_shm.yaml:SCE::Mesh::ShmChannel"
+                "someip:${MESH_TEST_DIR}/deploy_someip.yaml:vsomeip::application"
+                "zenoh:${MESH_TEST_DIR}/deploy_zenoh.yaml:zenoh::Session"
     )
 endif()
 

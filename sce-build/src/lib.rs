@@ -650,16 +650,26 @@ pub struct MeshResult {
 /// Generate mesh transport routing code for an SCXML model.
 ///
 /// This is the single public API for the mesh pipeline — CLI, test harness,
-/// and build.rs all go through here. The pipeline:
-///   1. Parse deploy.yaml
-///   2. Collect <send> targets from the model
-///   3. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
-///   4. Resolve targets against deploy.yaml bindings
-///   5. QoS intent/config consistency validation
-///   6. Event coverage validation — hard error when a sent event has no
-///      matching `<transition>` in the receiver (would be silently dropped
-///      by the transport layer at runtime otherwise)
-///   7. Generate transport-native routing code
+/// and build.rs all go through here. The pipeline is ordered so that each
+/// stage's precondition is established by an earlier stage, and so that
+/// architectural errors surface before implementation errors:
+///
+///   1. Parse deploy.yaml (device-shared `transports:` and per-target
+///      `bindings:` both validated at this stage; invalid values like
+///      `mode: pier` are rejected here, before any topology work).
+///   2. Collect <send> targets from the model (single pass)
+///   2a. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
+///   2b. Resolve targets against deploy.yaml bindings
+///   2c. QoS intent/config consistency validation (warnings)
+///   2d. Pattern capability validation — architectural: is the bound transport
+///       even capable of the requested communication pattern? (e.g. zenoh
+///       cannot do request/reply). Runs BEFORE event coverage because a
+///       transport mismatch is a deploy.yaml design error.
+///   2e. Event coverage validation — implementation: does the receiver have
+///       a matching <transition> for every sent event?
+///   3. Transport codegen (template rendering). Device-shared session config
+///      is read directly from `DeployConfig` (no extraction/merging step —
+///      the schema makes shared config explicit).
 ///
 /// Returns `Ok(MeshResult)` with generated files and all warnings,
 /// or `Err(MeshError)` on hard failure.
@@ -668,7 +678,7 @@ pub fn compile_mesh_transport(
     deploy_path: &Path,
     language: generator::Language,
 ) -> Result<MeshResult, mesh::error::MeshError> {
-    // Stage 1: deploy.yaml parsing
+    // Stage 1: deploy.yaml parsing (typed session config validated by serde)
     let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
 
     // Stage 2: single-pass send action collection
@@ -680,7 +690,7 @@ pub fn compile_mesh_transport(
     // Stage 2b: resolve static targets against deploy.yaml bindings
     let resolved = mesh::topology::resolve_targets(&summary, &deploy_cfg, &model.name)?;
 
-    // Stage 2c: QoS intent/config consistency validation
+    // Stage 2c: QoS intent/config consistency validation (warnings, not errors)
     let qos_warnings = mesh::topology::validate_qos_consistency(&summary, &deploy_cfg, &model.name);
 
     if resolved.is_empty() {
@@ -691,7 +701,19 @@ pub fn compile_mesh_transport(
         });
     }
 
-    // Stage 2d: event coverage — hard error on uncovered events.
+    // Stage 2d: pattern capability validation — architectural check.
+    // A transport that lacks a required capability is a design error.
+    let pattern_violations =
+        mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name)?;
+    if !pattern_violations.is_empty() {
+        return Err(mesh::error::TopologyError::PatternCapabilityViolation {
+            sender: model.name.clone(),
+            violations: pattern_violations,
+        }
+        .into());
+    }
+
+    // Stage 2e: event coverage — implementation check.
     let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
     let receiver_models =
         mesh::topology::load_receiver_models(&resolved, &deploy_cfg, deploy_dir, &model.name)?;
@@ -705,21 +727,21 @@ pub fn compile_mesh_transport(
         .into());
     }
 
-    // Stage 2e: pattern capability validation — hard error on unsupported patterns
-    // or unrecognized sce:pattern values (typo prevention).
-    let pattern_violations =
-        mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name)?;
-    if !pattern_violations.is_empty() {
-        return Err(mesh::error::TopologyError::PatternCapabilityViolation {
-            sender: model.name.clone(),
-            violations: pattern_violations,
-        }
-        .into());
-    }
-
-    // Stage 3: transport codegen
+    // Stage 3: transport codegen. Device-shared Zenoh session config is read
+    // directly from the device's `transports.zenoh` block; no merging/
+    // validation pass is needed because the schema makes shared config
+    // structurally singular.
+    let zenoh_session = deploy_cfg
+        .device_for_machine(&model.name)
+        .and_then(|d| d.transports.zenoh.as_ref());
     let template_base = find_template_base();
-    let output = mesh::codegen::generate_mesh(&model.name, &resolved, language, &template_base)?;
+    let output = mesh::codegen::generate_mesh(
+        &model.name,
+        &resolved,
+        zenoh_session,
+        language,
+        &template_base,
+    )?;
     Ok(MeshResult {
         output,
         dynamic_target_warnings,

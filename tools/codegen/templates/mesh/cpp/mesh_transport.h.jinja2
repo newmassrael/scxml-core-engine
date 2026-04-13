@@ -2,16 +2,39 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# SCE Mesh — unified transport routing (per-target transport dispatch).
-   Each target's transport type determines its send function and router field.
-   Supports mixed transports: e.g. #motor via local, #display via shm.
 
-   Adding a new transport: add {% elif %} blocks in the marked sections below.
-   Search for "NEW TRANSPORT" to find all extension points.
+   Each target's transport type determines its send function and router field.
+   Supports mixed transports: e.g. #motor via local, #display via shm,
+   #logger via someip, #telemetry via zenoh.
+
+   Template structure:
+     (A) Includes                     — keyed by `transport_types`
+     (B) Per-target constants         — keyed by `target.transport`
+     (C) Per-target send functions    — keyed by `target.transport`
+     (D) TransportRouter
+         D1. Per-target fields        — iterates `target.has_per_target_field`
+         D2. Shared transport fields  — keyed by `transport_types`
+         D3. Constructor              — iterates `target.has_per_target_ctor_init`
+         D4. init() / shutdown()      — keyed by `transport_types` (shared resources)
+         D5. route_send() dispatch    — keyed by `target.transport`
+
+   Adding a new transport (authoritative list lives in codegen.rs):
+     (1) Update `codegen::transport_shape()` with the field layout.
+     (2) Update `pattern::transport_capabilities()` with supported patterns.
+     (3) If device-shared session config is needed, add a typed field to
+         `deploy::TransportConfigs` (parse-time validated by serde), then
+         thread it through `generate_mesh` as a new parameter.
+     (4) Add {% elif %} blocks in this template at "NEW TRANSPORT" markers.
+
+   Per-target vs shared: per-target transports (local, shm, someip) emit
+   one field per target and one init-list entry per target. Shared-session
+   transports (zenoh) emit a single device-wide field initialized in init().
 
    Transport types handled:
      local  — same-process direct call (inlined by compiler)
      shm    — shared memory cross-process via ShmChannel
-     someip — SOME/IP over Ethernet via vsomeip #}
+     someip — SOME/IP over Ethernet via vsomeip (per-target application)
+     zenoh  — Zenoh pub/sub via zenoh-cpp (device-shared session) #}
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 //
 // [generated] SCE Mesh transport routing for {{ machine_name }}
@@ -22,11 +45,13 @@
 
 #include <cassert>
 #include <cstring>
+
+#include "mesh/MeshSendRequest.h"
+
+{# ── (A) Transport includes (NEW TRANSPORT: add conditional) ── #}
 {% if "local" in transport_types %}
 #include <type_traits>
 {% endif %}
-#include "mesh/MeshSendRequest.h"
-{# Per-target SM includes (local transport needs target SM headers) #}
 {% for target in targets if target.transport == "local" %}
 #include "{{ target.target_stem }}_sm.h"
 {% endfor %}
@@ -37,17 +62,21 @@
 #include <thread>
 #include <vsomeip/vsomeip.hpp>
 {% endif %}
+{% if "zenoh" in transport_types %}
+#include <optional>
+#include <stdexcept>
+#include <zenoh.hxx>
+{% endif %}
 
 namespace SCE::Generated::{{ machine_name }} {
 
-{# ── SHM channel name constants ── #}
+{# ── (B) Per-target constants (NEW TRANSPORT: add block if needed) ── #}
 {% if "shm" in transport_types %}
 {% for target in targets if target.transport == "shm" %}
 static constexpr const char* SHM_CHANNEL_{{ target.target_snake | upper }} = "/sce_{{ machine_name }}_{{ target.target_snake }}";
 {% endfor %}
 
 {% endif %}
-{# ── SOME/IP required field validation + service constants ── #}
 {% if "someip" in transport_types %}
 {% for target in targets if target.transport == "someip" %}
 {% if target.extra.service_id is not defined %}
@@ -65,7 +94,16 @@ static constexpr vsomeip::method_t SOMEIP_METHOD_{{ target.target_snake | upper 
 {% endfor %}
 
 {% endif %}
-{# ── Per-target send functions (NEW TRANSPORT: add {% elif %} block) ── #}
+{% if "zenoh" in transport_types %}
+{% for target in targets if target.transport == "zenoh" %}
+{% if target.extra.key is not defined %}
+#error "SCE Mesh: zenoh transport for '{{ target.target }}' requires 'key' in deploy.yaml"
+{% endif %}
+static constexpr const char* ZENOH_KEY_{{ target.target_snake | upper }} = "{{ target.extra.key }}";
+{% endfor %}
+
+{% endif %}
+{# ── (C) Per-target send functions (NEW TRANSPORT: add {% elif %} block) ── #}
 {% for target in targets %}
 {% if target.transport == "local" %}
 /// Route to {{ target.target }} (local: direct call, inlined by compiler)
@@ -112,8 +150,21 @@ inline void send_to_{{ target.target_snake }}(
     return true;
 }
 
+{% elif target.transport == "zenoh" %}
+/// Send event to {{ target.target }} via Zenoh pub/sub (key: {{ target.extra.key }}).
+/// Events: {{ target.events | join(", ") }}
+/// @return true if the put operation was submitted to Zenoh.
+///         Zenoh is fire-and-forget — delivery depends on subscriber availability.
+[[nodiscard]] inline bool send_to_{{ target.target_snake }}(
+    zenoh::Session& session,
+    const char* event_name
+) {
+    session.put(zenoh::KeyExpr(ZENOH_KEY_{{ target.target_snake | upper }}), event_name);
+    return true;
+}
+
 {% else %}
-#error "SCE Mesh: unsupported transport '{{ target.transport }}' for target '{{ target.target }}'. Update mesh_transport.h.jinja2."
+#error "SCE Mesh: unsupported transport '{{ target.transport }}' for target '{{ target.target }}'. Update codegen::transport_shape() and mesh_transport.h.jinja2."
 {% endif %}
 {% endfor %}
 /// Build-time resolved routing table from deploy.yaml.
@@ -128,8 +179,10 @@ inline void send_to_{{ target.target_snake }}(
 template<{% for target in targets if target.transport == "local" %}typename {{ target.target_pascal }}Engine{{ ", " if not loop.last }}{% endfor %}>
 {% endif %}
 struct TransportRouter {
-{# ── Field declarations (NEW TRANSPORT: add {% elif %} block) ── #}
-{% for target in targets %}
+{# ── (D1) Per-target fields ── #}
+{# Data-driven filter: `has_per_target_field` encodes transport shape — #}
+{# per-target transports emit one field per target; shared-session transports skip. #}
+{% for target in targets if target.has_per_target_field %}
 {% if target.transport == "local" %}
     {{ target.target_pascal }}Engine& {{ target.target_snake }}_;
 {% elif target.transport == "shm" %}
@@ -140,15 +193,24 @@ struct TransportRouter {
 {% endif %}
 {% endfor %}
 
-{# ── Constructor ── #}
+{# ── (D2) Shared transport resources (device-wide, not per-target) ── #}
+{% if "zenoh" in transport_types %}
+    // Zenoh: one session per device, shared by all zenoh targets.
+    std::optional<zenoh::Session> zenoh_session_;
+{% endif %}
+
+{# ── (D3) Constructor ── #}
 {# Parameters: only local targets (engine references passed by caller). #}
-{# Initializer list: ALL targets in one flat loop — no comma fragility. #}
+{# Initializer list: targets with per-target fields are ctor-initialized #}
+{# alongside their declaration; shared-session transports skip. #}
     TransportRouter(
         {%- for target in targets if target.transport == "local" -%}
         {{ target.target_pascal }}Engine& {{ target.target_snake }}{{ ", " if not loop.last }}
         {%- endfor -%}
     )
-        : {% for target in targets -%}
+{%- for target in targets if target.has_per_target_field %}
+{%- if loop.first %}
+        : {% endif -%}
             {%- if target.transport == "local" -%}
                 {{ target.target_snake }}_({{ target.target_snake }})
             {%- elif target.transport == "shm" -%}
@@ -157,38 +219,81 @@ struct TransportRouter {
                 {{ target.target_snake }}_app_(vsomeip::runtime::get()->create_application("{{ machine_name }}_{{ target.target_snake }}"))
             {%- endif -%}
             {{ ", " if not loop.last }}
-        {%- endfor %} {}
-{% if "someip" in transport_types %}
+{%- endfor %} {}
+{% if "someip" in transport_types or "zenoh" in transport_types %}
 
-    /// Initialize all SOME/IP applications and start IO threads.
+{# ── (D4) init() / shutdown() — lifecycle for shared transport resources ── #}
+    /// Initialize transport connections and open shared sessions.
     ///
-    /// Must be called before route_send() for SOME/IP targets.
-    /// Calls vsomeip init(), request_service(), and spawns start()
-    /// in a background thread for each SOME/IP target binding.
+    /// Must be called before route_send() for transports with a connect/start
+    /// lifecycle (currently: SOME/IP, Zenoh). Local and SHM transports are
+    /// fully initialized in the constructor.
+{% if "someip" in transport_types %}
+    /// SOME/IP: calls init(), request_service(), and spawns start() in a
+    /// background thread for each SOME/IP binding.
+{% endif %}
+{% if "zenoh" in transport_types %}
+    /// Zenoh: opens a single Session configured from deploy.yaml session-level
+    /// keys (mode, connect, listen), shared by all Zenoh bindings on this device.
+{% endif %}
     ///
-    /// @return true if all SOME/IP applications initialized successfully.
+    /// @return true if all transport connections initialized successfully.
+    ///         On failure, any already-initialized state (spawned SOME/IP
+    ///         threads, opened Zenoh session) is torn down via `shutdown()`
+    ///         before returning — the router is left in a safe state for
+    ///         destruction or a retry.
     [[nodiscard]] bool init() {
 {% for target in targets if target.transport == "someip" %}
-        if (!{{ target.target_snake }}_app_ || !{{ target.target_snake }}_app_->init()) return false;
+        if (!{{ target.target_snake }}_app_ || !{{ target.target_snake }}_app_->init()) {
+            shutdown();
+            return false;
+        }
         {{ target.target_snake }}_app_->request_service(
             SOMEIP_SERVICE_{{ target.target_snake | upper }},
             SOMEIP_INSTANCE_{{ target.target_snake | upper }});
         {{ target.target_snake }}_thread_ = std::thread([this]{ {{ target.target_snake }}_app_->start(); });
 {% endfor %}
+{% if "zenoh" in transport_types %}
+        try {
+            auto config = zenoh::Config::create_default();
+{# Session config literals are pre-escaped in Rust (codegen::cpp_string_literal). #}
+{# The template inserts them verbatim — no manual C++/JSON escaping here. #}
+{% if zenoh_session_json5 and zenoh_session_json5.mode %}
+            config.insert_json5("mode", {{ zenoh_session_json5.mode }});
+{% endif %}
+{% if zenoh_session_json5 and zenoh_session_json5.connect %}
+            config.insert_json5("connect/endpoints", {{ zenoh_session_json5.connect }});
+{% endif %}
+{% if zenoh_session_json5 and zenoh_session_json5.listen %}
+            config.insert_json5("listen/endpoints", {{ zenoh_session_json5.listen }});
+{% endif %}
+            zenoh_session_.emplace(zenoh::Session::open(std::move(config)));
+        } catch (const zenoh::ZException&) {
+            // Zenoh signals config/open failures via ZException. Unknown
+            // exception types should propagate (not be silently converted).
+            // Tear down any SOME/IP threads spawned earlier in this init().
+            shutdown();
+            return false;
+        }
+{% endif %}
         return true;
     }
 
-    /// Stop all SOME/IP applications and join IO threads.
+    /// Stop all transport connections and release shared resources.
     void shutdown() {
 {% for target in targets if target.transport == "someip" %}
         if ({{ target.target_snake }}_app_) {{ target.target_snake }}_app_->stop();
         if ({{ target.target_snake }}_thread_.joinable()) {{ target.target_snake }}_thread_.join();
 {% endfor %}
+{% if "zenoh" in transport_types %}
+        zenoh_session_.reset();
+{% endif %}
     }
 
     ~TransportRouter() { shutdown(); }
 {% endif %}
 
+{# ── (D5) route_send() dispatch (NEW TRANSPORT: add {% elif %} block) ── #}
     /// Dispatch a send request to the target identified by the SCXML target string.
     ///
     /// @return true if the event was dispatched; false if the target is unknown
@@ -196,7 +301,6 @@ struct TransportRouter {
     [[nodiscard]] bool route_send(const SCE::Mesh::MeshSendRequest& req) {
 {% for target in targets %}
         {% if not loop.first %}else {% endif %}if (req.target == "{{ target.target }}") {
-{# ── Dispatch branches (NEW TRANSPORT: add {% elif %} block) ── #}
 {% if target.transport == "local" %}
             using TargetPolicy = std::decay_t<decltype({{ target.target_snake }}_.getPolicy())>;
             auto ev = TargetPolicy::getEventFromName(req.eventName.c_str());
@@ -208,6 +312,11 @@ struct TransportRouter {
 {% elif target.transport == "someip" %}
             if ({{ target.target_snake }}_app_) {
                 return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, req.eventName.c_str());
+            }
+            return false;
+{% elif target.transport == "zenoh" %}
+            if (zenoh_session_) {
+                return send_to_{{ target.target_snake }}(*zenoh_session_, req.eventName.c_str());
             }
             return false;
 {% endif %}
