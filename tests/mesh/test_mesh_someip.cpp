@@ -26,6 +26,16 @@ static_assert(SCE::Generated::brake::SOMEIP_INSTANCE_MOTOR == 0x0001,
 static_assert(SCE::Generated::brake::SOMEIP_METHOD_MOTOR == 0x0421,
               "Method ID must match deploy.yaml");
 
+// Session C: multi-pattern constants (RPC, PubSub, FieldAccess)
+static_assert(SCE::Generated::brake::SOMEIP_EVENT_GROUP_MOTOR == 0x0001,
+              "Event group ID must match deploy.yaml");
+static_assert(SCE::Generated::brake::SOMEIP_EVENT_MOTOR == 0x8001,
+              "Event ID must match deploy.yaml");
+static_assert(SCE::Generated::brake::SOMEIP_GETTER_MOTOR == 0x0100,
+              "Getter method ID must match deploy.yaml");
+static_assert(SCE::Generated::brake::SOMEIP_SETTER_MOTOR == 0x0101,
+              "Setter method ID must match deploy.yaml");
+
 int main() {
     std::printf("SCE Mesh someip_transport compile verification: PASS\n");
     return 0;

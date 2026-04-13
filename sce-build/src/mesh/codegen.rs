@@ -120,6 +120,27 @@ struct TargetContext {
     /// initializer? Data-driven — removes transport-name hardcoding from
     /// the template's field/ctor sections.
     has_per_target_field: bool,
+    /// Per-event pattern metadata for pattern-aware send logic.
+    event_patterns: Vec<EventPatternContext>,
+    /// True if any event uses RPC patterns (ServiceRequest/ServiceResponse).
+    has_rpc: bool,
+    /// True if any event uses PubSub patterns (Subscribe/Notification).
+    has_pubsub: bool,
+    /// True if any event uses Field patterns (FieldGet/FieldSet).
+    has_field: bool,
+    /// True if target receives responses (RPC, EventNotify, FieldNotify).
+    /// Enables receive handler generation in init().
+    has_receive: bool,
+}
+
+/// Per-event pattern context for template rendering.
+#[derive(Debug, Clone, serde::Serialize)]
+struct EventPatternContext {
+    event: String,
+    /// C++ PatternKind wire value (1-9).
+    pattern_kind: u16,
+    /// Reply event name (sce:reply-event, RPC only).
+    reply_event: String,
 }
 
 // ── Public entry point ───────────────────────────────────────
@@ -180,6 +201,34 @@ fn generate_cpp_mesh(
         .map(|t| {
             let stripped = t.target.trim_start_matches('#');
             let desc = transport::lookup(&t.transport).expect("transport validated");
+
+            let event_patterns: Vec<EventPatternContext> = t.event_patterns.iter().map(|ep| {
+                EventPatternContext {
+                    event: ep.event.clone(),
+                    pattern_kind: ep.pattern_kind_value,
+                    reply_event: ep.reply_event.clone(),
+                }
+            }).collect();
+
+            // Detect pattern categories from wire values (named constants
+            // defined in pattern.rs mirror PatternKind.h — single source).
+            use crate::mesh::pattern::{
+                WIRE_EVENT_NOTIFY, WIRE_EVENT_SUBSCRIBE, WIRE_FIELD_READ, WIRE_FIELD_WRITE,
+                WIRE_RPC_REPLY, WIRE_RPC_REQUEST,
+            };
+            let has_rpc = event_patterns.iter().any(|ep| {
+                ep.pattern_kind == WIRE_RPC_REQUEST || ep.pattern_kind == WIRE_RPC_REPLY
+            });
+            let has_pubsub = event_patterns.iter().any(|ep| {
+                ep.pattern_kind == WIRE_EVENT_SUBSCRIBE || ep.pattern_kind == WIRE_EVENT_NOTIFY
+            });
+            let has_field = event_patterns.iter().any(|ep| {
+                ep.pattern_kind == WIRE_FIELD_READ || ep.pattern_kind == WIRE_FIELD_WRITE
+            });
+            // Target receives if it has RPC (responses come back), PubSub
+            // (notifications), or Field (notifications).
+            let has_receive = has_rpc || has_pubsub || has_field;
+
             TargetContext {
                 target: t.target.clone(),
                 target_stem: stripped.to_string(),
@@ -189,6 +238,11 @@ fn generate_cpp_mesh(
                 transport: t.transport.clone(),
                 extra: t.extra.clone(),
                 has_per_target_field: desc.shape.has_per_target_field,
+                event_patterns,
+                has_rpc,
+                has_pubsub,
+                has_field,
+                has_receive,
             }
         })
         .collect();

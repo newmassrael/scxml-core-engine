@@ -916,6 +916,13 @@ impl SCXMLParser {
             .attribute((SCE_NAMESPACE, "pattern"))
             .unwrap_or("")
             .to_string();
+
+        // SCE Mesh: Reply event name for RPC patterns (sce:reply-event="...")
+        // Used by codegen to generate correlation table entries.
+        action.mesh_reply_event = elem
+            .attribute((SCE_NAMESPACE, "reply-event"))
+            .unwrap_or("")
+            .to_string();
     }
 
     fn parse_if_action(

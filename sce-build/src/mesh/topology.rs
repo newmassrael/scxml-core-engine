@@ -11,6 +11,21 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+/// Per-event pattern metadata, detected at build time from sce:pattern attribute
+/// or event name prefix convention. Used by codegen to generate pattern-aware
+/// send logic (wireTo → PatternKind) and RPC correlation tables.
+#[derive(Debug, Clone, Serialize)]
+pub struct EventPatternInfo {
+    /// SCXML event name (e.g. "service.request.brake_status").
+    pub event: String,
+    /// Detected communication pattern (e.g. "ServiceRequest").
+    pub pattern: String,
+    /// PatternKind wire value for C++ enum (e.g. 2 for RpcRequest).
+    pub pattern_kind_value: u16,
+    /// Reply event name from sce:reply-event attribute (RPC only, empty if absent).
+    pub reply_event: String,
+}
+
 /// A resolved send target: SCXML <send> target matched to a deploy.yaml binding.
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedTarget {
@@ -22,6 +37,8 @@ pub struct ResolvedTarget {
     pub transport: String,
     /// Transport-native configuration from deploy.yaml binding.
     pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    /// Per-event pattern metadata for codegen (pattern-aware send + RPC correlation).
+    pub event_patterns: Vec<EventPatternInfo>,
 }
 
 /// Build-time warning about dynamic targets that cannot be statically resolved.
@@ -96,6 +113,8 @@ pub struct SendActionDetail {
     pub mesh_qos: String,
     /// The `sce:pattern` attribute (e.g. "request").
     pub mesh_pattern: String,
+    /// The `sce:reply-event` attribute (e.g. "brake.status.response").
+    pub mesh_reply_event: String,
 }
 
 /// Pre-collected `<send>` action data from a single model traversal.
@@ -147,6 +166,7 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
             event: action.event.clone(),
             mesh_qos: action.mesh_qos.clone(),
             mesh_pattern: action.mesh_pattern.clone(),
+            mesh_reply_event: action.mesh_reply_event.clone(),
         });
     });
 
@@ -202,6 +222,36 @@ pub fn resolve_targets(
             .push(event.clone());
     }
 
+    // Build per-target pattern info from summary actions.
+    // Deduplicates by event name — same event to same target produces one entry.
+    let mut pattern_map: std::collections::HashMap<String, Vec<EventPatternInfo>> =
+        std::collections::HashMap::new();
+    for action in &summary.actions {
+        if action.target.is_empty() || is_internal_target(&action.target) || action.event.is_empty()
+        {
+            continue;
+        }
+        let explicit = if action.mesh_pattern.is_empty() {
+            None
+        } else {
+            Some(action.mesh_pattern.as_str())
+        };
+        if let Ok(Some(pattern)) =
+            super::pattern::detect_pattern(&action.event, explicit)
+        {
+            let entry = pattern_map.entry(action.target.clone()).or_default();
+            // Deduplicate by event name
+            if !entry.iter().any(|e| e.event == action.event) {
+                entry.push(EventPatternInfo {
+                    event: action.event.clone(),
+                    pattern: format!("{:?}", pattern),
+                    pattern_kind_value: pattern.wire_value(),
+                    reply_event: action.mesh_reply_event.clone(),
+                });
+            }
+        }
+    }
+
     // Validate: every SCXML target must have a deploy.yaml binding
     let mut unresolved = Vec::new();
     let mut resolved = Vec::new();
@@ -214,6 +264,7 @@ pub fn resolve_targets(
                     events: events_map.remove(target).unwrap_or_default(),
                     transport: binding.transport.clone(),
                     extra: binding.extra.clone(),
+                    event_patterns: pattern_map.remove(target).unwrap_or_default(),
                 });
             }
             None => {
@@ -251,6 +302,14 @@ pub fn resolve_targets(
         // present. SCE_MESH.md Section 7.5.
         if rt.transport == "shm" {
             validate_shm_extras(machine_name, rt)?;
+        }
+
+        // Pattern-specific field validation for someip: certain deploy.yaml
+        // fields are required based on which communication patterns the SCXML
+        // model uses. Without this, missing fields silently generate `return
+        // false` in the template — a runtime failure instead of a build error.
+        if rt.transport == "someip" {
+            validate_someip_pattern_fields(machine_name, rt)?;
         }
     }
 
@@ -310,6 +369,53 @@ fn validate_shm_extras(
         }
     }
 
+    Ok(())
+}
+
+/// Validate someip pattern-specific deploy.yaml fields.
+///
+/// While `service_id` and `instance_id` are always required (enforced by
+/// `required_binding_fields`), other IDs depend on which communication
+/// patterns the SCXML model uses for this target:
+///   - FireForget / ServiceRequest / ServiceResponse → `method_id`
+///   - Subscribe / Notification → `event_group_id` + `event_id`
+///   - FieldGet → `getter_id`
+///   - FieldSet → `setter_id`
+fn validate_someip_pattern_fields(
+    machine_name: &str,
+    rt: &ResolvedTarget,
+) -> Result<(), TopologyError> {
+    use super::pattern::{
+        WIRE_EVENT_NOTIFY, WIRE_EVENT_SUBSCRIBE, WIRE_FIELD_READ, WIRE_FIELD_WRITE,
+        WIRE_FIRE_FORGET, WIRE_RPC_REPLY, WIRE_RPC_REQUEST,
+    };
+    for ep in &rt.event_patterns {
+        let require = |field: &str| {
+            if !rt.extra.contains_key(field) {
+                Err(TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: rt.target.clone(),
+                    transport: rt.transport.clone(),
+                    field: field.to_string(),
+                })
+            } else {
+                Ok(())
+            }
+        };
+
+        match ep.pattern_kind_value {
+            WIRE_FIRE_FORGET | WIRE_RPC_REQUEST | WIRE_RPC_REPLY => {
+                require("method_id")?
+            }
+            WIRE_EVENT_SUBSCRIBE | WIRE_EVENT_NOTIFY => {
+                require("event_group_id")?;
+                require("event_id")?;
+            }
+            WIRE_FIELD_READ => require("getter_id")?,
+            WIRE_FIELD_WRITE => require("setter_id")?,
+            _ => {}
+        }
+    }
     Ok(())
 }
 
@@ -891,6 +997,7 @@ mod tests {
             events: vec!["brake.activate".to_string()],
             transport: "local".to_string(),
             extra: HashMap::new(),
+            event_patterns: Vec::new(),
         }]
     }
 

@@ -48,7 +48,55 @@ impl CommunicationPattern {
             Self::FieldGet | Self::FieldSet => TransportCapability::FieldAccess,
         }
     }
+
+    /// Wire value corresponding to the C++ `SCE::Mesh::PatternKind` enum.
+    ///
+    /// Single source of truth for the Rust → C++ wire value mapping.
+    /// Values MUST match `sce/include/mesh/PatternKind.h`; any drift is caught
+    /// by the C++ static_asserts in that header.
+    ///
+    /// Note: `CommunicationPattern` is the SCXML-detectable subset (7 variants).
+    /// C++ `PatternKind` has 9 variants — `EventUnsubscribe` (5) is lifecycle-
+    /// emitted by codegen (not detected from `<send>`), and `FieldNotify` (9)
+    /// is inbound-only (arrives via `register_message_handler`, never sent).
+    /// Hence neither appears here; they exist only on the C++ side.
+    pub fn wire_value(self) -> u16 {
+        match self {
+            Self::FireForget       => 1,
+            Self::ServiceRequest   => 2,
+            Self::ServiceResponse  => 3,
+            Self::Subscribe        => 4,
+            Self::Notification     => 6,
+            Self::FieldGet         => 7,
+            Self::FieldSet         => 8,
+        }
+    }
 }
+
+// ── Wire value constants (C++ PatternKind.h mirror) ─────────
+//
+// Wire-stable values used by codegen for pattern category detection. Mirrors
+// PatternKind.h exactly. Never reuse once shipped. Use these instead of
+// literal magic numbers when comparing against encoded wire values.
+
+/// `PatternKind::FireForget` wire value.
+pub const WIRE_FIRE_FORGET:        u16 = 1;
+/// `PatternKind::RpcRequest` wire value.
+pub const WIRE_RPC_REQUEST:        u16 = 2;
+/// `PatternKind::RpcReply` wire value.
+pub const WIRE_RPC_REPLY:          u16 = 3;
+/// `PatternKind::EventSubscribe` wire value.
+pub const WIRE_EVENT_SUBSCRIBE:    u16 = 4;
+/// `PatternKind::EventUnsubscribe` wire value.
+pub const WIRE_EVENT_UNSUBSCRIBE:  u16 = 5;
+/// `PatternKind::EventNotify` wire value.
+pub const WIRE_EVENT_NOTIFY:       u16 = 6;
+/// `PatternKind::FieldRead` wire value.
+pub const WIRE_FIELD_READ:         u16 = 7;
+/// `PatternKind::FieldWrite` wire value.
+pub const WIRE_FIELD_WRITE:        u16 = 8;
+/// `PatternKind::FieldNotify` wire value.
+pub const WIRE_FIELD_NOTIFY:       u16 = 9;
 
 impl fmt::Display for CommunicationPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

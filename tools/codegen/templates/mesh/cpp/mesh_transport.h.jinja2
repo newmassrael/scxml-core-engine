@@ -35,6 +35,61 @@
      shm    — shared memory cross-process via ShmChannel
      someip — SOME/IP over Ethernet via vsomeip (per-target application)
      zenoh  — Zenoh pub/sub via zenoh-cpp (device-shared session) #}
+
+{# ── Jinja2 macros: SOME/IP boilerplate extraction ─────────
+   Eliminates three near-identical request-build sequences (RPC / FieldRead /
+   FieldWrite) and four near-identical receive-handler shells (RPC response /
+   event notify / getter resp / setter resp). RPC response path injects
+   correlation lookup; all others share the decode-and-dispatch body. #}
+
+{% macro someip_send_request(target, method_constant) -%}
+        auto request = vsomeip::runtime::get()->create_request(
+            {% if target.extra.protocol is defined and target.extra.protocol == "tcp" %}true{% else %}false{% endif %});
+        request->set_service(SOMEIP_SERVICE_{{ target.target_snake | upper }});
+        request->set_instance(SOMEIP_INSTANCE_{{ target.target_snake | upper }});
+        request->set_method({{ method_constant }});
+        auto buf = SCE::Mesh::encodeEnvelope(env);
+        auto payload = vsomeip::runtime::get()->create_payload(
+            reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
+            static_cast<uint32_t>(buf.size()));
+        request->set_payload(payload);
+        app.send(request);
+        return true;
+{%- endmacro %}
+
+{% macro someip_receive_handler(target, method_constant, pattern_kind, kind) -%}
+        {{ target.target_snake }}_app_->register_message_handler(
+            SOMEIP_SERVICE_{{ target.target_snake | upper }},
+            SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+            {{ method_constant }},
+            [this](const std::shared_ptr<vsomeip::message>& msg) {
+{% if kind == "rpc" %}
+                if (msg->get_return_code() != vsomeip::return_code_e::E_OK
+                    && msg->get_message_type() != vsomeip::message_type_e::MT_RESPONSE) return;
+{% elif kind == "field" %}
+                if (msg->get_message_type() != vsomeip::message_type_e::MT_RESPONSE) return;
+{% endif %}
+                auto pl = msg->get_payload();
+                if (!pl) return;
+                SCE::Mesh::MeshEnvelope env;
+                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+{% if kind == "rpc" %}
+                // Correlation: look up reply-event name for this correlation_id
+                if (env.correlation_id) {
+                    std::lock_guard<std::mutex> lock(correlation_mutex_);
+                    auto it = pending_rpcs_.find(CorrelationKey{*env.correlation_id});
+                    if (it != pending_rpcs_.end()) {
+                        env.type = it->second;
+                        env.pattern = SCE::Mesh::PatternKind::RpcReply;
+                        pending_rpcs_.erase(it);
+                    }
+                }
+{% else %}
+                env.pattern = {{ pattern_kind }};
+{% endif %}
+                if (receive_callback_) receive_callback_(env);
+            });
+{%- endmacro %}
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 //
 // [generated] SCE Mesh transport routing for {{ machine_name }}
@@ -62,7 +117,10 @@
 #include "mesh/ShmChannel.h"
 {% endif %}
 {% if "someip" in transport_types %}
+#include <functional>
+#include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <vsomeip/vsomeip.hpp>
 {% endif %}
 {% if "zenoh" in transport_types %}
@@ -98,12 +156,23 @@ using {{ target.target_pascal }}ShmChannel = SCE::Mesh::ShmChannel<
 {% if target.extra.instance_id is not defined %}
 #error "SCE Mesh: someip transport for '{{ target.target }}' requires 'instance_id' in deploy.yaml"
 {% endif %}
-{% if target.extra.method_id is not defined %}
-#error "SCE Mesh: someip transport for '{{ target.target }}' requires 'method_id' in deploy.yaml"
-{% endif %}
 static constexpr vsomeip::service_t SOMEIP_SERVICE_{{ target.target_snake | upper }} = {{ target.extra.service_id }};
 static constexpr vsomeip::instance_t SOMEIP_INSTANCE_{{ target.target_snake | upper }} = {{ target.extra.instance_id }};
+{% if target.extra.method_id is defined %}
 static constexpr vsomeip::method_t SOMEIP_METHOD_{{ target.target_snake | upper }} = {{ target.extra.method_id }};
+{% endif %}
+{% if target.extra.event_group_id is defined %}
+static constexpr vsomeip::eventgroup_t SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }} = {{ target.extra.event_group_id }};
+{% endif %}
+{% if target.extra.event_id is defined %}
+static constexpr vsomeip::event_t SOMEIP_EVENT_{{ target.target_snake | upper }} = {{ target.extra.event_id }};
+{% endif %}
+{% if target.extra.getter_id is defined %}
+static constexpr vsomeip::method_t SOMEIP_GETTER_{{ target.target_snake | upper }} = {{ target.extra.getter_id }};
+{% endif %}
+{% if target.extra.setter_id is defined %}
+static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper }} = {{ target.extra.setter_id }};
+{% endif %}
 {% endfor %}
 
 {% endif %}
@@ -149,24 +218,72 @@ inline void send_to_{{ target.target_snake }}(
 /// Events: {{ target.events | join(", ") }}
 ///
 /// Wire format: canonical CBOR envelope (MeshEnvelopeCodec).
+/// Pattern-aware: branches on env.pattern to use correct SOME/IP API.
 ///
 /// @return true if the request was submitted to vsomeip.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
     vsomeip::application& app,
     const SCE::Mesh::MeshEnvelope& env
 ) {
-    auto request = vsomeip::runtime::get()->create_request(
-        {% if target.extra.protocol is defined and target.extra.protocol == "tcp" %}true{% else %}false{% endif %});
-    request->set_service(SOMEIP_SERVICE_{{ target.target_snake | upper }});
-    request->set_instance(SOMEIP_INSTANCE_{{ target.target_snake | upper }});
-    request->set_method(SOMEIP_METHOD_{{ target.target_snake | upper }});
-    auto buf = SCE::Mesh::encodeEnvelope(env);
-    auto payload = vsomeip::runtime::get()->create_payload(
-        reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
-        static_cast<uint32_t>(buf.size()));
-    request->set_payload(payload);
-    app.send(request);
-    return true;
+    using PK = SCE::Mesh::PatternKind;
+    switch (env.pattern) {
+    case PK::FireForget:
+    case PK::RpcRequest: {
+{% if target.extra.method_id is defined %}
+{{ someip_send_request(target, "SOMEIP_METHOD_" + (target.target_snake | upper)) }}
+{% else %}
+        (void)app; (void)env;
+        return false;  // method_id not configured in deploy.yaml
+{% endif %}
+    }
+    case PK::EventSubscribe: {
+{% if target.extra.event_group_id is defined and target.extra.event_id is defined %}
+        app.request_event(
+            SOMEIP_SERVICE_{{ target.target_snake | upper }},
+            SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+            SOMEIP_EVENT_{{ target.target_snake | upper }},
+            {SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}});
+        app.subscribe(
+            SOMEIP_SERVICE_{{ target.target_snake | upper }},
+            SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+            SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }});
+        return true;
+{% else %}
+        (void)app; (void)env;
+        return false;  // event_group_id/event_id not configured
+{% endif %}
+    }
+    case PK::EventUnsubscribe: {
+{% if target.extra.event_group_id is defined %}
+        app.unsubscribe(
+            SOMEIP_SERVICE_{{ target.target_snake | upper }},
+            SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+            SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }});
+        return true;
+{% else %}
+        (void)app; (void)env;
+        return false;
+{% endif %}
+    }
+    case PK::FieldRead: {
+{% if target.extra.getter_id is defined %}
+{{ someip_send_request(target, "SOMEIP_GETTER_" + (target.target_snake | upper)) }}
+{% else %}
+        (void)app; (void)env;
+        return false;  // getter_id not configured
+{% endif %}
+    }
+    case PK::FieldWrite: {
+{% if target.extra.setter_id is defined %}
+{{ someip_send_request(target, "SOMEIP_SETTER_" + (target.target_snake | upper)) }}
+{% else %}
+        (void)app; (void)env;
+        return false;  // setter_id not configured
+{% endif %}
+    }
+    default:
+        return false;  // RpcReply, EventNotify, FieldNotify are inbound-only
+    }
 }
 
 {% elif target.transport == "zenoh" %}
@@ -222,6 +339,55 @@ struct TransportRouter {
     std::optional<zenoh::Session> zenoh_session_;
 {% endif %}
 
+{# ── (D2b) SOME/IP RPC correlation + receive callback ── #}
+{% if "someip" in transport_types %}
+    // RPC correlation table: maps correlation_id → reply event name.
+    // Written on send (RpcRequest), consumed on receive (RpcReply).
+    // vsomeip callbacks run on vsomeip's internal thread, so access is guarded.
+    //
+    // TTL / timeout eviction: entries for which no response arrives (network
+    // failure, peer crash, deadline exceeded) remain in this map until the
+    // router is destroyed — effectively a bounded leak proportional to the
+    // number of orphaned RPC calls. Timeout-based eviction keyed on
+    // `env.deadline_unix_ms` is deferred to Session E, where the full
+    // `<invoke type="sce:mesh-rpc">` lifecycle (start/done/error/cancel)
+    // provides a natural expiration point per invocation.
+    struct CorrelationKey {
+        std::array<uint8_t, 16> id;
+        bool operator==(const CorrelationKey& o) const { return id == o.id; }
+    };
+    struct CorrelationKeyHash {
+        // FNV-1a 64-bit hash. Deterministic, well-mixed across all byte
+        // positions — important because UUID v7 packs a ms-resolution
+        // timestamp in the leading bytes, so IDs generated in close
+        // succession share a common prefix. FNV-1a's per-byte multiply
+        // diffuses those shared prefixes across the output word.
+        std::size_t operator()(const CorrelationKey& k) const noexcept {
+            constexpr std::size_t FNV_OFFSET = 0xcbf29ce484222325ULL;
+            constexpr std::size_t FNV_PRIME  = 0x00000100000001B3ULL;
+            std::size_t h = FNV_OFFSET;
+            for (auto b : k.id) {
+                h ^= static_cast<std::size_t>(b);
+                h *= FNV_PRIME;
+            }
+            return h;
+        }
+    };
+    std::mutex correlation_mutex_;
+    std::unordered_map<CorrelationKey, std::string, CorrelationKeyHash> pending_rpcs_;
+
+    // Receive callback: installed by wireTo(), read by vsomeip callback
+    // threads created in init().
+    //
+    // Thread-safety: wireTo() MUST be called before init(). The happens-before
+    // relation is `wireTo() write → std::thread creation in init() → vsomeip
+    // callback thread read` (C++ §32.4.2 makes thread creation a
+    // synchronization point). init() asserts this ordering below for any
+    // target with receive patterns; violating the order after init() produces
+    // a data race on this function object.
+    std::function<bool(const SCE::Mesh::MeshEnvelope&)> receive_callback_;
+{% endif %}
+
 {# ── (D3) Constructor ── #}
 {# Parameters: only local targets (engine references passed by caller). #}
 {# Initializer list: targets with per-target fields are ctor-initialized #}
@@ -266,6 +432,20 @@ struct TransportRouter {
     ///         before returning — the router is left in a safe state for
     ///         destruction or a retry.
     [[nodiscard]] bool init() {
+{% if "someip" in transport_types %}
+        // API contract: wireTo() MUST be called before init() whenever any
+        // SOME/IP binding receives (RPC reply, event notify, field notify).
+        // init() spawns vsomeip callback threads; assigning receive_callback_
+        // after that point is a data race (the callback thread may read
+        // while wireTo() writes). The assert fires in debug builds if a
+        // caller forgets; in release builds the thread-creation
+        // happens-before guarantee protects correctly-ordered callers.
+{% for target in targets if target.transport == "someip" and target.has_receive %}
+        assert(receive_callback_ &&
+               "SCE Mesh: wireTo() must be called before init() for target '{{ target.target }}' "
+               "because it has receive patterns (RPC/PubSub/Field).");
+{% endfor %}
+{% endif %}
 {% for target in targets if target.transport == "someip" %}
         if (!{{ target.target_snake }}_app_ || !{{ target.target_snake }}_app_->init()) {
             shutdown();
@@ -274,6 +454,23 @@ struct TransportRouter {
         {{ target.target_snake }}_app_->request_service(
             SOMEIP_SERVICE_{{ target.target_snake | upper }},
             SOMEIP_INSTANCE_{{ target.target_snake | upper }});
+{% if target.has_rpc and target.extra.method_id is defined %}
+        // RPC response handler: correlate response to pending request,
+        // rewrite envelope type to reply-event name, dispatch to engine.
+{{ someip_receive_handler(target, "SOMEIP_METHOD_" + (target.target_snake | upper), "", "rpc") }}
+{% endif %}
+{% if target.has_pubsub and target.extra.event_id is defined %}
+        // Event notification handler: deliver subscribed event notifications.
+{{ someip_receive_handler(target, "SOMEIP_EVENT_" + (target.target_snake | upper), "SCE::Mesh::PatternKind::EventNotify", "notify") }}
+{% endif %}
+{% if target.has_field and target.extra.getter_id is defined %}
+        // Field getter response handler.
+{{ someip_receive_handler(target, "SOMEIP_GETTER_" + (target.target_snake | upper), "SCE::Mesh::PatternKind::FieldNotify", "field") }}
+{% endif %}
+{% if target.has_field and target.extra.setter_id is defined %}
+        // Field setter response handler.
+{{ someip_receive_handler(target, "SOMEIP_SETTER_" + (target.target_snake | upper), "SCE::Mesh::PatternKind::FieldNotify", "field") }}
+{% endif %}
         {{ target.target_snake }}_thread_ = std::thread([this]{ {{ target.target_snake }}_app_->start(); });
 {% endfor %}
 {% if "zenoh" in transport_types %}
@@ -351,15 +548,57 @@ struct TransportRouter {
         return false;  // unknown target — let caller handle fallback
     }
 
+    /// Resolve the PatternKind for a given event name based on build-time
+    /// detected patterns from sce:pattern attributes and event name conventions.
+    /// Falls back to FireForget for events with no detected pattern.
+    static SCE::Mesh::PatternKind resolvePattern(const std::string& eventName) {
+        using PK = SCE::Mesh::PatternKind;
+{# Collect all unique event→pattern mappings across all targets #}
+{% set ns = namespace(has_patterns=false) %}
+{% for target in targets %}
+{% for ep in target.event_patterns %}
+{% set ns.has_patterns = true %}
+        if (eventName == "{{ ep.event }}") return static_cast<PK>({{ ep.pattern_kind }});
+{% endfor %}
+{% endfor %}
+{% if not ns.has_patterns %}
+        (void)eventName;
+{% endif %}
+        return PK::FireForget;
+    }
+
+{% if "someip" in transport_types %}
+    /// Look up the sce:reply-event name for an RPC event (build-time table).
+    /// Returns empty string if no reply-event is configured.
+    static const char* resolveReplyEvent(const std::string& eventName) {
+{% for target in targets %}
+{% for ep in target.event_patterns if ep.reply_event %}
+        if (eventName == "{{ ep.event }}") return "{{ ep.reply_event }}";
+{% endfor %}
+{% endfor %}
+        (void)eventName;
+        return "";
+    }
+{% endif %}
+
     /// Wire this router to a sender StaticExecutionEngine's mesh-send callback.
     ///
     /// After this call, <send target="#<machine>"/> in the sender machine is
     /// automatically dispatched through the router. The lambda builds a
     /// MeshEnvelope from the raw fields and routes it to the target transport.
-    /// Unknown targets are declined so the engine may fall back to the
-    /// external queue (W3C behavior).
+    /// For RPC patterns, a correlation_id is generated and stored in the
+    /// pending_rpcs_ table for response matching. Unknown targets are declined
+    /// so the engine may fall back to the external queue (W3C behavior).
     template <typename SenderEngine>
     void wireTo(SenderEngine& engine) {
+{% if "someip" in transport_types %}
+        // Install receive callback: incoming SOME/IP responses/notifications
+        // are dispatched to the sender engine via MeshDispatch.
+        using SenderPolicy = std::decay_t<decltype(engine.getPolicy())>;
+        receive_callback_ = [&engine](const SCE::Mesh::MeshEnvelope& env) -> bool {
+            return SCE::Mesh::dispatchEnvelope<SenderPolicy>(env, engine);
+        };
+{% endif %}
         engine.setMeshSendCallback(
             [this](const std::string& target, const std::string& eventName,
                    const std::string& data, const std::string& /*sendId*/) -> bool {
@@ -367,11 +606,24 @@ struct TransportRouter {
                 env.id = SCE::uuid::v7();
                 env.source = "{{ machine_name }}";
                 env.type = eventName;
-                env.pattern = SCE::Mesh::PatternKind::FireForget;
+                env.pattern = resolvePattern(eventName);
                 env.datacontenttype = data.empty()
                     ? SCE::Mesh::PayloadCodec::None
                     : SCE::Mesh::PayloadCodec::Json;
                 env.data.assign(data.begin(), data.end());
+{% if "someip" in transport_types %}
+                // RPC correlation: generate correlation_id and register reply-event
+                if (env.pattern == SCE::Mesh::PatternKind::RpcRequest) {
+                    auto cid = SCE::uuid::v7();
+                    env.correlation_id = cid;
+                    env.reply_to = "{{ machine_name }}";
+                    const char* reply = resolveReplyEvent(eventName);
+                    if (reply[0] != '\0') {
+                        std::lock_guard<std::mutex> lock(correlation_mutex_);
+                        pending_rpcs_[CorrelationKey{cid}] = reply;
+                    }
+                }
+{% endif %}
                 return route_send(target, env);
             });
     }

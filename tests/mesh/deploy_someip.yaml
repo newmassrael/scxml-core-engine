@@ -11,6 +11,10 @@ topology:
             service_id: "0x1234"
             instance_id: "0x0001"
             method_id: "0x0421"
+            event_group_id: "0x0001"
+            event_id: "0x8001"
+            getter_id: "0x0100"
+            setter_id: "0x0101"
             protocol: udp
       motor:
         source: motor.scxml

@@ -1539,12 +1539,12 @@ All transports share the unified `mesh_transport.h.jinja2` template via `{% elif
 #### Entry sequence
 
 1. Communication Pattern event semantics definition (Section 8.1 formalization) — COMPLETE
-2. First transport template: `someip_transport` via real vsomeip 3.7.x — COMPLETE (FireForget only)
+2. First transport template: `someip_transport` via real vsomeip 3.7.x — COMPLETE (all 4 capabilities: FireForget, RPC, PubSub, FieldAccess — Session C)
 3. Second transport template: `zenoh_transport` via zenoh-cpp — validates that Communication Pattern Semantics abstraction is correct across middlewares — COMPLETE (FireForget only)
 4. Mesh-native event serialization (byte-stream group):
    a. Canonical CBOR `MeshEnvelope` wire format via `encodeEnvelope`/`decodeEnvelope` — COMPLETE (FireForget realized, others stubbed)
    b. SHM control-ring + payload-arena layout (Section 7.5) — replaces fixed-size `ShmEvent` — COMPLETE
-   c. Receive path: transport drain → `raiseExternal` (no `step()` in drain) — scheduler-owned macrostep — COMPLETE for shm; **deferred to Phase 3.5 for someip/zenoh** (will be Pattern dispatcher, not FireForget-only callback)
+   c. Receive path: transport drain → `raiseExternal` (no `step()` in drain) — scheduler-owned macrostep — COMPLETE for shm; COMPLETE for someip (Session C: `register_message_handler` + `receive_callback_` + correlation); **deferred for zenoh** (Session D)
    d. End-to-end payload test: SCXML `<param>` → `_event.data` on receiver with type preservation — COMPLETE (commit `3a3e36df`)
 5. Application-level test demonstrating deploy.yaml-only middleware switch — COMPLETE for FireForget (`mesh_middleware_switch_demo.sh`)
 
@@ -1815,7 +1815,7 @@ Sessions B-E execute the design above. Each session is a working unit; estimates
 |---|---|---|
 | **A (this)** | Design + sign-off (this section) | User approval of all 5 axes + envelope schema |
 | **B (DONE)** | Replace `MeshSendRequest` with `MeshEnvelope`; CBOR codec (`MeshEnvelopeCodec`); shared dispatch helper (`MeshDispatch.h`); ShmChannel symmetric send/drain; UUID v7 (`sce::uuid`); `MeshSendRequest.h`/`MeshWireFormat.h` deleted | All 4 FireForget E2E tests pass on envelope wire; W3C zero regression; `grep -r MeshSendRequest` → 0 code matches |
-| **C** | SOME/IP multi-pattern: method req/resp with correlation, event offer/subscribe, field triple. `<send sce:reply-event>` shortcut implemented end-to-end. Map W3C SCXML 5.10.1 `sendId` into `MeshEnvelope.subject` for RPC correlation. | Per-pattern compile + E2E test (compile-only acceptable for routing-manager-dependent paths) |
+| **C (DONE)** | SOME/IP multi-pattern: pattern-branching send (`send_to_X` switches on `PatternKind`), RPC correlation table (`pending_rpcs_` with mutex), `register_message_handler` for RPC response + event notify + field notify, `sce:reply-event` SCXML attribute parsed + threaded to codegen, `resolvePattern()` build-time event→PatternKind lookup in `wireTo()`, `MeshDispatch.h` handles RpcReply/EventNotify/FieldNotify inbound patterns, deploy.yaml extended with `event_group_id`/`event_id`/`getter_id`/`setter_id`. 32/32 tests GREEN. | Existing `mesh_someip_compile_test` + all 32 ctest pass |
 | **D** | Zenoh multi-pattern: declare_publisher/subscriber, queryable/query, get/put for fields. Peer-mode E2E. | Multi-pattern peer-mode E2E without daemon |
 | **E** | `<invoke type="sce:mesh-rpc">` full lifecycle (start, done, error, cancel); subscription dual-lifecycle (state-entry + machine-lifetime); W3C compatibility document; multi-pattern multi-transport integration test | `<invoke>`-based RPC integration test passes; W3C compatibility doc landed |
 

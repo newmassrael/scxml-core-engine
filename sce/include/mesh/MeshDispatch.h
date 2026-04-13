@@ -8,9 +8,12 @@
 //   - TransportRouter::onIncoming()           (receiver side)
 //   - TransportRouter::route_send() local     (same-process shortcut)
 //
-// Adding a new pattern: add a case to the switch in dispatchEnvelope().
-// The function returns false for unhandled patterns so callers can log
-// or drop as appropriate.
+// Pattern dispatch:
+//   Inbound (enqueue to engine): FireForget, RpcReply, EventNotify, FieldNotify
+//   Outbound-only (reject):      RpcRequest, EventSubscribe/Unsubscribe, FieldRead/Write
+//
+// Returns false for outbound-only patterns (misconfigured echo-back) and
+// unknown pattern kinds (forward compatibility).
 
 #pragma once
 
@@ -31,7 +34,16 @@ namespace SCE::Mesh {
 template <typename Policy, typename Engine>
 bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     switch (env.pattern) {
-    case PatternKind::FireForget: {
+    case PatternKind::FireForget:
+    // Inbound notifications are unidirectional — same delivery as FireForget.
+    // The pattern discriminator enables transport-level routing (e.g. SOME/IP
+    // event group subscription) but the engine dispatch is identical.
+    case PatternKind::EventNotify:
+    case PatternKind::FieldNotify:
+    // RPC reply: correlation matching is done by TransportRouter before calling
+    // dispatchEnvelope. By the time we get here, env.type is already set to the
+    // reply-event name from the correlation table. Delivery is same as FireForget.
+    case PatternKind::RpcReply: {
         auto ev = Policy::getEventFromName(env.type.c_str());
         if (!ev) return false;
         if (env.data.empty()) {
@@ -41,11 +53,17 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
         }
         return true;
     }
-    default:
-        // Stub: non-FireForget patterns not yet realized.
-        // Session C/D will add RpcRequest, PubSub, etc.
+    // Outbound-only patterns: these are sent by the engine, not received.
+    // If they arrive here it means a misconfigured transport is echoing
+    // back our own sends — return false so caller can log or drop.
+    case PatternKind::RpcRequest:
+    case PatternKind::EventSubscribe:
+    case PatternKind::EventUnsubscribe:
+    case PatternKind::FieldRead:
+    case PatternKind::FieldWrite:
         return false;
     }
+    return false;  // unknown pattern kind — forward compatibility
 }
 
 }  // namespace SCE::Mesh

@@ -129,7 +129,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
-        required_binding_fields: &["service_id", "instance_id", "method_id"],
+        // method_id is required for FireForget/RPC but not for PubSub-only or
+        // FieldAccess-only bindings. Pattern-specific field validation happens
+        // in topology.rs after pattern detection.
+        required_binding_fields: &["service_id", "instance_id"],
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },

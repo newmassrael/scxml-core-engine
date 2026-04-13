@@ -144,6 +144,14 @@ pub struct Action {
     // See SCE_MESH.md Section 8.1.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub mesh_pattern: String,
+
+    // SCE Mesh: Reply event name for RPC patterns (sce:reply-event="brake.status.response")
+    // Codegen generates correlation: on send, create correlation_id + store
+    // (correlation_id -> reply_event_name). On receive: match correlation_id,
+    // look up reply_event_name, raiseExternal(reply_event, response_data).
+    // See SCE_MESH.md Section 13.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mesh_reply_event: String,
 }
 
 /// W3C SCXML if/elseif branch
