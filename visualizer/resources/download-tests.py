@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
 """
 W3C SCXML Test Suite Downloader
 Downloads and processes W3C SCXML 1.0 test cases for compliance testing.
