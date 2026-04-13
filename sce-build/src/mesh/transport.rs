@@ -88,6 +88,15 @@ pub struct TransportDescriptor {
     /// can). Codegen rejects `implemented == false` at the Rust level —
     /// users get a clear build error instead of a deferred C++ `#error`.
     pub implemented: bool,
+    /// Per-binding fields that deploy.yaml MUST provide for this transport.
+    ///
+    /// Validated at the Rust level (topology stage) before codegen. Without
+    /// this, missing fields would only surface as C++ `#error` directives
+    /// in the generated template — a two-stage failure that gives users a
+    /// cryptic compiler error instead of a clear deploy.yaml diagnostic.
+    ///
+    /// Empty for transports with no required per-binding config (local, shm).
+    pub required_binding_fields: &'static [&'static str],
 }
 
 // ── Single registry ─────────────────────────────────────────
@@ -108,31 +117,37 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
+        required_binding_fields: &[],
     };
     static SHM: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[FireForget, FieldAccess],
         implemented: true,
+        required_binding_fields: &[],
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
+        required_binding_fields: &["service_id", "instance_id", "method_id"],
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },
         capabilities: &[FireForget, PubSub, FieldAccess],
         implemented: true,
+        required_binding_fields: &["key"],
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[FireForget, PubSub, FieldAccess],
         implemented: false,
+        required_binding_fields: &[],
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[FireForget, FieldAccess],
         implemented: false,
+        required_binding_fields: &[],
     };
 
     match transport {

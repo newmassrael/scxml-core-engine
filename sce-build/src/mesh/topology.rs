@@ -229,6 +229,24 @@ pub fn resolve_targets(
         });
     }
 
+    // Validate: each binding provides all fields required by its transport.
+    // Without this, missing fields would only surface as C++ #error directives
+    // in the generated template — a two-stage failure.
+    for rt in &resolved {
+        if let Some(desc) = super::transport::lookup(&rt.transport) {
+            for &field in desc.required_binding_fields {
+                if !rt.extra.contains_key(field) {
+                    return Err(TopologyError::MissingBindingField {
+                        machine: machine_name.to_string(),
+                        target: rt.target.clone(),
+                        transport: rt.transport.clone(),
+                        field: field.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
     Ok(resolved)
 }
 

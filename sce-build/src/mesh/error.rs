@@ -173,6 +173,19 @@ pub enum TopologyError {
         event: String,
         value: String,
     },
+
+    /// A deploy.yaml binding is missing a field required by its transport.
+    /// Detected at the Rust level (topology stage) so users get a clear
+    /// deploy.yaml diagnostic instead of a deferred C++ `#error`.
+    #[error("machine '{machine}': binding for '{target}' (transport: {transport}) \
+             is missing required field '{field}'. \
+             Add '{field}:' to the binding in deploy.yaml.")]
+    MissingBindingField {
+        machine: String,
+        target: String,
+        transport: String,
+        field: String,
+    },
 }
 
 // ── Stage 3: Template rendering ──────────────────────────────
