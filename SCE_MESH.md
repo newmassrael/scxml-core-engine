@@ -1216,6 +1216,15 @@ Not all transports support all communication patterns. sce-build validates patte
 
 If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch.
 
+### 8.3 Realization Status (2026-04-13)
+
+The capability matrix above reflects design intent. Current runtime realization is incomplete:
+
+- **`service.fire_forget`**: realized end-to-end across local/shm/someip/zenoh.
+- **All other patterns**: build-time validation passes, but the runtime degrades to FireForget shape (no correlation, no reply routing, no subscription lifecycle).
+
+This is tracked as the **Pattern Realization Gap** and is closed by Phase 3.5 (Section 13). Until then, do not rely on `service.request`/`event.subscribe`/`field.get` semantics for production deployments — they are syntactically accepted but semantically incomplete.
+
 ---
 
 ## 9. Remote Invoke Semantics
@@ -1497,9 +1506,24 @@ The same SCXML generates different transport code depending on deploy.yaml:
 
 `shm_transport` template (POSIX `shm_open`/`mmap`), `ShmChannel` with placement-new EventQueueBridge in shared memory, ready-flag handshake for any-order startup. Build-time event coverage enforcement (`UncoveredEvents` error — eliminates silently-broken-hooks pattern). Verification: two processes on same machine communicating via SCXML through generated SHM code, SCXML documents unchanged. QoS consistency check deferred to Phase 3.
 
-### Phase 3: Vehicle Network Transport Templates + Communication Patterns
+### Phase 3: Vehicle Network Transport Templates + Communication Patterns — PARTIAL
 
 Transport templates for real-world middleware. Each template generates code that calls the protocol's native API directly, preserving all protocol-specific features.
+
+#### Status: Pattern Realization Gap (2026-04-13)
+
+Section 8.1 defines 7 `CommunicationPattern` values and Section 8.2 defines a per-transport capability matrix. Build-time validation works. **However, only the FireForget pattern is realized in the wire format and runtime.** All other patterns pass build-time validation but degrade silently to FireForget at runtime.
+
+| Pattern | Build-time validation | Wire/runtime realization |
+|---|---|---|
+| `service.fire_forget` | OK | OK |
+| `service.request` / `service.response` | OK | **NOT REALIZED** — no correlation, no reply routing |
+| `event.subscribe` / `event.notification` | OK | **NOT REALIZED** — subscribe API unused |
+| `field.get` / `field.set` | OK | **NOT REALIZED** — forced into FireForget shape |
+
+Concrete consequence: the `someip` transport currently uses only one of SOME/IP's four native interaction types (method/event/field/SD). Holding a SOME/IP method ID without sending a response violates the SOME/IP standard. The `zenoh` transport uses only `session.put()` of zenoh's four primitives (put/get/pub-sub/queryable).
+
+This gap is closed by **Phase 3.5: Pattern Realization** (below). Until then, transport entries marked COMPLETE below are accurate only for FireForget workloads.
 
 #### Architecture additions in Phase 3
 
@@ -1511,28 +1535,117 @@ Transport templates for real-world middleware. Each template generates code that
 
 All transports share the unified `mesh_transport.h.jinja2` template via `{% elif %}` dispatch (Section 3.2):
 
-- `someip` transport: SOME/IP via real vsomeip 3.7.x — service/instance/method IDs from deploy.yaml `extra`, TCP/UDP protocol selection, build-time pattern capability validation — COMPLETE
-- `zenoh` transport: Zenoh pub/sub via zenoh-cpp — device-shared session with `Config::insert_json5`, key expressions from deploy.yaml `extra` — COMPLETE
+- `someip` transport: SOME/IP via real vsomeip 3.7.x — service/instance/method IDs from deploy.yaml `extra`, TCP/UDP protocol selection, build-time pattern capability validation — **COMPLETE for FireForget only** (method req/resp, event, field unrealized)
+- `zenoh` transport: Zenoh pub/sub via zenoh-cpp — device-shared session with `Config::insert_json5`, key expressions from deploy.yaml `extra` — **COMPLETE for FireForget only** (get, declare_subscriber, queryable unrealized)
 - Additional transports as demand arises — each adds a `{% elif %}` block in the template following the established pattern (Section 6.4)
 
 #### Infrastructure
 
 - **deploy.yaml native QoS**: each transport section carries full transport-native QoS configuration, passed directly to template without abstraction
-- **Remote `<invoke>` codegen**: invoke request/response/cancel as generated send/receive pairs over configured transport
-- **SCE Forge procedure integration**: Forge `procedure` kinds work with Mesh remote `<invoke>` across device boundaries
+- **Remote `<invoke>` codegen**: invoke request/response/cancel as generated send/receive pairs over configured transport — *blocked on Phase 3.5*
+- **SCE Forge procedure integration**: Forge `procedure` kinds work with Mesh remote `<invoke>` across device boundaries — *blocked on Phase 3.5*
 - **Build-time verification**: interface match, cross-transport ordering warnings, pattern capability check
 
 #### Entry sequence
 
 1. Communication Pattern event semantics definition (Section 8.1 formalization) — COMPLETE
-2. First transport template: `someip_transport` via real vsomeip 3.7.x — COMPLETE
-3. Second transport template: `zenoh_transport` via zenoh-cpp — validates that Communication Pattern Semantics abstraction is correct across middlewares — COMPLETE
+2. First transport template: `someip_transport` via real vsomeip 3.7.x — COMPLETE (FireForget only)
+3. Second transport template: `zenoh_transport` via zenoh-cpp — validates that Communication Pattern Semantics abstraction is correct across middlewares — COMPLETE (FireForget only)
 4. Mesh-native event serialization (byte-stream group):
-   a. Unified `[name\0data]` wire format via `encodeWirePayload` — COMPLETE for someip/zenoh
-   b. SHM control-ring + payload-arena layout (Section 7.5) — replaces fixed-size `ShmEvent`
-   c. Receive path: transport drain → `raiseExternal` (no `step()` in drain) — scheduler-owned macrostep
-   d. End-to-end payload test: SCXML `<param>` → `_event.data` on receiver
-5. Application-level test demonstrating deploy.yaml-only middleware switch — COMPLETE (`mesh_middleware_switch_demo.sh`)
+   a. Unified `[name\0data]` wire format via `encodeWirePayload` — COMPLETE (FireForget envelope)
+   b. SHM control-ring + payload-arena layout (Section 7.5) — replaces fixed-size `ShmEvent` — COMPLETE
+   c. Receive path: transport drain → `raiseExternal` (no `step()` in drain) — scheduler-owned macrostep — COMPLETE for shm; **deferred to Phase 3.5 for someip/zenoh** (will be Pattern dispatcher, not FireForget-only callback)
+   d. End-to-end payload test: SCXML `<param>` → `_event.data` on receiver with type preservation — COMPLETE (commit `3a3e36df`)
+5. Application-level test demonstrating deploy.yaml-only middleware switch — COMPLETE for FireForget (`mesh_middleware_switch_demo.sh`)
+
+### Phase 3.5: Pattern Realization (next priority)
+
+Realize the remaining 6 communication patterns at the wire and runtime level. Closes the gap between `pattern.rs` capability advertisements and what transports actually implement.
+
+#### Wire format change: envelope replacing `MeshSendRequest`
+
+`MeshSendRequest { target, eventName, data: string, sendId }` is a FireForget-shaped payload. It is replaced by `MeshEnvelope`:
+
+```cpp
+struct MeshEnvelope {
+    PatternKind pattern;                       // FireForget | RpcRequest | RpcReply
+                                               // | EventSubscribe | EventUnsubscribe
+                                               // | EventNotify | FieldRead | FieldWrite
+                                               // | FieldNotify
+    std::string interaction_key;               // SOME/IP method_id, zenoh key, ...
+    std::string event_or_field;
+    std::vector<uint8_t> payload;              // typed binary or JSON
+    std::optional<uint64_t> correlation_id;    // RPC req↔resp matching
+    std::optional<std::string> reply_endpoint; // response routing
+    QosHints qos;
+    SourceMetadata source;                     // sender machine, session id
+};
+```
+
+Wire encoding moves from `[name\0data]` to a tagged envelope (CBOR or MessagePack — decision in entry #1 below). Backward compatibility is not retained; Phase 3 itself was incomplete.
+
+#### Pattern dispatcher
+
+`TransportRouter` gains `wireReceiver(engine)` (symmetric to `wireTo`/`wireSender`). Incoming envelopes dispatch on `pattern`:
+
+- `FireForget` → `engine.raiseExternal(event, payload)` (current behavior)
+- `RpcRequest` → invoke handler, capture reply, send `RpcReply` envelope to `reply_endpoint` with `correlation_id`
+- `RpcReply` → look up `correlation_id` in pending table, deliver as event or fulfill awaited promise
+- `EventSubscribe` → register subscription, future `EventNotify`s flow as events
+- `EventNotify` → `engine.raiseExternal` with topic-source metadata
+- `FieldRead` → execute getter, send `RpcReply`-style envelope with value
+- `FieldWrite` → execute setter, optional ack envelope
+
+Per-transport mappings:
+
+| Pattern | SOME/IP API | Zenoh API |
+|---|---|---|
+| `RpcRequest` | `create_request` + `register_message_handler` (response) | `get` against a `declare_queryable` |
+| `RpcReply` | message reply via vsomeip | `Query::reply()` |
+| `EventSubscribe` | `request_event` + `subscribe` | `declare_subscriber` |
+| `EventNotify` | `notify` (publisher) | `declare_publisher` + `put` |
+| `FieldRead`/`Write` | offer_field + getter/setter | get/put on key |
+
+#### SCXML extension attributes (`sce:` namespace)
+
+To express patterns that need explicit response routing or correlation:
+
+```xml
+<!-- RPC request -->
+<send target="#brake_service" event="service.request.compute_force"
+      sce:reply-event="brake.force.reply">
+  <param name="velocity" expr="v"/>
+</send>
+<transition event="brake.force.reply" target="apply_brake"/>
+
+<!-- Field read -->
+<send target="#sensor" event="field.get.temperature"
+      sce:reply-event="temp.value"/>
+
+<!-- Subscription lifecycle -->
+<onentry>
+  <send target="#bus" event="event.subscribe.brake_status"/>
+</onentry>
+<onexit>
+  <send target="#bus" event="event.unsubscribe.brake_status"/>
+</onexit>
+```
+
+W3C SCXML 1.0 compatibility is preserved — all extensions live in the `sce:` namespace; SCXML processors that ignore unknown namespaces still parse the document correctly. Compatibility analysis is part of the entry sequence below.
+
+#### Entry sequence (multi-session)
+
+1. **Design + Approval**: envelope schema, dispatcher architecture, SCXML extension shape, wire encoding choice (CBOR vs MessagePack vs custom). Sign-off before code changes.
+2. **Envelope wire + dispatcher skeleton**: replace `MeshSendRequest`, generate dispatcher, stub non-FireForget patterns with `NotImplemented`. All current FireForget E2E tests must continue to pass.
+3. **SOME/IP multi-pattern**: method req/resp with correlation table, event offer/subscribe, field triple. Per-pattern E2E tests (compile-only acceptable for routing-manager-dependent tests).
+4. **Zenoh multi-pattern**: pub/sub, queryable/query, get. Peer-mode E2E (no daemon required).
+5. **SCXML extension finalization + W3C compatibility analysis**: `sce:reply-event`, subscription lifecycle, schema documentation. Multi-pattern multi-transport integration tests.
+
+#### Out of Phase 3.5 scope
+
+- Additional transports (DDS, gRPC, MQTT) — Phase 4
+- Performance optimizations (drain allocation, Lua compile bypass, double serialization) — re-evaluated after envelope settles
+- Dynamic discovery — Phase 5
 
 ### Phase 4: Game Scale (Directional — refined after Phase 3)
 
