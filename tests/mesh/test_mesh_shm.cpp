@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh Phase 2 shm_transport compile verification test.
+// SCE Mesh shm_transport compile verification test.
 //
 // Validates that generated shared memory transport code compiles
 // against runtime headers (ShmSegment, ShmChannel, EventQueueBridge).
@@ -15,9 +15,9 @@
 
 #include <cstdio>
 
-// Verify ShmEvent wire format
-static_assert(sizeof(SCE::Mesh::ShmEvent) == 64,
-              "ShmEvent must be 64 bytes for cache-line alignment");
+// Control slot is 12 bytes (offset + length + advance).
+static_assert(sizeof(SCE::Mesh::ControlSlot) == 12,
+              "ControlSlot must be 12 bytes");
 
 // Verify TransportRouter type is well-formed (shm-only: no template params)
 static_assert(sizeof(SCE::Generated::brake::TransportRouter) > 0,
@@ -27,22 +27,11 @@ static_assert(sizeof(SCE::Generated::brake::TransportRouter) > 0,
 static_assert(SCE::Generated::brake::SHM_CHANNEL_MOTOR[0] == '/',
               "Channel name must start with '/' (POSIX shm requirement)");
 
-// Verify ShmChannel template instantiation
-static_assert(sizeof(SCE::Mesh::ShmChannel<256>) > 0,
-              "ShmChannel<256> must be instantiable");
-
-// Verify ShmEvent construction from event name
-static_assert(SCE::Mesh::ShmEvent::MAX_NAME_LEN == 63,
-              "ShmEvent name buffer must hold 63 chars + null");
+// Verify ShmChannel template instantiation with default parameters
+static_assert(sizeof(SCE::Mesh::ShmChannel<>) > 0,
+              "ShmChannel<> must be instantiable");
 
 int main() {
-    // Verify ShmEvent round-trip at runtime
-    SCE::Mesh::ShmEvent event("brake.activate");
-    if (std::strcmp(event.name, "brake.activate") != 0) {
-        std::printf("ShmEvent round-trip FAILED\n");
-        return 1;
-    }
-
     std::printf("SCE Mesh shm_transport compile verification: PASS\n");
     return 0;
 }

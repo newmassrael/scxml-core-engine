@@ -38,9 +38,13 @@ int runReceiver() {
     // Retry open until the sender has finished constructing the channel
     // (ShmChannel returns valid()==false until READY_MAGIC is visible).
     for (int attempt = 0; attempt < OPEN_RETRIES; ++attempt) {
-        SCE::Mesh::ShmChannel<> channel(
-            SCE::Generated::brake::SHM_CHANNEL_MOTOR,
-            SCE::Mesh::ShmChannel<>::Mode::Open);
+        // Use the typedef exported from the sender's generated header so
+        // arena/ring template parameters match the sender exactly (the shm
+        // layout is template-parameterized; mismatch = incompatible
+        // segment size). SCE_MESH.md Section 7.5.
+        using Channel = SCE::Generated::brake::MotorShmChannel;
+        Channel channel(SCE::Generated::brake::SHM_CHANNEL_MOTOR,
+                        Channel::Mode::Open);
         if (!channel.valid()) {
             std::this_thread::sleep_for(POLL_INTERVAL);
             continue;
@@ -50,11 +54,12 @@ int runReceiver() {
         motor.initialize();
 
         for (int drain = 0; drain < DRAIN_RETRIES; ++drain) {
-            // Policy class carries the static getEventFromName lookup; the
-            // engine class only inherits StaticExecutionEngine and exposes
-            // processEvent — so drain takes both types explicitly.
+            // drain() enqueues events via raiseExternal but does NOT step
+            // the engine (W3C SCXML 3.12 — transport layer does not drive
+            // macrostep timing). The application owns step() scheduling.
             std::size_t drained = channel.drain<SCE::Generated::motor::motorPolicy>(motor);
             if (drained > 0) {
+                motor.step();  // process the external queue we just filled
                 if (motor.getCurrentState() == SCE::Generated::motor::State::Stopped) {
                     return 0;  // success
                 }

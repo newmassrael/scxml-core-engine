@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh end-to-end payload test: sender with param -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="lua" name="brake_payload" initial="idle">
+    <datamodel>
+        <data id="brakeForce" expr="42"/>
+    </datamodel>
+    <state id="idle">
+        <transition event="brake.press" target="braking"/>
+    </state>
+    <state id="braking">
+        <onentry>
+            <send target="#motor_payload" event="brake.activate">
+                <param name="force" expr="brakeForce"/>
+            </send>
+        </onentry>
+    </state>
+</scxml>

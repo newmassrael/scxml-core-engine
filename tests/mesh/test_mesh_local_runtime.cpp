@@ -39,8 +39,13 @@ int main() {
     }
 
     // Triggering Brake_press drives brake into 'braking', whose <onentry>
-    // fires <send target="#motor" event="brake.activate"/>.
+    // fires <send target="#motor" event="brake.activate"/>. The router
+    // enqueues to motor's external queue but does NOT step motor —
+    // macrostep timing is the application's responsibility.
     brake.processEvent(SCE::Generated::brake::Event::Brake_press);
+
+    // Application-driven macrostep: drain motor's external queue now.
+    motor.step();
 
     if (motor.getCurrentState() != SCE::Generated::motor::State::Stopped) {
         std::printf("FAIL: motor did not transition to 'stopped' (state=%d). "

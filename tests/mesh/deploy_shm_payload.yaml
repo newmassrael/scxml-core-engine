@@ -1,0 +1,18 @@
+# SCE Mesh end-to-end payload test — shared memory with <param> payload
+#
+# Exercises the config override path: non-default arena size and ring
+# capacity flow from deploy.yaml → Rust validation → template params →
+# generated C++ typedef → shared memory segment layout.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_payload:
+        source: brake_payload.scxml
+        bindings:
+          "#motor_payload":
+            transport: shm
+            shm_arena_bytes: 131072      # 128KB (vs 64KB default)
+            shm_ring_capacity: 512       # 512 slots (vs 256 default), power of 2
+      motor_payload:
+        source: motor_payload.scxml

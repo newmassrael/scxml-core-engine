@@ -1383,6 +1383,77 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         # names per binding; for testing we serialize with RESOURCE_LOCK.
         RESOURCE_LOCK sce_mesh_shm_brake_motor)
 
+    # ── Phase 3 entry #4d: end-to-end payload verification ─────────
+    # Proves <param> data survives: sender → JSON → wire → drain
+    # → raiseExternal → _event.data → receiver cond matches.
+    set(MESH_SHM_PAYLOAD_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_shm_payload_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_payload.scxml"
+                -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/brake_payload.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh shm payload: Generating brake_payload_sm.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/motor_payload_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_payload.scxml"
+                -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/motor_payload.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh shm payload: Generating motor_payload_sm.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_payload.scxml"
+                -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_shm_payload.yaml"
+        DEPENDS "${MESH_TEST_DIR}/brake_payload.scxml"
+                "${MESH_TEST_DIR}/motor_payload.scxml"
+                "${MESH_TEST_DIR}/deploy_shm_payload.yaml"
+                "${SCE_CODEGEN}"
+                "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h"
+        COMMENT "Mesh shm payload: Generating brake_payload_transport.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_shm_payload_runtime_test
+        mesh/test_mesh_shm_payload_runtime.cpp
+        "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h"
+        "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/motor_payload_sm.h"
+        "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_transport.h"
+    )
+
+    target_include_directories(mesh_shm_payload_runtime_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SHM_PAYLOAD_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_shm_payload_runtime_test
+        PRIVATE
+            sce_base
+            sce_runtime
+            sce_mesh_common
+            rt
+            pthread
+    )
+
+    target_compile_features(mesh_shm_payload_runtime_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_shm_payload_runtime_test)
+
+    add_test(NAME mesh_shm_payload_runtime_verification
+             COMMAND mesh_shm_payload_runtime_test)
+    set_tests_properties(mesh_shm_payload_runtime_verification PROPERTIES
+        TIMEOUT 30
+        RESOURCE_LOCK sce_mesh_shm_brake_payload_motor_payload)
+
     # ── Phase 3: someip_transport compile verification ─────────
     # Validates that generated SOME/IP transport code compiles against
     # real vsomeip 3.x headers. Gated on find_package(vsomeip3).
@@ -1558,7 +1629,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 "${SCE_CODEGEN}"
                 "${MESH_TEST_DIR}/brake.scxml"
                 "${MESH_SWITCH_OUT_DIR}"
-                "local:${MESH_TEST_DIR}/deploy.yaml:motor_.processEvent"
+                "local:${MESH_TEST_DIR}/deploy.yaml:motor_.raiseExternal"
                 "shm:${MESH_TEST_DIR}/deploy_shm.yaml:SCE::Mesh::ShmChannel"
                 "someip:${MESH_TEST_DIR}/deploy_someip.yaml:vsomeip::application"
                 "zenoh:${MESH_TEST_DIR}/deploy_zenoh.yaml:zenoh::Session"

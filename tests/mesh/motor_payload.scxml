@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh end-to-end payload test: receiver checks _event.data -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="lua" name="motor_payload" initial="running">
+    <state id="running">
+        <!-- Tolerant comparison: SCXML param JSON may encode as string or number
+             depending on the typed pipeline. tonumber handles both cases. -->
+        <transition event="brake.activate" cond="tonumber(_event.data.force) == 42" target="verified"/>
+        <transition event="brake.activate" target="wrong_payload"/>
+    </state>
+    <state id="verified"/>
+    <state id="wrong_payload"/>
+</scxml>

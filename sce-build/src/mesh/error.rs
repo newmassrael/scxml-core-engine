@@ -186,6 +186,20 @@ pub enum TopologyError {
         transport: String,
         field: String,
     },
+
+    /// A binding field has an invalid value (wrong type, out of range,
+    /// violates a constraint like power-of-two). Reported from the Rust
+    /// validation stage so the diagnostic points at deploy.yaml, not at
+    /// a deferred C++ static_assert.
+    #[error("machine '{machine}': binding '{target}' (transport: {transport}) \
+             has invalid '{field}': {reason}")]
+    InvalidBindingField {
+        machine: String,
+        target: String,
+        transport: String,
+        field: String,
+        reason: String,
+    },
 }
 
 // ── Stage 3: Template rendering ──────────────────────────────

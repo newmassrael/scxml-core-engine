@@ -165,7 +165,7 @@ SCE Mesh   = extends WHERE generated code can execute (transports: SOME/IP, Zeno
 ```
 
 Key integration points:
-- **Forge `codec` kind → Mesh serialization**: Codec-generated `encode()`/`decode()` are called directly in transport-generated serialization code — single source of truth for wire format (see Section 7.5)
+- **Forge `codec` kind → External protocol adaptation**: When a mesh target communicates with a non-SCE system that requires a specific binary wire format (CAN DBC frame, legacy sensor protocol), the transport template can optionally call Forge codec `encode()`/`decode()` for protocol-native byte packing. This is an opt-in adapter for external systems, not a general event serialization mechanism (see Section 7.5)
 - **Forge `procedure` kind → Mesh remote `<invoke>`**: Procedure state machine classes work unchanged with Mesh's remote invoke codegen (see Section 9)
 - **Forge `observer` kind → Mesh routing**: Observer-generated threshold events are routed via generated transport code
 - **Shared `sce:` namespace**: Both use `http://sce.dev/ext`, both processed at build time by sce-build (see Section 5)
@@ -267,6 +267,26 @@ using AnyScheduler = std::variant<
 ### 3.2 Transport Codegen — How to Deliver
 
 Transport dispatch is resolved at **build time**, not runtime. sce-build reads `deploy.yaml` bindings and generates code that directly calls each transport's native API. There is no `ITransport` runtime interface — a unified **Jinja2 codegen template** dispatches per-target to transport-native code.
+
+#### Transport Groups
+
+Transports are classified into three architectural groups. Each group has its own codegen path because the wire semantics are fundamentally different:
+
+| Group | Examples | Wire Model | Codegen Path |
+|-------|----------|-----------|--------------|
+| **Byte-stream** | local, shm, someip, zenoh, dds, grpc, kafka, nats, udp | opaque bytes (name + data payload) | Mesh-native wire format (Section 7.5) |
+| **Signal-based** | can, lin, flexray | fixed frame + bit-packed signals | Schema-driven from `.dbc`/`.arxml` (Section 7.5) |
+| **Field-oriented** | opc_ua, dbus_property | named field + typed value | Pattern-driven (`field.get`/`field.set`, Section 8.1) |
+
+The three groups do **not** share a wire format. They share only the logical `(event_name, data)` model at the SCXML layer. Each group generates a different transport send/receive code path:
+
+- **Byte-stream**: `[event_name\0data_bytes]` — name-null-data framing. `MeshSendRequest.data` is forwarded as bytes.
+- **Signal-based**: `.dbc` schema drives bit-packed signal encoding. `event_name` maps to CAN ID via deploy.yaml. `MeshSendRequest.data` is ignored — signals are packed from SCXML `<param>` values through schema-aware codegen.
+- **Field-oriented**: event becomes a property get/set. `event_name` maps to node_id/object_path. `data` is marshaled as the protocol's typed value (OPC UA Variant, D-Bus Variant).
+
+**Why three groups, not one**: SCE Mesh's logical model `(name, data)` is universal. The wire format is not — CAN has no name field (frame ID is the routing key), OPC UA has no event concept (only property access). Attempting a single wire format across all groups either constrains byte-stream transports unnecessarily (fixed frame sizes to fit CAN) or loses signal-level type information (opaque bytes over CAN). Each group preserves its native semantics.
+
+Within a group, deploy.yaml-only middleware switching works (e.g., someip ↔ zenoh, both byte-stream). Across groups, a SCXML author may need to match the `sce:pattern` attribute to a transport that supports that pattern (Section 8.2 Transport Capability Matrix).
 
 #### Template Architecture
 
@@ -915,92 +935,174 @@ void route_send(const char* target, const EventDescriptor& event) {
 
 ### 7.5 Generated Event Serialization
 
-Serialization is generated per-transport. Different transports have fundamentally different data encoding requirements:
+Event serialization has two distinct layers with different purposes:
 
-- **Buffer-based** (gRPC, SOME/IP, SharedMem): Variable-length byte streams
-- **Signal-based** (CAN, LIN): Bit-level packing into fixed-size frames
+1. **Mesh-native serialization (SCE ↔ SCE)**: Automatic, schema-free. The mesh transport carries SCXML event data as-is between SCE-generated state machines. Both sides run SCE-generated code, so the wire format is an internal concern — no user-defined schema required.
+2. **External protocol adaptation (SCE → non-SCE)**: Opt-in, schema-required. When a mesh target is a non-SCE system with a fixed binary protocol (CAN ECU, legacy sensor), a Forge codec or signal database provides the wire format translation.
 
-Each transport template generates serialization code appropriate to the wire format — no runtime `ISerializer` interface:
+#### Mesh-Native Serialization (Default, Byte-Stream Group)
 
-#### Type Information Source
+For SCE-to-SCE communication over byte-stream transports, the transport carries `MeshSendRequest` data transparently. The SCXML runtime already assembles `<param>`, `<content>`, and `namelist` data into a JSON string (via `EventDataHelper::buildJsonFromParams`). The mesh transport forwards this data alongside the event name using a unified wire format.
 
-W3C SCXML is typeless — `<param name="brake_force" expr="brakeForce"/>` carries no type information. The build tool requires an external type source to generate serialization code. Three sources are supported, in priority order:
+##### Unified Wire Format
 
-1. **SCE Forge `codec` kind** (preferred when available): If an event payload has a corresponding `sce:kind="codec"` SCXML file, the transport template generates serialization code that directly calls the codec's `encode()`/`decode()` methods. The codec SCXML becomes the single source of truth for both local byte parsing and remote event serialization. No `events.yaml` entry is needed for codec-backed payloads.
-2. **Buffer-based transports**: Types are declared in an **event schema file** (`events.yaml`) alongside `deploy.yaml`. This is the fallback for payloads without a codec kind definition.
-3. **Signal-based transports (CAN, LIN)**: Types, scaling, offsets, and bit layouts are imported from standard automotive database files (`.dbc`, `.arxml`, AUTOSAR system description). This is Phase 3 scope.
+All byte-stream transports share a single canonical wire format:
 
 ```
-Type resolution priority:
-  1. SCE Forge codec kind (sce:kind="codec")  → generated struct with encode/decode
-  2. events.yaml                                → explicit type declarations
-  3. .dbc / .arxml                              → automotive signal database
+┌─────────────────┬─────┬──────────────────┐
+│ event_name      │ \0  │ data bytes       │
+└─────────────────┴─────┴──────────────────┘
+  (UTF-8, no NUL)        (opaque, JSON default)
 ```
 
-**SCE Forge codec integration**: When the build tool detects that a `<send>` event payload matches a Forge codec kind (by matching the codec's `<data id>` against the event's `<param>` structure), the transport template generates serialization code that calls the Forge-generated codec directly:
+- `event_name`: ASCII/UTF-8 bytes, no embedded null (SCXML event names never contain `\0`).
+- Single null byte separator.
+- `data`: opaque bytes. Default encoding is JSON (produced by the SCXML runtime); may contain any byte including null.
+
+Decoding: receiver splits at the **first** null byte. Bytes before → event name. Bytes after (if any) → data. Empty tail means payload-less event.
+
+The shared encoder is `SCE::Mesh::encodeWirePayload(const MeshSendRequest&)` in `sce/include/mesh/MeshWireFormat.h`. Every byte-stream transport's generated send code calls this function — no per-transport framing logic in the templates.
+
+**Future encoding**: If binary efficiency becomes a measured bottleneck, JSON may be replaced with MessagePack or CBOR for the `data` portion without changing the `[name\0data]` framing. SCXML and deploy.yaml remain unchanged.
+
+##### SHM Wire Layout (Control Ring + Payload Arena)
+
+Shared memory has a unique constraint: the lock-free MPSC ring buffer (Vyukov algorithm) requires fixed-size slots, but SCXML events are variable-length. SCE Mesh resolves this through a **control-plus-arena** layout — the textbook approach used by high-performance shm IPC systems (iceoryx, DDS implementations):
+
+```
+┌─────────────────────────────────────────┐
+│ POSIX shm segment                        │
+├─────────────────────────────────────────┤
+│ Layout header:                          │
+│   ready_magic (atomic uint64)            │ ← startup handshake
+├─────────────────────────────────────────┤
+│ Control ring buffer (Vyukov MPSC)        │
+│   fixed-size slots: {offset, length}    │ ← 8 bytes each, lock-free
+│   capacity: power of 2                  │
+├─────────────────────────────────────────┤
+│ Payload arena (circular byte buffer)    │
+│   variable-size [name\0data] entries    │ ← producer advances head
+│   configurable size (default 64KB)      │   consumer advances tail
+└─────────────────────────────────────────┘
+```
+
+**Producer path**:
+1. Reserve `sizeof(wire_bytes)` in the arena via CAS on head cursor.
+2. Write `encodeWirePayload(req)` output to reserved arena region.
+3. Push `{arena_offset, length}` to the control ring.
+
+**Consumer path**:
+1. Pop `{offset, length}` from the control ring.
+2. Read wire bytes from arena at `offset`.
+3. Advance arena tail cursor after the entry is consumed.
+
+**Failure modes**:
+- Control ring full → `send()` returns false (current behavior preserved).
+- Arena has insufficient contiguous space → `send()` returns false. Producer treats identically to ring-full.
+- Reader lags → arena fills up → producer back-pressure. No silent truncation.
+
+**Configuration** (deploy.yaml, per-binding):
+```yaml
+"#motor":
+    transport: shm
+    shm_arena_bytes: 65536   # default; override for high-throughput bindings
+    shm_ring_capacity: 256   # default; must be power of 2
+```
+
+This layout eliminates the two shortcomings of fixed-slot shm:
+- No waste on small events (name-only events cost ~name_length bytes in arena, 8 bytes in ring).
+- No silent truncation on large events (up to `arena_bytes` is accepted).
+
+##### Receive Path Semantics (W3C-Compliant)
+
+The drain-to-engine path must respect W3C SCXML macrostep semantics. Specifically, the mesh transport layer **does not drive macrostep execution** — the application or scheduler owns `step()` timing:
+
+```
+Mesh receive flow:
+  transport wire → decodeWirePayload → (event, data)
+                                         ↓
+  engine.raiseExternal(event, data)     ← enqueues to external queue only
+                                         ↓
+  (scheduler or application calls step() at its chosen boundary)
+                                         ↓
+  processEventQueues() → EventMetadataHelper → _event.data in Lua/JS
+```
+
+**Responsibilities**:
+- **Transport drain**: calls `raiseExternal` for each received event, then returns. No `step()`.
+- **Scheduler** (Section 3.1 `TickScheduling` / `EventDrivenScheduling`): decides when macrosteps run.
+- **Application**: owns the event loop if not using a scheduler.
+
+**Why this separation matters** (W3C SCXML 3.12):
+External events are processed in the "next stable configuration" — i.e., between macrosteps, not during one. If the transport layer called `step()` per event, it would force micro-level macrosteps, breaking batch processing semantics and contradicting the Scheduler abstraction. It would also make event ordering dependent on transport arrival order rather than scheduler policy.
+
+The transport layer's job ends at the external queue. The engine's step/tick boundary is a scheduler concern.
+
+##### End-to-End Verification
+
+Each buffer-based transport's runtime test must verify:
+1. SCXML with `<param>` on the sender → event data reaches `_event.data` on the receiver's Lua/JS engine.
+2. Empty `<param>` case — payload-less events work without overhead.
+3. Payload size near arena boundary (shm only) — back-pressure, not truncation.
+
+These scenarios close the gap between "wire format defined" and "data reaches application logic."
+
+##### Summary
+
+```
+Byte-stream wire format:
+  [event_name\0data_bytes]    — single canonical format, all transports
+
+SHM layout:
+  control ring (fixed slots) + payload arena (variable bytes)
+
+Receive path:
+  transport drain → raiseExternal → scheduler-owned step → _event.data
+
+Compact binary encoding (future):
+  MessagePack/CBOR for data portion — transparent to SCXML/deploy.yaml
+```
+
+No `events.yaml`, no codec SCXML, no external schema. The JSON payload from the SCXML runtime is the data. This is sufficient for the majority of mesh use cases where both ends are SCE-generated machines.
+
+#### External Protocol Adaptation (Opt-In)
+
+When a mesh target is a non-SCE system that requires a specific binary wire format, two opt-in mechanisms provide protocol adaptation:
+
+**Forge codec** — for custom binary protocols:
+
+When deploy.yaml specifies a `wire_codec` on a binding, the transport template generates code that calls the Forge-generated codec's `encode()`/`decode()` instead of passing JSON:
+
+```yaml
+# deploy.yaml — opt-in codec for external system communication
+"#legacy_sensor":
+    transport: someip
+    service_id: "0x1234"
+    wire_codec: sensor_frame    # Forge codec SCXML name — external protocol
+```
 
 ```cpp
-// [generated] — transport template calls Forge-generated codec directly
-void send_to_motor(const EventDescriptor& event) {
-    // Forge-generated encode — single source of truth for wire format
-    auto payload = MotorCutPowerCodec::encode(event.params());
-    // Transport-native send — no serialization abstraction layer
-    vsomeip_send(motor_service_, payload.data(), payload.size());
+// [generated] — codec adapts SCE event data to external binary format
+void send_to_legacy_sensor(const MeshSendRequest& req) {
+    auto frame = SensorFrameCodec::from_json(req.data);  // JSON → typed struct
+    auto bytes = frame.encode();                          // struct → wire bytes
+    vsomeip_send(sensor_service_, bytes.data(), bytes.size());
 }
 ```
 
-This eliminates type duplication between `events.yaml` and codec SCXML files. When both exist for the same event, the codec kind takes precedence and the build tool emits a warning about the redundant `events.yaml` entry.
+This is explicitly for interfacing with systems that do not run SCE-generated code and require a specific byte layout. Forge codec remains a protocol-native binary serialization tool — it is not a general event serialization mechanism.
 
-**Data model type mismatch**: `events.yaml` declares static types (e.g., `float32`), but SCXML data models (particularly Lua) are dynamically typed. A Lua variable `brakeForce` could be integer or float at runtime. The mismatch strategy will be defined in Phase 2 implementation. Likely approach: runtime type coercion at the serialization boundary with build-time warnings when `events.yaml` types cannot be statically verified against the data model.
-
-```yaml
-# events.yaml — event payload type definitions (Phase 2+)
-events:
-  motor.cut_power:
-    params:
-      brake_force: { type: float32 }
-
-  sensor.frame:
-    params:
-      timestamp: { type: uint64 }
-      data:      { type: bytes, max_size: 4096 }
-
-  brake.indicator.on: {}    # no payload
-```
+**Signal database** — for automotive signal-based protocols (CAN, LIN):
 
 ```yaml
-# deploy.yaml — CAN signal import (Phase 3)
-topology:
-  brake_ecu:
-    machines:
-      brake:
-        bindings:
-          "#motor":
-            transport: can
-            address: "can0:0x100"
-            signals: "vehicle.dbc"     # DBC file provides type/layout info
+# deploy.yaml — DBC signal import for CAN target
+"#motor_ecu":
+    transport: can
+    address: "can0:0x100"
+    signals: "vehicle.dbc"     # DBC file provides bit-level signal layout
 ```
 
-The build tool merges type information from `events.yaml` (buffer-based) or `.dbc`/`.arxml` (signal-based) with the SCXML `<send>` analysis to generate the correct serialization code.
-
-Generated code example (buffer-based transport, types from `events.yaml`):
-
-```cpp
-// [generated] brake_events.h — types derived from events.yaml
-namespace SCE::Generated::brake::events {
-
-struct MotorCutPower {
-    static constexpr auto NAME = "motor.cut_power";
-    float brake_force;    // from events.yaml: float32
-
-    void serialize(SCE::Mesh::Buffer& buf) const;
-    static MotorCutPower deserialize(SCE::Mesh::BufferView buf);
-};
-
-}  // namespace SCE::Generated::brake::events
-```
-
-Generated code example (CAN signal-based transport, types from `.dbc`):
+Types, scaling, offsets, and bit layouts are imported from standard automotive database files (`.dbc`, `.arxml`). The transport template generates bit-packing code from the signal definition:
 
 ```cpp
 // [generated] brake_can_signals.h — layout derived from vehicle.dbc
@@ -1008,11 +1110,11 @@ namespace SCE::Generated::brake::signals {
 
 struct MotorCutPower {
     static constexpr auto NAME = "motor.cut_power";
-    static constexpr uint32_t CAN_ID = 0x100;   // from DBC: message ID
-    static constexpr uint8_t START_BIT = 0;      // from DBC: signal layout
-    static constexpr uint8_t LENGTH = 16;        // from DBC: 16 bits
-    static constexpr float SCALE = 0.1f;         // from DBC: scaling
-    static constexpr float OFFSET = 0.0f;        // from DBC: offset
+    static constexpr uint32_t CAN_ID = 0x100;
+    static constexpr uint8_t START_BIT = 0;
+    static constexpr uint8_t LENGTH = 16;
+    static constexpr float SCALE = 0.1f;
+    static constexpr float OFFSET = 0.0f;
 
     void pack(uint8_t frame[8]) const;
     static MotorCutPower unpack(const uint8_t frame[8]);
@@ -1020,6 +1122,16 @@ struct MotorCutPower {
 
 }  // namespace SCE::Generated::brake::signals
 ```
+
+#### Summary
+
+```
+SCE ↔ SCE communication:   mesh-native (JSON, automatic, no schema)
+SCE → external system:      wire_codec (Forge codec, opt-in per binding)
+SCE → CAN/LIN:              signal database (.dbc/.arxml, opt-in per binding)
+```
+
+SCXML documents never reference serialization details. The choice between mesh-native and protocol adaptation is a deploy.yaml concern — consistent with the core principle that SCXML authors write business logic and platform engineers configure deployment.
 
 ### 7.6 What Developers Write
 
@@ -1383,7 +1495,7 @@ The same SCXML generates different transport code depending on deploy.yaml:
 
 ### Phase 2: Shared Memory Transport — COMPLETE
 
-`shm_transport` template (POSIX `shm_open`/`mmap`), `ShmChannel` with placement-new EventQueueBridge in shared memory, ready-flag handshake for any-order startup. Build-time event coverage enforcement (`UncoveredEvents` error — eliminates silently-broken-hooks pattern). Forge codec integration for single-source wire format. Verification: two processes on same machine communicating via SCXML through generated SHM code, SCXML documents unchanged. QoS consistency check deferred to Phase 3.
+`shm_transport` template (POSIX `shm_open`/`mmap`), `ShmChannel` with placement-new EventQueueBridge in shared memory, ready-flag handshake for any-order startup. Build-time event coverage enforcement (`UncoveredEvents` error — eliminates silently-broken-hooks pattern). Verification: two processes on same machine communicating via SCXML through generated SHM code, SCXML documents unchanged. QoS consistency check deferred to Phase 3.
 
 ### Phase 3: Vehicle Network Transport Templates + Communication Patterns
 
@@ -1415,8 +1527,12 @@ All transports share the unified `mesh_transport.h.jinja2` template via `{% elif
 1. Communication Pattern event semantics definition (Section 8.1 formalization) — COMPLETE
 2. First transport template: `someip_transport` via real vsomeip 3.7.x — COMPLETE
 3. Second transport template: `zenoh_transport` via zenoh-cpp — validates that Communication Pattern Semantics abstraction is correct across middlewares — COMPLETE
-4. Forge codec for protocol header serialization
-5. Application-level test demonstrating deploy.yaml-only middleware switch
+4. Mesh-native event serialization (byte-stream group):
+   a. Unified `[name\0data]` wire format via `encodeWirePayload` — COMPLETE for someip/zenoh
+   b. SHM control-ring + payload-arena layout (Section 7.5) — replaces fixed-size `ShmEvent`
+   c. Receive path: transport drain → `raiseExternal` (no `step()` in drain) — scheduler-owned macrostep
+   d. End-to-end payload test: SCXML `<param>` → `_event.data` on receiver
+5. Application-level test demonstrating deploy.yaml-only middleware switch — COMPLETE (`mesh_middleware_switch_demo.sh`)
 
 ### Phase 4: Game Scale (Directional — refined after Phase 3)
 

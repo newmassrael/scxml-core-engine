@@ -40,6 +40,7 @@ struct MockEngine {
     Policy policy_;
     Policy& getPolicy() { return policy_; }
     void processEvent(Event) {}
+    void raiseExternal(Event, const std::string& = {}) {}
 };
 
 using Router = SCE::Generated::brake::TransportRouter<MockEngine>;

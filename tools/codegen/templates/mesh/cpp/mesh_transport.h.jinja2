@@ -47,6 +47,9 @@
 #include <cstring>
 
 #include "mesh/MeshSendRequest.h"
+{% if "someip" in transport_types or "zenoh" in transport_types %}
+#include "mesh/MeshWireFormat.h"
+{% endif %}
 
 {# ── (A) Transport includes (NEW TRANSPORT: add conditional) ── #}
 {% if "local" in transport_types %}
@@ -74,6 +77,16 @@ namespace SCE::Generated::{{ machine_name }} {
 {% if "shm" in transport_types %}
 {% for target in targets if target.transport == "shm" %}
 static constexpr const char* SHM_CHANNEL_{{ target.target_snake | upper }} = "/sce_{{ machine_name }}_{{ target.target_snake }}";
+// Arena and ring capacity come from deploy.yaml (shm_arena_bytes /
+// shm_ring_capacity) or fall back to library defaults. Defaults match
+// SCE::Mesh::SHM_DEFAULT_ARENA_BYTES / SHM_DEFAULT_RING_CAPACITY in
+// ShmChannel.h (64KB / 256 slots). Rust validates both at deploy.yaml
+// parse time (power-of-two for ring, positive for arena).
+static constexpr std::size_t SHM_ARENA_BYTES_{{ target.target_snake | upper }} = {{ target.extra.shm_arena_bytes | default(65536) }};
+static constexpr std::size_t SHM_RING_CAPACITY_{{ target.target_snake | upper }} = {{ target.extra.shm_ring_capacity | default(256) }};
+using {{ target.target_pascal }}ShmChannel = SCE::Mesh::ShmChannel<
+    SHM_ARENA_BYTES_{{ target.target_snake | upper }},
+    SHM_RING_CAPACITY_{{ target.target_snake | upper }}>;
 {% endfor %}
 
 {% endif %}
@@ -106,14 +119,18 @@ static constexpr const char* ZENOH_KEY_{{ target.target_snake | upper }} = "{{ t
 {# ── (C) Per-target send functions (NEW TRANSPORT: add {% elif %} block) ── #}
 {% for target in targets %}
 {% if target.transport == "local" %}
-/// Route to {{ target.target }} (local: direct call, inlined by compiler)
+/// Enqueue to {{ target.target }} (local: direct external-queue injection)
 /// Events: {{ target.events | join(", ") }}
+///
+/// Does not step the target engine — macrostep timing is scheduler or
+/// application responsibility (W3C SCXML 3.12).
 template<typename TargetEngine>
 inline void send_to_{{ target.target_snake }}(
     TargetEngine& engine,
-    typename TargetEngine::Event event
+    typename TargetEngine::Event event,
+    const std::string& data = {}
 ) {
-    engine.processEvent(event);
+    engine.raiseExternal(event, data);
 }
 
 {% elif target.transport == "shm" %}
@@ -121,30 +138,34 @@ inline void send_to_{{ target.target_snake }}(
 /// Events: {{ target.events | join(", ") }}
 /// @return true if enqueued; false if the channel is full or not yet ready.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
-    SCE::Mesh::ShmChannel<>& channel,
-    const char* event_name
+    {{ target.target_pascal }}ShmChannel& channel,
+    const char* event_name,
+    const std::string& data = {}
 ) {
-    return channel.send(event_name);
+    return channel.send(event_name, data);
 }
 
 {% elif target.transport == "someip" %}
 /// Submit event to {{ target.target }} via SOME/IP ({{ target.extra.protocol | default("udp") }}).
 /// Events: {{ target.events | join(", ") }}
+///
+/// Wire format: [event_name\0][data bytes]
+/// Receiver splits at the first null byte to recover name and data.
+///
 /// @return true if the request was submitted to vsomeip.
-///         Delivery is not guaranteed for fire-and-forget semantics.
-///         Use availability handlers for connection-aware error detection.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
     vsomeip::application& app,
-    const char* event_name
+    const SCE::Mesh::MeshSendRequest& req
 ) {
     auto request = vsomeip::runtime::get()->create_request(
         {% if target.extra.protocol is defined and target.extra.protocol == "tcp" %}true{% else %}false{% endif %});
     request->set_service(SOMEIP_SERVICE_{{ target.target_snake | upper }});
     request->set_instance(SOMEIP_INSTANCE_{{ target.target_snake | upper }});
     request->set_method(SOMEIP_METHOD_{{ target.target_snake | upper }});
+    auto buf = SCE::Mesh::encodeWirePayload(req);
     auto payload = vsomeip::runtime::get()->create_payload(
-        reinterpret_cast<const vsomeip::byte_t*>(event_name),
-        static_cast<uint32_t>(std::strlen(event_name)));
+        reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
+        static_cast<uint32_t>(buf.size()));
     request->set_payload(payload);
     app.send(request);
     return true;
@@ -153,13 +174,18 @@ inline void send_to_{{ target.target_snake }}(
 {% elif target.transport == "zenoh" %}
 /// Send event to {{ target.target }} via Zenoh pub/sub (key: {{ target.extra.key }}).
 /// Events: {{ target.events | join(", ") }}
+///
+/// Wire format: [event_name\0][data bytes]
+/// std::string preserves embedded null bytes; Zenoh transmits full size().
+///
 /// @return true if the put operation was submitted to Zenoh.
-///         Zenoh is fire-and-forget — delivery depends on subscriber availability.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
     zenoh::Session& session,
-    const char* event_name
+    const SCE::Mesh::MeshSendRequest& req
 ) {
-    session.put(zenoh::KeyExpr(ZENOH_KEY_{{ target.target_snake | upper }}), event_name);
+    auto buf = SCE::Mesh::encodeWirePayload(req);
+    session.put(zenoh::KeyExpr(ZENOH_KEY_{{ target.target_snake | upper }}),
+                std::string(reinterpret_cast<const char*>(buf.data()), buf.size()));
     return true;
 }
 
@@ -186,7 +212,7 @@ struct TransportRouter {
 {% if target.transport == "local" %}
     {{ target.target_pascal }}Engine& {{ target.target_snake }}_;
 {% elif target.transport == "shm" %}
-    SCE::Mesh::ShmChannel<> {{ target.target_snake }}_;
+    {{ target.target_pascal }}ShmChannel {{ target.target_snake }}_;
 {% elif target.transport == "someip" %}
     std::shared_ptr<vsomeip::application> {{ target.target_snake }}_app_;
     std::thread {{ target.target_snake }}_thread_;
@@ -214,7 +240,7 @@ struct TransportRouter {
             {%- if target.transport == "local" -%}
                 {{ target.target_snake }}_({{ target.target_snake }})
             {%- elif target.transport == "shm" -%}
-                {{ target.target_snake }}_(SHM_CHANNEL_{{ target.target_snake | upper }}, SCE::Mesh::ShmChannel<>::Mode::Create)
+                {{ target.target_snake }}_(SHM_CHANNEL_{{ target.target_snake | upper }}, {{ target.target_pascal }}ShmChannel::Mode::Create)
             {%- elif target.transport == "someip" -%}
                 {{ target.target_snake }}_app_(vsomeip::runtime::get()->create_application("{{ machine_name }}_{{ target.target_snake }}"))
             {%- endif -%}
@@ -302,21 +328,24 @@ struct TransportRouter {
 {% for target in targets %}
         {% if not loop.first %}else {% endif %}if (req.target == "{{ target.target }}") {
 {% if target.transport == "local" %}
+            // W3C SCXML 3.12: enqueue to external queue only. Macrostep
+            // timing is scheduler/application responsibility — the transport
+            // layer does not drive target engine execution.
             using TargetPolicy = std::decay_t<decltype({{ target.target_snake }}_.getPolicy())>;
             auto ev = TargetPolicy::getEventFromName(req.eventName.c_str());
             if (!ev) return false;
-            {{ target.target_snake }}_.processEvent(*ev);
+            {{ target.target_snake }}_.raiseExternal(*ev, req.data);
             return true;
 {% elif target.transport == "shm" %}
-            return {{ target.target_snake }}_.send(req.eventName.c_str());
+            return {{ target.target_snake }}_.send(req.eventName.c_str(), req.data);
 {% elif target.transport == "someip" %}
             if ({{ target.target_snake }}_app_) {
-                return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, req.eventName.c_str());
+                return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, req);
             }
             return false;
 {% elif target.transport == "zenoh" %}
             if (zenoh_session_) {
-                return send_to_{{ target.target_snake }}(*zenoh_session_, req.eventName.c_str());
+                return send_to_{{ target.target_snake }}(*zenoh_session_, req);
             }
             return false;
 {% endif %}

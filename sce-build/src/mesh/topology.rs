@@ -245,9 +245,81 @@ pub fn resolve_targets(
                 }
             }
         }
+
+        // Transport-specific optional field validation. These fields are
+        // optional (fall back to defaults) but must be well-formed when
+        // present. SCE_MESH.md Section 7.5.
+        if rt.transport == "shm" {
+            validate_shm_extras(machine_name, rt)?;
+        }
     }
 
     Ok(resolved)
+}
+
+/// Validate optional shm binding fields:
+///   - `shm_arena_bytes`   positive integer, must fit in u32 (offset/length
+///                         fields in the wire layout use uint32_t)
+///   - `shm_ring_capacity` positive power of two (EventQueueBridge
+///                         requires power-of-two capacity)
+fn validate_shm_extras(
+    machine_name: &str,
+    rt: &ResolvedTarget,
+) -> Result<(), TopologyError> {
+    let invalid = |field: &str, reason: String| TopologyError::InvalidBindingField {
+        machine: machine_name.to_string(),
+        target: rt.target.clone(),
+        transport: rt.transport.clone(),
+        field: field.to_string(),
+        reason,
+    };
+
+    if let Some(v) = rt.extra.get("shm_arena_bytes") {
+        let n = v.as_u64().ok_or_else(|| {
+            invalid(
+                "shm_arena_bytes",
+                format!("must be a positive integer (got {})", render_yaml_value(v)),
+            )
+        })?;
+        if n == 0 {
+            return Err(invalid("shm_arena_bytes", "must be greater than zero".into()));
+        }
+        if n > u32::MAX as u64 {
+            return Err(invalid(
+                "shm_arena_bytes",
+                format!(
+                    "exceeds u32 max ({n} > {}); arena offsets use uint32_t",
+                    u32::MAX
+                ),
+            ));
+        }
+    }
+
+    if let Some(v) = rt.extra.get("shm_ring_capacity") {
+        let n = v.as_u64().ok_or_else(|| {
+            invalid(
+                "shm_ring_capacity",
+                format!("must be a positive integer (got {})", render_yaml_value(v)),
+            )
+        })?;
+        if n == 0 || (n & (n - 1)) != 0 {
+            return Err(invalid(
+                "shm_ring_capacity",
+                format!("must be a power of two (got {n})"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Render a YAML value compactly for diagnostic messages.
+/// Uses serde_yaml_ng's built-in serialization, falling back to Debug
+/// if serialization fails (should not happen for valid input).
+fn render_yaml_value(v: &serde_yaml_ng::Value) -> String {
+    serde_yaml_ng::to_string(v)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| format!("{v:?}"))
 }
 
 /// Find bindings for a machine across all devices in the topology.
@@ -1187,5 +1259,198 @@ topology:
         // Machine "tester" not in deploy.yaml — no validation.
         let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
         assert!(violations.is_empty());
+    }
+
+    // ── shm_* binding field validation ──────────────────────────
+
+    const SHM_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" name="sender" initial="s">
+  <state id="s">
+    <onentry><send target="#receiver" event="e"/></onentry>
+  </state>
+</scxml>"##;
+
+    fn resolve_for_shm(yaml: &str) -> Result<Vec<ResolvedTarget>, TopologyError> {
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(SHM_SCXML, "sender");
+        resolve_targets(&summary_for(&model), &deploy, "sender")
+    }
+
+    #[test]
+    fn shm_no_extras_accepts_defaults() {
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender: { source: s.scxml, bindings: { "#receiver": { transport: shm } } }
+      receiver: { source: r.scxml }
+"##;
+        resolve_for_shm(yaml).expect("defaults should be accepted");
+    }
+
+    #[test]
+    fn shm_valid_arena_and_ring_accepted() {
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: shm
+            shm_arena_bytes: 131072
+            shm_ring_capacity: 512
+      receiver: { source: r.scxml }
+"##;
+        resolve_for_shm(yaml).expect("valid shm extras should be accepted");
+    }
+
+    #[test]
+    fn shm_zero_arena_rejected() {
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: shm
+            shm_arena_bytes: 0
+      receiver: { source: r.scxml }
+"##;
+        let err = resolve_for_shm(yaml).unwrap_err();
+        match err {
+            TopologyError::InvalidBindingField { field, reason, .. } => {
+                assert_eq!(field, "shm_arena_bytes");
+                assert!(reason.contains("greater than zero"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shm_ring_capacity_must_be_power_of_two() {
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: shm
+            shm_ring_capacity: 300
+      receiver: { source: r.scxml }
+"##;
+        let err = resolve_for_shm(yaml).unwrap_err();
+        match err {
+            TopologyError::InvalidBindingField { field, reason, .. } => {
+                assert_eq!(field, "shm_ring_capacity");
+                assert!(reason.contains("power of two"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shm_ring_capacity_zero_rejected() {
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: shm
+            shm_ring_capacity: 0
+      receiver: { source: r.scxml }
+"##;
+        let err = resolve_for_shm(yaml).unwrap_err();
+        match err {
+            TopologyError::InvalidBindingField { field, .. } => {
+                assert_eq!(field, "shm_ring_capacity");
+            }
+            other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shm_non_integer_arena_rejected() {
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: shm
+            shm_arena_bytes: "not-a-number"
+      receiver: { source: r.scxml }
+"##;
+        let err = resolve_for_shm(yaml).unwrap_err();
+        match err {
+            TopologyError::InvalidBindingField { field, reason, .. } => {
+                assert_eq!(field, "shm_arena_bytes");
+                // Message should include the offending value for diagnostics.
+                assert!(reason.contains("positive integer"), "reason: {reason}");
+                assert!(reason.contains("not-a-number"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shm_arena_exceeds_u32_rejected() {
+        // 2^32 = 4294967296 > u32::MAX (4294967295) — out of range.
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: shm
+            shm_arena_bytes: 4294967296
+      receiver: { source: r.scxml }
+"##;
+        let err = resolve_for_shm(yaml).unwrap_err();
+        match err {
+            TopologyError::InvalidBindingField { field, reason, .. } => {
+                assert_eq!(field, "shm_arena_bytes");
+                assert!(reason.contains("exceeds u32"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shm_negative_arena_rejected() {
+        // Negative values cannot coerce to u64; error message should
+        // include the offending value for diagnostics.
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: shm
+            shm_arena_bytes: -1
+      receiver: { source: r.scxml }
+"##;
+        let err = resolve_for_shm(yaml).unwrap_err();
+        match err {
+            TopologyError::InvalidBindingField { field, reason, .. } => {
+                assert_eq!(field, "shm_arena_bytes");
+                assert!(reason.contains("-1"), "reason should include value: {reason}");
+            }
+            other => panic!("expected InvalidBindingField, got {other:?}"),
+        }
     }
 }
