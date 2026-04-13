@@ -4,6 +4,9 @@ topology:
   ecu1:
     machines:
       brake:
+        source: brake.scxml
         bindings:
           "#motor":
             transport: shm
+      motor:
+        source: motor.scxml

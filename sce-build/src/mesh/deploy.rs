@@ -50,8 +50,19 @@ pub struct DeviceConfig {
 /// Machine-level configuration (one state machine instance).
 #[derive(Debug, Clone, Deserialize)]
 pub struct MachineConfig {
+    /// SCXML source path, relative to the deploy.yaml file.
+    /// Required for event coverage validation: every receiver referenced
+    /// by a `<send target="#X"/>` must declare its source so the analyzer
+    /// can read its `<transition event="...">` set.
+    ///
+    /// Trust boundary: deploy.yaml is part of the build configuration and
+    /// is trusted. Absolute paths are rejected as a portability signal,
+    /// not a security gate. `..` is permitted for legitimate cross-directory
+    /// layouts (e.g., `../shared/motor.scxml`).
+    pub source: String,
     /// Target ID -> transport binding.
     /// Keys are SCXML `<send target="...">` values (e.g. "#motor").
+    #[serde(default)]
     pub bindings: HashMap<String, BindingConfig>,
 }
 
@@ -65,6 +76,11 @@ pub struct BindingConfig {
     pub extra: HashMap<String, serde_yaml_ng::Value>,
 }
 
+/// Schema versions this compiler understands. Add new entries when
+/// introducing backward-compatible field additions; bump the minor
+/// version when making breaking changes to the schema.
+pub const SUPPORTED_VERSIONS: &[&str] = &["1.0"];
+
 /// Parse a deploy.yaml file from disk.
 pub fn parse_deploy(path: &Path) -> Result<DeployConfig, DeployError> {
     let content = std::fs::read_to_string(path).map_err(|e| DeployError::ReadFile {
@@ -76,5 +92,80 @@ pub fn parse_deploy(path: &Path) -> Result<DeployConfig, DeployError> {
 
 /// Parse deploy.yaml from a string (filesystem-free, testable).
 pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
-    serde_yaml_ng::from_str(content).map_err(|e| DeployError::Yaml(e.to_string()))
+    let cfg: DeployConfig =
+        serde_yaml_ng::from_str(content).map_err(|e| DeployError::Yaml(e.to_string()))?;
+
+    if let Some(v) = &cfg.version {
+        if !SUPPORTED_VERSIONS.contains(&v.as_str()) {
+            return Err(DeployError::UnsupportedVersion {
+                found: v.clone(),
+                supported: SUPPORTED_VERSIONS.to_vec(),
+            });
+        }
+    }
+
+    Ok(cfg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supported_version_accepted() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml }
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        assert_eq!(cfg.version.as_deref(), Some("1.0"));
+    }
+
+    #[test]
+    fn missing_version_accepted() {
+        let yaml = r#"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml }
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        assert!(cfg.version.is_none());
+    }
+
+    #[test]
+    fn unknown_version_rejected() {
+        let yaml = r#"
+version: "2.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml }
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::UnsupportedVersion { found, supported }) => {
+                assert_eq!(found, "2.0");
+                assert!(supported.contains(&"1.0"));
+            }
+            other => panic!("expected UnsupportedVersion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bindings_default_to_empty() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor: { source: motor.scxml }
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let motor = &cfg.topology["ecu1"].machines["motor"];
+        assert_eq!(motor.source, "motor.scxml");
+        assert!(motor.bindings.is_empty());
+    }
 }

@@ -49,6 +49,17 @@ pub enum DeployError {
     /// YAML syntax or schema error in deploy.yaml.
     #[error("deploy.yaml parse error: {0}")]
     Yaml(String),
+
+    /// `version:` field specifies a schema version this compiler does not know.
+    /// Prevents silent misinterpretation of fields whose semantics change
+    /// between schema revisions.
+    #[error("deploy.yaml version '{found}' is not supported. Supported: {supported}. \
+             Update sce-codegen or change the `version:` field.",
+             supported = .supported.join(", "))]
+    UnsupportedVersion {
+        found: String,
+        supported: Vec<&'static str>,
+    },
 }
 
 // ── Stage 2: Topology resolution ─────────────────────────────
@@ -71,6 +82,57 @@ pub enum TopologyError {
     MachineNotFound {
         machine: String,
         available: Vec<String>,
+    },
+
+    /// A <send target="#X"/> references a receiver machine not declared in
+    /// deploy.yaml. Required so the event coverage analyzer can locate the
+    /// receiver's SCXML source and read its <transition event="..."> set.
+    #[error("machine '{sender}' sends to '{target}' but no machine '{receiver}' \
+             is declared in deploy.yaml. Add the receiver under topology.*.machines \
+             with its `source:` path.")]
+    ReceiverNotDeclared {
+        sender: String,
+        target: String,
+        receiver: String,
+    },
+
+    /// The `source:` field uses an absolute path. Deploy descriptors must be
+    /// portable across checkouts and build roots — absolute paths defeat that.
+    #[error("machine '{machine}' has absolute source path '{path}'. Use a path \
+             relative to the deploy.yaml file instead.")]
+    AbsoluteSourcePath {
+        machine: String,
+        path: String,
+    },
+
+    /// Cannot read a receiver's SCXML source file during event coverage validation.
+    #[error("cannot read receiver SCXML '{path}' (for machine '{machine}'): {source}. \
+             Check the `source:` field in deploy.yaml for this machine.")]
+    ReceiverSourceRead {
+        machine: String,
+        path: String,
+        source: std::io::Error,
+    },
+
+    /// Cannot parse a receiver's SCXML source file.
+    #[error("cannot parse receiver SCXML '{path}' (for machine '{machine}'): {reason}")]
+    ReceiverSourceParse {
+        machine: String,
+        path: String,
+        reason: String,
+    },
+
+    /// Send events that have no matching <transition event="..."> in the
+    /// receiver machine. Detected at build time; otherwise these events
+    /// would be silently dropped at runtime by the transport layer.
+    #[error("event coverage violations in machine '{sender}':\n{}\nEach <send event=\"X\"> must have a matching <transition event=\"X\"> in the receiver. \
+             Fix: add the missing transition in the receiver, or correct the event name in the sender.",
+             .findings.iter().map(|f| format!("  - send target=\"{}\" event=\"{}\" has no matching transition in '{}'",
+                 f.target, f.event, f.target.trim_start_matches('#')))
+                 .collect::<Vec<_>>().join("\n"))]
+    UncoveredEvents {
+        sender: String,
+        findings: Vec<super::topology::EventCoverageWarning>,
     },
 }
 

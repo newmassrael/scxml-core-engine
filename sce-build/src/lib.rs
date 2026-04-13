@@ -656,7 +656,10 @@ pub struct MeshResult {
 ///   3. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
 ///   4. Resolve targets against deploy.yaml bindings
 ///   5. QoS intent/config consistency validation
-///   6. Generate transport-native routing code
+///   6. Event coverage validation — hard error when a sent event has no
+///      matching `<transition>` in the receiver (would be silently dropped
+///      by the transport layer at runtime otherwise)
+///   7. Generate transport-native routing code
 ///
 /// Returns `Ok(MeshResult)` with generated files and all warnings,
 /// or `Err(MeshError)` on hard failure.
@@ -683,6 +686,23 @@ pub fn compile_mesh_transport(
             dynamic_target_warnings,
             qos_warnings,
         });
+    }
+
+    // Stage 2d: event coverage — hard error on uncovered events.
+    // Load receivers declared in deploy.yaml to read their <transition> sets;
+    // missing `source:` or missing receiver declaration surfaces as a
+    // distinct TopologyError variant.
+    let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
+    let receiver_models =
+        mesh::topology::load_receiver_models(&resolved, &deploy_cfg, deploy_dir, &model.name)?;
+    let uncovered =
+        mesh::topology::check_sender_event_coverage(&model.name, model, &receiver_models, &deploy_cfg);
+    if !uncovered.is_empty() {
+        return Err(mesh::error::TopologyError::UncoveredEvents {
+            sender: model.name.clone(),
+            findings: uncovered,
+        }
+        .into());
     }
 
     // Stage 3: transport codegen

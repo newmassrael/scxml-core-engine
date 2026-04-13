@@ -1382,6 +1382,25 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         # on a single POSIX shm object. Real deployments assign unique
         # names per binding; for testing we serialize with RESOURCE_LOCK.
         RESOURCE_LOCK sce_mesh_shm_brake_motor)
+
+    # ── Negative: event coverage violation must fail codegen ────
+    # brake_bad.scxml sends "brake.activte" (typo) to #motor. The event
+    # has no matching <transition> in motor.scxml, so TopologyError::
+    # UncoveredEvents should fire before any code is written.
+    #
+    # We use a wrapper script rather than WILL_FAIL so the test asserts
+    # the *specific* error path fires — a future regression where codegen
+    # exits non-zero for an unrelated reason would otherwise masquerade
+    # as a passing negative test.
+    set(MESH_NEG_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_neg_generated")
+    add_test(
+        NAME mesh_event_coverage_rejection
+        COMMAND "${MESH_TEST_DIR}/expect_coverage_failure.sh"
+                "${SCE_CODEGEN}"
+                "${MESH_TEST_DIR}/brake_bad.scxml"
+                "${MESH_TEST_DIR}/deploy_bad.yaml"
+                "${MESH_NEG_OUTPUT_DIR}"
+    )
 endif()
 
 # ============================================================================

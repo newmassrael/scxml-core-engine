@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Negative fixture: sender emits an event the receiver does not declare.
+     The mesh pipeline must refuse to generate transport code for this — the
+     event would otherwise be silently dropped by the transport layer at
+     runtime (Policy::getEventFromName mismatch). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_bad" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="braking"/>
+    </state>
+    <state id="braking">
+        <onentry>
+            <!-- Typo: motor handles "brake.activate", not "brake.activte". -->
+            <send target="#motor" event="brake.activte"/>
+        </onentry>
+        <transition event="brake.release" target="idle"/>
+    </state>
+</scxml>

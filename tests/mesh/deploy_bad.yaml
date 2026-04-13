@@ -1,0 +1,14 @@
+# Negative deploy: references brake_bad.scxml which emits an event motor
+# does not declare. `sce-codegen generate --deploy` must exit non-zero
+# with a TopologyError::UncoveredEvents diagnostic.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_bad:
+        source: brake_bad.scxml
+        bindings:
+          "#motor":
+            transport: local
+      motor:
+        source: motor.scxml

@@ -9,6 +9,7 @@ use crate::mesh::error::TopologyError;
 use crate::model::SCXMLModel;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 /// A resolved send target: SCXML <send> target matched to a deploy.yaml binding.
 #[derive(Debug, Clone, Serialize)]
@@ -464,4 +465,396 @@ pub fn validate_qos_consistency(
     });
 
     warnings
+}
+
+// ── Build-time event coverage enforcement ───────────────────
+
+/// Load each receiver machine's SCXML model by reading the `source:` path
+/// declared in deploy.yaml (resolved relative to `deploy_dir`).
+///
+/// Each unique receiver target (`#motor` → "motor") is loaded once. Errors
+/// cover three distinct failure modes so diagnostics point at the right
+/// line in deploy.yaml: receiver not declared, source unreadable, source
+/// unparseable.
+pub fn load_receiver_models(
+    resolved: &[ResolvedTarget],
+    deploy: &DeployConfig,
+    deploy_dir: &Path,
+    sender_name: &str,
+) -> Result<Vec<(String, SCXMLModel)>, TopologyError> {
+    // BTreeSet: dedup + deterministic iteration order across platforms.
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut out = Vec::new();
+
+    for t in resolved {
+        let receiver = t.target.trim_start_matches('#').to_string();
+        if !seen.insert(receiver.clone()) {
+            continue;
+        }
+
+        let machine_cfg = deploy
+            .topology
+            .values()
+            .find_map(|d| d.machines.get(&receiver))
+            .ok_or_else(|| TopologyError::ReceiverNotDeclared {
+                sender: sender_name.to_string(),
+                target: t.target.clone(),
+                receiver: receiver.clone(),
+            })?;
+
+        // Portability: absolute source paths break deploy descriptors across
+        // checkouts and build roots. Reject early with a distinct diagnostic.
+        if Path::new(&machine_cfg.source).is_absolute() {
+            return Err(TopologyError::AbsoluteSourcePath {
+                machine: receiver.clone(),
+                path: machine_cfg.source.clone(),
+            });
+        }
+
+        let source_path = deploy_dir.join(&machine_cfg.source);
+        let content = std::fs::read_to_string(&source_path).map_err(|e| {
+            TopologyError::ReceiverSourceRead {
+                machine: receiver.clone(),
+                path: source_path.display().to_string(),
+                source: e,
+            }
+        })?;
+
+        let mut parser = crate::parser::SCXMLParser::new();
+        let rx_model = parser.parse_string(&content, &receiver).map_err(|reason| {
+            TopologyError::ReceiverSourceParse {
+                machine: receiver.clone(),
+                path: source_path.display().to_string(),
+                reason,
+            }
+        })?;
+
+        out.push((receiver, rx_model));
+    }
+
+    Ok(out)
+}
+
+/// Strict event coverage check for a single sender: every `<send event="Y"/>`
+/// to a static target must have a matching `<transition event="Y"/>` in the
+/// receiver.
+///
+/// Sender-scoped by construction: only the sender's target_events are
+/// iterated, so the cost is proportional to the sender's `<send>` count
+/// regardless of how many other machines are in the deployment.
+pub fn check_sender_event_coverage(
+    sender_name: &str,
+    sender_model: &SCXMLModel,
+    receiver_models: &[(String, SCXMLModel)],
+    deploy: &DeployConfig,
+) -> Vec<EventCoverageWarning> {
+    // Index receivers' transition event sets once.
+    let receiver_events: BTreeMap<&str, BTreeSet<String>> = receiver_models
+        .iter()
+        .map(|(name, m)| (name.as_str(), collect_transition_events(m)))
+        .collect();
+
+    let mut findings = Vec::new();
+    for (target, event) in collect_target_events(sender_model) {
+        if event.is_empty() {
+            continue; // content-only <send>; no event name to match
+        }
+        let receiver_name = target.trim_start_matches('#');
+        let rx_events = match receiver_events.get(receiver_name) {
+            Some(s) => s,
+            None => continue, // receiver model not supplied — out of scope
+        };
+        if !event_matches_any(&event, rx_events) {
+            findings.push(EventCoverageWarning {
+                sender: sender_name.to_string(),
+                target,
+                event,
+            });
+        }
+    }
+
+    // Mirror validate_event_coverage: only report for receivers that are
+    // actually deployed. A supplied-but-undeployed receiver would indicate
+    // an inconsistent caller, not a real runtime violation.
+    findings.retain(|w| {
+        let receiver = w.target.trim_start_matches('#');
+        deploy
+            .topology
+            .values()
+            .any(|d| d.machines.contains_key(receiver))
+    });
+
+    findings
+}
+
+// ── Tests ────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mesh::deploy::parse_deploy_str;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// Scratch directory with RAII cleanup. The dir is created on construction
+    /// and removed on drop so /tmp doesn't accumulate `sce_mesh_topology_*`
+    /// entries across test runs. `Deref<Target = Path>` lets callers use it
+    /// transparently with `fs::write(dir.join(...), ...)` etc.
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            let n = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "sce_mesh_topology_{}_{}_{}",
+                label,
+                std::process::id(),
+                n
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for TempDir {
+        type Target = std::path::Path;
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    const BRAKE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="brake" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="braking"/>
+    </state>
+    <state id="braking">
+        <onentry>
+            <send target="#motor" event="brake.activate"/>
+        </onentry>
+        <transition event="brake.release" target="idle"/>
+    </state>
+</scxml>"##;
+
+    const BRAKE_BAD_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="brake" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="braking"/>
+    </state>
+    <state id="braking">
+        <onentry>
+            <send target="#motor" event="brake.typo"/>
+        </onentry>
+    </state>
+</scxml>"##;
+
+    const MOTOR_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="motor" initial="running">
+    <state id="running">
+        <transition event="brake.activate" target="stopped"/>
+    </state>
+    <state id="stopped"/>
+</scxml>"##;
+
+    fn parse_model(content: &str, name: &str) -> SCXMLModel {
+        let mut p = crate::parser::SCXMLParser::new();
+        p.parse_string(content, name).expect("parse")
+    }
+
+    fn resolved_motor_target() -> Vec<ResolvedTarget> {
+        vec![ResolvedTarget {
+            target: "#motor".to_string(),
+            events: vec!["brake.activate".to_string()],
+            transport: "local".to_string(),
+            extra: HashMap::new(),
+        }]
+    }
+
+    // ── load_receiver_models: happy path ─────────────────────
+
+    #[test]
+    fn load_receiver_models_reads_source() {
+        let dir = TempDir::new("happy");
+        fs::write(dir.join("motor.scxml"), MOTOR_SCXML).unwrap();
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+
+        let resolved = resolved_motor_target();
+        let loaded = load_receiver_models(&resolved, &deploy, &dir, "brake").expect("load");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].0, "motor");
+        assert!(!loaded[0].1.states.is_empty());
+    }
+
+    // ── ReceiverNotDeclared ──────────────────────────────────
+
+    #[test]
+    fn receiver_not_declared_errors() {
+        let dir = TempDir::new("notdecl");
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+"##,
+        )
+        .unwrap();
+
+        let resolved = resolved_motor_target();
+        let err = load_receiver_models(&resolved, &deploy, &dir, "brake").unwrap_err();
+        match err {
+            TopologyError::ReceiverNotDeclared { sender, target, receiver } => {
+                assert_eq!(sender, "brake");
+                assert_eq!(target, "#motor");
+                assert_eq!(receiver, "motor");
+            }
+            other => panic!("expected ReceiverNotDeclared, got {other:?}"),
+        }
+    }
+
+    // ── ReceiverSourceRead (missing file) ────────────────────
+
+    #[test]
+    fn receiver_source_missing_file_errors() {
+        let dir = TempDir::new("missingfile");
+        // Note: motor.scxml is NOT written to scratch dir.
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+
+        let resolved = resolved_motor_target();
+        let err = load_receiver_models(&resolved, &deploy, &dir, "brake").unwrap_err();
+        match err {
+            TopologyError::ReceiverSourceRead { machine, path, .. } => {
+                assert_eq!(machine, "motor");
+                assert!(path.ends_with("motor.scxml"), "path was {path}");
+            }
+            other => panic!("expected ReceiverSourceRead, got {other:?}"),
+        }
+    }
+
+    // ── ReceiverSourceParse (bad XML) ────────────────────────
+
+    #[test]
+    fn receiver_source_bad_xml_errors() {
+        let dir = TempDir::new("badxml");
+        fs::write(dir.join("motor.scxml"), "<<<not-xml>>>").unwrap();
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+
+        let resolved = resolved_motor_target();
+        let err = load_receiver_models(&resolved, &deploy, &dir, "brake").unwrap_err();
+        match err {
+            TopologyError::ReceiverSourceParse { machine, .. } => {
+                assert_eq!(machine, "motor");
+            }
+            other => panic!("expected ReceiverSourceParse, got {other:?}"),
+        }
+    }
+
+    // ── AbsoluteSourcePath ───────────────────────────────────
+
+    #[test]
+    fn absolute_source_path_rejected() {
+        let dir = TempDir::new("absolute");
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: /etc/motor.scxml }
+"##,
+        )
+        .unwrap();
+
+        let resolved = resolved_motor_target();
+        let err = load_receiver_models(&resolved, &deploy, &dir, "brake").unwrap_err();
+        match err {
+            TopologyError::AbsoluteSourcePath { machine, path } => {
+                assert_eq!(machine, "motor");
+                assert_eq!(path, "/etc/motor.scxml");
+            }
+            other => panic!("expected AbsoluteSourcePath, got {other:?}"),
+        }
+    }
+
+    // ── check_sender_event_coverage: positive + negative ─────
+
+    #[test]
+    fn check_sender_event_coverage_ok_when_matched() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+        let brake = parse_model(BRAKE_SCXML, "brake");
+        let motor = parse_model(MOTOR_SCXML, "motor");
+        let receivers = vec![("motor".to_string(), motor)];
+
+        let findings = check_sender_event_coverage("brake", &brake, &receivers, &deploy);
+        assert!(findings.is_empty(), "expected no findings, got {findings:?}");
+    }
+
+    #[test]
+    fn check_sender_event_coverage_reports_mismatch() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+        let brake = parse_model(BRAKE_BAD_SCXML, "brake");
+        let motor = parse_model(MOTOR_SCXML, "motor");
+        let receivers = vec![("motor".to_string(), motor)];
+
+        let findings = check_sender_event_coverage("brake", &brake, &receivers, &deploy);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].event, "brake.typo");
+        assert_eq!(findings[0].target, "#motor");
+        assert_eq!(findings[0].sender, "brake");
+    }
 }
