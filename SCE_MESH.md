@@ -150,12 +150,9 @@ tools/codegen/templates/
     cpp/transform.h.jinja2
     ...
   mesh/
-    cpp/shm_transport.h.jinja2    # Mesh: transport × language templates
-    cpp/someip_transport.h.jinja2
-    cpp/dds_transport.h.jinja2
-    cpp/zenoh_transport.h.jinja2
-    cpp/dbus_transport.h.jinja2
-    ...
+    cpp/mesh_transport.h.jinja2   # Mesh: unified transport routing template
+                                  # Handles all transports via {% elif %} dispatch
+                                  # per target.transport (local, shm, someip, zenoh, ...)
 ```
 
 ### Relationship to SCE Forge
@@ -269,24 +266,28 @@ using AnyScheduler = std::variant<
 
 ### 3.2 Transport Codegen — How to Deliver
 
-Transport dispatch is resolved at **build time**, not runtime. sce-build reads `deploy.yaml` bindings and generates code that directly calls each transport's native API. There is no `ITransport` runtime interface — each transport has a dedicated **Jinja2 codegen template** that emits transport-native code.
+Transport dispatch is resolved at **build time**, not runtime. sce-build reads `deploy.yaml` bindings and generates code that directly calls each transport's native API. There is no `ITransport` runtime interface — a unified **Jinja2 codegen template** dispatches per-target to transport-native code.
 
 #### Template Architecture
 
 ```
 tools/codegen/templates/mesh/
   cpp/
-    shm_transport.h.jinja2       # POSIX shared memory ring buffer
-    someip_transport.h.jinja2    # vsomeip native API calls
-    dds_transport.h.jinja2       # Cyclone DDS / RTI Connext native API
-    zenoh_transport.h.jinja2     # zenoh-c / zenoh-pico native API
-    can_transport.h.jinja2       # SocketCAN / AUTOSAR CAN native API
-    dbus_transport.h.jinja2      # GDBus / sd-bus native API
-    grpc_transport.h.jinja2      # gRPC stub calls
-    local_transport.h.jinja2     # same-process direct call (inlined away)
+    mesh_transport.h.jinja2      # Unified transport routing template
 ```
 
-Each template receives the full transport-native configuration from deploy.yaml and generates code that uses 100% of the target transport's features — no abstraction loss.
+A single template generates `TransportRouter` with per-target send functions. Each target's transport type determines the generated code via `{% elif %}` dispatch:
+
+| Transport | Generated Send Pattern | Field Layout |
+|-----------|----------------------|--------------|
+| `local` | Direct `engine.processEvent()` call (inlined) | Engine reference (per-target) |
+| `shm` | `ShmChannel::send()` | ShmChannel (per-target) |
+| `someip` | `vsomeip::application::send()` | vsomeip application + thread (per-target) |
+| `zenoh` | `zenoh::Session::put()` | Session (device-shared) |
+| `dds` | Template slot (Phase 4) | Per-target |
+| `can` | Template slot (Phase 4) | Per-target |
+
+The unified template avoids duplicating common boilerplate (namespace, `TransportRouter` struct, constructor, `route_send()` dispatch) across per-transport files. Transport-specific code lives in clearly marked `{% elif %}` blocks with `NEW TRANSPORT` extension points. Each transport receives the full transport-native configuration from deploy.yaml — no abstraction loss.
 
 #### Generated Code Pattern
 
@@ -772,27 +773,30 @@ sce-build generates code that calls `dds_create_qos()` with every specified poli
 
 ### 6.4 Custom Transport
 
-To add a new transport, create a Jinja2 codegen template:
+To add a new transport, update three registries (authoritative list lives in `codegen.rs`):
+
+1. **`codegen::transport_shape()`** — declare the field layout: per-target field (`true` for local/shm/someip/dds/can) or device-shared session (`true` for zenoh). Unknown transports cause a build error (`CodegenError::UnsupportedTransport`).
+
+2. **`pattern::transport_capabilities()`** — declare supported communication patterns (Section 8.2). Returns `None` for unknown transports (conservative: validation skipped).
+
+3. **`mesh_transport.h.jinja2` `{% elif %}` blocks** — add transport-specific code at four `NEW TRANSPORT` extension points:
+   - (A) Includes
+   - (B) Per-target constants
+   - (C) Per-target send functions
+   - (D1-D5) TransportRouter fields, constructor, init/shutdown, route_send
+
+4. If the transport has device-shared session config (like Zenoh), add a typed struct field to `deploy::TransportConfigs`. `serde` + `deny_unknown_fields` then reject invalid values at parse time.
+
+5. Thread the new session config through `generate_mesh()` in `lib.rs`, pre-escaping for C++ via `cpp_string_literal()` before inserting into the template context.
+
+The `transport_shape_and_capabilities_in_sync` test catches drift between steps 1 and 2. The template's `#error` fallback catches step 3 drift at C++ compile time.
 
 ```
-tools/codegen/templates/mesh/cpp/my_transport.h.jinja2
-```
-
-The template receives:
-- `bindings`: list of target bindings from deploy.yaml
-- `qos`: transport-native QoS configuration
-- `transport_config`: any transport-specific settings from deploy.yaml
-
-And emits:
-- `init_transports()`: transport initialization code
-- `send_to_<target>()`: per-target send functions calling native API
-- `subscribe_<pattern>()`: subscription setup calling native API
-- `on_error_<target>()`: error handler generating `error.communication` events
-
-```
-// Compile error if template is missing:
-// "No codegen template found for transport 'my_transport'. 
-//  Expected: tools/codegen/templates/mesh/cpp/my_transport.h.jinja2"
+// Unknown transport in Rust pipeline:
+// "transport 'my_transport' not yet supported (target '#motor')"
+//
+// Unknown transport in generated C++ code:
+// #error "SCE Mesh: unsupported transport 'my_transport' for target '#motor'..."
 ```
 
 ---
@@ -1393,9 +1397,11 @@ Transport templates for real-world middleware. Each template generates code that
 
 #### Transport templates
 
-- `someip_transport`: SOME/IP via real vsomeip 3.7.x — service/instance/method IDs from deploy.yaml `extra`, TCP/UDP protocol selection, build-time pattern capability validation — COMPLETE
-- Second transport template (different middleware) — validates that Communication Pattern Semantics abstraction is correct across middlewares
-- Additional transport templates as demand arises — each is a Jinja2 file following the established template pattern (Section 6.4)
+All transports share the unified `mesh_transport.h.jinja2` template via `{% elif %}` dispatch (Section 3.2):
+
+- `someip` transport: SOME/IP via real vsomeip 3.7.x — service/instance/method IDs from deploy.yaml `extra`, TCP/UDP protocol selection, build-time pattern capability validation — COMPLETE
+- `zenoh` transport: Zenoh pub/sub via zenoh-cpp — device-shared session with `Config::insert_json5`, key expressions from deploy.yaml `extra` — COMPLETE
+- Additional transports as demand arises — each adds a `{% elif %}` block in the template following the established pattern (Section 6.4)
 
 #### Infrastructure
 
@@ -1408,8 +1414,8 @@ Transport templates for real-world middleware. Each template generates code that
 
 1. Communication Pattern event semantics definition (Section 8.1 formalization) — COMPLETE
 2. First transport template: `someip_transport` via real vsomeip 3.7.x — COMPLETE
-3. Forge codec for protocol header serialization
-4. Second transport template — validates abstraction correctness
+3. Second transport template: `zenoh_transport` via zenoh-cpp — validates that Communication Pattern Semantics abstraction is correct across middlewares — COMPLETE
+4. Forge codec for protocol header serialization
 5. Application-level test demonstrating deploy.yaml-only middleware switch
 
 ### Phase 4: Game Scale (Directional — refined after Phase 3)
@@ -1460,27 +1466,35 @@ topology:
   <device_name>:
     platform: linux | qnx | autosar | windows
     target: x86_64 | aarch64 | arm32
+    transports:                            # Device-shared transport session config
+      zenoh:                               # One Zenoh session per device
+        mode: peer | client | router
+        connect: [<endpoint>, ...]         # Router endpoints (client/peer mode)
+        listen: [<endpoint>, ...]          # Listen endpoints (router mode)
     machines:
       <scxml_name>:
+        source: <path.scxml>               # SCXML source, relative to deploy.yaml
         bindings:
           "<target_id>":
             transport: someip | can | zenoh | shm | dds | dbus | grpc | ...
-            # Transport-specific settings — passed directly to codegen template
-            # Each transport defines its own schema (see examples below)
+            # Per-target transport-native settings (flattened via serde)
+            # Each transport defines its own per-binding keys:
+            #   someip: service_id, instance_id, method_id, protocol
+            #   zenoh:  key
+            #   shm:    (no per-target extra)
+            #   local:  (no per-target extra)
             qos:
               # Transport-NATIVE QoS — full feature access
               # Schema depends on transport type (DDS: 22 policies, SOME/IP: protocol, etc.)
               <transport-native-key>: <value>
 
-events: <path to events.yaml>              # Event payload type definitions
+events: <path to events.yaml>              # Event payload type definitions (Phase 2+)
 
 discovery:
   mode: static | dynamic                   # static = build-time, dynamic = Phase 5
-
-# Transport-global configuration (optional)
-<transport_name>:                          # e.g., zenoh:, someip:
-  <transport-global-settings>              # Shared across all bindings of this type
 ```
+
+**Device-shared vs per-target config**: Transports with device-level session state (e.g., Zenoh opens one session shared by all machines on a device) declare session config under `topology.<device>.transports.<transport>`. Per-target settings (e.g., Zenoh `key`, SOME/IP `service_id`) stay on individual bindings. This mirrors the runtime semantics: one session per device, many bindings per session. `deny_unknown_fields` on all config structs catches typos at parse time.
 
 ### Example: Automotive
 

@@ -18,13 +18,13 @@
          D4. init() / shutdown()      — keyed by `transport_types` (shared resources)
          D5. route_send() dispatch    — keyed by `target.transport`
 
-   Adding a new transport (authoritative list lives in codegen.rs):
-     (1) Update `codegen::transport_shape()` with the field layout.
-     (2) Update `pattern::transport_capabilities()` with supported patterns.
-     (3) If device-shared session config is needed, add a typed field to
+   Adding a new transport (authoritative registry lives in transport.rs):
+     (1) Add one entry to `transport::lookup()` with shape + capabilities
+         + `implemented: true`.
+     (2) If device-shared session config is needed, add a typed field to
          `deploy::TransportConfigs` (parse-time validated by serde), then
          thread it through `generate_mesh` as a new parameter.
-     (4) Add {% elif %} blocks in this template at "NEW TRANSPORT" markers.
+     (3) Add {% elif %} blocks in this template at "NEW TRANSPORT" markers.
 
    Per-target vs shared: per-target transports (local, shm, someip) emit
    one field per target and one init-list entry per target. Shared-session

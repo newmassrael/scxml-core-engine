@@ -8,85 +8,22 @@
 // #telemetry via zenoh. The unified template generates a single TransportRouter
 // that dispatches per-target to the appropriate transport-specific send function.
 //
-// Adding a new transport:
-//   1. Update `transport_shape()` with the transport's router-field shape
-//      (per-target field? shared session?).
-//   2. Update `pattern::transport_capabilities()` with the transport's
-//      supported communication patterns.
-//   3. If the transport has device-shared session config, add a typed
-//      struct field to `deploy::TransportConfigs` (mirror of
-//      `ZenohTransportConfig`). `serde` + `deny_unknown_fields` then
-//      reject invalid values at parse time — no post-parse extraction
-//      pass is required.
-//   4. In `lib.rs`, read the new session config via
-//      `DeployConfig::device_for_machine(name)` and pass it to
-//      `generate_mesh`. Pre-escape for C++ via `cpp_string_literal`
-//      before inserting into the template context.
-//   5. Add {% elif %} blocks in mesh_transport.h.jinja2 at the "NEW
-//      TRANSPORT" extension points.
-// The template is the single source of truth for emitted C++ code.
+// Adding a new transport — two required changes:
+//   1. Add one entry to `transport::lookup()` (shape + capabilities)
+//   2. Add {% elif %} blocks in mesh_transport.h.jinja2
+// If the transport has device-shared session config, also:
+//   3. Add a typed struct field to `deploy::TransportConfigs`
+//   4. Thread the config through `generate_mesh()` in `lib.rs`
 
 use crate::filters;
 use crate::generator::{GeneratedOutput, Language};
 use crate::mesh::deploy::ZenohTransportConfig;
 use crate::mesh::error::CodegenError;
 use crate::mesh::topology::ResolvedTarget;
+use crate::mesh::transport;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::path::Path;
-
-// ── Transport shape metadata ─────────────────────────────────
-
-/// Describes how a transport's C++ router fields are laid out in
-/// TransportRouter. Separates per-target state (local engine reference,
-/// SHM channel, SOME/IP application) from device-shared state
-/// (Zenoh session).
-///
-/// The template consumes these flags (via `TargetContext`) to decide
-/// whether to emit a per-target field declaration and matching
-/// constructor initializer for each target, without hardcoding transport
-/// names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TransportShape {
-    /// Does this transport emit a per-target field in TransportRouter
-    /// (and a matching entry in the constructor initializer list)?
-    ///
-    /// `true` for local/shm/someip (each target has its own channel/app,
-    /// constructed via reference or ctor-initializer). `false` for zenoh
-    /// (all targets share one Session, constructed in `init()` after the
-    /// TransportRouter is already live).
-    ///
-    /// A single flag suffices today: no current transport declares a
-    /// per-target field without a matching ctor initializer. Split into
-    /// two flags only when a concrete transport requires it.
-    pub has_per_target_field: bool,
-    /// Does this transport use a device-shared session resource?
-    /// `true` for zenoh. The template emits the shared field once per
-    /// transport (not per target) and initializes it in `init()`.
-    pub has_shared_session: bool,
-}
-
-/// Return the router-field shape for a given transport name.
-///
-/// Unknown transports default to "per-target" shape (conservative — matches
-/// the local/shm/someip pattern). The template's `#error` fallback still
-/// catches unsupported transports at C++ compile time.
-pub fn transport_shape(transport: &str) -> TransportShape {
-    match transport {
-        "local" | "shm" | "someip" => TransportShape {
-            has_per_target_field: true,
-            has_shared_session: false,
-        },
-        "zenoh" => TransportShape {
-            has_per_target_field: false,
-            has_shared_session: true,
-        },
-        _ => TransportShape {
-            has_per_target_field: true,
-            has_shared_session: false,
-        },
-    }
-}
 
 // ── JSON5 → C++ string literal escaping ──────────────────────
 
@@ -215,11 +152,34 @@ fn generate_cpp_mesh(
     zenoh_session: Option<&ZenohTransportConfig>,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
+    // Validate: every target's transport must be in the registry AND
+    // have a template implementation. Two distinct failure modes:
+    //   - Unknown transport (not in registry at all)
+    //   - Known but not implemented (capabilities known, no template yet)
+    // Both fail here at the Rust level — no deferred C++ #error.
+    for t in targets {
+        match transport::lookup(&t.transport) {
+            None => {
+                return Err(CodegenError::UnsupportedTransport {
+                    transport: t.transport.clone(),
+                    target: t.target.clone(),
+                });
+            }
+            Some(desc) if !desc.implemented => {
+                return Err(CodegenError::UnsupportedTransport {
+                    transport: t.transport.clone(),
+                    target: t.target.clone(),
+                });
+            }
+            Some(_) => {}
+        }
+    }
+
     let target_contexts: Vec<TargetContext> = targets
         .iter()
         .map(|t| {
             let stripped = t.target.trim_start_matches('#');
-            let shape = transport_shape(&t.transport);
+            let desc = transport::lookup(&t.transport).expect("transport validated");
             TargetContext {
                 target: t.target.clone(),
                 target_stem: stripped.to_string(),
@@ -228,7 +188,7 @@ fn generate_cpp_mesh(
                 events: t.events.clone(),
                 transport: t.transport.clone(),
                 extra: t.extra.clone(),
-                has_per_target_field: shape.has_per_target_field,
+                has_per_target_field: desc.shape.has_per_target_field,
             }
         })
         .collect();
@@ -286,35 +246,6 @@ fn generate_cpp_mesh(
 mod tests {
     use super::*;
     use crate::mesh::deploy::ZenohMode;
-
-    // ── transport_shape ──────────────────────────────────────
-
-    #[test]
-    fn shape_local_is_per_target() {
-        let s = transport_shape("local");
-        assert!(s.has_per_target_field);
-        assert!(!s.has_shared_session);
-    }
-
-    #[test]
-    fn shape_someip_is_per_target() {
-        let s = transport_shape("someip");
-        assert!(s.has_per_target_field);
-        assert!(!s.has_shared_session);
-    }
-
-    #[test]
-    fn shape_zenoh_is_shared() {
-        let s = transport_shape("zenoh");
-        assert!(!s.has_per_target_field);
-        assert!(s.has_shared_session);
-    }
-
-    #[test]
-    fn shape_unknown_defaults_to_per_target() {
-        let s = transport_shape("iceoryx2");
-        assert!(s.has_per_target_field);
-    }
 
     // ── cpp_string_literal ───────────────────────────────────
 

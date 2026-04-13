@@ -529,7 +529,8 @@ pub fn validate_pattern_capability(
     deploy: &DeployConfig,
     machine_name: &str,
 ) -> Result<Vec<super::pattern::PatternViolation>, TopologyError> {
-    use super::pattern::{detect_pattern, transport_supports, PatternViolation};
+    use super::pattern::{detect_pattern, PatternViolation};
+    use super::transport;
 
     let bindings = match find_machine_bindings(deploy, machine_name) {
         Ok(b) => b,
@@ -571,7 +572,7 @@ pub fn validate_pattern_capability(
         };
 
         let required = pattern.required_capability();
-        if !transport_supports(&binding.transport, required) {
+        if !transport::supports(&binding.transport, required) {
             violations.push(PatternViolation {
                 state: action.state.clone(),
                 target: action.target.clone(),

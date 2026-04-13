@@ -10,6 +10,8 @@
 
 use std::fmt;
 
+use super::transport::TransportCapability;
+
 // ── Communication patterns ──────────────────────────────────
 
 /// Communication patterns recognized from SCXML `<send event="...">` names.
@@ -58,36 +60,6 @@ impl fmt::Display for CommunicationPattern {
             Self::Notification => write!(f, "event.notification"),
             Self::FieldGet => write!(f, "field.get"),
             Self::FieldSet => write!(f, "field.set"),
-        }
-    }
-}
-
-// ── Transport capabilities ──────────────────────────────────
-
-/// Transport capability categories (SCE_MESH.md Section 8.2).
-///
-/// Each transport declares which capability categories it supports.
-/// Pattern validation checks that the detected pattern's required
-/// capability is in the transport's supported set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TransportCapability {
-    /// Request/Response: method call, RPC, service invocation.
-    RequestReply,
-    /// Fire-and-forget: one-way send. Supported by all transports.
-    FireForget,
-    /// Pub/Sub: topic subscription and event notification.
-    PubSub,
-    /// Field access: named data field read/write.
-    FieldAccess,
-}
-
-impl fmt::Display for TransportCapability {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::RequestReply => write!(f, "request/reply"),
-            Self::FireForget => write!(f, "fire-and-forget"),
-            Self::PubSub => write!(f, "pub/sub"),
-            Self::FieldAccess => write!(f, "field access"),
         }
     }
 }
@@ -167,44 +139,6 @@ fn detect_pattern_from_event(event: &str) -> Option<CommunicationPattern> {
         }
     }
     None
-}
-
-// ── Transport capability declarations ───────────────────────
-
-/// Known transport capabilities (SCE_MESH.md Section 8.2 Transport Capability Matrix).
-///
-/// Returns `None` for unknown/custom transports (conservative: no validation).
-/// Returns `Some(capabilities)` for transports whose pattern support is known
-/// at compile time.
-pub fn transport_capabilities(transport: &str) -> Option<&'static [TransportCapability]> {
-    use TransportCapability::*;
-    match transport {
-        // Same-process direct call — all patterns are trivially supported.
-        "local" => Some(&[RequestReply, FireForget, PubSub, FieldAccess]),
-        // Shared memory — signal-like semantics: fire-and-forget + field access.
-        "shm" => Some(&[FireForget, FieldAccess]),
-        // SOME/IP — full automotive service model.
-        "someip" => Some(&[RequestReply, FireForget, PubSub, FieldAccess]),
-        // DDS — pub/sub with topic-based field access, no native request/reply.
-        "dds" => Some(&[FireForget, PubSub, FieldAccess]),
-        // Zenoh — pub/sub with key-expression field access, no native request/reply.
-        "zenoh" => Some(&[FireForget, PubSub, FieldAccess]),
-        // CAN — signal-based: fire-and-forget + DBC field access.
-        "can" => Some(&[FireForget, FieldAccess]),
-        // Unknown/custom transports: no validation (conservative).
-        _ => None,
-    }
-}
-
-/// Check whether a transport supports a specific capability.
-///
-/// Returns `true` if the transport is known and supports the capability,
-/// or if the transport is unknown (conservative: assume supported).
-pub fn transport_supports(transport: &str, capability: TransportCapability) -> bool {
-    match transport_capabilities(transport) {
-        Some(caps) => caps.contains(&capability),
-        None => true, // Unknown transport — no validation
-    }
 }
 
 // ── Pattern violation ───────────────────────────────────────
@@ -487,90 +421,12 @@ mod tests {
         );
     }
 
-    // ── transport_capabilities ──────────────────────────────
-
-    #[test]
-    fn local_supports_all() {
-        let caps = transport_capabilities("local").unwrap();
-        assert!(caps.contains(&TransportCapability::RequestReply));
-        assert!(caps.contains(&TransportCapability::FireForget));
-        assert!(caps.contains(&TransportCapability::PubSub));
-        assert!(caps.contains(&TransportCapability::FieldAccess));
-    }
-
-    #[test]
-    fn shm_supports_fire_forget_and_field() {
-        let caps = transport_capabilities("shm").unwrap();
-        assert!(caps.contains(&TransportCapability::FireForget));
-        assert!(caps.contains(&TransportCapability::FieldAccess));
-        assert!(!caps.contains(&TransportCapability::RequestReply));
-        assert!(!caps.contains(&TransportCapability::PubSub));
-    }
-
-    #[test]
-    fn someip_supports_all() {
-        let caps = transport_capabilities("someip").unwrap();
-        assert!(caps.contains(&TransportCapability::RequestReply));
-        assert!(caps.contains(&TransportCapability::FireForget));
-        assert!(caps.contains(&TransportCapability::PubSub));
-        assert!(caps.contains(&TransportCapability::FieldAccess));
-    }
-
-    #[test]
-    fn dds_no_request_reply() {
-        let caps = transport_capabilities("dds").unwrap();
-        assert!(!caps.contains(&TransportCapability::RequestReply));
-        assert!(caps.contains(&TransportCapability::PubSub));
-    }
-
-    #[test]
-    fn zenoh_no_request_reply() {
-        let caps = transport_capabilities("zenoh").unwrap();
-        assert!(!caps.contains(&TransportCapability::RequestReply));
-        assert!(caps.contains(&TransportCapability::PubSub));
-    }
-
-    #[test]
-    fn can_signal_only() {
-        let caps = transport_capabilities("can").unwrap();
-        assert!(caps.contains(&TransportCapability::FireForget));
-        assert!(caps.contains(&TransportCapability::FieldAccess));
-        assert!(!caps.contains(&TransportCapability::RequestReply));
-        assert!(!caps.contains(&TransportCapability::PubSub));
-    }
-
-    #[test]
-    fn unknown_transport_returns_none() {
-        assert!(transport_capabilities("custom_ipc").is_none());
-        assert!(transport_capabilities("iceoryx2").is_none());
-    }
-
-    // ── transport_supports ──────────────────────────────────
-
-    #[test]
-    fn known_transport_checked() {
-        assert!(transport_supports("shm", TransportCapability::FireForget));
-        assert!(!transport_supports("shm", TransportCapability::RequestReply));
-    }
-
-    #[test]
-    fn unknown_transport_assumed_supported() {
-        // Conservative: unknown transports pass validation.
-        assert!(transport_supports("custom_ipc", TransportCapability::RequestReply));
-    }
-
     // ── Display ─────────────────────────────────────────────
 
     #[test]
     fn pattern_display() {
         assert_eq!(CommunicationPattern::ServiceRequest.to_string(), "service.request");
         assert_eq!(CommunicationPattern::FieldSet.to_string(), "field.set");
-    }
-
-    #[test]
-    fn capability_display() {
-        assert_eq!(TransportCapability::RequestReply.to_string(), "request/reply");
-        assert_eq!(TransportCapability::PubSub.to_string(), "pub/sub");
     }
 
     #[test]
