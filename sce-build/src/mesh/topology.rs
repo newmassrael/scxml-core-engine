@@ -81,38 +81,87 @@ fn is_internal_target(target: &str) -> bool {
         || target == "#_scxml_"
 }
 
-// ── Public analysis functions ────────────────────────────────
+// ── Single-pass send action collection ──────────────────────
 
-/// Collect all external `<send>` targets from an SCXML model.
-///
-/// Filters out internal targets (#_parent, #_child, #_internal) and
-/// empty targets (same-machine events). Returns deduplicated target IDs.
-pub fn collect_send_targets(model: &SCXMLModel) -> BTreeSet<String> {
-    let mut targets = BTreeSet::new();
-    for_each_send_action(model, |_, action| {
-        if !action.target.is_empty() && !is_internal_target(&action.target) {
-            targets.insert(action.target.clone());
-        }
-    });
-    targets
+/// Details of a single `<send>` action, collected for downstream validators.
+#[derive(Debug, Clone)]
+pub struct SendActionDetail {
+    /// The state containing the `<send>`.
+    pub state: String,
+    /// The `target` attribute (e.g. "#motor").
+    pub target: String,
+    /// The `event` attribute.
+    pub event: String,
+    /// The `sce:qos` attribute (e.g. "reliable").
+    pub mesh_qos: String,
+    /// The `sce:pattern` attribute (e.g. "request").
+    pub mesh_pattern: String,
 }
 
-/// Detect `<send targetexpr="...">` actions that cannot be statically resolved.
-/// Returns warnings for each occurrence (emitted to stderr by the caller).
-pub fn collect_dynamic_target_warnings(model: &SCXMLModel) -> Vec<TopologyWarning> {
-    let mut warnings = Vec::new();
+/// Pre-collected `<send>` action data from a single model traversal.
+///
+/// Created by `collect_send_summary()` and consumed by `resolve_targets()`,
+/// `validate_qos_consistency()`, `validate_pattern_capability()`, and
+/// `check_sender_event_coverage()`. Eliminates redundant model traversals.
+#[derive(Debug)]
+pub struct SendActionSummary {
+    /// Deduplicated external send targets (e.g. "#motor").
+    pub targets: BTreeSet<String>,
+    /// Dynamic target warnings (`targetexpr` cannot be statically resolved).
+    pub dynamic_warnings: Vec<TopologyWarning>,
+    /// (target, event) pairs for event coverage validation.
+    pub target_events: Vec<(String, String)>,
+    /// Per-action details for QoS and pattern validation.
+    pub actions: Vec<SendActionDetail>,
+}
+
+/// Collect all `<send>` action data from an SCXML model in a single pass.
+///
+/// Replaces five separate `for_each_send_action` traversals with one.
+/// Each downstream validator reads from the summary instead of re-traversing.
+pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
+    let mut targets = BTreeSet::new();
+    let mut dynamic_warnings = Vec::new();
+    let mut target_events = Vec::new();
+    let mut actions = Vec::new();
+
     for_each_send_action(model, |state_id, action| {
+        // Dynamic target warning (targetexpr present)
         if !action.targetexpr.is_empty() {
-            warnings.push(TopologyWarning {
+            dynamic_warnings.push(TopologyWarning {
                 state: state_id.to_string(),
                 targetexpr: action.targetexpr.clone(),
             });
         }
+
+        // External static target
+        if !action.target.is_empty() && !is_internal_target(&action.target) {
+            targets.insert(action.target.clone());
+            target_events.push((action.target.clone(), action.event.clone()));
+        }
+
+        // Per-action details for QoS and pattern validation
+        actions.push(SendActionDetail {
+            state: state_id.to_string(),
+            target: action.target.clone(),
+            event: action.event.clone(),
+            mesh_qos: action.mesh_qos.clone(),
+            mesh_pattern: action.mesh_pattern.clone(),
+        });
     });
-    warnings
+
+    SendActionSummary {
+        targets,
+        dynamic_warnings,
+        target_events,
+        actions,
+    }
 }
 
-/// Collect (target, event) pairs from an SCXML model for documentation/validation.
+/// Collect (target, event) pairs from an SCXML model.
+///
+/// Used by `validate_event_coverage` (multi-model API). The per-model
+/// pipeline uses `SendActionSummary.target_events` instead.
 fn collect_target_events(model: &SCXMLModel) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     for_each_send_action(model, |_, action| {
@@ -127,28 +176,26 @@ fn collect_target_events(model: &SCXMLModel) -> Vec<(String, String)> {
 
 /// Resolve SCXML send targets against deploy.yaml bindings for a specific machine.
 ///
-/// `machine_name` is the SCXML document name (`<scxml name="...">`), which
-/// must match a machine key in the deploy.yaml topology.
+/// Uses pre-collected targets and target_events from `SendActionSummary`
+/// to avoid redundant model traversal.
 ///
 /// Returns an error if any SCXML target has no matching binding in deploy.yaml.
 pub fn resolve_targets(
-    model: &SCXMLModel,
+    summary: &SendActionSummary,
     deploy: &DeployConfig,
     machine_name: &str,
 ) -> Result<Vec<ResolvedTarget>, TopologyError> {
-    let send_targets = collect_send_targets(model);
-    if send_targets.is_empty() {
+    if summary.targets.is_empty() {
         return Ok(Vec::new());
     }
 
     // Find the machine's bindings in deploy.yaml topology
     let bindings = find_machine_bindings(deploy, machine_name)?;
 
-    // Collect events per target for documentation
-    let target_events = collect_target_events(model);
+    // Build events-per-target map from summary
     let mut events_map: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
-    for (target, event) in &target_events {
+    for (target, event) in &summary.target_events {
         events_map
             .entry(target.clone())
             .or_default()
@@ -159,7 +206,7 @@ pub fn resolve_targets(
     let mut unresolved = Vec::new();
     let mut resolved = Vec::new();
 
-    for target in &send_targets {
+    for target in &summary.targets {
         match bindings.get(target) {
             Some(binding) => {
                 resolved.push(ResolvedTarget {
@@ -398,11 +445,10 @@ fn transport_reliability(transport: &str) -> Option<&'static str> {
 /// Validate QoS intent from SCXML `sce:qos` attributes against deploy.yaml
 /// transport bindings.
 ///
-/// Cross-references each `<send sce:qos="reliable">` against the bound
-/// transport's known reliability characteristics. Returns warnings for
-/// mismatches (e.g., "reliable" intent on a best-effort transport).
+/// Uses pre-collected action details from `SendActionSummary` to avoid
+/// redundant model traversal.
 pub fn validate_qos_consistency(
-    model: &SCXMLModel,
+    summary: &SendActionSummary,
     deploy: &DeployConfig,
     machine_name: &str,
 ) -> Vec<QosWarning> {
@@ -413,10 +459,10 @@ pub fn validate_qos_consistency(
         Err(_) => return warnings, // Machine not in deploy.yaml — no validation
     };
 
-    for_each_send_action(model, |state_id, action| {
+    for action in &summary.actions {
         let qos = &action.mesh_qos;
         if qos.is_empty() || action.target.is_empty() || is_internal_target(&action.target) {
-            return;
+            continue;
         }
 
         if let Some(binding) = bindings.get(&action.target) {
@@ -434,7 +480,7 @@ pub fn validate_qos_consistency(
                 if let Some(reason) = mismatch {
                     warnings.push(QosWarning {
                         sender: machine_name.to_string(),
-                        state: state_id.to_string(),
+                        state: action.state.clone(),
                         target: action.target.clone(),
                         qos_intent: qos.clone(),
                         transport: binding.transport.clone(),
@@ -449,7 +495,7 @@ pub fn validate_qos_consistency(
                     if qos == "reliable" && proto_str.eq_ignore_ascii_case("udp") {
                         warnings.push(QosWarning {
                             sender: machine_name.to_string(),
-                            state: state_id.to_string(),
+                            state: action.state.clone(),
                             target: action.target.clone(),
                             qos_intent: qos.clone(),
                             transport: binding.transport.clone(),
@@ -462,9 +508,62 @@ pub fn validate_qos_consistency(
                 }
             }
         }
-    });
+    }
 
     warnings
+}
+
+// ── Pattern capability validation ────────────────────────────
+
+/// Validate that SCXML communication patterns are supported by bound transports
+/// (SCE_MESH.md Section 8.2).
+///
+/// Uses pre-collected action details from `SendActionSummary` to avoid
+/// redundant model traversal.
+pub fn validate_pattern_capability(
+    summary: &SendActionSummary,
+    deploy: &DeployConfig,
+    machine_name: &str,
+) -> Vec<super::pattern::PatternViolation> {
+    use super::pattern::{detect_pattern, transport_supports, PatternViolation};
+
+    let bindings = match find_machine_bindings(deploy, machine_name) {
+        Ok(b) => b,
+        Err(_) => return Vec::new(), // Machine not in deploy.yaml — no validation
+    };
+
+    let mut violations = Vec::new();
+
+    for action in &summary.actions {
+        if action.target.is_empty() || is_internal_target(&action.target) || action.event.is_empty()
+        {
+            continue;
+        }
+
+        let pattern = match detect_pattern(&action.event, &action.mesh_pattern) {
+            Some(p) => p,
+            None => continue, // Application-specific event or explicit opt-out
+        };
+
+        let binding = match bindings.get(&action.target) {
+            Some(b) => b,
+            None => continue, // Unresolved target — caught by resolve_targets()
+        };
+
+        let required = pattern.required_capability();
+        if !transport_supports(&binding.transport, required) {
+            violations.push(PatternViolation {
+                state: action.state.clone(),
+                target: action.target.clone(),
+                event: action.event.clone(),
+                pattern,
+                required,
+                transport: binding.transport.clone(),
+            });
+        }
+    }
+
+    violations
 }
 
 // ── Build-time event coverage enforcement ───────────────────
@@ -544,7 +643,7 @@ pub fn load_receiver_models(
 /// regardless of how many other machines are in the deployment.
 pub fn check_sender_event_coverage(
     sender_name: &str,
-    sender_model: &SCXMLModel,
+    summary: &SendActionSummary,
     receiver_models: &[(String, SCXMLModel)],
     deploy: &DeployConfig,
 ) -> Vec<EventCoverageWarning> {
@@ -555,7 +654,7 @@ pub fn check_sender_event_coverage(
         .collect();
 
     let mut findings = Vec::new();
-    for (target, event) in collect_target_events(sender_model) {
+    for (target, event) in &summary.target_events {
         if event.is_empty() {
             continue; // content-only <send>; no event name to match
         }
@@ -564,11 +663,11 @@ pub fn check_sender_event_coverage(
             Some(s) => s,
             None => continue, // receiver model not supplied — out of scope
         };
-        if !event_matches_any(&event, rx_events) {
+        if !event_matches_any(event, rx_events) {
             findings.push(EventCoverageWarning {
                 sender: sender_name.to_string(),
-                target,
-                event,
+                target: target.clone(),
+                event: event.clone(),
             });
         }
     }
@@ -669,6 +768,10 @@ mod tests {
     fn parse_model(content: &str, name: &str) -> SCXMLModel {
         let mut p = crate::parser::SCXMLParser::new();
         p.parse_string(content, name).expect("parse")
+    }
+
+    fn summary_for(model: &SCXMLModel) -> SendActionSummary {
+        collect_send_summary(model)
     }
 
     fn resolved_motor_target() -> Vec<ResolvedTarget> {
@@ -831,7 +934,8 @@ topology:
         let motor = parse_model(MOTOR_SCXML, "motor");
         let receivers = vec![("motor".to_string(), motor)];
 
-        let findings = check_sender_event_coverage("brake", &brake, &receivers, &deploy);
+        let summary = summary_for(&brake);
+        let findings = check_sender_event_coverage("brake", &summary, &receivers, &deploy);
         assert!(findings.is_empty(), "expected no findings, got {findings:?}");
     }
 
@@ -851,10 +955,198 @@ topology:
         let motor = parse_model(MOTOR_SCXML, "motor");
         let receivers = vec![("motor".to_string(), motor)];
 
-        let findings = check_sender_event_coverage("brake", &brake, &receivers, &deploy);
+        let summary = summary_for(&brake);
+        let findings = check_sender_event_coverage("brake", &summary, &receivers, &deploy);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].event, "brake.typo");
         assert_eq!(findings[0].target, "#motor");
         assert_eq!(findings[0].sender, "brake");
+    }
+
+    // ── validate_pattern_capability ─────────────────────────
+
+    /// SCXML with communication pattern events for pattern validation tests.
+    const PATTERN_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="tester" initial="idle">
+    <state id="idle">
+        <onentry>
+            <send target="#service" event="service.request.get_status"/>
+        </onentry>
+        <transition event="done" target="idle"/>
+    </state>
+</scxml>"##;
+
+    /// SCXML with fire-and-forget pattern (universally supported).
+    const FIRE_FORGET_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="sender" initial="s">
+    <state id="s">
+        <onentry>
+            <send target="#receiver" event="service.fire_forget.motor_cmd"/>
+        </onentry>
+    </state>
+</scxml>"##;
+
+    /// SCXML with subscribe pattern.
+    const SUBSCRIBE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="subscriber" initial="s">
+    <state id="s">
+        <onentry>
+            <send target="#broker" event="event.subscribe.speed_updates"/>
+        </onentry>
+    </state>
+</scxml>"##;
+
+    /// SCXML with application-specific events (no pattern — no validation).
+    const APP_EVENT_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="app" initial="s">
+    <state id="s">
+        <onentry>
+            <send target="#motor" event="brake.activate"/>
+        </onentry>
+    </state>
+</scxml>"##;
+
+    #[test]
+    fn pattern_validation_passes_on_capable_transport() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      tester: { source: tester.scxml, bindings: { "#service": { transport: someip } } }
+      service: { source: service.scxml }
+"##,
+        )
+        .unwrap();
+        let model = parse_model(PATTERN_SCXML, "tester");
+
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        assert!(violations.is_empty(), "expected no violations, got {violations:?}");
+    }
+
+    #[test]
+    fn pattern_validation_detects_request_on_shm() {
+        // shm does not support request/reply — service.request should fail.
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      tester: { source: tester.scxml, bindings: { "#service": { transport: shm } } }
+      service: { source: service.scxml }
+"##,
+        )
+        .unwrap();
+        let model = parse_model(PATTERN_SCXML, "tester");
+
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].event, "service.request.get_status");
+        assert_eq!(violations[0].transport, "shm");
+        assert_eq!(
+            violations[0].pattern,
+            super::super::pattern::CommunicationPattern::ServiceRequest
+        );
+    }
+
+    #[test]
+    fn pattern_validation_detects_subscribe_on_can() {
+        // CAN does not support pub/sub — event.subscribe should fail.
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      subscriber: { source: sub.scxml, bindings: { "#broker": { transport: can } } }
+      broker: { source: broker.scxml }
+"##,
+        )
+        .unwrap();
+        let model = parse_model(SUBSCRIBE_SCXML, "subscriber");
+
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "subscriber");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].event, "event.subscribe.speed_updates");
+        assert_eq!(violations[0].transport, "can");
+    }
+
+    #[test]
+    fn pattern_validation_fire_forget_passes_everywhere() {
+        // fire_forget is supported by all known transports.
+        for transport in &["local", "shm", "someip", "dds", "zenoh", "can"] {
+            let yaml = format!(
+                r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender: {{ source: s.scxml, bindings: {{ "#receiver": {{ transport: {transport} }} }} }}
+      receiver: {{ source: r.scxml }}
+"##
+            );
+            let deploy = parse_deploy_str(&yaml).unwrap();
+            let model = parse_model(FIRE_FORGET_SCXML, "sender");
+
+            let violations = validate_pattern_capability(&summary_for(&model), &deploy, "sender");
+            assert!(
+                violations.is_empty(),
+                "fire_forget should pass on {transport}, got {violations:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pattern_validation_skips_application_events() {
+        // Application-specific events (brake.activate) have no pattern — no validation.
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      app: { source: app.scxml, bindings: { "#motor": { transport: can } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+        let model = parse_model(APP_EVENT_SCXML, "app");
+
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "app");
+        assert!(violations.is_empty(), "app events should not be validated");
+    }
+
+    #[test]
+    fn pattern_validation_skips_unknown_transport() {
+        // Unknown transports get conservative pass (no validation).
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      tester: { source: t.scxml, bindings: { "#service": { transport: custom_ipc } } }
+      service: { source: s.scxml }
+"##,
+        )
+        .unwrap();
+        let model = parse_model(PATTERN_SCXML, "tester");
+
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        assert!(violations.is_empty(), "unknown transport should pass");
+    }
+
+    #[test]
+    fn pattern_validation_skips_machine_not_in_deploy() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      other: { source: other.scxml }
+"##,
+        )
+        .unwrap();
+        let model = parse_model(PATTERN_SCXML, "tester");
+
+        // Machine "tester" not in deploy.yaml — no validation.
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        assert!(violations.is_empty());
     }
 }

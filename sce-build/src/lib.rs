@@ -671,14 +671,17 @@ pub fn compile_mesh_transport(
     // Stage 1: deploy.yaml parsing
     let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
 
-    // Stage 2a: collect dynamic target warnings
-    let dynamic_target_warnings = mesh::topology::collect_dynamic_target_warnings(model);
+    // Stage 2: single-pass send action collection
+    let summary = mesh::topology::collect_send_summary(model);
+
+    // Stage 2a: dynamic target warnings (from summary)
+    let dynamic_target_warnings = summary.dynamic_warnings.clone();
 
     // Stage 2b: resolve static targets against deploy.yaml bindings
-    let resolved = mesh::topology::resolve_targets(model, &deploy_cfg, &model.name)?;
+    let resolved = mesh::topology::resolve_targets(&summary, &deploy_cfg, &model.name)?;
 
     // Stage 2c: QoS intent/config consistency validation
-    let qos_warnings = mesh::topology::validate_qos_consistency(model, &deploy_cfg, &model.name);
+    let qos_warnings = mesh::topology::validate_qos_consistency(&summary, &deploy_cfg, &model.name);
 
     if resolved.is_empty() {
         return Ok(MeshResult {
@@ -689,18 +692,26 @@ pub fn compile_mesh_transport(
     }
 
     // Stage 2d: event coverage — hard error on uncovered events.
-    // Load receivers declared in deploy.yaml to read their <transition> sets;
-    // missing `source:` or missing receiver declaration surfaces as a
-    // distinct TopologyError variant.
     let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
     let receiver_models =
         mesh::topology::load_receiver_models(&resolved, &deploy_cfg, deploy_dir, &model.name)?;
     let uncovered =
-        mesh::topology::check_sender_event_coverage(&model.name, model, &receiver_models, &deploy_cfg);
+        mesh::topology::check_sender_event_coverage(&model.name, &summary, &receiver_models, &deploy_cfg);
     if !uncovered.is_empty() {
         return Err(mesh::error::TopologyError::UncoveredEvents {
             sender: model.name.clone(),
             findings: uncovered,
+        }
+        .into());
+    }
+
+    // Stage 2e: pattern capability validation — hard error on unsupported patterns.
+    let pattern_violations =
+        mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name);
+    if !pattern_violations.is_empty() {
+        return Err(mesh::error::TopologyError::PatternCapabilityViolation {
+            sender: model.name.clone(),
+            violations: pattern_violations,
         }
         .into());
     }

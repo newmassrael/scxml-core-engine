@@ -13,5 +13,6 @@
 
 pub mod error;
 pub mod deploy;
+pub mod pattern;
 pub mod topology;
 pub mod codegen;

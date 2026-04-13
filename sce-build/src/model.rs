@@ -138,6 +138,12 @@ pub struct Action {
     // Validated against deploy.yaml transport config at build time.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub mesh_qos: String,
+
+    // SCE Mesh: Explicit communication pattern (sce:pattern="request"|"fire_forget"|...)
+    // Overrides convention-based detection from event name prefix.
+    // See SCE_MESH.md Section 8.1.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mesh_pattern: String,
 }
 
 /// W3C SCXML if/elseif branch

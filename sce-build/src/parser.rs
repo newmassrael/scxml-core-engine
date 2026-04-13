@@ -909,6 +909,13 @@ impl SCXMLParser {
             .attribute((SCE_NAMESPACE, "qos"))
             .unwrap_or("")
             .to_string();
+
+        // SCE Mesh: Explicit communication pattern (sce:pattern="request"|...)
+        // Overrides convention-based detection from event name prefix.
+        action.mesh_pattern = elem
+            .attribute((SCE_NAMESPACE, "pattern"))
+            .unwrap_or("")
+            .to_string();
     }
 
     fn parse_if_action(

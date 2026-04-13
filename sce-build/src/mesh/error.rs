@@ -134,6 +134,18 @@ pub enum TopologyError {
         sender: String,
         findings: Vec<super::topology::EventCoverageWarning>,
     },
+
+    /// SCXML `<send>` uses a communication pattern that the bound transport
+    /// does not support (SCE_MESH.md Section 8.2). Build error, not warning:
+    /// the generated code would fail at runtime.
+    #[error("pattern capability violations in machine '{sender}':\n{}\nEach communication pattern must be supported by the bound transport. \
+             Fix: change the transport in deploy.yaml, or use a different event pattern.",
+             .violations.iter().map(|v| format!("  - {v}"))
+                 .collect::<Vec<_>>().join("\n"))]
+    PatternCapabilityViolation {
+        sender: String,
+        violations: Vec<super::pattern::PatternViolation>,
+    },
 }
 
 // ── Stage 3: Template rendering ──────────────────────────────
