@@ -1560,92 +1560,282 @@ All transports share the unified `mesh_transport.h.jinja2` template via `{% elif
 
 ### Phase 3.5: Pattern Realization (next priority)
 
-Realize the remaining 6 communication patterns at the wire and runtime level. Closes the gap between `pattern.rs` capability advertisements and what transports actually implement.
+Realize the remaining 8 communication patterns at the wire and runtime level. Closes the gap between `pattern.rs` capability advertisements and what transports actually implement.
 
-#### Wire format change: envelope replacing `MeshSendRequest`
+#### Design decisions (Session A, sign-off 2026-04-13)
 
-`MeshSendRequest { target, eventName, data: string, sendId }` is a FireForget-shaped payload. It is replaced by `MeshEnvelope`:
+| Axis | Decision | Rationale |
+|---|---|---|
+| Pattern enum | 9 variants + immutable `wire_value: u16` + values 10-15 reserved for future Stream patterns | Protobuf field-number convention; prevents wire breakage on future additions |
+| Wire encoding | **2-layer**: envelope = CBOR (RFC 8949), payload = per-event codec (`json` / `cbor` / `typed` / `raw`) | CloudEvents v1.0 precedent; default safe & debuggable, opt-in zero-overhead path for game/MMORPG workloads |
+| Envelope field naming | Aligned with CloudEvents v1.0 (`id`, `source`, `type`, `subject`, `datacontenttype`, `data`) | Familiar to external integrators; future CloudEvents binding compatibility |
+| Correlation ID | UUID v7 (RFC 9562, 16 bytes); v4 fallback acceptable when language lib lacks v7 | Distributed uniqueness for dynamic peers (zenoh peer mode, MMORPG clients, federated meshes) + monotonic ms-prefix for log ordering |
+| RPC model | **`<invoke type="sce:mesh-rpc">` is the primary, textbook SCXML-native API.** `<send sce:reply-event=...>` retained as convenience shortcut for short-lived single-shot RPC. Blocking RPC rejected (RTC violation). | W3C SCXML §6.4 invoke is the standard external-service mechanism; `done.invoke.ID` carries result via `_event.data`; `<cancel>` provides termination |
+| Subscription lifecycle | Dual-path: (a) state entry/exit binding (Rx Disposable scoping); (b) deploy.yaml machine-lifetime declarations for always-on sensors | Matches SCXML hierarchical composition + supports static sensor topologies |
+
+#### MeshEnvelope schema (final)
+
+CloudEvents-aligned field names. Wire form is canonical CBOR (RFC 8949 §4.2.1) with integer keys for size; alternate JSON form available for diagnostics.
 
 ```cpp
-struct MeshEnvelope {
-    PatternKind pattern;                       // FireForget | RpcRequest | RpcReply
-                                               // | EventSubscribe | EventUnsubscribe
-                                               // | EventNotify | FieldRead | FieldWrite
-                                               // | FieldNotify
-    std::string interaction_key;               // SOME/IP method_id, zenoh key, ...
-    std::string event_or_field;
-    std::vector<uint8_t> payload;              // typed binary or JSON
-    std::optional<uint64_t> correlation_id;    // RPC req↔resp matching
-    std::optional<std::string> reply_endpoint; // response routing
-    QosHints qos;
-    SourceMetadata source;                     // sender machine, session id
+namespace SCE::Mesh {
+
+/// Wire-stable pattern discriminator. Values are immutable once shipped.
+/// Range 1-9 is in use; 10-15 is reserved for future Stream patterns
+/// (Unary/ServerStream/ClientStream/Bidi). Adding a variant requires
+/// a new wire value, never reuse.
+enum class PatternKind : uint16_t {
+    FireForget         = 1,
+    RpcRequest         = 2,
+    RpcReply           = 3,   // success or error — see envelope.rpc_status
+    EventSubscribe     = 4,
+    EventUnsubscribe   = 5,
+    EventNotify        = 6,
+    FieldRead          = 7,
+    FieldWrite         = 8,
+    FieldNotify        = 9,
+    // 10-15 RESERVED for Stream* (Phase 4)
 };
+
+/// Payload codec discriminator. Wire-stable; do not reuse values.
+enum class PayloadCodec : uint8_t {
+    None    = 0,   // payload absent (FireForget control messages)
+    Json    = 1,   // default; W3C SCXML 5.10 _event.data
+    Cbor    = 2,   // structured, smaller than JSON
+    Typed   = 3,   // codegen-emitted binary using event schema
+    Raw     = 4,   // user-supplied encoder (escape hatch)
+};
+
+/// gRPC-style status for RpcReply. Success = Ok, all others are errors.
+enum class RpcStatus : uint8_t {
+    Ok                 = 0,
+    Cancelled          = 1,
+    InvalidArgument    = 3,
+    NotFound           = 5,
+    Unavailable        = 14,
+    Unimplemented      = 12,
+    DeadlineExceeded   = 4,
+    Internal           = 13,
+};
+
+/// Cross-transport message envelope. CloudEvents v1.0 field naming where
+/// applicable. Optional fields are CBOR-omitted when absent for size.
+struct MeshEnvelope {
+    // ── Required (CloudEvents core) ──
+    std::array<uint8_t, 16> id;       // CE 'id' — UUID v7 (v4 fallback)
+    std::string source;               // CE 'source' — sender machine name
+    std::string type;                 // CE 'type' — SCXML event name
+    PatternKind pattern;              // SCE extension; pattern discriminator
+    PayloadCodec datacontenttype;     // CE 'datacontenttype' — payload codec
+    std::vector<uint8_t> data;        // CE 'data' — payload bytes (codec-encoded)
+
+    // ── Optional ──
+    std::optional<std::string> subject;             // CE 'subject' — interaction key (someip method_id, zenoh key)
+    std::optional<std::array<uint8_t, 16>> correlation_id;  // RPC req↔resp matching (UUID v7)
+    std::optional<std::string> reply_to;            // CE-extension; response routing endpoint
+    std::optional<std::array<uint8_t, 16>> invoke_id;  // RESERVED for <invoke type="sce:mesh-rpc"> lifecycle
+    std::optional<RpcStatus> rpc_status;            // RpcReply only; absent = Ok
+    std::optional<std::string> rpc_error_message;   // RpcReply non-Ok detail
+    std::optional<uint64_t> deadline_unix_ms;       // RPC timeout absolute
+    QosHints qos;                                   // delivery hints (best_effort, reliable, ordered)
+};
+
+}  // namespace SCE::Mesh
 ```
 
-Wire encoding moves from `[name\0data]` to a tagged envelope (CBOR or MessagePack — decision in entry #1 below). Backward compatibility is not retained; Phase 3 itself was incomplete.
+CBOR map integer keys (wire-stable):
+
+| Key | Field | Required | Notes |
+|---|---|---|---|
+| 0 | id | yes | 16 bytes |
+| 1 | source | yes | string |
+| 2 | type | yes | string |
+| 3 | pattern | yes | uint16 |
+| 4 | datacontenttype | yes | uint8 |
+| 5 | data | yes | bstr (may be empty) |
+| 6 | subject | no | string |
+| 7 | correlation_id | no | 16 bytes |
+| 8 | reply_to | no | string |
+| 9 | invoke_id | no | 16 bytes — reserved for `<invoke>` RPC |
+| 10 | rpc_status | no | uint8 |
+| 11 | rpc_error_message | no | string |
+| 12 | deadline_unix_ms | no | uint64 |
+| 13 | qos | no | nested map |
+
+Unknown integer keys MUST be skipped by readers. New fields use unused integers; never reuse.
+
+**Low-overhead path (game/MMORPG)**: a deploy.yaml binding may declare `codec: typed` + `correlation: none` + omit `subject`/`reply_to`. The resulting envelope serializes to ~12-18 bytes (id + source + type + pattern + codec + data length + payload), comparable to bespoke binary protocols while remaining within CBOR.
 
 #### Pattern dispatcher
 
-`TransportRouter` gains `wireReceiver(engine)` (symmetric to `wireTo`/`wireSender`). Incoming envelopes dispatch on `pattern`:
+`TransportRouter` gains `wireReceiver(engine)` symmetric to existing `wireTo`/`wireSender`. Incoming envelopes dispatch on `pattern`:
 
-- `FireForget` → `engine.raiseExternal(event, payload)` (current behavior)
-- `RpcRequest` → invoke handler, capture reply, send `RpcReply` envelope to `reply_endpoint` with `correlation_id`
-- `RpcReply` → look up `correlation_id` in pending table, deliver as event or fulfill awaited promise
-- `EventSubscribe` → register subscription, future `EventNotify`s flow as events
-- `EventNotify` → `engine.raiseExternal` with topic-source metadata
-- `FieldRead` → execute getter, send `RpcReply`-style envelope with value
-- `FieldWrite` → execute setter, optional ack envelope
+```cpp
+template<typename Engine>
+class TransportRouter {
+    void wireSender(Engine&);
+    void wireReceiver(Engine&);
 
-Per-transport mappings:
+    void onIncoming(MeshEnvelope env, Engine& engine) {
+        switch (env.pattern) {
+            case PatternKind::FireForget:       handleFireForget(env, engine); break;
+            case PatternKind::RpcRequest:       handleRpcRequest(env, engine); break;
+            case PatternKind::RpcReply:         handleRpcReply(env, engine); break;
+            case PatternKind::EventSubscribe:   handleSubscribe(env, engine); break;
+            case PatternKind::EventUnsubscribe: handleUnsubscribe(env, engine); break;
+            case PatternKind::EventNotify:      handleNotify(env, engine); break;
+            case PatternKind::FieldRead:        handleFieldRead(env, engine); break;
+            case PatternKind::FieldWrite:       handleFieldWrite(env, engine); break;
+            case PatternKind::FieldNotify:      handleFieldNotify(env, engine); break;
+        }
+    }
 
-| Pattern | SOME/IP API | Zenoh API |
-|---|---|---|
-| `RpcRequest` | `create_request` + `register_message_handler` (response) | `get` against a `declare_queryable` |
-| `RpcReply` | message reply via vsomeip | `Query::reply()` |
-| `EventSubscribe` | `request_event` + `subscribe` | `declare_subscriber` |
-| `EventNotify` | `notify` (publisher) | `declare_publisher` + `put` |
-| `FieldRead`/`Write` | offer_field + getter/setter | get/put on key |
+    // RPC correlation table — keyed by correlation_id (or invoke_id for <invoke> path)
+    struct PendingRpc {
+        std::string reply_event_name;  // for <send sce:reply-event> path
+        std::optional<std::array<uint8_t,16>> invoke_id;  // for <invoke> path
+        std::chrono::steady_clock::time_point deadline;
+    };
+    std::unordered_map<UuidKey, PendingRpc> pending_;
 
-#### SCXML extension attributes (`sce:` namespace)
-
-To express patterns that need explicit response routing or correlation:
-
-```xml
-<!-- RPC request -->
-<send target="#brake_service" event="service.request.compute_force"
-      sce:reply-event="brake.force.reply">
-  <param name="velocity" expr="v"/>
-</send>
-<transition event="brake.force.reply" target="apply_brake"/>
-
-<!-- Field read -->
-<send target="#sensor" event="field.get.temperature"
-      sce:reply-event="temp.value"/>
-
-<!-- Subscription lifecycle -->
-<onentry>
-  <send target="#bus" event="event.subscribe.brake_status"/>
-</onentry>
-<onexit>
-  <send target="#bus" event="event.unsubscribe.brake_status"/>
-</onexit>
+    // Subscription registry — keyed by (source, type)
+    struct Subscription {
+        SubscriptionScope scope;  // StateEntry | MachineLifetime
+        std::string owning_state; // for StateEntry scope
+    };
+    std::unordered_map<SubscriptionKey, Subscription> subs_;
+};
 ```
 
-W3C SCXML 1.0 compatibility is preserved — all extensions live in the `sce:` namespace; SCXML processors that ignore unknown namespaces still parse the document correctly. Compatibility analysis is part of the entry sequence below.
+Per-transport native API mapping (codegen target):
+
+| Pattern | SOME/IP (vsomeip) | Zenoh |
+|---|---|---|
+| RpcRequest (sender) | `create_request` + `send` | `session.get(key, query)` |
+| RpcRequest (receiver) | `register_message_handler(REQUEST)` | `declare_queryable(key)` |
+| RpcReply | `vsomeip::message::create_response` + `send` | `Query::reply(sample)` |
+| EventNotify (publisher) | `offer_event` + `notify` | `declare_publisher` + `put` |
+| EventSubscribe | `request_event` + `subscribe_eventgroup` | `declare_subscriber(key, callback)` |
+| EventUnsubscribe | `unsubscribe_eventgroup` | drop subscriber handle |
+| FieldRead | field getter via `register_message_handler` | `session.get(key)` |
+| FieldWrite | field setter | `session.put(key, value)` |
+| FieldNotify | field notifier (`notify` to subscribers) | `declare_publisher` on field key |
+
+#### SCXML extension specification
+
+**Primary path: `<invoke type="sce:mesh-rpc">` (W3C SCXML §6.4 native semantics)**
+
+```xml
+<state id="braking">
+  <invoke type="sce:mesh-rpc" src="#brake_service" id="compute_force_inv">
+    <param name="event"    expr="'service.request.compute_force'"/>
+    <param name="velocity" expr="v"/>
+    <param name="deadline_ms" expr="100"/>
+  </invoke>
+  <transition event="done.invoke.compute_force_inv"  target="apply_brake"/>
+  <transition event="error.invoke.compute_force_inv" target="brake_failed"/>
+  <onexit>
+    <cancel sendid="compute_force_inv"/>
+  </onexit>
+</state>
+```
+
+- W3C-compliant: `done.invoke.ID` and `error.invoke.ID` are standard SCXML §6.4.1.
+- Result delivered via `_event.data` per spec.
+- `<cancel>` propagates as RpcStatus::Cancelled to remote peer.
+- `invoke_id` field in envelope carries the SCXML invoke ID for correlation.
+
+**Convenience shortcut: `<send sce:reply-event="...">`**
+
+```xml
+<send target="#sensor" event="service.request.read_temp"
+      sce:reply-event="temp.reading"
+      sce:reply-timeout="500"/>
+<transition event="temp.reading"  target="..."/>
+<transition event="error.communication.timeout" target="..."/>
+```
+
+- Non-standard SCXML extension; lighter weight than `<invoke>`.
+- Suitable for short-lived single-shot RPC where invoke lifecycle overhead is unwarranted.
+- Implementation: synthesizes a transient correlation entry; reply arrives as the named event.
+
+**Subscription lifecycle**
+
+State-entry binding (recommended for state-scoped interest):
+```xml
+<state id="monitoring_brake">
+  <onentry><send target="#bus" event="event.subscribe.brake_status"/></onentry>
+  <onexit><send target="#bus" event="event.unsubscribe.brake_status"/></onexit>
+  <transition event="event.notification.brake_status" target="..."/>
+</state>
+```
+
+Machine-lifetime binding (deploy.yaml, for always-on sensors):
+```yaml
+machines:
+  ecu_brake:
+    transport: someip
+    subscriptions:
+      - event: event.notification.vehicle_speed
+        source: "#chassis"
+```
+
+Runtime semantics: machine-lifetime subscriptions register at engine startup, unregister at shutdown. State-entry subscriptions register on `<onentry>`, unregister on `<onexit>` (including on parallel-region exit).
+
+#### W3C SCXML 1.0 compatibility analysis
+
+All extensions confined to the `sce:` namespace (`xmlns:sce="http://newmassrael.org/scxml-extension"`).
+
+| Extension point | Standard? | Behavior in conforming SCXML processor |
+|---|---|---|
+| `<invoke type="sce:mesh-rpc">` | W3C §6.4 — invoke type is implementation-defined | Foreign processor: invoke fails to start; `error.execution` raised. SCXML document remains parseable. |
+| `sce:reply-event`, `sce:reply-timeout` (on `<send>`) | W3C §6.2 — `<send>` allows extension attributes | Foreign processor: attributes ignored; `<send>` still executes (degrades to fire-and-forget). |
+| `sce:pattern` (on `<send>`, existing) | Same — extension attribute | Same — attribute ignored. |
+| `xmlns:sce` declaration | W3C XML namespace standard | Standard XML; always parseable. |
+| Event names with reserved prefixes (`service.request.*`, `field.notify.*` etc.) | W3C §5.10 — event names are dot-delimited, no reserved prefixes | Treated as ordinary event names. No conflict. |
+
+**Conclusion**: An SCXML 1.0 conforming processor that does not understand `sce:` extensions will:
+- Parse our documents successfully (XML namespace isolation).
+- Treat our RPC patterns as fire-and-forget sends (graceful degradation).
+- Skip `<invoke type="sce:mesh-rpc">` invocations with `error.execution`, which the document author can handle via standard `<transition event="error.execution">`.
+
+No conflict with W3C SCXML 1.0 normative behavior. Documented with a "Compatibility" subsection in user-facing SCXML guide (Phase 3.5 Step 5).
+
+#### Migration plan (existing FireForget E2E acid test)
+
+Current FireForget tests that MUST continue to pass throughout Phase 3.5:
+
+| Test | Current wire | Migration |
+|---|---|---|
+| `tests/mesh/test_mesh_local.cpp` | direct engine call | Encode FireForget envelope; decode at receiver; `raiseExternal` |
+| `tests/mesh/test_mesh_shm_runtime.cpp` | `[name\0data]` over ShmChannel | Replace encoder with envelope CBOR; receiver decodes via `MeshWireFormat` |
+| `tests/mesh/test_mesh_shm_payload_runtime.cpp` | `[name\0data]` with payload | Same — payload moves to `data` field with `datacontenttype=Json` |
+| `tests/mesh/test_mesh_someip_runtime.cpp` (compile-only) | someip request_no_return | Wraps envelope in vsomeip payload bytes |
+
+Migration acid test for Session B completion:
+1. All 4 tests above pass with envelope-on-wire (FireForget path through dispatcher).
+2. Non-FireForget patterns return `RpcStatus::Unimplemented` envelopes (stub).
+3. W3C 404 conformance suite shows zero regressions.
 
 #### Entry sequence (multi-session)
 
-1. **Design + Approval**: envelope schema, dispatcher architecture, SCXML extension shape, wire encoding choice (CBOR vs MessagePack vs custom). Sign-off before code changes.
-2. **Envelope wire + dispatcher skeleton**: replace `MeshSendRequest`, generate dispatcher, stub non-FireForget patterns with `NotImplemented`. All current FireForget E2E tests must continue to pass.
-3. **SOME/IP multi-pattern**: method req/resp with correlation table, event offer/subscribe, field triple. Per-pattern E2E tests (compile-only acceptable for routing-manager-dependent tests).
-4. **Zenoh multi-pattern**: pub/sub, queryable/query, get. Peer-mode E2E (no daemon required).
-5. **SCXML extension finalization + W3C compatibility analysis**: `sce:reply-event`, subscription lifecycle, schema documentation. Multi-pattern multi-transport integration tests.
+Sessions B-E execute the design above. Each session is a working unit; estimates are not commitments.
+
+| Session | Scope | Acid test |
+|---|---|---|
+| **A (this)** | Design + sign-off (this section) | User approval of all 5 axes + envelope schema |
+| **B** | Replace `MeshSendRequest` with `MeshEnvelope`; CBOR encoder/decoder; dispatcher skeleton with FireForget realized + others stubbed; CloudEvents-aligned field names; UUID v7 helper in `sce::uuid` (with v4 fallback) | All 4 FireForget E2E tests pass on envelope wire; non-FireForget returns Unimplemented; W3C zero regression |
+| **C** | SOME/IP multi-pattern: method req/resp with correlation, event offer/subscribe, field triple. `<send sce:reply-event>` shortcut implemented end-to-end. | Per-pattern compile + E2E test (compile-only acceptable for routing-manager-dependent paths) |
+| **D** | Zenoh multi-pattern: declare_publisher/subscriber, queryable/query, get/put for fields. Peer-mode E2E. | Multi-pattern peer-mode E2E without daemon |
+| **E** | `<invoke type="sce:mesh-rpc">` full lifecycle (start, done, error, cancel); subscription dual-lifecycle (state-entry + machine-lifetime); W3C compatibility document; multi-pattern multi-transport integration test | `<invoke>`-based RPC integration test passes; W3C compatibility doc landed |
 
 #### Out of Phase 3.5 scope
 
-- Additional transports (DDS, gRPC, MQTT) — Phase 4
+- Additional transports (DDS, gRPC, MQTT, UDP) — Phase 4
+- Stream patterns (Unary/Server/Client/Bidi streaming) — Phase 4 (wire values 10-13 reserved)
 - Performance optimizations (drain allocation, Lua compile bypass, double serialization) — re-evaluated after envelope settles
-- Dynamic discovery — Phase 5
+- Dynamic discovery (SOME/IP-SD, Zenoh scouting, Consul) — Phase 5
+- True blocking RPC (`sce:blocking="true"`) — rejected; revisit only if a concrete use case forces it
 
 ### Phase 4: Game Scale (Directional — refined after Phase 3)
 

@@ -100,27 +100,40 @@ target_include_directories(sce_core
 target_compile_features(sce_core INTERFACE cxx_std_17)
 
 # ============================================================================
-# sce_mesh_common: Header-only mesh transport abstractions (optional)
+# sce_mesh_common: Mesh transport abstractions + wire envelope (optional)
 # ============================================================================
-# Contains: SchedulerConcepts, EventQueueBridge
-# Phase 1: concept definitions + MPSC queue. Phase 2+ adds concrete schedulers.
-# Consumers: generated transport routing code, mesh integration tests.
+# Headers: SchedulerConcepts, EventQueueBridge, ShmChannel, PatternKind,
+#          PayloadCodec, RpcStatus, MeshEnvelope, MeshEnvelopeCodec.
+# Compiled: MeshEnvelopeCodec.cpp (CBOR encode/decode using vendored tinycbor).
+# Phase 3.5 promotes this from INTERFACE to STATIC for the codec compilation
+# unit; consumers (generated transport routing, mesh integration tests) link
+# the static target.
 if(SCE_ENABLE_MESH)
-    add_library(sce_mesh_common INTERFACE)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/tinycbor
+                     ${CMAKE_CURRENT_BINARY_DIR}/tinycbor)
+
+    add_library(sce_mesh_common STATIC
+        src/mesh/MeshEnvelopeCodec.cpp
+    )
 
     target_include_directories(sce_mesh_common
-        INTERFACE
+        PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     )
 
-    target_link_libraries(sce_mesh_common INTERFACE sce_core)
+    target_link_libraries(sce_mesh_common
+        PUBLIC
+            sce_core
+        PRIVATE
+            tinycbor
+    )
 
-    # POSIX shared memory requires -lrt on Linux (shm_open, shm_unlink)
+    # POSIX shared memory requires -lrt on Linux (shm_open, shm_unlink).
     if(NOT APPLE)
-        target_link_libraries(sce_mesh_common INTERFACE rt)
+        target_link_libraries(sce_mesh_common PUBLIC rt)
     endif()
 
-    target_compile_features(sce_mesh_common INTERFACE cxx_std_17)
+    target_compile_features(sce_mesh_common PUBLIC cxx_std_17)
 
     message(STATUS "SCE: Mesh transport layer enabled (sce_mesh_common)")
 endif()

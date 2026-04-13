@@ -135,6 +135,7 @@ add_executable(sce_scxml_tests
     core/TypeRegistryTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
+    common/UuidTest.cpp
 )
 
 target_include_directories(sce_scxml_tests
@@ -1199,6 +1200,31 @@ add_dependencies(comprehensive_interactive_test sce_runtime)
 if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     set(MESH_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mesh")
     set(MESH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_generated")
+
+    # ── MeshEnvelope codec unit tests (Phase 3.5 Step 3) ──────────
+    # Pure unit tests on the CBOR envelope codec — no codegen, no
+    # transport, no scheduler. Catches wire-format regressions early.
+    add_executable(mesh_envelope_codec_test
+        mesh/MeshEnvelopeCodecTest.cpp
+    )
+
+    target_include_directories(mesh_envelope_codec_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_envelope_codec_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_envelope_codec_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_envelope_codec_test)
+
+    add_test(NAME mesh_envelope_codec_verification COMMAND mesh_envelope_codec_test)
 
     # Generate brake_sm.h from brake.scxml
     add_custom_command(

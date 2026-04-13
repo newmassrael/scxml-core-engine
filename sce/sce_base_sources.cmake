@@ -11,6 +11,7 @@ set(SCE_BASE_SOURCES
     src/common/GuardUtils.cpp
     src/common/Logger.cpp
     src/common/UniqueIdGenerator.cpp
+    src/common/Uuid.cpp
 
     # Logger backends
     src/backends/DefaultBackend.cpp
