@@ -82,6 +82,11 @@ std::string EventDataHelper::buildJsonFromTypedParams(const std::map<std::string
     return JsonUtils::toCompactString(eventDataJson);
 }
 
+std::string EventDataHelper::buildEventDataJson(const std::map<std::string, std::vector<std::string>> &stringParams,
+                                                const std::map<std::string, ScriptValue> &typedParams) {
+    return !typedParams.empty() ? buildJsonFromTypedParams(typedParams) : buildJsonFromParams(stringParams);
+}
+
 std::string EventDataHelper::scriptValueToJsonString(const ScriptValue &value) {
     return JsonUtils::toCompactString(scriptValueToJson(value));
 }

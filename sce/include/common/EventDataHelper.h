@@ -93,6 +93,21 @@ public:
     static std::string buildJsonFromTypedParams(const std::map<std::string, ScriptValue> &typedParams);
 
     /**
+     * @brief Build event data JSON, preferring type-preserving form when typed params exist.
+     *
+     * Single decision point shared by every send-action call site (parent send,
+     * scheduler, immediate send) and by mesh transports (shm/someip/zenoh) where
+     * `data` is the only channel and must encode int/double/bool natively for the
+     * receiver to compare values without coercion.
+     *
+     * @param stringParams Map of param names to stringified values
+     * @param typedParams  Map of param names to typed ScriptValues (preferred)
+     * @return Type-preserving JSON when typedParams non-empty; string-only JSON otherwise
+     */
+    static std::string buildEventDataJson(const std::map<std::string, std::vector<std::string>> &stringParams,
+                                          const std::map<std::string, ScriptValue> &typedParams);
+
+    /**
      * @brief Convert ScriptValue to JSON string
      *
      * W3C SCXML B.2: Recursive ScriptValue -> JSON string conversion.

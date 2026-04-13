@@ -167,10 +167,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     }
 {% endif %}
 {% endfor %}
-    // W3C SCXML 5.10: Use type-preserving JSON for parent communication (preserves int/double types)
-    std::string eventData = !typedParams.empty()
-        ? ::SCE::EventDataHelper::buildJsonFromTypedParams(typedParams)
-        : ::SCE::EventDataHelper::buildJsonFromParams(params);
+    std::string eventData = ::SCE::EventDataHelper::buildEventDataJson(params, typedParams);
     ::SCE::SendHelper::sendToParentWithOrigin(
         engine.getPolicy().parent_,
         ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
@@ -456,10 +453,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
     auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString("{{ action.delay }}");
 {% endif %}
 {% if action.params or action.namelist %}
-    // W3C SCXML 5.10: Use type-preserving JSON for scheduler (preserves int/double types)
-    std::string eventData = !typedParams.empty()
-        ? ::SCE::EventDataHelper::buildJsonFromTypedParams(typedParams)
-        : ::SCE::EventDataHelper::buildJsonFromParams(params);
+    std::string eventData = ::SCE::EventDataHelper::buildEventDataJson(params, typedParams);
     engine.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId, eventData);
 {% else %}
     engine.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId);
@@ -511,7 +505,7 @@ params["{{ param.name }}"].push_back(std::to_string({{ param.expr }}));
 {% endif %}
 {% endfor %}
 {% endif %}
-std::string eventData = ::SCE::EventDataHelper::buildJsonFromParams(params);
+std::string eventData = ::SCE::EventDataHelper::buildEventDataJson(params, typedParams);
 std::optional<ScriptValue> typedData;
 if (!typedParams.empty()) {
     typedData = ::SCE::EventDataHelper::buildScriptValueFromParams(typedParams);

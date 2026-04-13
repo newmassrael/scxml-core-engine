@@ -124,5 +124,36 @@ TEST_F(EventDataHelperTest, NumericValuesAsStrings) {
     EXPECT_EQ(parsed["numbers"].size(), 3);
 }
 
+// buildEventDataJson: prefers typed JSON when typedParams non-empty.
+TEST_F(EventDataHelperTest, BuildEventDataJson_PrefersTypedWhenAvailable) {
+    std::map<std::string, std::vector<std::string>> stringParams;
+    stringParams["force"].push_back("42");
+
+    std::map<std::string, ScriptValue> typedParams;
+    typedParams["force"] = static_cast<int64_t>(42);
+
+    std::string result = EventDataHelper::buildEventDataJson(stringParams, typedParams);
+
+    json parsed;
+    ASSERT_NO_THROW(parsed = json::parse(result)) << "Invalid JSON: " << result;
+    EXPECT_TRUE(parsed["force"].is_number_integer());  // Typed path: number, not "42"
+    EXPECT_EQ(parsed["force"], 42);
+}
+
+// buildEventDataJson: falls back to string-only when typedParams empty.
+TEST_F(EventDataHelperTest, BuildEventDataJson_FallsBackToStringOnly) {
+    std::map<std::string, std::vector<std::string>> stringParams;
+    stringParams["force"].push_back("42");
+
+    std::map<std::string, ScriptValue> typedParams;  // empty
+
+    std::string result = EventDataHelper::buildEventDataJson(stringParams, typedParams);
+
+    json parsed;
+    ASSERT_NO_THROW(parsed = json::parse(result)) << "Invalid JSON: " << result;
+    EXPECT_TRUE(parsed["force"].is_string());  // String-only path: "42", not 42
+    EXPECT_EQ(parsed["force"], "42");
+}
+
 }  // namespace Test
 }  // namespace SCE
