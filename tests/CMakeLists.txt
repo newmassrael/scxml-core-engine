@@ -1655,7 +1655,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 "${SCE_CODEGEN}"
                 "${MESH_TEST_DIR}/brake.scxml"
                 "${MESH_SWITCH_OUT_DIR}"
-                "local:${MESH_TEST_DIR}/deploy.yaml:motor_.raiseExternal"
+                "local:${MESH_TEST_DIR}/deploy.yaml:motor_.getPolicy()"
                 "shm:${MESH_TEST_DIR}/deploy_shm.yaml:SCE::Mesh::ShmChannel"
                 "someip:${MESH_TEST_DIR}/deploy_someip.yaml:vsomeip::application"
                 "zenoh:${MESH_TEST_DIR}/deploy_zenoh.yaml:zenoh::Session"

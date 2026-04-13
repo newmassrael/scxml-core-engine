@@ -55,11 +55,10 @@ int main() {
     MockEngine motor;
     Router router(motor);
 
-    // Verify route_send compiles with MeshSendRequest API
-    SCE::Mesh::MeshSendRequest req;
-    req.target = "#motor";
-    req.eventName = "dummy";
-    (void)router.route_send(req);
+    // Verify route_send compiles with MeshEnvelope API
+    SCE::Mesh::MeshEnvelope env;
+    env.type = "dummy";
+    (void)router.route_send("#motor", env);
 
     // Verify EventQueueBridge push/pop/empty compile
     SCE::Mesh::EventQueueBridge<int, 64> bridge;

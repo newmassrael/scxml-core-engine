@@ -280,8 +280,8 @@ Transports are classified into three architectural groups. Each group has its ow
 
 The three groups do **not** share a wire format. They share only the logical `(event_name, data)` model at the SCXML layer. Each group generates a different transport send/receive code path:
 
-- **Byte-stream**: `[event_name\0data_bytes]` — name-null-data framing. `MeshSendRequest.data` is forwarded as bytes.
-- **Signal-based**: `.dbc` schema drives bit-packed signal encoding. `event_name` maps to CAN ID via deploy.yaml. `MeshSendRequest.data` is ignored — signals are packed from SCXML `<param>` values through schema-aware codegen.
+- **Byte-stream**: canonical CBOR `MeshEnvelope` (see Section 13 Phase 3.5). `MeshEnvelope.data` carries event payload as bytes.
+- **Signal-based**: `.dbc` schema drives bit-packed signal encoding. `event_name` maps to CAN ID via deploy.yaml. `MeshEnvelope.data` is ignored — signals are packed from SCXML `<param>` values through schema-aware codegen.
 - **Field-oriented**: event becomes a property get/set. `event_name` maps to node_id/object_path. `data` is marshaled as the protocol's typed value (OPC UA Variant, D-Bus Variant).
 
 **Why three groups, not one**: SCE Mesh's logical model `(name, data)` is universal. The wire format is not — CAN has no name field (frame ID is the routing key), OPC UA has no event concept (only property access). Attempting a single wire format across all groups either constrains byte-stream transports unnecessarily (fixed frame sizes to fit CAN) or loses signal-level type information (opaque bytes over CAN). Each group preserves its native semantics.
@@ -942,28 +942,15 @@ Event serialization has two distinct layers with different purposes:
 
 #### Mesh-Native Serialization (Default, Byte-Stream Group)
 
-For SCE-to-SCE communication over byte-stream transports, the transport carries `MeshSendRequest` data transparently. The SCXML runtime already assembles `<param>`, `<content>`, and `namelist` data into a JSON string (via `EventDataHelper::buildJsonFromParams`). The mesh transport forwards this data alongside the event name using a unified wire format.
+For SCE-to-SCE communication over byte-stream transports, the transport carries event data inside a `MeshEnvelope` (see Section 13 Phase 3.5). The SCXML runtime assembles `<param>`, `<content>`, and `namelist` data into a JSON string (via `EventDataHelper::buildJsonFromParams`). The generated `TransportRouter::wireTo()` lambda packs this into a `MeshEnvelope` with UUID v7, source machine name, pattern kind, and payload codec tag, then routes through the target transport.
 
-##### Unified Wire Format
+##### Canonical CBOR Wire Format
 
-All byte-stream transports share a single canonical wire format:
+All byte-stream transports share a single canonical wire format: **CBOR-encoded `MeshEnvelope`** (RFC 8949 §4.2.1 canonical, integer-keyed map). The schema and key map are pinned in Section 13 Phase 3.5.
 
-```
-┌─────────────────┬─────┬──────────────────┐
-│ event_name      │ \0  │ data bytes       │
-└─────────────────┴─────┴──────────────────┘
-  (UTF-8, no NUL)        (opaque, JSON default)
-```
+The shared codec is `SCE::Mesh::encodeEnvelope()` / `SCE::Mesh::decodeEnvelope()` in `sce/include/mesh/MeshEnvelopeCodec.h`. For SHM, encode/decode are internal to `ShmChannel` (symmetric API: `send(MeshEnvelope)` / `drain()`). For SOME/IP and Zenoh, the generated `send_to_X()` functions call `encodeEnvelope()` directly.
 
-- `event_name`: ASCII/UTF-8 bytes, no embedded null (SCXML event names never contain `\0`).
-- Single null byte separator.
-- `data`: opaque bytes. Default encoding is JSON (produced by the SCXML runtime); may contain any byte including null.
-
-Decoding: receiver splits at the **first** null byte. Bytes before → event name. Bytes after (if any) → data. Empty tail means payload-less event.
-
-The shared encoder is `SCE::Mesh::encodeWirePayload(const MeshSendRequest&)` in `sce/include/mesh/MeshWireFormat.h`. Every byte-stream transport's generated send code calls this function — no per-transport framing logic in the templates.
-
-**Future encoding**: If binary efficiency becomes a measured bottleneck, JSON may be replaced with MessagePack or CBOR for the `data` portion without changing the `[name\0data]` framing. SCXML and deploy.yaml remain unchanged.
+Pattern-based dispatch is handled by `SCE::Mesh::dispatchEnvelope<Policy>()` in `sce/include/mesh/MeshDispatch.h` — single source of truth for envelope-to-engine event delivery, used by `ShmChannel::drain()`, `TransportRouter::onIncoming()`, and `route_send()` local branch.
 
 ##### SHM Wire Layout (Control Ring + Payload Arena)
 
@@ -987,8 +974,8 @@ Shared memory has a unique constraint: the lock-free MPSC ring buffer (Vyukov al
 ```
 
 **Producer path**:
-1. Reserve `sizeof(wire_bytes)` in the arena via CAS on head cursor.
-2. Write `encodeWirePayload(req)` output to reserved arena region.
+1. Reserve `sizeof(cbor_bytes)` in the arena via CAS on head cursor.
+2. Write `encodeEnvelope(env)` output to reserved arena region.
 3. Push `{arena_offset, length}` to the control ring.
 
 **Consumer path**:
@@ -1019,9 +1006,11 @@ The drain-to-engine path must respect W3C SCXML macrostep semantics. Specificall
 
 ```
 Mesh receive flow:
-  transport wire → decodeWirePayload → (event, data)
+  transport wire → decodeEnvelope → MeshEnvelope
                                          ↓
-  engine.raiseExternal(event, data)     ← enqueues to external queue only
+  dispatchEnvelope<Policy>(env, engine)  ← switch on PatternKind
+                                         ↓
+  engine.raiseExternal(event, data)      ← enqueues to external queue only
                                          ↓
   (scheduler or application calls step() at its chosen boundary)
                                          ↓
@@ -1083,9 +1072,10 @@ When deploy.yaml specifies a `wire_codec` on a binding, the transport template g
 
 ```cpp
 // [generated] — codec adapts SCE event data to external binary format
-void send_to_legacy_sensor(const MeshSendRequest& req) {
-    auto frame = SensorFrameCodec::from_json(req.data);  // JSON → typed struct
-    auto bytes = frame.encode();                          // struct → wire bytes
+void send_to_legacy_sensor(const MeshEnvelope& env) {
+    std::string json_data(env.data.begin(), env.data.end());
+    auto frame = SensorFrameCodec::from_json(json_data);  // JSON → typed struct
+    auto bytes = frame.encode();                           // struct → wire bytes
     vsomeip_send(sensor_service_, bytes.data(), bytes.size());
 }
 ```
@@ -1552,7 +1542,7 @@ All transports share the unified `mesh_transport.h.jinja2` template via `{% elif
 2. First transport template: `someip_transport` via real vsomeip 3.7.x — COMPLETE (FireForget only)
 3. Second transport template: `zenoh_transport` via zenoh-cpp — validates that Communication Pattern Semantics abstraction is correct across middlewares — COMPLETE (FireForget only)
 4. Mesh-native event serialization (byte-stream group):
-   a. Unified `[name\0data]` wire format via `encodeWirePayload` — COMPLETE (FireForget envelope)
+   a. Canonical CBOR `MeshEnvelope` wire format via `encodeEnvelope`/`decodeEnvelope` — COMPLETE (FireForget realized, others stubbed)
    b. SHM control-ring + payload-arena layout (Section 7.5) — replaces fixed-size `ShmEvent` — COMPLETE
    c. Receive path: transport drain → `raiseExternal` (no `step()` in drain) — scheduler-owned macrostep — COMPLETE for shm; **deferred to Phase 3.5 for someip/zenoh** (will be Pattern dispatcher, not FireForget-only callback)
    d. End-to-end payload test: SCXML `<param>` → `_event.data` on receiver with type preservation — COMPLETE (commit `3a3e36df`)
@@ -1807,10 +1797,10 @@ Current FireForget tests that MUST continue to pass throughout Phase 3.5:
 
 | Test | Current wire | Migration |
 |---|---|---|
-| `tests/mesh/test_mesh_local.cpp` | direct engine call | Encode FireForget envelope; decode at receiver; `raiseExternal` |
-| `tests/mesh/test_mesh_shm_runtime.cpp` | `[name\0data]` over ShmChannel | Replace encoder with envelope CBOR; receiver decodes via `MeshWireFormat` |
-| `tests/mesh/test_mesh_shm_payload_runtime.cpp` | `[name\0data]` with payload | Same — payload moves to `data` field with `datacontenttype=Json` |
-| `tests/mesh/test_mesh_someip_runtime.cpp` (compile-only) | someip request_no_return | Wraps envelope in vsomeip payload bytes |
+| `tests/mesh/test_mesh_local.cpp` | `MeshEnvelope` via `dispatchEnvelope` | DONE — `route_send` local uses shared dispatch helper |
+| `tests/mesh/test_mesh_shm_runtime.cpp` | CBOR envelope over ShmChannel | DONE — `channel.send(env)` / `drain()` with internal encode/decode |
+| `tests/mesh/test_mesh_shm_payload_runtime.cpp` | CBOR envelope + JSON payload | DONE — `datacontenttype=Json`, `_event.data.force == 42` guard passes |
+| `tests/mesh/test_mesh_someip_runtime.cpp` (compile-only) | CBOR envelope in vsomeip payload | DONE — `encodeEnvelope(env)` in generated send function |
 
 Migration acid test for Session B completion:
 1. All 4 tests above pass with envelope-on-wire (FireForget path through dispatcher).
@@ -1824,8 +1814,8 @@ Sessions B-E execute the design above. Each session is a working unit; estimates
 | Session | Scope | Acid test |
 |---|---|---|
 | **A (this)** | Design + sign-off (this section) | User approval of all 5 axes + envelope schema |
-| **B** | Replace `MeshSendRequest` with `MeshEnvelope`; CBOR encoder/decoder; dispatcher skeleton with FireForget realized + others stubbed; CloudEvents-aligned field names; UUID v7 helper in `sce::uuid` (with v4 fallback) | All 4 FireForget E2E tests pass on envelope wire; non-FireForget returns Unimplemented; W3C zero regression |
-| **C** | SOME/IP multi-pattern: method req/resp with correlation, event offer/subscribe, field triple. `<send sce:reply-event>` shortcut implemented end-to-end. | Per-pattern compile + E2E test (compile-only acceptable for routing-manager-dependent paths) |
+| **B (DONE)** | Replace `MeshSendRequest` with `MeshEnvelope`; CBOR codec (`MeshEnvelopeCodec`); shared dispatch helper (`MeshDispatch.h`); ShmChannel symmetric send/drain; UUID v7 (`sce::uuid`); `MeshSendRequest.h`/`MeshWireFormat.h` deleted | All 4 FireForget E2E tests pass on envelope wire; W3C zero regression; `grep -r MeshSendRequest` → 0 code matches |
+| **C** | SOME/IP multi-pattern: method req/resp with correlation, event offer/subscribe, field triple. `<send sce:reply-event>` shortcut implemented end-to-end. Map W3C SCXML 5.10.1 `sendId` into `MeshEnvelope.subject` for RPC correlation. | Per-pattern compile + E2E test (compile-only acceptable for routing-manager-dependent paths) |
 | **D** | Zenoh multi-pattern: declare_publisher/subscriber, queryable/query, get/put for fields. Peer-mode E2E. | Multi-pattern peer-mode E2E without daemon |
 | **E** | `<invoke type="sce:mesh-rpc">` full lifecycle (start, done, error, cancel); subscription dual-lifecycle (state-entry + machine-lifetime); W3C compatibility document; multi-pattern multi-transport integration test | `<invoke>`-based RPC integration test passes; W3C compatibility doc landed |
 

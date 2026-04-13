@@ -46,10 +46,10 @@
 #include <cassert>
 #include <cstring>
 
-#include "mesh/MeshSendRequest.h"
-{% if "someip" in transport_types or "zenoh" in transport_types %}
-#include "mesh/MeshWireFormat.h"
-{% endif %}
+#include "mesh/MeshDispatch.h"
+#include "mesh/MeshEnvelope.h"
+#include "mesh/MeshEnvelopeCodec.h"
+#include "common/Uuid.h"
 
 {# ── (A) Transport includes (NEW TRANSPORT: add conditional) ── #}
 {% if "local" in transport_types %}
@@ -134,35 +134,33 @@ inline void send_to_{{ target.target_snake }}(
 }
 
 {% elif target.transport == "shm" %}
-/// Send event to {{ target.target }} via shared memory.
+/// Send envelope to {{ target.target }} via shared memory (CBOR wire).
 /// Events: {{ target.events | join(", ") }}
 /// @return true if enqueued; false if the channel is full or not yet ready.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
     {{ target.target_pascal }}ShmChannel& channel,
-    const char* event_name,
-    const std::string& data = {}
+    const SCE::Mesh::MeshEnvelope& env
 ) {
-    return channel.send(event_name, data);
+    return channel.send(env);
 }
 
 {% elif target.transport == "someip" %}
-/// Submit event to {{ target.target }} via SOME/IP ({{ target.extra.protocol | default("udp") }}).
+/// Submit envelope to {{ target.target }} via SOME/IP ({{ target.extra.protocol | default("udp") }}).
 /// Events: {{ target.events | join(", ") }}
 ///
-/// Wire format: [event_name\0][data bytes]
-/// Receiver splits at the first null byte to recover name and data.
+/// Wire format: canonical CBOR envelope (MeshEnvelopeCodec).
 ///
 /// @return true if the request was submitted to vsomeip.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
     vsomeip::application& app,
-    const SCE::Mesh::MeshSendRequest& req
+    const SCE::Mesh::MeshEnvelope& env
 ) {
     auto request = vsomeip::runtime::get()->create_request(
         {% if target.extra.protocol is defined and target.extra.protocol == "tcp" %}true{% else %}false{% endif %});
     request->set_service(SOMEIP_SERVICE_{{ target.target_snake | upper }});
     request->set_instance(SOMEIP_INSTANCE_{{ target.target_snake | upper }});
     request->set_method(SOMEIP_METHOD_{{ target.target_snake | upper }});
-    auto buf = SCE::Mesh::encodeWirePayload(req);
+    auto buf = SCE::Mesh::encodeEnvelope(env);
     auto payload = vsomeip::runtime::get()->create_payload(
         reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
         static_cast<uint32_t>(buf.size()));
@@ -172,18 +170,17 @@ inline void send_to_{{ target.target_snake }}(
 }
 
 {% elif target.transport == "zenoh" %}
-/// Send event to {{ target.target }} via Zenoh pub/sub (key: {{ target.extra.key }}).
+/// Send envelope to {{ target.target }} via Zenoh pub/sub (key: {{ target.extra.key }}).
 /// Events: {{ target.events | join(", ") }}
 ///
-/// Wire format: [event_name\0][data bytes]
-/// std::string preserves embedded null bytes; Zenoh transmits full size().
+/// Wire format: canonical CBOR envelope (MeshEnvelopeCodec).
 ///
 /// @return true if the put operation was submitted to Zenoh.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
     zenoh::Session& session,
-    const SCE::Mesh::MeshSendRequest& req
+    const SCE::Mesh::MeshEnvelope& env
 ) {
-    auto buf = SCE::Mesh::encodeWirePayload(req);
+    auto buf = SCE::Mesh::encodeEnvelope(env);
     session.put(zenoh::KeyExpr(ZENOH_KEY_{{ target.target_snake | upper }}),
                 std::string(reinterpret_cast<const char*>(buf.data()), buf.size()));
     return true;
@@ -320,32 +317,32 @@ struct TransportRouter {
 {% endif %}
 
 {# ── (D5) route_send() dispatch (NEW TRANSPORT: add {% elif %} block) ── #}
-    /// Dispatch a send request to the target identified by the SCXML target string.
+    /// Dispatch an envelope to the target identified by the SCXML target string.
+    ///
+    /// Local transport skips CBOR encode/decode (same-process); byte-stream
+    /// transports (shm, someip, zenoh) encode the envelope on the wire.
     ///
     /// @return true if the event was dispatched; false if the target is unknown
     ///         or the transport-specific send failed.
-    [[nodiscard]] bool route_send(const SCE::Mesh::MeshSendRequest& req) {
+    [[nodiscard]] bool route_send(const std::string& target, const SCE::Mesh::MeshEnvelope& env) {
 {% for target in targets %}
-        {% if not loop.first %}else {% endif %}if (req.target == "{{ target.target }}") {
+        {% if not loop.first %}else {% endif %}if (target == "{{ target.target }}") {
 {% if target.transport == "local" %}
             // W3C SCXML 3.12: enqueue to external queue only. Macrostep
             // timing is scheduler/application responsibility — the transport
             // layer does not drive target engine execution.
             using TargetPolicy = std::decay_t<decltype({{ target.target_snake }}_.getPolicy())>;
-            auto ev = TargetPolicy::getEventFromName(req.eventName.c_str());
-            if (!ev) return false;
-            {{ target.target_snake }}_.raiseExternal(*ev, req.data);
-            return true;
+            return SCE::Mesh::dispatchEnvelope<TargetPolicy>(env, {{ target.target_snake }}_);
 {% elif target.transport == "shm" %}
-            return {{ target.target_snake }}_.send(req.eventName.c_str(), req.data);
+            return send_to_{{ target.target_snake }}({{ target.target_snake }}_, env);
 {% elif target.transport == "someip" %}
             if ({{ target.target_snake }}_app_) {
-                return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, req);
+                return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, env);
             }
             return false;
 {% elif target.transport == "zenoh" %}
             if (zenoh_session_) {
-                return send_to_{{ target.target_snake }}(*zenoh_session_, req);
+                return send_to_{{ target.target_snake }}(*zenoh_session_, env);
             }
             return false;
 {% endif %}
@@ -357,14 +354,38 @@ struct TransportRouter {
     /// Wire this router to a sender StaticExecutionEngine's mesh-send callback.
     ///
     /// After this call, <send target="#<machine>"/> in the sender machine is
-    /// automatically dispatched through the router. Unknown targets are declined
-    /// so the engine may fall back to the external queue (W3C behavior).
+    /// automatically dispatched through the router. The lambda builds a
+    /// MeshEnvelope from the raw fields and routes it to the target transport.
+    /// Unknown targets are declined so the engine may fall back to the
+    /// external queue (W3C behavior).
     template <typename SenderEngine>
     void wireTo(SenderEngine& engine) {
         engine.setMeshSendCallback(
-            [this](const SCE::Mesh::MeshSendRequest& req) -> bool {
-                return route_send(req);
+            [this](const std::string& target, const std::string& eventName,
+                   const std::string& data, const std::string& /*sendId*/) -> bool {
+                SCE::Mesh::MeshEnvelope env;
+                env.id = SCE::uuid::v7();
+                env.source = "{{ machine_name }}";
+                env.type = eventName;
+                env.pattern = SCE::Mesh::PatternKind::FireForget;
+                env.datacontenttype = data.empty()
+                    ? SCE::Mesh::PayloadCodec::None
+                    : SCE::Mesh::PayloadCodec::Json;
+                env.data.assign(data.begin(), data.end());
+                return route_send(target, env);
             });
+    }
+
+    /// Dispatch an incoming envelope to the appropriate handler based on
+    /// its communication pattern. Delegates to MeshDispatch.h — single
+    /// source of truth for pattern-based dispatch logic.
+    ///
+    /// @tparam Policy Receiver's StatePolicy (generated struct)
+    /// @tparam Engine StaticExecutionEngine<Policy>
+    /// @return true if the envelope was dispatched to the engine
+    template <typename Policy, typename Engine>
+    bool onIncoming(const SCE::Mesh::MeshEnvelope& env, Engine& engine) {
+        return SCE::Mesh::dispatchEnvelope<Policy>(env, engine);
     }
 };
 

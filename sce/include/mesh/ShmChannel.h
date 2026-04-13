@@ -10,10 +10,11 @@
 //   head_vc      — producer virtual counter (arena occupancy tracking)
 //   tail_vc      — consumer virtual counter
 //   control ring — fixed-size ControlSlot entries (see below)
-//   payload arena — variable-size [name\0data] bytes, circular
+//   payload arena — variable-size CBOR envelope bytes, circular
 //
-// Wire format (per event): `[event_name\0data_bytes]` — the unified
-// byte-stream wire format (MeshWireFormat.h).
+// Wire format (per event): canonical CBOR MeshEnvelope (MeshEnvelopeCodec.h).
+// Both encode and decode are internal to ShmChannel — callers use the
+// high-level send(MeshEnvelope) / drain() API without touching CBOR.
 //
 // Concurrency model: **SPSC overall** (single producer, single consumer).
 //
@@ -33,7 +34,9 @@
 #pragma once
 
 #include "mesh/EventQueueBridge.h"
-#include "mesh/MeshWireFormat.h"
+#include "mesh/MeshDispatch.h"
+#include "mesh/MeshEnvelope.h"
+#include "mesh/MeshEnvelopeCodec.h"
 #include "mesh/ShmSegment.h"
 
 #include <atomic>
@@ -52,7 +55,7 @@ namespace SCE::Mesh {
 ///
 ///   offset   — physical byte offset in the arena where this entry's
 ///              wire bytes start.
-///   length   — wire bytes at that offset (event_name + \0 + data).
+///   length   — wire bytes at that offset (CBOR-encoded MeshEnvelope).
 ///   advance  — amount by which the consumer must bump tail_vc after
 ///              processing this entry. Equals `length` when the entry
 ///              was written contiguously; larger when the producer
@@ -158,75 +161,24 @@ public:
     ShmChannel(const ShmChannel&) = delete;
     ShmChannel& operator=(const ShmChannel&) = delete;
 
-    /// Send an event with optional data through the shared memory channel.
+    /// Send a MeshEnvelope through the shared memory channel.
+    ///
+    /// Internally encodes to CBOR before writing to the arena — symmetric
+    /// with drain() which decodes CBOR internally. Callers never touch
+    /// raw bytes or the CBOR codec directly.
     ///
     /// Returns false on:
     ///   - channel not valid (segment mapping failed or sender not ready)
+    ///   - CBOR encoding failure (should not occur for well-formed envelopes)
     ///   - message size exceeds arena capacity
     ///   - arena full (consumer lagging — back-pressure, not truncation)
     ///   - control ring full
     ///
     /// Single-producer: one thread may call send() per channel instance.
-    [[nodiscard]] bool send(const char* event_name,
-                             const std::string& data = {}) noexcept {
-        if (!layout_) return false;
-
-#ifndef NDEBUG
-        // SPSC: claim ownership on first call; assert same thread afterward.
-        std::thread::id empty{};
-        std::thread::id self = std::this_thread::get_id();
-        if (!producer_tid_.compare_exchange_strong(
-                empty, self, std::memory_order_relaxed)) {
-            assert(empty == self &&
-                   "ShmChannel::send() called from multiple threads. "
-                   "SCE Mesh shm transport is SPSC (one producer per channel). "
-                   "See SCE_MESH.md Section 7.5.");
-        }
-#endif
-
-        auto name_len = std::strlen(event_name);
-        std::size_t wire_size = name_len + 1 + data.size();
-        if (wire_size > ArenaSize) return false;  // message too large
-
-        std::uint64_t h = layout_->head_vc.load(std::memory_order_relaxed);
-        std::uint64_t t = layout_->tail_vc.load(std::memory_order_acquire);
-
-        // Compute physical offset and any skip padding needed if the
-        // message would wrap past the physical end of the arena.
-        std::uint32_t phys = static_cast<std::uint32_t>(h % ArenaSize);
-        std::uint32_t remaining = static_cast<std::uint32_t>(ArenaSize - phys);
-        std::uint32_t skip = 0;
-        if (wire_size > remaining) {
-            skip = remaining;
-            phys = 0;
-        }
-        std::uint32_t advance = skip + static_cast<std::uint32_t>(wire_size);
-
-        // Back-pressure: fail if not enough free arena space.
-        if ((h + advance) - t > ArenaSize) return false;
-
-        // Write wire bytes: [name\0data]
-        char* dst = layout_->arena + phys;
-        std::memcpy(dst, event_name, name_len);
-        dst[name_len] = '\0';
-        if (!data.empty()) {
-            std::memcpy(dst + name_len + 1, data.data(), data.size());
-        }
-
-        // Publish control entry. Vyukov push has release semantics — pairs
-        // with consumer's acquire on pop, ensuring arena writes are visible.
-        if (!layout_->control.try_push(
-                {phys, static_cast<std::uint32_t>(wire_size), advance})) {
-            // Ring full. head_vc stays unadvanced, so the next send
-            // recomputes phys/skip from the same h and overwrites these
-            // bytes (including any skip padding) — no orphaned reservation.
-            return false;
-        }
-
-        // Advance head for next reservation. Safe without release — consumer
-        // does not observe head_vc; it uses control ring ordering instead.
-        layout_->head_vc.store(h + advance, std::memory_order_relaxed);
-        return true;
+    [[nodiscard]] bool send(const MeshEnvelope& env) {
+        auto buf = encodeEnvelope(env);
+        if (buf.empty()) return false;
+        return sendRaw(buf.data(), buf.size());
     }
 
     /// Check if the channel is valid (shm mapped, sender ready).
@@ -239,8 +191,11 @@ public:
 
     /// Drain all pending events from the channel into a state machine engine.
     ///
-    /// Calls `engine.raiseExternal(event, data)` for each event. Does NOT
-    /// call `engine.step()` — macrostep timing is scheduler/application
+    /// Internally decodes each arena entry from CBOR and dispatches via
+    /// dispatchEnvelope() — symmetric with send() which encodes internally.
+    /// Callers never touch raw bytes or the CBOR codec directly.
+    ///
+    /// Does NOT call `engine.step()` — macrostep timing is scheduler/application
     /// responsibility (W3C SCXML 3.12, SCE_MESH.md Section 7.5).
     ///
     /// Unknown event names (not in the receiver's enum) are silently dropped
@@ -256,24 +211,16 @@ public:
         std::size_t count = 0;
         ControlSlot slot;
         while (layout_->control.try_pop(slot)) {
-            std::string_view wire(layout_->arena + slot.offset, slot.length);
-            auto payload = decodeWirePayload(
-                reinterpret_cast<const std::uint8_t*>(wire.data()), wire.size());
-
-            if (!payload.eventName.empty()) {
-                // Need null-terminated C string for Policy::getEventFromName.
-                // event names are short (bounded by SCXML) — small std::string
-                // allocation is acceptable here.
-                std::string name(payload.eventName);
-                auto event = Policy::getEventFromName(name.c_str());
-                if (event) {
-                    if (payload.data.empty()) {
-                        engine.raiseExternal(*event);
-                    } else {
-                        engine.raiseExternal(*event, std::string(payload.data));
-                    }
-                }
+            MeshEnvelope env;
+            if (!decodeEnvelope(
+                    reinterpret_cast<const std::uint8_t*>(layout_->arena + slot.offset),
+                    slot.length, env)) {
+                // Malformed CBOR — skip but reclaim arena space.
+                layout_->tail_vc.fetch_add(slot.advance, std::memory_order_release);
+                continue;
             }
+
+            dispatchEnvelope<Policy>(env, engine);
 
             // Advance tail unconditionally — arena slot is reclaimed
             // whether or not the event name resolved.
@@ -281,6 +228,50 @@ public:
             ++count;
         }
         return count;
+    }
+
+private:
+    /// Write pre-encoded bytes into the arena. Implementation detail of
+    /// send(const MeshEnvelope&) — not part of the public API.
+    [[nodiscard]] bool sendRaw(const uint8_t* raw, std::size_t len) noexcept {
+        if (!layout_ || len == 0) return false;
+        if (len > ArenaSize) return false;
+
+#ifndef NDEBUG
+        std::thread::id empty{};
+        std::thread::id self = std::this_thread::get_id();
+        if (!producer_tid_.compare_exchange_strong(
+                empty, self, std::memory_order_relaxed)) {
+            assert(empty == self &&
+                   "ShmChannel::send() called from multiple threads. "
+                   "SCE Mesh shm transport is SPSC (one producer per channel). "
+                   "See SCE_MESH.md Section 7.5.");
+        }
+#endif
+
+        std::uint64_t h = layout_->head_vc.load(std::memory_order_relaxed);
+        std::uint64_t t = layout_->tail_vc.load(std::memory_order_acquire);
+
+        std::uint32_t phys = static_cast<std::uint32_t>(h % ArenaSize);
+        std::uint32_t remaining = static_cast<std::uint32_t>(ArenaSize - phys);
+        std::uint32_t skip = 0;
+        if (len > remaining) {
+            skip = remaining;
+            phys = 0;
+        }
+        std::uint32_t advance = skip + static_cast<std::uint32_t>(len);
+
+        if ((h + advance) - t > ArenaSize) return false;
+
+        std::memcpy(layout_->arena + phys, raw, len);
+
+        if (!layout_->control.try_push(
+                {phys, static_cast<std::uint32_t>(len), advance})) {
+            return false;
+        }
+
+        layout_->head_vc.store(h + advance, std::memory_order_relaxed);
+        return true;
     }
 };
 

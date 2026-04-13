@@ -25,7 +25,6 @@
 #include "core/StatePolicyConcepts.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
-#include "mesh/MeshSendRequest.h"
 #include "common/SendSchedulingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
@@ -54,11 +53,15 @@ struct HttpSendRequest {
     std::string sendId;
 };
 
-/// MeshSendRequest lives in sce/include/mesh/MeshSendRequest.h so that
-/// generated TransportRouter code can include it without dragging in the
-/// full static engine header. Imported via the include at the top of
-/// this file and re-exported into SCE::Static for HTTP-callback symmetry.
-using SCE::Mesh::MeshSendRequest;
+/// Mesh send callback signature: (target, eventName, data, sendId) → accepted.
+/// Kept as raw fields so StaticExecutionEngine.h has zero mesh-layer includes —
+/// the generated TransportRouter's wireTo() lambda builds the wire-format
+/// envelope from these fields, keeping CBOR / UUID / envelope concerns in the
+/// mesh layer where they belong.
+using MeshSendCallback = std::function<bool(const std::string& target,
+                                            const std::string& eventName,
+                                            const std::string& data,
+                                            const std::string& sendId)>;
 
 /**
  * @brief Template-based SCXML execution engine for static code generation
@@ -401,7 +404,7 @@ private:
     bool isRunning_ = false;
     std::function<void()> completionCallback_;  // W3C SCXML 6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // W3C SCXML C.2: BasicHTTP callback
-    std::function<bool(const MeshSendRequest &)> onMeshSend_;  // SCE Mesh: cross-machine callback
+    MeshSendCallback onMeshSend_;  // SCE Mesh: cross-machine callback
     SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
 protected:
@@ -486,10 +489,10 @@ public:
         // transport leave onMeshSend_ unset and the event falls through to
         // the external queue (legacy behavior, preserves W3C conformance).
         if (::SCE::SendHelper::isMeshTarget(eventWithMetadata.target)) {
-            if (performMeshSend(MeshSendRequest{eventWithMetadata.target,
-                                                policy_.getEventName(eventWithMetadata.event),
-                                                eventWithMetadata.data,
-                                                eventWithMetadata.sendId})) {
+            if (performMeshSend(eventWithMetadata.target,
+                                policy_.getEventName(eventWithMetadata.event),
+                                eventWithMetadata.data,
+                                eventWithMetadata.sendId)) {
                 return;  // handled by mesh transport — do not enqueue locally
             }
         }
@@ -1075,8 +1078,9 @@ public:
     /**
      * @brief Register a SCE Mesh send callback (cross-machine transport)
      *
-     * Mirrors setHttpSendCallback(). The callback receives a MeshSendRequest
-     * for every external <send target="#<machine>"/>. It must return true
+     * Mirrors setHttpSendCallback(). The callback receives raw field values
+     * (target, eventName, data, sendId) for every external
+     * <send target="#<machine>"/>. It must return true
      * when the send was accepted by the transport and false to fall through
      * to the external queue (legacy W3C behavior, useful for targets that
      * the transport does not recognize).
@@ -1084,7 +1088,7 @@ public:
      * Applications typically do not call this directly — the generated
      * TransportRouter's wireTo() method registers itself here.
      */
-    void setMeshSendCallback(std::function<bool(const MeshSendRequest &)> callback) {
+    void setMeshSendCallback(MeshSendCallback callback) {
         onMeshSend_ = std::move(callback);
     }
 
@@ -1095,9 +1099,10 @@ public:
      *         false if no callback is wired or it declined the target
      *         (caller should fall back to the external queue).
      */
-    bool performMeshSend(const MeshSendRequest &request) {
+    bool performMeshSend(const std::string& target, const std::string& eventName,
+                         const std::string& data, const std::string& sendId) {
         if (onMeshSend_) {
-            return onMeshSend_(request);
+            return onMeshSend_(target, eventName, data, sendId);
         }
         return false;
     }

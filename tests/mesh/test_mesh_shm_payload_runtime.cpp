@@ -5,8 +5,8 @@
 //
 // Verifies the full data path across processes:
 //   parent:  brake_payload <send><param name="force" expr="42"/></send>
-//            → MeshSendRequest.data = {"force":["42"]} (JSON)
-//            → encodeWirePayload → [name\0data] in arena
+//            → MeshEnvelope.data = {"force":["42"]} (JSON bytes)
+//            → encodeEnvelope (CBOR) → sendRaw → arena
 //            → control ring entry
 //   child:   drain → raiseExternal(event, data) → external queue
 //            → step() → _event.data populated
