@@ -705,9 +705,10 @@ pub fn compile_mesh_transport(
         .into());
     }
 
-    // Stage 2e: pattern capability validation — hard error on unsupported patterns.
+    // Stage 2e: pattern capability validation — hard error on unsupported patterns
+    // or unrecognized sce:pattern values (typo prevention).
     let pattern_violations =
-        mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name);
+        mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name)?;
     if !pattern_violations.is_empty() {
         return Err(mesh::error::TopologyError::PatternCapabilityViolation {
             sender: model.name.clone(),

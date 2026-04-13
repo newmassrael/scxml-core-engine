@@ -520,16 +520,20 @@ pub fn validate_qos_consistency(
 ///
 /// Uses pre-collected action details from `SendActionSummary` to avoid
 /// redundant model traversal.
+///
+/// Returns:
+///   Ok(violations) — all `sce:pattern` values recognized; violations are transport mismatches
+///   Err(UnrecognizedPattern) — an `sce:pattern` value is not recognized (likely typo, build error)
 pub fn validate_pattern_capability(
     summary: &SendActionSummary,
     deploy: &DeployConfig,
     machine_name: &str,
-) -> Vec<super::pattern::PatternViolation> {
+) -> Result<Vec<super::pattern::PatternViolation>, TopologyError> {
     use super::pattern::{detect_pattern, transport_supports, PatternViolation};
 
     let bindings = match find_machine_bindings(deploy, machine_name) {
         Ok(b) => b,
-        Err(_) => return Vec::new(), // Machine not in deploy.yaml — no validation
+        Err(_) => return Ok(Vec::new()), // Machine not in deploy.yaml — no validation
     };
 
     let mut violations = Vec::new();
@@ -540,9 +544,25 @@ pub fn validate_pattern_capability(
             continue;
         }
 
-        let pattern = match detect_pattern(&action.event, &action.mesh_pattern) {
-            Some(p) => p,
-            None => continue, // Application-specific event or explicit opt-out
+        // Convert empty mesh_pattern to None (Rust-idiomatic Option API)
+        let explicit = if action.mesh_pattern.is_empty() {
+            None
+        } else {
+            Some(action.mesh_pattern.as_str())
+        };
+
+        let pattern = match detect_pattern(&action.event, explicit) {
+            Ok(Some(p)) => p,
+            Ok(None) => continue, // Application-specific event or explicit opt-out
+            Err(unrecognized) => {
+                return Err(TopologyError::UnrecognizedPattern {
+                    sender: machine_name.to_string(),
+                    state: action.state.clone(),
+                    target: action.target.clone(),
+                    event: action.event.clone(),
+                    value: unrecognized,
+                });
+            }
         };
 
         let binding = match bindings.get(&action.target) {
@@ -563,7 +583,7 @@ pub fn validate_pattern_capability(
         }
     }
 
-    violations
+    Ok(violations)
 }
 
 // ── Build-time event coverage enforcement ───────────────────
@@ -1020,7 +1040,7 @@ topology:
         .unwrap();
         let model = parse_model(PATTERN_SCXML, "tester");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
         assert!(violations.is_empty(), "expected no violations, got {violations:?}");
     }
 
@@ -1039,7 +1059,7 @@ topology:
         .unwrap();
         let model = parse_model(PATTERN_SCXML, "tester");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].event, "service.request.get_status");
         assert_eq!(violations[0].transport, "shm");
@@ -1064,7 +1084,7 @@ topology:
         .unwrap();
         let model = parse_model(SUBSCRIBE_SCXML, "subscriber");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "subscriber");
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "subscriber").unwrap();
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].event, "event.subscribe.speed_updates");
         assert_eq!(violations[0].transport, "can");
@@ -1086,7 +1106,7 @@ topology:
             let deploy = parse_deploy_str(&yaml).unwrap();
             let model = parse_model(FIRE_FORGET_SCXML, "sender");
 
-            let violations = validate_pattern_capability(&summary_for(&model), &deploy, "sender");
+            let violations = validate_pattern_capability(&summary_for(&model), &deploy, "sender").unwrap();
             assert!(
                 violations.is_empty(),
                 "fire_forget should pass on {transport}, got {violations:?}"
@@ -1109,7 +1129,7 @@ topology:
         .unwrap();
         let model = parse_model(APP_EVENT_SCXML, "app");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "app");
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "app").unwrap();
         assert!(violations.is_empty(), "app events should not be validated");
     }
 
@@ -1128,7 +1148,7 @@ topology:
         .unwrap();
         let model = parse_model(PATTERN_SCXML, "tester");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
         assert!(violations.is_empty(), "unknown transport should pass");
     }
 
@@ -1146,7 +1166,7 @@ topology:
         let model = parse_model(PATTERN_SCXML, "tester");
 
         // Machine "tester" not in deploy.yaml — no validation.
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
         assert!(violations.is_empty());
     }
 }

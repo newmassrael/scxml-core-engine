@@ -110,44 +110,41 @@ const PATTERN_PREFIXES: &[(&str, CommunicationPattern)] = &[
 /// event name prefix convention.
 ///
 /// Resolution order:
-///   1. Explicit annotation: `<send sce:pattern="request"/>` → ServiceRequest
-///   2. Event name prefix: `"service.request.brake_status"` → ServiceRequest
-///   3. No match → None (application-specific event, no validation)
-///
-/// The explicit annotation overrides convention. This handles cases where
-/// an event name incidentally matches a prefix but has different semantics.
-pub fn detect_pattern(event: &str, explicit_pattern: &str) -> Option<CommunicationPattern> {
+///   1. Explicit annotation: `<send sce:pattern="request"/>` → Ok(Some(ServiceRequest))
+///   2. Event name prefix: `"service.request.brake_status"` → Ok(Some(ServiceRequest))
+///   3. Explicit "none": → Ok(None) (opt-out)
+///   4. No match → Ok(None) (application-specific event, no validation)
+///   5. Unrecognized explicit value → Err (likely typo, build error)
+pub fn detect_pattern(
+    event: &str,
+    explicit_pattern: Option<&str>,
+) -> Result<Option<CommunicationPattern>, String> {
     // Priority 1: explicit sce:pattern attribute
-    if !explicit_pattern.is_empty() {
-        return parse_explicit_pattern(explicit_pattern);
+    if let Some(value) = explicit_pattern {
+        return parse_explicit_pattern(value);
     }
 
     // Priority 2: convention-based prefix matching
-    detect_pattern_from_event(event)
+    Ok(detect_pattern_from_event(event))
 }
 
-/// Parse an explicit `sce:pattern` attribute value into a CommunicationPattern.
+/// Parse an explicit `sce:pattern` attribute value.
 ///
-/// Accepted values (case-insensitive, matching SCE_MESH.md §8.1):
-///   "request" | "service.request"      → ServiceRequest
-///   "response" | "service.response"    → ServiceResponse
-///   "fire_forget" | "service.fire_forget" → FireForget
-///   "subscribe" | "event.subscribe"    → Subscribe
-///   "notification" | "event.notification" → Notification
-///   "field_get" | "field.get"          → FieldGet
-///   "field_set" | "field.set"          → FieldSet
-///   "none"                             → None (explicit opt-out)
-fn parse_explicit_pattern(value: &str) -> Option<CommunicationPattern> {
+/// Returns:
+///   Ok(Some(pattern)) — recognized pattern
+///   Ok(None) — explicit "none" (opt-out from validation)
+///   Err(value) — unrecognized value (likely typo, caller should emit build error)
+fn parse_explicit_pattern(value: &str) -> Result<Option<CommunicationPattern>, String> {
     match value.to_ascii_lowercase().as_str() {
-        "request" | "service.request" => Some(CommunicationPattern::ServiceRequest),
-        "response" | "service.response" => Some(CommunicationPattern::ServiceResponse),
-        "fire_forget" | "service.fire_forget" => Some(CommunicationPattern::FireForget),
-        "subscribe" | "event.subscribe" => Some(CommunicationPattern::Subscribe),
-        "notification" | "event.notification" => Some(CommunicationPattern::Notification),
-        "field_get" | "field.get" => Some(CommunicationPattern::FieldGet),
-        "field_set" | "field.set" => Some(CommunicationPattern::FieldSet),
-        "none" => None, // Explicit opt-out from pattern validation
-        _ => None,      // Unrecognized value — treated as no pattern
+        "request" | "service.request" => Ok(Some(CommunicationPattern::ServiceRequest)),
+        "response" | "service.response" => Ok(Some(CommunicationPattern::ServiceResponse)),
+        "fire_forget" | "service.fire_forget" => Ok(Some(CommunicationPattern::FireForget)),
+        "subscribe" | "event.subscribe" => Ok(Some(CommunicationPattern::Subscribe)),
+        "notification" | "event.notification" => Ok(Some(CommunicationPattern::Notification)),
+        "field_get" | "field.get" => Ok(Some(CommunicationPattern::FieldGet)),
+        "field_set" | "field.set" => Ok(Some(CommunicationPattern::FieldSet)),
+        "none" => Ok(None),
+        _ => Err(value.to_string()),
     }
 }
 
@@ -249,12 +246,12 @@ impl fmt::Display for PatternViolation {
 mod tests {
     use super::*;
 
-    // ── detect_pattern (convention fallback) ───────────────
+    // ── detect_pattern (convention fallback, no explicit) ──
 
     #[test]
     fn detect_exact_service_request() {
         assert_eq!(
-            detect_pattern("service.request", ""),
+            detect_pattern("service.request", None).unwrap(),
             Some(CommunicationPattern::ServiceRequest)
         );
     }
@@ -262,7 +259,7 @@ mod tests {
     #[test]
     fn detect_prefixed_service_request() {
         assert_eq!(
-            detect_pattern("service.request.brake_status", ""),
+            detect_pattern("service.request.brake_status", None).unwrap(),
             Some(CommunicationPattern::ServiceRequest)
         );
     }
@@ -270,11 +267,11 @@ mod tests {
     #[test]
     fn detect_service_response() {
         assert_eq!(
-            detect_pattern("service.response", ""),
+            detect_pattern("service.response", None).unwrap(),
             Some(CommunicationPattern::ServiceResponse)
         );
         assert_eq!(
-            detect_pattern("service.response.brake_status", ""),
+            detect_pattern("service.response.brake_status", None).unwrap(),
             Some(CommunicationPattern::ServiceResponse)
         );
     }
@@ -282,11 +279,11 @@ mod tests {
     #[test]
     fn detect_fire_forget() {
         assert_eq!(
-            detect_pattern("service.fire_forget", ""),
+            detect_pattern("service.fire_forget", None).unwrap(),
             Some(CommunicationPattern::FireForget)
         );
         assert_eq!(
-            detect_pattern("service.fire_forget.motor_cmd", ""),
+            detect_pattern("service.fire_forget.motor_cmd", None).unwrap(),
             Some(CommunicationPattern::FireForget)
         );
     }
@@ -294,11 +291,11 @@ mod tests {
     #[test]
     fn detect_subscribe() {
         assert_eq!(
-            detect_pattern("event.subscribe", ""),
+            detect_pattern("event.subscribe", None).unwrap(),
             Some(CommunicationPattern::Subscribe)
         );
         assert_eq!(
-            detect_pattern("event.subscribe.speed_updates", ""),
+            detect_pattern("event.subscribe.speed_updates", None).unwrap(),
             Some(CommunicationPattern::Subscribe)
         );
     }
@@ -306,11 +303,11 @@ mod tests {
     #[test]
     fn detect_notification() {
         assert_eq!(
-            detect_pattern("event.notification", ""),
+            detect_pattern("event.notification", None).unwrap(),
             Some(CommunicationPattern::Notification)
         );
         assert_eq!(
-            detect_pattern("event.notification.speed_changed", ""),
+            detect_pattern("event.notification.speed_changed", None).unwrap(),
             Some(CommunicationPattern::Notification)
         );
     }
@@ -318,11 +315,11 @@ mod tests {
     #[test]
     fn detect_field_get() {
         assert_eq!(
-            detect_pattern("field.get", ""),
+            detect_pattern("field.get", None).unwrap(),
             Some(CommunicationPattern::FieldGet)
         );
         assert_eq!(
-            detect_pattern("field.get.vehicle_speed", ""),
+            detect_pattern("field.get.vehicle_speed", None).unwrap(),
             Some(CommunicationPattern::FieldGet)
         );
     }
@@ -330,75 +327,76 @@ mod tests {
     #[test]
     fn detect_field_set() {
         assert_eq!(
-            detect_pattern("field.set", ""),
+            detect_pattern("field.set", None).unwrap(),
             Some(CommunicationPattern::FieldSet)
         );
         assert_eq!(
-            detect_pattern("field.set.target_speed", ""),
+            detect_pattern("field.set.target_speed", None).unwrap(),
             Some(CommunicationPattern::FieldSet)
         );
     }
 
     #[test]
     fn detect_none_for_application_events() {
-        assert_eq!(detect_pattern("brake.activate", ""), None);
-        assert_eq!(detect_pattern("motor.start", ""), None);
-        assert_eq!(detect_pattern("error.communication", ""), None);
+        assert_eq!(detect_pattern("brake.activate", None).unwrap(), None);
+        assert_eq!(detect_pattern("motor.start", None).unwrap(), None);
+        assert_eq!(detect_pattern("error.communication", None).unwrap(), None);
     }
 
     #[test]
     fn detect_none_for_partial_prefix() {
-        assert_eq!(detect_pattern("service.requestX", ""), None);
-        assert_eq!(detect_pattern("field.getAll", ""), None);
-        assert_eq!(detect_pattern("event.subscribeNow", ""), None);
+        assert_eq!(detect_pattern("service.requestX", None).unwrap(), None);
+        assert_eq!(detect_pattern("field.getAll", None).unwrap(), None);
+        assert_eq!(detect_pattern("event.subscribeNow", None).unwrap(), None);
     }
 
     #[test]
     fn detect_none_for_empty_event() {
-        assert_eq!(detect_pattern("", ""), None);
+        assert_eq!(detect_pattern("", None).unwrap(), None);
     }
 
     // ── detect_pattern (explicit annotation) ────────────────
 
     #[test]
     fn explicit_overrides_convention() {
-        // Event name says "service.request" but explicit says "fire_forget".
         assert_eq!(
-            detect_pattern("service.request.brake", "fire_forget"),
+            detect_pattern("service.request.brake", Some("fire_forget")).unwrap(),
             Some(CommunicationPattern::FireForget)
         );
     }
 
     #[test]
     fn explicit_none_opts_out() {
-        // Event name matches convention, but explicit "none" disables validation.
-        assert_eq!(detect_pattern("service.request.brake", "none"), None);
+        assert_eq!(
+            detect_pattern("service.request.brake", Some("none")).unwrap(),
+            None
+        );
     }
 
     #[test]
     fn explicit_short_forms() {
         assert_eq!(
-            detect_pattern("any.event", "request"),
+            detect_pattern("any.event", Some("request")).unwrap(),
             Some(CommunicationPattern::ServiceRequest)
         );
         assert_eq!(
-            detect_pattern("any.event", "response"),
+            detect_pattern("any.event", Some("response")).unwrap(),
             Some(CommunicationPattern::ServiceResponse)
         );
         assert_eq!(
-            detect_pattern("any.event", "subscribe"),
+            detect_pattern("any.event", Some("subscribe")).unwrap(),
             Some(CommunicationPattern::Subscribe)
         );
         assert_eq!(
-            detect_pattern("any.event", "notification"),
+            detect_pattern("any.event", Some("notification")).unwrap(),
             Some(CommunicationPattern::Notification)
         );
         assert_eq!(
-            detect_pattern("any.event", "field_get"),
+            detect_pattern("any.event", Some("field_get")).unwrap(),
             Some(CommunicationPattern::FieldGet)
         );
         assert_eq!(
-            detect_pattern("any.event", "field_set"),
+            detect_pattern("any.event", Some("field_set")).unwrap(),
             Some(CommunicationPattern::FieldSet)
         );
     }
@@ -406,15 +404,15 @@ mod tests {
     #[test]
     fn explicit_long_forms() {
         assert_eq!(
-            detect_pattern("any.event", "service.request"),
+            detect_pattern("any.event", Some("service.request")).unwrap(),
             Some(CommunicationPattern::ServiceRequest)
         );
         assert_eq!(
-            detect_pattern("any.event", "event.subscribe"),
+            detect_pattern("any.event", Some("event.subscribe")).unwrap(),
             Some(CommunicationPattern::Subscribe)
         );
         assert_eq!(
-            detect_pattern("any.event", "field.get"),
+            detect_pattern("any.event", Some("field.get")).unwrap(),
             Some(CommunicationPattern::FieldGet)
         );
     }
@@ -422,18 +420,25 @@ mod tests {
     #[test]
     fn explicit_case_insensitive() {
         assert_eq!(
-            detect_pattern("any.event", "Request"),
+            detect_pattern("any.event", Some("Request")).unwrap(),
             Some(CommunicationPattern::ServiceRequest)
         );
         assert_eq!(
-            detect_pattern("any.event", "FIRE_FORGET"),
+            detect_pattern("any.event", Some("FIRE_FORGET")).unwrap(),
             Some(CommunicationPattern::FireForget)
         );
     }
 
     #[test]
-    fn explicit_unknown_value_returns_none() {
-        assert_eq!(detect_pattern("any.event", "invalid_pattern"), None);
+    fn explicit_unrecognized_value_is_error() {
+        let err = detect_pattern("any.event", Some("requst")).unwrap_err();
+        assert_eq!(err, "requst");
+    }
+
+    #[test]
+    fn explicit_typo_does_not_silently_disable() {
+        // "subscribee" is a typo — must be Err, not silent Ok(None)
+        assert!(detect_pattern("any.event", Some("subscribee")).is_err());
     }
 
     // ── required_capability ─────────────────────────────────

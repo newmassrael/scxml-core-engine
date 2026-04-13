@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh codegen dispatcher — selects transport template and generates code.
+// SCE Mesh codegen dispatcher — per-target transport template rendering.
 //
-// Supported transports:
-//   local — same-process direct call (Phase 1)
-//   shm   — shared memory cross-process via EventQueueBridge (Phase 2)
+// Each target routes through its deploy.yaml-bound transport. Mixed transports
+// are supported: e.g. #motor via local, #display via shm, #logger via someip.
+// The unified template generates a single TransportRouter that dispatches
+// per-target to the appropriate transport-specific send function.
+//
+// Adding a new transport: add conditionals in mesh_transport.h.jinja2 only.
+// No Rust code changes needed — the template is the single source of truth
+// for which transports are supported. Unknown transports produce a C++ #error.
 
 use crate::filters;
 use crate::generator::{GeneratedOutput, Language};
 use crate::mesh::error::CodegenError;
 use crate::mesh::topology::ResolvedTarget;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 /// Template context for a single resolved send target.
@@ -26,15 +32,13 @@ struct TargetContext {
     target_pascal: String,
     /// Events sent to this target.
     events: Vec<String>,
-    /// Transport type.
+    /// Transport type from deploy.yaml.
     transport: String,
     /// Transport-native extra config (passed to template).
     extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
 }
 
 /// Generate mesh transport code for a machine's resolved targets.
-///
-/// Returns generated files to be written alongside the SM output.
 pub fn generate_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
@@ -56,39 +60,6 @@ fn generate_cpp_mesh(
     targets: &[ResolvedTarget],
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
-    // Determine transport type — all targets must agree
-    let transport = &targets[0].transport;
-    for t in &targets[1..] {
-        if t.transport != *transport {
-            let mut seen: Vec<String> = targets.iter().map(|t| t.transport.clone()).collect();
-            seen.sort();
-            seen.dedup();
-            return Err(CodegenError::MixedTransports {
-                machine: machine_name.to_string(),
-                transports: seen,
-            });
-        }
-    }
-
-    // Select template by transport type
-    let template_name = match transport.as_str() {
-        "local" => "mesh/cpp/local_transport.h.jinja2",
-        "shm" => "mesh/cpp/shm_transport.h.jinja2",
-        other => {
-            return Err(CodegenError::UnsupportedTransport {
-                transport: other.to_string(),
-                target: targets[0].target.clone(),
-            });
-        }
-    };
-
-    let template_path = template_base.join(template_name);
-    let template_content =
-        std::fs::read_to_string(&template_path).map_err(|e| CodegenError::TemplateRead {
-            path: template_path.display().to_string(),
-            source: e,
-        })?;
-
     let target_contexts: Vec<TargetContext> = targets
         .iter()
         .map(|t| {
@@ -105,21 +76,34 @@ fn generate_cpp_mesh(
         })
         .collect();
 
+    // Data-driven: template uses transport_types for conditional guards,
+    // and filters targets by transport inline. No per-transport vectors.
+    let transport_types: BTreeSet<&str> =
+        target_contexts.iter().map(|t| t.transport.as_str()).collect();
+
     let machine_pascal = filters::to_pascal_case(machine_name.to_string());
 
+    let template_name = "mesh/cpp/mesh_transport.h.jinja2";
+    let template_path = template_base.join(template_name);
+    let template_content =
+        std::fs::read_to_string(&template_path).map_err(|e| CodegenError::TemplateRead {
+            path: template_path.display().to_string(),
+            source: e,
+        })?;
+
     let mut env = minijinja::Environment::new();
-    let tpl_file_name = template_name.rsplit('/').next().unwrap_or(template_name);
-    env.add_template(tpl_file_name, &template_content)
+    env.add_template("mesh_transport.h.jinja2", &template_content)
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
 
     let tmpl = env
-        .get_template(tpl_file_name)
+        .get_template("mesh_transport.h.jinja2")
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
 
     let ctx = minijinja::context! {
         machine_name => machine_name,
         machine_pascal => machine_pascal,
         targets => target_contexts,
+        transport_types => transport_types,
     };
 
     let code = tmpl

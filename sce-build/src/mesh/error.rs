@@ -146,6 +146,19 @@ pub enum TopologyError {
         sender: String,
         violations: Vec<super::pattern::PatternViolation>,
     },
+
+    /// Unrecognized `sce:pattern` attribute value on a `<send>` action.
+    /// Likely a typo — fails the build to prevent silent validation bypass.
+    #[error("unrecognized sce:pattern=\"{value}\" on <send target=\"{target}\" event=\"{event}\"/> \
+             in state '{state}' of machine '{sender}'. \
+             Valid values: request, response, fire_forget, subscribe, notification, field_get, field_set, none")]
+    UnrecognizedPattern {
+        sender: String,
+        state: String,
+        target: String,
+        event: String,
+        value: String,
+    },
 }
 
 // ── Stage 3: Template rendering ──────────────────────────────
@@ -162,15 +175,6 @@ pub enum CodegenError {
     UnsupportedTransport {
         transport: String,
         target: String,
-    },
-
-    /// All targets for a machine must use the same transport type.
-    #[error("machine '{machine}' has mixed transport types: {transports}. \
-             All <send> targets must use the same transport in deploy.yaml",
-             transports = .transports.join(", "))]
-    MixedTransports {
-        machine: String,
-        transports: Vec<String>,
     },
 
     /// Cannot read the mesh Jinja2 template file.
