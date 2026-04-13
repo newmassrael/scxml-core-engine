@@ -1051,6 +1051,7 @@ The build tool performs conservative static analysis across all SCXML documents.
 | Event coverage | Every sent event has at least one receiver | Exact — name matching only | 2 |
 | Interface match | Sender event names match receiver transition triggers | Exact — name matching only | 2 |
 | Cross-transport ordering | Warn when order-dependent events route through different transports to the same target | Conservative | 3 |
+| Pattern capability | SCXML communication pattern is supported by bound transport (see 8.2) | Exact | 3 |
 | Reachability | Every declared state is reachable via some event path | Exact for unconditional, conservative for guarded | 5 |
 | Circular dependency detection | Detect potential circular wait in cross-device send/invoke patterns | Conservative — may flag safe cycles | 5 |
 
@@ -1069,6 +1070,35 @@ How SCXML concepts map to each transport protocol. Each cell represents the nati
 | `done.invoke` | Service Down | Undeclare | Dispose | Stream End | N/A | Process exit |
 | `error.communication` | TIMEOUT/NACK | Disconnected | Lost Writer | UNAVAILABLE | Bus-off | SIGPIPE |
 | Target format | service:instance | key/expression | domain/topic | host:port/svc | bus:id | /dev/shm/name |
+
+### 8.1 Communication Pattern Semantics
+
+Protocol Mapping (above) shows per-transport API calls. Communication Pattern Semantics define the **transport-agnostic event vocabulary** that SCXML authors use. Each transport template maps these patterns to native API calls.
+
+| SCXML Event Pattern | Semantics | Example |
+|---|---|---|
+| `service.request` | Request/Response — expects reply | Method call, RPC |
+| `service.response` | Reply to a prior request | Method return |
+| `service.fire_forget` | One-way send, no reply expected | Notification, command |
+| `event.subscribe` | Register interest in a topic/event group | Pub/Sub setup |
+| `event.notification` | Received event from subscription | Pub/Sub delivery |
+| `field.get` / `field.set` | Read/write a named data field | Property access |
+
+These patterns enable **deploy.yaml-only middleware switching**: the same SCXML event patterns map to different native APIs depending on the transport binding. SCXML documents never reference transport-specific concepts.
+
+### 8.2 Transport Capability Matrix
+
+Not all transports support all communication patterns. sce-build validates pattern compatibility at build time:
+
+| Pattern | Req/Reply transports | Pub/Sub transports | Signal transports |
+|---|---|---|---|
+| `service.request` (req/resp) | Supported | N/A | N/A |
+| `service.fire_forget` | Supported | Supported | Supported |
+| `event.subscribe` | N/A | Supported | N/A |
+| `field.get` / `field.set` | Supported | Via topic read/write | Via signal read/write |
+| Reliable delivery | Transport-dependent | Transport-dependent | N/A |
+
+If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch.
 
 ---
 
@@ -1341,45 +1371,46 @@ The same SCXML generates different transport code depending on deploy.yaml:
 
 ## 13. Roadmap
 
-**Scope commitment**: Phase 1-2 are the concrete implementation target. Phase 3-5 are directional plans that will be refined after Phase 2 delivers an end-to-end working demo. The first milestone is: **two processes on the same machine communicating via SCXML through shared memory, with no changes to the SCXML documents themselves.**
+**Scope commitment**: Phase 1-2 are complete. Phase 3-5 are directional plans refined after Phase 2 delivery.
 
-### Phase 1: Codegen Infrastructure + Local Transport
+### Phase 1: Codegen Infrastructure + Local Transport — COMPLETE
 
-Extend sce-codegen with `--deploy` option and generate the trivial case (same-process direct call).
+`--deploy` CLI option, deploy.yaml parser (serde_yaml), topology analyzer, `local_transport` template, `SchedulerConcepts.h` (TickScheduling/EventDrivenScheduling C++20 concepts with C++17 fallback), `EventQueueBridge.h` (lock-free MPSC, Vyukov algorithm). Build-time topology completeness and event coverage validation. Verification: single-process tests pass unchanged with `--deploy` codegen path.
 
-- **`--deploy` option for sce-codegen**: when `--deploy deploy.yaml` is provided, sce-codegen parses topology + bindings alongside SCXML and generates transport code in addition to SM code. Without `--deploy`, existing behavior is unchanged
-- **deploy.yaml parser** (serde_yaml in Rust): topology, bindings, scheduler, QoS schema
-- **Topology analyzer**: collect `<send>` targets from SCXML, match against deploy.yaml bindings, detect same-device vs cross-device boundaries
-- **`local_transport` template**: same-process targets generate inlined direct calls (zero overhead, existing behavior preserved)
-- **Scheduler concepts** in `sce_mesh_common`: `TickScheduling`, `EventDrivenScheduling` (C++20 concepts, C++17 fallback — same pattern as existing `StatePolicyConcepts.h`)
-- **MPSC EventQueue bridge** in `sce_mesh_common`: thread-safe event queue for cross-thread event injection
-- **Build-time validation**: topology completeness (all targets resolve), event coverage (all sent events have receivers), QoS intent/config consistency check
-- **Verification**: existing single-process tests pass with `--deploy` codegen path, generated code is functionally identical to non-deploy AOT output
+### Phase 2: Shared Memory Transport — COMPLETE
 
-### Phase 2: Shared Memory Transport (first cross-process)
+`shm_transport` template (POSIX `shm_open`/`mmap`), `ShmChannel` with placement-new EventQueueBridge in shared memory, ready-flag handshake for any-order startup. Build-time event coverage enforcement (`UncoveredEvents` error — eliminates silently-broken-hooks pattern). Forge codec integration for single-source wire format. Verification: two processes on same machine communicating via SCXML through generated SHM code, SCXML documents unchanged. QoS consistency check deferred to Phase 3.
 
-First transport template that crosses a process boundary.
+### Phase 3: Vehicle Network Transport Templates + Communication Patterns
 
-- **`shm_transport` Jinja2 template**: generates ring-buffer shared memory code (POSIX `shm_open` / `mmap`)
-- **Event serialization codegen**: per-transport serialization — SHM gets binary event encoding (not JSON)
-- **SCE Forge codec integration**: if event payload matches a Forge `codec` kind, generated serialization wraps the codec's `encode()`/`decode()`. Single source of truth for both local byte parsing and remote event serialization
-- **Receive-side codegen**: generated subscriber code that polls/waits on SHM ring buffer, deserializes events, injects into instance's EventQueue via MPSC bridge
-- **Instance lifecycle**: REGISTERED → READY → ACTIVE → DRAINING → GONE (state machine for each deployed instance)
-- **Error propagation codegen**: SHM failures (segment not found, peer crash) generate `error.communication` events
-- **Verification**: two processes on same machine communicating via SCXML through generated shared memory code. SCXML documents are unchanged
+Transport templates for real-world middleware. Each template generates code that calls the protocol's native API directly, preserving all protocol-specific features.
 
-### Phase 3: Vehicle Network Transport Templates (Directional — refined after Phase 2)
+#### Architecture additions in Phase 3
 
-Transport templates for automotive protocols. Each template generates code that calls the protocol's native API directly, preserving all protocol-specific features.
+- **Communication Pattern Semantics** (Section 8.1): Transport-agnostic event vocabulary (`service.request`, `event.subscribe`, `field.get`, etc.) enabling deploy.yaml-only middleware switching
+- **Transport Capability Matrix** (Section 8.2): Build-time validation that SCXML communication patterns are supported by the bound transport
+- **Pattern capability build check** (Section 7.7): sce-build emits build error when SCXML uses a pattern unsupported by its deploy.yaml transport
 
-- **`someip_transport` template**: generates vsomeip API calls — service offer/find, method call/fire-and-forget, event group subscription. Full SOME/IP service model preserved
-- **`can_transport` template**: generates SocketCAN API calls — frame TX/RX, DBC signal packing. CAN FD support
-- **`zenoh_transport` template**: generates zenoh-c/zenoh-pico API calls — put/subscribe, key expressions, SHM mode. Reusable for IoT/robotics
-- **`dds_transport` template**: generates Cyclone DDS API calls — **all 22 QoS policies** from deploy.yaml passed through natively. Typed topics, content filters, partitions
-- **deploy.yaml native QoS**: each transport section in deploy.yaml carries the full transport-native QoS configuration. sce-build passes it directly to the template without abstraction
+#### Transport templates
+
+- First non-trivial transport template (automotive middleware) — validates the codegen pipeline end-to-end with real protocol
+- Second transport template (different middleware) — validates that Communication Pattern Semantics abstraction is correct across middlewares
+- Additional transport templates as demand arises — each is a Jinja2 file following the established template pattern (Section 6.4)
+
+#### Infrastructure
+
+- **deploy.yaml native QoS**: each transport section carries full transport-native QoS configuration, passed directly to template without abstraction
 - **Remote `<invoke>` codegen**: invoke request/response/cancel as generated send/receive pairs over configured transport
-- **SCE Forge procedure integration**: Forge `procedure` kinds generate SM-compatible classes. Mesh remote `<invoke>` codegen executes these across device boundaries
-- **Build-time verification**: interface match (sender event names == receiver transition triggers), cross-transport ordering warnings
+- **SCE Forge procedure integration**: Forge `procedure` kinds work with Mesh remote `<invoke>` across device boundaries
+- **Build-time verification**: interface match, cross-transport ordering warnings, pattern capability check
+
+#### Entry sequence
+
+1. Communication Pattern event semantics definition (Section 8.1 formalization)
+2. First transport template with real-world validation use case
+3. Forge codec for protocol header serialization
+4. Second transport template — validates abstraction correctness
+5. Application-level test demonstrating deploy.yaml-only middleware switch
 
 ### Phase 4: Game Scale (Directional — refined after Phase 3)
 
