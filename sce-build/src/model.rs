@@ -326,8 +326,6 @@ pub struct State {
     /// Typed view of each invoke on this state (sum of Scxml / Hybrid /
     /// MeshRpc). Templates dispatch on `invoke.kind`.
     pub invokes: Vec<Invoke>,
-    pub static_invokes: Vec<InvokeInfo>,
-    pub hybrid_invokes: Vec<InvokeInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub donedata: Option<DoneData>,
     pub document_order: u32,
@@ -384,12 +382,10 @@ pub struct SCXMLModel {
     pub variables: Vec<Variable>,
     pub global_scripts: Vec<Action>,
 
-    // Invoke — typed sum view (see `Invoke`) alongside the legacy per-kind
-    // vectors. R2 migrates consumers onto `invokes`; R3 drops the legacy
-    // vectors once templates are branching on `invoke.kind`.
+    // Every `<invoke>` declared in the document, in insertion order. The
+    // typed sum makes "exactly one kind per invoke" a structural invariant —
+    // templates dispatch on `invoke.kind`, Rust consumers pattern-match.
     pub invokes: Vec<Invoke>,
-    pub static_invokes: Vec<InvokeInfo>,
-    pub hybrid_invokes: Vec<InvokeInfo>,
 
     // Parallel regions
     pub parallel_regions: BTreeMap<String, Vec<String>>,

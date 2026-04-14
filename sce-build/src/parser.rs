@@ -174,7 +174,7 @@ impl SCXMLParser {
 
         // Compute needs_nonstatic_method
         model.needs_nonstatic_method = model.needs_script_engine
-            || !model.static_invokes.is_empty()
+            || model.has_scxml_invoke()
             || model.has_parent_communication
             || model.has_parallel_states
             || model.uses_in_predicate
@@ -199,13 +199,6 @@ impl SCXMLParser {
                 trans.transition_index = i;
             }
         }
-
-        // R1: rebuild the typed `invokes` sum view from the now-finalised
-        // legacy vectors. `process_static_invokes` mutates `static_invokes`
-        // after parse (child_name, idlocation, child_datamodel_vars), so the
-        // sum-type mirror must be synthesised AFTER all those passes finish.
-        // R3 will invert this relationship, making `invokes` primary.
-        rebuild_invokes_sum(&mut model);
 
         Ok(model)
     }
@@ -519,7 +512,9 @@ impl SCXMLParser {
                 model.has_invoke = true;
                 if let Some(is_hybrid) = invoke.get("is_hybrid").and_then(|v| v.as_bool()) {
                     if is_hybrid {
-                        let idx = model.hybrid_invokes.len();
+                        // Document-order index among hybrid invokes in this model.
+                        // Drives the auto-generated child_name for hybrid invokes.
+                        let idx = model.iter_hybrid_invokes().count();
                         // W3C SCXML 6.4: Extract params from invoke JSON
                         let params = invoke
                             .get("params")
@@ -550,8 +545,8 @@ impl SCXMLParser {
                             contentexpr: Some(json_str(&invoke, "contentexpr")),
                             ..Default::default()
                         };
-                        state.hybrid_invokes.push(hi.clone());
-                        model.hybrid_invokes.push(hi);
+                        state.invokes.push(Invoke::Hybrid(hi.clone()));
+                        model.invokes.push(Invoke::Hybrid(hi));
                     }
                 }
                 if let Some(is_static) = invoke.get("is_static").and_then(|v| v.as_bool()) {
@@ -597,8 +592,8 @@ impl SCXMLParser {
                             namelist: json_str(&invoke, "namelist"),
                             ..Default::default()
                         };
-                        state.static_invokes.push(si.clone());
-                        model.static_invokes.push(si);
+                        state.invokes.push(Invoke::Scxml(si.clone()));
+                        model.invokes.push(Invoke::Scxml(si));
                     }
                 }
                 state.raw_invoke_json.push(invoke);
@@ -1435,8 +1430,8 @@ impl SCXMLParser {
         for state in model.states.values() {
             if !model.has_entry_actions {
                 if !state.on_entry_blocks.is_empty()
-                    || !state.static_invokes.is_empty()
-                    || !state.hybrid_invokes.is_empty()
+                    || state.has_scxml_invoke()
+                    || state.has_hybrid_invoke()
                     || !state.datamodel.is_empty()
                     || !state.initial_transition_actions.is_empty()
                     || !state.initial_history_id.is_empty()
@@ -1447,8 +1442,8 @@ impl SCXMLParser {
             }
             if !model.has_exit_actions {
                 if !state.on_exit_blocks.is_empty()
-                    || !state.static_invokes.is_empty()
-                    || !state.hybrid_invokes.is_empty()
+                    || state.has_scxml_invoke()
+                    || state.has_hybrid_invoke()
                 {
                     model.has_exit_actions = true;
                 }
@@ -1489,40 +1484,37 @@ impl SCXMLParser {
             }
         }
 
-        // Only add specific done.invoke.{id} events if transitions reference them
-        // and set use_specific_event flag on BOTH model-level AND state-level InvokeInfo
-        // (templates use state.static_invokes, not model.static_invokes)
-        for si in &mut model.static_invokes {
-            if !si.invoke_id.is_empty() {
-                let specific = format!("done.invoke.{}", si.invoke_id);
-                si.use_specific_event = used_done_invoke_events.contains(&specific);
-                if si.use_specific_event {
-                    model.events.insert(specific);
-                }
+        // Set the use_specific_event flag on every model-level Scxml/Hybrid
+        // invoke whose id shows up in a `done.invoke.<id>` transition. The
+        // matching specific event is also added to the model's event set so
+        // the generated Event enum exposes it.
+        for invoke in model.invokes.iter_mut() {
+            let info = match invoke {
+                Invoke::Scxml(i) | Invoke::Hybrid(i) => i,
+                Invoke::MeshRpc(_) => continue,
+            };
+            if info.invoke_id.is_empty() {
+                continue;
+            }
+            let specific = format!("done.invoke.{}", info.invoke_id);
+            info.use_specific_event = used_done_invoke_events.contains(&specific);
+            if info.use_specific_event {
+                model.events.insert(specific);
             }
         }
-        for hi in &mut model.hybrid_invokes {
-            if !hi.invoke_id.is_empty() {
-                let specific = format!("done.invoke.{}", hi.invoke_id);
-                hi.use_specific_event = used_done_invoke_events.contains(&specific);
-                if hi.use_specific_event {
-                    model.events.insert(specific);
-                }
-            }
-        }
-        // Propagate use_specific_event to state-level static_invokes/hybrid_invokes
+
+        // Propagate use_specific_event to each state's local Invoke copy.
         for state in model.states.values_mut() {
-            for si in &mut state.static_invokes {
-                if !si.invoke_id.is_empty() {
-                    let specific = format!("done.invoke.{}", si.invoke_id);
-                    si.use_specific_event = used_done_invoke_events.contains(&specific);
+            for invoke in state.invokes.iter_mut() {
+                let info = match invoke {
+                    Invoke::Scxml(i) | Invoke::Hybrid(i) => i,
+                    Invoke::MeshRpc(_) => continue,
+                };
+                if info.invoke_id.is_empty() {
+                    continue;
                 }
-            }
-            for hi in &mut state.hybrid_invokes {
-                if !hi.invoke_id.is_empty() {
-                    let specific = format!("done.invoke.{}", hi.invoke_id);
-                    hi.use_specific_event = used_done_invoke_events.contains(&specific);
-                }
+                let specific = format!("done.invoke.{}", info.invoke_id);
+                info.use_specific_event = used_done_invoke_events.contains(&specific);
             }
         }
     }
@@ -1534,7 +1526,7 @@ impl SCXMLParser {
         model: &mut SCXMLModel,
         base_dir: Option<&Path>,
     ) {
-        if model.static_invokes.is_empty() {
+        if !model.has_scxml_invoke() {
             return;
         }
         let scxml_dir = match base_dir {
@@ -1543,7 +1535,7 @@ impl SCXMLParser {
         };
         let mut parsed_children: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        let invokes = model.static_invokes.clone();
+        let invokes: Vec<InvokeInfo> = model.iter_scxml_invokes().cloned().collect();
         for si in &invokes {
             if si.child_name.is_empty() || parsed_children.contains(&si.child_name) {
                 continue;
@@ -1618,8 +1610,18 @@ impl SCXMLParser {
             }
         }
 
-        // Process model-level static_invokes
-        for (i, si) in model.static_invokes.iter_mut().enumerate() {
+        // Process model-level Scxml invokes in document order. Only Scxml
+        // variants participate in inline-extraction / src resolution; Hybrid
+        // and MeshRpc are skipped by pattern match.
+        let mut scxml_index = 0usize;
+        for invoke in model.invokes.iter_mut() {
+            let si = match invoke {
+                Invoke::Scxml(info) => info,
+                _ => continue,
+            };
+            let i = scxml_index;
+            scxml_index += 1;
+
             let (_, _, has_inline, ref inline_text) = if i < invoke_map.len() {
                 invoke_map[i].clone()
             } else {
@@ -1676,12 +1678,18 @@ impl SCXMLParser {
             }
         }
 
-        // Propagate to state-level static_invokes by rebuilding from model-level
-        let model_invokes = model.static_invokes.clone();
+        // Propagate the now-finalised model-level Scxml data into each
+        // state's per-state `Invoke::Scxml` entry. State-level entries were
+        // cloned from pre-mutation data in `parse_states`, so they need a
+        // second pass to pick up child_name / idlocation / child metadata.
+        let model_scxml: Vec<InvokeInfo> = model.iter_scxml_invokes().cloned().collect();
         for state in model.states.values_mut() {
-            for si in &mut state.static_invokes {
-                // Find matching model-level invoke by state_name and original src
-                if let Some(model_si) = model_invokes.iter().find(|mi| {
+            for invoke in state.invokes.iter_mut() {
+                let si = match invoke {
+                    Invoke::Scxml(info) => info,
+                    _ => continue,
+                };
+                if let Some(model_si) = model_scxml.iter().find(|mi| {
                     mi.state_name == si.state_name
                         && (mi.invoke_id == si.invoke_id
                             || (mi.src == si.src && !mi.src.is_empty())
@@ -2249,46 +2257,6 @@ fn parse_child_metadata(child_path: &Path, invoke_info: &mut InvokeInfo) {
             invoke_info.child_needs_script_engine = true;
             invoke_info.child_datamodel_vars = Some(Vec::new());
         }
-    }
-}
-
-/// R1 helper: project the now-finalised `static_invokes` and `hybrid_invokes`
-/// vectors into the typed `Invoke` sum view on both `SCXMLModel` and every
-/// `State`.
-///
-/// `process_static_invokes` mutates entries in the legacy per-kind vectors
-/// after `parse_states` returns (it resolves inline SCXML, assigns
-/// `child_name`, etc.), so the sum-type mirror must be rebuilt *after* those
-/// passes complete. Insertion order mirrors the legacy vectors: static kinds
-/// first in document order, then hybrid. This matches how the templates
-/// previously iterated the two vectors in sequence, keeping generated output
-/// byte-identical across R1 through R3.
-///
-/// R3 will delete the legacy vectors; at that point `invokes` must become the
-/// primary store populated directly by the parser and mutated in place by
-/// `process_static_invokes`.
-fn rebuild_invokes_sum(model: &mut SCXMLModel) {
-    // Per-state projection first: each state's `invokes` is rebuilt from its
-    // own legacy vectors so template iteration matches 1:1.
-    for state in model.states.values_mut() {
-        state.invokes.clear();
-        for si in &state.static_invokes {
-            state.invokes.push(Invoke::Scxml(si.clone()));
-        }
-        for hi in &state.hybrid_invokes {
-            state.invokes.push(Invoke::Hybrid(hi.clone()));
-        }
-    }
-
-    // Model-level projection: static kinds in document order followed by
-    // hybrid kinds, matching `model.static_invokes` and `model.hybrid_invokes`
-    // insertion order from `parse_states`.
-    model.invokes.clear();
-    for si in &model.static_invokes {
-        model.invokes.push(Invoke::Scxml(si.clone()));
-    }
-    for hi in &model.hybrid_invokes {
-        model.invokes.push(Invoke::Hybrid(hi.clone()));
     }
 }
 
