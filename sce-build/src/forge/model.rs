@@ -496,6 +496,13 @@ pub struct ProcedureTransition {
     /// Assign actions executed during transition (Level 2). Empty for Level 1.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub assigns: Vec<ProcedureAssign>,
+    /// 1-based source line of the `<transition>` element. Populated by
+    /// `parse_procedure_transitions` so post-loop validators (e.g. the
+    /// transition target reference check) can anchor diagnostics at the
+    /// offending element rather than its parent `<state>`. Skipped from
+    /// serialization to preserve manifest wire-format byte-stability.
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 /// A state within a procedure (either regular or final).
@@ -512,6 +519,13 @@ pub struct ProcedureState {
     /// Done data parameters (Level 2, final states only). Empty for Level 1.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub done_params: Vec<ProcedureDoneParam>,
+    /// 1-based source line of the `<state>`/`<final>` element. Populated by
+    /// `parse_procedure` so the post-loop "non-final state with no
+    /// transitions" check can anchor at the offending element without
+    /// requiring a twin `state_nodes` vector. Skipped from serialization
+    /// to preserve manifest wire-format byte-stability.
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 /// A user-declared helper function referenced by procedure expressions
@@ -1103,5 +1117,38 @@ mod tests {
             .collect();
         let expected: BTreeSet<&str> = ["src", "kind", "alias"].into_iter().collect();
         assert_eq!(actual, expected, "wire-format keys must remain stable");
+    }
+
+    #[test]
+    fn procedure_transition_serialization_omits_line_field() {
+        let tr = ProcedureTransition {
+            target: "B".into(),
+            cond: None,
+            event: None,
+            assigns: Vec::new(),
+            line: Some(7),
+        };
+        let json = serde_json::to_value(&tr).expect("serialize ProcedureTransition");
+        assert!(
+            json.get("line").is_none(),
+            "ProcedureTransition.line must be #[serde(skip)] for byte-stability; got {json}"
+        );
+    }
+
+    #[test]
+    fn procedure_state_serialization_omits_line_field() {
+        let st = ProcedureState {
+            id: "A".into(),
+            is_final: false,
+            transitions: Vec::new(),
+            on_entry_sends: Vec::new(),
+            done_params: Vec::new(),
+            line: Some(11),
+        };
+        let json = serde_json::to_value(&st).expect("serialize ProcedureState");
+        assert!(
+            json.get("line").is_none(),
+            "ProcedureState.line must be #[serde(skip)] for byte-stability; got {json}"
+        );
     }
 }

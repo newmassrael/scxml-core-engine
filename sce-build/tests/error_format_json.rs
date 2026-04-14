@@ -686,6 +686,78 @@ fn json_mode_interpolation_missing_method_reports_output_data_line() {
         "must point at the output <data>, not <scxml> root: {parsed}"
     );
 }
+fn write_procedure_bad_transition_target_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("proc_bad_target.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" name="bad_proc"
+       initial="A">
+  <state id="A">
+    <transition target="NONEXISTENT"/>
+  </state>
+  <final id="end"/>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write procedure fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_procedure_bad_transition_target_reports_transition_line() {
+    let (_dir, scxml) = write_procedure_bad_transition_target_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/invalid-reference");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(7),
+        "must point at the offending <transition>, not the parent <state>: {parsed}"
+    );
+}
+
+/// Procedure non-final `<state>` containing zero `<transition>`
+/// children must report at the `<state>` line, locking the
+/// post-loop "non-final state with no transitions" check against
+/// regression to root-level anchoring. Complements the transition-
+/// target test above: together they prove ProcedureState.line and
+/// ProcedureTransition.line both flow through to diagnostics.
+fn write_procedure_state_without_transition_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("proc_no_transition.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" name="bad_proc2"
+       initial="A">
+  <state id="A">
+  </state>
+  <final id="end"/>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write procedure fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_procedure_state_without_transition_reports_state_line() {
+    let (_dir, scxml) = write_procedure_state_without_transition_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/empty-collection");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(6),
+        "must point at the offending <state>, not the <scxml> root: {parsed}"
+    );
+}
 
 /// Lookup with no `<sce:entry>` children (empty entries collection)
 /// must report at the `<datamodel>` container line, not the `<scxml>`

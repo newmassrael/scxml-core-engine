@@ -27,6 +27,18 @@ fn located<E: Into<ForgeError>>(
     Located::new(err.into(), name, Some(pos.row), Some(pos.col))
 }
 
+/// Build a `Located<ForgeError>` from a stored line number rather than
+/// a live `roxmltree::Node`. Used by post-loop validators whose anchor
+/// element is no longer in scope but whose line was captured during
+/// parsing (e.g. `ProcedureTransition.line`, `ProcedureState.line`).
+fn located_at_line<E: Into<ForgeError>>(
+    name: &str,
+    line: Option<u32>,
+    err: E,
+) -> Located<ForgeError> {
+    Located::new(err.into(), name, line, None)
+}
+
 /// Detect the `sce:kind` attribute on the <scxml> root element.
 /// Returns `None` if no `sce:kind` is present (defaults to statechart).
 ///
@@ -758,7 +770,6 @@ fn parse_procedure(
     // Parse <state> and <final> elements
     let mut states = Vec::new();
     let mut state_ids = std::collections::BTreeSet::new();
-    let mut state_nodes: Vec<roxmltree::Node> = Vec::new();
 
     for child in root.children().filter(|n| n.is_element()) {
         let tag = child.tag_name().name();
@@ -809,13 +820,14 @@ fn parse_procedure(
             Vec::new()
         };
 
-        state_nodes.push(child);
+        let line = Some(child.document().text_pos_at(child.range().start).row);
         states.push(ProcedureState {
             id,
             is_final,
             transitions,
             on_entry_sends,
             done_params,
+            line,
         });
     }
 
@@ -857,15 +869,16 @@ fn parse_procedure(
     }
 
     // Validate: all transition targets must reference existing states.
-    // Locate the diagnostic at the owning <state> element — pairing states
-    // with their DOM nodes preserves leaf precision even though the target
-    // check runs post-loop.
-    for (state, node) in states.iter().zip(state_nodes.iter()) {
+    // Anchor the diagnostic at the offending <transition>'s own line —
+    // ProcedureTransition carries it directly so we don't need a twin
+    // `state_nodes` Vec whose lockstep invariant a future loop edit
+    // could silently break.
+    for state in &states {
         for tr in &state.transitions {
             if !state_ids.contains(&tr.target) {
-                return Err(located(
-                    node,
+                return Err(located_at_line(
                     name,
+                    tr.line,
                     ValidationError::InvalidReference {
                         kind: ForgeKind::Procedure,
                         name: format!("transition target '{}' in state '{}'", tr.target, state.id),
@@ -877,12 +890,14 @@ fn parse_procedure(
         }
     }
 
-    // Validate: non-final states must have at least one transition
-    for (state, node) in states.iter().zip(state_nodes.iter()) {
+    // Validate: non-final states must have at least one transition. The
+    // raise anchors at the owning <state> via the line ProcedureState
+    // captured during construction.
+    for state in &states {
         if !state.is_final && state.transitions.is_empty() {
-            return Err(located(
-                node,
+            return Err(located_at_line(
                 name,
+                state.line,
                 ValidationError::EmptyCollection {
                     kind: ForgeKind::Procedure,
                     what: format!("<transition> in non-final state '{}'", state.id),
@@ -1042,11 +1057,13 @@ fn parse_procedure_transitions(
         // Parse <assign> children within the transition (Level 2)
         let assigns = parse_procedure_assigns(&child, doc_name)?;
 
+        let line = Some(child.document().text_pos_at(child.range().start).row);
         transitions.push(ProcedureTransition {
             target,
             cond,
             event,
             assigns,
+            line,
         });
     }
 
