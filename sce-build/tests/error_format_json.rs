@@ -759,6 +759,95 @@ fn json_mode_procedure_state_without_transition_reports_state_line() {
     );
 }
 
+/// Build a filter fixture where the output declares `sce:filter=ftype`
+/// but omits the parameter required by that filter type. Used by the
+/// three branch-coverage tests below.
+fn write_filter_missing_param_fixture(
+    label: &str,
+    file_stem: &str,
+    name: &str,
+    filter_attr: &str,
+) -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new(label);
+    let path = dir.path().join(format!("{file_stem}.scxml"));
+    let body = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="filter" name="{name}">
+  <datamodel>
+    <data id="i" sce:type="float64" sce:direction="in"/>
+    <data id="o" sce:type="float64" sce:direction="out" sce:filter="{filter_attr}"/>
+  </datamodel>
+</scxml>
+"#,
+    );
+    std::fs::write(&path, body).expect("write filter param fixture");
+    (dir, path)
+}
+
+/// Assert that running sce-codegen on `scxml` yields a single NDJSON
+/// `validation/missing-attribute` record whose `location.line` equals
+/// the output `<data>` (line 7 in every fixture above). Used by the
+/// three filter param tests so each branch — moving-average, debounce,
+/// low-pass — gets its own regression assertion without copy-paste
+/// drift.
+fn assert_filter_param_anchored_at_output_data(scxml: &PathBuf) {
+    let out = run_generate(&sce_codegen_bin(), scxml, "json");
+    assert!(!out.status.success(), "must fail when filter param is missing");
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/missing-attribute");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(7),
+        "must point at the output <data>, not <datamodel>: {parsed}"
+    );
+}
+
+/// Moving-average filter without `sce:window`. Pins the
+/// `FilterType::MovingAverage` arm of parse_filter's post-loop
+/// param validation.
+#[test]
+fn json_mode_filter_moving_average_missing_window_reports_output_data_line() {
+    let (_dir, scxml) = write_filter_missing_param_fixture(
+        "leaf-precision",
+        "filter_ma_no_window",
+        "bad_ma",
+        "moving-average",
+    );
+    assert_filter_param_anchored_at_output_data(&scxml);
+}
+
+/// Debounce filter without `sce:window`. Pins the
+/// `FilterType::Debounce` arm — separate from moving-average so a
+/// future refactor that splits the match arms cannot regress one
+/// branch without tripping its own assertion.
+#[test]
+fn json_mode_filter_debounce_missing_window_reports_output_data_line() {
+    let (_dir, scxml) = write_filter_missing_param_fixture(
+        "leaf-precision",
+        "filter_debounce_no_window",
+        "bad_debounce",
+        "debounce",
+    );
+    assert_filter_param_anchored_at_output_data(&scxml);
+}
+
+/// Low-pass filter without `sce:alpha`. Pins the
+/// `FilterType::LowPass` arm.
+#[test]
+fn json_mode_filter_low_pass_missing_alpha_reports_output_data_line() {
+    let (_dir, scxml) = write_filter_missing_param_fixture(
+        "leaf-precision",
+        "filter_lowpass_no_alpha",
+        "bad_lowpass",
+        "low-pass",
+    );
+    assert_filter_param_anchored_at_output_data(&scxml);
+}
+
 /// Lookup with no `<sce:entry>` children (empty entries collection)
 /// must report at the `<datamodel>` container line, not the `<scxml>`
 /// root. The `<sce:entry>` element's own attributes (`key`, `value`)

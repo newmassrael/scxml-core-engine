@@ -1249,6 +1249,7 @@ fn parse_filter(
 
     let mut input: Option<ForgeField> = None;
     let mut output: Option<ForgeField> = None;
+    let mut output_node: Option<roxmltree::Node> = None;
     let mut filter_type: Option<FilterType> = None;
     let mut window: Option<u32> = None;
     let mut alpha: Option<f64> = None;
@@ -1261,6 +1262,7 @@ fn parse_filter(
             }
             Some("out") => {
                 output = Some(parse_forge_field(&data, name)?);
+                output_node = Some(data);
 
                 let ft_str = sce_attr(&data, "filter").ok_or_else(|| {
                     located(
@@ -1333,12 +1335,19 @@ fn parse_filter(
         )
     })?;
 
-    // Validate required parameters per filter type
+    // Validate required parameters per filter type. The `sce:filter`
+    // attribute that determined which param is required lives on the
+    // output `<data>`; anchor the diagnostic there so an agent can
+    // jump to the offending element instead of the surrounding
+    // `<datamodel>`. The `unwrap_or` is defensive — `filter_type`
+    // requires a present output, so output_node is always populated
+    // by the time we reach this match.
+    let param_anchor = output_node.as_ref().unwrap_or(&datamodel);
     match filter_type {
         FilterType::MovingAverage => {
             if window.is_none() {
                 return Err(located(
-                    &datamodel,
+                    param_anchor,
                     name,
                     ValidationError::MissingAttribute {
                         element: "Moving-average filter".into(),
@@ -1350,7 +1359,7 @@ fn parse_filter(
         FilterType::LowPass => {
             if alpha.is_none() {
                 return Err(located(
-                    &datamodel,
+                    param_anchor,
                     name,
                     ValidationError::MissingAttribute {
                         element: "Low-pass filter".into(),
@@ -1362,7 +1371,7 @@ fn parse_filter(
         FilterType::Debounce => {
             if window.is_none() {
                 return Err(located(
-                    &datamodel,
+                    param_anchor,
                     name,
                     ValidationError::MissingAttribute {
                         element: "Debounce filter".into(),
