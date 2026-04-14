@@ -332,8 +332,13 @@ impl std::ops::DerefMut for MeshRpcInvokeInfo {
 /// Holds only the fields the static lifecycle actually uses. Hybrid-only
 /// fields (`srcexpr`, `contentexpr`) do not appear here — the type system
 /// guarantees `Invoke::Scxml` never carries them. Common metadata lives on
-/// [`InvokeCommon`] and is accessible via `Deref` so `scxml_info.invoke_id`
-/// still reads naturally.
+/// [`InvokeSessionCommon`] and is accessible via `Deref` so
+/// `scxml_info.invoke_id` still reads naturally.
+///
+/// Inline `<content><scxml>` is resolved to a concrete child SCXML file
+/// during parse (see `SCXMLParser::parse_invoke`); by the time this struct
+/// exists, `src` already points at the final path and `child_name` is set.
+/// There is no "awaiting extraction" transient state.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ScxmlInvokeInfo {
     #[serde(flatten)]
@@ -341,14 +346,6 @@ pub struct ScxmlInvokeInfo {
     pub finalize_content: String,
     pub src: String,
     pub namelist: String,
-    /// Parser-internal: inline `<scxml>` extraction source. Populated when
-    /// `<invoke>` carries `<content><scxml>...</scxml></content>`; consumed
-    /// by `process_static_invokes`, which writes the text to a child .scxml
-    /// file and then leaves `src`/`child_name` set. Not exposed to templates.
-    #[serde(skip)]
-    pub has_inline_scxml: bool,
-    #[serde(skip)]
-    pub inline_scxml_text: String,
 }
 
 /// W3C SCXML 6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).

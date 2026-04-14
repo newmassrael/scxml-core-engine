@@ -13,6 +13,7 @@ pub struct SCXMLParser {
     document_order_counter: u32,
     invoke_counter: u32,
     hybrid_invoke_counter: u32,
+    inline_child_counter: u32,
     send_counter: u32,
     /// Build-time deprecation notices collected during the current parse.
     /// Accessed via `deprecation_warnings()`; reset by `clear_diagnostics()`
@@ -26,6 +27,7 @@ impl SCXMLParser {
             document_order_counter: 0,
             invoke_counter: 0,
             hybrid_invoke_counter: 0,
+            inline_child_counter: 0,
             send_counter: 0,
             deprecation_warnings: Vec::new(),
         }
@@ -119,16 +121,13 @@ impl SCXMLParser {
         self.parse_sce_contexts(&root, &mut model)?;
 
         // Parse states recursively
-        self.parse_states(&root, None, &mut model);
+        self.parse_states(&root, None, &mut model, base_dir);
 
         // Feature detection
         self.detect_features(&mut model);
 
         // Named Context validation
         self.validate_context_usage(&model)?;
-
-        // Process static invokes
-        self.process_static_invokes(&mut model, base_dir);
 
         // Resolve deep initial state
         self.resolve_deep_initial(&mut model);
@@ -436,6 +435,7 @@ impl SCXMLParser {
         parent_elem: &roxmltree::Node,
         parent_id: Option<&str>,
         model: &mut SCXMLModel,
+        base_dir: Option<&Path>,
     ) {
         // Parse <state> elements
         for child in scxml_children(parent_elem, "state") {
@@ -516,7 +516,9 @@ impl SCXMLParser {
             // Parse invokes — parse_invoke returns the typed Invoke variant
             // directly; unsupported classifications are skipped silently.
             for invoke_elem in scxml_children(&child, "invoke") {
-                if let Some(invoke) = self.parse_invoke(&invoke_elem, model, &state_id) {
+                if let Some(invoke) =
+                    self.parse_invoke(&invoke_elem, model, &state_id, base_dir)
+                {
                     state.invokes.push(invoke);
                 }
             }
@@ -524,7 +526,7 @@ impl SCXMLParser {
             model.states.insert(state_id.clone(), state);
 
             // Recurse into child states
-            self.parse_states(&child, Some(&state_id), model);
+            self.parse_states(&child, Some(&state_id), model, base_dir);
 
             // Set default initial (first child in document order)
             let state = model.states.get_mut(&state_id).unwrap();
@@ -625,7 +627,7 @@ impl SCXMLParser {
 
             model.states.insert(parallel_id.clone(), state);
             model.has_parallel_states = true;
-            self.parse_states(&child, Some(&parallel_id), model);
+            self.parse_states(&child, Some(&parallel_id), model, base_dir);
         }
 
         // Parse <history> elements
@@ -1060,6 +1062,7 @@ impl SCXMLParser {
         elem: &roxmltree::Node,
         model: &mut SCXMLModel,
         state_id: &str,
+        base_dir: Option<&Path>,
     ) -> Option<Invoke> {
         // W3C SCXML 6.4.1: Generate invoke ID if not provided
         let mut invoke_id = elem.attribute("id").unwrap_or("").to_string();
@@ -1165,7 +1168,61 @@ impl SCXMLParser {
             if !namelist.is_empty() {
                 model.needs_script_engine = true;
             }
-            return Some(Invoke::Scxml(ScxmlInvokeInfo {
+
+            // W3C SCXML 6.4: Inline `<content><scxml>` and external `src="..."`
+            // resolve to a concrete child SCXML path eagerly, at parse time.
+            // This way `ScxmlInvokeInfo` never holds "raw, awaiting
+            // extraction" state; by the time it is pushed onto the state the
+            // type already matches the invariant the codegen expects.
+            //
+            // `base_dir == None` means WASM-style parse with no filesystem
+            // access; inline extraction is skipped and the invoke surfaces
+            // with empty child_name, which downstream codegen rejects with a
+            // clear diagnostic. Behaviourally identical to the pre-R9 path.
+            let (resolved_src, resolved_child_name) =
+                if has_inline_scxml && !inline_scxml_text.is_empty() {
+                    if let Some(scxml_dir) = base_dir {
+                        let child_name = extract_inline_child_name(
+                            &inline_scxml_text,
+                            &model.name,
+                            &mut self.inline_child_counter,
+                        );
+                        let child_scxml_path =
+                            scxml_dir.join(format!("{child_name}.scxml"));
+                        let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
+                            inline_scxml_text.replacen(
+                                "<scxml",
+                                "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"",
+                                1,
+                            )
+                        } else {
+                            inline_scxml_text.clone()
+                        };
+                        let xml_content =
+                            format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
+                        if let Err(e) = std::fs::write(&child_scxml_path, &xml_content) {
+                            eprintln!(
+                                "Warning: Cannot write inline SCXML {}: {e}",
+                                child_scxml_path.display()
+                            );
+                        }
+                        (format!("{child_name}.scxml"), child_name)
+                    } else {
+                        (src.clone(), String::new())
+                    }
+                } else if !src.is_empty() {
+                    let stripped = src.replace("file:", "");
+                    let child_name = Path::new(&stripped)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_default();
+                    (src.clone(), child_name)
+                } else {
+                    (src.clone(), String::new())
+                };
+
+            let mut scxml_info = ScxmlInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
                         invoke_id,
@@ -1173,16 +1230,26 @@ impl SCXMLParser {
                         params: static_params,
                         idlocation,
                     },
-                    child_name: String::new(),
+                    child_name: resolved_child_name,
                     autoforward,
                     ..Default::default()
                 },
                 finalize_content,
-                src,
+                src: resolved_src,
                 namelist,
-                has_inline_scxml,
-                inline_scxml_text,
-            }));
+            };
+
+            // Populate child-side metadata (script-engine flag, datamodel
+            // variable list) when the resolved child SCXML file exists.
+            if let Some(scxml_dir) = base_dir {
+                if !scxml_info.common.child_name.is_empty() {
+                    let child_scxml_path = scxml_dir
+                        .join(format!("{}.scxml", scxml_info.common.child_name));
+                    parse_child_metadata(&child_scxml_path, &mut scxml_info.common);
+                }
+            }
+
+            return Some(Invoke::Scxml(scxml_info));
         }
 
         // Neither static nor hybrid — currently a no-op classification path
@@ -1536,84 +1603,6 @@ impl SCXMLParser {
             if !state.initial.is_empty() {
                 state.initial_children =
                     state.initial.split_whitespace().map(String::from).collect();
-            }
-        }
-    }
-
-    fn process_static_invokes(&self, model: &mut SCXMLModel, base_dir: Option<&Path>) {
-        let scxml_dir = match base_dir {
-            Some(dir) => dir.to_path_buf(),
-            None => return, // No filesystem access (WASM) — skip invoke processing
-        };
-        let mut invoke_count: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
-        let mut inline_child_count = 0u32;
-
-        // Walk each state's invokes in document order and mutate the Scxml
-        // variants in place. The inline-content flag and text now live on
-        // `ScxmlInvokeInfo`; there is no separate JSON scratchpad.
-        let mut state_ids_by_order: Vec<String> =
-            model.states.keys().cloned().collect();
-        state_ids_by_order.sort_by_key(|id| model.states[id].document_order);
-        for state_id in &state_ids_by_order {
-            let state = model.states.get_mut(state_id).unwrap();
-            for invoke in state.invokes.iter_mut() {
-                let si = match invoke {
-                    Invoke::Scxml(info) => info,
-                    _ => continue,
-                };
-
-                let has_inline = si.has_inline_scxml;
-                let inline_text = std::mem::take(&mut si.inline_scxml_text);
-                si.has_inline_scxml = false;
-
-                if has_inline && !inline_text.is_empty() {
-                    // W3C SCXML 6.4: Extract inline <scxml> to separate file
-                    // Determine child name from inline <scxml name="..."> or auto-generate
-                    let child_name = extract_inline_child_name(
-                        &inline_text,
-                        &model.name,
-                        &mut inline_child_count,
-                    );
-
-                    let child_scxml_path = scxml_dir.join(format!("{child_name}.scxml"));
-
-                    // Write inline SCXML to file.
-                    // W3C SCXML 6.4: Inline <scxml> inside <content> inherits
-                    // the parent document's namespace, but as a standalone file
-                    // it needs an explicit xmlns declaration for XSD validation.
-                    let inline_with_ns = if !inline_text.contains("xmlns=") {
-                        inline_text.replacen("<scxml", "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"", 1)
-                    } else {
-                        inline_text.clone()
-                    };
-                    let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
-                    if let Err(e) = std::fs::write(&child_scxml_path, &xml_content) {
-                        eprintln!("Warning: Cannot write inline SCXML {}: {e}", child_scxml_path.display());
-                    }
-
-                    si.src = format!("{child_name}.scxml");
-                    si.child_name = child_name.clone();
-
-                    // Parse extracted child to detect JSEngine needs and datamodel variables
-                    parse_child_metadata(&child_scxml_path, &mut si.common);
-                } else if !si.src.is_empty() && si.child_name.is_empty() {
-                    // Handle external src
-                    let src = si.src.replace("file:", "");
-                    let child_path = scxml_dir.join(&src);
-                    if let Some(stem) = child_path.file_stem().and_then(|s| s.to_str()) {
-                        si.child_name = stem.to_string();
-                    }
-                    // Parse child to detect script engine needs
-                    let child_scxml_path = scxml_dir.join(format!("{}.scxml", si.child_name));
-                    parse_child_metadata(&child_scxml_path, &mut si.common);
-                }
-
-                // Auto-generate invoke ID if not specified
-                if si.invoke_id.is_empty() {
-                    let count = invoke_count.entry(si.state_name.clone()).or_insert(0);
-                    si.invoke_id = format!("{}_invoke_{count}", si.state_name);
-                    *count += 1;
-                }
             }
         }
     }
