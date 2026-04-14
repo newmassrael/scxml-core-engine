@@ -15,6 +15,19 @@
 use crate::forge::model::ForgeKind;
 use std::path::PathBuf;
 
+/// Source location attached to an error for machine-readable diagnostics.
+///
+/// The `Located` variant wraps any `ForgeError` with this context so
+/// call-sites that know where they are can enrich the error without
+/// every leaf variant needing `file`/`line` fields. This keeps the
+/// leaf enums focused on *what* is wrong; `Located` answers *where*.
+#[derive(Debug, Clone)]
+pub struct SourceLocation {
+    pub file: String,
+    pub line: Option<u32>,
+    pub col: Option<u32>,
+}
+
 /// Top-level error for the forge code-generation pipeline.
 ///
 /// Variants correspond to pipeline stages so callers can react
@@ -45,6 +58,37 @@ pub enum ForgeError {
         path: PathBuf,
         source: std::io::Error,
     },
+
+    /// Any forge error wrapped with source-location context.
+    ///
+    /// The inner error retains its stage / exit-code semantics; this
+    /// variant is a pure decorator used by `to_diagnostic()` to fill
+    /// the `location` field. Call-sites attach it via `.at(file, line)`.
+    #[error("{inner}")]
+    Located {
+        inner: Box<ForgeError>,
+        location: SourceLocation,
+    },
+}
+
+impl ForgeError {
+    /// Attach source-location context to this error.
+    ///
+    /// Consumed-self API so callers can chain: `err.at(path, Some(42))`.
+    /// Use when you know the SCXML file and (optionally) line that
+    /// triggered the error. Leaf constructors still return bare
+    /// `ForgeError` — location is attached at the first frame that
+    /// knows it, avoiding plumbing through every helper.
+    pub fn at(self, file: impl Into<String>, line: Option<u32>) -> Self {
+        ForgeError::Located {
+            inner: Box::new(self),
+            location: SourceLocation {
+                file: file.into(),
+                line,
+                col: None,
+            },
+        }
+    }
 }
 
 // ── Stage 1-2: XML / XSD ───────────────────────────────────────
@@ -290,6 +334,7 @@ impl ForgeError {
             ForgeError::Manifest(_) => 6,
             ForgeError::Generate(_) => 7,
             ForgeError::Io { .. } => 8,
+            ForgeError::Located { inner, .. } => inner.exit_code(),
         }
     }
 }

@@ -6,6 +6,7 @@
 // Extends W3C SCXML with `sce:kind` attribute to support code generation
 // beyond state machines: transforms, lookups, conditions, codecs, and more.
 
+pub mod diagnostic;
 pub mod error;
 pub mod model;
 pub mod parser;
