@@ -197,6 +197,81 @@ fn json_mode_covers_cli_boundary_errors() {
     );
 }
 
+/// Write a document with an `sce:kind` value outside the XSD enum.
+///
+/// Pre-fix, `is_forge_document()` returned false for unknown kinds
+/// (the detector collapsed `Err(UnsupportedKind)` and "absent" into the
+/// same boolean), so the document was misrouted through the SCXML
+/// parser and reported with `stage="cli"` / `code="cli/scxml-parse"`.
+/// The contract promises `stage` is the repair-routing key, so the bug
+/// caused agents to branch on the wrong arm.
+///
+/// The fixture locks in the post-fix routing: any `sce:kind` attribute
+/// — known or unknown — dispatches through the forge pipeline, so the
+/// bundled XSD emits `xml/schema-validation` with the enum of legal
+/// values included in the message.
+fn write_unknown_kind_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("error-format");
+    let path = dir.path().join("bogus_kind.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="bogus" name="bad_kind">
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
+    let (_dir, scxml) = write_unknown_kind_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+
+    assert!(!out.status.success(), "process must fail on unknown sce:kind");
+    // `XmlError::SchemaValidation` → `ForgeError::Xml` → exit code 2.
+    // If this becomes 1 (clap / ScxmlParse) again, the routing bug has
+    // regressed: the document is re-flowing through the SCXML parser.
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "unknown kind must produce ForgeError::Xml (exit 2), not cli/scxml-parse (exit 1)"
+    );
+
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let line = stderr.trim_end();
+    assert!(
+        line.starts_with('{') && line.ends_with('}'),
+        "stderr must be a single NDJSON record: {line}"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_str(line).expect("stderr line must parse as JSON");
+
+    assert_eq!(
+        parsed["code"], "xml/schema-validation",
+        "unknown kind must surface the XSD violation, not cli/scxml-parse: {line}"
+    );
+    assert_eq!(
+        parsed["stage"], "xml",
+        "stage must reflect where the error was caught (XSD), not the CLI boundary: {line}"
+    );
+    assert_eq!(parsed["v"].as_u64(), Some(1));
+
+    // The `message` field quotes the XSD enumeration so an agent can
+    // repair without consulting SCE_ERROR_CONTRACT.md — pin this guarantee.
+    let message = parsed["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("'bogus'"),
+        "message must identify the offending value: {line}"
+    );
+    for legal_kind in ["statechart", "transform", "lookup"] {
+        assert!(
+            message.contains(&format!("'{legal_kind}'")),
+            "message must enumerate legal kinds so agents can repair: missing '{legal_kind}' in {line}"
+        );
+    }
+}
+
 #[test]
 fn human_mode_remains_plain_text() {
     let (_dir, scxml) = write_missing_datamodel_fixture();
@@ -215,5 +290,148 @@ fn human_mode_remains_plain_text() {
     assert!(
         !stderr.trim_start().starts_with('{'),
         "human mode must not emit JSON: {stderr}"
+    );
+}
+
+/// Minimal but valid statechart the generator accepts without
+/// requiring a script engine. Pins the shape of the success-path
+/// stdout manifest.
+fn write_trivial_statechart_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("stdout-manifest");
+    let path = dir.path().join("trivial.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       initial="a" version="1.0" datamodel="ecmascript" name="trivial">
+  <state id="a"><transition event="go" target="b"/></state>
+  <state id="b"/>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write fixture");
+    (dir, path)
+}
+
+#[test]
+fn stdout_emits_single_json_manifest_on_success() {
+    let (dir, scxml) = write_trivial_statechart_fixture();
+    let out = Command::new(sce_codegen_bin())
+        .args([
+            "generate",
+            scxml.to_str().unwrap(),
+            "--language",
+            "rust",
+            "--output-dir",
+            dir.path().to_str().unwrap(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("spawn sce-codegen");
+
+    assert!(out.status.success(), "generate must succeed on valid SCXML");
+
+    // stderr holds no diagnostics for a clean run. Pinning this keeps
+    // the streams orthogonal — warnings/deprecations in future must
+    // either be structured on stderr or accepted as a contract change.
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    assert!(
+        stderr.trim().is_empty(),
+        "stderr must be empty on clean generate: {stderr}"
+    );
+
+    // stdout is exactly one JSON line — the manifest.
+    let stdout = String::from_utf8(out.stdout).expect("stdout utf8");
+    let line = stdout.trim_end();
+    assert!(
+        !line.contains('\n'),
+        "stdout must be a single line, got: {line}"
+    );
+    assert!(
+        line.starts_with('{') && line.ends_with('}'),
+        "stdout must be a JSON object: {line}"
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(line).expect("stdout manifest must parse as JSON");
+    let obj = parsed.as_object().expect("root must be an object");
+
+    // Required keys per SCE_ERROR_CONTRACT.md §10.
+    for key in ["v", "kind", "artifacts", "needs_script_engine"] {
+        assert!(obj.contains_key(key), "manifest missing '{key}': {line}");
+    }
+    assert_eq!(obj["v"].as_u64(), Some(1), "schema v pinned at 1: {line}");
+    assert_eq!(obj["kind"], "generate", "kind pinned to subcommand: {line}");
+    assert_eq!(
+        obj["needs_script_engine"].as_bool(),
+        Some(false),
+        "trivial machine has no scripts: {line}"
+    );
+
+    // Artifacts carry {path} objects, not bare strings — future fields
+    // (size, hash, kind-of-artifact) must extend the object additively.
+    let artifacts = obj["artifacts"]
+        .as_array()
+        .expect("artifacts must be an array");
+    assert!(
+        !artifacts.is_empty(),
+        "rust backend must write at least one file: {line}"
+    );
+    for entry in artifacts {
+        let e = entry
+            .as_object()
+            .expect("each artifact must be a JSON object, not a string");
+        let p = e["path"]
+            .as_str()
+            .expect("artifact.path must be a string")
+            .to_string();
+        assert!(
+            std::path::Path::new(&p).exists(),
+            "manifest path must refer to a real file on disk: {p}"
+        );
+    }
+
+    // `rejected` is absent on clean runs — agents branch on presence.
+    assert!(
+        !obj.contains_key("rejected"),
+        "rejected field must be omitted on clean generate: {line}"
+    );
+}
+
+#[test]
+fn stdout_does_not_emit_human_prose() {
+    // Pins the removal of the legacy `Generated: X` / `Needs
+    // ScriptEngine: Y` prose. Anything grep'ing those strings in
+    // stdout must either migrate to reading the JSON manifest or
+    // fail loudly here.
+    let (dir, scxml) = write_trivial_statechart_fixture();
+    let out = Command::new(sce_codegen_bin())
+        .args([
+            "generate",
+            scxml.to_str().unwrap(),
+            "--language",
+            "rust",
+            "--output-dir",
+            dir.path().to_str().unwrap(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("spawn sce-codegen");
+
+    let stdout = String::from_utf8(out.stdout).expect("stdout utf8");
+    assert!(
+        !stdout.contains("Generated:"),
+        "human-mode 'Generated:' line must not appear: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Needs ScriptEngine:"),
+        "human-mode 'Needs ScriptEngine:' line must not appear: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Reason:"),
+        "stale 'Reason:' prose must not appear: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Document rejected"),
+        "human-mode 'Document rejected' line must not appear on clean generate: {stdout}"
     );
 }

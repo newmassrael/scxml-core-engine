@@ -14,7 +14,7 @@ enforcement is `forge::diagnostic::tests::diagnostic_goldens_are_byte_stable`
 
 | Stream | Content |
 |---|---|
-| **stdout** | Success artifacts: generated file paths, progress lines, manifest JSON produced by `manifest` / `list-fixtures` subcommands. Never carries diagnostics. |
+| **stdout** | On success: a single JSON manifest line per run (see [§10](#10-stdout-manifest)). On failure: empty. Never carries diagnostics. |
 | **stderr** | Exactly one NDJSON diagnostic per line when `--error-format=json`. In `human` mode, free-form text. |
 
 Agents **must** split the two streams by fd. A parser that reads
@@ -81,10 +81,22 @@ less-structured signal.
 | `add_attribute` | `element`, `attr` | Add the named attribute to the named element. For deploy.yaml errors, `element` is a dotted path (`machines.x.bindings.y`). |
 | `rename_duplicate` | `what`, `id` | The id `id` of kind `what` appears more than once; rename one occurrence. |
 | `remove_fields` | `location`, `fields[]` | At the config path `location`, remove every key in `fields`. The only well-defined repair for reserved-key and unused-entry errors. |
+| `replace_with` | `to` | Replace the value carried in the record's `actual` field with `to`. Emitted only when the replacement is single-valued and context-free — e.g. `==` → `===` under strict equality, or a `<sce:import kind>` declaration corrected to the imported file's real kind. |
 
 Agents holding a dispatch table keyed on `fix.kind` may safely
 enumerate these — the set only grows in backward-compatible ways
 ([§8](#8-evolution-policy)).
+
+### 3.2 Why `expected` is not a fix
+
+Some codes — `cli/unknown-language`, `validation/invalid-attribute`,
+`mesh/topology-machine-not-found` — carry a closed enumeration in
+`expected` but deliberately leave `fix` absent. That is the honest
+signal: the repair requires user intent (which language? which
+machine?) and no element of the enumeration is a canonical answer.
+Promoting such cases to a `replace_with` where `to` is "one of many"
+would misrepresent `fix` as a multi-valued constraint. Agents must
+branch on `expected`'s length, not on the absence of `fix`.
 
 ## 4. Stage taxonomy
 
@@ -102,6 +114,35 @@ enumerate these — the set only grows in backward-compatible ways
 | `mesh-external` | vsomeip.json / zenoh.json5 resolver | Name resolution, schema conflicts. |
 | `mesh-topology` | Target / binding resolver | Send-target coverage, pattern capability, binding field validation. |
 | `mesh-codegen` | Mesh template engine | Transport-specific rendering and collision checks. |
+
+### 4.1 Pipeline routing
+
+`stage` is the repair-routing key for agents. Its value is determined
+by the `sce:kind` attribute on the `<scxml>` root, *not* by whether
+the document happens to parse successfully:
+
+| `sce:kind` value                       | Pipeline         | Diagnostic source          |
+|----------------------------------------|------------------|----------------------------|
+| absent                                 | SCXML parser     | `cli/scxml-parse`, etc.    |
+| `"statechart"`                         | SCXML parser     | `cli/scxml-parse`, etc.    |
+| known forge kind (e.g. `"lookup"`)     | Forge            | `xml` / `validation` / ... |
+| unknown value (e.g. `"bogus"`)         | Forge            | `xml/schema-validation`    |
+
+The last row is a contract guarantee. An author who wrote
+`sce:kind="bogus"` intended a forge document, so the failure must
+surface through the forge pipeline — where the bundled XSD identifies
+the violation and the `message` field enumerates the legal values.
+Reporting such a failure as `cli/scxml-parse` would mis-route repair
+agents and is explicitly forbidden.
+
+Malformed XML that never reaches the root attribute list falls back
+to the SCXML parser: intent cannot be inferred, and the SCXML
+parser's XML-level diagnostic is the least-wrong answer.
+
+The on-disk enforcement of this rule is
+`tests/error_format_json.rs::json_mode_routes_unknown_sce_kind_through_forge_pipeline`.
+The routing primitive is `sce_build::classify_document` in
+`sce-build/src/lib.rs`.
 
 ## 5. Code catalog
 
@@ -133,14 +174,14 @@ a schema bump ([§8](#8-evolution-policy)).
 | `expression/empty` | `expression` | no |
 | `expression/lex` | `expression` | no |
 | `expression/unsupported-construct` | `expression` | no |
-| `expression/strict-equality` | `expression` | no (use `expected`) |
+| `expression/strict-equality` | `expression` | `replace_with` |
 | `expression/parse-mismatch` | `expression` | no |
 | `expression/unexpected-token` | `expression` | no |
 | `expression/invalid-lvalue` | `expression` | no |
 | `expression/type-coercion` | `expression` | no |
 | `expression/go-ternary-unsupported` | `expression` | no |
 | `import/file-not-found` | `import` | no |
-| `import/kind-mismatch` | `import` | no |
+| `import/kind-mismatch` | `import` | `replace_with` |
 | `import/not-forge` | `import` | no |
 | `import/read-error` | `import` | no |
 | `manifest/circular-dependency` | `manifest` | no |
@@ -271,3 +312,52 @@ minor release behind a compatibility flag.
 - CLI integration: `sce-build/tests/error_format_json.rs`.
 - Emitter: `sce-build/src/bin/sce_codegen.rs` →
   `ErrorFormat::emit_and_exit` and `cli_exit`.
+
+## 10. Stdout manifest
+
+On success, `sce-codegen generate` writes exactly one JSON line to
+stdout — nothing more, nothing less. The shape is:
+
+```json
+{
+  "v": 1,
+  "kind": "generate",
+  "artifacts": [
+    {"path": "/abs/path/foo_sm.rs"}
+  ],
+  "needs_script_engine": false,
+  "rejected": {"spec": "W3C SCXML 5.8", "name": "untestable_doc"}
+}
+```
+
+### 10.1 Fields
+
+| Field | Type | Semantics |
+|---|---|---|
+| `v` | integer | Schema version. Currently `1`. Bumped under the same policy as the error contract ([§8](#8-evolution-policy)). |
+| `kind` | string | Which subcommand produced this manifest. Agents branch on this before deserialising into a subcommand-specific shape. Currently only `"generate"`. |
+| `artifacts` | array of `{path}` objects | Absolute path of every file written during the run, in emission order. Entries are objects (not bare strings) so the schema can grow additively — future fields (`size`, `hash`, `artifact_kind`) must extend the object without a `v` bump. |
+| `needs_script_engine` | bool | Whether the compiled machine embeds ECMAScript requiring a runtime engine. |
+| `rejected` | optional object | Present only when the input triggered a W3C-spec rejection (currently `W3C SCXML 5.8`, "untestable manifest") and stub files were written in place of generated code. Absence means clean generation. Fields: `spec` (e.g. `"W3C SCXML 5.8"`) and `name` (the document's `name` attribute). |
+
+### 10.2 Stream discipline
+
+- On **failure** the manifest is not emitted; stdout is empty and the
+  NDJSON diagnostic on stderr is the sole signal. Agents must
+  treat stdout as valid only when the process exit code is `0`.
+- No legacy prose is emitted. Anything grepping for `Generated:`,
+  `Needs ScriptEngine:`, `Document rejected:`, or `Reason:` in
+  stdout is reading a format that was removed in v1 and will never
+  return — pinned by
+  `tests/error_format_json.rs::stdout_does_not_emit_human_prose`.
+- The manifest is one line — no pretty-printing, no trailing
+  whitespace, terminated by a single `\n`.
+
+### 10.3 On-disk enforcement
+
+- Structs: `GenerateManifest`, `ArtifactEntry`, `RejectedInfo` in
+  `sce-build/src/bin/sce_codegen.rs`.
+- Emitter: `emit_generate_manifest` in the same file, called at every
+  `cmd_generate` exit point.
+- Tests: `tests/error_format_json.rs::stdout_emits_single_json_manifest_on_success`
+  (positive pin) and `::stdout_does_not_emit_human_prose` (negative pin).

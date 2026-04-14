@@ -17,15 +17,74 @@ use std::path::PathBuf;
 
 /// Source location attached to an error for machine-readable diagnostics.
 ///
-/// The `Located` variant wraps any `ForgeError` with this context so
-/// call-sites that know where they are can enrich the error without
-/// every leaf variant needing `file`/`line` fields. This keeps the
-/// leaf enums focused on *what* is wrong; `Located` answers *where*.
+/// Carried by the [`Located`] wrapper struct (below) to answer *where*
+/// an error was raised. The leaf error enums stay focused on *what* is
+/// wrong — identity, expected/actual values, stage — and remain
+/// orthogonal to position.
 #[derive(Debug, Clone)]
 pub struct SourceLocation {
     pub file: String,
     pub line: Option<u32>,
     pub col: Option<u32>,
+}
+
+/// Error + source-location context as a single unit.
+///
+/// Preferred over an enum variant on `ForgeError` because:
+///   - the leaf error type (`E`) stays narrow — a function that only
+///     produces `ValidationError` still advertises `Result<_,
+///     Located<ValidationError>>`, not a widened `ForgeError`,
+///   - nesting is structurally impossible (`Located<Located<E>>` is
+///     a type error, not a runtime surprise),
+///   - `exit_code()` / `to_diagnostic()` become plain delegates
+///     without a recursive match arm,
+///   - diagnostic emission (`to_diagnostic`) can key off the type,
+///     not a runtime discriminant.
+///
+/// This mirrors the wrapper-struct pattern used by `syn::Spanned`,
+/// `codespan`, and `miette::Report`.
+#[derive(Debug, Clone)]
+pub struct Located<E> {
+    pub error: E,
+    pub location: SourceLocation,
+}
+
+impl<E> Located<E> {
+    /// Build a located error from its parts.
+    ///
+    /// `line` and `col` are optional so XSD-level errors (line only),
+    /// file-scoped errors (neither), and node-precise errors (both)
+    /// share a single constructor.
+    pub fn new(
+        error: E,
+        file: impl Into<String>,
+        line: Option<u32>,
+        col: Option<u32>,
+    ) -> Self {
+        Self {
+            error,
+            location: SourceLocation {
+                file: file.into(),
+                line,
+                col,
+            },
+        }
+    }
+}
+
+impl<E: std::fmt::Display> std::fmt::Display for Located<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Delegate: the location rides on the outer record, not the
+        // human-readable message. Rendering stays identical to the
+        // wrapped error's own Display.
+        self.error.fmt(f)
+    }
+}
+
+impl<E: std::error::Error + 'static> std::error::Error for Located<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
 }
 
 /// Top-level error for the forge code-generation pipeline.
@@ -58,37 +117,6 @@ pub enum ForgeError {
         path: PathBuf,
         source: std::io::Error,
     },
-
-    /// Any forge error wrapped with source-location context.
-    ///
-    /// The inner error retains its stage / exit-code semantics; this
-    /// variant is a pure decorator used by `to_diagnostic()` to fill
-    /// the `location` field. Call-sites attach it via `.at(file, line)`.
-    #[error("{inner}")]
-    Located {
-        inner: Box<ForgeError>,
-        location: SourceLocation,
-    },
-}
-
-impl ForgeError {
-    /// Attach source-location context to this error.
-    ///
-    /// Consumed-self API so callers can chain: `err.at(path, Some(42))`.
-    /// Use when you know the SCXML file and (optionally) line that
-    /// triggered the error. Leaf constructors still return bare
-    /// `ForgeError` — location is attached at the first frame that
-    /// knows it, avoiding plumbing through every helper.
-    pub fn at(self, file: impl Into<String>, line: Option<u32>) -> Self {
-        ForgeError::Located {
-            inner: Box::new(self),
-            location: SourceLocation {
-                file: file.into(),
-                line,
-                col: None,
-            },
-        }
-    }
 }
 
 // ── Stage 1-2: XML / XSD ───────────────────────────────────────
@@ -322,7 +350,6 @@ pub enum GenerateError {
     TemplateRender(String),
 }
 
-/// Expression transpilation errors encountered during code generation are
 /// CLI exit code by error category.
 impl ForgeError {
     pub fn exit_code(&self) -> i32 {
@@ -334,7 +361,6 @@ impl ForgeError {
             ForgeError::Manifest(_) => 6,
             ForgeError::Generate(_) => 7,
             ForgeError::Io { .. } => 8,
-            ForgeError::Located { inner, .. } => inner.exit_code(),
         }
     }
 }

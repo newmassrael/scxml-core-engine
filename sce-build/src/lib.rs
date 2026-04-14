@@ -779,12 +779,58 @@ pub fn validate_mesh_event_coverage(
     Ok(mesh::topology::validate_event_coverage(models, &deploy_cfg))
 }
 
-/// Detect if an SCXML file uses a non-statechart `sce:kind`.
-pub fn is_forge_document(content: &str) -> bool {
-    forge::parser::detect_kind(content)
-        .ok()
-        .flatten()
-        .map_or(false, |k| k != forge::model::ForgeKind::Statechart)
+/// Which processing pipeline an input document must be routed through.
+///
+/// The discriminant is the `sce:kind` attribute on the `<scxml>` root:
+///
+/// | `sce:kind` value                                | [`Pipeline`]      |
+/// |-------------------------------------------------|-------------------|
+/// | absent                                          | [`Self::Scxml`]   |
+/// | `"statechart"`                                  | [`Self::Scxml`]   |
+/// | any other XSD-declared value (`transform` etc.) | [`Self::Forge`]   |
+/// | any string *not* in the XSD enumeration         | [`Self::Forge`]   |
+///
+/// The last row is the contract-critical case. An author who wrote
+/// `sce:kind="bogus"` intended a forge document; reporting that failure
+/// through the SCXML parser would mis-label the `stage` field as
+/// `cli/scxml-parse` when the truth is an `sce:kind` violation caught by
+/// the Forge XSD. Routing such documents to [`Self::Forge`] lets the
+/// forge pipeline emit the honest stage (`xml/schema-validation` when
+/// the bundled XSD is reachable, or `validation/unsupported-kind` when
+/// the schemas were not vendored) — either of which is strictly more
+/// actionable than `cli/scxml-parse`.
+///
+/// Documents whose XML is too malformed for `roxmltree` to reach the
+/// root attribute list fall back to [`Self::Scxml`]: intent is not
+/// knowable, and the SCXML parser's own XML-level diagnostic is the
+/// least-wrong answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pipeline {
+    /// Route through the SCXML parser (classic statechart compilation).
+    Scxml,
+    /// Route through the Forge pipeline (XSD + kind-specific validator).
+    Forge,
+}
+
+/// Decide which pipeline should process `content`.
+///
+/// See [`Pipeline`] for the full routing table and the rationale behind
+/// each case. This predicate is the single source of truth for routing
+/// — the CLI dispatches on it, and any future embedding API must too.
+pub fn classify_document(content: &str) -> Pipeline {
+    use forge::error::{ForgeError, ValidationError};
+    match forge::parser::detect_kind(content) {
+        // Explicit forge kind with a recognised value.
+        Ok(Some(k)) if k != forge::model::ForgeKind::Statechart => Pipeline::Forge,
+        // No `sce:kind` attribute, or `sce:kind="statechart"`.
+        Ok(_) => Pipeline::Scxml,
+        // `sce:kind` attribute is present but the value is outside the
+        // XSD enumeration. Route to forge so the schema / validator
+        // emits the authoritative stage — see `Pipeline` doc comment.
+        Err(ForgeError::Validation(ValidationError::UnsupportedKind(_))) => Pipeline::Forge,
+        // XML was not parseable; intent unknowable — defer to SCXML.
+        Err(_) => Pipeline::Scxml,
+    }
 }
 
 /// Locate the base template directory (contains rust/, kotlin/, actions/).

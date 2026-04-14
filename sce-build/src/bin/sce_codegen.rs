@@ -13,6 +13,7 @@
 //   read-metadata  — Extract metadata description (replaces read_test_metadata.py)
 
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -352,6 +353,84 @@ fn cli_exit(err: CliError) -> ! {
     current_error_format().emit_and_exit(&err, "")
 }
 
+// ── Stdout manifest (success-path contract) ─────────────────────
+
+/// Accumulator populated during a single `generate` run and serialised
+/// once, at the end, by [`emit_generate_manifest`]. Lives as a plain
+/// local on the stack — no globals — so concurrent future callers
+/// (batch mode, daemon) get per-invocation isolation for free.
+#[derive(Default)]
+struct GenerateReport {
+    artifacts: Vec<PathBuf>,
+    needs_script_engine: Option<bool>,
+    rejected: Option<RejectedDocument>,
+}
+
+struct RejectedDocument {
+    spec: &'static str,
+    name: String,
+}
+
+/// Wire contract for `sce-codegen generate` stdout. Matches
+/// SCE_ERROR_CONTRACT.md §10.
+///
+/// * `v` — schema version, pinned at 1; bumped only on breaking shape
+///   changes per the same policy that governs the error contract.
+/// * `kind` — which subcommand produced the record. Constrains agent
+///   dispatch when future subcommands (e.g. `generate-w3c`) emit
+///   their own manifest shapes on the same stream.
+/// * `artifacts` — every file written during the run. Each entry is
+///   an object (not a bare string) so the schema can grow additively
+///   (size, hash, kind-of-artifact) without a v-bump.
+/// * `needs_script_engine` — whether the compiled machine needs a
+///   runtime script engine.
+/// * `rejected` — present only when the document was rejected by a
+///   W3C-spec rule (e.g. W3C SCXML 5.8) and stub files were written
+///   in its place. Absence means clean generation.
+#[derive(Serialize)]
+struct GenerateManifest<'a> {
+    v: u32,
+    kind: &'static str,
+    artifacts: Vec<ArtifactEntry>,
+    needs_script_engine: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rejected: Option<RejectedInfo<'a>>,
+}
+
+#[derive(Serialize)]
+struct ArtifactEntry {
+    path: String,
+}
+
+#[derive(Serialize)]
+struct RejectedInfo<'a> {
+    spec: &'a str,
+    name: &'a str,
+}
+
+/// Serialise `report` and write it as a single JSON line to stdout.
+fn emit_generate_manifest(report: &GenerateReport) {
+    let manifest = GenerateManifest {
+        v: 1,
+        kind: "generate",
+        artifacts: report
+            .artifacts
+            .iter()
+            .map(|p| ArtifactEntry {
+                path: p.display().to_string(),
+            })
+            .collect(),
+        needs_script_engine: report.needs_script_engine.unwrap_or(false),
+        rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
+            spec: rd.spec,
+            name: rd.name.as_str(),
+        }),
+    };
+    let line = serde_json::to_string(&manifest)
+        .expect("GenerateManifest serialises; fields are all owned");
+    println!("{line}");
+}
+
 // ── CLI Definition ──────────────────────────────────────────────
 
 #[derive(Parser)]
@@ -562,6 +641,11 @@ fn cmd_generate(
         error_format.emit_and_exit(&CliError::UnknownLanguage { lang: language.to_string() }, "")
     });
 
+    // Every stdout artifact, the `needs_script_engine` verdict, and
+    // any W3C rejection are collected here and flushed as a single
+    // JSON manifest at each function exit. Stays local — no globals.
+    let mut report = GenerateReport::default();
+
     // C++ formatter: created once and reused for all output files.
     let cpp_formatter = create_cpp_formatter(lang, format_style, no_format);
 
@@ -574,52 +658,56 @@ fn cmd_generate(
         )
     });
 
-    if sce_build::is_forge_document(&scxml_content) {
-        let input_stem = Path::new(scxml_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
+    match sce_build::classify_document(&scxml_content) {
+        sce_build::Pipeline::Forge => {
+            let input_stem = Path::new(scxml_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
 
-        let base_dir = Path::new(scxml_path)
-            .parent()
-            .unwrap_or_else(|| Path::new("."));
-        let forge_opts = sce_build::ForgeCompileOptions {
-            go_module_prefix: go_module_prefix.map(str::to_owned),
-        };
-        match sce_build::compile_forge_with_imports(
-            &scxml_content,
-            input_stem,
-            lang,
-            base_dir,
-            &forge_opts,
-        ) {
-            Ok(output) => {
-                let files = maybe_format_files(output.files, &cpp_formatter);
-                let out = Path::new(output_dir);
-                for (filename, code) in &files {
-                    let path = out.join(filename);
-                    fs::write(&path, code).unwrap_or_else(|e| {
-                        error_format.emit_and_exit(
-                            &CliError::WriteOutput { path: path.display().to_string(), source: e },
-                            "",
-                        )
-                    });
-                    println!("Generated: {}", path.display());
-                }
-                if let Some(dep_path) = depfile_path {
+            let base_dir = Path::new(scxml_path)
+                .parent()
+                .unwrap_or_else(|| Path::new("."));
+            let forge_opts = sce_build::ForgeCompileOptions {
+                go_module_prefix: go_module_prefix.map(str::to_owned),
+            };
+            match sce_build::compile_forge_with_imports(
+                &scxml_content,
+                input_stem,
+                lang,
+                base_dir,
+                &forge_opts,
+            ) {
+                Ok(output) => {
+                    let files = maybe_format_files(output.files, &cpp_formatter);
                     let out = Path::new(output_dir);
-                    let targets: Vec<String> = files
-                        .iter()
-                        .map(|(f, _)| out.join(f).display().to_string())
-                        .collect();
-                    let dep_content = format!("{}: {}\n", targets.join(" "), scxml_path);
-                    let _ = fs::write(dep_path, dep_content);
+                    for (filename, code) in &files {
+                        let path = out.join(filename);
+                        fs::write(&path, code).unwrap_or_else(|e| {
+                            error_format.emit_and_exit(
+                                &CliError::WriteOutput { path: path.display().to_string(), source: e },
+                                "",
+                            )
+                        });
+                        report.artifacts.push(path.clone());
+                    }
+                    if let Some(dep_path) = depfile_path {
+                        let out = Path::new(output_dir);
+                        let targets: Vec<String> = files
+                            .iter()
+                            .map(|(f, _)| out.join(f).display().to_string())
+                            .collect();
+                        let dep_content = format!("{}: {}\n", targets.join(" "), scxml_path);
+                        let _ = fs::write(dep_path, dep_content);
+                    }
+                    report.needs_script_engine = Some(false);
+                    emit_generate_manifest(&report);
+                    return;
                 }
-                println!("Needs ScriptEngine: false");
-                return;
+                Err(e) => error_format.emit_forge_and_exit(&e),
             }
-            Err(e) => error_format.emit_forge_and_exit(&e),
         }
+        sce_build::Pipeline::Scxml => {}
     }
 
     let template_dir = sce_build::find_template_dir_for(lang);
@@ -691,16 +779,16 @@ fn cmd_generate(
                 write_or_exit(error_format, out.join(format!("{input_stem}_sm.py")), stub);
             }
         }
-        println!("Document rejected (W3C SCXML 5.8): {}", model.name);
-        println!("Needs ScriptEngine: false");
+        report.rejected = Some(RejectedDocument {
+            spec: "W3C SCXML 5.8",
+            name: model.name.clone(),
+        });
+        report.needs_script_engine = Some(false);
+        emit_generate_manifest(&report);
         return;
     }
 
     if !analyzer::can_generate_static(&model) {
-        // Retain the legacy stdout hint so CMake-side filters that
-        // grep for "Reason:" continue to match. The structured error
-        // lands on stderr via emit_and_exit.
-        println!("Reason: static generation not possible");
         error_format.emit_and_exit(
             &CliError::DynamicFeatures { name: model.name.clone() },
             "",
@@ -777,11 +865,11 @@ fn cmd_generate(
     for (filename, code) in &files {
         let file_path = out_path.join(filename);
         write_or_exit(error_format, &file_path, code);
-        println!("  Generated: {}", file_path.display());
+        report.artifacts.push(file_path.clone());
         output_paths.push(file_path);
     }
 
-    println!("  Needs ScriptEngine: {}", model.needs_script_engine);
+    report.needs_script_engine = Some(model.needs_script_engine);
 
     // W3C SCXML 6.4: Generate children metadata + hybrid SCXML stubs for all languages.
     // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.
@@ -819,7 +907,7 @@ fn cmd_generate(
                 for (filename, code) in &mesh_files {
                     let file_path = out_path.join(filename);
                     write_or_exit(error_format, &file_path, code);
-                    println!("  Generated: {}", file_path.display());
+                    report.artifacts.push(file_path.clone());
                     output_paths.push(file_path);
                 }
             }
@@ -831,6 +919,8 @@ fn cmd_generate(
     if let Some(depfile) = depfile_path {
         write_depfile(depfile, &output_paths, &template_dir, lang, Path::new(scxml_path));
     }
+
+    emit_generate_manifest(&report);
 }
 
 /// Collect child SCXML names from model's static/hybrid invokes.

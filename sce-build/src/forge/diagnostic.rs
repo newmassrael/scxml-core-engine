@@ -13,15 +13,16 @@
 //      its identity.
 //   3. Every populated `Fix` variant carries a real payload. If no
 //      deterministic repair is available, `fix` is `None` (honest).
-//   4. `location` rides on top of any `ForgeError` via the `Located`
-//      wrapper variant. Leaf errors stay location-free; call-sites
-//      attach context via `.at(file, line)`.
+//   4. `location` rides on any error via the `Located<E>` wrapper
+//      struct. Leaf errors stay location-free; call-sites that know
+//      *where* the failure originated construct `Located::new(err,
+//      file, line, col)` and propagate that instead.
 //
 // Human rendering lives in `Display for ForgeError`. Machine rendering
 // goes through `to_diagnostic()` → `serde_json`.
 
 use crate::forge::error::{
-    ExprError, ForgeError, GenerateError, ImportError, ManifestError, SourceLocation,
+    ExprError, ForgeError, GenerateError, ImportError, Located, ManifestError, SourceLocation,
     ValidationError, XmlError,
 };
 use serde::Serialize;
@@ -82,8 +83,8 @@ pub struct Diagnostic {
     /// identity from this field; `id` is the stable identifier.
     pub message: String,
 
-    /// Source location, present when a call-site wrapped the error
-    /// via `ForgeError::at(file, line)`.
+    /// Source location, present when the error was raised through a
+    /// call-site that wrapped it in `Located<ForgeError>`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<Location>,
 
@@ -493,6 +494,20 @@ pub enum Fix {
     /// `"machines.x.bindings.y"`) and `fields` are the keys under it
     /// that must be removed.
     RemoveFields { location: String, fields: Vec<String> },
+
+    /// Replace the offending value — carried in `actual` on the parent
+    /// record — with `to`. Emitted **only** for errors whose repair is
+    /// deterministic and single-valued: e.g. `==` → `===` under strict
+    /// equality, or a mismatched `<sce:import kind=…>` where the
+    /// imported file's real kind is the one correct answer.
+    ///
+    /// Multi-candidate constraints (unknown language, invalid attribute
+    /// value whose legal set has many members) intentionally stay
+    /// `fix: None` and rely on the `expected` array alone. Emitting a
+    /// `replace_with` for those would misrepresent `Fix` as "pick one
+    /// of" rather than its defined semantics ("apply this repair
+    /// automatically").
+    ReplaceWith { to: String },
 }
 
 // ── Per-error-variant field extraction ─────────────────────────
@@ -518,43 +533,61 @@ impl ToDiagnostic for ForgeError {
         ForgeError::exit_code(self)
     }
 
-    /// Render this error into a machine-readable [`Diagnostic`].
+    /// Render this error into a machine-readable [`Diagnostic`] with
+    /// no source location. Used for error paths that bubble up before
+    /// any frame with file/line context (e.g. pure I/O failures).
     fn to_diagnostic(&self) -> Diagnostic {
-        // Unwrap one level of `Located` so the mapping stays simple
-        // and the wrapper is handled in exactly one place.
-        let (inner, location_ctx): (&ForgeError, Option<&SourceLocation>) = match self {
-            ForgeError::Located { inner, location } => (inner.as_ref(), Some(location)),
-            other => (other, None),
-        };
+        build_forge_diagnostic(self, None)
+    }
+}
 
-        let fields = forge_error_fields(inner);
-        let location = location_ctx.map(|loc| Location {
-            file: loc.file.clone(),
-            line: loc.line,
-            col: loc.col,
-        });
-
-        let id = compute_id(
-            fields.code.as_str(),
-            fields.stage.as_str(),
-            location.as_ref().map(|l| l.file.as_str()),
-            &fields.key_fragments,
-        );
-
-        Diagnostic {
-            schema_version: SCHEMA_VERSION,
-            id,
-            code: fields.code,
-            stage: fields.stage,
-            spec: fields.spec,
-            message: self.to_string(),
-            location,
-            expected: fields.expected,
-            actual: fields.actual,
-            fix: fields.fix,
-        }
+impl ToDiagnostic for Located<ForgeError> {
+    fn exit_code(&self) -> i32 {
+        self.error.exit_code()
     }
 
+    /// Render this located error into a machine-readable [`Diagnostic`]
+    /// carrying the source location. Preferred emission path — the
+    /// location field is the single largest signal upstream agents
+    /// use for repair routing, so reaching this impl (instead of the
+    /// bare-`ForgeError` one) means a leaf call-site did its job.
+    fn to_diagnostic(&self) -> Diagnostic {
+        build_forge_diagnostic(&self.error, Some(&self.location))
+    }
+}
+
+/// Shared emission routine used by both `ForgeError` and
+/// `Located<ForgeError>`. The two `ToDiagnostic` impls differ only in
+/// whether they pass `Some(&location)` or `None`; every other field
+/// (code, stage, spec, expected/actual, fix, id) is invariant under
+/// location and computed identically.
+fn build_forge_diagnostic(err: &ForgeError, location_ctx: Option<&SourceLocation>) -> Diagnostic {
+    let fields = forge_error_fields(err);
+    let location = location_ctx.map(|loc| Location {
+        file: loc.file.clone(),
+        line: loc.line,
+        col: loc.col,
+    });
+
+    let id = compute_id(
+        fields.code.as_str(),
+        fields.stage.as_str(),
+        location.as_ref().map(|l| l.file.as_str()),
+        &fields.key_fragments,
+    );
+
+    Diagnostic {
+        schema_version: SCHEMA_VERSION,
+        id,
+        code: fields.code,
+        stage: fields.stage,
+        spec: fields.spec,
+        message: err.to_string(),
+        location,
+        expected: fields.expected,
+        actual: fields.actual,
+        fix: fields.fix,
+    }
 }
 
 fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
@@ -574,10 +607,6 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![path.display().to_string()],
         },
-        // `Located` is unwrapped by `to_diagnostic` before this
-        // function is reached. Treat as unreachable; if this ever
-        // fires it is a construction bug, not user input.
-        ForgeError::Located { .. } => unreachable!("Located unwrapped in to_diagnostic"),
     }
 }
 
@@ -815,7 +844,11 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             spec: subset_spec,
             expected: Some(vec![(*strict).to_string()]),
             actual: Some((*operator).to_string()),
-            fix: None,
+            // `==` → `===` and `!=` → `!==` are the only two legal
+            // replacements ECMAScript-5 strict subset permits; no
+            // context can change the mapping, so a deterministic
+            // `ReplaceWith` is honest.
+            fix: Some(Fix::ReplaceWith { to: (*strict).to_string() }),
             key_fragments: vec![(*operator).to_string()],
         },
         ExprError::ParseMismatch { expected, got } => DiagnosticFields {
@@ -887,7 +920,10 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
             spec: None,
             expected: Some(vec![actual.clone()]),
             actual: Some(declared.clone()),
-            fix: None,
+            // The imported file's real kind is authoritative. The
+            // declared kind is the fix target — rewrite the
+            // `<sce:import kind="…">` attribute to match.
+            fix: Some(Fix::ReplaceWith { to: actual.clone() }),
             key_fragments: vec![src.clone(), declared.clone(), actual.clone()],
         },
         ImportError::NotForge { src } => DiagnosticFields {
@@ -1083,7 +1119,7 @@ mod tests {
     #[test]
     fn located_fills_location_and_shifts_id() {
         let bare = missing_attr("id");
-        let located = missing_attr("id").at("checkout.scxml", Some(42));
+        let located = Located::new(missing_attr("id"), "checkout.scxml", Some(42), None);
 
         let d_bare = bare.to_diagnostic();
         let d_loc = located.to_diagnostic();
@@ -1099,7 +1135,7 @@ mod tests {
 
     #[test]
     fn located_preserves_stage_and_exit_code() {
-        let err = missing_attr("id").at("x.scxml", None);
+        let err = Located::new(missing_attr("id"), "x.scxml", None, None);
         assert_eq!(err.exit_code(), 3); // Validation
         let d = err.to_diagnostic();
         assert!(matches!(d.stage, Stage::Validation));
@@ -1235,6 +1271,23 @@ mod tests {
                 "forge/not-forge",
                 actual_forge(ImportError::NotForge { src: "neighbour.scxml".into() }.into()),
                 r#"{"v":1,"id":"fnv1a:7cec8a8357830a5a","code":"import/not-forge","stage":"import","message":"<sce:import src=\"neighbour.scxml\">: not a forge document (no sce:kind)","actual":"neighbour.scxml"}"#,
+            ),
+            (
+                "forge/strict-equality",
+                actual_forge(ExprError::StrictEquality { operator: "==", strict: "===" }.into()),
+                r#"{"v":1,"id":"fnv1a:056d2165b00f16bd","code":"expression/strict-equality","stage":"expression","spec":"Extended SCXML stateless subset","message":"loose == is not permitted in Extended SCXML. Use === instead.","expected":["==="],"actual":"==","fix":{"kind":"replace_with","to":"==="}}"#,
+            ),
+            (
+                "forge/import-kind-mismatch",
+                actual_forge(
+                    ImportError::KindMismatch {
+                        src: "peer.scxml".into(),
+                        declared: "validator".into(),
+                        actual: "codec".into(),
+                    }
+                    .into(),
+                ),
+                r#"{"v":1,"id":"fnv1a:5f500ed01d12c1bb","code":"import/kind-mismatch","stage":"import","message":"<sce:import src=\"peer.scxml\" kind=\"validator\">: actual kind is 'codec' (mismatch)","expected":["codec"],"actual":"validator","fix":{"kind":"replace_with","to":"codec"}}"#,
             ),
             (
                 "mesh/missing-binding-field",
