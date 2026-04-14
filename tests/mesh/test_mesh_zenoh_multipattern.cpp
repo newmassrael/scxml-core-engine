@@ -4,11 +4,13 @@
 // SCE Mesh Session D: zenoh multi-pattern compile verification.
 //
 // brake_zenoh_multi.scxml exercises every Zenoh capability category:
-// FireForget, RpcRequest (with sce:reply-event), EventSubscribe,
-// FieldRead, FieldWrite. All five branches of the generated send_zenoh
-// switch must instantiate and compile against zenoh-cpp. Compilation
-// success IS the test; runtime behaviour is covered by
-// test_mesh_zenoh_multipattern_runtime.cpp.
+// FireForget, RpcRequest, EventSubscribe, FieldRead, FieldWrite. All
+// five branches of the generated send_zenoh switch must instantiate
+// and compile against zenoh-cpp. Compilation success IS the test;
+// runtime behaviour is covered by
+// test_mesh_zenoh_multipattern_runtime.cpp. SCE_MESH.md §13 path B:
+// RPC reply pairing is topology-inferred (service.request.X ↔
+// service.response.X), not declared via sce:* attributes.
 
 #include "brake_zenoh_multi_sm.h"
 #include "motor_zenoh_multi_sm.h"
@@ -69,11 +71,12 @@ int main() {
     CHECK(RouterT::resolvePattern("field.set.position") == PK::FieldWrite,
           "field.set.* must resolve to FieldWrite");
 
-    // sce:reply-event="force.computed" on the service.request.compute_force
-    // send must be captured verbatim in the build-time reply table.
+    // Topology-inferred RPC pairing: the request `service.request.X`
+    // must resolve to the reply `service.response.X` in the build-time
+    // reply table (SCE_MESH.md §13 path B — no sce:reply-event needed).
     CHECK(std::strcmp(RouterT::resolveReplyEvent("service.request.compute_force"),
-                      "force.computed") == 0,
-          "sce:reply-event must appear in resolveReplyEvent table");
+                      "service.response.compute_force") == 0,
+          "topology-inferred RPC reply must appear in resolveReplyEvent table");
     // Unmapped events return an empty string so callers can branch safely.
     CHECK(RouterT::resolveReplyEvent("service.fire_forget.activate")[0] == '\0',
           "non-RPC events must resolve to empty reply-event");

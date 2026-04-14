@@ -627,7 +627,7 @@ struct TransportRouter {
     }
 
     /// Resolve the PatternKind for a given event name based on build-time
-    /// detected patterns from sce:pattern attributes and event name conventions.
+    /// pattern detection from event name conventions (SCE_MESH.md §13 path B).
     /// Falls back to FireForget for events with no detected pattern.
     static SCE::Mesh::PatternKind resolvePattern(const std::string& eventName) {
         using PK = SCE::Mesh::PatternKind;
@@ -646,8 +646,10 @@ struct TransportRouter {
     }
 
 {% if "someip" in transport_types or "zenoh" in transport_types %}
-    /// Look up the sce:reply-event name for an RPC event (build-time table).
-    /// Returns empty string if no reply-event is configured.
+    /// Look up the paired reply event for an RPC request (build-time table).
+    /// SCE_MESH.md §13 path B: the pair is inferred by convention —
+    /// `service.request.X` ↔ `service.response.X`. Returns empty string
+    /// for non-RPC events.
     static const char* resolveReplyEvent(const std::string& eventName) {
 {% for target in targets %}
 {% for ep in target.event_patterns if ep.reply_event %}

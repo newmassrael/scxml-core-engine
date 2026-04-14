@@ -284,19 +284,21 @@ int run_test() {
 
     // ── 2. RpcRequest: send_zenoh → session.get → queryable → on_reply ─
     //
-    // The sender's on_reply closure rewrites env.type to "force.computed"
-    // (from the resolveReplyEvent table) and pattern to RpcReply. After
-    // MeshDispatch delivers the reply, the sender engine sees the
-    // rewritten event name — we assert on that.
+    // The sender's on_reply closure rewrites env.type to the paired
+    // reply event "service.response.compute_force" (SCE_MESH.md §13
+    // path B: inferred by topology convention from the request name)
+    // and pattern to RpcReply. After MeshDispatch delivers the reply,
+    // the sender engine sees the rewritten event name — we assert on
+    // that.
     {
         auto env = make_envelope("service.request.compute_force", PK::RpcRequest);
         const bool ok = router.send_zenoh(env, kMotorKey, "#motor");
         REQUIRE(ok, "send_zenoh RpcRequest returned false");
 
         REQUIRE(sender.received_.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "force.computed";
+                    return !v.empty() && v.back().type == "service.response.compute_force";
                 }),
-                "sender engine did not see the rewritten reply-event 'force.computed'");
+                "sender engine did not see paired reply 'service.response.compute_force'");
         sender.received_.clear();
     }
 

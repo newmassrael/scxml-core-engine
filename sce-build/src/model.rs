@@ -133,25 +133,13 @@ pub struct Action {
     #[serde(default)]
     pub is_kt_function: bool,
 
-    // SCE Mesh: QoS intent attribute (sce:qos="reliable"|"best-effort")
-    // Parsed from <send sce:qos="reliable"/>
-    // Validated against deploy.yaml transport config at build time.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub mesh_qos: String,
-
-    // SCE Mesh: Explicit communication pattern (sce:pattern="request"|"fire_forget"|...)
-    // Overrides convention-based detection from event name prefix.
-    // See SCE_MESH.md Section 8.1.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub mesh_pattern: String,
-
-    // SCE Mesh: Reply event name for RPC patterns (sce:reply-event="brake.status.response")
-    // Codegen generates correlation: on send, create correlation_id + store
-    // (correlation_id -> reply_event_name). On receive: match correlation_id,
-    // look up reply_event_name, raiseExternal(reply_event, response_data).
-    // See SCE_MESH.md Section 13.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub mesh_reply_event: String,
+    // SCE_MESH.md §13 — mesh metadata is no longer carried on individual
+    // <send> actions. Communication pattern is inferred from event name
+    // conventions (mesh::pattern), RPC reply pairing is inferred from
+    // topology structure (mesh::topology::detect_rpc_pairs), and QoS is
+    // a transport binding concern (deploy.yaml). The previous
+    // mesh_qos/mesh_pattern/mesh_reply_event fields were removed in
+    // Session E1.
 }
 
 /// W3C SCXML if/elseif branch

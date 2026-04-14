@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Mesh Session D: brake controller exercising all 4 Zenoh
      pattern categories. Event-name prefixes drive pattern detection
-     (see sce-build/src/mesh/pattern.rs reserved_prefixes). The
-     sce:reply-event attribute provides the RPC reply-event name
-     consumed by the generated send_zenoh dispatcher. -->
+     (sce-build/src/mesh/pattern.rs). SCE_MESH.md §13 path B:
+     RPC request events (service.request.X) are paired with their
+     reply (service.response.X) by topology-inferred convention —
+     no sce:* attribute is needed. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
        version="1.0"
        datamodel="null" name="brake_zenoh_multi" initial="idle">
     <state id="idle">
@@ -15,9 +15,10 @@
         <onentry>
             <!-- FireForget: session.put(key, envelope) -->
             <send target="#motor" event="service.fire_forget.activate"/>
-            <!-- RpcRequest: session.get(key, params, on_reply, opts{payload}) -->
-            <send target="#motor" event="service.request.compute_force"
-                  sce:reply-event="force.computed"/>
+            <!-- RpcRequest: session.get(key, params, on_reply, opts{payload}).
+                 Paired reply event "service.response.compute_force" is
+                 inferred by convention (topology analyzer). -->
+            <send target="#motor" event="service.request.compute_force"/>
             <!-- EventSubscribe: declare_subscriber(key, on_sample) -->
             <send target="#motor" event="event.subscribe.status"/>
             <!-- FieldWrite: session.put(key, envelope) -->
@@ -26,9 +27,9 @@
             <send target="#motor" event="field.get.position"/>
         </onentry>
         <!-- Reply paths (RPC response + field response + subscription notify) -->
-        <transition event="force.computed"       target="idle"/>
-        <transition event="event.notification.status" target="idle"/>
-        <transition event="field.notify.position" target="idle"/>
-        <transition event="brake.release"        target="idle"/>
+        <transition event="service.response.compute_force" target="idle"/>
+        <transition event="event.notification.status"      target="idle"/>
+        <transition event="field.notify.position"          target="idle"/>
+        <transition event="brake.release"                  target="idle"/>
     </state>
 </scxml>

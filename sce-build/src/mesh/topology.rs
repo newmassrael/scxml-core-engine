@@ -11,19 +11,25 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-/// Per-event pattern metadata, detected at build time from sce:pattern attribute
-/// or event name prefix convention. Used by codegen to generate pattern-aware
-/// send logic (wireTo → PatternKind) and RPC correlation tables.
+/// Per-event pattern metadata, detected at build time from the event name
+/// prefix convention (`pattern::detect_pattern`). Used by codegen to generate
+/// pattern-aware send logic (wireTo → PatternKind) and RPC correlation tables.
+/// SCE_MESH.md §13 path B: no longer carries sce:* attribute provenance.
 #[derive(Debug, Clone, Serialize)]
 pub struct EventPatternInfo {
     /// SCXML event name (e.g. "service.request.brake_status").
     pub event: String,
-    /// Detected communication pattern (e.g. "ServiceRequest").
-    pub pattern: String,
     /// PatternKind wire value for C++ enum (e.g. 2 for RpcRequest).
+    /// This is the only pattern representation the code generator needs —
+    /// the symbolic form is recoverable from the event name and is not
+    /// serialized into generated code.
     pub pattern_kind_value: u16,
-    /// Reply event name from sce:reply-event attribute (RPC only, empty if absent).
-    pub reply_event: String,
+    /// Paired reply event, inferred by convention for RPC requests
+    /// (`service.request.X` → `service.response.X`). `None` for non-RPC
+    /// patterns or when no convention match exists — empty-string sentinels
+    /// are not used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_event: Option<String>,
 }
 
 /// A resolved send target: SCXML <send> target matched to a deploy.yaml binding.
@@ -101,6 +107,8 @@ fn is_internal_target(target: &str) -> bool {
 // ── Single-pass send action collection ──────────────────────
 
 /// Details of a single `<send>` action, collected for downstream validators.
+/// SCE_MESH.md §13 path B: no longer carries sce:* attribute values — pattern
+/// and reply pairing are derived from the event name by the analyzer.
 #[derive(Debug, Clone)]
 pub struct SendActionDetail {
     /// The state containing the `<send>`.
@@ -109,19 +117,13 @@ pub struct SendActionDetail {
     pub target: String,
     /// The `event` attribute.
     pub event: String,
-    /// The `sce:qos` attribute (e.g. "reliable").
-    pub mesh_qos: String,
-    /// The `sce:pattern` attribute (e.g. "request").
-    pub mesh_pattern: String,
-    /// The `sce:reply-event` attribute (e.g. "brake.status.response").
-    pub mesh_reply_event: String,
 }
 
 /// Pre-collected `<send>` action data from a single model traversal.
 ///
 /// Created by `collect_send_summary()` and consumed by `resolve_targets()`,
-/// `validate_qos_consistency()`, `validate_pattern_capability()`, and
-/// `check_sender_event_coverage()`. Eliminates redundant model traversals.
+/// `validate_pattern_capability()`, and `check_sender_event_coverage()`.
+/// Eliminates redundant model traversals.
 #[derive(Debug)]
 pub struct SendActionSummary {
     /// Deduplicated external send targets (e.g. "#motor").
@@ -159,14 +161,11 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
             target_events.push((action.target.clone(), action.event.clone()));
         }
 
-        // Per-action details for QoS and pattern validation
+        // Per-action details for pattern validation
         actions.push(SendActionDetail {
             state: state_id.to_string(),
             target: action.target.clone(),
             event: action.event.clone(),
-            mesh_qos: action.mesh_qos.clone(),
-            mesh_pattern: action.mesh_pattern.clone(),
-            mesh_reply_event: action.mesh_reply_event.clone(),
         });
     });
 
@@ -194,10 +193,52 @@ fn collect_target_events(model: &SCXMLModel) -> Vec<(String, String)> {
 
 // ── Target resolution ────────────────────────────────────────
 
+/// Analyze `<send>` actions and produce per-target event/pattern/reply
+/// metadata by pure inference (no deploy.yaml involvement).
+///
+/// SCE_MESH.md §13 path B decomposition: this pass owns pattern detection
+/// and topology-inferred RPC pairing. `resolve_targets` consumes the result
+/// and is responsible only for matching targets to deploy.yaml bindings.
+/// Separating the two enforces single responsibility: pairing is a property
+/// of the SCXML event vocabulary, binding is a property of deployment.
+///
+/// Returns a map `target → Vec<EventPatternInfo>` deduplicated by event name.
+pub fn analyze_event_pairs(
+    summary: &SendActionSummary,
+) -> std::collections::HashMap<String, Vec<EventPatternInfo>> {
+    let mut pattern_map: std::collections::HashMap<String, Vec<EventPatternInfo>> =
+        std::collections::HashMap::new();
+
+    for action in &summary.actions {
+        if action.target.is_empty()
+            || is_internal_target(&action.target)
+            || action.event.is_empty()
+        {
+            continue;
+        }
+        let Some(pattern) = super::pattern::detect_pattern(&action.event) else {
+            continue;
+        };
+        let entry = pattern_map.entry(action.target.clone()).or_default();
+        if entry.iter().any(|e| e.event == action.event) {
+            continue; // Same event to same target — already captured.
+        }
+        entry.push(EventPatternInfo {
+            event: action.event.clone(),
+            pattern_kind_value: pattern.wire_value(),
+            reply_event: pattern.infer_reply_event(&action.event),
+        });
+    }
+
+    pattern_map
+}
+
 /// Resolve SCXML send targets against deploy.yaml bindings for a specific machine.
 ///
 /// Uses pre-collected targets and target_events from `SendActionSummary`
-/// to avoid redundant model traversal.
+/// to avoid redundant model traversal. Pattern/pairing metadata is produced
+/// by `analyze_event_pairs` and consumed here — this function itself is
+/// responsible only for deploy.yaml binding resolution.
 ///
 /// Returns an error if any SCXML target has no matching binding in deploy.yaml.
 pub fn resolve_targets(
@@ -222,35 +263,8 @@ pub fn resolve_targets(
             .push(event.clone());
     }
 
-    // Build per-target pattern info from summary actions.
-    // Deduplicates by event name — same event to same target produces one entry.
-    let mut pattern_map: std::collections::HashMap<String, Vec<EventPatternInfo>> =
-        std::collections::HashMap::new();
-    for action in &summary.actions {
-        if action.target.is_empty() || is_internal_target(&action.target) || action.event.is_empty()
-        {
-            continue;
-        }
-        let explicit = if action.mesh_pattern.is_empty() {
-            None
-        } else {
-            Some(action.mesh_pattern.as_str())
-        };
-        if let Ok(Some(pattern)) =
-            super::pattern::detect_pattern(&action.event, explicit)
-        {
-            let entry = pattern_map.entry(action.target.clone()).or_default();
-            // Deduplicate by event name
-            if !entry.iter().any(|e| e.event == action.event) {
-                entry.push(EventPatternInfo {
-                    event: action.event.clone(),
-                    pattern: format!("{:?}", pattern),
-                    pattern_kind_value: pattern.wire_value(),
-                    reply_event: action.mesh_reply_event.clone(),
-                });
-            }
-        }
-    }
+    // Pattern metadata + RPC reply pairing — pure event-vocabulary inference.
+    let mut pattern_map = analyze_event_pairs(summary);
 
     // Validate: every SCXML target must have a deploy.yaml binding
     let mut unresolved = Vec::new();
@@ -593,121 +607,11 @@ pub fn validate_event_coverage(
     warnings
 }
 
-// ── QoS consistency validation ──────────────────────────────
+// SCE_MESH.md §13 path B: QoS is a transport binding concern (declared in
+// deploy.yaml or external config such as vsomeip.json), not a per-<send>
+// SCXML annotation. The earlier sce:qos intent/consistency validator was
+// removed with the attribute in Session E1.
 
-/// Build-time warning about QoS intent/config mismatch.
-#[derive(Debug, Clone)]
-pub struct QosWarning {
-    /// The sender machine name.
-    pub sender: String,
-    /// The state containing the <send>.
-    pub state: String,
-    /// The target (e.g. "#motor").
-    pub target: String,
-    /// The sce:qos intent from SCXML (e.g. "reliable").
-    pub qos_intent: String,
-    /// The transport type from deploy.yaml (e.g. "someip").
-    pub transport: String,
-    /// Human-readable reason for the warning.
-    pub reason: String,
-}
-
-impl std::fmt::Display for QosWarning {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "machine '{}' state '{}': <send target=\"{}\" sce:qos=\"{}\"/> \
-             bound to transport '{}' — {}",
-            self.sender, self.state, self.target, self.qos_intent,
-            self.transport, self.reason
-        )
-    }
-}
-
-/// Known transport reliability characteristics for QoS cross-reference.
-/// Returns `None` for transports whose reliability depends on configuration
-/// (protocol, QoS profile, etc.) — caller falls through to extra-config checks.
-fn transport_reliability(transport: &str) -> Option<&'static str> {
-    match transport {
-        "local" => Some("reliable"),  // same-process direct call
-        "shm" => Some("reliable"),    // shared memory with sequence numbers
-        "someip" => None,             // depends on TCP/UDP config
-        "dds" => None,                // depends on DDS QoS profile
-        "zenoh" => None,              // depends on zenoh QoS profile
-        _ => None,
-    }
-}
-
-/// Validate QoS intent from SCXML `sce:qos` attributes against deploy.yaml
-/// transport bindings.
-///
-/// Uses pre-collected action details from `SendActionSummary` to avoid
-/// redundant model traversal.
-pub fn validate_qos_consistency(
-    summary: &SendActionSummary,
-    deploy: &DeployConfig,
-    machine_name: &str,
-) -> Vec<QosWarning> {
-    let mut warnings = Vec::new();
-
-    let bindings = match find_machine_bindings(deploy, machine_name) {
-        Ok(b) => b,
-        Err(_) => return warnings, // Machine not in deploy.yaml — no validation
-    };
-
-    for action in &summary.actions {
-        let qos = &action.mesh_qos;
-        if qos.is_empty() || action.target.is_empty() || is_internal_target(&action.target) {
-            continue;
-        }
-
-        if let Some(binding) = bindings.get(&action.target) {
-            // Check known transport reliability against intent
-            if let Some(transport_rel) = transport_reliability(&binding.transport) {
-                let mismatch = match (qos.as_str(), transport_rel) {
-                    ("reliable", "best-effort") => Some(
-                        "transport provides best-effort delivery, \
-                         but sender requires reliable. Consider TCP-based \
-                         transport or application-level acknowledgment",
-                    ),
-                    ("best-effort", "reliable") => None, // OK: reliable transport satisfies best-effort
-                    _ => None,
-                };
-                if let Some(reason) = mismatch {
-                    warnings.push(QosWarning {
-                        sender: machine_name.to_string(),
-                        state: action.state.clone(),
-                        target: action.target.clone(),
-                        qos_intent: qos.clone(),
-                        transport: binding.transport.clone(),
-                        reason: reason.to_string(),
-                    });
-                }
-            }
-
-            // Check extra config for protocol-level hints
-            if let Some(protocol) = binding.extra.get("protocol") {
-                if let Some(proto_str) = protocol.as_str() {
-                    if qos == "reliable" && proto_str.eq_ignore_ascii_case("udp") {
-                        warnings.push(QosWarning {
-                            sender: machine_name.to_string(),
-                            state: action.state.clone(),
-                            target: action.target.clone(),
-                            qos_intent: qos.clone(),
-                            transport: binding.transport.clone(),
-                            reason: format!(
-                                "transport protocol is UDP (best-effort) but \
-                                 sce:qos=\"reliable\" requires guaranteed delivery"
-                            ),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    warnings
-}
 
 // ── Pattern capability validation ────────────────────────────
 
@@ -715,22 +619,20 @@ pub fn validate_qos_consistency(
 /// (SCE_MESH.md Section 8.2).
 ///
 /// Uses pre-collected action details from `SendActionSummary` to avoid
-/// redundant model traversal.
-///
-/// Returns:
-///   Ok(violations) — all `sce:pattern` values recognized; violations are transport mismatches
-///   Err(UnrecognizedPattern) — an `sce:pattern` value is not recognized (likely typo, build error)
+/// redundant model traversal. SCE_MESH.md §13 path B: patterns are inferred
+/// from event names only — never fails on author-provided input, so the
+/// return type is a plain `Vec` of transport-mismatch violations.
 pub fn validate_pattern_capability(
     summary: &SendActionSummary,
     deploy: &DeployConfig,
     machine_name: &str,
-) -> Result<Vec<super::pattern::PatternViolation>, TopologyError> {
+) -> Vec<super::pattern::PatternViolation> {
     use super::pattern::{detect_pattern, PatternViolation};
     use super::transport;
 
     let bindings = match find_machine_bindings(deploy, machine_name) {
         Ok(b) => b,
-        Err(_) => return Ok(Vec::new()), // Machine not in deploy.yaml — no validation
+        Err(_) => return Vec::new(), // Machine not in deploy.yaml — no validation
     };
 
     let mut violations = Vec::new();
@@ -741,25 +643,10 @@ pub fn validate_pattern_capability(
             continue;
         }
 
-        // Convert empty mesh_pattern to None (Rust-idiomatic Option API)
-        let explicit = if action.mesh_pattern.is_empty() {
-            None
-        } else {
-            Some(action.mesh_pattern.as_str())
-        };
-
-        let pattern = match detect_pattern(&action.event, explicit) {
-            Ok(Some(p)) => p,
-            Ok(None) => continue, // Application-specific event or explicit opt-out
-            Err(unrecognized) => {
-                return Err(TopologyError::UnrecognizedPattern {
-                    sender: machine_name.to_string(),
-                    state: action.state.clone(),
-                    target: action.target.clone(),
-                    event: action.event.clone(),
-                    value: unrecognized,
-                });
-            }
+        // SCE_MESH.md §13 path B: pattern is inferred from event name only.
+        let pattern = match detect_pattern(&action.event) {
+            Some(p) => p,
+            None => continue, // Application-specific event — no capability check
         };
 
         let binding = match bindings.get(&action.target) {
@@ -780,7 +667,7 @@ pub fn validate_pattern_capability(
         }
     }
 
-    Ok(violations)
+    violations
 }
 
 // ── Build-time event coverage enforcement ───────────────────
@@ -1238,7 +1125,7 @@ topology:
         .unwrap();
         let model = parse_model(PATTERN_SCXML, "tester");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
         assert!(violations.is_empty(), "expected no violations, got {violations:?}");
     }
 
@@ -1257,7 +1144,7 @@ topology:
         .unwrap();
         let model = parse_model(PATTERN_SCXML, "tester");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].event, "service.request.get_status");
         assert_eq!(violations[0].transport, "shm");
@@ -1282,7 +1169,7 @@ topology:
         .unwrap();
         let model = parse_model(SUBSCRIBE_SCXML, "subscriber");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "subscriber").unwrap();
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "subscriber");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].event, "event.subscribe.speed_updates");
         assert_eq!(violations[0].transport, "can");
@@ -1304,7 +1191,7 @@ topology:
             let deploy = parse_deploy_str(&yaml).unwrap();
             let model = parse_model(FIRE_FORGET_SCXML, "sender");
 
-            let violations = validate_pattern_capability(&summary_for(&model), &deploy, "sender").unwrap();
+            let violations = validate_pattern_capability(&summary_for(&model), &deploy, "sender");
             assert!(
                 violations.is_empty(),
                 "fire_forget should pass on {transport}, got {violations:?}"
@@ -1327,7 +1214,7 @@ topology:
         .unwrap();
         let model = parse_model(APP_EVENT_SCXML, "app");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "app").unwrap();
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "app");
         assert!(violations.is_empty(), "app events should not be validated");
     }
 
@@ -1346,7 +1233,7 @@ topology:
         .unwrap();
         let model = parse_model(PATTERN_SCXML, "tester");
 
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
         assert!(violations.is_empty(), "unknown transport should pass");
     }
 
@@ -1364,7 +1251,7 @@ topology:
         let model = parse_model(PATTERN_SCXML, "tester");
 
         // Machine "tester" not in deploy.yaml — no validation.
-        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester").unwrap();
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
         assert!(violations.is_empty());
     }
 

@@ -452,6 +452,11 @@ fn cmd_generate(
     // Uses the public API (compile_mesh_transport) so CLI, tests, and build.rs
     // share the same entry point. SM output remains byte-identical.
     if let Some(deploy_file) = deploy_path {
+        // Parse-pass deprecation notices are drained from the parser itself
+        // (SCXMLModel is a pure domain model and no longer carries them).
+        for notice in parser.deprecation_warnings() {
+            eprintln!("Deprecation: {notice}");
+        }
         match sce_build::compile_mesh_transport(
             &model,
             Path::new(deploy_file),
@@ -459,9 +464,6 @@ fn cmd_generate(
         ) {
             Ok(result) => {
                 for w in &result.dynamic_target_warnings {
-                    eprintln!("Warning: {w}");
-                }
-                for w in &result.qos_warnings {
                     eprintln!("Warning: {w}");
                 }
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);

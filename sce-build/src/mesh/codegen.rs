@@ -139,8 +139,12 @@ struct EventPatternContext {
     event: String,
     /// C++ PatternKind wire value (1-9).
     pattern_kind: u16,
-    /// Reply event name (sce:reply-event, RPC only).
-    reply_event: String,
+    /// Paired reply event, inferred by convention (RPC request only).
+    /// `None` for non-RPC events — the template filters on truthiness so
+    /// `{% if ep.reply_event %}` and `{% for ep in ... if ep.reply_event %}`
+    /// both continue to work unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_event: Option<String>,
 }
 
 // ── Public entry point ───────────────────────────────────────

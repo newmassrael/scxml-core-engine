@@ -39,6 +39,38 @@ pub enum CommunicationPattern {
 }
 
 impl CommunicationPattern {
+    /// Every variant, in a stable order suitable for iteration.
+    ///
+    /// Consumers that want to scan every pattern (e.g. `detect_pattern`) do
+    /// so through this constant instead of rewriting match arms — there is
+    /// one place to add a variant when the vocabulary grows.
+    pub const ALL: &'static [Self] = &[
+        Self::FireForget,
+        Self::ServiceRequest,
+        Self::ServiceResponse,
+        Self::Subscribe,
+        Self::Notification,
+        Self::FieldGet,
+        Self::FieldSet,
+    ];
+
+    /// The reserved event-name prefix that identifies this pattern.
+    ///
+    /// Single source of truth for the pattern vocabulary — `Display`,
+    /// `match_suffix`, and `infer_reply_event` all derive from this value.
+    /// `const fn` so the compiler can fold it at call sites.
+    pub const fn prefix_str(self) -> &'static str {
+        match self {
+            Self::FireForget      => "service.fire_forget",
+            Self::ServiceRequest  => "service.request",
+            Self::ServiceResponse => "service.response",
+            Self::Subscribe       => "event.subscribe",
+            Self::Notification    => "event.notification",
+            Self::FieldGet        => "field.get",
+            Self::FieldSet        => "field.set",
+        }
+    }
+
     /// The transport capability category this pattern requires.
     pub fn required_capability(self) -> TransportCapability {
         match self {
@@ -47,6 +79,18 @@ impl CommunicationPattern {
             Self::Subscribe | Self::Notification => TransportCapability::PubSub,
             Self::FieldGet | Self::FieldSet => TransportCapability::FieldAccess,
         }
+    }
+
+    /// If `event` belongs to this pattern — either the bare prefix or
+    /// `<prefix>.<suffix>` — return the suffix (empty for the bare form).
+    /// Otherwise `None`. Boundary check is strict: `service.requestX`
+    /// does not match `ServiceRequest` because `X` is not preceded by `.`.
+    pub fn match_suffix(self, event: &str) -> Option<&str> {
+        let prefix = self.prefix_str();
+        if event == prefix {
+            return Some("");
+        }
+        event.strip_prefix(prefix)?.strip_prefix('.')
     }
 
     /// Wire value corresponding to the C++ `SCE::Mesh::PatternKind` enum.
@@ -70,6 +114,28 @@ impl CommunicationPattern {
             Self::FieldGet         => 7,
             Self::FieldSet         => 8,
         }
+    }
+
+    /// Derive the paired reply event name for an RPC request by convention
+    /// (SCE_MESH.md §13 path B). Returns `None` for patterns that have no
+    /// reply semantics or for events that do not match this variant's prefix.
+    ///
+    /// Only `ServiceRequest` has a paired reply under path B — other
+    /// patterns either never reply (`FireForget`, `FieldSet`, `Subscribe`,
+    /// `Unsubscribe`) or ARE the reply themselves (`ServiceResponse`,
+    /// `Notification`, `FieldGet`). The paired reply is built from
+    /// `ServiceResponse.prefix_str()`; no literal strings are duplicated.
+    pub fn infer_reply_event(self, event: &str) -> Option<String> {
+        if self != Self::ServiceRequest {
+            return None;
+        }
+        let suffix = self.match_suffix(event)?;
+        let resp = Self::ServiceResponse.prefix_str();
+        Some(if suffix.is_empty() {
+            resp.to_string()
+        } else {
+            format!("{resp}.{suffix}")
+        })
     }
 }
 
@@ -100,94 +166,33 @@ pub const WIRE_FIELD_NOTIFY:       u16 = 9;
 
 impl fmt::Display for CommunicationPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ServiceRequest => write!(f, "service.request"),
-            Self::ServiceResponse => write!(f, "service.response"),
-            Self::FireForget => write!(f, "service.fire_forget"),
-            Self::Subscribe => write!(f, "event.subscribe"),
-            Self::Notification => write!(f, "event.notification"),
-            Self::FieldGet => write!(f, "field.get"),
-            Self::FieldSet => write!(f, "field.set"),
-        }
+        f.write_str(self.prefix_str())
     }
 }
 
 // ── Pattern detection ───────────────────────────────────────
 
-/// Ordered from longest to shortest prefix to avoid false matches
-/// (e.g., `service.request` must not match `service.response`).
-const PATTERN_PREFIXES: &[(&str, CommunicationPattern)] = &[
-    ("service.fire_forget", CommunicationPattern::FireForget),
-    ("service.request", CommunicationPattern::ServiceRequest),
-    ("service.response", CommunicationPattern::ServiceResponse),
-    ("event.notification", CommunicationPattern::Notification),
-    ("event.subscribe", CommunicationPattern::Subscribe),
-    ("field.get", CommunicationPattern::FieldGet),
-    ("field.set", CommunicationPattern::FieldSet),
-];
-
-/// Detect communication pattern from explicit `sce:pattern` attribute or
-/// event name prefix convention.
+/// Detect communication pattern from event name prefix convention.
 ///
-/// Resolution order:
-///   1. Explicit annotation: `<send sce:pattern="request"/>` → Ok(Some(ServiceRequest))
-///   2. Event name prefix: `"service.request.brake_status"` → Ok(Some(ServiceRequest))
-///   3. Explicit "none": → Ok(None) (opt-out)
-///   4. No match → Ok(None) (application-specific event, no validation)
-///   5. Unrecognized explicit value → Err (likely typo, build error)
-pub fn detect_pattern(
-    event: &str,
-    explicit_pattern: Option<&str>,
-) -> Result<Option<CommunicationPattern>, String> {
-    // Priority 1: explicit sce:pattern attribute
-    if let Some(value) = explicit_pattern {
-        return parse_explicit_pattern(value);
-    }
-
-    // Priority 2: convention-based prefix matching
-    Ok(detect_pattern_from_event(event))
+/// SCE_MESH.md §13 path B (SCXML purity): pattern annotations are no longer
+/// carried as `sce:pattern` attributes. The event name itself is the pattern
+/// declaration — the reserved prefixes returned by `prefix_str` form the
+/// stable vocabulary that SCXML authors commit to.
+///
+/// Matching rules (delegated to `CommunicationPattern::match_suffix`):
+///   - Exact match: `"service.request"` → Some(ServiceRequest)
+///   - Prefix + dot: `"service.request.brake_status"` → Some(ServiceRequest)
+///   - No match: `"brake.activate"` → None (application-specific event)
+///
+/// No two reserved prefixes share a common prefix, so variant iteration
+/// order is irrelevant for correctness.
+pub fn detect_pattern(event: &str) -> Option<CommunicationPattern> {
+    CommunicationPattern::ALL
+        .iter()
+        .copied()
+        .find(|p| p.match_suffix(event).is_some())
 }
 
-/// Parse an explicit `sce:pattern` attribute value.
-///
-/// Returns:
-///   Ok(Some(pattern)) — recognized pattern
-///   Ok(None) — explicit "none" (opt-out from validation)
-///   Err(value) — unrecognized value (likely typo, caller should emit build error)
-fn parse_explicit_pattern(value: &str) -> Result<Option<CommunicationPattern>, String> {
-    match value.to_ascii_lowercase().as_str() {
-        "request" | "service.request" => Ok(Some(CommunicationPattern::ServiceRequest)),
-        "response" | "service.response" => Ok(Some(CommunicationPattern::ServiceResponse)),
-        "fire_forget" | "service.fire_forget" => Ok(Some(CommunicationPattern::FireForget)),
-        "subscribe" | "event.subscribe" => Ok(Some(CommunicationPattern::Subscribe)),
-        "notification" | "event.notification" => Ok(Some(CommunicationPattern::Notification)),
-        "field_get" | "field.get" => Ok(Some(CommunicationPattern::FieldGet)),
-        "field_set" | "field.set" => Ok(Some(CommunicationPattern::FieldSet)),
-        "none" => Ok(None),
-        _ => Err(value.to_string()),
-    }
-}
-
-/// Detect communication pattern from event name prefix convention only.
-///
-/// Matching rules:
-///   - Exact match: `"service.request"` → ServiceRequest
-///   - Prefix + dot: `"service.request.brake_status"` → ServiceRequest
-///   - No match: `"brake.activate"` → None
-fn detect_pattern_from_event(event: &str) -> Option<CommunicationPattern> {
-    for &(prefix, pattern) in PATTERN_PREFIXES {
-        if event == prefix {
-            return Some(pattern);
-        }
-        if event.len() > prefix.len()
-            && event.starts_with(prefix)
-            && event.as_bytes()[prefix.len()] == b'.'
-        {
-            return Some(pattern);
-        }
-    }
-    None
-}
 
 // ── Pattern violation ───────────────────────────────────────
 
@@ -228,12 +233,12 @@ impl fmt::Display for PatternViolation {
 mod tests {
     use super::*;
 
-    // ── detect_pattern (convention fallback, no explicit) ──
+    // ── detect_pattern (convention-only, post-Session E1) ──
 
     #[test]
     fn detect_exact_service_request() {
         assert_eq!(
-            detect_pattern("service.request", None).unwrap(),
+            detect_pattern("service.request"),
             Some(CommunicationPattern::ServiceRequest)
         );
     }
@@ -241,7 +246,7 @@ mod tests {
     #[test]
     fn detect_prefixed_service_request() {
         assert_eq!(
-            detect_pattern("service.request.brake_status", None).unwrap(),
+            detect_pattern("service.request.brake_status"),
             Some(CommunicationPattern::ServiceRequest)
         );
     }
@@ -249,11 +254,11 @@ mod tests {
     #[test]
     fn detect_service_response() {
         assert_eq!(
-            detect_pattern("service.response", None).unwrap(),
+            detect_pattern("service.response"),
             Some(CommunicationPattern::ServiceResponse)
         );
         assert_eq!(
-            detect_pattern("service.response.brake_status", None).unwrap(),
+            detect_pattern("service.response.brake_status"),
             Some(CommunicationPattern::ServiceResponse)
         );
     }
@@ -261,11 +266,11 @@ mod tests {
     #[test]
     fn detect_fire_forget() {
         assert_eq!(
-            detect_pattern("service.fire_forget", None).unwrap(),
+            detect_pattern("service.fire_forget"),
             Some(CommunicationPattern::FireForget)
         );
         assert_eq!(
-            detect_pattern("service.fire_forget.motor_cmd", None).unwrap(),
+            detect_pattern("service.fire_forget.motor_cmd"),
             Some(CommunicationPattern::FireForget)
         );
     }
@@ -273,11 +278,11 @@ mod tests {
     #[test]
     fn detect_subscribe() {
         assert_eq!(
-            detect_pattern("event.subscribe", None).unwrap(),
+            detect_pattern("event.subscribe"),
             Some(CommunicationPattern::Subscribe)
         );
         assert_eq!(
-            detect_pattern("event.subscribe.speed_updates", None).unwrap(),
+            detect_pattern("event.subscribe.speed_updates"),
             Some(CommunicationPattern::Subscribe)
         );
     }
@@ -285,11 +290,11 @@ mod tests {
     #[test]
     fn detect_notification() {
         assert_eq!(
-            detect_pattern("event.notification", None).unwrap(),
+            detect_pattern("event.notification"),
             Some(CommunicationPattern::Notification)
         );
         assert_eq!(
-            detect_pattern("event.notification.speed_changed", None).unwrap(),
+            detect_pattern("event.notification.speed_changed"),
             Some(CommunicationPattern::Notification)
         );
     }
@@ -297,11 +302,11 @@ mod tests {
     #[test]
     fn detect_field_get() {
         assert_eq!(
-            detect_pattern("field.get", None).unwrap(),
+            detect_pattern("field.get"),
             Some(CommunicationPattern::FieldGet)
         );
         assert_eq!(
-            detect_pattern("field.get.vehicle_speed", None).unwrap(),
+            detect_pattern("field.get.vehicle_speed"),
             Some(CommunicationPattern::FieldGet)
         );
     }
@@ -309,118 +314,86 @@ mod tests {
     #[test]
     fn detect_field_set() {
         assert_eq!(
-            detect_pattern("field.set", None).unwrap(),
+            detect_pattern("field.set"),
             Some(CommunicationPattern::FieldSet)
         );
         assert_eq!(
-            detect_pattern("field.set.target_speed", None).unwrap(),
+            detect_pattern("field.set.target_speed"),
             Some(CommunicationPattern::FieldSet)
         );
     }
 
     #[test]
     fn detect_none_for_application_events() {
-        assert_eq!(detect_pattern("brake.activate", None).unwrap(), None);
-        assert_eq!(detect_pattern("motor.start", None).unwrap(), None);
-        assert_eq!(detect_pattern("error.communication", None).unwrap(), None);
+        assert_eq!(detect_pattern("brake.activate"), None);
+        assert_eq!(detect_pattern("motor.start"), None);
+        assert_eq!(detect_pattern("error.communication"), None);
     }
 
     #[test]
     fn detect_none_for_partial_prefix() {
-        assert_eq!(detect_pattern("service.requestX", None).unwrap(), None);
-        assert_eq!(detect_pattern("field.getAll", None).unwrap(), None);
-        assert_eq!(detect_pattern("event.subscribeNow", None).unwrap(), None);
+        assert_eq!(detect_pattern("service.requestX"), None);
+        assert_eq!(detect_pattern("field.getAll"), None);
+        assert_eq!(detect_pattern("event.subscribeNow"), None);
     }
 
     #[test]
     fn detect_none_for_empty_event() {
-        assert_eq!(detect_pattern("", None).unwrap(), None);
+        assert_eq!(detect_pattern(""), None);
     }
 
-    // ── detect_pattern (explicit annotation) ────────────────
+    // ── CommunicationPattern::infer_reply_event ────────────
 
     #[test]
-    fn explicit_overrides_convention() {
+    fn infer_reply_event_from_request_prefix() {
         assert_eq!(
-            detect_pattern("service.request.brake", Some("fire_forget")).unwrap(),
-            Some(CommunicationPattern::FireForget)
-        );
-    }
-
-    #[test]
-    fn explicit_none_opts_out() {
-        assert_eq!(
-            detect_pattern("service.request.brake", Some("none")).unwrap(),
-            None
+            CommunicationPattern::ServiceRequest
+                .infer_reply_event("service.request.compute_force")
+                .as_deref(),
+            Some("service.response.compute_force")
         );
     }
 
     #[test]
-    fn explicit_short_forms() {
+    fn infer_reply_event_exact_prefix() {
         assert_eq!(
-            detect_pattern("any.event", Some("request")).unwrap(),
-            Some(CommunicationPattern::ServiceRequest)
-        );
-        assert_eq!(
-            detect_pattern("any.event", Some("response")).unwrap(),
-            Some(CommunicationPattern::ServiceResponse)
-        );
-        assert_eq!(
-            detect_pattern("any.event", Some("subscribe")).unwrap(),
-            Some(CommunicationPattern::Subscribe)
-        );
-        assert_eq!(
-            detect_pattern("any.event", Some("notification")).unwrap(),
-            Some(CommunicationPattern::Notification)
-        );
-        assert_eq!(
-            detect_pattern("any.event", Some("field_get")).unwrap(),
-            Some(CommunicationPattern::FieldGet)
-        );
-        assert_eq!(
-            detect_pattern("any.event", Some("field_set")).unwrap(),
-            Some(CommunicationPattern::FieldSet)
+            CommunicationPattern::ServiceRequest
+                .infer_reply_event("service.request")
+                .as_deref(),
+            Some("service.response")
         );
     }
 
     #[test]
-    fn explicit_long_forms() {
-        assert_eq!(
-            detect_pattern("any.event", Some("service.request")).unwrap(),
-            Some(CommunicationPattern::ServiceRequest)
-        );
-        assert_eq!(
-            detect_pattern("any.event", Some("event.subscribe")).unwrap(),
-            Some(CommunicationPattern::Subscribe)
-        );
-        assert_eq!(
-            detect_pattern("any.event", Some("field.get")).unwrap(),
-            Some(CommunicationPattern::FieldGet)
-        );
+    fn infer_reply_event_none_for_non_request_pattern() {
+        // The method is only meaningful on ServiceRequest; every other
+        // variant returns None regardless of the event string.
+        for p in [
+            CommunicationPattern::ServiceResponse,
+            CommunicationPattern::FireForget,
+            CommunicationPattern::Subscribe,
+            CommunicationPattern::Notification,
+            CommunicationPattern::FieldGet,
+            CommunicationPattern::FieldSet,
+        ] {
+            assert_eq!(p.infer_reply_event("service.request.x"), None,
+                       "pattern {p:?} must not produce a reply");
+        }
     }
 
     #[test]
-    fn explicit_case_insensitive() {
-        assert_eq!(
-            detect_pattern("any.event", Some("Request")).unwrap(),
-            Some(CommunicationPattern::ServiceRequest)
-        );
-        assert_eq!(
-            detect_pattern("any.event", Some("FIRE_FORGET")).unwrap(),
-            Some(CommunicationPattern::FireForget)
-        );
+    fn infer_reply_event_none_for_non_request_event_name() {
+        let req = CommunicationPattern::ServiceRequest;
+        assert_eq!(req.infer_reply_event("service.response.x"), None);
+        assert_eq!(req.infer_reply_event("event.subscribe.status"), None);
+        assert_eq!(req.infer_reply_event("brake.activate"), None);
     }
 
     #[test]
-    fn explicit_unrecognized_value_is_error() {
-        let err = detect_pattern("any.event", Some("requst")).unwrap_err();
-        assert_eq!(err, "requst");
-    }
-
-    #[test]
-    fn explicit_typo_does_not_silently_disable() {
-        // "subscribee" is a typo — must be Err, not silent Ok(None)
-        assert!(detect_pattern("any.event", Some("subscribee")).is_err());
+    fn infer_reply_event_none_for_partial_prefix_match() {
+        // "service.requestX" is not a valid request event (no dot separator).
+        let req = CommunicationPattern::ServiceRequest;
+        assert_eq!(req.infer_reply_event("service.requestX"), None);
     }
 
     // ── required_capability ─────────────────────────────────

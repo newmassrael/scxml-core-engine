@@ -16,6 +16,7 @@
 //   // main.rs
 //   include!(concat!(env!("OUT_DIR"), "/traffic_light_sm.rs"));
 
+pub mod diagnostics;
 pub mod model;
 pub mod parser;
 pub mod analyzer;
@@ -643,8 +644,6 @@ pub struct MeshResult {
     pub output: generator::GeneratedOutput,
     /// Dynamic target warnings (targetexpr cannot be statically resolved).
     pub dynamic_target_warnings: Vec<mesh::topology::TopologyWarning>,
-    /// QoS intent/config mismatch warnings.
-    pub qos_warnings: Vec<mesh::topology::QosWarning>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -660,12 +659,11 @@ pub struct MeshResult {
 ///   2. Collect <send> targets from the model (single pass)
 ///   2a. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
 ///   2b. Resolve targets against deploy.yaml bindings
-///   2c. QoS intent/config consistency validation (warnings)
-///   2d. Pattern capability validation — architectural: is the bound transport
+///   2c. Pattern capability validation — architectural: is the bound transport
 ///       even capable of the requested communication pattern? (e.g. zenoh
 ///       cannot do request/reply). Runs BEFORE event coverage because a
 ///       transport mismatch is a deploy.yaml design error.
-///   2e. Event coverage validation — implementation: does the receiver have
+///   2d. Event coverage validation — implementation: does the receiver have
 ///       a matching <transition> for every sent event?
 ///   3. Transport codegen (template rendering). Device-shared session config
 ///      is read directly from `DeployConfig` (no extraction/merging step —
@@ -690,21 +688,17 @@ pub fn compile_mesh_transport(
     // Stage 2b: resolve static targets against deploy.yaml bindings
     let resolved = mesh::topology::resolve_targets(&summary, &deploy_cfg, &model.name)?;
 
-    // Stage 2c: QoS intent/config consistency validation (warnings, not errors)
-    let qos_warnings = mesh::topology::validate_qos_consistency(&summary, &deploy_cfg, &model.name);
-
     if resolved.is_empty() {
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
             dynamic_target_warnings,
-            qos_warnings,
         });
     }
 
-    // Stage 2d: pattern capability validation — architectural check.
+    // Stage 2c: pattern capability validation — architectural check.
     // A transport that lacks a required capability is a design error.
     let pattern_violations =
-        mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name)?;
+        mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name);
     if !pattern_violations.is_empty() {
         return Err(mesh::error::TopologyError::PatternCapabilityViolation {
             sender: model.name.clone(),
@@ -713,7 +707,7 @@ pub fn compile_mesh_transport(
         .into());
     }
 
-    // Stage 2e: event coverage — implementation check.
+    // Stage 2d: event coverage — implementation check.
     let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
     let receiver_models =
         mesh::topology::load_receiver_models(&resolved, &deploy_cfg, deploy_dir, &model.name)?;
@@ -745,7 +739,6 @@ pub fn compile_mesh_transport(
     Ok(MeshResult {
         output,
         dynamic_target_warnings,
-        qos_warnings,
     })
 }
 

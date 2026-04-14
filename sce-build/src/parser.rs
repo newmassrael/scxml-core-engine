@@ -13,6 +13,10 @@ pub struct SCXMLParser {
     document_order_counter: u32,
     invoke_counter: u32,
     send_counter: u32,
+    /// Build-time deprecation notices collected during the current parse.
+    /// Accessed via `deprecation_warnings()`; reset by `clear_diagnostics()`
+    /// when a parser instance is reused across documents.
+    deprecation_warnings: Vec<crate::diagnostics::DeprecationWarning>,
 }
 
 impl SCXMLParser {
@@ -21,7 +25,23 @@ impl SCXMLParser {
             document_order_counter: 0,
             invoke_counter: 0,
             send_counter: 0,
+            deprecation_warnings: Vec::new(),
         }
+    }
+
+    /// Deprecation notices recorded during the most recent parse. The parser
+    /// stores them on itself rather than on `SCXMLModel` so the domain model
+    /// stays focused on generator input — diagnostics are a parse-pass
+    /// artifact with a different lifecycle.
+    pub fn deprecation_warnings(&self) -> &[crate::diagnostics::DeprecationWarning] {
+        &self.deprecation_warnings
+    }
+
+    /// Take ownership of the collected deprecation notices, clearing the
+    /// internal buffer. Useful when the caller wants to surface notices
+    /// through its own aggregated result type without re-allocating.
+    pub fn take_deprecation_warnings(&mut self) -> Vec<crate::diagnostics::DeprecationWarning> {
+        std::mem::take(&mut self.deprecation_warnings)
     }
 
     pub fn parse_file(&mut self, scxml_path: &str) -> Result<SCXMLModel, String> {
@@ -903,26 +923,31 @@ impl SCXMLParser {
             model.needs_http_send = true;
         }
 
-        // SCE Mesh: QoS intent attribute (sce:qos="reliable"|"best-effort")
+        // SCE_MESH.md §13 path B — SCXML purity: sce:qos / sce:pattern /
+        // sce:reply-event attributes on <send> are no longer part of the
+        // mesh model. Pattern is inferred from event-name conventions
+        // (pattern.rs) and RPC reply pairing from topology structure.
+        // Stage 1: the attributes are tolerated, a structured warning is
+        // recorded on the parser, and the values are dropped. Stage 2
+        // (Session E1 finalization) promotes these to hard errors.
         use crate::forge::model::SCE_NAMESPACE;
-        action.mesh_qos = elem
-            .attribute((SCE_NAMESPACE, "qos"))
-            .unwrap_or("")
-            .to_string();
-
-        // SCE Mesh: Explicit communication pattern (sce:pattern="request"|...)
-        // Overrides convention-based detection from event name prefix.
-        action.mesh_pattern = elem
-            .attribute((SCE_NAMESPACE, "pattern"))
-            .unwrap_or("")
-            .to_string();
-
-        // SCE Mesh: Reply event name for RPC patterns (sce:reply-event="...")
-        // Used by codegen to generate correlation table entries.
-        action.mesh_reply_event = elem
-            .attribute((SCE_NAMESPACE, "reply-event"))
-            .unwrap_or("")
-            .to_string();
+        let _ = model; // deprecation notices live on the parser, not the model
+        for deprecated_attr in ["qos", "pattern", "reply-event"] {
+            if elem.attribute((SCE_NAMESPACE, deprecated_attr)).is_some() {
+                self.deprecation_warnings.push(crate::diagnostics::DeprecationWarning {
+                    attribute: format!("sce:{deprecated_attr}"),
+                    event: if action.event.is_empty() {
+                        None
+                    } else {
+                        Some(action.event.clone())
+                    },
+                    reason: "removed by SCE_MESH.md §13 path B — pattern detection now \
+                             uses event-name conventions and RPC reply pairing is \
+                             topology-inferred"
+                        .to_string(),
+                });
+            }
+        }
     }
 
     fn parse_if_action(

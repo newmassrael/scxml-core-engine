@@ -161,19 +161,6 @@ pub enum TopologyError {
         violations: Vec<super::pattern::PatternViolation>,
     },
 
-    /// Unrecognized `sce:pattern` attribute value on a `<send>` action.
-    /// Likely a typo — fails the build to prevent silent validation bypass.
-    #[error("unrecognized sce:pattern=\"{value}\" on <send target=\"{target}\" event=\"{event}\"/> \
-             in state '{state}' of machine '{sender}'. \
-             Valid values: request, response, fire_forget, subscribe, notification, field_get, field_set, none")]
-    UnrecognizedPattern {
-        sender: String,
-        state: String,
-        target: String,
-        event: String,
-        value: String,
-    },
-
     /// A deploy.yaml binding is missing a field required by its transport.
     /// Detected at the Rust level (topology stage) so users get a clear
     /// deploy.yaml diagnostic instead of a deferred C++ `#error`.
