@@ -6,11 +6,35 @@
 // Reads `sce:kind` on <scxml> root and dispatches to kind-specific parsing.
 // Also handles inline kinds on <data> elements within statechart documents.
 
-use crate::forge::error::{ForgeError, ValidationError, XmlError};
+use crate::forge::error::{ForgeError, Located, ValidationError, XmlError};
 use crate::forge::model::*;
+
+/// Construct a [`Located<ForgeError>`] from a node + the enclosing
+/// document's filename.
+///
+/// Uses `roxmltree::Document::text_pos_at` on the node's byte range
+/// start to recover the (line, col) from libxml2's point of view.
+/// Every raise-site in this module that has a node in scope runs
+/// through here so location data on diagnostics is uniform: an agent
+/// reading `xml/schema-validation` and `validation/missing-attribute`
+/// records gets the same shape of location hint for both.
+fn located<E: Into<ForgeError>>(
+    node: &roxmltree::Node,
+    name: &str,
+    err: E,
+) -> Located<ForgeError> {
+    let pos = node.document().text_pos_at(node.range().start);
+    Located::new(err.into(), name, Some(pos.row), Some(pos.col))
+}
 
 /// Detect the `sce:kind` attribute on the <scxml> root element.
 /// Returns `None` if no `sce:kind` is present (defaults to statechart).
+///
+/// Errors carry a file name but not always a line — an XML parse
+/// failure is raised before the DOM exists, so no node anchors the
+/// location. Callers that need a file label should pass one via
+/// the higher-level `parse_forge_with_imports` entry point; this
+/// lower-level helper reports the file-less version.
 pub fn detect_kind(content: &str) -> Result<Option<ForgeKind>, ForgeError> {
     let doc = roxmltree::Document::parse(content)
         .map_err(|e| XmlError::Parse(e.to_string()))?;
@@ -20,7 +44,10 @@ pub fn detect_kind(content: &str) -> Result<Option<ForgeKind>, ForgeError> {
 
 /// Single-parse entry point: detect kind and parse forge document in one pass.
 /// Returns `None` if the document is a statechart (no `sce:kind` or `sce:kind="statechart"`).
-pub fn parse_forge(content: &str, name: &str) -> Result<Option<ForgeDocument>, ForgeError> {
+pub fn parse_forge(
+    content: &str,
+    name: &str,
+) -> Result<Option<ForgeDocument>, Located<ForgeError>> {
     parse_forge_with_imports(content, name).map(|opt| opt.map(|pf| pf.document))
 }
 
@@ -36,25 +63,37 @@ pub fn parse_forge(content: &str, name: &str) -> Result<Option<ForgeDocument>, F
 /// located (e.g. `sce-build` vendored without the `schemas/` directory),
 /// validation is silently skipped — see
 /// `xsd_validator::validate_or_skip` for the rationale.
-pub fn parse_forge_with_imports(content: &str, name: &str) -> Result<Option<ParsedForge>, ForgeError> {
+pub fn parse_forge_with_imports(
+    content: &str,
+    name: &str,
+) -> Result<Option<ParsedForge>, Located<ForgeError>> {
+    // XSD validation carries its own per-violation line data inside
+    // `XsdErrors`; wrap with name here so the outer `Located` still
+    // names the file (and the emission path picks XsdErrors' lines).
     crate::forge::xsd_validator::validate_or_skip(content, name)
-        .map_err(XmlError::SchemaValidation)?;
+        .map_err(|e| Located::new(XmlError::SchemaValidation(e).into(), name, None, None))?;
 
-    let doc = roxmltree::Document::parse(content)
-        .map_err(|e| XmlError::Parse(e.to_string()))?;
+    let doc = roxmltree::Document::parse(content).map_err(|e| {
+        Located::new(XmlError::Parse(e.to_string()).into(), name, None, None)
+    })?;
     let root = doc.root_element();
 
-    let kind = match detect_kind_from_node(&root)? {
-        None => return Ok(None),
-        Some(ForgeKind::Statechart) => return Ok(None),
-        Some(k) => k,
+    let kind = match detect_kind_from_node(&root) {
+        Ok(None) => return Ok(None),
+        Ok(Some(ForgeKind::Statechart)) => return Ok(None),
+        Ok(Some(k)) => k,
+        Err(e) => return Err(located(&root, name, e)),
     };
 
     if !kind.is_supported() {
-        return Err(ValidationError::UnsupportedKind(kind.to_string()).into());
+        return Err(located(
+            &root,
+            name,
+            ValidationError::UnsupportedKind(kind.to_string()),
+        ));
     }
 
-    let imports = parse_imports(&root)?;
+    let imports = parse_imports(&root).map_err(|e| located(&root, name, e))?;
     let document = parse_forge_from_node(&root, name, kind)?;
     Ok(Some(ParsedForge { document, imports }))
 }
@@ -76,70 +115,122 @@ fn parse_forge_from_node(
     root: &roxmltree::Node,
     name: &str,
     kind: ForgeKind,
-) -> Result<ForgeDocument, ForgeError> {
+) -> Result<ForgeDocument, Located<ForgeError>> {
     match kind {
-        ForgeKind::Transform => Ok(parse_transform(root, name).map(ForgeDocument::Transform)?),
-        ForgeKind::Lookup => Ok(parse_lookup(root, name).map(ForgeDocument::Lookup)?),
-        ForgeKind::Condition => Ok(parse_condition(root, name).map(ForgeDocument::Condition)?),
-        ForgeKind::Codec => Ok(parse_codec(root, name).map(ForgeDocument::Codec)?),
-        ForgeKind::Validator => Ok(parse_validator(root, name).map(ForgeDocument::Validator)?),
-        ForgeKind::Procedure => Ok(parse_procedure(root, name).map(ForgeDocument::Procedure)?),
-        ForgeKind::Filter => Ok(parse_filter(root, name).map(ForgeDocument::Filter)?),
-        ForgeKind::Interpolation => Ok(parse_interpolation(root, name).map(ForgeDocument::Interpolation)?),
-        ForgeKind::Timer => Ok(parse_timer(root, name).map(ForgeDocument::Timer)?),
-        ForgeKind::Observer => Ok(parse_observer(root, name).map(ForgeDocument::Observer)?),
-        ForgeKind::Statechart => Err(ValidationError::WrongPipeline {
-            kind: ForgeKind::Statechart,
-        }.into()),
+        ForgeKind::Transform => parse_transform(root, name).map(ForgeDocument::Transform),
+        ForgeKind::Lookup => parse_lookup(root, name).map(ForgeDocument::Lookup),
+        ForgeKind::Condition => parse_condition(root, name).map(ForgeDocument::Condition),
+        ForgeKind::Codec => parse_codec(root, name).map(ForgeDocument::Codec),
+        ForgeKind::Validator => parse_validator(root, name).map(ForgeDocument::Validator),
+        ForgeKind::Procedure => parse_procedure(root, name).map(ForgeDocument::Procedure),
+        ForgeKind::Filter => parse_filter(root, name).map(ForgeDocument::Filter),
+        ForgeKind::Interpolation => parse_interpolation(root, name).map(ForgeDocument::Interpolation),
+        ForgeKind::Timer => parse_timer(root, name).map(ForgeDocument::Timer),
+        ForgeKind::Observer => parse_observer(root, name).map(ForgeDocument::Observer),
+        ForgeKind::Statechart => Err(located(
+            root,
+            name,
+            ValidationError::WrongPipeline {
+                kind: ForgeKind::Statechart,
+            },
+        )),
     }
+}
+
+// ── Kind-parser wrappers ───────────────────────────────────────
+//
+// Each `parse_X` wrapper gives upstream callers a `Located<ForgeError>`
+// carrying file + root-line position for any failure inside the kind's
+// parser. The `_inner` implementations keep the leaner `ValidationError`
+// type so interior logic can `?`-propagate without location plumbing.
+//
+// `parse_transform` below is the one exception — it was upgraded to
+// per-leaf precision in this commit as the template for future kind
+// sweeps. Callers read all kinds through the same `Located<ForgeError>`
+// surface regardless of interior style.
+
+fn parse_lookup(root: &roxmltree::Node, name: &str) -> Result<LookupModel, Located<ForgeError>> {
+    parse_lookup_inner(root, name).map_err(|e| located(root, name, e))
+}
+
+fn parse_condition(root: &roxmltree::Node, name: &str) -> Result<ConditionModel, Located<ForgeError>> {
+    parse_condition_inner(root, name).map_err(|e| located(root, name, e))
+}
+
+fn parse_codec(root: &roxmltree::Node, name: &str) -> Result<CodecModel, Located<ForgeError>> {
+    parse_codec_inner(root, name).map_err(|e| located(root, name, e))
+}
+
+fn parse_validator(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel, Located<ForgeError>> {
+    parse_validator_inner(root, name).map_err(|e| located(root, name, e))
+}
+
+fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel, Located<ForgeError>> {
+    parse_procedure_inner(root, name).map_err(|e| located(root, name, e))
+}
+
+fn parse_filter(root: &roxmltree::Node, name: &str) -> Result<FilterModel, Located<ForgeError>> {
+    parse_filter_inner(root, name).map_err(|e| located(root, name, e))
+}
+
+fn parse_interpolation(root: &roxmltree::Node, name: &str) -> Result<InterpolationModel, Located<ForgeError>> {
+    parse_interpolation_inner(root, name).map_err(|e| located(root, name, e))
+}
+
+fn parse_timer(root: &roxmltree::Node, name: &str) -> Result<TimerModel, Located<ForgeError>> {
+    parse_timer_inner(root, name).map_err(|e| located(root, name, e))
+}
+
+fn parse_observer(root: &roxmltree::Node, name: &str) -> Result<ObserverModel, Located<ForgeError>> {
+    parse_observer_inner(root, name).map_err(|e| located(root, name, e))
 }
 
 // ── Transform parsing ──────────────────────────────────────────
 
-fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel, ValidationError> {
+fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
+        .ok_or_else(|| located(root, name, ValidationError::MissingElement {
             kind: ForgeKind::Transform,
             element: "datamodel".into(),
-        })?;
+        }))?;
 
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
 
     for data in data_children(&datamodel) {
-        let field = parse_forge_field(&data)?;
+        let field = parse_forge_field(&data).map_err(|e| located(&data, name, e))?;
         match field.direction {
             Direction::In => inputs.push(field),
             Direction::Out => outputs.push(field),
             Direction::Internal => {
-                return Err(ValidationError::InvalidDirection {
+                return Err(located(&data, name, ValidationError::InvalidDirection {
                     kind: ForgeKind::Transform,
                     direction: "internal".into(),
                     field: field.id,
-                });
+                }));
             }
         }
     }
 
     if inputs.is_empty() {
-        return Err(ValidationError::EmptyCollection {
+        return Err(located(&datamodel, name, ValidationError::EmptyCollection {
             kind: ForgeKind::Transform,
             what: "input field".into(),
-        });
+        }));
     }
     if outputs.is_empty() {
-        return Err(ValidationError::EmptyCollection {
+        return Err(located(&datamodel, name, ValidationError::EmptyCollection {
             kind: ForgeKind::Transform,
             what: "output field".into(),
-        });
+        }));
     }
 
     for out in &outputs {
         if out.expr.is_none() {
-            return Err(ValidationError::MissingAttribute {
+            return Err(located(&datamodel, name, ValidationError::MissingAttribute {
                 element: format!("Transform output field '{}'", out.id),
                 attr: "expr".into(),
-            });
+            }));
         }
     }
 
@@ -152,7 +243,7 @@ fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel,
 
 // ── Lookup parsing ─────────────────────────────────────────────
 
-fn parse_lookup(root: &roxmltree::Node, name: &str) -> Result<LookupModel, ValidationError> {
+fn parse_lookup_inner(root: &roxmltree::Node, name: &str) -> Result<LookupModel, ValidationError> {
     let datamodel = find_child(root, "datamodel")
         .ok_or(ValidationError::MissingElement {
             kind: ForgeKind::Lookup,
@@ -251,7 +342,7 @@ fn parse_lookup(root: &roxmltree::Node, name: &str) -> Result<LookupModel, Valid
 
 // ── Condition parsing ──────────────────────────────────────────
 
-fn parse_condition(root: &roxmltree::Node, name: &str) -> Result<ConditionModel, ValidationError> {
+fn parse_condition_inner(root: &roxmltree::Node, name: &str) -> Result<ConditionModel, ValidationError> {
     let datamodel = find_child(root, "datamodel")
         .ok_or(ValidationError::MissingElement {
             kind: ForgeKind::Condition,
@@ -307,7 +398,7 @@ fn parse_condition(root: &roxmltree::Node, name: &str) -> Result<ConditionModel,
 
 // ── Codec parsing ──────────────────────────────────────────────
 
-fn parse_codec(root: &roxmltree::Node, name: &str) -> Result<CodecModel, ValidationError> {
+fn parse_codec_inner(root: &roxmltree::Node, name: &str) -> Result<CodecModel, ValidationError> {
     let default_endian = sce_attr(root, "default-endian")
         .and_then(|s| Endian::from_attr(&s))
         .unwrap_or(Endian::Big);
@@ -441,7 +532,7 @@ pub fn parse_codec_field_from_node(node: &roxmltree::Node) -> Result<CodecField,
 
 // ── Validator parsing ──────────────────────────────────────
 
-fn parse_validator(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel, ValidationError> {
+fn parse_validator_inner(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel, ValidationError> {
     let datamodel = find_child(root, "datamodel")
         .ok_or(ValidationError::MissingElement {
             kind: ForgeKind::Validator,
@@ -530,7 +621,7 @@ fn parse_validator(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel,
 
 // ── Procedure parsing ──────────────────────────────────────
 
-fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel, ValidationError> {
+fn parse_procedure_inner(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel, ValidationError> {
     let initial = root
         .attribute("initial")
         .ok_or(ValidationError::MissingAttribute {
@@ -919,7 +1010,7 @@ fn parse_time_interval(s: &str) -> Result<u32, ValidationError> {
 
 // ── Filter parsing ────────────────────────────────────────────
 
-fn parse_filter(root: &roxmltree::Node, name: &str) -> Result<FilterModel, ValidationError> {
+fn parse_filter_inner(root: &roxmltree::Node, name: &str) -> Result<FilterModel, ValidationError> {
     let datamodel = find_child(root, "datamodel")
         .ok_or(ValidationError::MissingElement {
             kind: ForgeKind::Filter,
@@ -1022,7 +1113,7 @@ fn parse_filter(root: &roxmltree::Node, name: &str) -> Result<FilterModel, Valid
 
 // ── Interpolation parsing ─────────────────────────────────────
 
-fn parse_interpolation(root: &roxmltree::Node, name: &str) -> Result<InterpolationModel, ValidationError> {
+fn parse_interpolation_inner(root: &roxmltree::Node, name: &str) -> Result<InterpolationModel, ValidationError> {
     let datamodel = find_child(root, "datamodel")
         .ok_or(ValidationError::MissingElement {
             kind: ForgeKind::Interpolation,
@@ -1201,7 +1292,7 @@ fn parse_interpolation(root: &roxmltree::Node, name: &str) -> Result<Interpolati
 
 // ── Timer parsing ─────────────────────────────────────────────
 
-fn parse_timer(root: &roxmltree::Node, name: &str) -> Result<TimerModel, ValidationError> {
+fn parse_timer_inner(root: &roxmltree::Node, name: &str) -> Result<TimerModel, ValidationError> {
     let datamodel = find_child(root, "datamodel")
         .ok_or(ValidationError::MissingElement {
             kind: ForgeKind::Timer,
@@ -1311,7 +1402,7 @@ fn parse_timer(root: &roxmltree::Node, name: &str) -> Result<TimerModel, Validat
 
 // ── Observer parsing ──────────────────────────────────────────
 
-fn parse_observer(root: &roxmltree::Node, name: &str) -> Result<ObserverModel, ValidationError> {
+fn parse_observer_inner(root: &roxmltree::Node, name: &str) -> Result<ObserverModel, ValidationError> {
     let datamodel = find_child(root, "datamodel")
         .ok_or(ValidationError::MissingElement {
             kind: ForgeKind::Observer,

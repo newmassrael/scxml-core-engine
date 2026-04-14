@@ -238,31 +238,30 @@ pub fn compile_forge_from_string(
     name: &str,
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
-    compile_forge_from_string_inner(content, name, language)
-        .map_err(|e| forge::error::Located::new(e, name, None, None))
-}
+    use forge::error::{Located, ValidationError};
 
-fn compile_forge_from_string_inner(
-    content: &str,
-    name: &str,
-    language: generator::Language,
-) -> Result<generator::GeneratedOutput, forge::error::ForgeError> {
     let doc = forge::parser::parse_forge(content, name)?
-        .ok_or(forge::error::ForgeError::Validation(
-            forge::error::ValidationError::WrongPipeline {
+        .ok_or_else(|| Located::new(
+            ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
-            },
+            }
+            .into(),
+            name,
+            None,
+            None,
         ))?;
 
     let template_base = find_template_base();
 
-    Ok(match language {
+    let output = match language {
         generator::Language::Cpp => forge::generator::generate_cpp(&doc, &template_base),
         generator::Language::Kotlin => forge::generator::generate_kotlin(&doc, &template_base),
         generator::Language::Rust => forge::generator::generate_rust(&doc, &template_base),
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
-    }?)
+    }
+    .map_err(|e| Located::new(e, name, None, None))?;
+    Ok(output)
 }
 
 /// Options that steer forge cross-file codegen beyond the plain
@@ -296,31 +295,26 @@ pub fn compile_forge_with_imports(
     base_dir: &Path,
     options: &ForgeCompileOptions,
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
-    compile_forge_with_imports_inner(content, name, language, base_dir, options)
-        .map_err(|e| forge::error::Located::new(e, name, None, None))
-}
+    use forge::error::{Located, ValidationError};
 
-fn compile_forge_with_imports_inner(
-    content: &str,
-    name: &str,
-    language: generator::Language,
-    base_dir: &Path,
-    options: &ForgeCompileOptions,
-) -> Result<generator::GeneratedOutput, forge::error::ForgeError> {
     let parsed = forge::parser::parse_forge_with_imports(content, name)?
-        .ok_or(forge::error::ForgeError::Validation(
-            forge::error::ValidationError::WrongPipeline {
+        .ok_or_else(|| Located::new(
+            ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
-            },
+            }
+            .into(),
+            name,
+            None,
+            None,
         ))?;
 
     let template_base = find_template_base();
-    let mut import_ctx =
-        forge::generator::resolve_imports(&parsed.imports, &language, options)?;
+    let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
+        .map_err(|e| Located::new(e, name, None, None))?;
 
     validate_and_enrich_imports(&mut import_ctx, &parsed.imports, base_dir, &language)?;
 
-    Ok(match language {
+    let output = match language {
         generator::Language::Cpp => {
             forge::generator::generate_cpp_with_imports(&parsed.document, &template_base, &import_ctx)
         }
@@ -336,7 +330,9 @@ fn compile_forge_with_imports_inner(
         generator::Language::Python => {
             forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx)
         }
-    }?)
+    }
+    .map_err(|e| Located::new(e, name, None, None))?;
+    Ok(output)
 }
 
 /// Validate and enrich `<sce:import>` declarations in a single pass.
@@ -351,45 +347,66 @@ fn validate_and_enrich_imports(
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
     language: &generator::Language,
-) -> Result<(), forge::error::ForgeError> {
-    use forge::error::ImportError;
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{ImportError, Located};
 
     for (ctx, imp) in import_ctx.iter_mut().zip(imports.iter()) {
         let src_path = base_dir.join(&imp.src);
+        let src_label = src_path.display().to_string();
 
         // 1. Existence
         if !src_path.exists() {
-            return Err(ImportError::FileNotFound {
-                src: imp.src.clone(),
-                searched: src_path.display().to_string(),
-            }
-            .into());
+            return Err(Located::new(
+                ImportError::FileNotFound {
+                    src: imp.src.clone(),
+                    searched: src_label.clone(),
+                }
+                .into(),
+                &src_label,
+                None,
+                None,
+            ));
         }
 
         // Read once
-        let content = std::fs::read_to_string(&src_path)
-            .map_err(|e| {
+        let content = std::fs::read_to_string(&src_path).map_err(|e| {
+            Located::new(
                 forge::error::ForgeError::Import(ImportError::ReadError {
                     src: imp.src.clone(),
                     source: e,
-                })
-            })?;
+                }),
+                &src_label,
+                None,
+                None,
+            )
+        })?;
 
         // 2. Kind validation
-        let actual_kind = forge::parser::detect_kind(&content)?
+        let actual_kind = forge::parser::detect_kind(&content)
+            .map_err(|e| Located::new(e, &src_label, None, None))?
             .ok_or_else(|| {
-                forge::error::ForgeError::Import(ImportError::NotForge {
-                    src: imp.src.clone(),
-                })
+                Located::new(
+                    forge::error::ForgeError::Import(ImportError::NotForge {
+                        src: imp.src.clone(),
+                    }),
+                    &src_label,
+                    None,
+                    None,
+                )
             })?;
 
         if actual_kind != imp.kind {
-            return Err(ImportError::KindMismatch {
-                src: imp.src.clone(),
-                declared: imp.kind.to_string(),
-                actual: actual_kind.to_string(),
-            }
-            .into());
+            return Err(Located::new(
+                ImportError::KindMismatch {
+                    src: imp.src.clone(),
+                    declared: imp.kind.to_string(),
+                    actual: actual_kind.to_string(),
+                }
+                .into(),
+                &src_label,
+                None,
+                None,
+            ));
         }
 
         // 3. API enrichment (reuse already-read content). We parse the
