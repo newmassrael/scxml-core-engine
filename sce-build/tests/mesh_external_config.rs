@@ -471,6 +471,91 @@ topology:
 }
 
 #[test]
+fn empty_event_entry_rejected() {
+    // `events.foo: {}` declares an event mapping with no field. Without
+    // dedicated rejection this entry silently contributes nothing to
+    // resolution and can trip a downstream invariant check. Build must
+    // fail here with a diagnostic naming the SCXML event.
+    let fx = Fixture::new("empty_event");
+    fx.write("vsomeip.json", VSOMEIP_JSON);
+    fx.write("brake.scxml", BRAKE_SCXML);
+    fx.write("motor.scxml", MOTOR_SCXML);
+    let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            events:
+              "service.request.compute_force": {}
+      motor:
+        source: motor.scxml
+"##;
+    let deploy_path = fx.write("deploy.yaml", yaml);
+
+    let model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+        Ok(_) => panic!("empty event entry must be rejected"),
+        Err(e) => e,
+    };
+    match err {
+        MeshError::External(ExternalConfigError::EmptyEventEntry { event, target, .. }) => {
+            assert_eq!(target, "#motor");
+            assert_eq!(event, "service.request.compute_force");
+        }
+        other => panic!("expected EmptyEventEntry, got {other}"),
+    }
+}
+
+#[test]
+fn reserved_keys_on_non_someip_transport_rejected() {
+    // Reserved SOME/IP ID keys have no meaning on any other transport —
+    // catching them where the operator declared them is better than
+    // letting them slip into `extra` and be silently ignored.
+    let fx = Fixture::new("reserved_keys_zenoh");
+    fx.write("brake.scxml", BRAKE_SCXML);
+    fx.write("motor.scxml", MOTOR_SCXML);
+    let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "brake/cmd"
+            method_id: "0x0421"
+      motor:
+        source: motor.scxml
+"##;
+    let deploy_path = fx.write("deploy.yaml", yaml);
+
+    let model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+        Ok(_) => panic!("reserved keys on zenoh binding must be rejected"),
+        Err(e) => e,
+    };
+    match err {
+        MeshError::External(ExternalConfigError::ReservedSomeipIdKeys {
+            transport, fields, ..
+        }) => {
+            assert_eq!(transport, "zenoh");
+            assert_eq!(fields, vec!["method_id"]);
+        }
+        other => panic!("expected ReservedSomeipIdKeys, got {other}"),
+    }
+}
+
+#[test]
 fn reserved_someip_id_keys_rejected_by_compile() {
     // deploy.yaml does not declare SOME/IP numeric IDs directly — the
     // names `service_id`, `method_id`, etc. are reserved and rejected

@@ -219,6 +219,19 @@ pub enum ExternalConfigError {
         fields: Vec<String>,
     },
 
+    /// A per-event entry declares no field at all (`events.foo: {}`).
+    /// Every entry must set exactly one of `method`/`event_group`/
+    /// `getter`/`setter` — an empty entry contributes no mapping and
+    /// would silently drop the event at codegen time. Rejected at
+    /// resolution so the diagnostic points at the SCXML event.
+    #[error("machine '{machine}': binding '{target}' event '{event}' declares no field. \
+             Each per-event entry must set exactly one of method / event_group / getter / setter.")]
+    EmptyEventEntry {
+        machine: String,
+        target: String,
+        event: String,
+    },
+
     // EventBindingUnused lives on TopologyError because detection requires
     // the SCXML send summary (an SCXML-stage input).
 }

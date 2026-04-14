@@ -433,20 +433,30 @@ fn resolve_event_binding_to_tag(
     if event_binding.getter.is_some()      { set_fields.push("getter"); }
     if event_binding.setter.is_some()      { set_fields.push("setter"); }
 
-    if set_fields.len() > 1 {
-        return Err(ExternalConfigError::ConflictingEventFieldKinds {
-            machine: machine.to_string(),
-            target: target.as_str().to_string(),
-            event: event_name.to_string(),
-            fields: set_fields.iter().map(|s| s.to_string()).collect(),
-        });
+    // Exactly one field family must be set. Both "zero fields" and
+    // "multiple fields" are user errors caught here, so the match below
+    // does not need a fall-through branch and topology's invariant
+    // "every someip binding that lands in ExternalResolution has a
+    // resolvable per-event map" stays intact.
+    match set_fields.len() {
+        0 => {
+            return Err(ExternalConfigError::EmptyEventEntry {
+                machine: machine.to_string(),
+                target: target.as_str().to_string(),
+                event: event_name.to_string(),
+            });
+        }
+        1 => {}
+        _ => {
+            return Err(ExternalConfigError::ConflictingEventFieldKinds {
+                machine: machine.to_string(),
+                target: target.as_str().to_string(),
+                event: event_name.to_string(),
+                fields: set_fields.iter().map(|s| s.to_string()).collect(),
+            });
+        }
     }
-
-    // Gate above guarantees at most one field family is populated. Zero-field
-    // entries (empty `events.foo: {}`) are handled explicitly below.
-    let Some(kind) = set_fields.first().copied() else {
-        return Ok(None);
-    };
+    let kind = set_fields[0];
 
     let defaults = resolve_event_binding_to_default(
         machine, target, config_path, event_name, event_binding, service_ref, missing,
