@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 pub struct SCXMLParser {
     document_order_counter: u32,
     invoke_counter: u32,
+    hybrid_invoke_counter: u32,
     send_counter: u32,
     /// Build-time deprecation notices collected during the current parse.
     /// Accessed via `deprecation_warnings()`; reset by `clear_diagnostics()`
@@ -24,6 +25,7 @@ impl SCXMLParser {
         Self {
             document_order_counter: 0,
             invoke_counter: 0,
+            hybrid_invoke_counter: 0,
             send_counter: 0,
             deprecation_warnings: Vec::new(),
         }
@@ -511,99 +513,13 @@ impl SCXMLParser {
                 }
             }
 
-            // Parse invokes
+            // Parse invokes — parse_invoke returns the typed Invoke variant
+            // directly; unsupported classifications are skipped silently.
             for invoke_elem in scxml_children(&child, "invoke") {
-                let invoke = self.parse_invoke(&invoke_elem, model, &state_id);
-                model.has_invoke = true;
-                if let Some(is_hybrid) = invoke.get("is_hybrid").and_then(|v| v.as_bool()) {
-                    if is_hybrid {
-                        // Document-order index among hybrid invokes in this model.
-                        // Drives the auto-generated child_name for hybrid invokes.
-                        let idx = model.iter_hybrid_invokes().count();
-                        // W3C SCXML 6.4: Extract params from invoke JSON
-                        let params = invoke
-                            .get("params")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .map(|p| Param {
-                                        name: json_str(p, "name"),
-                                        expr: json_str(p, "expr"),
-                                        location: json_str(p, "location"),
-                                        ..Default::default()
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        let hi = HybridInvokeInfo {
-                            common: InvokeCommon {
-                                invoke_id: json_str(&invoke, "id"),
-                                child_name: format!("{}_hybrid{idx}", model.name),
-                                state_name: state_id.clone(),
-                                autoforward: invoke
-                                    .get("autoforward")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("false")
-                                    == "true",
-                                params,
-                                idlocation: json_str(&invoke, "idlocation"),
-                                ..Default::default()
-                            },
-                            srcexpr: json_str(&invoke, "srcexpr"),
-                            contentexpr: json_str(&invoke, "contentexpr"),
-                        };
-                        state.invokes.push(Invoke::Hybrid(hi));
-                    }
+                if let Some(invoke) = self.parse_invoke(&invoke_elem, model, &state_id) {
+                    model.has_invoke = true;
+                    state.invokes.push(invoke);
                 }
-                if let Some(is_static) = invoke.get("is_static").and_then(|v| v.as_bool()) {
-                    if is_static {
-                        // W3C SCXML 6.4: Extract params from invoke JSON
-                        let params = invoke
-                            .get("params")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .map(|p| {
-                                        let param_expr = json_str(p, "expr");
-                                        let is_sl = is_static_string_literal(&param_expr);
-                                        Param {
-                                            name: json_str(p, "name"),
-                                            expr: param_expr.clone(),
-                                            location: json_str(p, "location"),
-                                            is_static_literal: is_sl,
-                                            static_value: if is_sl {
-                                                extract_static_string_literal(&param_expr)
-                                            } else {
-                                                String::new()
-                                            },
-                                        }
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-
-                        let si = ScxmlInvokeInfo {
-                            common: InvokeCommon {
-                                invoke_id: json_str(&invoke, "id"),
-                                child_name: String::new(),
-                                state_name: state_id.clone(),
-                                autoforward: invoke
-                                    .get("autoforward")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("false")
-                                    == "true",
-                                params,
-                                idlocation: json_str(&invoke, "idlocation"),
-                                ..Default::default()
-                            },
-                            finalize_content: json_str(&invoke, "finalize_content"),
-                            src: json_str(&invoke, "src"),
-                            namelist: json_str(&invoke, "namelist"),
-                        };
-                        state.invokes.push(Invoke::Scxml(si));
-                    }
-                }
-                state.raw_invoke_json.push(invoke);
             }
 
             model.states.insert(state_id.clone(), state);
@@ -1134,13 +1050,18 @@ impl SCXMLParser {
         Some(action)
     }
 
-    /// W3C SCXML 6.4: Parse `<invoke>` element
+    /// W3C SCXML 6.4: Parse `<invoke>` into the typed [`Invoke`] sum.
+    ///
+    /// Returns `None` if the element neither resolves to a static SCXML
+    /// session (`src` / inline `<content><scxml>`) nor to a hybrid session
+    /// (`srcexpr` / `contentexpr`). The caller pushes the result directly
+    /// onto `state.invokes`; there is no intermediate JSON representation.
     fn parse_invoke(
         &mut self,
         elem: &roxmltree::Node,
         model: &mut SCXMLModel,
-        _state_id: &str,
-    ) -> serde_json::Value {
+        state_id: &str,
+    ) -> Option<Invoke> {
         // W3C SCXML 6.4.1: Generate invoke ID if not provided
         let mut invoke_id = elem.attribute("id").unwrap_or("").to_string();
         if invoke_id.is_empty() {
@@ -1152,10 +1073,9 @@ impl SCXMLParser {
         let src = elem.attribute("src").unwrap_or("").to_string();
         let srcexpr = elem.attribute("srcexpr").unwrap_or("").to_string();
         let idlocation = elem.attribute("idlocation").unwrap_or("").to_string();
-        let autoforward = elem.attribute("autoforward").unwrap_or("false").to_string();
+        let autoforward = elem.attribute("autoforward").unwrap_or("false") == "true";
         let namelist = elem.attribute("namelist").unwrap_or("").to_string();
 
-        let mut content = String::new();
         let mut contentexpr = String::new();
         let mut has_inline_scxml = false;
         let mut inline_scxml_text = String::new();
@@ -1171,19 +1091,35 @@ impl SCXMLParser {
                 let doc_text = scxml_child_elem.document().input_text();
                 let range = scxml_child_elem.range();
                 inline_scxml_text = doc_text[range].to_string();
-            } else {
-                content = content_elem.attribute("expr").unwrap_or("").to_string();
             }
         }
 
-        // Parse <param> children
-        let mut params = Vec::new();
+        // Parse <param> children. Static invokes retain a static-literal
+        // optimisation flag so codegen can inline literal values.
+        let mut static_params: Vec<Param> = Vec::new();
+        let mut hybrid_params: Vec<Param> = Vec::new();
         for param in scxml_children(elem, "param") {
-            params.push(serde_json::json!({
-                "name": param.attribute("name").unwrap_or(""),
-                "expr": param.attribute("expr").unwrap_or(""),
-                "location": param.attribute("location").unwrap_or(""),
-            }));
+            let name = param.attribute("name").unwrap_or("").to_string();
+            let expr = param.attribute("expr").unwrap_or("").to_string();
+            let location = param.attribute("location").unwrap_or("").to_string();
+            let is_sl = is_static_string_literal(&expr);
+            static_params.push(Param {
+                name: name.clone(),
+                expr: expr.clone(),
+                location: location.clone(),
+                is_static_literal: is_sl,
+                static_value: if is_sl {
+                    extract_static_string_literal(&expr)
+                } else {
+                    String::new()
+                },
+            });
+            hybrid_params.push(Param {
+                name,
+                expr,
+                location,
+                ..Default::default()
+            });
         }
 
         // Parse <finalize>
@@ -1195,48 +1131,62 @@ impl SCXMLParser {
 
         // W3C SCXML 6.4: Classify invoke type
         let has_static_child = !src.is_empty() || has_inline_scxml;
-
-        let is_static_invoke = (invoke_type.is_empty()
-            || invoke_type == "scxml"
-            || invoke_type == "http://www.w3.org/TR/scxml/")
-            && srcexpr.is_empty()
-            && contentexpr.is_empty()
-            && has_static_child;
-
-        let is_hybrid_invoke = (invoke_type.is_empty()
+        let scxml_type = invoke_type.is_empty()
             || invoke_type == "scxml"
             || invoke_type == "http://www.w3.org/TR/scxml"
-            || invoke_type == "http://www.w3.org/TR/scxml/")
-            && (!srcexpr.is_empty() || !contentexpr.is_empty());
+            || invoke_type == "http://www.w3.org/TR/scxml/";
 
-        // Set model flags
+        let is_static_invoke =
+            scxml_type && srcexpr.is_empty() && contentexpr.is_empty() && has_static_child;
+        let is_hybrid_invoke = scxml_type && (!srcexpr.is_empty() || !contentexpr.is_empty());
+
         if is_hybrid_invoke {
             model.has_hybrid_invoke = true;
             model.needs_script_engine = true;
+            let idx = self.hybrid_invoke_counter;
+            self.hybrid_invoke_counter += 1;
+            return Some(Invoke::Hybrid(HybridInvokeInfo {
+                common: InvokeCommon {
+                    invoke_id,
+                    child_name: format!("{}_hybrid{idx}", model.name),
+                    state_name: state_id.to_string(),
+                    autoforward,
+                    params: hybrid_params,
+                    idlocation,
+                    ..Default::default()
+                },
+                srcexpr,
+                contentexpr,
+            }));
         }
 
-        // W3C SCXML 6.4.1: Namelist validation requires script engine
-        if is_static_invoke && !namelist.is_empty() {
-            model.needs_script_engine = true;
+        if is_static_invoke {
+            // W3C SCXML 6.4.1: Namelist validation requires script engine
+            if !namelist.is_empty() {
+                model.needs_script_engine = true;
+            }
+            return Some(Invoke::Scxml(ScxmlInvokeInfo {
+                common: InvokeCommon {
+                    invoke_id,
+                    child_name: String::new(),
+                    state_name: state_id.to_string(),
+                    autoforward,
+                    params: static_params,
+                    idlocation,
+                    ..Default::default()
+                },
+                finalize_content,
+                src,
+                namelist,
+                has_inline_scxml,
+                inline_scxml_text,
+            }));
         }
 
-        serde_json::json!({
-            "type": invoke_type,
-            "src": src,
-            "srcexpr": srcexpr,
-            "id": invoke_id,
-            "idlocation": idlocation,
-            "autoforward": autoforward,
-            "namelist": namelist,
-            "params": params,
-            "content": content,
-            "contentexpr": contentexpr,
-            "is_static": is_static_invoke,
-            "is_hybrid": is_hybrid_invoke,
-            "has_inline_scxml": has_inline_scxml,
-            "inline_scxml_text": inline_scxml_text,
-            "finalize_content": finalize_content,
-        })
+        // Neither static nor hybrid — currently a no-op classification path
+        // (e.g. invokes with an unsupported `type`). MeshRpc will plug in
+        // here once §9.5 support lands (Task #6 F-phase).
+        None
     }
 
     fn parse_donedata(
@@ -1596,38 +1546,12 @@ impl SCXMLParser {
         let mut invoke_count: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         let mut inline_child_count = 0u32;
 
-        // Build list of (has_inline, inline_text) for each Scxml invoke in
-        // document order, read from the parser-internal raw JSON. Used
-        // downstream to drive inline-extraction.
-        let mut invoke_map: Vec<(bool, String)> = Vec::new();
-        let mut state_ids_by_order: Vec<String> = model
-            .states
-            .values()
-            .map(|s| (s.id.clone(), s.document_order))
-            .collect::<Vec<_>>()
-            .into_iter()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect();
-        // Actually sort by document_order.
-        state_ids_by_order.sort_by_key(|id| model.states[id].document_order);
-        for state_id in &state_ids_by_order {
-            let state = &model.states[state_id];
-            for inv in &state.raw_invoke_json {
-                let is_static = inv.get("is_static").and_then(|v| v.as_bool()).unwrap_or(false);
-                if is_static {
-                    let has_inline = inv.get("has_inline_scxml").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let inline_text = json_str(inv, "inline_scxml_text");
-                    invoke_map.push((has_inline, inline_text));
-                }
-            }
-        }
-
         // Walk each state's invokes in document order and mutate the Scxml
-        // variants directly. `state.invokes` is the sole owner of invoke data;
-        // there is no model-level mirror to propagate into.
-        let mut scxml_index = 0usize;
+        // variants in place. The inline-content flag and text now live on
+        // `ScxmlInvokeInfo`; there is no separate JSON scratchpad.
+        let mut state_ids_by_order: Vec<String> =
+            model.states.keys().cloned().collect();
+        state_ids_by_order.sort_by_key(|id| model.states[id].document_order);
         for state_id in &state_ids_by_order {
             let state = model.states.get_mut(state_id).unwrap();
             for invoke in state.invokes.iter_mut() {
@@ -1635,20 +1559,16 @@ impl SCXMLParser {
                     Invoke::Scxml(info) => info,
                     _ => continue,
                 };
-                let i = scxml_index;
-                scxml_index += 1;
 
-                let (has_inline, ref inline_text) = if i < invoke_map.len() {
-                    invoke_map[i].clone()
-                } else {
-                    (false, String::new())
-                };
+                let has_inline = si.has_inline_scxml;
+                let inline_text = std::mem::take(&mut si.inline_scxml_text);
+                si.has_inline_scxml = false;
 
                 if has_inline && !inline_text.is_empty() {
                     // W3C SCXML 6.4: Extract inline <scxml> to separate file
                     // Determine child name from inline <scxml name="..."> or auto-generate
                     let child_name = extract_inline_child_name(
-                        inline_text,
+                        &inline_text,
                         &model.name,
                         &mut inline_child_count,
                     );
@@ -2047,13 +1967,6 @@ fn serialize_node_inner(node: &roxmltree::Node, parent_ns: Option<&str>, c14n: b
         result.push_str(&format!("</{tag}>"));
     }
     result
-}
-
-fn json_str(val: &serde_json::Value, key: &str) -> String {
-    val.get(key)
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string()
 }
 
 /// W3C SCXML 5.9.2: Check if expression is pure In() predicate

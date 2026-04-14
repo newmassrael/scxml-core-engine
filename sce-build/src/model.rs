@@ -317,6 +317,14 @@ pub struct ScxmlInvokeInfo {
     pub finalize_content: String,
     pub src: String,
     pub namelist: String,
+    /// Parser-internal: inline `<scxml>` extraction source. Populated when
+    /// `<invoke>` carries `<content><scxml>...</scxml></content>`; consumed
+    /// by `process_static_invokes`, which writes the text to a child .scxml
+    /// file and then leaves `src`/`child_name` set. Not exposed to templates.
+    #[serde(skip)]
+    pub has_inline_scxml: bool,
+    #[serde(skip)]
+    pub inline_scxml_text: String,
 }
 
 /// W3C SCXML 6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).
@@ -377,14 +385,9 @@ pub struct State {
     pub on_entry_blocks: Vec<Vec<Action>>,
     pub on_exit_blocks: Vec<Vec<Action>>,
     pub datamodel: Vec<Variable>,
-    /// Parser-internal raw JSON for each `<invoke>` on this state, carried
-    /// through so `process_static_invokes` can inspect `is_static`,
-    /// `has_inline_scxml`, and inline text without a second parse pass.
-    /// Not exposed to templates — the typed view lives in `invokes`.
-    #[serde(skip)]
-    pub raw_invoke_json: Vec<serde_json::Value>,
-    /// Typed view of each invoke on this state (sum of Scxml / Hybrid /
-    /// MeshRpc). Templates dispatch on `invoke.kind`.
+    /// Every `<invoke>` on this state in document order, typed by kind
+    /// ([`Invoke::Scxml`] / [`Invoke::Hybrid`] / [`Invoke::MeshRpc`]).
+    /// Templates dispatch on `invoke.kind`; Rust consumers pattern-match.
     pub invokes: Vec<Invoke>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub donedata: Option<DoneData>,
