@@ -129,10 +129,12 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
-        // method_id is required for FireForget/RPC but not for PubSub-only or
-        // FieldAccess-only bindings. Pattern-specific field validation happens
-        // in topology.rs after pattern detection.
-        required_binding_fields: &["service_id", "instance_id"],
+        // SOME/IP identity (`service_id` + `instance_id`) and per-event IDs
+        // are NOT verified via this generic `extra`-key presence check —
+        // they live on typed `ResolvedTarget` fields (`someip_service`,
+        // `event_bindings`) populated by `finalize_targets`, and
+        // topology runs a typed check after that pass.
+        required_binding_fields: &[],
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },

@@ -35,20 +35,60 @@ pub struct EventPatternInfo {
 
 /// Per-event resolved SOME/IP numeric IDs (SCE_MESH.md §14).
 ///
-/// Populated from one of three sources during resolution:
-///   1. `events:` block in deploy.yaml (spec canonical) — one entry per
-///      SCXML event, resolved name-by-name against vsomeip.json.
-///   2. Flat per-binding sugar fields (`method:`, `event_group:`, ...) —
-///      expanded to one entry per matching-pattern event on this target.
-///   3. Stage 1 deprecated inline numeric IDs (`method_id:`, etc.) — same
-///      expansion as (2), bypassing vsomeip.json.
+/// Tagged enum: each event binds to exactly one SOME/IP resource family
+/// (RPC method, event group, field getter, or field setter) per the event's
+/// communication pattern. Variant is the dispatch — no probing of which
+/// `Option` happens to be populated, and impossible states (an event with
+/// both `method_id` and `getter_id`) are unrepresentable.
 ///
-/// All three converge into the same shape so codegen has a single path.
-/// Field presence follows the event's communication pattern: RPC uses
-/// `method_id`, Notification uses `event_group_id` + `event_id`, Field
-/// access uses `getter_id` / `setter_id`.
+/// Produced from:
+///   1. Per-event `events:` block in deploy.yaml (spec canonical) — one
+///      variant per entry, chosen by which `EventBinding` field is set.
+///   2. Flat per-binding sugar projected through
+///      [`CommunicationPattern::someip_field`] — see
+///      [`BindingDefaultIds::project_to`].
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "field_kind", rename_all = "snake_case")]
+pub enum SomeipEventIds {
+    /// RPC / FireForget — `services[*].methods[*]` slot.
+    Method { method_id: u16 },
+    /// Subscribe / Notification — `services[*].eventgroups[*]` slot plus
+    /// the single event ID it contains (the current template expects
+    /// exactly one event per group; multi-event groups are rejected at
+    /// resolution time).
+    EventGroup { event_group_id: u16, event_id: u16 },
+    /// Field read — `services[*].methods[*]` slot used as getter.
+    Getter { getter_id: u16 },
+    /// Field write — `services[*].methods[*]` slot used as setter.
+    Setter { setter_id: u16 },
+}
+
+impl SomeipEventIds {
+    /// The SOME/IP field kind this entry represents. Used by codegen and
+    /// validation to dispatch uniformly (`match SomeipFieldKind { … }`)
+    /// instead of probing which variant they see.
+    pub fn field_kind(&self) -> super::pattern::SomeipFieldKind {
+        use super::pattern::SomeipFieldKind;
+        match self {
+            Self::Method { .. } => SomeipFieldKind::Method,
+            Self::EventGroup { .. } => SomeipFieldKind::EventGroup,
+            Self::Getter { .. } => SomeipFieldKind::Getter,
+            Self::Setter { .. } => SomeipFieldKind::Setter,
+        }
+    }
+}
+
+/// Binding-level defaults: optional IDs gathered from flat sugar
+/// (`method:` / `event_group:` / `getter:` / `setter:` on `BindingConfig`).
+/// A single binding may set more than one family at once — flat sugar is
+/// "apply these defaults to all events whose pattern wants this family".
+///
+/// `project_to(pattern)` fans a default entry out into a per-event
+/// [`SomeipEventIds`]; callers consult
+/// [`CommunicationPattern::someip_field`] to decide which fields are
+/// relevant to each event's pattern.
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
-pub struct EventResolvedIds {
+pub struct BindingDefaultIds {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method_id: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,13 +101,50 @@ pub struct EventResolvedIds {
     pub setter_id: Option<u16>,
 }
 
-impl EventResolvedIds {
+/// Binding-level SOME/IP service identity (SCE_MESH.md §14). Populated
+/// by name-based resolution of `service:` against vsomeip.json in
+/// `external.rs`; inline `service_id:`/`instance_id:` are rejected
+/// outright (see [`ExternalConfigError::LegacyInlineIds`]).
+///
+/// Held as a typed field on [`ResolvedTarget`] rather than probed out of
+/// the untyped `extra` map at codegen time; this keeps `extra` reserved
+/// for genuinely opaque transport-native passthrough keys.
+///
+/// [`ExternalConfigError::LegacyInlineIds`]:
+///     crate::mesh::error::ExternalConfigError::LegacyInlineIds
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub struct SomeipServiceIds {
+    pub service_id: u16,
+    pub instance_id: u16,
+}
+
+impl BindingDefaultIds {
     pub fn is_empty(&self) -> bool {
         self.method_id.is_none()
             && self.event_group_id.is_none()
             && self.event_id.is_none()
             && self.getter_id.is_none()
             && self.setter_id.is_none()
+    }
+
+    /// Project the default into a per-event value for a specific pattern,
+    /// using [`CommunicationPattern::someip_field`] as SSOT for which
+    /// family the pattern needs. Returns `None` if the pattern's required
+    /// family is not populated on this default — caller treats that as
+    /// "no defaults to attach for this event".
+    pub fn project_to(&self, pattern: super::pattern::CommunicationPattern) -> Option<SomeipEventIds> {
+        use super::pattern::SomeipFieldKind;
+        match pattern.someip_field() {
+            SomeipFieldKind::Method => self.method_id.map(|id| SomeipEventIds::Method { method_id: id }),
+            SomeipFieldKind::EventGroup => match (self.event_group_id, self.event_id) {
+                (Some(group), Some(event)) => {
+                    Some(SomeipEventIds::EventGroup { event_group_id: group, event_id: event })
+                }
+                _ => None,
+            },
+            SomeipFieldKind::Getter => self.getter_id.map(|id| SomeipEventIds::Getter { getter_id: id }),
+            SomeipFieldKind::Setter => self.setter_id.map(|id| SomeipEventIds::Setter { setter_id: id }),
+        }
     }
 }
 
@@ -81,13 +158,27 @@ pub struct ResolvedTarget {
     /// Transport type from deploy.yaml binding.
     pub transport: String,
     /// Transport-native configuration from deploy.yaml binding.
+    ///
+    /// Reserved for keys the template treats as opaque (e.g. zenoh `key:`,
+    /// someip `protocol:`, shm capacity tunables, plus the Stage 1 inline
+    /// numeric IDs that `extra_someip_service_ids` hoists out). SOME/IP
+    /// identity is NOT stored here after resolution — see
+    /// [`ResolvedTarget::someip_service`].
     pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    /// Typed SOME/IP service identity (`service_id` + `instance_id`).
+    /// `Some` for every `transport == "someip"` target after resolution;
+    /// `None` for non-someip targets. Hoisting out of `extra` means the
+    /// template reads one typed field instead of probing the untyped map.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub someip_service: Option<SomeipServiceIds>,
     /// Per-event pattern metadata for codegen (pattern-aware send + RPC correlation).
     pub event_patterns: Vec<EventPatternInfo>,
     /// Per-event resolved SOME/IP numeric IDs, keyed by SCXML event name.
-    /// Empty for non-someip targets; may be empty for someip targets that
-    /// rely entirely on legacy inline IDs (Stage 1 deprecated).
-    pub event_bindings: BTreeMap<String, EventResolvedIds>,
+    /// Empty for non-someip targets. For someip targets every event that
+    /// has a detected/default pattern gets exactly one entry; if an entry
+    /// is missing, the pipeline rejects the build
+    /// before codegen runs.
+    pub event_bindings: BTreeMap<String, SomeipEventIds>,
 }
 
 /// Build-time warning about dynamic targets that cannot be statically resolved.
@@ -293,19 +384,36 @@ pub fn analyze_event_pairs(
     pattern_map
 }
 
-/// Resolve SCXML send targets against deploy.yaml bindings for a specific machine.
+/// Intermediate target produced by [`resolve_partials`] before the
+/// external-config stage has filled in per-event SOME/IP IDs. Internal
+/// to topology — it exists precisely to keep `ResolvedTarget` free of the
+/// half-built `event_bindings: BTreeMap::new()` state. External callers
+/// only ever see `ResolvedTarget`, produced by [`build_resolved_targets`].
+#[derive(Debug, Clone)]
+pub(crate) struct PartialTarget {
+    pub target: TargetId,
+    pub events: Vec<String>,
+    pub transport: String,
+    pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    pub event_patterns: Vec<EventPatternInfo>,
+}
+
+/// Resolve SCXML send targets against deploy.yaml bindings for a specific
+/// machine. Pre-external stage — produces [`PartialTarget`]s that carry
+/// every field independent of vsomeip.json resolution. [`finalize_targets`]
+/// then attaches per-event SOME/IP IDs and produces the public
+/// [`ResolvedTarget`]s.
 ///
 /// Uses pre-collected targets and target_events from `SendActionSummary`
 /// to avoid redundant model traversal. Pattern/pairing metadata is produced
-/// by `analyze_event_pairs` and consumed here — this function itself is
-/// responsible only for deploy.yaml binding resolution.
+/// by `analyze_event_pairs` and consumed here.
 ///
 /// Returns an error if any SCXML target has no matching binding in deploy.yaml.
-pub fn resolve_targets(
+pub(crate) fn resolve_partials(
     summary: &SendActionSummary,
     deploy: &DeployConfig,
     machine_name: &str,
-) -> Result<Vec<ResolvedTarget>, TopologyError> {
+) -> Result<Vec<PartialTarget>, TopologyError> {
     if summary.targets.is_empty() {
         return Ok(Vec::new());
     }
@@ -328,23 +436,17 @@ pub fn resolve_targets(
 
     // Validate: every SCXML target must have a deploy.yaml binding
     let mut unresolved: Vec<TargetId> = Vec::new();
-    let mut resolved = Vec::new();
+    let mut partials = Vec::new();
 
     for target in &summary.targets {
         match bindings.get(target) {
             Some(binding) => {
-                resolved.push(ResolvedTarget {
+                partials.push(PartialTarget {
                     target: target.clone(),
                     events: events_map.remove(target).unwrap_or_default(),
                     transport: binding.transport.clone(),
                     extra: binding.extra.clone(),
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
-                    // Per-event SOME/IP IDs are attached in a second pass
-                    // by `attach_event_bindings`. Leaving it empty here keeps
-                    // `resolve_targets` focused on static-target matching and
-                    // avoids threading the external-resolution table into
-                    // every branch.
-                    event_bindings: BTreeMap::new(),
                 });
             }
             None => {
@@ -363,14 +465,14 @@ pub fn resolve_targets(
     // Validate: each binding provides all fields required by its transport.
     // Without this, missing fields would only surface as C++ #error directives
     // in the generated template — a two-stage failure.
-    for rt in &resolved {
-        if let Some(desc) = super::transport::lookup(&rt.transport) {
+    for pt in &partials {
+        if let Some(desc) = super::transport::lookup(&pt.transport) {
             for &field in desc.required_binding_fields {
-                if !rt.extra.contains_key(field) {
+                if !pt.extra.contains_key(field) {
                     return Err(TopologyError::MissingBindingField {
                         machine: machine_name.to_string(),
-                        target: rt.target.clone(),
-                        transport: rt.transport.clone(),
+                        target: pt.target.clone(),
+                        transport: pt.transport.clone(),
                         field: field.to_string(),
                     });
                 }
@@ -380,25 +482,41 @@ pub fn resolve_targets(
         // Transport-specific optional field validation. These fields are
         // optional (fall back to defaults) but must be well-formed when
         // present. SCE_MESH.md Section 7.5.
-        if rt.transport == "shm" {
-            validate_shm_extras(machine_name, rt)?;
+        if pt.transport == "shm" {
+            validate_shm_extras_partial(machine_name, pt)?;
         }
 
-        // SOME/IP per-event ID validation runs in a separate pass after
-        // `attach_event_bindings` has fanned the per-binding resolution
-        // out into per-event entries — not here.
+        // SOME/IP per-event ID validation runs after `finalize_targets`
+        // has fanned the per-binding resolution out into per-event entries.
     }
 
+    Ok(partials)
+}
+
+/// Public pipeline entry: resolve, attach, validate in a single step so
+/// external callers cannot observe (let alone construct) a half-built
+/// [`ResolvedTarget`]. Replaces the sequence
+/// `resolve_targets → attach_event_bindings → validate_someip_event_fields`
+/// that previously required correct caller ordering.
+pub fn build_resolved_targets(
+    summary: &SendActionSummary,
+    deploy: &DeployConfig,
+    machine_name: &str,
+    external: &super::external::ExternalResolution,
+) -> Result<Vec<ResolvedTarget>, TopologyError> {
+    let partials = resolve_partials(summary, deploy, machine_name)?;
+    let resolved = finalize_targets(partials, machine_name, external)?;
+    validate_someip_event_fields(&resolved, machine_name)?;
     Ok(resolved)
 }
 
 /// Validate SOME/IP per-event field presence.
 ///
-/// Runs after `attach_event_bindings`, so it can read `event_bindings`
+/// Runs after `finalize_targets`, so it can read `event_bindings`
 /// directly. Each SCXML event must have the IDs its communication
 /// pattern requires, otherwise the template would silently emit
 /// `return false` for that event at runtime.
-pub fn validate_someip_event_fields(
+pub(crate) fn validate_someip_event_fields(
     resolved: &[ResolvedTarget],
     machine_name: &str,
 ) -> Result<(), TopologyError> {
@@ -410,24 +528,25 @@ pub fn validate_someip_event_fields(
     Ok(())
 }
 
-/// Validate optional shm binding fields:
+/// Validate optional shm binding fields (partial stage — runs before
+/// external IDs are attached, so there is no `ResolvedTarget` yet):
 ///   - `shm_arena_bytes`   positive integer, must fit in u32 (offset/length
 ///                         fields in the wire layout use uint32_t)
 ///   - `shm_ring_capacity` positive power of two (EventQueueBridge
 ///                         requires power-of-two capacity)
-fn validate_shm_extras(
+fn validate_shm_extras_partial(
     machine_name: &str,
-    rt: &ResolvedTarget,
+    pt: &PartialTarget,
 ) -> Result<(), TopologyError> {
     let invalid = |field: &str, reason: String| TopologyError::InvalidBindingField {
         machine: machine_name.to_string(),
-        target: rt.target.clone(),
-        transport: rt.transport.clone(),
+        target: pt.target.clone(),
+        transport: pt.transport.clone(),
         field: field.to_string(),
         reason,
     };
 
-    if let Some(v) = rt.extra.get("shm_arena_bytes") {
+    if let Some(v) = pt.extra.get("shm_arena_bytes") {
         let n = v.as_u64().ok_or_else(|| {
             invalid(
                 "shm_arena_bytes",
@@ -448,7 +567,7 @@ fn validate_shm_extras(
         }
     }
 
-    if let Some(v) = rt.extra.get("shm_ring_capacity") {
+    if let Some(v) = pt.extra.get("shm_ring_capacity") {
         let n = v.as_u64().ok_or_else(|| {
             invalid(
                 "shm_ring_capacity",
@@ -468,180 +587,169 @@ fn validate_shm_extras(
 
 /// Validate someip pattern-specific per-event IDs.
 ///
-/// While `service_id` and `instance_id` are always required at binding
-/// level (enforced by `required_binding_fields`), the other IDs are
-/// per-event because different events on the same target can use different
-/// patterns (e.g. one event is RPC, another is a notification). The
-/// required field set per event:
-///   - FireForget / ServiceRequest / ServiceResponse → `method_id`
-///   - Subscribe / Notification → `event_group_id` + `event_id`
-///   - FieldGet → `getter_id`
-///   - FieldSet → `setter_id`
+/// `service_id` / `instance_id` are binding-level and guaranteed present
+/// by `resolve_someip_ids`. The per-event resource ID is pattern-dependent;
+/// [`super::pattern::CommunicationPattern::someip_field`] is the SSOT. This
+/// validator checks that the expected [`SomeipFieldKind`] appears as a
+/// matching [`SomeipEventIds`] variant in `event_bindings`.
 fn validate_someip_pattern_fields(
     machine_name: &str,
     rt: &ResolvedTarget,
 ) -> Result<(), TopologyError> {
-    use super::pattern::{
-        WIRE_EVENT_NOTIFY, WIRE_EVENT_SUBSCRIBE, WIRE_FIELD_READ, WIRE_FIELD_WRITE,
-        WIRE_FIRE_FORGET, WIRE_RPC_REPLY, WIRE_RPC_REQUEST,
-    };
     for ep in &rt.event_patterns {
-        // Per-event resolution comes first; fall back to nothing (the
-        // default-fan-out happened upstream in `attach_event_bindings`).
-        let ids = rt.event_bindings.get(&ep.event);
-
-        let require_present = |present: bool, field: &'static str| {
-            if !present {
-                Err(TopologyError::MissingBindingField {
-                    machine: machine_name.to_string(),
-                    target: rt.target.clone(),
-                    transport: rt.transport.clone(),
-                    field: format!("{field} (event \"{}\")", ep.event),
-                })
-            } else {
-                Ok(())
-            }
+        // Recover the detected pattern from the cached wire value; pattern
+        // is what knows which field kind is required.
+        let Some(pattern) = super::pattern::CommunicationPattern::from_wire(ep.pattern_kind_value)
+        else {
+            // Unknown wire value — upstream produced a pattern we don't
+            // recognize. Skip rather than fail: the catalogue is the SSOT
+            // and a missing arm is a pattern-layer bug, not an event bug.
+            continue;
         };
-
-        match ep.pattern_kind_value {
-            WIRE_FIRE_FORGET | WIRE_RPC_REQUEST | WIRE_RPC_REPLY => {
-                require_present(ids.and_then(|i| i.method_id).is_some(), "method_id")?;
-            }
-            WIRE_EVENT_SUBSCRIBE | WIRE_EVENT_NOTIFY => {
-                require_present(
-                    ids.and_then(|i| i.event_group_id).is_some(),
-                    "event_group_id",
-                )?;
-                require_present(ids.and_then(|i| i.event_id).is_some(), "event_id")?;
-            }
-            WIRE_FIELD_READ => {
-                require_present(ids.and_then(|i| i.getter_id).is_some(), "getter_id")?;
-            }
-            WIRE_FIELD_WRITE => {
-                require_present(ids.and_then(|i| i.setter_id).is_some(), "setter_id")?;
-            }
-            _ => {}
+        let expected = pattern.someip_field();
+        let actual_kind = rt.event_bindings.get(&ep.event).map(|ids| ids.field_kind());
+        if actual_kind != Some(expected) {
+            return Err(TopologyError::MissingBindingField {
+                machine: machine_name.to_string(),
+                target: rt.target.clone(),
+                transport: rt.transport.clone(),
+                field: format!("{} (event \"{}\")", field_kind_yaml_name(expected), ep.event),
+            });
         }
     }
     Ok(())
 }
 
-/// Fan per-binding resolution into per-event SOME/IP IDs.
+/// Map a SOME/IP field kind back to the deploy.yaml identifier the operator
+/// would use to declare it. Kept close to validation so diagnostics match
+/// the user-facing vocabulary exactly.
+fn field_kind_yaml_name(kind: super::pattern::SomeipFieldKind) -> &'static str {
+    use super::pattern::SomeipFieldKind;
+    match kind {
+        SomeipFieldKind::Method => "method_id",
+        SomeipFieldKind::EventGroup => "event_group_id",
+        SomeipFieldKind::Getter => "getter_id",
+        SomeipFieldKind::Setter => "setter_id",
+    }
+}
+
+/// Fan the per-binding external resolution into per-event SOME/IP IDs
+/// and construct the public [`ResolvedTarget`]s.
 ///
 /// Three sources are merged into `target.event_bindings`:
 ///   1. Per-event `events:` entries from deploy.yaml — copied verbatim.
 ///   2. Flat sugar (`method:` / `event_group:` / ...) — one entry per
 ///      SCXML event whose pattern matches the field set.
-///   3. Stage 1 inline numeric IDs (`method_id:` etc. in `extra`) —
-///      same fan-out as flat sugar.
-///
-/// Sources (2) and (3) are mutually exclusive in practice: a binding
-/// using flat sugar resolves through external.rs and the result lands
-/// in `external.bindings.default`; a legacy binding skips external.rs
-/// entirely and we materialise the default from `extra` here.
 ///
 /// Per-event entries always win on conflict — they are the most specific
 /// declaration. `EventBindingUnused` is reported when an `events:` entry
 /// names an SCXML event that is never actually `<send>`-ed to this
 /// target (likely a typo).
-pub fn attach_event_bindings(
-    resolved: &mut [ResolvedTarget],
+///
+/// Consumes `partials` by value: `ResolvedTarget` has only one construction
+/// path (this function), so the "empty `event_bindings` BTreeMap" transient
+/// state is never observable — callers either see a half-built
+/// `PartialTarget` (internal) or a fully populated `ResolvedTarget` (public).
+pub(crate) fn finalize_targets(
+    partials: Vec<PartialTarget>,
     machine_name: &str,
     external: &super::external::ExternalResolution,
-) -> Result<(), TopologyError> {
-    use super::pattern::{
-        WIRE_EVENT_NOTIFY, WIRE_EVENT_SUBSCRIBE, WIRE_FIELD_READ, WIRE_FIELD_WRITE,
-        WIRE_FIRE_FORGET, WIRE_RPC_REPLY, WIRE_RPC_REQUEST,
-    };
+) -> Result<Vec<ResolvedTarget>, TopologyError> {
+    let mut resolved = Vec::with_capacity(partials.len());
 
-    for rt in resolved.iter_mut() {
-        if rt.transport != "someip" {
-            continue;
-        }
+    for pt in partials {
+        let (someip_service, event_bindings) = if pt.transport == "someip" {
+            resolve_someip_ids(&pt, machine_name, external)?
+        } else {
+            (None, BTreeMap::new())
+        };
 
-        // Look up the per-binding resolution produced by external.rs.
-        let key = (machine_name.to_string(), rt.target.clone());
-        let per_binding = external.bindings.get(&key);
-
-        // Default IDs to fan out to every matching event:
-        // (a) external.bindings.default if name-based fields were set, OR
-        // (b) extracted from rt.extra for the legacy inline-ID path.
-        let default_ids = per_binding
-            .map(|p| p.default.clone())
-            .unwrap_or_else(|| EventResolvedIds {
-                method_id: u16_from_extra(&rt.extra, "method_id"),
-                event_group_id: u16_from_extra(&rt.extra, "event_group_id"),
-                event_id: u16_from_extra(&rt.extra, "event_id"),
-                getter_id: u16_from_extra(&rt.extra, "getter_id"),
-                setter_id: u16_from_extra(&rt.extra, "setter_id"),
-            });
-
-        // Fan out per-event entries.
-        for ep in &rt.event_patterns {
-            // Per-event explicit entry wins.
-            if let Some(by_event) = per_binding.and_then(|p| p.by_event.get(&ep.event)) {
-                rt.event_bindings.insert(ep.event.clone(), by_event.clone());
-                continue;
-            }
-            // Otherwise project the default to the fields this event's
-            // pattern actually needs. Projecting (instead of cloning the
-            // whole default) keeps unused fields out of the codegen
-            // context — `getter_id` for an RPC event would only confuse
-            // the template reader.
-            let mut ids = EventResolvedIds::default();
-            match ep.pattern_kind_value {
-                WIRE_FIRE_FORGET | WIRE_RPC_REQUEST | WIRE_RPC_REPLY => {
-                    ids.method_id = default_ids.method_id;
-                }
-                WIRE_EVENT_SUBSCRIBE | WIRE_EVENT_NOTIFY => {
-                    ids.event_group_id = default_ids.event_group_id;
-                    ids.event_id = default_ids.event_id;
-                }
-                WIRE_FIELD_READ => ids.getter_id = default_ids.getter_id,
-                WIRE_FIELD_WRITE => ids.setter_id = default_ids.setter_id,
-                _ => {}
-            }
-            if !ids.is_empty() {
-                rt.event_bindings.insert(ep.event.clone(), ids);
-            }
-        }
-
-        // Detect unused per-event entries (likely typos).
-        if let Some(per) = per_binding {
-            let actual_events: BTreeSet<&str> =
-                rt.event_patterns.iter().map(|ep| ep.event.as_str()).collect();
-            for declared in per.by_event.keys() {
-                if !actual_events.contains(declared.as_str()) {
-                    return Err(TopologyError::EventBindingUnused {
-                        machine: machine_name.to_string(),
-                        target: rt.target.clone(),
-                        event: declared.clone(),
-                    });
-                }
-            }
-        }
+        resolved.push(ResolvedTarget {
+            target: pt.target,
+            events: pt.events,
+            transport: pt.transport,
+            extra: pt.extra,
+            someip_service,
+            event_patterns: pt.event_patterns,
+            event_bindings,
+        });
     }
-    Ok(())
+
+    Ok(resolved)
 }
 
-/// Try to parse a u16 out of a YAML value that the user may have written
-/// as either an integer (`16`) or a hex string (`"0x10"`).
-fn u16_from_extra(
-    extra: &std::collections::HashMap<String, serde_yaml_ng::Value>,
-    key: &str,
-) -> Option<u16> {
-    let v = extra.get(key)?;
-    if let Some(n) = v.as_u64() {
-        return u16::try_from(n).ok();
+/// Per-target someip resolution: service identity + per-event IDs.
+///
+/// Every SOME/IP binding that reaches topology has already passed through
+/// `external::resolve_external_bindings`, so `per_binding` is always
+/// populated with a resolved `service_ids` and a (possibly empty)
+/// per-event map. The only way a binding reaches here without one is
+/// `transport == "someip"` with no `service:` and no `events:`, which
+/// external rejects outright with `NamedReferenceWithoutConfig`.
+fn resolve_someip_ids(
+    pt: &PartialTarget,
+    machine_name: &str,
+    external: &super::external::ExternalResolution,
+) -> Result<(Option<SomeipServiceIds>, BTreeMap<String, SomeipEventIds>), TopologyError> {
+    let key = (machine_name.to_string(), pt.target.clone());
+    let per_binding = external.bindings.get(&key).ok_or_else(|| {
+        TopologyError::MissingBindingField {
+            machine: machine_name.to_string(),
+            target: pt.target.clone(),
+            transport: pt.transport.clone(),
+            field: "service".to_string(),
+        }
+    })?;
+
+    let someip_service = per_binding.service_ids;
+    if someip_service.is_none() {
+        return Err(TopologyError::MissingBindingField {
+            machine: machine_name.to_string(),
+            target: pt.target.clone(),
+            transport: pt.transport.clone(),
+            field: "service".to_string(),
+        });
     }
-    let s = v.as_str()?.trim();
-    let (radix, digits) = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
-    {
-        (16, rest)
-    } else {
-        (10, s)
-    };
-    u16::from_str_radix(digits, radix).ok()
+
+    let default_ids = &per_binding.default;
+    let mut event_bindings: BTreeMap<String, SomeipEventIds> = BTreeMap::new();
+
+    // Fan out per-event entries.
+    for ep in &pt.event_patterns {
+        // Per-event explicit entry wins.
+        if let Some(by_event) = per_binding.by_event.get(&ep.event) {
+            event_bindings.insert(ep.event.clone(), by_event.clone());
+            continue;
+        }
+        // Otherwise project the binding-level default through the event's
+        // pattern. `project_to` consults the pattern's `someip_field` SSOT
+        // and only yields Some when the fields the pattern wants are
+        // populated on the default. Events whose pattern has no matching
+        // default ID simply have no per-event entry —
+        // `validate_someip_event_fields` will flag the gap.
+        let Some(pattern) = super::pattern::CommunicationPattern::from_wire(ep.pattern_kind_value)
+        else {
+            continue;
+        };
+        if let Some(ids) = default_ids.project_to(pattern) {
+            event_bindings.insert(ep.event.clone(), ids);
+        }
+    }
+
+    // Detect unused per-event entries (likely typos).
+    let actual_events: BTreeSet<&str> =
+        pt.event_patterns.iter().map(|ep| ep.event.as_str()).collect();
+    for declared in per_binding.by_event.keys() {
+        if !actual_events.contains(declared.as_str()) {
+            return Err(TopologyError::EventBindingUnused {
+                machine: machine_name.to_string(),
+                target: pt.target.clone(),
+                event: declared.clone(),
+            });
+        }
+    }
+
+    Ok((someip_service, event_bindings))
 }
 
 /// Render a YAML value compactly for diagnostic messages.
@@ -1090,13 +1198,16 @@ mod tests {
     }
 
     fn resolved_motor_target() -> Vec<ResolvedTarget> {
+        // Non-someip target — the absent `event_bindings` is part of the
+        // fully-resolved state, not a half-built transient.
         vec![ResolvedTarget {
             target: TargetId::new("#motor").unwrap(),
             events: vec!["brake.activate".to_string()],
             transport: "local".to_string(),
             extra: HashMap::new(),
+            someip_service: None,
             event_patterns: Vec::new(),
-            event_bindings: BTreeMap::new(),
+            event_bindings: Default::default(),
         }]
     }
 
@@ -1479,7 +1590,8 @@ topology:
     fn resolve_for_shm(yaml: &str) -> Result<Vec<ResolvedTarget>, TopologyError> {
         let deploy = parse_deploy_str(yaml).unwrap();
         let model = parse_model(SHM_SCXML, "sender");
-        resolve_targets(&summary_for(&model), &deploy, "sender")
+        let external = super::super::external::ExternalResolution::default();
+        build_resolved_targets(&summary_for(&model), &deploy, "sender", &external)
     }
 
     #[test]

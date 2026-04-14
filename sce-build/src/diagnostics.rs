@@ -19,8 +19,10 @@ use std::fmt;
 /// Stage 2: promote to hard error). Kept structured — never `eprintln!` —
 /// so consumers can filter, group, or promote uniformly.
 ///
-/// Scope: SCXML document attributes (e.g. `sce:qos` on `<send>`). For
-/// deploy.yaml deprecations see `DeployDeprecationWarning`.
+/// Scope: SCXML document attributes (e.g. `sce:qos` on `<send>`). deploy.yaml
+/// deprecations are hard errors starting at Session E1 Stage 2 (see
+/// `mesh::error::ExternalConfigError::LegacyInlineIds`) and do not pass
+/// through this type.
 #[derive(Debug, Clone)]
 pub struct DeprecationWarning {
     /// The attribute name, qualified with its namespace prefix
@@ -48,42 +50,5 @@ impl fmt::Display for DeprecationWarning {
                 self.attribute, self.reason
             ),
         }
-    }
-}
-
-// ── deploy.yaml parse-time deprecations ──────────────────────
-
-/// A build-time deprecation notice emitted by the deploy.yaml pipeline
-/// when it encounters a field that the spec has superseded but that
-/// remains tolerated during Stage 1 migration.
-///
-/// Kept separate from `DeprecationWarning` because the payload differs:
-/// SCXML deprecations carry (attribute, event name), whereas deploy.yaml
-/// deprecations carry (field name, YAML path, transport context). Fusing
-/// them forced field reuse that did not match semantics (the `event`
-/// field would hold a YAML location, etc.).
-#[derive(Debug, Clone)]
-pub struct DeployDeprecationWarning {
-    /// The deprecated field as it appears in deploy.yaml (e.g.
-    /// `"service_id"`). Never empty; never namespaced.
-    pub field: String,
-    /// Hierarchical location inside deploy.yaml — formatted like
-    /// `topology.<device>.machines.<machine>.bindings[<target>]` so the
-    /// reader can find the occurrence without additional context.
-    pub location: String,
-    /// Human-readable migration guidance pointing at the replacement
-    /// (spec section + replacement field name).
-    pub reason: String,
-}
-
-impl fmt::Display for DeployDeprecationWarning {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "deploy.yaml: deprecated field `{field}` at {loc}: {reason}",
-            field = self.field,
-            loc = self.location,
-            reason = self.reason,
-        )
     }
 }

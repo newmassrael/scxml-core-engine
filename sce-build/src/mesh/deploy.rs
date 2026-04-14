@@ -240,8 +240,10 @@ impl EventBinding {
 ///
 /// `extra` uses `serde(flatten)` for per-target transport-native keys not
 /// covered by the explicit fields (e.g. zenoh `key:`, someip `protocol:`,
-/// plus the Stage 1 deprecated inline numeric IDs). Device-shared session
-/// keys live on `DeviceConfig::transports`, not here.
+/// shm arena/ring settings). Inline SOME/IP numeric IDs (`service_id:`,
+/// `method_id:`, …) are recognised here as keys but are rejected at the
+/// external-resolution stage (`ExternalConfigError::LegacyInlineIds`).
+/// Device-shared session keys live on `DeviceConfig::transports`, not here.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BindingConfig {
     /// Transport type: "local", "shm", "someip", "dds", "zenoh", etc.

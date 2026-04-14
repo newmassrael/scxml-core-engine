@@ -1,0 +1,15 @@
+{
+  "applications": [
+    { "name": "brake_app" }
+  ],
+  "services": [
+    {
+      "name": "motor_control",
+      "service": "0x1234",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "activate", "method": "0x0421" }
+      ]
+    }
+  ]
+}

@@ -157,33 +157,26 @@ using {{ target.target_pascal }}ShmChannel = SCE::Mesh::ShmChannel<
 {% endif %}
 {% if "someip" in transport_types %}
 {% for target in targets if target.transport == "someip" %}
-{% if target.extra.service_id is not defined %}
-#error "SCE Mesh: someip transport for '{{ target.target }}' requires a 'service:' name reference (or legacy 'service_id') in deploy.yaml"
+{% if not target.someip_service %}
+#error "SCE Mesh: someip transport for '{{ target.target }}' requires a 'service:' name reference (or legacy 'service_id' + 'instance_id') in deploy.yaml"
 {% endif %}
-{% if target.extra.instance_id is not defined %}
-#error "SCE Mesh: someip transport for '{{ target.target }}' requires a 'service:' name reference (or legacy 'instance_id') in deploy.yaml"
-{% endif %}
-static constexpr vsomeip::service_t SOMEIP_SERVICE_{{ target.target_snake | upper }} = {{ target.extra.service_id }};
-static constexpr vsomeip::instance_t SOMEIP_INSTANCE_{{ target.target_snake | upper }} = {{ target.extra.instance_id }};
+static constexpr vsomeip::service_t SOMEIP_SERVICE_{{ target.target_snake | upper }} = {{ target.someip_service.service_id }};
+static constexpr vsomeip::instance_t SOMEIP_INSTANCE_{{ target.target_snake | upper }} = {{ target.someip_service.instance_id }};
 {# Per-event IDs (SCE_MESH.md §14): different SCXML events on the same target
    can use different methods or event groups. One constant per (target, event)
    pair so the dispatch switch below can index by event name without runtime
-   string lookups. Pattern-projection in topology means each event only carries
-   the IDs its own pattern needs — getter_id never appears for an RPC event. #}
+   string lookups. Dispatch keys on `ep.field_kind` (the discriminator from
+   `SomeipEventIds`) — NOT on "which Option is populated" — so there is a
+   single site that knows the pattern→field-kind mapping. #}
 {% for ep in target.event_patterns %}
-{% if ep.method_id %}
+{% if ep.field_kind == "method" %}
 static constexpr vsomeip::method_t SOMEIP_METHOD_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.method_id }};
-{% endif %}
-{% if ep.event_group_id %}
+{% elif ep.field_kind == "event_group" %}
 static constexpr vsomeip::eventgroup_t SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.event_group_id }};
-{% endif %}
-{% if ep.event_id %}
 static constexpr vsomeip::event_t SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.event_id }};
-{% endif %}
-{% if ep.getter_id %}
+{% elif ep.field_kind == "getter" %}
 static constexpr vsomeip::method_t SOMEIP_GETTER_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.getter_id }};
-{% endif %}
-{% if ep.setter_id %}
+{% elif ep.field_kind == "setter" %}
 static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.setter_id }};
 {% endif %}
 {% endfor %}
@@ -242,10 +235,8 @@ inline void send_to_{{ target.target_snake }}(
     const SCE::Mesh::MeshEnvelope& env
 ) {
 {% set has_any_event_ids = namespace(v=false) %}
-{% for ep in target.event_patterns %}
-{% if ep.method_id or ep.event_group_id or ep.getter_id or ep.setter_id %}
+{% for ep in target.event_patterns if ep.field_kind %}
 {% set has_any_event_ids.v = true %}
-{% endif %}
 {% endfor %}
 {% if not has_any_event_ids.v %}
     (void)app; (void)env;
@@ -253,14 +244,14 @@ inline void send_to_{{ target.target_snake }}(
 {% else %}
 {% for ep in target.event_patterns %}
 {# Each event handled in its own scope so request/payload locals don't
-   collide across cases. The dispatch is build-time exhaustive — events
-   not listed here are unreachable for this target. #}
-{% if ep.method_id %}
+   collide across cases. Dispatch on the SomeipEventIds discriminator
+   (field_kind) — one arm per kind, no Option-probe ambiguity. #}
+{% if ep.field_kind == "method" %}
     if (env.type == "{{ ep.event }}") {
         // {{ ep.event }} → SOMEIP_METHOD_{{ target.target_snake | upper }}_{{ ep.event_const }}
 {{ someip_send_request(target, "SOMEIP_METHOD_" + (target.target_snake | upper) + "_" + ep.event_const) }}
     }
-{% elif ep.event_group_id and ep.event_id %}
+{% elif ep.field_kind == "event_group" %}
     if (env.type == "{{ ep.event }}") {
         using PK = SCE::Mesh::PatternKind;
         if (env.pattern == PK::EventSubscribe) {
@@ -284,11 +275,11 @@ inline void send_to_{{ target.target_snake }}(
         }
         return false;  // EventNotify is inbound-only
     }
-{% elif ep.getter_id %}
+{% elif ep.field_kind == "getter" %}
     if (env.type == "{{ ep.event }}") {
 {{ someip_send_request(target, "SOMEIP_GETTER_" + (target.target_snake | upper) + "_" + ep.event_const) }}
     }
-{% elif ep.setter_id %}
+{% elif ep.field_kind == "setter" %}
     if (env.type == "{{ ep.event }}") {
 {{ someip_send_request(target, "SOMEIP_SETTER_" + (target.target_snake | upper) + "_" + ep.event_const) }}
     }
@@ -546,21 +537,19 @@ struct TransportRouter {
             SOMEIP_INSTANCE_{{ target.target_snake | upper }});
 {# Per-event receive handlers (SCE_MESH.md §14): one register_message_handler
    per (target, event) so different events on the same target can use
-   different methods/event-groups/getters/setters. #}
+   different methods/event-groups/getters/setters. Dispatch keys on the
+   SomeipEventIds discriminator (field_kind). #}
 {% for ep in target.event_patterns %}
-{% if ep.method_id %}
+{% if ep.field_kind == "method" %}
         // {{ ep.event }} → SOMEIP_METHOD_{{ target.target_snake | upper }}_{{ ep.event_const }}
 {{ someip_receive_handler(target, "SOMEIP_METHOD_" + (target.target_snake | upper) + "_" + ep.event_const, "", "rpc") }}
-{% endif %}
-{% if ep.event_id %}
+{% elif ep.field_kind == "event_group" %}
         // {{ ep.event }} → SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ ep.event_const }}
 {{ someip_receive_handler(target, "SOMEIP_EVENT_" + (target.target_snake | upper) + "_" + ep.event_const, "SCE::Mesh::PatternKind::EventNotify", "notify") }}
-{% endif %}
-{% if ep.getter_id %}
+{% elif ep.field_kind == "getter" %}
         // {{ ep.event }} → SOMEIP_GETTER_{{ target.target_snake | upper }}_{{ ep.event_const }}
 {{ someip_receive_handler(target, "SOMEIP_GETTER_" + (target.target_snake | upper) + "_" + ep.event_const, "SCE::Mesh::PatternKind::FieldNotify", "field") }}
-{% endif %}
-{% if ep.setter_id %}
+{% elif ep.field_kind == "setter" %}
         // {{ ep.event }} → SOMEIP_SETTER_{{ target.target_snake | upper }}_{{ ep.event_const }}
 {{ someip_receive_handler(target, "SOMEIP_SETTER_" + (target.target_snake | upper) + "_" + ep.event_const, "SCE::Mesh::PatternKind::FieldNotify", "field") }}
 {% endif %}

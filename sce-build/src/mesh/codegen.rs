@@ -153,6 +153,15 @@ impl SomeipTransportContext {
 
 // ── Template context ─────────────────────────────────────────
 
+/// SOME/IP service identity, pre-rendered as `0xNNNN` hex strings so the
+/// template emits literals without probing integer formatters. `None` for
+/// non-SOME/IP targets.
+#[derive(Debug, Clone, serde::Serialize)]
+struct SomeipServiceLiterals {
+    service_id: String,
+    instance_id: String,
+}
+
 /// Template context for a single resolved send target.
 /// `target` uses `TargetId` directly — `#[serde(transparent)]` makes the
 /// wire form identical to a bare string, so Jinja2 sees `"#motor"` with no
@@ -166,6 +175,11 @@ struct TargetContext {
     events: Vec<String>,
     transport: String,
     extra: HashMap<String, serde_yaml_ng::Value>,
+    /// Typed SOME/IP service identity. Present only when `transport ==
+    /// "someip"` — template dispatches on `{% if target.someip_service %}`
+    /// rather than probing `extra.service_id`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    someip_service: Option<SomeipServiceLiterals>,
     /// Emit a per-target field in TransportRouter and a matching ctor
     /// initializer? Data-driven — removes transport-name hardcoding from
     /// the template's field/ctor sections.
@@ -189,6 +203,13 @@ struct TargetContext {
 /// numeric IDs so the template can emit per-event constants and dispatch
 /// on event name (different SCXML events on the same target can use
 /// different methods or event groups, SCE_MESH.md §14).
+///
+/// Template dispatch is driven by `field_kind` (`"method"` /
+/// `"event_group"` / `"getter"` / `"setter"`), NOT by probing which ID
+/// Option is populated. The individual ID strings are only for value
+/// rendering — keying on them creates a 4-way dispatch duplicated across
+/// validator, attach, and template, and that was the whole point of the
+/// `SomeipEventIds` tagged enum.
 #[derive(Debug, Clone, serde::Serialize)]
 struct EventPatternContext {
     event: String,
@@ -203,8 +224,16 @@ struct EventPatternContext {
     /// both continue to work unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     reply_event: Option<String>,
-    /// Per-event SOME/IP numeric IDs. All optional — only populated for
-    /// SOME/IP targets and only for fields the event's pattern requires.
+    /// Discriminator for SOME/IP per-event dispatch. One of `"method"`,
+    /// `"event_group"`, `"getter"`, `"setter"`, or `None` for non-SOME/IP
+    /// targets (or SOME/IP events whose resolution produced no mapping —
+    /// topology validation rejects those before codegen, so at this point
+    /// `None` iff transport != "someip").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field_kind: Option<&'static str>,
+    /// Per-event SOME/IP numeric IDs, rendered as `0x####` literals. Only
+    /// the field(s) matching `field_kind` are populated — the others stay
+    /// `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     method_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -234,11 +263,62 @@ fn event_to_const_suffix(event: &str) -> String {
         .collect()
 }
 
-/// Format a u16 SOME/IP ID as the same `0x{XXXX}` literal the legacy
-/// inline-ID path used. Keeping the format identical lets diffs of the
-/// generated header be tractable across the resolution-path migration.
-fn fmt_someip_id(id: u16) -> String {
-    format!("0x{id:04X}")
+/// Re-export of the canonical u16 → SOME/IP literal renderer. Kept as a
+/// local alias so the call sites in this module read naturally; the actual
+/// format lives in [`crate::mesh::someip_format`] so the resolution path
+/// and codegen path cannot drift.
+use crate::mesh::someip_format::hex_id as fmt_someip_id;
+
+/// Fan a [`SomeipEventIds`] variant into the per-event template fields.
+/// Returns `(field_kind, method_id, event_group_id, event_id, getter_id,
+/// setter_id)` with only the fields matching the variant populated.
+/// Centralizes the single "variant → template fields" translation so
+/// the template never has to probe which option happened to be set.
+fn event_ids_to_template(
+    ids: &crate::mesh::topology::SomeipEventIds,
+) -> (
+    Option<&'static str>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    use crate::mesh::topology::SomeipEventIds;
+    match *ids {
+        SomeipEventIds::Method { method_id } => (
+            Some("method"),
+            Some(fmt_someip_id(method_id)),
+            None,
+            None,
+            None,
+            None,
+        ),
+        SomeipEventIds::EventGroup { event_group_id, event_id } => (
+            Some("event_group"),
+            None,
+            Some(fmt_someip_id(event_group_id)),
+            Some(fmt_someip_id(event_id)),
+            None,
+            None,
+        ),
+        SomeipEventIds::Getter { getter_id } => (
+            Some("getter"),
+            None,
+            None,
+            None,
+            Some(fmt_someip_id(getter_id)),
+            None,
+        ),
+        SomeipEventIds::Setter { setter_id } => (
+            Some("setter"),
+            None,
+            None,
+            None,
+            None,
+            Some(fmt_someip_id(setter_id)),
+        ),
+    }
 }
 
 // ── Public entry point ───────────────────────────────────────
@@ -303,6 +383,39 @@ fn generate_cpp_mesh(
         }
     }
 
+    // Fail fast on event-name collisions: two SCXML events on the same
+    // target that collapse to the same C++ constant suffix would emit
+    // duplicate `static constexpr` definitions in the generated header,
+    // surfacing as a C++ redefinition error far from the actual cause.
+    //
+    // Scan the union of `event_patterns` (the set the template emits
+    // constants for) AND `events` (the raw per-send list from
+    // `SendActionSummary.target_events`). Currently the two align since
+    // every observed event defaults to FireForget when no prefix matches,
+    // but scanning both keeps this check correct if a future template
+    // emission keys on the raw event list.
+    for t in targets {
+        let mut seen: HashMap<String, String> = HashMap::new();
+        let names = t
+            .event_patterns
+            .iter()
+            .map(|ep| ep.event.as_str())
+            .chain(t.events.iter().map(String::as_str))
+            .filter(|e| !e.is_empty());
+        for event in names {
+            let suffix = event_to_const_suffix(event);
+            if let Some(prev) = seen.insert(suffix.clone(), event.to_string()) {
+                if prev != event {
+                    return Err(CodegenError::EventNameCollision {
+                        target: t.target.clone(),
+                        suffix,
+                        events: vec![prev, event.to_string()],
+                    });
+                }
+            }
+        }
+    }
+
     let target_contexts: Vec<TargetContext> = targets
         .iter()
         .map(|t| {
@@ -314,40 +427,48 @@ fn generate_cpp_mesh(
                 .iter()
                 .map(|ep| {
                     // Per-event SOME/IP IDs come from `event_bindings`,
-                    // populated by `topology::attach_event_bindings`. For
-                    // non-someip targets (or events with no resolved IDs)
-                    // every field is None and the template skips the
-                    // per-event constant emission.
-                    let ids = t.event_bindings.get(&ep.event);
+                    // populated by `topology::finalize_targets`. For
+                    // non-someip targets `event_bindings` is empty; for
+                    // someip targets every detected event has an entry
+                    // (topology validation enforces this before codegen).
+                    let ctx_ids = t.event_bindings.get(&ep.event).map(event_ids_to_template);
+                    let (field_kind, method_id, event_group_id, event_id, getter_id, setter_id) =
+                        ctx_ids.unwrap_or_default();
                     EventPatternContext {
                         event: ep.event.clone(),
                         event_const: event_to_const_suffix(&ep.event),
                         pattern_kind: ep.pattern_kind_value,
                         reply_event: ep.reply_event.clone(),
-                        method_id: ids.and_then(|i| i.method_id).map(fmt_someip_id),
-                        event_group_id: ids.and_then(|i| i.event_group_id).map(fmt_someip_id),
-                        event_id: ids.and_then(|i| i.event_id).map(fmt_someip_id),
-                        getter_id: ids.and_then(|i| i.getter_id).map(fmt_someip_id),
-                        setter_id: ids.and_then(|i| i.setter_id).map(fmt_someip_id),
+                        field_kind,
+                        method_id,
+                        event_group_id,
+                        event_id,
+                        getter_id,
+                        setter_id,
                     }
                 })
                 .collect();
 
-            // Detect pattern categories from wire values (named constants
-            // defined in pattern.rs mirror PatternKind.h — single source).
-            use crate::mesh::pattern::{
-                WIRE_EVENT_NOTIFY, WIRE_EVENT_SUBSCRIBE, WIRE_FIELD_READ, WIRE_FIELD_WRITE,
-                WIRE_RPC_REPLY, WIRE_RPC_REQUEST,
+            // Detect pattern categories by recovering the symbolic pattern
+            // from the cached wire value and consulting its capability.
+            // `CommunicationPattern::required_capability()` is the SSOT
+            // for "which category does this pattern belong to"; the old
+            // per-wire-constant `match` is gone so wire values live solely
+            // in pattern.rs.
+            use crate::mesh::pattern::CommunicationPattern;
+            use crate::mesh::transport::TransportCapability;
+            let category_of = |wire: u16| -> Option<TransportCapability> {
+                CommunicationPattern::from_wire(wire).map(|p| p.required_capability())
             };
-            let has_rpc = event_patterns.iter().any(|ep| {
-                ep.pattern_kind == WIRE_RPC_REQUEST || ep.pattern_kind == WIRE_RPC_REPLY
-            });
-            let has_pubsub = event_patterns.iter().any(|ep| {
-                ep.pattern_kind == WIRE_EVENT_SUBSCRIBE || ep.pattern_kind == WIRE_EVENT_NOTIFY
-            });
-            let has_field = event_patterns.iter().any(|ep| {
-                ep.pattern_kind == WIRE_FIELD_READ || ep.pattern_kind == WIRE_FIELD_WRITE
-            });
+            let has_rpc = event_patterns
+                .iter()
+                .any(|ep| category_of(ep.pattern_kind) == Some(TransportCapability::RequestReply));
+            let has_pubsub = event_patterns
+                .iter()
+                .any(|ep| category_of(ep.pattern_kind) == Some(TransportCapability::PubSub));
+            let has_field = event_patterns
+                .iter()
+                .any(|ep| category_of(ep.pattern_kind) == Some(TransportCapability::FieldAccess));
             // Target receives if it has RPC (responses come back), PubSub
             // (notifications), or Field (notifications).
             let has_receive = has_rpc || has_pubsub || has_field;
@@ -360,6 +481,10 @@ fn generate_cpp_mesh(
                 events: t.events.clone(),
                 transport: t.transport.clone(),
                 extra: t.extra.clone(),
+                someip_service: t.someip_service.map(|s| SomeipServiceLiterals {
+                    service_id: fmt_someip_id(s.service_id),
+                    instance_id: fmt_someip_id(s.instance_id),
+                }),
                 has_per_target_field: desc.shape.has_per_target_field,
                 event_patterns,
                 has_rpc,

@@ -13,7 +13,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use sce_build::generator::Language;
-use sce_build::mesh::error::{ExternalConfigError, MeshError};
+use sce_build::mesh::error::{CodegenError, ExternalConfigError, MeshError};
 
 const BRAKE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -125,13 +125,6 @@ fn end_to_end_name_resolution_produces_numeric_constants() {
     let model = parse_brake();
     let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
-
-    // No inline IDs → no deprecation warnings.
-    assert!(
-        result.deprecation_warnings.is_empty(),
-        "unexpected deprecation warnings: {:?}",
-        result.deprecation_warnings
-    );
 
     // Exactly one generated mesh header for the brake machine.
     assert_eq!(result.output.files.len(), 1, "one generated file per machine");
@@ -478,10 +471,10 @@ topology:
 }
 
 #[test]
-fn inline_numeric_ids_still_compile_with_deprecation_warning() {
-    // Legacy fixture shape: all IDs inline, no transports.someip.config.
-    // compile_mesh_transport must still succeed (Stage 1 deprecation) but
-    // surface a DeprecationWarning per inline ID for the CLI to emit.
+fn inline_numeric_ids_rejected_as_legacy() {
+    // Post Session E1 Stage 2: the Stage 1 tolerance for inline SOME/IP
+    // numeric IDs is gone. A deploy.yaml shaped like the old Session C
+    // fixture fails resolution outright, listing every offending key.
     let fx = Fixture::new("legacy_inline");
     fx.write("brake.scxml", BRAKE_SCXML);
     fx.write("motor.scxml", MOTOR_SCXML);
@@ -505,20 +498,78 @@ topology:
     let deploy_path = fx.write("deploy.yaml", legacy);
 
     let model = parse_brake();
-    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
-        .expect("inline IDs stay valid under Stage 1 deprecation");
+    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+        Ok(_) => panic!("legacy inline IDs must be rejected"),
+        Err(e) => e,
+    };
+    match err {
+        MeshError::External(ExternalConfigError::LegacyInlineIds { fields, target, .. }) => {
+            assert_eq!(target, "#motor");
+            assert!(fields.contains(&"service_id"));
+            assert!(fields.contains(&"instance_id"));
+            assert!(fields.contains(&"method_id"));
+        }
+        other => panic!("expected LegacyInlineIds, got {other}"),
+    }
+}
 
-    // At least the three inline IDs on #motor must be reported.
-    assert!(
-        result.deprecation_warnings.len() >= 3,
-        "expected at least 3 deprecation warnings, got {:?}",
-        result.deprecation_warnings
-    );
-    let fields: Vec<_> = result
-        .deprecation_warnings
-        .iter()
-        .map(|w| w.field.as_str())
-        .collect();
-    assert!(fields.contains(&"service_id"));
-    assert!(fields.contains(&"method_id"));
+#[test]
+fn event_name_collision_at_codegen_rejected() {
+    // Two distinct SCXML event names on the same target that collapse to
+    // identical C++ constant suffixes (`event_to_const_suffix` maps any
+    // non-alphanumeric to `_`, so `"a.b.c"` and `"a-b-c"` both yield
+    // `A_B_C`). Without dedicated detection this would fall through to
+    // duplicate `static constexpr` declarations and a C++ redefinition
+    // error — bad UX. Build must fail here with a typed error naming
+    // both events.
+    let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="brake" initial="s">
+  <state id="s">
+    <onentry>
+      <send target="#motor" event="alpha.beta"/>
+      <send target="#motor" event="alpha-beta"/>
+    </onentry>
+  </state>
+</scxml>"##;
+    let motor = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="motor" initial="s">
+  <state id="s">
+    <transition event="alpha.beta" target="s"/>
+    <transition event="alpha-beta" target="s"/>
+  </state>
+</scxml>"##;
+    let fx = Fixture::new("collision");
+    fx.write("brake.scxml", scxml);
+    fx.write("motor.scxml", motor);
+    let deploy = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: local
+      motor:
+        source: motor.scxml
+"##;
+    let deploy_path = fx.write("deploy.yaml", deploy);
+
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser.parse_string(scxml, "brake").expect("parse");
+    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+        Err(e) => e,
+        Ok(_) => panic!("collision must reject codegen"),
+    };
+    match err {
+        MeshError::Codegen(CodegenError::EventNameCollision { suffix, events, .. }) => {
+            assert_eq!(suffix, "ALPHA_BETA");
+            assert!(events.contains(&"alpha.beta".to_string()));
+            assert!(events.contains(&"alpha-beta".to_string()));
+        }
+        other => panic!("expected EventNameCollision, got {other:?}"),
+    }
 }

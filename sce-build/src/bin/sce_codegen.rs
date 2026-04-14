@@ -466,9 +466,6 @@ fn cmd_generate(
                 for w in &result.dynamic_target_warnings {
                     eprintln!("Warning: {w}");
                 }
-                for w in &result.deprecation_warnings {
-                    eprintln!("Deprecation: {w}");
-                }
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
                 for (filename, code) in &mesh_files {
                     let file_path = out_path.join(filename);

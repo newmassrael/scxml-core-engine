@@ -159,6 +159,20 @@ pub enum ExternalConfigError {
         target: String,
     },
 
+    /// deploy.yaml carries inline numeric IDs (`service_id: "0x1234"`,
+    /// `method_id:`, …) that were tolerated during Session E1 Stage 1 and
+    /// are now rejected. Every SOME/IP identity must resolve through
+    /// `service:` + `events:` (or flat sugar) against vsomeip.json.
+    #[error("machine '{machine}': binding '{target}' uses inline SOME/IP numeric IDs \
+             {fields:?}. These were deprecated in Session E1 and are no longer accepted. \
+             Move the identity into `transports.someip.config:` (vsomeip.json) and \
+             reference it by name (`service:`, `events.*.method:`, …). See SCE_MESH.md §14.")]
+    LegacyInlineIds {
+        machine: String,
+        target: String,
+        fields: Vec<&'static str>,
+    },
+
     /// A binding whose `transport:` is not `someip` carries SOME/IP-only
     /// name-based fields (`service`, `method`, `event_group`, `getter`,
     /// `setter`). Catches misconfigured deploy.yaml at build time instead
@@ -184,6 +198,20 @@ pub enum ExternalConfigError {
         machine: String,
         target: String,
         flat_fields: Vec<&'static str>,
+    },
+
+    /// A single per-event entry sets more than one field family (e.g. both
+    /// `method:` and `event_group:`). Each SCXML event addresses exactly
+    /// one SOME/IP resource kind — mixing families within one entry would
+    /// silently pick a variant at codegen time. Rejected at resolution.
+    #[error("machine '{machine}': binding '{target}' event '{event}' sets multiple \
+             field kinds ({fields:?}). Each per-event entry must declare exactly one \
+             of method / event_group / getter / setter.")]
+    ConflictingEventFieldKinds {
+        machine: String,
+        target: String,
+        event: String,
+        fields: Vec<String>,
     },
 
     // EventBindingUnused lives on TopologyError because detection requires
@@ -375,6 +403,20 @@ pub enum CodegenError {
     /// Jinja2 template rendering failure.
     #[error("mesh template render error: {0}")]
     TemplateRender(String),
+
+    /// Two distinct SCXML event names on the same target map to the same
+    /// C++ identifier suffix (e.g. `service.request.x` and
+    /// `service-request-x` both collapse to `SERVICE_REQUEST_X`). Without
+    /// this check the collision would only surface as a C++ redefinition
+    /// error on the downstream compiler — an unhelpful diagnostic location.
+    #[error("target '{target}': SCXML events {events:?} both map to the same \
+             C++ constant suffix '{suffix}'. Rename one of the events (or use \
+             a per-event explicit mapping) so generated constants are unique.")]
+    EventNameCollision {
+        target: super::target::TargetId,
+        suffix: String,
+        events: Vec<String>,
+    },
 }
 
 /// CLI exit code by error category.

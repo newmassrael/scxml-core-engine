@@ -644,9 +644,6 @@ pub struct MeshResult {
     pub output: generator::GeneratedOutput,
     /// Dynamic target warnings (targetexpr cannot be statically resolved).
     pub dynamic_target_warnings: Vec<mesh::topology::TopologyWarning>,
-    /// Deploy.yaml deprecation warnings from Stage 1 tolerations (inline
-    /// SOME/IP IDs, etc.). Promoted to hard errors in Session E1 Stage 2.
-    pub deprecation_warnings: Vec<crate::diagnostics::DeployDeprecationWarning>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -662,7 +659,7 @@ pub struct MeshResult {
 ///   1b. Resolve external infrastructure config (SCE_MESH.md §13):
 ///       load each device's vsomeip.json and resolve name-based binding
 ///       references into numeric IDs before topology runs. Inline numeric
-///       IDs (Stage 1 deprecation) emit warnings and are passed through.
+///       IDs are rejected (hard error — Session E1 Stage 2).
 ///   2. Collect <send> targets from the model (single pass)
 ///   2a. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
 ///   2b. Resolve targets against deploy.yaml bindings
@@ -684,14 +681,14 @@ pub fn compile_mesh_transport(
     language: generator::Language,
 ) -> Result<MeshResult, mesh::error::MeshError> {
     // Stage 1: deploy.yaml parsing (typed session config validated by serde)
-    let mut deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+    let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
 
     // Stage 1b: resolve external infrastructure config (vsomeip.json) —
-    // transforms name-based binding references into numeric IDs in place
-    // so downstream stages see a unified deploy.yaml shape.
+    // produces a typed `ExternalResolution` map consumed by topology. The
+    // deploy config itself is treated read-only from here on.
     let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
     let external_resolution =
-        mesh::external::resolve_external_bindings(&mut deploy_cfg, deploy_dir)?;
+        mesh::external::resolve_external_bindings(&deploy_cfg, deploy_dir)?;
 
     // Stage 2: single-pass send action collection
     let summary = mesh::topology::collect_send_summary(model);
@@ -700,18 +697,21 @@ pub fn compile_mesh_transport(
     let dynamic_target_warnings = summary.dynamic_warnings.clone();
 
     // Stage 2b: resolve static targets against deploy.yaml bindings,
-    // attach per-event SOME/IP IDs (fans flat sugar / inline IDs out to
-    // one entry per matching SCXML event), then validate per-event
-    // field presence against each event's communication pattern.
-    let mut resolved = mesh::topology::resolve_targets(&summary, &deploy_cfg, &model.name)?;
-    mesh::topology::attach_event_bindings(&mut resolved, &model.name, &external_resolution)?;
-    mesh::topology::validate_someip_event_fields(&resolved, &model.name)?;
+    // attach per-event SOME/IP IDs, and validate per-event field presence
+    // in a single pipeline — callers cannot observe the half-built state
+    // between resolution and attach.
+    let resolved = mesh::topology::build_resolved_targets(
+        &summary,
+        &deploy_cfg,
+        &model.name,
+        &external_resolution,
+    )?;
 
     if resolved.is_empty() {
+        let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
             dynamic_target_warnings,
-            deprecation_warnings: external_resolution.deprecation_warnings,
         });
     }
 
@@ -728,7 +728,6 @@ pub fn compile_mesh_transport(
     }
 
     // Stage 2d: event coverage — implementation check.
-    let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
     let receiver_models =
         mesh::topology::load_receiver_models(&resolved, &deploy_cfg, deploy_dir, &model.name)?;
     let uncovered =
@@ -760,7 +759,6 @@ pub fn compile_mesh_transport(
     Ok(MeshResult {
         output,
         dynamic_target_warnings,
-        deprecation_warnings: external_resolution.deprecation_warnings,
     })
 }
 

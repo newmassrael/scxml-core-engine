@@ -12,6 +12,31 @@ use std::fmt;
 
 use super::transport::TransportCapability;
 
+// ── SOME/IP field kinds ─────────────────────────────────────
+
+/// The family of SOME/IP numeric slot a pattern binds to.
+///
+/// Every recognized pattern maps to exactly one kind (see
+/// [`CommunicationPattern::someip_field`]). The kind is what
+/// resolution, validation, and codegen dispatch on — not the raw
+/// pattern, and not the probing of which `Option` field happens
+/// to be populated.
+///
+/// `EventGroup` additionally requires a contained `event_id`; the
+/// tagged-enum per-event value type (`topology::SomeipEventIds`)
+/// carries both as part of the same variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SomeipFieldKind {
+    /// RPC/FireForget methods (`services[*].methods[*]`).
+    Method,
+    /// Subscribe/Notification event groups (`services[*].eventgroups[*]`).
+    EventGroup,
+    /// Field read (`services[*].methods[*]` treated as getter).
+    Getter,
+    /// Field write (`services[*].methods[*]` treated as setter).
+    Setter,
+}
+
 // ── Communication patterns ──────────────────────────────────
 
 /// Communication patterns recognized from SCXML `<send event="...">` names.
@@ -81,6 +106,29 @@ impl CommunicationPattern {
         }
     }
 
+    /// Which SOME/IP numeric-ID slot this pattern requires at runtime.
+    ///
+    /// Single source of truth for "pattern → required SOME/IP field" —
+    /// resolution fan-out, validation, and codegen dispatch all read this
+    /// instead of duplicating a `match` over `CommunicationPattern` (or
+    /// worse, over `PatternKind` wire values). Adding a new pattern variant
+    /// is a single edit here.
+    ///
+    /// Every recognized pattern addresses **exactly one** slot family —
+    /// `Method`, `EventGroup`, `Getter`, or `Setter`. If a future pattern
+    /// needs zero slots or multiple slots, this returns type must change
+    /// (e.g. `&'static [SomeipFieldKind]`) and the callers that currently
+    /// rely on infallibility need to adapt.
+    pub fn someip_field(self) -> SomeipFieldKind {
+        use SomeipFieldKind::*;
+        match self {
+            Self::FireForget | Self::ServiceRequest | Self::ServiceResponse => Method,
+            Self::Subscribe | Self::Notification => EventGroup,
+            Self::FieldGet => Getter,
+            Self::FieldSet => Setter,
+        }
+    }
+
     /// If `event` belongs to this pattern — either the bare prefix or
     /// `<prefix>.<suffix>` — return the suffix (empty for the bare form).
     /// Otherwise `None`. Boundary check is strict: `service.requestX`
@@ -114,6 +162,17 @@ impl CommunicationPattern {
             Self::FieldGet         => 7,
             Self::FieldSet         => 8,
         }
+    }
+
+    /// Inverse of [`wire_value`] over the SCXML-detectable subset. Returns
+    /// `None` for wire values that exist in the C++ `PatternKind` enum but
+    /// cannot originate from `<send>` (e.g. `EventUnsubscribe`, `FieldNotify`).
+    ///
+    /// Consumers that need to recover the symbolic pattern from a cached
+    /// `pattern_kind_value` (e.g. validators) go through this — no open-coded
+    /// wire → variant `match` elsewhere.
+    pub fn from_wire(v: u16) -> Option<Self> {
+        Self::ALL.iter().copied().find(|p| p.wire_value() == v)
     }
 
     /// Derive the paired reply event name for an RPC request by convention
@@ -440,6 +499,42 @@ mod tests {
             CommunicationPattern::FieldSet.required_capability(),
             TransportCapability::FieldAccess
         );
+    }
+
+    // ── someip_field ────────────────────────────────────────
+
+    #[test]
+    fn someip_field_method_family() {
+        use SomeipFieldKind::Method;
+        assert_eq!(CommunicationPattern::FireForget.someip_field(), Method);
+        assert_eq!(CommunicationPattern::ServiceRequest.someip_field(), Method);
+        assert_eq!(CommunicationPattern::ServiceResponse.someip_field(), Method);
+    }
+
+    #[test]
+    fn someip_field_event_group_family() {
+        use SomeipFieldKind::EventGroup;
+        assert_eq!(CommunicationPattern::Subscribe.someip_field(), EventGroup);
+        assert_eq!(CommunicationPattern::Notification.someip_field(), EventGroup);
+    }
+
+    #[test]
+    fn someip_field_getter_setter_family() {
+        use SomeipFieldKind::{Getter, Setter};
+        assert_eq!(CommunicationPattern::FieldGet.someip_field(), Getter);
+        assert_eq!(CommunicationPattern::FieldSet.someip_field(), Setter);
+    }
+
+    #[test]
+    fn someip_field_exhaustive_across_all_variants() {
+        // Every recognized pattern must return some SomeipFieldKind. The
+        // infallible return type already guarantees this at compile time;
+        // this test also exercises the call on every variant in the ALL
+        // catalogue so a future variant added to `ALL` without a match arm
+        // in `someip_field` fails the test instead of panicking in prod.
+        for p in CommunicationPattern::ALL.iter().copied() {
+            let _ = p.someip_field();
+        }
     }
 
     // ── Display ─────────────────────────────────────────────

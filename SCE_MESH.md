@@ -468,7 +468,7 @@ topology:
 
 Generated code contains compile-time constant routing tables. Protocol-native SD is not used.
 
-**Best for**: Safety-critical automotive (ASIL-B/D), embedded systems.
+**Best for**: Deterministic automotive, embedded systems.
 
 ### 4.2 Scoped Mode (Domain-Partitioned)
 
@@ -2209,6 +2209,8 @@ error: deploy.yaml references SOME/IP entities that do not exist in
 ```
 
 The minimum-schema approach keeps SCE's dependency on vsomeip surface small: any vsomeip configuration feature not listed here (routing manager trace filters, security policies, service-group mappings, etc.) passes through untouched to vsomeip at runtime. SCE never rewrites the file.
+
+**Per-event `service:` — not supported.** A binding's `service:` reference is binding-level only; the per-event `events:` entries carry `method` / `event_group` / `getter` / `setter` but **no** `service:`. A target identity (`#motor`) resolves to exactly one SOME/IP `{service_id, instance_id}` pair, so "this event on the same target actually routes to a different service" would require a second logical target — declare it as a separate binding (`#motor_ctrl` vs. `#motor_diag`) and `<send>` to the appropriate target, rather than overloading per-event `service:`. sce-build rejects `service:` inside an `events:` entry as an unknown field.
 
 Inline numeric IDs in deploy.yaml remain supported for incremental migration of existing Session C/D test fixtures but are **deprecated** and will be removed after migration in Session E1.
 
