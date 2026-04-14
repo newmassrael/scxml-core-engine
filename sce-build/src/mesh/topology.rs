@@ -226,45 +226,25 @@ impl TransportState {
 }
 
 /// A resolved send target: SCXML <send> target matched to a deploy.yaml binding.
+///
+/// Transport-specific data lives on `state` ([`TransportState`]). The
+/// runtime tag that used to live on a separate `transport: String` field
+/// is the variant identity itself — readers cannot probe SOME/IP fields
+/// on a non-SOME/IP target because those fields do not exist on those
+/// variants.
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedTarget {
     /// The target ID from SCXML (e.g. "#motor").
     pub target: TargetId,
     /// Events sent to this target (for documentation/validation).
     pub events: Vec<String>,
-    /// Transport type from deploy.yaml binding.
-    ///
-    /// Deprecated: kept temporarily for the in-flight TransportState
-    /// migration. Use `state.transport_name()` instead — `transport`
-    /// disappears in the third commit of the sum-type refactor.
-    pub transport: String,
-    /// Transport-native configuration from deploy.yaml binding.
-    ///
-    /// Deprecated: kept temporarily for the in-flight TransportState
-    /// migration. Typed values (someip identity, shm capacity, zenoh
-    /// key) live on the `state` variant; `extra` disappears in the
-    /// third commit of the sum-type refactor.
-    pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
-    /// Typed SOME/IP service identity (`service_id` + `instance_id`).
-    ///
-    /// Deprecated: kept temporarily for the in-flight TransportState
-    /// migration. Read `TransportState::Someip { service, .. }`
-    /// instead. Disappears in the third commit of the sum-type refactor.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub someip_service: Option<SomeipServiceIds>,
     /// Per-event pattern metadata for codegen (pattern-aware send + RPC correlation).
     pub event_patterns: Vec<EventPatternInfo>,
-    /// Per-event resolved SOME/IP numeric IDs, keyed by SCXML event name.
-    ///
-    /// Deprecated: kept temporarily for the in-flight TransportState
-    /// migration. Read `TransportState::Someip { event_bindings, .. }`
-    /// instead. Disappears in the third commit of the sum-type refactor.
-    pub event_bindings: BTreeMap<String, SomeipEventIds>,
-    /// Tagged transport state — the post-refactor SSOT. Variant identity
-    /// replaces the `transport: String` runtime tag and the
-    /// `Some`/`None`-correlated `someip_service` / `event_bindings`
-    /// fields. The legacy fields above continue to mirror this for the
-    /// duration of the migration.
+    /// Tagged transport state — variant identity is the dispatch key for
+    /// codegen and validators. Replaces the historical
+    /// `transport: String` + `someip_service: Option<...>` +
+    /// `event_bindings: BTreeMap<...>` + `extra: HashMap<...>` quartet
+    /// whose populated/empty correlation was a runtime invariant.
     pub state: TransportState,
 }
 
@@ -599,17 +579,18 @@ pub fn build_resolved_targets(
 
 /// Validate SOME/IP per-event field presence.
 ///
-/// Runs after `finalize_targets`, so it can read `event_bindings`
-/// directly. Each SCXML event must have the IDs its communication
-/// pattern requires, otherwise the template would silently emit
-/// `return false` for that event at runtime.
+/// Runs after `finalize_targets`, so it can read the populated
+/// `TransportState::Someip { event_bindings, .. }` variant directly.
+/// Each SCXML event must have the IDs its communication pattern
+/// requires, otherwise the template would silently emit `return false`
+/// for that event at runtime.
 pub(crate) fn validate_someip_event_fields(
     resolved: &[ResolvedTarget],
     machine_name: &str,
 ) -> Result<(), TopologyError> {
     for rt in resolved {
-        if rt.transport == "someip" {
-            validate_someip_pattern_fields(machine_name, rt)?;
+        if let TransportState::Someip { event_bindings, .. } = &rt.state {
+            validate_someip_pattern_fields(machine_name, rt, event_bindings)?;
         }
     }
     Ok(())
@@ -678,10 +659,13 @@ fn validate_shm_extras_partial(
 /// by `resolve_someip_ids`. The per-event resource ID is pattern-dependent;
 /// [`super::pattern::CommunicationPattern::someip_field`] is the SSOT. This
 /// validator checks that the expected [`SomeipFieldKind`] appears as a
-/// matching [`SomeipEventIds`] variant in `event_bindings`.
+/// matching [`SomeipEventIds`] variant in the SOME/IP variant's
+/// `event_bindings` map (passed in by the caller after destructuring
+/// the variant).
 fn validate_someip_pattern_fields(
     machine_name: &str,
     rt: &ResolvedTarget,
+    event_bindings: &BTreeMap<String, SomeipEventIds>,
 ) -> Result<(), TopologyError> {
     for ep in &rt.event_patterns {
         // Recover the detected pattern from the cached wire value; pattern
@@ -694,12 +678,12 @@ fn validate_someip_pattern_fields(
             continue;
         };
         let expected = pattern.someip_field();
-        let actual_kind = rt.event_bindings.get(&ep.event).map(|ids| ids.field_kind());
+        let actual_kind = event_bindings.get(&ep.event).map(|ids| ids.field_kind());
         if actual_kind != Some(expected) {
             return Err(TopologyError::MissingBindingField {
                 machine: machine_name.to_string(),
                 target: rt.target.clone(),
-                transport: rt.transport.clone(),
+                transport: rt.state.transport_name().to_string(),
                 field: format!("{} (event \"{}\")", field_kind_yaml_name(expected), ep.event),
             });
         }
@@ -745,26 +729,18 @@ pub(crate) fn finalize_targets(
     let mut resolved = Vec::with_capacity(partials.len());
 
     for pt in partials {
-        let (someip_service, event_bindings) = if pt.transport == "someip" {
-            let (svc, ev) = resolve_someip_ids(&pt, machine_name, external)?;
-            (Some(svc), ev)
+        let someip_resolved = if pt.transport == "someip" {
+            Some(resolve_someip_ids(&pt, machine_name, external)?)
         } else {
-            (None, BTreeMap::new())
+            None
         };
 
-        // Build the typed state variant from the same inputs as the
-        // legacy fields. Population is in lockstep — commit 2 migrates
-        // consumers, commit 3 deletes the legacy mirrors.
-        let state = build_transport_state(&pt, someip_service, &event_bindings);
+        let state = build_transport_state(&pt, someip_resolved);
 
         resolved.push(ResolvedTarget {
             target: pt.target,
             events: pt.events,
-            transport: pt.transport,
-            extra: pt.extra,
-            someip_service,
             event_patterns: pt.event_patterns,
-            event_bindings,
             state,
         });
     }
@@ -777,15 +753,15 @@ pub(crate) fn finalize_targets(
 /// SHM capacity tunables are extracted via `as_u64` after
 /// [`validate_shm_extras_partial`] has already confirmed they fit in
 /// `u32`; the cast is therefore lossless. SOME/IP identity and per-event
-/// IDs are passed in by the caller (already produced by
-/// [`resolve_someip_ids`]). Zenoh `key` is required by the registry
+/// IDs are produced by the caller via [`resolve_someip_ids`] and passed
+/// in as a single tuple — non-`None` iff `pt.transport == "someip"`.
+/// Zenoh `key` is required by the registry
 /// (`required_binding_fields = ["key"]`) so its presence is guaranteed
-/// upstream — non-string values render as the empty string here, which
+/// upstream; non-string values render as the empty string here, which
 /// downstream codegen will surface as a build-time mismatch.
 fn build_transport_state(
     pt: &PartialTarget,
-    someip_service: Option<SomeipServiceIds>,
-    event_bindings: &BTreeMap<String, SomeipEventIds>,
+    someip_resolved: Option<(SomeipServiceIds, BTreeMap<String, SomeipEventIds>)>,
 ) -> TransportState {
     match pt.transport.as_str() {
         "local" => TransportState::Local,
@@ -793,21 +769,24 @@ fn build_transport_state(
             arena_bytes: pt.extra.get("shm_arena_bytes").and_then(|v| v.as_u64()).map(|n| n as u32),
             ring_capacity: pt.extra.get("shm_ring_capacity").and_then(|v| v.as_u64()).map(|n| n as u32),
         },
-        "someip" => TransportState::Someip {
-            // `someip_service` is `Some` for every someip target after
+        "someip" => {
+            // `someip_resolved` is `Some` for every someip target after
             // `resolve_someip_ids` runs (typed `PerBindingResolution`
             // invariant). The `expect` pins that contract; reaching
             // `None` here would be an upstream bug.
-            service: someip_service.expect(
+            let (service, event_bindings) = someip_resolved.expect(
                 "build_transport_state: someip target must have resolved service identity",
-            ),
-            event_bindings: event_bindings.clone(),
-            // `pt.extra` already excludes typed BindingConfig fields
-            // (`service`, `method`, `events`, …) and reserved ID keys
-            // (rejected upstream). Whatever lands here is opaque
-            // passthrough such as `protocol: udp/tcp`.
-            extra: pt.extra.clone(),
-        },
+            );
+            TransportState::Someip {
+                service,
+                event_bindings,
+                // `pt.extra` already excludes typed BindingConfig fields
+                // (`service`, `method`, `events`, …) and reserved ID keys
+                // (rejected upstream). Whatever lands here is opaque
+                // passthrough such as `protocol: udp/tcp`.
+                extra: pt.extra.clone(),
+            }
+        }
         "zenoh" => {
             let key = pt
                 .extra
@@ -1345,16 +1324,12 @@ mod tests {
     }
 
     fn resolved_motor_target() -> Vec<ResolvedTarget> {
-        // Non-someip target — the absent `event_bindings` is part of the
-        // fully-resolved state, not a half-built transient.
+        // Non-someip target — `TransportState::Local` carries no
+        // SOME/IP fields, so impossible-state probing is unrepresentable.
         vec![ResolvedTarget {
             target: TargetId::new("#motor").unwrap(),
             events: vec!["brake.activate".to_string()],
-            transport: "local".to_string(),
-            extra: HashMap::new(),
-            someip_service: None,
             event_patterns: Vec::new(),
-            event_bindings: Default::default(),
             state: TransportState::Local,
         }]
     }
