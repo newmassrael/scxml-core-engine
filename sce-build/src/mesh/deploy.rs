@@ -22,7 +22,7 @@ use crate::mesh::error::DeployError;
 use crate::mesh::target::TargetId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Top-level deploy.yaml structure.
 ///
@@ -78,15 +78,22 @@ pub struct DeviceConfig {
 /// Device-level transport config block.
 ///
 /// Each field is an entry for a transport that has device-shared state. A
-/// transport that has no shared state (local, shm, someip) does not appear
-/// here — its entire config is per-binding. `deny_unknown_fields` catches
-/// typos in transport names (e.g. `zneoh:`) at parse time.
+/// transport that has no shared state (local, shm) does not appear here —
+/// its entire config is per-binding. SOME/IP and Zenoh appear here because
+/// they carry device-shared identity (vsomeip application name, zenoh
+/// session) and reference external OEM config files (SCE_MESH.md §13).
+/// `deny_unknown_fields` catches typos in transport names (e.g. `zneoh:`)
+/// at parse time.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransportConfigs {
     /// Zenoh session config — applied to the single `zenoh::Session` shared
     /// by all zenoh bindings on this device.
     pub zenoh: Option<ZenohTransportConfig>,
+    /// SOME/IP device-shared config — references the OEM-supplied
+    /// vsomeip.json (single source of truth for service/method IDs) and
+    /// binds the generated runtime to a vsomeip application identity.
+    pub someip: Option<SomeipTransportConfig>,
 }
 
 /// Zenoh device-shared session configuration.
@@ -104,6 +111,24 @@ pub struct ZenohTransportConfig {
     pub connect: Option<Vec<String>>,
     /// Endpoint list the session will listen on for incoming connections.
     pub listen: Option<Vec<String>>,
+    /// Path (relative to deploy.yaml) to an external zenoh.json5 session
+    /// config. `mode`/`connect`/`listen` above, when present, merge over
+    /// this file at runtime. SCE_MESH.md §13 / §14.
+    pub config: Option<PathBuf>,
+}
+
+/// SOME/IP device-shared configuration (SCE_MESH.md §13).
+///
+/// `config:` points to the OEM-supplied `vsomeip.json`; `application_name`
+/// matches one of `applications[*].name` inside it. `deny_unknown_fields`
+/// catches typos like `applicaton_name:` at parse time.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SomeipTransportConfig {
+    /// Path (relative to deploy.yaml) to the external vsomeip.json.
+    pub config: Option<PathBuf>,
+    /// Matches `applications[*].name` in vsomeip.json.
+    pub application_name: Option<String>,
 }
 
 /// Zenoh session mode.
@@ -157,14 +182,49 @@ pub struct MachineConfig {
 
 /// Transport binding for a single `<send>` target.
 ///
-/// `extra` uses `serde(flatten)` for per-target transport-native keys
-/// (e.g. zenoh `key:`, someip `service_id:`). Device-shared session keys
-/// live on `DeviceConfig::transports`, not here.
+/// Name-based fields (`service:`, `method:`, `event_group:`, `getter:`,
+/// `setter:`) reference entities in the external OEM config (vsomeip.json);
+/// sce-build resolves them into numeric IDs at build time and injects the
+/// resolved IDs into `extra` before codegen (SCE_MESH.md §13).
+///
+/// `extra` uses `serde(flatten)` for per-target transport-native keys not
+/// covered by the explicit fields (e.g. zenoh `key:`, someip `protocol:`,
+/// plus the Stage 1 deprecated inline numeric IDs). Device-shared session
+/// keys live on `DeviceConfig::transports`, not here.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BindingConfig {
     /// Transport type: "local", "shm", "someip", "dds", "zenoh", etc.
     pub transport: String,
+
+    /// SOME/IP service name — resolved against vsomeip.json
+    /// `services[*].name`, producing `service_id` + `instance_id`.
+    #[serde(default)]
+    pub service: Option<String>,
+
+    /// SOME/IP method name — resolved against `services[*].methods[*].name`,
+    /// producing `method_id`. Single-method-per-binding sugar; per-event
+    /// fanout is a future extension.
+    #[serde(default)]
+    pub method: Option<String>,
+
+    /// SOME/IP event group name — resolved against
+    /// `services[*].eventgroups[*].name`, producing `event_group_id` and
+    /// the contained event's `event_id`. The referenced group must contain
+    /// exactly one event for the current template.
+    #[serde(default)]
+    pub event_group: Option<String>,
+
+    /// SOME/IP field getter method name — resolves to `getter_id`.
+    #[serde(default)]
+    pub getter: Option<String>,
+
+    /// SOME/IP field setter method name — resolves to `setter_id`.
+    #[serde(default)]
+    pub setter: Option<String>,
+
     /// Per-target transport-native settings passed through to templates.
+    /// Holds both non-typed fields (zenoh `key:`, someip `protocol:`) and
+    /// the Stage 1 deprecated inline numeric IDs (`service_id:`, etc.).
     #[serde(flatten)]
     pub extra: HashMap<String, serde_yaml_ng::Value>,
 }

@@ -18,3 +18,5 @@ pub mod pattern;
 pub mod target;
 pub mod topology;
 pub mod codegen;
+pub mod vsomeip_config;
+pub mod external;

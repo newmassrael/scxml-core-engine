@@ -357,6 +357,7 @@ mod tests {
             mode: Some(ZenohMode::Peer),
             connect: None,
             listen: None,
+            config: None,
         };
         let j = ZenohSessionJson5::from_config(&cfg);
         // Literal, ready to drop into insert_json5("mode", <HERE>).
@@ -369,6 +370,7 @@ mod tests {
             mode: None,
             connect: Some(vec!["tcp/192.168.1.1:7447".into()]),
             listen: None,
+            config: None,
         };
         let j = ZenohSessionJson5::from_config(&cfg);
         assert_eq!(j.connect.as_deref(), Some(r#""[\"tcp/192.168.1.1:7447\"]""#));
@@ -381,6 +383,7 @@ mod tests {
             mode: None,
             connect: Some(vec!["a\"b\\c\nd".into()]),
             listen: None,
+            config: None,
         };
         let j = ZenohSessionJson5::from_config(&cfg);
         // Unquoting the C++ literal yields valid JSON whose parsed string
@@ -407,6 +410,7 @@ mod tests {
             mode: None,
             connect: None,
             listen: None,
+            config: None,
         };
         let j = ZenohSessionJson5::from_config(&cfg);
         assert!(j.is_empty());

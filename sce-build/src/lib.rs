@@ -644,6 +644,9 @@ pub struct MeshResult {
     pub output: generator::GeneratedOutput,
     /// Dynamic target warnings (targetexpr cannot be statically resolved).
     pub dynamic_target_warnings: Vec<mesh::topology::TopologyWarning>,
+    /// Deprecation warnings from Stage 1 tolerations (inline SOME/IP IDs,
+    /// etc.). Promoted to hard errors in Session E1 Stage 2.
+    pub deprecation_warnings: Vec<crate::diagnostics::DeprecationWarning>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -656,6 +659,10 @@ pub struct MeshResult {
 ///   1. Parse deploy.yaml (device-shared `transports:` and per-target
 ///      `bindings:` both validated at this stage; invalid values like
 ///      `mode: pier` are rejected here, before any topology work).
+///   1b. Resolve external infrastructure config (SCE_MESH.md §13):
+///       load each device's vsomeip.json and resolve name-based binding
+///       references into numeric IDs before topology runs. Inline numeric
+///       IDs (Stage 1 deprecation) emit warnings and are passed through.
 ///   2. Collect <send> targets from the model (single pass)
 ///   2a. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
 ///   2b. Resolve targets against deploy.yaml bindings
@@ -677,7 +684,14 @@ pub fn compile_mesh_transport(
     language: generator::Language,
 ) -> Result<MeshResult, mesh::error::MeshError> {
     // Stage 1: deploy.yaml parsing (typed session config validated by serde)
-    let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+    let mut deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+
+    // Stage 1b: resolve external infrastructure config (vsomeip.json) —
+    // transforms name-based binding references into numeric IDs in place
+    // so downstream stages see a unified deploy.yaml shape.
+    let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
+    let external_resolution =
+        mesh::external::resolve_external_bindings(&mut deploy_cfg, deploy_dir)?;
 
     // Stage 2: single-pass send action collection
     let summary = mesh::topology::collect_send_summary(model);
@@ -692,6 +706,7 @@ pub fn compile_mesh_transport(
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
             dynamic_target_warnings,
+            deprecation_warnings: external_resolution.deprecation_warnings,
         });
     }
 
@@ -739,6 +754,7 @@ pub fn compile_mesh_transport(
     Ok(MeshResult {
         output,
         dynamic_target_warnings,
+        deprecation_warnings: external_resolution.deprecation_warnings,
     })
 }
 

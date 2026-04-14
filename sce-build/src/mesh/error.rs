@@ -4,10 +4,11 @@
 // Structured error hierarchy for the SCE Mesh pipeline.
 //
 // Each variant maps to a pipeline stage:
-//   Deploy   → stage 1 (deploy.yaml parsing)
-//   Topology → stage 2 (target resolution + validation)
-//   Codegen  → stage 3 (template rendering)
-//   Io       → cross-cutting filesystem errors
+//   Deploy         → stage 1 (deploy.yaml parsing)
+//   External       → stage 1b (vsomeip.json / zenoh.json5 parsing + 3-way check)
+//   Topology       → stage 2 (target resolution + validation)
+//   Codegen        → stage 3 (template rendering)
+//   Io             → cross-cutting filesystem errors
 
 use std::path::PathBuf;
 
@@ -20,6 +21,9 @@ use std::path::PathBuf;
 pub enum MeshError {
     #[error(transparent)]
     Deploy(#[from] DeployError),
+
+    #[error(transparent)]
+    External(#[from] ExternalConfigError),
 
     #[error(transparent)]
     Topology(#[from] TopologyError),
@@ -74,6 +78,118 @@ pub enum DeployError {
         machine: String,
         devices: Vec<String>,
     },
+}
+
+// ── Stage 1b: External infrastructure config ─────────────────
+
+/// Errors from vsomeip.json / zenoh.json5 parsing and 3-way name resolution.
+///
+/// External config files are owned by the platform team (OEM tooling,
+/// ARXML/Franca pipelines). sce-build reads them to resolve deploy.yaml
+/// name references into numeric transport IDs; diagnostics therefore carry
+/// the file path so operators can correlate with their OEM source.
+#[derive(Debug, thiserror::Error)]
+pub enum ExternalConfigError {
+    /// Cannot read the external config file from disk.
+    #[error("cannot read external config '{path}': {source}")]
+    Read {
+        path: String,
+        source: std::io::Error,
+    },
+
+    /// External config file is malformed (JSON / JSON5 syntax or schema).
+    #[error("external config '{path}' parse error: {reason}")]
+    Parse { path: String, reason: String },
+
+    /// deploy.yaml references one or more entities that do not exist in
+    /// the referenced external config. All unresolved references for a
+    /// single (machine, config) pair are batched into one error so operators
+    /// see the full picture instead of fixing them one at a time.
+    ///
+    /// Format mirrors SCE_MESH.md §13 example — one line per missing entity
+    /// with the deploy.yaml kind (`service`/`method`/`event_group`) and the
+    /// unmet assertion.
+    #[error("deploy.yaml for machine '{machine}' references SOME/IP entities that do not exist in\n\
+             {config_path}:\n{}",
+             .missing.iter().map(|m| format!("  - {m}"))
+                 .collect::<Vec<_>>().join("\n"))]
+    UnresolvedNames {
+        machine: String,
+        config_path: String,
+        missing: Vec<UnresolvedName>,
+    },
+
+    /// A binding uses the `event_group:` sugar but the referenced event group
+    /// in vsomeip.json contains more than one event. The current template
+    /// models one event per binding; resolving a multi-event group would
+    /// silently pick a single id. Rejected at the Rust level.
+    #[error("machine '{machine}': binding '{target}' references event_group '{event_group}' \
+             in '{config_path}', which contains {count} events. \
+             Per-event fanout is not yet supported; declare a single-event group \
+             or add a per-event binding.")]
+    AmbiguousEventGroup {
+        machine: String,
+        target: String,
+        config_path: String,
+        event_group: String,
+        count: usize,
+    },
+
+    /// A binding uses the `event_group:` sugar but the referenced event group
+    /// in vsomeip.json contains no events. Building on that would emit an
+    /// event_id of 0 and route nothing.
+    #[error("machine '{machine}': binding '{target}' references event_group '{event_group}' \
+             in '{config_path}', which has no events declared. Add the event id in vsomeip.json.")]
+    EmptyEventGroup {
+        machine: String,
+        target: String,
+        config_path: String,
+        event_group: String,
+    },
+
+    /// A binding declared a name-based reference (e.g. `service: motor`) but
+    /// the owning device did not declare `transports.someip.config:`. Without
+    /// the config file path there is no way to resolve the name.
+    #[error("machine '{machine}': binding '{target}' uses name-based SOME/IP references \
+             but device '{device}' does not declare 'transports.someip.config:'. \
+             Add the vsomeip.json path to the device's transports block.")]
+    MissingConfigReference {
+        machine: String,
+        device: String,
+        target: String,
+    },
+}
+
+/// One unresolved name entry inside `ExternalConfigError::UnresolvedNames`.
+#[derive(Debug, Clone)]
+pub struct UnresolvedName {
+    /// The deploy.yaml key kind: "service", "method", "event_group",
+    /// "getter", "setter", or "application_name".
+    pub kind: &'static str,
+    /// The unresolved name as declared in deploy.yaml.
+    pub name: String,
+    /// Extra context for multi-level lookups (e.g. "in service \"motor\"").
+    pub context: Option<String>,
+}
+
+impl std::fmt::Display for UnresolvedName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.context {
+            Some(ctx) => write!(
+                f,
+                "{kind} \"{name}\" → no match {ctx}",
+                kind = self.kind,
+                name = self.name,
+                ctx = ctx
+            ),
+            None => write!(
+                f,
+                "{kind} \"{name}\" → no match",
+                kind = self.kind,
+                name = self.name
+            ),
+        }
+    }
 }
 
 // ── Stage 2: Topology resolution ─────────────────────────────
@@ -223,6 +339,7 @@ impl MeshError {
     pub fn exit_code(&self) -> i32 {
         match self {
             MeshError::Deploy(_) => 10,
+            MeshError::External(_) => 14,
             MeshError::Topology(_) => 11,
             MeshError::Codegen(_) => 12,
             MeshError::Io { .. } => 13,
