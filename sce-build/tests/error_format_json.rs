@@ -370,6 +370,121 @@ fn json_mode_emits_one_ndjson_record_per_xsd_violation() {
     );
 }
 
+/// Write a condition fixture that passes XSD but fails semantic
+/// validation on a specific child element: the `<data direction="out">`
+/// is missing the `expr` attribute the condition kind requires.
+///
+/// The root `<scxml>` is deliberately on line 2 and the offending
+/// `<data id="y">` on line 6 so the assertion below can distinguish
+/// root-level precision (every error would report line 2) from
+/// leaf-level precision (the raise-site node's actual line).
+fn write_condition_missing_expr_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("cond_missing_expr.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="condition" name="bad_cond">
+  <datamodel>
+    <data id="x" sce:type="int32" sce:direction="in"/>
+    <data id="y" sce:type="bool" sce:direction="out"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write condition fixture");
+    (dir, path)
+}
+
+/// Leaf-precision acceptance test for `parse_condition`.
+///
+/// Before per-leaf wiring this fixture reported `location.line` equal
+/// to the `<scxml>` root line (2), so upstream agents could not tell
+/// which child element violated the contract. The expected behaviour
+/// is that the diagnostic points at the offending `<data>` element's
+/// own line — proving `located(&data, ...)` fires at the raise-site
+/// rather than the wrapper collapsing everything to root.
+#[test]
+fn json_mode_condition_missing_expr_reports_leaf_line() {
+    let (_dir, scxml) = write_condition_missing_expr_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+
+    assert!(!out.status.success(), "must fail on missing expr");
+    assert_eq!(out.status.code(), Some(3), "ValidationError exit code");
+
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let line = stderr.trim_end();
+    let parsed: serde_json::Value =
+        serde_json::from_str(line).expect("stderr must be NDJSON");
+
+    assert_eq!(parsed["code"], "validation/missing-attribute");
+    assert_eq!(parsed["stage"], "validation");
+
+    let location = &parsed["location"];
+    assert!(location.is_object(), "location object required: {line}");
+    assert_eq!(
+        location["file"].as_str(),
+        scxml.file_name().and_then(|s| s.to_str())
+    );
+    // The offending <data id="y"> sits on fixture line 7 (root is 2).
+    // If leaf precision regressed to wrapper behaviour, this becomes 2.
+    assert_eq!(
+        location["line"].as_u64(),
+        Some(7),
+        "must point at the specific <data> element, not the <scxml> root: {line}"
+    );
+}
+
+/// Write a codec fixture that passes XSD but fails the post-loop
+/// `fields.is_empty()` check inside `parse_codec`. XSD accepts a
+/// lone input `<data>` with no output fields, so validation must
+/// run against the `<datamodel>` container — the most specific
+/// node still in scope at that raise-site.
+fn write_codec_no_output_fields_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("codec_no_output.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" name="bad_codec">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write codec fixture");
+    (dir, path)
+}
+
+/// Leaf-precision acceptance test for `parse_codec`.
+///
+/// The `<scxml>` root is on line 2 and `<datamodel>` on line 5.
+/// Post-loop validation reports at `<datamodel>` — the most specific
+/// node still in scope — so `location.line == 5`, not `2`. This
+/// pins the "most specific node still in scope" rule for the
+/// template across container-level raises (not just per-`<data>`
+/// raises exercised by the condition test above).
+#[test]
+fn json_mode_codec_no_output_reports_datamodel_line() {
+    let (_dir, scxml) = write_codec_no_output_fields_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+
+    assert!(!out.status.success(), "must fail when no output fields");
+    assert_eq!(out.status.code(), Some(3), "ValidationError exit code");
+
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let line = stderr.trim_end();
+    let parsed: serde_json::Value =
+        serde_json::from_str(line).expect("stderr must be NDJSON");
+
+    assert_eq!(parsed["code"], "validation/empty-collection");
+    let location = &parsed["location"];
+    assert_eq!(
+        location["line"].as_u64(),
+        Some(5),
+        "must point at <datamodel>, not the <scxml> root: {line}"
+    );
+}
+
 #[test]
 fn human_mode_remains_plain_text() {
     let (_dir, scxml) = write_missing_datamodel_fixture();

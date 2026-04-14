@@ -9,32 +9,47 @@
 // Usage:
 //   sce-codegen manifest <dir>
 
-use crate::forge::error::{ForgeError, ManifestError};
+use crate::forge::error::{ForgeError, Located, ManifestError};
 use crate::forge::model::{ForgeKind, ForgeManifest, ManifestEntry};
 use crate::forge::parser;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+
+/// Attach `dir` as the `Located` file name for a bare [`ForgeError`].
+/// Used at the manifest-scanning boundary when a cross-file failure
+/// (directory IO, topological cycle) doesn't belong to any single
+/// document and `dir` is the most specific filename we have.
+fn locate_at_dir<E: Into<ForgeError>>(dir: &Path, err: E) -> Located<ForgeError> {
+    Located::new(err.into(), dir.display().to_string(), None, None)
+}
 
 /// Scan a directory for forge SCXML files and build a dependency manifest.
 ///
 /// Returns `ForgeManifest` with:
 /// - `entries`: all forge documents found (with their imports)
 /// - `build_order`: topologically sorted file list (leaves first)
-pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, ForgeError> {
+pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, Located<ForgeError>> {
     let mut entries = Vec::new();
 
     // Scan for .scxml files
-    let scxml_files = collect_scxml_files(dir)?;
+    let scxml_files = collect_scxml_files(dir).map_err(|e| locate_at_dir(dir, e))?;
 
     for path in &scxml_files {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ManifestError::Io {
-                context: format!("cannot read {}", path.display()),
-                source: e,
-            })?;
+        let path_label = path.display().to_string();
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            locate_at_dir(
+                dir,
+                ManifestError::Io {
+                    context: format!("cannot read {}", path.display()),
+                    source: e,
+                },
+            )
+        })?;
 
         // Detect if forge document
-        let kind = match parser::detect_kind(&content)? {
+        let kind = match parser::detect_kind(&content)
+            .map_err(|e| Located::new(e, path_label.clone(), None, None))?
+        {
             None => continue,
             Some(ForgeKind::Statechart) => continue,
             Some(k) => k,
@@ -56,7 +71,10 @@ pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, ForgeError> {
             .unwrap_or("unknown")
             .to_string();
 
-        let imports = parser::parse_imports_only(&content)?;
+        // parse_imports_only already returns `Located<ForgeError>` keyed
+        // to `path_label`, so per-<sce:import> line data survives the
+        // hop through the manifest scanner.
+        let imports = parser::parse_imports_only(&content, &path_label)?;
 
         entries.push(ManifestEntry {
             src,
@@ -68,7 +86,7 @@ pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, ForgeError> {
     }
 
     // Topological sort
-    let build_order = topological_sort(&entries)?;
+    let build_order = topological_sort(&entries).map_err(|e| locate_at_dir(dir, e))?;
 
     Ok(ForgeManifest {
         entries,
@@ -222,6 +240,7 @@ mod tests {
                     src: "codec.scxml".to_string(),
                     kind: ForgeKind::Codec,
                     alias: "frame".to_string(),
+                    line: None,
                 }],
             },
         ];
@@ -241,6 +260,7 @@ mod tests {
                     src: "b.scxml".to_string(),
                     kind: ForgeKind::Transform,
                     alias: "b".to_string(),
+                    line: None,
                 }],
             },
             ManifestEntry {
@@ -252,6 +272,7 @@ mod tests {
                     src: "a.scxml".to_string(),
                     kind: ForgeKind::Codec,
                     alias: "a".to_string(),
+                    line: None,
                 }],
             },
         ];

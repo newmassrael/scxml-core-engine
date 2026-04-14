@@ -312,7 +312,7 @@ pub fn compile_forge_with_imports(
     let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
         .map_err(|e| Located::new(e, name, None, None))?;
 
-    validate_and_enrich_imports(&mut import_ctx, &parsed.imports, base_dir, &language)?;
+    validate_and_enrich_imports(&mut import_ctx, &parsed.imports, base_dir, &language, name)?;
 
     let output = match language {
         generator::Language::Cpp => {
@@ -347,6 +347,7 @@ fn validate_and_enrich_imports(
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
     language: &generator::Language,
+    importing_doc: &str,
 ) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{ImportError, Located};
 
@@ -396,6 +397,12 @@ fn validate_and_enrich_imports(
             })?;
 
         if actual_kind != imp.kind {
+            // The `sce:kind="..."` attribute that disagrees lives in
+            // the importing document, not in the imported file — so
+            // the diagnostic's location anchors at `importing_doc` on
+            // the `<sce:import>` element's own line (recorded during
+            // `parse_imports`). Pointing at `src_label` was a double
+            // mislabel: wrong file *and* no line.
             return Err(Located::new(
                 ImportError::KindMismatch {
                     src: imp.src.clone(),
@@ -403,8 +410,8 @@ fn validate_and_enrich_imports(
                     actual: actual_kind.to_string(),
                 }
                 .into(),
-                &src_label,
-                None,
+                importing_doc,
+                imp.line,
                 None,
             ));
         }
@@ -683,7 +690,6 @@ pub fn build_forge_manifest(
     dir: &std::path::Path,
 ) -> Result<forge::model::ForgeManifest, forge::error::Located<forge::error::ForgeError>> {
     forge::manifest::build_manifest(dir)
-        .map_err(|e| forge::error::Located::new(e, dir.display().to_string(), None, None))
 }
 
 /// Result of a mesh transport compilation — generated files plus all

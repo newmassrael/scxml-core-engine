@@ -916,6 +916,14 @@ pub struct ForgeImport {
     pub kind: ForgeKind,
     /// Alias used in expressions to reference the imported kind.
     pub alias: String,
+    /// 1-based source line of the `<sce:import>` element in the
+    /// importing document. Populated by `parse_imports` so later
+    /// passes (e.g. `validate_and_enrich_imports`) can anchor their
+    /// diagnostics at the exact element rather than at the document
+    /// root. Skipped from serialization so existing manifest JSON
+    /// output stays byte-stable.
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 // ── Build manifest ────────────────────────────────────────────

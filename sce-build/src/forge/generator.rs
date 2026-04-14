@@ -4799,6 +4799,7 @@ mod tests {
             src: "transform.scxml".to_string(),
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
+            line: None,
         }];
         let opts = crate::ForgeCompileOptions { go_module_prefix: None };
         let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
@@ -4811,6 +4812,7 @@ mod tests {
             src: "transform.scxml".to_string(),
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
+            line: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("".to_string()),
@@ -4825,6 +4827,7 @@ mod tests {
             src: "transform.scxml".to_string(),
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
+            line: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme /gen".to_string()),
@@ -4839,6 +4842,7 @@ mod tests {
             src: "transform.scxml".to_string(),
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
+            line: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/gen".to_string()),
@@ -4860,6 +4864,7 @@ mod tests {
             src: "transform.scxml".to_string(),
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
+            line: None,
         }];
         let opts = crate::ForgeCompileOptions { go_module_prefix: None };
         let result = validate_options(&imports, &crate::generator::Language::Cpp, &opts);
@@ -4873,6 +4878,7 @@ mod tests {
             src: "temperature_transform.scxml".to_string(),
             kind: ForgeKind::Transform,
             alias: "temp".to_string(),
+            line: None,
         }
     }
 
@@ -4881,6 +4887,7 @@ mod tests {
             src: "simple_codec.scxml".to_string(),
             kind: ForgeKind::Codec,
             alias: "frame".to_string(),
+            line: None,
         }
     }
 

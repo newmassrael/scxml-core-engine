@@ -93,7 +93,7 @@ pub fn parse_forge_with_imports(
         ));
     }
 
-    let imports = parse_imports(&root).map_err(|e| located(&root, name, e))?;
+    let imports = parse_imports(&root, name)?;
     let document = parse_forge_from_node(&root, name, kind)?;
     Ok(Some(ParsedForge { document, imports }))
 }
@@ -137,53 +137,19 @@ fn parse_forge_from_node(
     }
 }
 
-// ── Kind-parser wrappers ───────────────────────────────────────
+// ── Kind-parser surface ────────────────────────────────────────
 //
-// Each `parse_X` wrapper gives upstream callers a `Located<ForgeError>`
-// carrying file + root-line position for any failure inside the kind's
-// parser. The `_inner` implementations keep the leaner `ValidationError`
-// type so interior logic can `?`-propagate without location plumbing.
-//
-// `parse_transform` below is the one exception — it was upgraded to
-// per-leaf precision in this commit as the template for future kind
-// sweeps. Callers read all kinds through the same `Located<ForgeError>`
-// surface regardless of interior style.
+// Every `parse_X` below returns `Result<_, Located<ForgeError>>` and
+// raises through the shared `located()` helper at each failure site,
+// anchoring the diagnostic at the most specific DOM node the error
+// refers to (a particular `<data>`, a `<state>`, the `<datamodel>`
+// container, or the `<scxml>` root when nothing more precise is in
+// scope). Upstream agents branch on `stage + location` — so keeping
+// the line data tight to the offending element is the contract this
+// layer exists to serve.
 
-fn parse_lookup(root: &roxmltree::Node, name: &str) -> Result<LookupModel, Located<ForgeError>> {
-    parse_lookup_inner(root, name).map_err(|e| located(root, name, e))
-}
 
-fn parse_condition(root: &roxmltree::Node, name: &str) -> Result<ConditionModel, Located<ForgeError>> {
-    parse_condition_inner(root, name).map_err(|e| located(root, name, e))
-}
 
-fn parse_codec(root: &roxmltree::Node, name: &str) -> Result<CodecModel, Located<ForgeError>> {
-    parse_codec_inner(root, name).map_err(|e| located(root, name, e))
-}
-
-fn parse_validator(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel, Located<ForgeError>> {
-    parse_validator_inner(root, name).map_err(|e| located(root, name, e))
-}
-
-fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel, Located<ForgeError>> {
-    parse_procedure_inner(root, name).map_err(|e| located(root, name, e))
-}
-
-fn parse_filter(root: &roxmltree::Node, name: &str) -> Result<FilterModel, Located<ForgeError>> {
-    parse_filter_inner(root, name).map_err(|e| located(root, name, e))
-}
-
-fn parse_interpolation(root: &roxmltree::Node, name: &str) -> Result<InterpolationModel, Located<ForgeError>> {
-    parse_interpolation_inner(root, name).map_err(|e| located(root, name, e))
-}
-
-fn parse_timer(root: &roxmltree::Node, name: &str) -> Result<TimerModel, Located<ForgeError>> {
-    parse_timer_inner(root, name).map_err(|e| located(root, name, e))
-}
-
-fn parse_observer(root: &roxmltree::Node, name: &str) -> Result<ObserverModel, Located<ForgeError>> {
-    parse_observer_inner(root, name).map_err(|e| located(root, name, e))
-}
 
 // ── Transform parsing ──────────────────────────────────────────
 
@@ -198,7 +164,7 @@ fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel,
     let mut outputs = Vec::new();
 
     for data in data_children(&datamodel) {
-        let field = parse_forge_field(&data).map_err(|e| located(&data, name, e))?;
+        let field = parse_forge_field(&data, name)?;
         match field.direction {
             Direction::In => inputs.push(field),
             Direction::Out => outputs.push(field),
@@ -243,12 +209,20 @@ fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel,
 
 // ── Lookup parsing ─────────────────────────────────────────────
 
-fn parse_lookup_inner(root: &roxmltree::Node, name: &str) -> Result<LookupModel, ValidationError> {
-    let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
-            kind: ForgeKind::Lookup,
-            element: "datamodel".into(),
-        })?;
+fn parse_lookup(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<LookupModel, Located<ForgeError>> {
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Lookup,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let mut input: Option<ForgeField> = None;
     let mut output: Option<ForgeField> = None;
@@ -260,9 +234,9 @@ fn parse_lookup_inner(root: &roxmltree::Node, name: &str) -> Result<LookupModel,
         let dir = sce_attr(&data, "direction");
 
         if dir.as_deref() == Some("in") {
-            input = Some(parse_forge_field(&data)?);
+            input = Some(parse_forge_field(&data, name)?);
         } else if dir.as_deref() == Some("out") {
-            output = Some(parse_forge_field(&data)?);
+            output = Some(parse_forge_field(&data, name)?);
         } else {
             if let Some(def) = sce_attr(&data, "default") {
                 explicit_default = Some(def);
@@ -270,24 +244,40 @@ fn parse_lookup_inner(root: &roxmltree::Node, name: &str) -> Result<LookupModel,
             if let Some(oms) = sce_attr(&data, "on-miss") {
                 on_miss_attr = Some(oms);
             }
-            entries.extend(parse_sce_entries(&data)?);
+            entries.extend(parse_sce_entries(&data, name)?);
         }
     }
 
-    let input = input.ok_or(ValidationError::MissingElement {
-        kind: ForgeKind::Lookup,
-        element: "input field (sce:direction=\"in\")".into(),
+    let input = input.ok_or_else(|| {
+        located(
+            &datamodel,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Lookup,
+                element: "input field (sce:direction=\"in\")".into(),
+            },
+        )
     })?;
-    let output = output.ok_or(ValidationError::MissingElement {
-        kind: ForgeKind::Lookup,
-        element: "output field (sce:direction=\"out\")".into(),
+    let output = output.ok_or_else(|| {
+        located(
+            &datamodel,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Lookup,
+                element: "output field (sce:direction=\"out\")".into(),
+            },
+        )
     })?;
 
     if entries.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Lookup,
-            what: "<sce:entry>".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Lookup,
+                what: "<sce:entry>".into(),
+            },
+        ));
     }
 
     // Key uniqueness is required by both miss policies: duplicates make the
@@ -295,23 +285,31 @@ fn parse_lookup_inner(root: &roxmltree::Node, name: &str) -> Result<LookupModel,
     let mut seen_keys = std::collections::BTreeSet::new();
     for entry in &entries {
         if !seen_keys.insert(entry.key.clone()) {
-            return Err(ValidationError::DuplicateId {
-                kind: ForgeKind::Lookup,
-                what: "key".into(),
-                id: entry.key.clone(),
-            });
+            return Err(located(
+                &datamodel,
+                name,
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::Lookup,
+                    what: "key".into(),
+                    id: entry.key.clone(),
+                },
+            ));
         }
     }
 
     let miss_policy = match on_miss_attr.as_deref() {
         Some("error") => {
             if explicit_default.is_some() {
-                return Err(ValidationError::IncompatibleAttributes {
-                    element: "Lookup".into(),
-                    detail: "sce:on-miss=\"error\" is incompatible with sce:default; \
-                             an error policy has no fallback value"
-                        .into(),
-                });
+                return Err(located(
+                    &datamodel,
+                    name,
+                    ValidationError::IncompatibleAttributes {
+                        element: "Lookup".into(),
+                        detail: "sce:on-miss=\"error\" is incompatible with sce:default; \
+                                 an error policy has no fallback value"
+                            .into(),
+                    },
+                ));
             }
             MissPolicy::Error
         }
@@ -322,12 +320,16 @@ fn parse_lookup_inner(root: &roxmltree::Node, name: &str) -> Result<LookupModel,
             MissPolicy::Default(value)
         }
         Some(other) => {
-            return Err(ValidationError::InvalidAttribute {
-                element: "Lookup".into(),
-                attr: "sce:on-miss".into(),
-                value: other.to_string(),
-                expected: "default, error".into(),
-            });
+            return Err(located(
+                &datamodel,
+                name,
+                ValidationError::InvalidAttribute {
+                    element: "Lookup".into(),
+                    attr: "sce:on-miss".into(),
+                    value: other.to_string(),
+                    expected: "default, error".into(),
+                },
+            ));
         }
     };
 
@@ -342,51 +344,75 @@ fn parse_lookup_inner(root: &roxmltree::Node, name: &str) -> Result<LookupModel,
 
 // ── Condition parsing ──────────────────────────────────────────
 
-fn parse_condition_inner(root: &roxmltree::Node, name: &str) -> Result<ConditionModel, ValidationError> {
-    let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
-            kind: ForgeKind::Condition,
-            element: "datamodel".into(),
-        })?;
+fn parse_condition(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<ConditionModel, Located<ForgeError>> {
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Condition,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let mut inputs = Vec::new();
     let mut expr = String::new();
 
     for data in data_children(&datamodel) {
-        let field = parse_forge_field(&data)?;
+        let field = parse_forge_field(&data, name)?;
         match field.direction {
             Direction::In => inputs.push(field),
             Direction::Out => {
                 if let Some(e) = &field.expr {
                     expr = e.clone();
                 } else {
-                    return Err(ValidationError::MissingAttribute {
-                        element: "Condition output field".into(),
-                        attr: "expr".into(),
-                    });
+                    return Err(located(
+                        &data,
+                        name,
+                        ValidationError::MissingAttribute {
+                            element: "Condition output field".into(),
+                            attr: "expr".into(),
+                        },
+                    ));
                 }
             }
             Direction::Internal => {
-                return Err(ValidationError::InvalidDirection {
-                    kind: ForgeKind::Condition,
-                    direction: "internal".into(),
-                    field: field.id,
-                });
+                return Err(located(
+                    &data,
+                    name,
+                    ValidationError::InvalidDirection {
+                        kind: ForgeKind::Condition,
+                        direction: "internal".into(),
+                        field: field.id,
+                    },
+                ));
             }
         }
     }
 
     if inputs.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Condition,
-            what: "input field".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Condition,
+                what: "input field".into(),
+            },
+        ));
     }
     if expr.is_empty() {
-        return Err(ValidationError::MissingElement {
-            kind: ForgeKind::Condition,
-            element: "output field with an 'expr' attribute".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Condition,
+                element: "output field with an 'expr' attribute".into(),
+            },
+        ));
     }
 
     Ok(ConditionModel {
@@ -398,16 +424,24 @@ fn parse_condition_inner(root: &roxmltree::Node, name: &str) -> Result<Condition
 
 // ── Codec parsing ──────────────────────────────────────────────
 
-fn parse_codec_inner(root: &roxmltree::Node, name: &str) -> Result<CodecModel, ValidationError> {
+fn parse_codec(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<CodecModel, Located<ForgeError>> {
     let default_endian = sce_attr(root, "default-endian")
         .and_then(|s| Endian::from_attr(&s))
         .unwrap_or(Endian::Big);
 
-    let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
-            kind: ForgeKind::Codec,
-            element: "datamodel".into(),
-        })?;
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Codec,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let mut fields = Vec::new();
     let mut input_length: Option<u32> = None;
@@ -417,36 +451,51 @@ fn parse_codec_inner(root: &roxmltree::Node, name: &str) -> Result<CodecModel, V
 
         if dir.as_deref() == Some("in") {
             if let Some(len_str) = sce_attr(&data, "length") {
-                input_length = Some(
-                    parse_int(&len_str).ok_or_else(|| ValidationError::NumericParse {
-                        element: "Codec input".into(),
-                        attr: "sce:length".into(),
-                        value: len_str,
-                        detail: "expected integer".into(),
-                    })?,
-                );
+                input_length = Some(parse_int(&len_str).ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::NumericParse {
+                            element: "Codec input".into(),
+                            attr: "sce:length".into(),
+                            value: len_str,
+                            detail: "expected integer".into(),
+                        },
+                    )
+                })?);
             }
             continue;
         }
 
-        // Output fields with byte layout (on <data> elements)
+        // Output fields with byte layout (on <data> elements). The helper
+        // is shared with the statechart parser for inline codec fields, so
+        // it remains `ValidationError`-returning; we wrap at the call-site
+        // so the <data> node's line still anchors the diagnostic.
         if sce_attr(&data, "byte").is_some() {
-            fields.push(parse_codec_field_from_node(&data)?);
+            fields.push(
+                parse_codec_field_from_node(&data).map_err(|e| located(&data, name, e))?,
+            );
         }
     }
 
     // Also check for <sce:field> elements (used in both standalone and inline codec)
     for child in datamodel.children().filter(|n| n.is_element()) {
         if child.tag_name().name() == "field" && child.tag_name().namespace() == Some(SCE_NAMESPACE) {
-            fields.push(parse_codec_field_from_node(&child)?);
+            fields.push(
+                parse_codec_field_from_node(&child).map_err(|e| located(&child, name, e))?,
+            );
         }
     }
 
     if fields.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Codec,
-            what: "field with byte layout".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Codec,
+                what: "field with byte layout".into(),
+            },
+        ));
     }
 
     Ok(CodecModel {
@@ -532,12 +581,20 @@ pub fn parse_codec_field_from_node(node: &roxmltree::Node) -> Result<CodecField,
 
 // ── Validator parsing ──────────────────────────────────────
 
-fn parse_validator_inner(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel, ValidationError> {
-    let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
-            kind: ForgeKind::Validator,
-            element: "datamodel".into(),
-        })?;
+fn parse_validator(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<ValidatorModel, Located<ForgeError>> {
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Validator,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let mut inputs = Vec::new();
     let mut ranges = Vec::new();
@@ -545,7 +602,7 @@ fn parse_validator_inner(root: &roxmltree::Node, name: &str) -> Result<Validator
     let mut plausibility: Option<String> = None;
 
     for data in data_children(&datamodel) {
-        let field = parse_forge_field(&data)?;
+        let field = parse_forge_field(&data, name)?;
         match field.direction {
             Direction::In => {
                 // Extract validator rules from sce: attributes on input <data> elements.
@@ -562,7 +619,8 @@ fn parse_validator_inner(root: &roxmltree::Node, name: &str) -> Result<Validator
                 if let Some(max_delta) = sce_attr(&data, "max-delta") {
                     let sample_interval_str = sce_attr(&data, "sample-interval")
                         .unwrap_or_else(|| "100ms".to_string());
-                    let sample_interval_ms = parse_time_interval(&sample_interval_str)?;
+                    let sample_interval_ms = parse_time_interval(&sample_interval_str)
+                        .map_err(|e| located(&data, name, e))?;
                     rate_of_changes.push(RateOfChangeRule {
                         id: field.id.clone(),
                         max_delta,
@@ -576,36 +634,52 @@ fn parse_validator_inner(root: &roxmltree::Node, name: &str) -> Result<Validator
                 // Extract sce:plausibility expression from output <data> element.
                 if let Some(expr) = sce_attr(&data, "plausibility") {
                     if plausibility.is_some() {
-                        return Err(ValidationError::SingletonViolation {
-                            kind: ForgeKind::Validator,
-                            attr: "sce:plausibility".into(),
-                        });
+                        return Err(located(
+                            &data,
+                            name,
+                            ValidationError::SingletonViolation {
+                                kind: ForgeKind::Validator,
+                                attr: "sce:plausibility".into(),
+                            },
+                        ));
                     }
                     plausibility = Some(expr);
                 }
             }
             Direction::Internal => {
-                return Err(ValidationError::InvalidDirection {
-                    kind: ForgeKind::Validator,
-                    direction: "internal".into(),
-                    field: field.id,
-                });
+                return Err(located(
+                    &data,
+                    name,
+                    ValidationError::InvalidDirection {
+                        kind: ForgeKind::Validator,
+                        direction: "internal".into(),
+                        field: field.id,
+                    },
+                ));
             }
         }
     }
 
     if inputs.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Validator,
-            what: "input field".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Validator,
+                what: "input field".into(),
+            },
+        ));
     }
 
     if ranges.is_empty() && rate_of_changes.is_empty() && plausibility.is_none() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Validator,
-            what: "rule (sce:range-min/max, sce:max-delta, or sce:plausibility)".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Validator,
+                what: "rule (sce:range-min/max, sce:max-delta, or sce:plausibility)".into(),
+            },
+        ));
     }
 
     Ok(ValidatorModel {
@@ -621,12 +695,21 @@ fn parse_validator_inner(root: &roxmltree::Node, name: &str) -> Result<Validator
 
 // ── Procedure parsing ──────────────────────────────────────
 
-fn parse_procedure_inner(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel, ValidationError> {
+fn parse_procedure(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<ProcedureModel, Located<ForgeError>> {
     let initial = root
         .attribute("initial")
-        .ok_or(ValidationError::MissingAttribute {
-            element: "Procedure <scxml>".into(),
-            attr: "initial".into(),
+        .ok_or_else(|| {
+            located(
+                root,
+                name,
+                ValidationError::MissingAttribute {
+                    element: "Procedure <scxml>".into(),
+                    attr: "initial".into(),
+                },
+            )
         })?
         .to_string();
 
@@ -636,7 +719,7 @@ fn parse_procedure_inner(root: &roxmltree::Node, name: &str) -> Result<Procedure
     let mut helpers = Vec::new();
     if let Some(datamodel) = find_child(root, "datamodel") {
         for data in data_children(&datamodel) {
-            let field = parse_forge_field(&data)?;
+            let field = parse_forge_field(&data, name)?;
             match field.direction {
                 Direction::In => inputs.push(field),
                 Direction::Internal => internals.push(field),
@@ -656,13 +739,17 @@ fn parse_procedure_inner(root: &roxmltree::Node, name: &str) -> Result<Procedure
                 && n.tag_name().namespace() == Some(SCE_NAMESPACE)
                 && n.tag_name().name() == "helper"
         }) {
-            let helper = parse_procedure_helper(&child)?;
+            let helper = parse_procedure_helper(&child, name)?;
             if helpers.iter().any(|h: &ProcedureHelper| h.name == helper.name) {
-                return Err(ValidationError::DuplicateId {
-                    kind: ForgeKind::Procedure,
-                    what: "<sce:helper>".into(),
-                    id: helper.name,
-                });
+                return Err(located(
+                    &child,
+                    name,
+                    ValidationError::DuplicateId {
+                        kind: ForgeKind::Procedure,
+                        what: "<sce:helper>".into(),
+                        id: helper.name,
+                    },
+                ));
             }
             helpers.push(helper);
         }
@@ -671,6 +758,7 @@ fn parse_procedure_inner(root: &roxmltree::Node, name: &str) -> Result<Procedure
     // Parse <state> and <final> elements
     let mut states = Vec::new();
     let mut state_ids = std::collections::BTreeSet::new();
+    let mut state_nodes: Vec<roxmltree::Node> = Vec::new();
 
     for child in root.children().filter(|n| n.is_element()) {
         let tag = child.tag_name().name();
@@ -681,36 +769,47 @@ fn parse_procedure_inner(root: &roxmltree::Node, name: &str) -> Result<Procedure
 
         let id = child
             .attribute("id")
-            .ok_or_else(|| ValidationError::MissingAttribute {
-                element: format!("<{tag}>"),
-                attr: "id".into(),
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    name,
+                    ValidationError::MissingAttribute {
+                        element: format!("<{tag}>"),
+                        attr: "id".into(),
+                    },
+                )
             })?
             .to_string();
 
         if !state_ids.insert(id.clone()) {
-            return Err(ValidationError::DuplicateId {
-                kind: ForgeKind::Procedure,
-                what: "state id".into(),
-                id,
-            });
+            return Err(located(
+                &child,
+                name,
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::Procedure,
+                    what: "state id".into(),
+                    id,
+                },
+            ));
         }
 
         let transitions = if is_final {
             Vec::new()
         } else {
-            parse_procedure_transitions(&child)?
+            parse_procedure_transitions(&child, name)?
         };
 
         // Parse <onentry> → <send> actions
-        let on_entry_sends = parse_procedure_onentry(&child)?;
+        let on_entry_sends = parse_procedure_onentry(&child, name)?;
 
         // Parse <donedata> on <final> elements
         let done_params = if is_final {
-            parse_procedure_donedata(&child)?
+            parse_procedure_donedata(&child, name)?
         } else {
             Vec::new()
         };
 
+        state_nodes.push(child);
         states.push(ProcedureState {
             id,
             is_final,
@@ -721,51 +820,74 @@ fn parse_procedure_inner(root: &roxmltree::Node, name: &str) -> Result<Procedure
     }
 
     if states.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Procedure,
-            what: "<state> or <final> element".into(),
-        });
+        return Err(located(
+            root,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Procedure,
+                what: "<state> or <final> element".into(),
+            },
+        ));
     }
 
     // Validate: initial state must exist
     if !state_ids.contains(&initial) {
-        return Err(ValidationError::InvalidReference {
-            kind: ForgeKind::Procedure,
-            name: initial.clone(),
-            what: "state".into(),
-            available: state_ids.iter().cloned().collect::<Vec<_>>().join(", "),
-        });
+        return Err(located(
+            root,
+            name,
+            ValidationError::InvalidReference {
+                kind: ForgeKind::Procedure,
+                name: initial.clone(),
+                what: "state".into(),
+                available: state_ids.iter().cloned().collect::<Vec<_>>().join(", "),
+            },
+        ));
     }
 
     // Validate: must have at least one final state
     if !states.iter().any(|s| s.is_final) {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Procedure,
-            what: "<final> element".into(),
-        });
+        return Err(located(
+            root,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Procedure,
+                what: "<final> element".into(),
+            },
+        ));
     }
 
-    // Validate: all transition targets must reference existing states
-    for state in &states {
+    // Validate: all transition targets must reference existing states.
+    // Locate the diagnostic at the owning <state> element — pairing states
+    // with their DOM nodes preserves leaf precision even though the target
+    // check runs post-loop.
+    for (state, node) in states.iter().zip(state_nodes.iter()) {
         for tr in &state.transitions {
             if !state_ids.contains(&tr.target) {
-                return Err(ValidationError::InvalidReference {
-                    kind: ForgeKind::Procedure,
-                    name: format!("transition target '{}' in state '{}'", tr.target, state.id),
-                    what: "state".into(),
-                    available: state_ids.iter().cloned().collect::<Vec<_>>().join(", "),
-                });
+                return Err(located(
+                    node,
+                    name,
+                    ValidationError::InvalidReference {
+                        kind: ForgeKind::Procedure,
+                        name: format!("transition target '{}' in state '{}'", tr.target, state.id),
+                        what: "state".into(),
+                        available: state_ids.iter().cloned().collect::<Vec<_>>().join(", "),
+                    },
+                ));
             }
         }
     }
 
     // Validate: non-final states must have at least one transition
-    for state in &states {
+    for (state, node) in states.iter().zip(state_nodes.iter()) {
         if !state.is_final && state.transitions.is_empty() {
-            return Err(ValidationError::EmptyCollection {
-                kind: ForgeKind::Procedure,
-                what: format!("<transition> in non-final state '{}'", state.id),
-            });
+            return Err(located(
+                node,
+                name,
+                ValidationError::EmptyCollection {
+                    kind: ForgeKind::Procedure,
+                    what: format!("<transition> in non-final state '{}'", state.id),
+                },
+            ));
         }
     }
 
@@ -798,53 +920,86 @@ fn is_ident(name: &str) -> bool {
 /// Parse `<sce:helper name="..." args="bytes,uint32" returns="bytes"/>`.
 /// Zero-arg helpers use `args=""`. Both `args` and `returns` accept the full
 /// `SceType::from_attr` vocabulary.
-fn parse_procedure_helper(node: &roxmltree::Node) -> Result<ProcedureHelper, ValidationError> {
-    let name = node
+fn parse_procedure_helper(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<ProcedureHelper, Located<ForgeError>> {
+    let helper_name = node
         .attribute("name")
-        .ok_or(ValidationError::MissingAttribute {
-            element: "<sce:helper>".into(),
-            attr: "name".into(),
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: "<sce:helper>".into(),
+                    attr: "name".into(),
+                },
+            )
         })?
         .to_string();
-    if name.is_empty() {
-        return Err(ValidationError::EmptyValue {
-            element: "<sce:helper>".into(),
-            attr: "name".into(),
-        });
+    if helper_name.is_empty() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::EmptyValue {
+                element: "<sce:helper>".into(),
+                attr: "name".into(),
+            },
+        ));
     }
-    if !is_ident(&name) {
-        return Err(ValidationError::InvalidAttribute {
-            element: "<sce:helper>".into(),
-            attr: "name".into(),
-            value: name,
-            expected: "[A-Za-z_][A-Za-z0-9_]* (valid identifier for 5-language generated source)".into(),
-        });
+    if !is_ident(&helper_name) {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: "<sce:helper>".into(),
+                attr: "name".into(),
+                value: helper_name,
+                expected: "[A-Za-z_][A-Za-z0-9_]* (valid identifier for 5-language generated source)".into(),
+            },
+        ));
     }
     let args_raw = node.attribute("args").unwrap_or("");
     let mut args = Vec::new();
     for part in args_raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        let sce_ty = SceType::from_attr(part).ok_or_else(|| ValidationError::InvalidAttribute {
-            element: format!("<sce:helper name=\"{name}\">"),
-            attr: "args".into(),
-            value: part.to_string(),
-            expected: "valid sce:type".into(),
+        let sce_ty = SceType::from_attr(part).ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:helper name=\"{helper_name}\">"),
+                    attr: "args".into(),
+                    value: part.to_string(),
+                    expected: "valid sce:type".into(),
+                },
+            )
         })?;
         args.push(sce_ty);
     }
-    let returns_raw = node
-        .attribute("returns")
-        .ok_or_else(|| ValidationError::MissingAttribute {
-            element: format!("<sce:helper name=\"{name}\">"),
-            attr: "returns".into(),
-        })?;
-    let returns = SceType::from_attr(returns_raw).ok_or_else(|| ValidationError::InvalidAttribute {
-        element: format!("<sce:helper name=\"{name}\">"),
-        attr: "returns".into(),
-        value: returns_raw.to_string(),
-        expected: "valid sce:type".into(),
+    let returns_raw = node.attribute("returns").ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("<sce:helper name=\"{helper_name}\">"),
+                attr: "returns".into(),
+            },
+        )
+    })?;
+    let returns = SceType::from_attr(returns_raw).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:helper name=\"{helper_name}\">"),
+                attr: "returns".into(),
+                value: returns_raw.to_string(),
+                expected: "valid sce:type".into(),
+            },
+        )
     })?;
     Ok(ProcedureHelper {
-        name,
+        name: helper_name,
         args,
         returns,
     })
@@ -853,7 +1008,10 @@ fn parse_procedure_helper(node: &roxmltree::Node) -> Result<ProcedureHelper, Val
 /// Parse <transition> children of a procedure state.
 /// Level 1: target + cond only.
 /// Level 2: + event + <assign> children.
-fn parse_procedure_transitions(state: &roxmltree::Node) -> Result<Vec<ProcedureTransition>, ValidationError> {
+fn parse_procedure_transitions(
+    state: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<ProcedureTransition>, Located<ForgeError>> {
     let mut transitions = Vec::new();
 
     for child in state.children().filter(|n| n.is_element()) {
@@ -863,12 +1021,18 @@ fn parse_procedure_transitions(state: &roxmltree::Node) -> Result<Vec<ProcedureT
 
         let target = child
             .attribute("target")
-            .ok_or_else(|| ValidationError::MissingAttribute {
-                element: format!(
-                    "<transition> in state '{}'",
-                    state.attribute("id").unwrap_or("?")
-                ),
-                attr: "target".into(),
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: format!(
+                            "<transition> in state '{}'",
+                            state.attribute("id").unwrap_or("?")
+                        ),
+                        attr: "target".into(),
+                    },
+                )
             })?
             .to_string();
 
@@ -876,7 +1040,7 @@ fn parse_procedure_transitions(state: &roxmltree::Node) -> Result<Vec<ProcedureT
         let event = child.attribute("event").map(|s| s.to_string());
 
         // Parse <assign> children within the transition (Level 2)
-        let assigns = parse_procedure_assigns(&child)?;
+        let assigns = parse_procedure_assigns(&child, doc_name)?;
 
         transitions.push(ProcedureTransition {
             target,
@@ -890,44 +1054,70 @@ fn parse_procedure_transitions(state: &roxmltree::Node) -> Result<Vec<ProcedureT
 }
 
 /// Parse <assign> children within a <transition> element.
-fn parse_procedure_assigns(transition: &roxmltree::Node) -> Result<Vec<ProcedureAssign>, ValidationError> {
+fn parse_procedure_assigns(
+    transition: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<ProcedureAssign>, Located<ForgeError>> {
     let mut assigns = Vec::new();
     for child in transition.children().filter(|n| n.is_element()) {
         if child.tag_name().name() != "assign" {
             continue;
         }
-        let location = child
+        let location_attr = child
             .attribute("location")
-            .ok_or(ValidationError::MissingAttribute {
-                element: "<assign>".into(),
-                attr: "location".into(),
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<assign>".into(),
+                        attr: "location".into(),
+                    },
+                )
             })?
             .to_string();
         let expr = child
             .attribute("expr")
-            .ok_or(ValidationError::MissingAttribute {
-                element: "<assign>".into(),
-                attr: "expr".into(),
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<assign>".into(),
+                        attr: "expr".into(),
+                    },
+                )
             })?
             .to_string();
-        assigns.push(ProcedureAssign { location, expr });
+        assigns.push(ProcedureAssign {
+            location: location_attr,
+            expr,
+        });
     }
     Ok(assigns)
 }
 
 /// Parse <onentry> → <send> actions within a procedure state.
-fn parse_procedure_onentry(state: &roxmltree::Node) -> Result<Vec<ProcedureSendAction>, ValidationError> {
+fn parse_procedure_onentry(
+    state: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<ProcedureSendAction>, Located<ForgeError>> {
     let mut sends = Vec::new();
     for onentry in state.children().filter(|n| n.is_element() && n.tag_name().name() == "onentry") {
         for child in onentry.children().filter(|n| n.is_element()) {
             if child.tag_name().name() != "send" {
                 continue;
             }
-            let service = sce_attr(&child, "service")
-                .ok_or(ValidationError::MissingAttribute {
-                    element: "<send> in procedure <onentry>".into(),
-                    attr: "sce:service".into(),
-                })?;
+            let service = sce_attr(&child, "service").ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<send> in procedure <onentry>".into(),
+                        attr: "sce:service".into(),
+                    },
+                )
+            })?;
             let subfunc = sce_attr(&child, "subfunc");
             let addr = sce_attr(&child, "addr");
             let payload = sce_attr(&child, "payload");
@@ -943,7 +1133,10 @@ fn parse_procedure_onentry(state: &roxmltree::Node) -> Result<Vec<ProcedureSendA
 }
 
 /// Parse <donedata> → <param> children within a <final> element.
-fn parse_procedure_donedata(final_elem: &roxmltree::Node) -> Result<Vec<ProcedureDoneParam>, ValidationError> {
+fn parse_procedure_donedata(
+    final_elem: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<ProcedureDoneParam>, Located<ForgeError>> {
     let mut params = Vec::new();
     for donedata in final_elem
         .children()
@@ -955,16 +1148,28 @@ fn parse_procedure_donedata(final_elem: &roxmltree::Node) -> Result<Vec<Procedur
             }
             let param_name = child
                 .attribute("name")
-                .ok_or(ValidationError::MissingAttribute {
-                    element: "<param> in <donedata>".into(),
-                    attr: "name".into(),
+                .ok_or_else(|| {
+                    located(
+                        &child,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: "<param> in <donedata>".into(),
+                            attr: "name".into(),
+                        },
+                    )
                 })?
                 .to_string();
             let expr = child
                 .attribute("expr")
-                .ok_or(ValidationError::MissingAttribute {
-                    element: "<param> in <donedata>".into(),
-                    attr: "expr".into(),
+                .ok_or_else(|| {
+                    located(
+                        &child,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: "<param> in <donedata>".into(),
+                            attr: "expr".into(),
+                        },
+                    )
                 })?
                 .to_string();
             params.push(ProcedureDoneParam {
@@ -1010,12 +1215,20 @@ fn parse_time_interval(s: &str) -> Result<u32, ValidationError> {
 
 // ── Filter parsing ────────────────────────────────────────────
 
-fn parse_filter_inner(root: &roxmltree::Node, name: &str) -> Result<FilterModel, ValidationError> {
-    let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
-            kind: ForgeKind::Filter,
-            element: "datamodel".into(),
-        })?;
+fn parse_filter(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<FilterModel, Located<ForgeError>> {
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Filter,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let mut input: Option<ForgeField> = None;
     let mut output: Option<ForgeField> = None;
@@ -1027,76 +1240,118 @@ fn parse_filter_inner(root: &roxmltree::Node, name: &str) -> Result<FilterModel,
         let dir = sce_attr(&data, "direction");
         match dir.as_deref() {
             Some("in") => {
-                input = Some(parse_forge_field(&data)?);
+                input = Some(parse_forge_field(&data, name)?);
             }
             Some("out") => {
-                output = Some(parse_forge_field(&data)?);
+                output = Some(parse_forge_field(&data, name)?);
 
-                let ft_str = sce_attr(&data, "filter")
-                    .ok_or(ValidationError::MissingAttribute {
-                        element: "Filter output".into(),
-                        attr: "sce:filter".into(),
-                    })?;
-                filter_type = Some(
-                    FilterType::from_attr(&ft_str)
-                        .ok_or_else(|| ValidationError::InvalidAttribute {
+                let ft_str = sce_attr(&data, "filter").ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::MissingAttribute {
+                            element: "Filter output".into(),
+                            attr: "sce:filter".into(),
+                        },
+                    )
+                })?;
+                filter_type = Some(FilterType::from_attr(&ft_str).ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::InvalidAttribute {
                             element: "Filter output".into(),
                             attr: "sce:filter".into(),
                             value: ft_str.clone(),
                             expected: "moving-average, low-pass, debounce".into(),
-                        })?,
-                );
+                        },
+                    )
+                })?);
 
                 window = sce_attr(&data, "window").and_then(|s| s.parse::<u32>().ok());
                 alpha = sce_attr(&data, "alpha").and_then(|s| s.parse::<f64>().ok());
             }
             _ => {
-                return Err(ValidationError::InvalidDirection {
-                    kind: ForgeKind::Filter,
-                    direction: dir.unwrap_or_default(),
-                    field: String::new(),
-                });
+                return Err(located(
+                    &data,
+                    name,
+                    ValidationError::InvalidDirection {
+                        kind: ForgeKind::Filter,
+                        direction: dir.unwrap_or_default(),
+                        field: String::new(),
+                    },
+                ));
             }
         }
     }
 
-    let input = input.ok_or(ValidationError::MissingElement {
-        kind: ForgeKind::Filter,
-        element: "input field (sce:direction=\"in\")".into(),
+    let input = input.ok_or_else(|| {
+        located(
+            &datamodel,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Filter,
+                element: "input field (sce:direction=\"in\")".into(),
+            },
+        )
     })?;
-    let output = output.ok_or(ValidationError::MissingElement {
-        kind: ForgeKind::Filter,
-        element: "output field (sce:direction=\"out\")".into(),
+    let output = output.ok_or_else(|| {
+        located(
+            &datamodel,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Filter,
+                element: "output field (sce:direction=\"out\")".into(),
+            },
+        )
     })?;
-    let filter_type = filter_type.ok_or(ValidationError::MissingAttribute {
-        element: "Filter output".into(),
-        attr: "sce:filter".into(),
+    let filter_type = filter_type.ok_or_else(|| {
+        located(
+            &datamodel,
+            name,
+            ValidationError::MissingAttribute {
+                element: "Filter output".into(),
+                attr: "sce:filter".into(),
+            },
+        )
     })?;
 
     // Validate required parameters per filter type
     match filter_type {
         FilterType::MovingAverage => {
             if window.is_none() {
-                return Err(ValidationError::MissingAttribute {
-                    element: "Moving-average filter".into(),
-                    attr: "sce:window".into(),
-                });
+                return Err(located(
+                    &datamodel,
+                    name,
+                    ValidationError::MissingAttribute {
+                        element: "Moving-average filter".into(),
+                        attr: "sce:window".into(),
+                    },
+                ));
             }
         }
         FilterType::LowPass => {
             if alpha.is_none() {
-                return Err(ValidationError::MissingAttribute {
-                    element: "Low-pass filter".into(),
-                    attr: "sce:alpha".into(),
-                });
+                return Err(located(
+                    &datamodel,
+                    name,
+                    ValidationError::MissingAttribute {
+                        element: "Low-pass filter".into(),
+                        attr: "sce:alpha".into(),
+                    },
+                ));
             }
         }
         FilterType::Debounce => {
             if window.is_none() {
-                return Err(ValidationError::MissingAttribute {
-                    element: "Debounce filter".into(),
-                    attr: "sce:window".into(),
-                });
+                return Err(located(
+                    &datamodel,
+                    name,
+                    ValidationError::MissingAttribute {
+                        element: "Debounce filter".into(),
+                        attr: "sce:window".into(),
+                    },
+                ));
             }
         }
     }
@@ -1113,12 +1368,20 @@ fn parse_filter_inner(root: &roxmltree::Node, name: &str) -> Result<FilterModel,
 
 // ── Interpolation parsing ─────────────────────────────────────
 
-fn parse_interpolation_inner(root: &roxmltree::Node, name: &str) -> Result<InterpolationModel, ValidationError> {
-    let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
-            kind: ForgeKind::Interpolation,
-            element: "datamodel".into(),
-        })?;
+fn parse_interpolation(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<InterpolationModel, Located<ForgeError>> {
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Interpolation,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let mut inputs = Vec::new();
     let mut output: Option<ForgeField> = None;
@@ -1131,34 +1394,47 @@ fn parse_interpolation_inner(root: &roxmltree::Node, name: &str) -> Result<Inter
         let dir = sce_attr(&data, "direction");
         match dir.as_deref() {
             Some("in") => {
-                inputs.push(parse_forge_field(&data)?);
+                inputs.push(parse_forge_field(&data, name)?);
             }
             Some("out") => {
-                output = Some(parse_forge_field(&data)?);
+                output = Some(parse_forge_field(&data, name)?);
 
-                let method_str = sce_attr(&data, "interpolation")
-                    .ok_or(ValidationError::MissingAttribute {
-                        element: "Interpolation output".into(),
-                        attr: "sce:interpolation".into(),
-                    })?;
-                method = Some(
-                    InterpolationMethod::from_attr(&method_str)
-                        .ok_or_else(|| ValidationError::InvalidAttribute {
+                let method_str = sce_attr(&data, "interpolation").ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::MissingAttribute {
+                            element: "Interpolation output".into(),
+                            attr: "sce:interpolation".into(),
+                        },
+                    )
+                })?;
+                method = Some(InterpolationMethod::from_attr(&method_str).ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::InvalidAttribute {
                             element: "Interpolation output".into(),
                             attr: "sce:interpolation".into(),
                             value: method_str.clone(),
                             expected: "linear, bilinear".into(),
-                        })?,
-                );
+                        },
+                    )
+                })?);
 
                 if let Some(oob_str) = sce_attr(&data, "out-of-bounds") {
-                    out_of_bounds = OutOfBounds::from_attr(&oob_str)
-                        .ok_or_else(|| ValidationError::InvalidAttribute {
-                            element: "Interpolation output".into(),
-                            attr: "sce:out-of-bounds".into(),
-                            value: oob_str.clone(),
-                            expected: "clamp, extrapolate, error".into(),
-                        })?;
+                    out_of_bounds = OutOfBounds::from_attr(&oob_str).ok_or_else(|| {
+                        located(
+                            &data,
+                            name,
+                            ValidationError::InvalidAttribute {
+                                element: "Interpolation output".into(),
+                                attr: "sce:out-of-bounds".into(),
+                                value: oob_str.clone(),
+                                expected: "clamp, extrapolate, error".into(),
+                            },
+                        )
+                    })?;
                 }
 
                 // Parse sce:axis-{input_id} attributes
@@ -1169,13 +1445,18 @@ fn parse_interpolation_inner(root: &roxmltree::Node, name: &str) -> Result<Inter
                             .split_whitespace()
                             .map(|s| s.parse::<f64>())
                             .collect();
-                        let breakpoints = breakpoints
-                            .map_err(|e| ValidationError::NumericParse {
-                                element: format!("Interpolation axis-{}", inp.id),
-                                attr: format!("sce:axis-{}", inp.id),
-                                value: bp_str.clone(),
-                                detail: e.to_string(),
-                            })?;
+                        let breakpoints = breakpoints.map_err(|e| {
+                            located(
+                                &data,
+                                name,
+                                ValidationError::NumericParse {
+                                    element: format!("Interpolation axis-{}", inp.id),
+                                    attr: format!("sce:axis-{}", inp.id),
+                                    value: bp_str.clone(),
+                                    detail: e.to_string(),
+                                },
+                            )
+                        })?;
                         axes.push(InterpolationAxis {
                             input_id: inp.id.clone(),
                             breakpoints,
@@ -1190,91 +1471,141 @@ fn parse_interpolation_inner(root: &roxmltree::Node, name: &str) -> Result<Inter
                         .split_whitespace()
                         .map(|s| s.parse::<f64>())
                         .collect::<Result<Vec<_>, _>>()
-                        .map_err(|e| ValidationError::NumericParse {
-                            element: "Interpolation output".into(),
-                            attr: "table values".into(),
-                            value: text.clone(),
-                            detail: e.to_string(),
+                        .map_err(|e| {
+                            located(
+                                &data,
+                                name,
+                                ValidationError::NumericParse {
+                                    element: "Interpolation output".into(),
+                                    attr: "table values".into(),
+                                    value: text.clone(),
+                                    detail: e.to_string(),
+                                },
+                            )
                         })?;
                 }
             }
             _ => {
-                return Err(ValidationError::InvalidDirection {
-                    kind: ForgeKind::Interpolation,
-                    direction: dir.unwrap_or_default(),
-                    field: String::new(),
-                });
+                return Err(located(
+                    &data,
+                    name,
+                    ValidationError::InvalidDirection {
+                        kind: ForgeKind::Interpolation,
+                        direction: dir.unwrap_or_default(),
+                        field: String::new(),
+                    },
+                ));
             }
         }
     }
 
-    let output = output.ok_or(ValidationError::MissingElement {
-        kind: ForgeKind::Interpolation,
-        element: "output field (sce:direction=\"out\")".into(),
+    let output = output.ok_or_else(|| {
+        located(
+            &datamodel,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Interpolation,
+                element: "output field (sce:direction=\"out\")".into(),
+            },
+        )
     })?;
-    let method = method.ok_or(ValidationError::MissingAttribute {
-        element: "Interpolation output".into(),
-        attr: "sce:interpolation".into(),
+    let method = method.ok_or_else(|| {
+        located(
+            &datamodel,
+            name,
+            ValidationError::MissingAttribute {
+                element: "Interpolation output".into(),
+                attr: "sce:interpolation".into(),
+            },
+        )
     })?;
 
     if inputs.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Interpolation,
-            what: "input field".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Interpolation,
+                what: "input field".into(),
+            },
+        ));
     }
     if axes.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Interpolation,
-            what: "sce:axis-* attribute".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Interpolation,
+                what: "sce:axis-* attribute".into(),
+            },
+        ));
     }
     if values.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Interpolation,
-            what: "table values in the output element text".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Interpolation,
+                what: "table values in the output element text".into(),
+            },
+        ));
     }
 
     // Validate axis count matches method
     match method {
         InterpolationMethod::Linear => {
             if axes.len() != 1 {
-                return Err(ValidationError::CountMismatch {
-                    kind: ForgeKind::Interpolation,
-                    detail: "linear: requires exactly 1 axis".into(),
-                });
+                return Err(located(
+                    &datamodel,
+                    name,
+                    ValidationError::CountMismatch {
+                        kind: ForgeKind::Interpolation,
+                        detail: "linear: requires exactly 1 axis".into(),
+                    },
+                ));
             }
             if values.len() != axes[0].breakpoints.len() {
-                return Err(ValidationError::CountMismatch {
-                    kind: ForgeKind::Interpolation,
-                    detail: format!(
-                        "linear: value count ({}) must match axis breakpoints ({})",
-                        values.len(),
-                        axes[0].breakpoints.len()
-                    ),
-                });
+                return Err(located(
+                    &datamodel,
+                    name,
+                    ValidationError::CountMismatch {
+                        kind: ForgeKind::Interpolation,
+                        detail: format!(
+                            "linear: value count ({}) must match axis breakpoints ({})",
+                            values.len(),
+                            axes[0].breakpoints.len()
+                        ),
+                    },
+                ));
             }
         }
         InterpolationMethod::Bilinear => {
             if axes.len() != 2 {
-                return Err(ValidationError::CountMismatch {
-                    kind: ForgeKind::Interpolation,
-                    detail: "bilinear: requires exactly 2 axes".into(),
-                });
+                return Err(located(
+                    &datamodel,
+                    name,
+                    ValidationError::CountMismatch {
+                        kind: ForgeKind::Interpolation,
+                        detail: "bilinear: requires exactly 2 axes".into(),
+                    },
+                ));
             }
             let expected = axes[0].breakpoints.len() * axes[1].breakpoints.len();
             if values.len() != expected {
-                return Err(ValidationError::CountMismatch {
-                    kind: ForgeKind::Interpolation,
-                    detail: format!(
-                        "bilinear: value count ({}) must equal rows({}) x cols({}) = {}",
-                        values.len(),
-                        axes[0].breakpoints.len(),
-                        axes[1].breakpoints.len(),
-                        expected
-                    ),
-                });
+                return Err(located(
+                    &datamodel,
+                    name,
+                    ValidationError::CountMismatch {
+                        kind: ForgeKind::Interpolation,
+                        detail: format!(
+                            "bilinear: value count ({}) must equal rows({}) x cols({}) = {}",
+                            values.len(),
+                            axes[0].breakpoints.len(),
+                            axes[1].breakpoints.len(),
+                            expected
+                        ),
+                    },
+                ));
             }
         }
     }
@@ -1292,12 +1623,20 @@ fn parse_interpolation_inner(root: &roxmltree::Node, name: &str) -> Result<Inter
 
 // ── Timer parsing ─────────────────────────────────────────────
 
-fn parse_timer_inner(root: &roxmltree::Node, name: &str) -> Result<TimerModel, ValidationError> {
-    let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
-            kind: ForgeKind::Timer,
-            element: "datamodel".into(),
-        })?;
+fn parse_timer(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<TimerModel, Located<ForgeError>> {
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Timer,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let mut timers = Vec::new();
 
@@ -1309,62 +1648,103 @@ fn parse_timer_inner(root: &roxmltree::Node, name: &str) -> Result<TimerModel, V
 
         let id = data
             .attribute("id")
-            .ok_or(ValidationError::MissingAttribute {
-                element: "Timer <data>".into(),
-                attr: "id".into(),
+            .ok_or_else(|| {
+                located(
+                    &data,
+                    name,
+                    ValidationError::MissingAttribute {
+                        element: "Timer <data>".into(),
+                        attr: "id".into(),
+                    },
+                )
             })?
             .to_string();
 
-        let timer_type = TimerType::from_attr(&timer_str)
-            .ok_or_else(|| ValidationError::InvalidAttribute {
-                element: format!("Timer '{id}'"),
-                attr: "sce:timer".into(),
-                value: timer_str.clone(),
-                expected: "periodic, timeout, delayed".into(),
-            })?;
+        let timer_type = TimerType::from_attr(&timer_str).ok_or_else(|| {
+            located(
+                &data,
+                name,
+                ValidationError::InvalidAttribute {
+                    element: format!("Timer '{id}'"),
+                    attr: "sce:timer".into(),
+                    value: timer_str.clone(),
+                    expected: "periodic, timeout, delayed".into(),
+                },
+            )
+        })?;
 
         let time_ms = match timer_type {
             TimerType::Periodic => {
-                let s = sce_attr(&data, "interval")
-                    .ok_or_else(|| ValidationError::MissingAttribute {
-                        element: format!("Periodic timer '{id}'"),
-                        attr: "sce:interval".into(),
-                    })?;
-                s.parse::<u32>()
-                    .map_err(|_| ValidationError::NumericParse {
-                        element: format!("timer '{id}'"),
-                        attr: "sce:interval".into(),
-                        value: s.clone(),
-                        detail: "expected integer".into(),
-                    })?
+                let s = sce_attr(&data, "interval").ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::MissingAttribute {
+                            element: format!("Periodic timer '{id}'"),
+                            attr: "sce:interval".into(),
+                        },
+                    )
+                })?;
+                s.parse::<u32>().map_err(|_| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::NumericParse {
+                            element: format!("timer '{id}'"),
+                            attr: "sce:interval".into(),
+                            value: s.clone(),
+                            detail: "expected integer".into(),
+                        },
+                    )
+                })?
             }
             TimerType::Timeout => {
-                let s = sce_attr(&data, "duration")
-                    .ok_or_else(|| ValidationError::MissingAttribute {
-                        element: format!("Timeout timer '{id}'"),
-                        attr: "sce:duration".into(),
-                    })?;
-                s.parse::<u32>()
-                    .map_err(|_| ValidationError::NumericParse {
-                        element: format!("timer '{id}'"),
-                        attr: "sce:duration".into(),
-                        value: s.clone(),
-                        detail: "expected integer".into(),
-                    })?
+                let s = sce_attr(&data, "duration").ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::MissingAttribute {
+                            element: format!("Timeout timer '{id}'"),
+                            attr: "sce:duration".into(),
+                        },
+                    )
+                })?;
+                s.parse::<u32>().map_err(|_| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::NumericParse {
+                            element: format!("timer '{id}'"),
+                            attr: "sce:duration".into(),
+                            value: s.clone(),
+                            detail: "expected integer".into(),
+                        },
+                    )
+                })?
             }
             TimerType::Delayed => {
-                let s = sce_attr(&data, "delay")
-                    .ok_or_else(|| ValidationError::MissingAttribute {
-                        element: format!("Delayed timer '{id}'"),
-                        attr: "sce:delay".into(),
-                    })?;
-                s.parse::<u32>()
-                    .map_err(|_| ValidationError::NumericParse {
-                        element: format!("timer '{id}'"),
-                        attr: "sce:delay".into(),
-                        value: s.clone(),
-                        detail: "expected integer".into(),
-                    })?
+                let s = sce_attr(&data, "delay").ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::MissingAttribute {
+                            element: format!("Delayed timer '{id}'"),
+                            attr: "sce:delay".into(),
+                        },
+                    )
+                })?;
+                s.parse::<u32>().map_err(|_| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::NumericParse {
+                            element: format!("timer '{id}'"),
+                            attr: "sce:delay".into(),
+                            value: s.clone(),
+                            detail: "expected integer".into(),
+                        },
+                    )
+                })?
             }
         };
 
@@ -1372,10 +1752,14 @@ fn parse_timer_inner(root: &roxmltree::Node, name: &str) -> Result<TimerModel, V
         let on_timeout = sce_attr(&data, "on-timeout");
 
         if event.is_none() && on_timeout.is_none() {
-            return Err(ValidationError::RequireEither {
-                element: format!("Timer '{id}'"),
-                alternatives: vec!["sce:event".into(), "sce:on-timeout".into()],
-            });
+            return Err(located(
+                &data,
+                name,
+                ValidationError::RequireEither {
+                    element: format!("Timer '{id}'"),
+                    alternatives: vec!["sce:event".into(), "sce:on-timeout".into()],
+                },
+            ));
         }
 
         timers.push(TimerEntry {
@@ -1388,10 +1772,14 @@ fn parse_timer_inner(root: &roxmltree::Node, name: &str) -> Result<TimerModel, V
     }
 
     if timers.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Timer,
-            what: "<data> with 'sce:timer' attribute".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Timer,
+                what: "<data> with 'sce:timer' attribute".into(),
+            },
+        ));
     }
 
     Ok(TimerModel {
@@ -1402,12 +1790,20 @@ fn parse_timer_inner(root: &roxmltree::Node, name: &str) -> Result<TimerModel, V
 
 // ── Observer parsing ──────────────────────────────────────────
 
-fn parse_observer_inner(root: &roxmltree::Node, name: &str) -> Result<ObserverModel, ValidationError> {
-    let datamodel = find_child(root, "datamodel")
-        .ok_or(ValidationError::MissingElement {
-            kind: ForgeKind::Observer,
-            element: "datamodel".into(),
-        })?;
+fn parse_observer(
+    root: &roxmltree::Node,
+    name: &str,
+) -> Result<ObserverModel, Located<ForgeError>> {
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Observer,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let event_domain = sce_attr(root, "event-domain");
 
@@ -1418,42 +1814,62 @@ fn parse_observer_inner(root: &roxmltree::Node, name: &str) -> Result<ObserverMo
         let dir = sce_attr(&data, "direction");
 
         if dir.as_deref() == Some("in") {
-            inputs.push(parse_forge_field(&data)?);
+            inputs.push(parse_forge_field(&data, name)?);
             continue;
         }
 
         // Monitor definitions have sce:monitor attribute
         if let Some(monitor_type) = sce_attr(&data, "monitor") {
             if monitor_type != "threshold" {
-                return Err(ValidationError::InvalidAttribute {
-                    element: "Observer monitor".into(),
-                    attr: "sce:monitor".into(),
-                    value: monitor_type,
-                    expected: "threshold".into(),
-                });
+                return Err(located(
+                    &data,
+                    name,
+                    ValidationError::InvalidAttribute {
+                        element: "Observer monitor".into(),
+                        attr: "sce:monitor".into(),
+                        value: monitor_type,
+                        expected: "threshold".into(),
+                    },
+                ));
             }
 
             let id = data
                 .attribute("id")
-                .ok_or(ValidationError::MissingAttribute {
-                    element: "Observer monitor <data>".into(),
-                    attr: "id".into(),
+                .ok_or_else(|| {
+                    located(
+                        &data,
+                        name,
+                        ValidationError::MissingAttribute {
+                            element: "Observer monitor <data>".into(),
+                            attr: "id".into(),
+                        },
+                    )
                 })?
                 .to_string();
 
-            let enter_expr = sce_attr(&data, "enter")
-                .ok_or_else(|| ValidationError::MissingAttribute {
-                    element: format!("Monitor '{id}'"),
-                    attr: "sce:enter".into(),
-                })?;
+            let enter_expr = sce_attr(&data, "enter").ok_or_else(|| {
+                located(
+                    &data,
+                    name,
+                    ValidationError::MissingAttribute {
+                        element: format!("Monitor '{id}'"),
+                        attr: "sce:enter".into(),
+                    },
+                )
+            })?;
 
             let leave_expr = sce_attr(&data, "leave");
 
-            let on_enter = sce_attr(&data, "on-enter")
-                .ok_or_else(|| ValidationError::MissingAttribute {
-                    element: format!("Monitor '{id}'"),
-                    attr: "sce:on-enter".into(),
-                })?;
+            let on_enter = sce_attr(&data, "on-enter").ok_or_else(|| {
+                located(
+                    &data,
+                    name,
+                    ValidationError::MissingAttribute {
+                        element: format!("Monitor '{id}'"),
+                        attr: "sce:on-enter".into(),
+                    },
+                )
+            })?;
 
             let on_leave = sce_attr(&data, "on-leave");
 
@@ -1468,16 +1884,24 @@ fn parse_observer_inner(root: &roxmltree::Node, name: &str) -> Result<ObserverMo
     }
 
     if inputs.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Observer,
-            what: "input field".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Observer,
+                what: "input field".into(),
+            },
+        ));
     }
     if monitors.is_empty() {
-        return Err(ValidationError::EmptyCollection {
-            kind: ForgeKind::Observer,
-            what: "monitor definition".into(),
-        });
+        return Err(located(
+            &datamodel,
+            name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Observer,
+                what: "monitor definition".into(),
+            },
+        ));
     }
 
     Ok(ObserverModel {
@@ -1499,7 +1923,10 @@ fn parse_observer_inner(root: &roxmltree::Node, name: &str) -> Result<ObserverMo
 /// - `src` (required): relative path to the imported SCXML file.
 /// - `kind` (required): the forge kind of the imported document.
 /// - `as` (required): alias used in expressions.
-fn parse_imports(root: &roxmltree::Node) -> Result<Vec<ForgeImport>, ValidationError> {
+fn parse_imports(
+    root: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<ForgeImport>, Located<ForgeError>> {
     let mut imports = Vec::new();
     let mut aliases = std::collections::BTreeSet::new();
 
@@ -1512,46 +1939,85 @@ fn parse_imports(root: &roxmltree::Node) -> Result<Vec<ForgeImport>, ValidationE
 
         let src = child
             .attribute("src")
-            .ok_or(ValidationError::MissingAttribute {
-                element: "<sce:import>".into(),
-                attr: "src".into(),
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:import>".into(),
+                        attr: "src".into(),
+                    },
+                )
             })?
             .to_string();
 
-        let kind_str = child
-            .attribute("kind")
-            .ok_or(ValidationError::MissingAttribute {
-                element: "<sce:import>".into(),
-                attr: "kind".into(),
-            })?;
-        let kind = ForgeKind::from_attr(kind_str)
-            .ok_or_else(|| ValidationError::UnsupportedKind(kind_str.to_string()))?;
+        let kind_str = child.attribute("kind").ok_or_else(|| {
+            located(
+                &child,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: "<sce:import>".into(),
+                    attr: "kind".into(),
+                },
+            )
+        })?;
+        let kind = ForgeKind::from_attr(kind_str).ok_or_else(|| {
+            located(
+                &child,
+                doc_name,
+                ValidationError::UnsupportedKind(kind_str.to_string()),
+            )
+        })?;
         if !kind.is_supported() {
-            return Err(ValidationError::UnsupportedKind(kind.to_string()));
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::UnsupportedKind(kind.to_string()),
+            ));
         }
         if kind == ForgeKind::Statechart {
-            return Err(ValidationError::WrongPipeline {
-                kind: ForgeKind::Statechart,
-            });
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::WrongPipeline {
+                    kind: ForgeKind::Statechart,
+                },
+            ));
         }
 
         let alias = child
             .attribute("as")
-            .ok_or(ValidationError::MissingAttribute {
-                element: "<sce:import>".into(),
-                attr: "as".into(),
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:import>".into(),
+                        attr: "as".into(),
+                    },
+                )
             })?
             .to_string();
 
         if !aliases.insert(alias.clone()) {
-            return Err(ValidationError::DuplicateId {
-                kind,
-                what: "alias".into(),
-                id: alias,
-            });
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::DuplicateId {
+                    kind,
+                    what: "alias".into(),
+                    id: alias,
+                },
+            ));
         }
 
-        imports.push(ForgeImport { src, kind, alias });
+        let line = Some(child.document().text_pos_at(child.range().start).row);
+        imports.push(ForgeImport {
+            src,
+            kind,
+            alias,
+            line,
+        });
     }
 
     Ok(imports)
@@ -1559,11 +2025,24 @@ fn parse_imports(root: &roxmltree::Node) -> Result<Vec<ForgeImport>, ValidationE
 
 /// Extract only the import list from a forge SCXML (lightweight — no model parse).
 /// Used by the manifest scanner to build dependency graphs.
-pub fn parse_imports_only(content: &str) -> Result<Vec<ForgeImport>, ForgeError> {
-    let doc = roxmltree::Document::parse(content)
-        .map_err(|e| XmlError::Parse(e.to_string()))?;
+///
+/// `doc_name` is passed through so per-file import-validation errors
+/// carry the correct filename even in the manifest-scanning path,
+/// where each scanned file is processed separately.
+pub fn parse_imports_only(
+    content: &str,
+    doc_name: &str,
+) -> Result<Vec<ForgeImport>, Located<ForgeError>> {
+    let doc = roxmltree::Document::parse(content).map_err(|e| {
+        Located::new(
+            XmlError::Parse(e.to_string()).into(),
+            doc_name,
+            None,
+            None,
+        )
+    })?;
     let root = doc.root_element();
-    Ok(parse_imports(&root)?)
+    parse_imports(&root, doc_name)
 }
 
 // ── Shared helpers ─────────────────────────────────────────────
@@ -1575,22 +2054,42 @@ fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
 }
 
 /// Parse `<sce:entry key="..." value="..."/>` children from a node.
-fn parse_sce_entries(node: &roxmltree::Node) -> Result<Vec<LookupEntry>, ValidationError> {
+///
+/// Takes `doc_name` so each raise can anchor at the offending
+/// `<sce:entry>` child rather than at the calling `<data>` parent —
+/// the difference an agent sees as "row 12 of the lookup table" vs.
+/// "somewhere in the datamodel".
+fn parse_sce_entries(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<LookupEntry>, Located<ForgeError>> {
     let mut entries = Vec::new();
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().name() == "entry" && child.tag_name().namespace() == Some(SCE_NAMESPACE) {
             let key = child
                 .attribute("key")
-                .ok_or(ValidationError::MissingAttribute {
-                    element: "<sce:entry>".into(),
-                    attr: "key".into(),
+                .ok_or_else(|| {
+                    located(
+                        &child,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:entry>".into(),
+                            attr: "key".into(),
+                        },
+                    )
                 })?
                 .to_string();
             let value = child
                 .attribute("value")
-                .ok_or(ValidationError::MissingAttribute {
-                    element: "<sce:entry>".into(),
-                    attr: "value".into(),
+                .ok_or_else(|| {
+                    located(
+                        &child,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:entry>".into(),
+                            attr: "value".into(),
+                        },
+                    )
                 })?
                 .to_string();
             entries.push(LookupEntry { key, value });
@@ -1600,40 +2099,74 @@ fn parse_sce_entries(node: &roxmltree::Node) -> Result<Vec<LookupEntry>, Validat
 }
 
 /// Parse a typed forge field from a <data> element.
-fn parse_forge_field(data: &roxmltree::Node) -> Result<ForgeField, ValidationError> {
+///
+/// `doc_name` is threaded through so the helper can raise
+/// `Located<ForgeError>` itself — keeps the call-site wrap-plumbing
+/// uniform with every other kind parser instead of scattering
+/// `.map_err(|e| located(&data, name, e))?` across the module.
+fn parse_forge_field(
+    data: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<ForgeField, Located<ForgeError>> {
     let id = data
         .attribute("id")
-        .ok_or(ValidationError::MissingAttribute {
-            element: "Forge <data> field".into(),
-            attr: "id".into(),
+        .ok_or_else(|| {
+            located(
+                data,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: "Forge <data> field".into(),
+                    attr: "id".into(),
+                },
+            )
         })?
         .to_string();
 
-    let type_str = sce_attr(data, "type")
-        .ok_or_else(|| ValidationError::MissingAttribute {
-            element: format!("Field '{id}'"),
-            attr: "sce:type".into(),
-        })?;
-    let sce_type = SceType::from_attr(&type_str)
-        .ok_or_else(|| ValidationError::InvalidAttribute {
-            element: format!("field '{id}'"),
-            attr: "sce:type".into(),
-            value: type_str.clone(),
-            expected: "uint8, uint16, uint32, int8, int16, int32, float32, float64, bool, string, bytes".into(),
-        })?;
+    let type_str = sce_attr(data, "type").ok_or_else(|| {
+        located(
+            data,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("Field '{id}'"),
+                attr: "sce:type".into(),
+            },
+        )
+    })?;
+    let sce_type = SceType::from_attr(&type_str).ok_or_else(|| {
+        located(
+            data,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("field '{id}'"),
+                attr: "sce:type".into(),
+                value: type_str.clone(),
+                expected: "uint8, uint16, uint32, int8, int16, int32, float32, float64, bool, string, bytes".into(),
+            },
+        )
+    })?;
 
-    let dir_str = sce_attr(data, "direction")
-        .ok_or_else(|| ValidationError::MissingAttribute {
-            element: format!("Field '{id}'"),
-            attr: "sce:direction".into(),
-        })?;
-    let direction = Direction::from_attr(&dir_str)
-        .ok_or_else(|| ValidationError::InvalidAttribute {
-            element: format!("field '{id}'"),
-            attr: "sce:direction".into(),
-            value: dir_str.clone(),
-            expected: "in, out, internal".into(),
-        })?;
+    let dir_str = sce_attr(data, "direction").ok_or_else(|| {
+        located(
+            data,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("Field '{id}'"),
+                attr: "sce:direction".into(),
+            },
+        )
+    })?;
+    let direction = Direction::from_attr(&dir_str).ok_or_else(|| {
+        located(
+            data,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("field '{id}'"),
+                attr: "sce:direction".into(),
+                value: dir_str.clone(),
+                expected: "in, out, internal".into(),
+            },
+        )
+    })?;
 
     let expr = data.attribute("expr").map(|s| s.to_string());
     let unit = sce_attr(data, "unit");
