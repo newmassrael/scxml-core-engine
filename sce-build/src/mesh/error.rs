@@ -172,6 +172,22 @@ pub enum ExternalConfigError {
         transport: String,
         fields: Vec<&'static str>,
     },
+
+    /// A binding declared both flat per-binding fields (`method:`,
+    /// `event_group:`, `getter:`, `setter:`) AND a per-event `events:` block.
+    /// Rejected because the two are mutually exclusive and a reader would
+    /// have to know a precedence rule that the spec does not define.
+    #[error("machine '{machine}': binding '{target}' declares both flat fields ({flat_fields:?}) \
+             and an 'events:' block. These are mutually exclusive — use 'events:' for per-event \
+             mappings, or the flat fields for a single mapping shared by every event on this target.")]
+    ConflictingEventSchema {
+        machine: String,
+        target: String,
+        flat_fields: Vec<&'static str>,
+    },
+
+    // EventBindingUnused lives on TopologyError because detection requires
+    // the SCXML send summary (an SCXML-stage input).
 }
 
 /// One unresolved name entry inside `ExternalConfigError::UnresolvedNames`.
@@ -317,6 +333,19 @@ pub enum TopologyError {
         transport: String,
         field: String,
         reason: String,
+    },
+
+    /// A binding's `events:` table declares an entry for an SCXML event
+    /// that the sender never `<send>`s to this target. Detecting this
+    /// here (instead of at runtime where the event would silently route
+    /// to no method_id) catches deploy.yaml typos at build time.
+    #[error("machine '{machine}': binding '{target}' declares events.{event} in deploy.yaml, \
+             but the SCXML model never sends '{event}' to this target. Remove the unused \
+             entry, or correct the event name.")]
+    EventBindingUnused {
+        machine: String,
+        target: super::target::TargetId,
+        event: String,
     },
 }
 

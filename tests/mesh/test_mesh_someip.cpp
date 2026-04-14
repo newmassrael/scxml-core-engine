@@ -19,23 +19,24 @@
 static_assert(sizeof(SCE::Generated::brake::TransportRouter<SCE::Generated::brake::brake>) > 0,
               "TransportRouter<brake> must be instantiable");
 
-// Verify SOME/IP service constants match deploy_someip.yaml
+// Verify SOME/IP service constants match deploy_someip.yaml.
+// Service/instance IDs are per-target (binding-level) and stay
+// `SOMEIP_SERVICE_<TARGET>` / `SOMEIP_INSTANCE_<TARGET>`.
 static_assert(SCE::Generated::brake::SOMEIP_SERVICE_MOTOR == 0x1234,
               "Service ID must match deploy.yaml");
 static_assert(SCE::Generated::brake::SOMEIP_INSTANCE_MOTOR == 0x0001,
               "Instance ID must match deploy.yaml");
-static_assert(SCE::Generated::brake::SOMEIP_METHOD_MOTOR == 0x0421,
-              "Method ID must match deploy.yaml");
 
-// Session C: multi-pattern constants (RPC, PubSub, FieldAccess)
-static_assert(SCE::Generated::brake::SOMEIP_EVENT_GROUP_MOTOR == 0x0001,
-              "Event group ID must match deploy.yaml");
-static_assert(SCE::Generated::brake::SOMEIP_EVENT_MOTOR == 0x8001,
-              "Event ID must match deploy.yaml");
-static_assert(SCE::Generated::brake::SOMEIP_GETTER_MOTOR == 0x0100,
-              "Getter method ID must match deploy.yaml");
-static_assert(SCE::Generated::brake::SOMEIP_SETTER_MOTOR == 0x0101,
-              "Setter method ID must match deploy.yaml");
+// Per-event SOME/IP constants (SCE_MESH.md §14): pattern-matched IDs are
+// generated as `SOMEIP_<KIND>_<TARGET>_<EVENT>` so the same target can
+// route different events to different methods/event-groups. brake.scxml
+// only sends `brake.activate` (FireForget → method_id), so only the
+// per-event method constant for that event exists. The legacy "one
+// constant per kind per target" shape is gone — each event must list
+// itself in deploy.yaml `events:` (or rely on flat-sugar fan-out) to
+// produce a constant.
+static_assert(SCE::Generated::brake::SOMEIP_METHOD_MOTOR_BRAKE_ACTIVATE == 0x0421,
+              "Per-event method ID must match deploy.yaml method_id");
 
 int main() {
     std::printf("SCE Mesh someip_transport compile verification: PASS\n");

@@ -21,7 +21,7 @@
 use crate::mesh::error::DeployError;
 use crate::mesh::target::TargetId;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 /// Top-level deploy.yaml structure.
@@ -180,12 +180,63 @@ pub struct MachineConfig {
     pub bindings: HashMap<TargetId, BindingConfig>,
 }
 
+/// Per-event SOME/IP binding (SCE_MESH.md §14).
+///
+/// A binding declares one `EventBinding` per SCXML event routed to the
+/// target, letting different events map to different methods or event
+/// groups on the same target (e.g. `service.request.compute_force` vs
+/// `service.request.release_force` both going to `#motor`). Each field
+/// resolves against vsomeip.json at build time:
+///
+///   `method`      → `services[*].methods[*].name`      → `method_id`
+///   `event_group` → `services[*].eventgroups[*].name`  → `event_group_id`
+///                                                      + contained `event_id`
+///   `getter`      → `services[*].methods[*].name`      → `getter_id`
+///   `setter`      → `services[*].methods[*].name`      → `setter_id`
+///
+/// All fields are optional; which one is required depends on the event's
+/// communication pattern (RPC → method, Notification → event_group, Field
+/// access → getter/setter). Validation is done in topology, not here.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct EventBinding {
+    /// Method name to resolve against vsomeip.json.
+    #[serde(default)]
+    pub method: Option<String>,
+    /// Event group name to resolve against vsomeip.json.
+    #[serde(default)]
+    pub event_group: Option<String>,
+    /// Field getter method name.
+    #[serde(default)]
+    pub getter: Option<String>,
+    /// Field setter method name.
+    #[serde(default)]
+    pub setter: Option<String>,
+}
+
+impl EventBinding {
+    pub fn is_empty(&self) -> bool {
+        self.method.is_none()
+            && self.event_group.is_none()
+            && self.getter.is_none()
+            && self.setter.is_none()
+    }
+}
+
 /// Transport binding for a single `<send>` target.
 ///
 /// Name-based fields (`service:`, `method:`, `event_group:`, `getter:`,
-/// `setter:`) reference entities in the external OEM config (vsomeip.json);
-/// sce-build resolves them into numeric IDs at build time and injects the
-/// resolved IDs into `extra` before codegen (SCE_MESH.md §13).
+/// `setter:`, `events:`) reference entities in the external OEM config
+/// (vsomeip.json); sce-build resolves them into numeric IDs at build
+/// time (SCE_MESH.md §13, §14).
+///
+/// The per-event `events:` block is the canonical path — it lets different
+/// SCXML events on the same target map to different methods or event groups.
+/// The flat `method:` / `event_group:` / `getter:` / `setter:` fields at
+/// binding level are sugar for "this one mapping applies to every event
+/// on this target", useful for one-event-per-target deployments. `events:`
+/// and the flat fields are mutually exclusive: declaring both is rejected
+/// at resolution time so a reader cannot be confused about precedence.
 ///
 /// `extra` uses `serde(flatten)` for per-target transport-native keys not
 /// covered by the explicit fields (e.g. zenoh `key:`, someip `protocol:`,
@@ -197,36 +248,52 @@ pub struct BindingConfig {
     pub transport: String,
 
     /// SOME/IP service name — resolved against vsomeip.json
-    /// `services[*].name`, producing `service_id` + `instance_id`.
+    /// `services[*].name`, producing `service_id` + `instance_id`. Applies
+    /// at binding level because `service_id` / `instance_id` are per-target,
+    /// not per-event.
     #[serde(default)]
     pub service: Option<String>,
 
-    /// SOME/IP method name — resolved against `services[*].methods[*].name`,
-    /// producing `method_id`. Single-method-per-binding sugar; per-event
-    /// fanout is a future extension.
+    /// Sugar: single-method binding. Equivalent to an `events:` block where
+    /// every SCXML event on this target uses the same method. Mutually
+    /// exclusive with `events:`.
     #[serde(default)]
     pub method: Option<String>,
 
-    /// SOME/IP event group name — resolved against
-    /// `services[*].eventgroups[*].name`, producing `event_group_id` and
-    /// the contained event's `event_id`. The referenced group must contain
-    /// exactly one event for the current template.
+    /// Sugar: single event-group binding. Mutually exclusive with `events:`.
     #[serde(default)]
     pub event_group: Option<String>,
 
-    /// SOME/IP field getter method name — resolves to `getter_id`.
+    /// Sugar: single getter. Mutually exclusive with `events:`.
     #[serde(default)]
     pub getter: Option<String>,
 
-    /// SOME/IP field setter method name — resolves to `setter_id`.
+    /// Sugar: single setter. Mutually exclusive with `events:`.
     #[serde(default)]
     pub setter: Option<String>,
+
+    /// Per-event binding table, keyed by SCXML event name (e.g.
+    /// `"service.request.compute_force"`). `BTreeMap` gives deterministic
+    /// codegen order. Empty iff the user relies on the flat sugar fields.
+    #[serde(default)]
+    pub events: BTreeMap<String, EventBinding>,
 
     /// Per-target transport-native settings passed through to templates.
     /// Holds both non-typed fields (zenoh `key:`, someip `protocol:`) and
     /// the Stage 1 deprecated inline numeric IDs (`service_id:`, etc.).
     #[serde(flatten)]
     pub extra: HashMap<String, serde_yaml_ng::Value>,
+}
+
+impl BindingConfig {
+    /// True iff any of the flat per-binding method/event_group/getter/setter
+    /// fields is set (i.e. the single-event sugar path is in use).
+    pub fn has_flat_event_fields(&self) -> bool {
+        self.method.is_some()
+            || self.event_group.is_some()
+            || self.getter.is_some()
+            || self.setter.is_some()
+    }
 }
 
 /// Schema versions this compiler understands.

@@ -699,8 +699,13 @@ pub fn compile_mesh_transport(
     // Stage 2a: dynamic target warnings (from summary)
     let dynamic_target_warnings = summary.dynamic_warnings.clone();
 
-    // Stage 2b: resolve static targets against deploy.yaml bindings
-    let resolved = mesh::topology::resolve_targets(&summary, &deploy_cfg, &model.name)?;
+    // Stage 2b: resolve static targets against deploy.yaml bindings,
+    // attach per-event SOME/IP IDs (fans flat sugar / inline IDs out to
+    // one entry per matching SCXML event), then validate per-event
+    // field presence against each event's communication pattern.
+    let mut resolved = mesh::topology::resolve_targets(&summary, &deploy_cfg, &model.name)?;
+    mesh::topology::attach_event_bindings(&mut resolved, &model.name, &external_resolution)?;
+    mesh::topology::validate_someip_event_fields(&resolved, &model.name)?;
 
     if resolved.is_empty() {
         return Ok(MeshResult {

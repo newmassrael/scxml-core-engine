@@ -151,6 +151,159 @@ fn end_to_end_name_resolution_produces_numeric_constants() {
         code.contains("0x0421"),
         "expected method_id 0x0421 in generated code"
     );
+    // Per-event constant naming (SCE_MESH.md §14): the BRAKE_SCXML
+    // fixture sends `service.request.compute_force` so the generated
+    // header must declare `SOMEIP_METHOD_MOTOR_SERVICE_REQUEST_COMPUTE_FORCE`.
+    assert!(
+        code.contains("SOMEIP_METHOD_MOTOR_SERVICE_REQUEST_COMPUTE_FORCE"),
+        "expected per-event method constant in generated code: {code}"
+    );
+}
+
+#[test]
+fn per_event_block_resolves_distinct_methods_into_separate_constants() {
+    // Two SCXML events on the same target, each mapped to a different
+    // method via the spec-canonical events: block. The generated header
+    // must carry one constant per (target, event) pair so the dispatch
+    // switch can route by event name.
+    let fx = Fixture::new("per_event");
+    let vsomeip = r#"{
+      "applications": [{ "name": "brake_app" }],
+      "services": [{
+        "name": "motor_control",
+        "service": "0x1234",
+        "instance": "0x0001",
+        "methods": [
+          { "name": "compute_force", "method": "0x0421" },
+          { "name": "release_force", "method": "0x0422" }
+        ]
+      }]
+    }"#;
+    let brake = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="brake" initial="idle">
+  <state id="idle">
+    <transition event="press" target="active">
+      <send target="#motor" event="service.request.compute_force"/>
+    </transition>
+  </state>
+  <state id="active">
+    <transition event="release" target="idle">
+      <send target="#motor" event="service.request.release_force"/>
+    </transition>
+    <transition event="service.response.compute_force" target="idle"/>
+    <transition event="service.response.release_force" target="idle"/>
+  </state>
+</scxml>
+"##;
+    let motor = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="motor" initial="ready">
+  <state id="ready">
+    <transition event="service.request.compute_force" target="ready">
+      <send target="#brake" event="service.response.compute_force"/>
+    </transition>
+    <transition event="service.request.release_force" target="ready">
+      <send target="#brake" event="service.response.release_force"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+    let deploy = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              "service.request.compute_force":
+                method: compute_force
+              "service.request.release_force":
+                method: release_force
+      motor:
+        source: motor.scxml
+"##;
+    fx.write("vsomeip.json", vsomeip);
+    fx.write("brake.scxml", brake);
+    fx.write("motor.scxml", motor);
+    let deploy_path = fx.write("deploy.yaml", deploy);
+
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_string(brake, "brake")
+        .expect("parse brake");
+    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
+        .expect("compile_mesh_transport");
+    let (_name, code) = &result.output.files[0];
+
+    // Both per-event constants must appear with their distinct IDs.
+    assert!(
+        code.contains("SOMEIP_METHOD_MOTOR_SERVICE_REQUEST_COMPUTE_FORCE = 0x0421"),
+        "compute_force constant missing: {code}"
+    );
+    assert!(
+        code.contains("SOMEIP_METHOD_MOTOR_SERVICE_REQUEST_RELEASE_FORCE = 0x0422"),
+        "release_force constant missing: {code}"
+    );
+    // Dispatch must branch on env.type so the right method is picked.
+    assert!(
+        code.contains(r#"env.type == "service.request.compute_force""#),
+        "dispatch for compute_force missing: {code}"
+    );
+    assert!(
+        code.contains(r#"env.type == "service.request.release_force""#),
+        "dispatch for release_force missing: {code}"
+    );
+}
+
+#[test]
+fn unused_event_binding_rejected() {
+    // events: declares an event that the SCXML model never <send>s to
+    // this target → likely a typo, must fail at build time.
+    let fx = Fixture::new("unused_event");
+    fx.write("vsomeip.json", VSOMEIP_JSON);
+    fx.write("brake.scxml", BRAKE_SCXML);
+    fx.write("motor.scxml", MOTOR_SCXML);
+    let deploy = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              "service.request.compute_force":
+                method: compute_force
+              "service.request.never_sent":
+                method: compute_force
+      motor:
+        source: motor.scxml
+"##;
+    let deploy_path = fx.write("deploy.yaml", deploy);
+
+    let model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+        Ok(_) => panic!("must fail on unused event binding"),
+        Err(e) => e,
+    };
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("never_sent"),
+        "error must name the unused event: {msg}"
+    );
 }
 
 #[test]

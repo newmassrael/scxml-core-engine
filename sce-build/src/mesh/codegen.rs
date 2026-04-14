@@ -184,9 +184,17 @@ struct TargetContext {
 }
 
 /// Per-event pattern context for template rendering.
+///
+/// Carries both the pattern classification and the per-event SOME/IP
+/// numeric IDs so the template can emit per-event constants and dispatch
+/// on event name (different SCXML events on the same target can use
+/// different methods or event groups, SCE_MESH.md §14).
 #[derive(Debug, Clone, serde::Serialize)]
 struct EventPatternContext {
     event: String,
+    /// C++-identifier-safe upper-snake form of the event name, used for
+    /// per-event constant naming (`SOMEIP_METHOD_<TARGET>_<EVENT>`).
+    event_const: String,
     /// C++ PatternKind wire value (1-9).
     pattern_kind: u16,
     /// Paired reply event, inferred by convention (RPC request only).
@@ -195,6 +203,42 @@ struct EventPatternContext {
     /// both continue to work unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     reply_event: Option<String>,
+    /// Per-event SOME/IP numeric IDs. All optional — only populated for
+    /// SOME/IP targets and only for fields the event's pattern requires.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    method_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_group_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    getter_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setter_id: Option<String>,
+}
+
+/// Convert an SCXML event name (`service.request.compute_force`) into a
+/// C++-safe upper-snake constant suffix (`SERVICE_REQUEST_COMPUTE_FORCE`).
+/// `.`/`-`/`/` map to `_`; anything else outside `[A-Za-z0-9_]` also
+/// becomes `_`. Identical inputs produce identical suffixes (deterministic).
+fn event_to_const_suffix(event: &str) -> String {
+    event
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Format a u16 SOME/IP ID as the same `0x{XXXX}` literal the legacy
+/// inline-ID path used. Keeping the format identical lets diffs of the
+/// generated header be tractable across the resolution-path migration.
+fn fmt_someip_id(id: u16) -> String {
+    format!("0x{id:04X}")
 }
 
 // ── Public entry point ───────────────────────────────────────
@@ -265,13 +309,29 @@ fn generate_cpp_mesh(
             let stripped = t.target.name();
             let desc = transport::lookup(&t.transport).expect("transport validated");
 
-            let event_patterns: Vec<EventPatternContext> = t.event_patterns.iter().map(|ep| {
-                EventPatternContext {
-                    event: ep.event.clone(),
-                    pattern_kind: ep.pattern_kind_value,
-                    reply_event: ep.reply_event.clone(),
-                }
-            }).collect();
+            let event_patterns: Vec<EventPatternContext> = t
+                .event_patterns
+                .iter()
+                .map(|ep| {
+                    // Per-event SOME/IP IDs come from `event_bindings`,
+                    // populated by `topology::attach_event_bindings`. For
+                    // non-someip targets (or events with no resolved IDs)
+                    // every field is None and the template skips the
+                    // per-event constant emission.
+                    let ids = t.event_bindings.get(&ep.event);
+                    EventPatternContext {
+                        event: ep.event.clone(),
+                        event_const: event_to_const_suffix(&ep.event),
+                        pattern_kind: ep.pattern_kind_value,
+                        reply_event: ep.reply_event.clone(),
+                        method_id: ids.and_then(|i| i.method_id).map(fmt_someip_id),
+                        event_group_id: ids.and_then(|i| i.event_group_id).map(fmt_someip_id),
+                        event_id: ids.and_then(|i| i.event_id).map(fmt_someip_id),
+                        getter_id: ids.and_then(|i| i.getter_id).map(fmt_someip_id),
+                        setter_id: ids.and_then(|i| i.setter_id).map(fmt_someip_id),
+                    }
+                })
+                .collect();
 
             // Detect pattern categories from wire values (named constants
             // defined in pattern.rs mirror PatternKind.h — single source).

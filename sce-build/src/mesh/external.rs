@@ -3,34 +3,37 @@
 //
 // External infrastructure config resolution (SCE_MESH.md §13).
 //
-// This stage runs between deploy.yaml parsing and topology analysis:
+// This stage runs between deploy.yaml parsing and topology analysis. Three
+// inputs converge into one uniform per-event ID table:
 //
-//   1. For each device that declares `transports.someip.config:`, load
-//      the referenced vsomeip.json into a `VsomeipConfig`.
-//   2. For each binding on a SOME/IP target, resolve any name-based
-//      references (`service`, `method`, `event_group`, `getter`, `setter`)
-//      into numeric IDs and inject them into `binding.extra` under the
-//      keys the existing template reads (`service_id`, `method_id`, etc.).
-//   3. Batch all unresolved names into one error per (machine, config)
-//      pair so operators see every mismatch at once.
+//   1. Per-event `events:` block in deploy.yaml (spec canonical): each
+//      SCXML event gets its own name-based references resolved against
+//      vsomeip.json into a per-event `EventResolvedIds`.
+//   2. Flat per-binding sugar (`method:` / `event_group:` / `getter:` /
+//      `setter:` at binding level): one resolved set that topology later
+//      fans out to every matching-pattern event on this target.
+//   3. Stage 1 deprecated inline numeric IDs (`service_id: "0x1234"`):
+//      tolerated with a `DeployDeprecationWarning`; topology fans them
+//      out the same way as flat sugar.
 //
-// After this stage the rest of the pipeline (pattern validation, codegen)
-// sees a DeployConfig that is indistinguishable from one with inline
-// numeric IDs — templates do not branch on "was this resolved or inline".
+// `service:` always resolves at binding level (service_id / instance_id
+// are per-target, not per-event) and is injected into `binding.extra`.
+// Unresolved names are batched into a single `UnresolvedNames` error per
+// machine so operators see every mismatch at once.
 //
-// Stage 1 deprecation (SCE_MESH.md §13, §14): bindings may carry inline
-// numeric IDs (`service_id: "0x1234"`) alongside name-based references.
-// Inline IDs are tolerated but emit a `DeployDeprecationWarning`; a
-// name-based reference that resolves takes precedence over an inline value.
+// After this stage runs, `topology::attach_event_bindings` expands the
+// flat/inline paths into per-event entries so the downstream codegen
+// sees exactly one data structure (`ResolvedTarget.event_bindings`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::diagnostics::DeployDeprecationWarning;
-use crate::mesh::deploy::{BindingConfig, DeployConfig};
+use crate::mesh::deploy::{BindingConfig, DeployConfig, EventBinding};
 use crate::mesh::error::{ExternalConfigError, UnresolvedName};
 use crate::mesh::target::TargetId;
-use crate::mesh::vsomeip_config::VsomeipConfig;
+use crate::mesh::topology::EventResolvedIds;
+use crate::mesh::vsomeip_config::{Service, VsomeipConfig};
 
 /// Keys the existing mesh_transport.h.jinja2 template reads out of
 /// `target.extra`. Kept here as constants so the injection site and the
@@ -55,12 +58,29 @@ const DEPRECATED_INLINE_IDS: &[&str] = &[
     KEY_SETTER_ID,
 ];
 
+/// Per-binding resolution output.
+///
+/// `by_event` carries explicit per-event mappings from deploy.yaml's
+/// `events:` block. `default` carries the binding-level flat sugar or
+/// Stage 1 inline numeric IDs — an all-events-on-this-target fallback
+/// that topology fans out to every SCXML event of matching pattern.
+/// `default.is_empty()` means neither flat nor inline was set.
+#[derive(Debug, Clone, Default)]
+pub struct PerBindingResolution {
+    pub by_event: BTreeMap<String, EventResolvedIds>,
+    pub default: EventResolvedIds,
+}
+
 /// Result of the external-config resolution stage.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ExternalResolution {
     /// Deploy.yaml deprecation warnings for inline numeric IDs and other
     /// Stage 1 tolerations. Surfaced on `MeshResult` for CLI emission.
     pub deprecation_warnings: Vec<DeployDeprecationWarning>,
+    /// Per-binding resolved IDs, keyed by `(machine_name, target_id)`.
+    /// Consumed by `topology::attach_event_bindings` to produce per-event
+    /// codegen context.
+    pub bindings: HashMap<(String, TargetId), PerBindingResolution>,
 }
 
 /// Resolve all name-based external references in `deploy_cfg` in place.
@@ -75,7 +95,7 @@ pub fn resolve_external_bindings(
     deploy_cfg: &mut DeployConfig,
     deploy_dir: &Path,
 ) -> Result<ExternalResolution, ExternalConfigError> {
-    let mut deprecation_warnings = Vec::new();
+    let mut result = ExternalResolution::default();
 
     // Cache parsed vsomeip.json per device — the same file can be referenced
     // by many bindings and there's no value in parsing it more than once.
@@ -104,7 +124,7 @@ pub fn resolve_external_bindings(
                 device_name,
                 machine_name,
                 &machine.bindings,
-                &mut deprecation_warnings,
+                &mut result.deprecation_warnings,
             );
 
             for (target, binding) in machine.bindings.iter_mut() {
@@ -122,11 +142,16 @@ pub fn resolve_external_bindings(
                     continue;
                 }
 
-                let needs_resolution = binding_uses_named_references(binding);
-                if !needs_resolution {
-                    // All-inline binding — Stage 1 deprecation path. The
-                    // DeployDeprecationWarning was already recorded above;
-                    // nothing to resolve.
+                // Spec schema conflict: flat sugar and events: block are
+                // mutually exclusive. Caught here before any name resolution
+                // runs so the diagnostic points at the schema mismatch, not
+                // at a downstream symptom.
+                reject_mixed_schema(machine_name, target, binding)?;
+
+                // Pure-legacy binding (only inline extra IDs, no name-based
+                // refs) has no resolution work; the default EventResolvedIds
+                // is built by topology from binding.extra.
+                if !binding_uses_named_references(binding) && binding.events.is_empty() {
                     continue;
                 }
 
@@ -139,7 +164,7 @@ pub fn resolve_external_bindings(
                     }
                 })?;
 
-                resolve_binding_names(
+                let per_binding = resolve_binding(
                     machine_name,
                     target,
                     binding,
@@ -147,6 +172,9 @@ pub fn resolve_external_bindings(
                     config_path.as_path(),
                     &mut missing,
                 )?;
+                result
+                    .bindings
+                    .insert((machine_name.clone(), target.clone()), per_binding);
             }
 
             if !missing.is_empty() {
@@ -162,18 +190,46 @@ pub fn resolve_external_bindings(
         }
     }
 
-    Ok(ExternalResolution {
-        deprecation_warnings,
-    })
+    Ok(result)
 }
 
-/// True iff any name-based SOME/IP reference is set on this binding.
+/// True iff any name-based SOME/IP reference is set on this binding —
+/// either at binding level (flat sugar) or inside a per-event entry.
 fn binding_uses_named_references(binding: &BindingConfig) -> bool {
     binding.service.is_some()
-        || binding.method.is_some()
-        || binding.event_group.is_some()
-        || binding.getter.is_some()
-        || binding.setter.is_some()
+        || binding.has_flat_event_fields()
+        || binding.events.values().any(|e| !e.is_empty())
+}
+
+/// Reject deploy.yaml that mixes the flat sugar fields with a per-event
+/// `events:` block on the same binding. There is no defined precedence,
+/// and silently picking one would surprise the reader on the other.
+fn reject_mixed_schema(
+    machine: &str,
+    target: &TargetId,
+    binding: &BindingConfig,
+) -> Result<(), ExternalConfigError> {
+    if binding.events.is_empty() || !binding.has_flat_event_fields() {
+        return Ok(());
+    }
+    let mut flat: Vec<&'static str> = Vec::new();
+    if binding.method.is_some() {
+        flat.push("method");
+    }
+    if binding.event_group.is_some() {
+        flat.push("event_group");
+    }
+    if binding.getter.is_some() {
+        flat.push("getter");
+    }
+    if binding.setter.is_some() {
+        flat.push("setter");
+    }
+    Err(ExternalConfigError::ConflictingEventSchema {
+        machine: machine.to_string(),
+        target: target.as_str().to_string(),
+        flat_fields: flat,
+    })
 }
 
 /// Non-SOME/IP bindings must not carry SOME/IP-only name-based fields.
@@ -251,101 +307,160 @@ fn collect_inline_id_deprecations(
     }
 }
 
-/// Resolve the name-based references on a single binding by mutating
-/// `binding.extra`. Unresolved names are appended to `missing` (not
-/// returned) so all mismatches for a machine are batched. `machine`,
-/// `target`, and `config_path` are threaded through because the
-/// event-group diagnostics (`EmptyEventGroup`, `AmbiguousEventGroup`)
-/// need all three to point at the exact failure site in vsomeip.json.
-fn resolve_binding_names(
+/// Resolve a single binding into a `PerBindingResolution`.
+///
+/// Three distinct sub-paths share `resolve_event_binding` for per-event
+/// detail and the `service:` resolution at the top:
+///   1. `service:` (always at binding level) → `service_id` + `instance_id`
+///      injected into `binding.extra` for the legacy template path.
+///   2. Per-event `events:` block → one `EventResolvedIds` per entry.
+///   3. Flat sugar (`method:` / `event_group:` / ...) → a single default
+///      `EventResolvedIds` that topology fans out to matching events.
+///
+/// Unresolved names go into `missing` for batched reporting.
+fn resolve_binding(
     machine: &str,
     target: &TargetId,
     binding: &mut BindingConfig,
     someip: &VsomeipConfig,
     config_path: &Path,
     missing: &mut Vec<UnresolvedName>,
-) -> Result<(), ExternalConfigError> {
+) -> Result<PerBindingResolution, ExternalConfigError> {
     // Service → service_id + instance_id. Without a service there is
-    // nothing for method/event_group/getter/setter to hang off, so
-    // method-level resolutions short-circuit when service is unset or
-    // unresolved.
-    let service = binding.service.as_deref();
+    // nothing for method/event_group/getter/setter to hang off, so the
+    // per-event resolutions short-circuit when service is unset or
+    // unresolved (still recording the unresolved-method as missing for
+    // batched reporting).
+    let service_ref = resolve_service(binding, someip, missing);
 
-    let service_ref = match service {
-        Some(name) => match someip.resolve_service(name) {
-            Some(svc) => {
-                insert_u16(&mut binding.extra, KEY_SERVICE_ID, svc.service);
-                insert_u16(&mut binding.extra, KEY_INSTANCE_ID, svc.instance);
-                Some(svc)
+    let mut out = PerBindingResolution::default();
+
+    if !binding.events.is_empty() {
+        // Per-event path (spec canonical).
+        for (event_name, event_binding) in &binding.events {
+            let ids = resolve_event_binding(
+                machine,
+                target,
+                config_path,
+                event_name,
+                event_binding,
+                service_ref,
+                missing,
+            )?;
+            // Skip empty entries — an `events.foo: {}` with no fields is
+            // user error but harmless; topology will report it as unused
+            // if the event is sent without any pattern requirement.
+            if !ids.is_empty() {
+                out.by_event.insert(event_name.clone(), ids);
             }
-            None => {
-                missing.push(UnresolvedName {
-                    kind: "service",
-                    name: name.to_string(),
-                    context: None,
-                });
-                None
-            }
-        },
-        None => None,
+        }
+    }
+
+    if binding.has_flat_event_fields() {
+        // Flat sugar path. The flat fields collapse into a single
+        // EventBinding so resolution shares one code path with the
+        // events: block. The schema-conflict gate above guarantees
+        // events: is empty here.
+        let synthetic = EventBinding {
+            method: binding.method.clone(),
+            event_group: binding.event_group.clone(),
+            getter: binding.getter.clone(),
+            setter: binding.setter.clone(),
+        };
+        out.default = resolve_event_binding(
+            machine,
+            target,
+            config_path,
+            "<all events>",
+            &synthetic,
+            service_ref,
+            missing,
+        )?;
+    }
+
+    Ok(out)
+}
+
+/// Resolve `binding.service` against vsomeip.json, injecting
+/// `service_id`/`instance_id` into `binding.extra` so the legacy template
+/// path stays unchanged. Returns the resolved `Service` for downstream
+/// per-event lookups.
+fn resolve_service<'a>(
+    binding: &mut BindingConfig,
+    someip: &'a VsomeipConfig,
+    missing: &mut Vec<UnresolvedName>,
+) -> Option<&'a Service> {
+    let name = binding.service.as_deref()?;
+    match someip.resolve_service(name) {
+        Some(svc) => {
+            insert_u16(&mut binding.extra, KEY_SERVICE_ID, svc.service);
+            insert_u16(&mut binding.extra, KEY_INSTANCE_ID, svc.instance);
+            Some(svc)
+        }
+        None => {
+            missing.push(UnresolvedName {
+                kind: "service",
+                name: name.to_string(),
+                context: None,
+            });
+            None
+        }
+    }
+}
+
+/// Resolve a single `EventBinding` (per-event entry or flat-sugar synthetic)
+/// against vsomeip.json. `event_name` and `target` are used in diagnostics
+/// so the operator sees which SCXML event the failure originates from.
+fn resolve_event_binding(
+    machine: &str,
+    target: &TargetId,
+    config_path: &Path,
+    event_name: &str,
+    event_binding: &EventBinding,
+    service_ref: Option<&Service>,
+    missing: &mut Vec<UnresolvedName>,
+) -> Result<EventResolvedIds, ExternalConfigError> {
+    let mut out = EventResolvedIds::default();
+    let svc_ctx = || {
+        service_ref.map(|s| format!("in service \"{}\" (event \"{event_name}\")", s.name))
     };
 
-    if let Some(name) = binding.method.as_deref() {
-        match service_ref.and_then(|svc| {
-            svc.methods
-                .iter()
-                .find(|m| m.name == name)
-                .map(|m| m.method)
-        }) {
-            Some(id) => insert_u16(&mut binding.extra, KEY_METHOD_ID, id),
+    if let Some(name) = event_binding.method.as_deref() {
+        match service_ref.and_then(|svc| svc.methods.iter().find(|m| m.name == name)) {
+            Some(m) => out.method_id = Some(m.method),
             None => missing.push(UnresolvedName {
                 kind: "method",
                 name: name.to_string(),
-                context: service.map(|s| format!("in service \"{s}\"")),
+                context: svc_ctx(),
             }),
         }
     }
-
-    if let Some(name) = binding.getter.as_deref() {
-        match service_ref.and_then(|svc| {
-            svc.methods
-                .iter()
-                .find(|m| m.name == name)
-                .map(|m| m.method)
-        }) {
-            Some(id) => insert_u16(&mut binding.extra, KEY_GETTER_ID, id),
+    if let Some(name) = event_binding.getter.as_deref() {
+        match service_ref.and_then(|svc| svc.methods.iter().find(|m| m.name == name)) {
+            Some(m) => out.getter_id = Some(m.method),
             None => missing.push(UnresolvedName {
                 kind: "getter",
                 name: name.to_string(),
-                context: service.map(|s| format!("in service \"{s}\"")),
+                context: svc_ctx(),
             }),
         }
     }
-
-    if let Some(name) = binding.setter.as_deref() {
-        match service_ref.and_then(|svc| {
-            svc.methods
-                .iter()
-                .find(|m| m.name == name)
-                .map(|m| m.method)
-        }) {
-            Some(id) => insert_u16(&mut binding.extra, KEY_SETTER_ID, id),
+    if let Some(name) = event_binding.setter.as_deref() {
+        match service_ref.and_then(|svc| svc.methods.iter().find(|m| m.name == name)) {
+            Some(m) => out.setter_id = Some(m.method),
             None => missing.push(UnresolvedName {
                 kind: "setter",
                 name: name.to_string(),
-                context: service.map(|s| format!("in service \"{s}\"")),
+                context: svc_ctx(),
             }),
         }
     }
-
-    if let Some(name) = binding.event_group.as_deref() {
-        match service_ref
-            .and_then(|svc| svc.eventgroups.iter().find(|e| e.name == name))
-        {
+    if let Some(name) = event_binding.event_group.as_deref() {
+        match service_ref.and_then(|svc| svc.eventgroups.iter().find(|e| e.name == name)) {
             Some(eg) => {
-                insert_u16(&mut binding.extra, KEY_EVENT_GROUP_ID, eg.eventgroup);
+                out.event_group_id = Some(eg.eventgroup);
                 // Event group must contain exactly one event for the
-                // current one-event-per-binding template. Multi-event and
+                // current one-event-per-mapping template. Multi-event and
                 // zero-event cases are diagnosed with dedicated errors —
                 // silently picking events[0] or 0 would route nothing.
                 match eg.events.len() {
@@ -357,9 +472,7 @@ fn resolve_binding_names(
                             event_group: name.to_string(),
                         });
                     }
-                    1 => {
-                        insert_u16(&mut binding.extra, KEY_EVENT_ID, eg.events[0]);
-                    }
+                    1 => out.event_id = Some(eg.events[0]),
                     n => {
                         return Err(ExternalConfigError::AmbiguousEventGroup {
                             machine: machine.to_string(),
@@ -374,12 +487,11 @@ fn resolve_binding_names(
             None => missing.push(UnresolvedName {
                 kind: "event_group",
                 name: name.to_string(),
-                context: service.map(|s| format!("in service \"{s}\"")),
+                context: svc_ctx(),
             }),
         }
     }
-
-    Ok(())
+    Ok(out)
 }
 
 /// Insert a u16 id into `binding.extra` as a hex-string YAML value.
@@ -477,6 +589,7 @@ topology:
         let mut deploy = sample_deploy(&cfg_path);
         let res = resolve_external_bindings(&mut deploy, &dir).expect("resolve");
 
+        // Service IDs go into binding.extra (binding-level, per-target).
         let binding = &deploy.topology["ecu1"].machines["brake"].bindings["#motor"];
         let id = |k: &str| {
             binding
@@ -488,14 +601,116 @@ topology:
         };
         assert_eq!(id("service_id"), "0x1234");
         assert_eq!(id("instance_id"), "0x0001");
-        assert_eq!(id("method_id"), "0x0421");
-        assert_eq!(id("event_group_id"), "0x0001");
-        assert_eq!(id("event_id"), "0x8001");
-        assert_eq!(id("getter_id"), "0x0100");
-        assert_eq!(id("setter_id"), "0x0101");
+
+        // Per-event IDs live on the resolution map's `default` slot
+        // (sample_deploy uses flat sugar fields, not an events: block).
+        let key = ("brake".to_string(), TargetId::new("#motor").unwrap());
+        let per_binding = res.bindings.get(&key).expect("binding resolution");
+        assert!(per_binding.by_event.is_empty(), "flat sugar → no by_event entries");
+        let d = &per_binding.default;
+        assert_eq!(d.method_id, Some(0x0421));
+        assert_eq!(d.event_group_id, Some(0x0001));
+        assert_eq!(d.event_id, Some(0x8001));
+        assert_eq!(d.getter_id, Some(0x0100));
+        assert_eq!(d.setter_id, Some(0x0101));
 
         // No inline IDs in this fixture → no deprecation warnings.
         assert!(res.deprecation_warnings.is_empty());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn per_event_block_resolves_into_by_event_map() {
+        // Per-event SCE_MESH.md §14 schema: distinct method per event.
+        let dir = std::env::temp_dir().join("sce_ext_cfg_per_event");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
+
+        let yaml = format!(
+            r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: {config}
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              "service.request.compute_force":
+                method: compute_force
+              "field.get.status":
+                getter: get_status
+              "field.set.mode":
+                setter: set_mode
+"##,
+            config = cfg_path.display()
+        );
+        let mut deploy = crate::mesh::deploy::parse_deploy_str(&yaml).expect("parse");
+        let res = resolve_external_bindings(&mut deploy, &dir).expect("resolve");
+
+        let key = ("brake".to_string(), TargetId::new("#motor").unwrap());
+        let per_binding = res.bindings.get(&key).expect("resolution");
+
+        // Each event maps to its own resolved IDs — no fan-out, no defaults.
+        assert!(per_binding.default.is_empty(), "no flat sugar declared");
+        assert_eq!(
+            per_binding.by_event["service.request.compute_force"].method_id,
+            Some(0x0421)
+        );
+        assert_eq!(
+            per_binding.by_event["field.get.status"].getter_id,
+            Some(0x0100)
+        );
+        assert_eq!(
+            per_binding.by_event["field.set.mode"].setter_id,
+            Some(0x0101)
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn flat_sugar_and_events_block_conflict_rejected() {
+        let dir = std::env::temp_dir().join("sce_ext_cfg_conflict");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
+
+        let yaml = format!(
+            r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: {config}
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            method: compute_force
+            events:
+              "service.request.compute_force":
+                method: compute_force
+"##,
+            config = cfg_path.display()
+        );
+        let mut deploy = crate::mesh::deploy::parse_deploy_str(&yaml).expect("parse");
+        match resolve_external_bindings(&mut deploy, &dir) {
+            Err(ExternalConfigError::ConflictingEventSchema { flat_fields, .. }) => {
+                assert!(flat_fields.contains(&"method"));
+            }
+            other => panic!("expected ConflictingEventSchema, got {other:?}"),
+        }
 
         std::fs::remove_dir_all(&dir).ok();
     }

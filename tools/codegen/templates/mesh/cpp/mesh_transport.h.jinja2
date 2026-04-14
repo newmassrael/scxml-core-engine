@@ -158,28 +158,35 @@ using {{ target.target_pascal }}ShmChannel = SCE::Mesh::ShmChannel<
 {% if "someip" in transport_types %}
 {% for target in targets if target.transport == "someip" %}
 {% if target.extra.service_id is not defined %}
-#error "SCE Mesh: someip transport for '{{ target.target }}' requires 'service_id' in deploy.yaml"
+#error "SCE Mesh: someip transport for '{{ target.target }}' requires a 'service:' name reference (or legacy 'service_id') in deploy.yaml"
 {% endif %}
 {% if target.extra.instance_id is not defined %}
-#error "SCE Mesh: someip transport for '{{ target.target }}' requires 'instance_id' in deploy.yaml"
+#error "SCE Mesh: someip transport for '{{ target.target }}' requires a 'service:' name reference (or legacy 'instance_id') in deploy.yaml"
 {% endif %}
 static constexpr vsomeip::service_t SOMEIP_SERVICE_{{ target.target_snake | upper }} = {{ target.extra.service_id }};
 static constexpr vsomeip::instance_t SOMEIP_INSTANCE_{{ target.target_snake | upper }} = {{ target.extra.instance_id }};
-{% if target.extra.method_id is defined %}
-static constexpr vsomeip::method_t SOMEIP_METHOD_{{ target.target_snake | upper }} = {{ target.extra.method_id }};
+{# Per-event IDs (SCE_MESH.md §14): different SCXML events on the same target
+   can use different methods or event groups. One constant per (target, event)
+   pair so the dispatch switch below can index by event name without runtime
+   string lookups. Pattern-projection in topology means each event only carries
+   the IDs its own pattern needs — getter_id never appears for an RPC event. #}
+{% for ep in target.event_patterns %}
+{% if ep.method_id %}
+static constexpr vsomeip::method_t SOMEIP_METHOD_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.method_id }};
 {% endif %}
-{% if target.extra.event_group_id is defined %}
-static constexpr vsomeip::eventgroup_t SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }} = {{ target.extra.event_group_id }};
+{% if ep.event_group_id %}
+static constexpr vsomeip::eventgroup_t SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.event_group_id }};
 {% endif %}
-{% if target.extra.event_id is defined %}
-static constexpr vsomeip::event_t SOMEIP_EVENT_{{ target.target_snake | upper }} = {{ target.extra.event_id }};
+{% if ep.event_id %}
+static constexpr vsomeip::event_t SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.event_id }};
 {% endif %}
-{% if target.extra.getter_id is defined %}
-static constexpr vsomeip::method_t SOMEIP_GETTER_{{ target.target_snake | upper }} = {{ target.extra.getter_id }};
+{% if ep.getter_id %}
+static constexpr vsomeip::method_t SOMEIP_GETTER_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.getter_id }};
 {% endif %}
-{% if target.extra.setter_id is defined %}
-static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper }} = {{ target.extra.setter_id }};
+{% if ep.setter_id %}
+static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.setter_id }};
 {% endif %}
+{% endfor %}
 {% endfor %}
 
 {% endif %}
@@ -225,72 +232,71 @@ inline void send_to_{{ target.target_snake }}(
 /// Events: {{ target.events | join(", ") }}
 ///
 /// Wire format: canonical CBOR envelope (MeshEnvelopeCodec).
-/// Pattern-aware: branches on env.pattern to use correct SOME/IP API.
+/// Per-event dispatch (SCE_MESH.md §14): every event maps to its own
+/// numeric IDs at build time, so the function reads `env.type` to pick
+/// the right per-event constants. Unknown event names return false.
 ///
 /// @return true if the request was submitted to vsomeip.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
     vsomeip::application& app,
     const SCE::Mesh::MeshEnvelope& env
 ) {
-    using PK = SCE::Mesh::PatternKind;
-    switch (env.pattern) {
-    case PK::FireForget:
-    case PK::RpcRequest: {
-{% if target.extra.method_id is defined %}
-{{ someip_send_request(target, "SOMEIP_METHOD_" + (target.target_snake | upper)) }}
-{% else %}
-        (void)app; (void)env;
-        return false;  // method_id not configured in deploy.yaml
+{% set has_any_event_ids = namespace(v=false) %}
+{% for ep in target.event_patterns %}
+{% if ep.method_id or ep.event_group_id or ep.getter_id or ep.setter_id %}
+{% set has_any_event_ids.v = true %}
 {% endif %}
-    }
-    case PK::EventSubscribe: {
-{% if target.extra.event_group_id is defined and target.extra.event_id is defined %}
-        app.request_event(
-            SOMEIP_SERVICE_{{ target.target_snake | upper }},
-            SOMEIP_INSTANCE_{{ target.target_snake | upper }},
-            SOMEIP_EVENT_{{ target.target_snake | upper }},
-            {SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}});
-        app.subscribe(
-            SOMEIP_SERVICE_{{ target.target_snake | upper }},
-            SOMEIP_INSTANCE_{{ target.target_snake | upper }},
-            SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }});
-        return true;
+{% endfor %}
+{% if not has_any_event_ids.v %}
+    (void)app; (void)env;
+    return false;  // no per-event SOME/IP IDs configured for this target
 {% else %}
-        (void)app; (void)env;
-        return false;  // event_group_id/event_id not configured
+{% for ep in target.event_patterns %}
+{# Each event handled in its own scope so request/payload locals don't
+   collide across cases. The dispatch is build-time exhaustive — events
+   not listed here are unreachable for this target. #}
+{% if ep.method_id %}
+    if (env.type == "{{ ep.event }}") {
+        // {{ ep.event }} → SOMEIP_METHOD_{{ target.target_snake | upper }}_{{ ep.event_const }}
+{{ someip_send_request(target, "SOMEIP_METHOD_" + (target.target_snake | upper) + "_" + ep.event_const) }}
+    }
+{% elif ep.event_group_id and ep.event_id %}
+    if (env.type == "{{ ep.event }}") {
+        using PK = SCE::Mesh::PatternKind;
+        if (env.pattern == PK::EventSubscribe) {
+            app.request_event(
+                SOMEIP_SERVICE_{{ target.target_snake | upper }},
+                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ ep.event_const }},
+                {SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ ep.event_const }}});
+            app.subscribe(
+                SOMEIP_SERVICE_{{ target.target_snake | upper }},
+                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ ep.event_const }});
+            return true;
+        }
+        if (env.pattern == PK::EventUnsubscribe) {
+            app.unsubscribe(
+                SOMEIP_SERVICE_{{ target.target_snake | upper }},
+                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ ep.event_const }});
+            return true;
+        }
+        return false;  // EventNotify is inbound-only
+    }
+{% elif ep.getter_id %}
+    if (env.type == "{{ ep.event }}") {
+{{ someip_send_request(target, "SOMEIP_GETTER_" + (target.target_snake | upper) + "_" + ep.event_const) }}
+    }
+{% elif ep.setter_id %}
+    if (env.type == "{{ ep.event }}") {
+{{ someip_send_request(target, "SOMEIP_SETTER_" + (target.target_snake | upper) + "_" + ep.event_const) }}
+    }
 {% endif %}
-    }
-    case PK::EventUnsubscribe: {
-{% if target.extra.event_group_id is defined %}
-        app.unsubscribe(
-            SOMEIP_SERVICE_{{ target.target_snake | upper }},
-            SOMEIP_INSTANCE_{{ target.target_snake | upper }},
-            SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }});
-        return true;
-{% else %}
-        (void)app; (void)env;
-        return false;
+{% endfor %}
+    (void)app;
+    return false;  // unknown event name for this target
 {% endif %}
-    }
-    case PK::FieldRead: {
-{% if target.extra.getter_id is defined %}
-{{ someip_send_request(target, "SOMEIP_GETTER_" + (target.target_snake | upper)) }}
-{% else %}
-        (void)app; (void)env;
-        return false;  // getter_id not configured
-{% endif %}
-    }
-    case PK::FieldWrite: {
-{% if target.extra.setter_id is defined %}
-{{ someip_send_request(target, "SOMEIP_SETTER_" + (target.target_snake | upper)) }}
-{% else %}
-        (void)app; (void)env;
-        return false;  // setter_id not configured
-{% endif %}
-    }
-    default:
-        return false;  // RpcReply, EventNotify, FieldNotify are inbound-only
-    }
 }
 
 {% elif target.transport == "zenoh" %}
@@ -538,23 +544,27 @@ struct TransportRouter {
         {{ target.target_snake }}_app_->request_service(
             SOMEIP_SERVICE_{{ target.target_snake | upper }},
             SOMEIP_INSTANCE_{{ target.target_snake | upper }});
-{% if target.has_rpc and target.extra.method_id is defined %}
-        // RPC response handler: correlate response to pending request,
-        // rewrite envelope type to reply-event name, dispatch to engine.
-{{ someip_receive_handler(target, "SOMEIP_METHOD_" + (target.target_snake | upper), "", "rpc") }}
+{# Per-event receive handlers (SCE_MESH.md §14): one register_message_handler
+   per (target, event) so different events on the same target can use
+   different methods/event-groups/getters/setters. #}
+{% for ep in target.event_patterns %}
+{% if ep.method_id %}
+        // {{ ep.event }} → SOMEIP_METHOD_{{ target.target_snake | upper }}_{{ ep.event_const }}
+{{ someip_receive_handler(target, "SOMEIP_METHOD_" + (target.target_snake | upper) + "_" + ep.event_const, "", "rpc") }}
 {% endif %}
-{% if target.has_pubsub and target.extra.event_id is defined %}
-        // Event notification handler: deliver subscribed event notifications.
-{{ someip_receive_handler(target, "SOMEIP_EVENT_" + (target.target_snake | upper), "SCE::Mesh::PatternKind::EventNotify", "notify") }}
+{% if ep.event_id %}
+        // {{ ep.event }} → SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ ep.event_const }}
+{{ someip_receive_handler(target, "SOMEIP_EVENT_" + (target.target_snake | upper) + "_" + ep.event_const, "SCE::Mesh::PatternKind::EventNotify", "notify") }}
 {% endif %}
-{% if target.has_field and target.extra.getter_id is defined %}
-        // Field getter response handler.
-{{ someip_receive_handler(target, "SOMEIP_GETTER_" + (target.target_snake | upper), "SCE::Mesh::PatternKind::FieldNotify", "field") }}
+{% if ep.getter_id %}
+        // {{ ep.event }} → SOMEIP_GETTER_{{ target.target_snake | upper }}_{{ ep.event_const }}
+{{ someip_receive_handler(target, "SOMEIP_GETTER_" + (target.target_snake | upper) + "_" + ep.event_const, "SCE::Mesh::PatternKind::FieldNotify", "field") }}
 {% endif %}
-{% if target.has_field and target.extra.setter_id is defined %}
-        // Field setter response handler.
-{{ someip_receive_handler(target, "SOMEIP_SETTER_" + (target.target_snake | upper), "SCE::Mesh::PatternKind::FieldNotify", "field") }}
+{% if ep.setter_id %}
+        // {{ ep.event }} → SOMEIP_SETTER_{{ target.target_snake | upper }}_{{ ep.event_const }}
+{{ someip_receive_handler(target, "SOMEIP_SETTER_" + (target.target_snake | upper) + "_" + ep.event_const, "SCE::Mesh::PatternKind::FieldNotify", "field") }}
 {% endif %}
+{% endfor %}
         {{ target.target_snake }}_thread_ = std::thread([this]{ {{ target.target_snake }}_app_->start(); });
 {% endfor %}
 {% if "zenoh" in transport_types %}

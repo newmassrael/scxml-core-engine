@@ -33,6 +33,44 @@ pub struct EventPatternInfo {
     pub reply_event: Option<String>,
 }
 
+/// Per-event resolved SOME/IP numeric IDs (SCE_MESH.md §14).
+///
+/// Populated from one of three sources during resolution:
+///   1. `events:` block in deploy.yaml (spec canonical) — one entry per
+///      SCXML event, resolved name-by-name against vsomeip.json.
+///   2. Flat per-binding sugar fields (`method:`, `event_group:`, ...) —
+///      expanded to one entry per matching-pattern event on this target.
+///   3. Stage 1 deprecated inline numeric IDs (`method_id:`, etc.) — same
+///      expansion as (2), bypassing vsomeip.json.
+///
+/// All three converge into the same shape so codegen has a single path.
+/// Field presence follows the event's communication pattern: RPC uses
+/// `method_id`, Notification uses `event_group_id` + `event_id`, Field
+/// access uses `getter_id` / `setter_id`.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub struct EventResolvedIds {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_group_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub getter_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setter_id: Option<u16>,
+}
+
+impl EventResolvedIds {
+    pub fn is_empty(&self) -> bool {
+        self.method_id.is_none()
+            && self.event_group_id.is_none()
+            && self.event_id.is_none()
+            && self.getter_id.is_none()
+            && self.setter_id.is_none()
+    }
+}
+
 /// A resolved send target: SCXML <send> target matched to a deploy.yaml binding.
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedTarget {
@@ -46,6 +84,10 @@ pub struct ResolvedTarget {
     pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     /// Per-event pattern metadata for codegen (pattern-aware send + RPC correlation).
     pub event_patterns: Vec<EventPatternInfo>,
+    /// Per-event resolved SOME/IP numeric IDs, keyed by SCXML event name.
+    /// Empty for non-someip targets; may be empty for someip targets that
+    /// rely entirely on legacy inline IDs (Stage 1 deprecated).
+    pub event_bindings: BTreeMap<String, EventResolvedIds>,
 }
 
 /// Build-time warning about dynamic targets that cannot be statically resolved.
@@ -229,9 +271,14 @@ pub fn analyze_event_pairs(
         if action.target.is_internal() || action.event.is_empty() {
             continue;
         }
-        let Some(pattern) = action.pattern else {
-            continue;
-        };
+        // Spec §14: "everything else → FireForget" — events that don't match
+        // a reserved prefix default to FireForget rather than dropping out
+        // of the pattern table. Falling out would leave such events with
+        // no per-event metadata for codegen to emit, so app-level events
+        // (e.g. `brake.activate`) would silently route to no method_id.
+        let pattern = action
+            .pattern
+            .unwrap_or(super::pattern::CommunicationPattern::FireForget);
         let entry = pattern_map.entry(action.target.clone()).or_default();
         if entry.iter().any(|e| e.event == action.event) {
             continue; // Same event to same target — already captured.
@@ -292,6 +339,12 @@ pub fn resolve_targets(
                     transport: binding.transport.clone(),
                     extra: binding.extra.clone(),
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
+                    // Per-event SOME/IP IDs are attached in a second pass
+                    // by `attach_event_bindings`. Leaving it empty here keeps
+                    // `resolve_targets` focused on static-target matching and
+                    // avoids threading the external-resolution table into
+                    // every branch.
+                    event_bindings: BTreeMap::new(),
                 });
             }
             None => {
@@ -331,16 +384,30 @@ pub fn resolve_targets(
             validate_shm_extras(machine_name, rt)?;
         }
 
-        // Pattern-specific field validation for someip: certain deploy.yaml
-        // fields are required based on which communication patterns the SCXML
-        // model uses. Without this, missing fields silently generate `return
-        // false` in the template — a runtime failure instead of a build error.
+        // SOME/IP per-event ID validation runs in a separate pass after
+        // `attach_event_bindings` has fanned the per-binding resolution
+        // out into per-event entries — not here.
+    }
+
+    Ok(resolved)
+}
+
+/// Validate SOME/IP per-event field presence.
+///
+/// Runs after `attach_event_bindings`, so it can read `event_bindings`
+/// directly. Each SCXML event must have the IDs its communication
+/// pattern requires, otherwise the template would silently emit
+/// `return false` for that event at runtime.
+pub fn validate_someip_event_fields(
+    resolved: &[ResolvedTarget],
+    machine_name: &str,
+) -> Result<(), TopologyError> {
+    for rt in resolved {
         if rt.transport == "someip" {
             validate_someip_pattern_fields(machine_name, rt)?;
         }
     }
-
-    Ok(resolved)
+    Ok(())
 }
 
 /// Validate optional shm binding fields:
@@ -399,11 +466,13 @@ fn validate_shm_extras(
     Ok(())
 }
 
-/// Validate someip pattern-specific deploy.yaml fields.
+/// Validate someip pattern-specific per-event IDs.
 ///
-/// While `service_id` and `instance_id` are always required (enforced by
-/// `required_binding_fields`), other IDs depend on which communication
-/// patterns the SCXML model uses for this target:
+/// While `service_id` and `instance_id` are always required at binding
+/// level (enforced by `required_binding_fields`), the other IDs are
+/// per-event because different events on the same target can use different
+/// patterns (e.g. one event is RPC, another is a notification). The
+/// required field set per event:
 ///   - FireForget / ServiceRequest / ServiceResponse → `method_id`
 ///   - Subscribe / Notification → `event_group_id` + `event_id`
 ///   - FieldGet → `getter_id`
@@ -417,13 +486,17 @@ fn validate_someip_pattern_fields(
         WIRE_FIRE_FORGET, WIRE_RPC_REPLY, WIRE_RPC_REQUEST,
     };
     for ep in &rt.event_patterns {
-        let require = |field: &str| {
-            if !rt.extra.contains_key(field) {
+        // Per-event resolution comes first; fall back to nothing (the
+        // default-fan-out happened upstream in `attach_event_bindings`).
+        let ids = rt.event_bindings.get(&ep.event);
+
+        let require_present = |present: bool, field: &'static str| {
+            if !present {
                 Err(TopologyError::MissingBindingField {
                     machine: machine_name.to_string(),
                     target: rt.target.clone(),
                     transport: rt.transport.clone(),
-                    field: field.to_string(),
+                    field: format!("{field} (event \"{}\")", ep.event),
                 })
             } else {
                 Ok(())
@@ -432,18 +505,143 @@ fn validate_someip_pattern_fields(
 
         match ep.pattern_kind_value {
             WIRE_FIRE_FORGET | WIRE_RPC_REQUEST | WIRE_RPC_REPLY => {
-                require("method_id")?
+                require_present(ids.and_then(|i| i.method_id).is_some(), "method_id")?;
             }
             WIRE_EVENT_SUBSCRIBE | WIRE_EVENT_NOTIFY => {
-                require("event_group_id")?;
-                require("event_id")?;
+                require_present(
+                    ids.and_then(|i| i.event_group_id).is_some(),
+                    "event_group_id",
+                )?;
+                require_present(ids.and_then(|i| i.event_id).is_some(), "event_id")?;
             }
-            WIRE_FIELD_READ => require("getter_id")?,
-            WIRE_FIELD_WRITE => require("setter_id")?,
+            WIRE_FIELD_READ => {
+                require_present(ids.and_then(|i| i.getter_id).is_some(), "getter_id")?;
+            }
+            WIRE_FIELD_WRITE => {
+                require_present(ids.and_then(|i| i.setter_id).is_some(), "setter_id")?;
+            }
             _ => {}
         }
     }
     Ok(())
+}
+
+/// Fan per-binding resolution into per-event SOME/IP IDs.
+///
+/// Three sources are merged into `target.event_bindings`:
+///   1. Per-event `events:` entries from deploy.yaml — copied verbatim.
+///   2. Flat sugar (`method:` / `event_group:` / ...) — one entry per
+///      SCXML event whose pattern matches the field set.
+///   3. Stage 1 inline numeric IDs (`method_id:` etc. in `extra`) —
+///      same fan-out as flat sugar.
+///
+/// Sources (2) and (3) are mutually exclusive in practice: a binding
+/// using flat sugar resolves through external.rs and the result lands
+/// in `external.bindings.default`; a legacy binding skips external.rs
+/// entirely and we materialise the default from `extra` here.
+///
+/// Per-event entries always win on conflict — they are the most specific
+/// declaration. `EventBindingUnused` is reported when an `events:` entry
+/// names an SCXML event that is never actually `<send>`-ed to this
+/// target (likely a typo).
+pub fn attach_event_bindings(
+    resolved: &mut [ResolvedTarget],
+    machine_name: &str,
+    external: &super::external::ExternalResolution,
+) -> Result<(), TopologyError> {
+    use super::pattern::{
+        WIRE_EVENT_NOTIFY, WIRE_EVENT_SUBSCRIBE, WIRE_FIELD_READ, WIRE_FIELD_WRITE,
+        WIRE_FIRE_FORGET, WIRE_RPC_REPLY, WIRE_RPC_REQUEST,
+    };
+
+    for rt in resolved.iter_mut() {
+        if rt.transport != "someip" {
+            continue;
+        }
+
+        // Look up the per-binding resolution produced by external.rs.
+        let key = (machine_name.to_string(), rt.target.clone());
+        let per_binding = external.bindings.get(&key);
+
+        // Default IDs to fan out to every matching event:
+        // (a) external.bindings.default if name-based fields were set, OR
+        // (b) extracted from rt.extra for the legacy inline-ID path.
+        let default_ids = per_binding
+            .map(|p| p.default.clone())
+            .unwrap_or_else(|| EventResolvedIds {
+                method_id: u16_from_extra(&rt.extra, "method_id"),
+                event_group_id: u16_from_extra(&rt.extra, "event_group_id"),
+                event_id: u16_from_extra(&rt.extra, "event_id"),
+                getter_id: u16_from_extra(&rt.extra, "getter_id"),
+                setter_id: u16_from_extra(&rt.extra, "setter_id"),
+            });
+
+        // Fan out per-event entries.
+        for ep in &rt.event_patterns {
+            // Per-event explicit entry wins.
+            if let Some(by_event) = per_binding.and_then(|p| p.by_event.get(&ep.event)) {
+                rt.event_bindings.insert(ep.event.clone(), by_event.clone());
+                continue;
+            }
+            // Otherwise project the default to the fields this event's
+            // pattern actually needs. Projecting (instead of cloning the
+            // whole default) keeps unused fields out of the codegen
+            // context — `getter_id` for an RPC event would only confuse
+            // the template reader.
+            let mut ids = EventResolvedIds::default();
+            match ep.pattern_kind_value {
+                WIRE_FIRE_FORGET | WIRE_RPC_REQUEST | WIRE_RPC_REPLY => {
+                    ids.method_id = default_ids.method_id;
+                }
+                WIRE_EVENT_SUBSCRIBE | WIRE_EVENT_NOTIFY => {
+                    ids.event_group_id = default_ids.event_group_id;
+                    ids.event_id = default_ids.event_id;
+                }
+                WIRE_FIELD_READ => ids.getter_id = default_ids.getter_id,
+                WIRE_FIELD_WRITE => ids.setter_id = default_ids.setter_id,
+                _ => {}
+            }
+            if !ids.is_empty() {
+                rt.event_bindings.insert(ep.event.clone(), ids);
+            }
+        }
+
+        // Detect unused per-event entries (likely typos).
+        if let Some(per) = per_binding {
+            let actual_events: BTreeSet<&str> =
+                rt.event_patterns.iter().map(|ep| ep.event.as_str()).collect();
+            for declared in per.by_event.keys() {
+                if !actual_events.contains(declared.as_str()) {
+                    return Err(TopologyError::EventBindingUnused {
+                        machine: machine_name.to_string(),
+                        target: rt.target.clone(),
+                        event: declared.clone(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Try to parse a u16 out of a YAML value that the user may have written
+/// as either an integer (`16`) or a hex string (`"0x10"`).
+fn u16_from_extra(
+    extra: &std::collections::HashMap<String, serde_yaml_ng::Value>,
+    key: &str,
+) -> Option<u16> {
+    let v = extra.get(key)?;
+    if let Some(n) = v.as_u64() {
+        return u16::try_from(n).ok();
+    }
+    let s = v.as_str()?.trim();
+    let (radix, digits) = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
+    {
+        (16, rest)
+    } else {
+        (10, s)
+    };
+    u16::from_str_radix(digits, radix).ok()
 }
 
 /// Render a YAML value compactly for diagnostic messages.
@@ -898,6 +1096,7 @@ mod tests {
             transport: "local".to_string(),
             extra: HashMap::new(),
             event_patterns: Vec::new(),
+            event_bindings: BTreeMap::new(),
         }]
     }
 
