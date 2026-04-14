@@ -84,10 +84,11 @@ pub enum TopologyError {
     /// SCXML <send> targets that have no matching deploy.yaml binding.
     #[error("unresolved send targets for machine '{machine}': {targets}. \
              Each <send target=\"...\"> in SCXML must have a corresponding \
-             binding in deploy.yaml", targets = .targets.join(", "))]
+             binding in deploy.yaml",
+             targets = .targets.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(", "))]
     UnresolvedTargets {
         machine: String,
-        targets: Vec<String>,
+        targets: Vec<super::target::TargetId>,
     },
 
     /// Machine name (from SCXML <scxml name="...">) not found in deploy.yaml.
@@ -106,7 +107,7 @@ pub enum TopologyError {
              with its `source:` path.")]
     ReceiverNotDeclared {
         sender: String,
-        target: String,
+        target: super::target::TargetId,
         receiver: String,
     },
 
@@ -142,7 +143,7 @@ pub enum TopologyError {
     #[error("event coverage violations in machine '{sender}':\n{}\nEach <send event=\"X\"> must have a matching <transition event=\"X\"> in the receiver. \
              Fix: add the missing transition in the receiver, or correct the event name in the sender.",
              .findings.iter().map(|f| format!("  - send target=\"{}\" event=\"{}\" has no matching transition in '{}'",
-                 f.target, f.event, f.target.trim_start_matches('#')))
+                 f.target, f.event, f.target.name()))
                  .collect::<Vec<_>>().join("\n"))]
     UncoveredEvents {
         sender: String,
@@ -169,7 +170,7 @@ pub enum TopologyError {
              Add '{field}:' to the binding in deploy.yaml.")]
     MissingBindingField {
         machine: String,
-        target: String,
+        target: super::target::TargetId,
         transport: String,
         field: String,
     },
@@ -182,7 +183,7 @@ pub enum TopologyError {
              has invalid '{field}': {reason}")]
     InvalidBindingField {
         machine: String,
-        target: String,
+        target: super::target::TargetId,
         transport: String,
         field: String,
         reason: String,
@@ -202,7 +203,7 @@ pub enum CodegenError {
     #[error("transport '{transport}' not yet supported (target '{target}')")]
     UnsupportedTransport {
         transport: String,
-        target: String,
+        target: super::target::TargetId,
     },
 
     /// Cannot read the mesh Jinja2 template file.

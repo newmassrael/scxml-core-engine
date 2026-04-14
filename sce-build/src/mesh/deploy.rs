@@ -19,6 +19,7 @@
 // to know every key.
 
 use crate::mesh::error::DeployError;
+use crate::mesh::target::TargetId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -148,9 +149,10 @@ pub struct MachineConfig {
     /// layouts (e.g., `../shared/motor.scxml`).
     pub source: String,
     /// Target ID → transport binding. Keys are SCXML `<send target="...">`
-    /// values (e.g. "#motor").
+    /// values (e.g. "#motor"), typed as `TargetId` so the domain model stays
+    /// stringly-free past the deploy.yaml boundary.
     #[serde(default)]
-    pub bindings: HashMap<String, BindingConfig>,
+    pub bindings: HashMap<TargetId, BindingConfig>,
 }
 
 /// Transport binding for a single `<send>` target.

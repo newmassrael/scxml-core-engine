@@ -6,6 +6,7 @@
 
 use crate::mesh::deploy::{BindingConfig, DeployConfig};
 use crate::mesh::error::TopologyError;
+use crate::mesh::target::TargetId;
 use crate::model::SCXMLModel;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -36,7 +37,7 @@ pub struct EventPatternInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedTarget {
     /// The target ID from SCXML (e.g. "#motor").
-    pub target: String,
+    pub target: TargetId,
     /// Events sent to this target (for documentation/validation).
     pub events: Vec<String>,
     /// Transport type from deploy.yaml binding.
@@ -96,27 +97,30 @@ where
     }
 }
 
-/// Check if a target is a W3C internal target handled by the SM engine.
-fn is_internal_target(target: &str) -> bool {
-    target == "#_parent"
-        || target == "#_child"
-        || target == "#_internal"
-        || target == "#_scxml_"
-}
+// W3C internal targets (#_parent, #_child, …) are identified by
+// `TargetId::is_internal()` — the previous free helper `is_internal_target`
+// was removed when the newtype migration centralised target semantics.
 
 // ── Single-pass send action collection ──────────────────────
 
 /// Details of a single `<send>` action, collected for downstream validators.
 /// SCE_MESH.md §13 path B: no longer carries sce:* attribute values — pattern
 /// and reply pairing are derived from the event name by the analyzer.
+///
+/// Only actions with a non-empty `target` attribute are captured; empty-target
+/// (e.g. `targetexpr`-only) sends produce `TopologyWarning` instead.
 #[derive(Debug, Clone)]
 pub struct SendActionDetail {
     /// The state containing the `<send>`.
     pub state: String,
-    /// The `target` attribute (e.g. "#motor").
-    pub target: String,
+    /// The `target` attribute (e.g. "#motor"), non-empty by construction.
+    pub target: TargetId,
     /// The `event` attribute.
     pub event: String,
+    /// Pattern detected at summary-collection time from the event name.
+    /// `None` for application-specific events (no reserved prefix match).
+    /// Caching here avoids re-running `detect_pattern` in every consumer.
+    pub pattern: Option<super::pattern::CommunicationPattern>,
 }
 
 /// Pre-collected `<send>` action data from a single model traversal.
@@ -127,11 +131,11 @@ pub struct SendActionDetail {
 #[derive(Debug)]
 pub struct SendActionSummary {
     /// Deduplicated external send targets (e.g. "#motor").
-    pub targets: BTreeSet<String>,
+    pub targets: BTreeSet<TargetId>,
     /// Dynamic target warnings (`targetexpr` cannot be statically resolved).
     pub dynamic_warnings: Vec<TopologyWarning>,
     /// (target, event) pairs for event coverage validation.
-    pub target_events: Vec<(String, String)>,
+    pub target_events: Vec<(TargetId, String)>,
     /// Per-action details for QoS and pattern validation.
     pub actions: Vec<SendActionDetail>,
 }
@@ -155,17 +159,27 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
             });
         }
 
-        // External static target
-        if !action.target.is_empty() && !is_internal_target(&action.target) {
-            targets.insert(action.target.clone());
-            target_events.push((action.target.clone(), action.event.clone()));
+        // Empty-target sends (e.g. targetexpr-only) produce a warning above
+        // but contribute no SendActionDetail — the downstream validators
+        // skip them anyway.
+        let Some(tid) = TargetId::new(&action.target) else {
+            return;
+        };
+
+        // External (non-internal) static targets feed deploy.yaml resolution
+        // and event-coverage analysis.
+        if !tid.is_internal() {
+            targets.insert(tid.clone());
+            target_events.push((tid.clone(), action.event.clone()));
         }
 
-        // Per-action details for pattern validation
+        // Per-action details for pattern validation (includes internal
+        // targets; validators filter them via TargetId::is_internal()).
         actions.push(SendActionDetail {
             state: state_id.to_string(),
-            target: action.target.clone(),
+            target: tid,
             event: action.event.clone(),
+            pattern: super::pattern::detect_pattern(&action.event),
         });
     });
 
@@ -181,11 +195,13 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
 ///
 /// Used by `validate_event_coverage` (multi-model API). The per-model
 /// pipeline uses `SendActionSummary.target_events` instead.
-fn collect_target_events(model: &SCXMLModel) -> Vec<(String, String)> {
+fn collect_target_events(model: &SCXMLModel) -> Vec<(TargetId, String)> {
     let mut pairs = Vec::new();
     for_each_send_action(model, |_, action| {
-        if !action.target.is_empty() && !is_internal_target(&action.target) {
-            pairs.push((action.target.clone(), action.event.clone()));
+        if let Some(tid) = TargetId::new(&action.target) {
+            if !tid.is_internal() {
+                pairs.push((tid, action.event.clone()));
+            }
         }
     });
     pairs
@@ -205,18 +221,15 @@ fn collect_target_events(model: &SCXMLModel) -> Vec<(String, String)> {
 /// Returns a map `target → Vec<EventPatternInfo>` deduplicated by event name.
 pub fn analyze_event_pairs(
     summary: &SendActionSummary,
-) -> std::collections::HashMap<String, Vec<EventPatternInfo>> {
-    let mut pattern_map: std::collections::HashMap<String, Vec<EventPatternInfo>> =
+) -> std::collections::HashMap<TargetId, Vec<EventPatternInfo>> {
+    let mut pattern_map: std::collections::HashMap<TargetId, Vec<EventPatternInfo>> =
         std::collections::HashMap::new();
 
     for action in &summary.actions {
-        if action.target.is_empty()
-            || is_internal_target(&action.target)
-            || action.event.is_empty()
-        {
+        if action.target.is_internal() || action.event.is_empty() {
             continue;
         }
-        let Some(pattern) = super::pattern::detect_pattern(&action.event) else {
+        let Some(pattern) = action.pattern else {
             continue;
         };
         let entry = pattern_map.entry(action.target.clone()).or_default();
@@ -254,7 +267,7 @@ pub fn resolve_targets(
     let bindings = find_machine_bindings(deploy, machine_name)?;
 
     // Build events-per-target map from summary
-    let mut events_map: std::collections::HashMap<String, Vec<String>> =
+    let mut events_map: std::collections::HashMap<TargetId, Vec<String>> =
         std::collections::HashMap::new();
     for (target, event) in &summary.target_events {
         events_map
@@ -267,7 +280,7 @@ pub fn resolve_targets(
     let mut pattern_map = analyze_event_pairs(summary);
 
     // Validate: every SCXML target must have a deploy.yaml binding
-    let mut unresolved = Vec::new();
+    let mut unresolved: Vec<TargetId> = Vec::new();
     let mut resolved = Vec::new();
 
     for target in &summary.targets {
@@ -450,7 +463,7 @@ fn render_yaml_value(v: &serde_yaml_ng::Value) -> String {
 fn find_machine_bindings<'a>(
     deploy: &'a DeployConfig,
     machine_name: &str,
-) -> Result<&'a std::collections::HashMap<String, BindingConfig>, TopologyError> {
+) -> Result<&'a std::collections::HashMap<TargetId, BindingConfig>, TopologyError> {
     for device in deploy.topology.values() {
         if let Some(machine) = device.machines.get(machine_name) {
             return Ok(&machine.bindings);
@@ -476,7 +489,7 @@ pub struct EventCoverageWarning {
     /// The sender machine name.
     pub sender: String,
     /// The receiver target (e.g. "#motor").
-    pub target: String,
+    pub target: TargetId,
     /// The event name that has no matching transition in the receiver.
     pub event: String,
 }
@@ -577,7 +590,7 @@ pub fn validate_event_coverage(
             }
 
             // Resolve target to machine name: "#motor" → "motor"
-            let receiver_name = target.trim_start_matches('#');
+            let receiver_name = target.name();
 
             // Only validate if receiver model is available
             if let Some(rx_events) = receiver_events.get(receiver_name) {
@@ -597,7 +610,7 @@ pub fn validate_event_coverage(
     // The first filter (receiver_events.get) already skips receivers with no
     // model — this catches the case where a model exists but isn't in deploy.yaml.
     warnings.retain(|w| {
-        let receiver = w.target.trim_start_matches('#');
+        let receiver = w.target.name();
         deploy
             .topology
             .values()
@@ -627,7 +640,7 @@ pub fn validate_pattern_capability(
     deploy: &DeployConfig,
     machine_name: &str,
 ) -> Vec<super::pattern::PatternViolation> {
-    use super::pattern::{detect_pattern, PatternViolation};
+    use super::pattern::PatternViolation;
     use super::transport;
 
     let bindings = match find_machine_bindings(deploy, machine_name) {
@@ -638,15 +651,15 @@ pub fn validate_pattern_capability(
     let mut violations = Vec::new();
 
     for action in &summary.actions {
-        if action.target.is_empty() || is_internal_target(&action.target) || action.event.is_empty()
-        {
+        if action.target.is_internal() || action.event.is_empty() {
             continue;
         }
 
-        // SCE_MESH.md §13 path B: pattern is inferred from event name only.
-        let pattern = match detect_pattern(&action.event) {
-            Some(p) => p,
-            None => continue, // Application-specific event — no capability check
+        // SCE_MESH.md §13 path B: pattern is cached on SendActionDetail by
+        // collect_send_summary (inferred from event name). Application-specific
+        // events have no pattern — skip capability check.
+        let Some(pattern) = action.pattern else {
+            continue;
         };
 
         let binding = match bindings.get(&action.target) {
@@ -690,7 +703,7 @@ pub fn load_receiver_models(
     let mut out = Vec::new();
 
     for t in resolved {
-        let receiver = t.target.trim_start_matches('#').to_string();
+        let receiver = t.target.name().to_string();
         if !seen.insert(receiver.clone()) {
             continue;
         }
@@ -762,7 +775,7 @@ pub fn check_sender_event_coverage(
         if event.is_empty() {
             continue; // content-only <send>; no event name to match
         }
-        let receiver_name = target.trim_start_matches('#');
+        let receiver_name = target.name();
         let rx_events = match receiver_events.get(receiver_name) {
             Some(s) => s,
             None => continue, // receiver model not supplied — out of scope
@@ -780,7 +793,7 @@ pub fn check_sender_event_coverage(
     // actually deployed. A supplied-but-undeployed receiver would indicate
     // an inconsistent caller, not a real runtime violation.
     findings.retain(|w| {
-        let receiver = w.target.trim_start_matches('#');
+        let receiver = w.target.name();
         deploy
             .topology
             .values()
@@ -880,7 +893,7 @@ mod tests {
 
     fn resolved_motor_target() -> Vec<ResolvedTarget> {
         vec![ResolvedTarget {
-            target: "#motor".to_string(),
+            target: TargetId::new("#motor").unwrap(),
             events: vec!["brake.activate".to_string()],
             transport: "local".to_string(),
             extra: HashMap::new(),

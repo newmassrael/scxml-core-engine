@@ -205,7 +205,7 @@ pub struct PatternViolation {
     /// The state containing the `<send>`.
     pub state: String,
     /// The target of the `<send>` (e.g. "#motor").
-    pub target: String,
+    pub target: super::target::TargetId,
     /// The event name of the `<send>`.
     pub event: String,
     /// The detected communication pattern.
@@ -454,7 +454,7 @@ mod tests {
     fn violation_display() {
         let v = PatternViolation {
             state: "braking".to_string(),
-            target: "#motor".to_string(),
+            target: super::super::target::TargetId::new("#motor").unwrap(),
             event: "service.request.brake_status".to_string(),
             pattern: CommunicationPattern::ServiceRequest,
             required: TransportCapability::RequestReply,

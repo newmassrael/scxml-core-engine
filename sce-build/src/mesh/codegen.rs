@@ -107,9 +107,12 @@ impl ZenohSessionJson5 {
 // ── Template context ─────────────────────────────────────────
 
 /// Template context for a single resolved send target.
+/// `target` uses `TargetId` directly — `#[serde(transparent)]` makes the
+/// wire form identical to a bare string, so Jinja2 sees `"#motor"` with no
+/// String round-trip at the template boundary.
 #[derive(Debug, Clone, serde::Serialize)]
 struct TargetContext {
-    target: String,
+    target: super::target::TargetId,
     target_stem: String,
     target_snake: String,
     target_pascal: String,
@@ -203,7 +206,7 @@ fn generate_cpp_mesh(
     let target_contexts: Vec<TargetContext> = targets
         .iter()
         .map(|t| {
-            let stripped = t.target.trim_start_matches('#');
+            let stripped = t.target.name();
             let desc = transport::lookup(&t.transport).expect("transport validated");
 
             let event_patterns: Vec<EventPatternContext> = t.event_patterns.iter().map(|ep| {
