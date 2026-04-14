@@ -449,3 +449,496 @@ impl MeshError {
         }
     }
 }
+
+// ── Machine-readable diagnostic mapping ──────────────────────────
+//
+// Kept in this module (not diagnostic.rs) so variant additions to
+// MeshError and its mapping stay next to each other. The trait impl
+// lives in `crate::forge::diagnostic`; we only supply the per-variant
+// `(code, stage, key_fragments)` triple.
+
+use crate::forge::diagnostic::{
+    Diagnostic, DiagnosticCode, Fix, Location, Stage, ToDiagnostic, SCHEMA_VERSION,
+};
+
+/// FNV-1a 64-bit content hash used for diagnostic ids.
+///
+/// Duplicated (not imported) because the function in `diagnostic.rs`
+/// is private to that module — intentionally, so the schema surface
+/// stays small. The constants are a stable standard; re-using them
+/// here preserves the `fnv1a:<16hex>` id format across every error
+/// type. A future cleanup could promote a small `hash::Fnv1a64` into
+/// a shared helper; for now the cost is 20 lines to avoid widening
+/// the public API.
+fn mesh_diagnostic_id(code: DiagnosticCode, stage: Stage, key_fragments: &[String]) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut h: u64 = OFFSET;
+    let feed = |h: &mut u64, bytes: &[u8]| {
+        for &b in bytes {
+            *h ^= b as u64;
+            *h = h.wrapping_mul(PRIME);
+        }
+    };
+    feed(&mut h, code_str(code).as_bytes());
+    feed(&mut h, b"|");
+    feed(&mut h, stage_str(stage).as_bytes());
+    feed(&mut h, b"|");
+    // Mesh errors do not currently attach a file location (mesh
+    // inputs are deploy.yaml / vsomeip.json, referenced from the
+    // error's own payload fields), so the file slot is always empty.
+    feed(&mut h, b"");
+    for frag in key_fragments {
+        feed(&mut h, &[0x1f]);
+        feed(&mut h, frag.as_bytes());
+    }
+    format!("fnv1a:{h:016x}")
+}
+
+/// Match the `DiagnosticCode::as_str` private helper so mesh ids are
+/// computed over the exact same byte sequence as forge ids.
+fn code_str(c: DiagnosticCode) -> &'static str {
+    use DiagnosticCode::*;
+    match c {
+        MeshDeployRead => "mesh/deploy-read",
+        MeshDeployParse => "mesh/deploy-parse",
+        MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
+        MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
+        MeshExternalRead => "mesh/external-read",
+        MeshExternalParse => "mesh/external-parse",
+        MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
+        MeshExternalAmbiguousEventGroup => "mesh/external-ambiguous-event-group",
+        MeshExternalEmptyEventGroup => "mesh/external-empty-event-group",
+        MeshExternalNamedReferenceWithoutConfig => "mesh/external-named-reference-without-config",
+        MeshExternalReservedSomeipIdKeys => "mesh/external-reserved-someip-id-keys",
+        MeshExternalSomeipFieldOnNonSomeipTransport => "mesh/external-someip-field-on-non-someip-transport",
+        MeshExternalConflictingEventSchema => "mesh/external-conflicting-event-schema",
+        MeshExternalConflictingEventFieldKinds => "mesh/external-conflicting-event-field-kinds",
+        MeshExternalEmptyEventEntry => "mesh/external-empty-event-entry",
+        MeshTopologyUnresolvedTargets => "mesh/topology-unresolved-targets",
+        MeshTopologyMachineNotFound => "mesh/topology-machine-not-found",
+        MeshTopologyReceiverNotDeclared => "mesh/topology-receiver-not-declared",
+        MeshTopologyAbsoluteSourcePath => "mesh/topology-absolute-source-path",
+        MeshTopologyReceiverSourceRead => "mesh/topology-receiver-source-read",
+        MeshTopologyReceiverSourceParse => "mesh/topology-receiver-source-parse",
+        MeshTopologyUncoveredEvents => "mesh/topology-uncovered-events",
+        MeshTopologyPatternCapabilityViolation => "mesh/topology-pattern-capability-violation",
+        MeshTopologyMissingBindingField => "mesh/topology-missing-binding-field",
+        MeshTopologyInvalidBindingField => "mesh/topology-invalid-binding-field",
+        MeshTopologyEventBindingUnused => "mesh/topology-event-binding-unused",
+        MeshCodegenUnsupportedLanguage => "mesh/codegen-unsupported-language",
+        MeshCodegenUnsupportedTransport => "mesh/codegen-unsupported-transport",
+        MeshCodegenTemplateRead => "mesh/codegen-template-read",
+        MeshCodegenTemplateRender => "mesh/codegen-template-render",
+        MeshCodegenEventNameCollision => "mesh/codegen-event-name-collision",
+        MeshIo => "mesh/io",
+        // Non-mesh codes are not used in mesh id computation; panic
+        // here catches a wiring bug (accidentally using a forge code
+        // for a mesh error) at first use rather than silently.
+        other => panic!("mesh_diagnostic_id called with non-mesh code: {other:?}"),
+    }
+}
+
+fn stage_str(s: Stage) -> &'static str {
+    match s {
+        Stage::MeshDeploy => "mesh-deploy",
+        Stage::MeshExternal => "mesh-external",
+        Stage::MeshTopology => "mesh-topology",
+        Stage::MeshCodegen => "mesh-codegen",
+        Stage::Io => "io",
+        other => panic!("mesh_diagnostic_id called with non-mesh stage: {other:?}"),
+    }
+}
+
+struct MeshDiagFields {
+    code: DiagnosticCode,
+    stage: Stage,
+    actual: Option<String>,
+    expected: Option<Vec<String>>,
+    fix: Option<Fix>,
+    key: Vec<String>,
+}
+
+fn deploy_fields(e: &DeployError) -> MeshDiagFields {
+    match e {
+        DeployError::ReadFile { path, .. } => MeshDiagFields {
+            code: DiagnosticCode::MeshDeployRead,
+            stage: Stage::MeshDeploy,
+            actual: Some(path.clone()),
+            expected: None,
+            fix: None,
+            key: vec![path.clone()],
+        },
+        DeployError::Yaml(reason) => MeshDiagFields {
+            code: DiagnosticCode::MeshDeployParse,
+            stage: Stage::MeshDeploy,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: vec![reason.clone()],
+        },
+        DeployError::UnsupportedVersion { found, supported } => MeshDiagFields {
+            code: DiagnosticCode::MeshDeployUnsupportedVersion,
+            stage: Stage::MeshDeploy,
+            actual: Some(found.clone()),
+            expected: Some(supported.iter().map(|s| (*s).to_string()).collect()),
+            fix: None,
+            key: vec![found.clone()],
+        },
+        DeployError::DuplicateMachine { machine, devices } => MeshDiagFields {
+            code: DiagnosticCode::MeshDeployDuplicateMachine,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key: {
+                let mut k = vec![machine.clone()];
+                k.extend(devices.iter().cloned());
+                k
+            },
+        },
+    }
+}
+
+fn external_fields(e: &ExternalConfigError) -> MeshDiagFields {
+    match e {
+        ExternalConfigError::Read { path, .. } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalRead,
+            stage: Stage::MeshExternal,
+            actual: Some(path.clone()),
+            expected: None,
+            fix: None,
+            key: vec![path.clone()],
+        },
+        ExternalConfigError::Parse { path, reason } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalParse,
+            stage: Stage::MeshExternal,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: vec![path.clone(), reason.clone()],
+        },
+        ExternalConfigError::UnresolvedNames { machine, config_path, missing } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalUnresolvedNames,
+            stage: Stage::MeshExternal,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: {
+                let mut k = vec![machine.clone(), config_path.clone()];
+                k.extend(missing.iter().map(|m| format!("{}:{}", m.kind, m.name)));
+                k
+            },
+        },
+        ExternalConfigError::AmbiguousEventGroup { machine, target, event_group, count, .. } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalAmbiguousEventGroup,
+            stage: Stage::MeshExternal,
+            actual: Some(count.to_string()),
+            expected: Some(vec!["1".to_string()]),
+            fix: None,
+            key: vec![machine.clone(), target.clone(), event_group.clone()],
+        },
+        ExternalConfigError::EmptyEventGroup { machine, target, event_group, .. } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalEmptyEventGroup,
+            stage: Stage::MeshExternal,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: vec![machine.clone(), target.clone(), event_group.clone()],
+        },
+        ExternalConfigError::NamedReferenceWithoutConfig { machine, device, target } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalNamedReferenceWithoutConfig,
+            stage: Stage::MeshExternal,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: vec![machine.clone(), device.clone(), target.clone()],
+        },
+        ExternalConfigError::ReservedSomeipIdKeys { machine, target, transport, fields } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalReservedSomeipIdKeys,
+            stage: Stage::MeshExternal,
+            actual: None,
+            expected: None,
+            // Fully deterministic repair: the reserved keys were
+            // listed by the producer, and the fix is always "remove
+            // them" — never "rename" or "replace". The dotted path
+            // names the binding precisely so agents apply without
+            // re-parsing the error message.
+            fix: Some(Fix::RemoveFields {
+                location: format!("machines.{machine}.bindings.{target}"),
+                fields: fields.iter().map(|f| (*f).to_string()).collect(),
+            }),
+            key: {
+                let mut k = vec![machine.clone(), target.clone(), transport.clone()];
+                k.extend(fields.iter().map(|f| (*f).to_string()));
+                k
+            },
+        },
+        ExternalConfigError::SomeipFieldOnNonSomeipTransport { machine, target, transport, fields } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalSomeipFieldOnNonSomeipTransport,
+            stage: Stage::MeshExternal,
+            actual: Some(transport.clone()),
+            expected: Some(vec!["someip".to_string()]),
+            fix: None,
+            key: {
+                let mut k = vec![machine.clone(), target.clone(), transport.clone()];
+                k.extend(fields.iter().map(|f| (*f).to_string()));
+                k
+            },
+        },
+        ExternalConfigError::ConflictingEventSchema { machine, target, flat_fields } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalConflictingEventSchema,
+            stage: Stage::MeshExternal,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: {
+                let mut k = vec![machine.clone(), target.clone()];
+                k.extend(flat_fields.iter().map(|f| (*f).to_string()));
+                k
+            },
+        },
+        ExternalConfigError::ConflictingEventFieldKinds { machine, target, event, fields } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalConflictingEventFieldKinds,
+            stage: Stage::MeshExternal,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: {
+                let mut k = vec![machine.clone(), target.clone(), event.clone()];
+                k.extend(fields.iter().cloned());
+                k
+            },
+        },
+        ExternalConfigError::EmptyEventEntry { machine, target, event } => MeshDiagFields {
+            code: DiagnosticCode::MeshExternalEmptyEventEntry,
+            stage: Stage::MeshExternal,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: vec![machine.clone(), target.clone(), event.clone()],
+        },
+    }
+}
+
+fn topology_fields(e: &TopologyError) -> MeshDiagFields {
+    match e {
+        TopologyError::UnresolvedTargets { machine, targets } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyUnresolvedTargets,
+            stage: Stage::MeshTopology,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: {
+                let mut k = vec![machine.clone()];
+                k.extend(targets.iter().map(|t| t.as_str().to_string()));
+                k
+            },
+        },
+        TopologyError::MachineNotFound { machine, available } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyMachineNotFound,
+            stage: Stage::MeshTopology,
+            actual: Some(machine.clone()),
+            expected: Some(available.clone()),
+            fix: None,
+            key: vec![machine.clone()],
+        },
+        TopologyError::ReceiverNotDeclared { sender, target, receiver } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyReceiverNotDeclared,
+            stage: Stage::MeshTopology,
+            actual: Some(receiver.clone()),
+            expected: None,
+            fix: None,
+            key: vec![sender.clone(), target.as_str().to_string(), receiver.clone()],
+        },
+        TopologyError::AbsoluteSourcePath { machine, path } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyAbsoluteSourcePath,
+            stage: Stage::MeshTopology,
+            actual: Some(path.clone()),
+            expected: None,
+            fix: None,
+            key: vec![machine.clone(), path.clone()],
+        },
+        TopologyError::ReceiverSourceRead { machine, path, .. } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyReceiverSourceRead,
+            stage: Stage::MeshTopology,
+            actual: Some(path.clone()),
+            expected: None,
+            fix: None,
+            key: vec![machine.clone(), path.clone()],
+        },
+        TopologyError::ReceiverSourceParse { machine, path, reason } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyReceiverSourceParse,
+            stage: Stage::MeshTopology,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: vec![machine.clone(), path.clone(), reason.clone()],
+        },
+        TopologyError::UncoveredEvents { sender, findings } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyUncoveredEvents,
+            stage: Stage::MeshTopology,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: {
+                let mut k = vec![sender.clone()];
+                for f in findings {
+                    k.push(format!("{}:{}", f.target.as_str(), f.event));
+                }
+                k
+            },
+        },
+        TopologyError::PatternCapabilityViolation { sender, violations } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyPatternCapabilityViolation,
+            stage: Stage::MeshTopology,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: {
+                let mut k = vec![sender.clone()];
+                k.extend(violations.iter().map(|v| v.to_string()));
+                k
+            },
+        },
+        TopologyError::MissingBindingField { machine, target, transport, field } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyMissingBindingField,
+            stage: Stage::MeshTopology,
+            actual: None,
+            expected: None,
+            // The binding path and the missing field are both known;
+            // the fix is to add one attribute. Reuses the same Fix
+            // variant as forge ValidationError::MissingAttribute so
+            // agents share one dispatch arm.
+            fix: Some(Fix::AddAttribute {
+                element: format!("machines.{machine}.bindings.{}", target.as_str()),
+                attr: field.clone(),
+            }),
+            key: vec![
+                machine.clone(),
+                target.as_str().to_string(),
+                transport.clone(),
+                field.clone(),
+            ],
+        },
+        TopologyError::InvalidBindingField { machine, target, transport, field, reason } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyInvalidBindingField,
+            stage: Stage::MeshTopology,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: vec![
+                machine.clone(),
+                target.as_str().to_string(),
+                transport.clone(),
+                field.clone(),
+                reason.clone(),
+            ],
+        },
+        TopologyError::EventBindingUnused { machine, target, event } => MeshDiagFields {
+            code: DiagnosticCode::MeshTopologyEventBindingUnused,
+            stage: Stage::MeshTopology,
+            actual: Some(event.clone()),
+            expected: None,
+            // The unused entry is a single known key under the
+            // binding's `events:` map; removing it is the only
+            // well-defined repair. (The alternative — "rename the
+            // sender's <send event=...>" — lives elsewhere and is
+            // not local to this binding.)
+            fix: Some(Fix::RemoveFields {
+                location: format!(
+                    "machines.{machine}.bindings.{}.events",
+                    target.as_str()
+                ),
+                fields: vec![event.clone()],
+            }),
+            key: vec![machine.clone(), target.as_str().to_string(), event.clone()],
+        },
+    }
+}
+
+fn codegen_fields(e: &CodegenError) -> MeshDiagFields {
+    match e {
+        CodegenError::UnsupportedLanguage(lang) => MeshDiagFields {
+            code: DiagnosticCode::MeshCodegenUnsupportedLanguage,
+            stage: Stage::MeshCodegen,
+            actual: Some(lang.clone()),
+            expected: None,
+            fix: None,
+            key: vec![lang.clone()],
+        },
+        CodegenError::UnsupportedTransport { transport, target } => MeshDiagFields {
+            code: DiagnosticCode::MeshCodegenUnsupportedTransport,
+            stage: Stage::MeshCodegen,
+            actual: Some(transport.clone()),
+            expected: None,
+            fix: None,
+            key: vec![transport.clone(), target.as_str().to_string()],
+        },
+        CodegenError::TemplateRead { path, .. } => MeshDiagFields {
+            code: DiagnosticCode::MeshCodegenTemplateRead,
+            stage: Stage::MeshCodegen,
+            actual: Some(path.clone()),
+            expected: None,
+            fix: None,
+            key: vec![path.clone()],
+        },
+        CodegenError::TemplateRender(detail) => MeshDiagFields {
+            code: DiagnosticCode::MeshCodegenTemplateRender,
+            stage: Stage::MeshCodegen,
+            actual: None,
+            expected: None,
+            fix: None,
+            key: vec![detail.clone()],
+        },
+        CodegenError::EventNameCollision { target, suffix, events } => MeshDiagFields {
+            code: DiagnosticCode::MeshCodegenEventNameCollision,
+            stage: Stage::MeshCodegen,
+            actual: Some(suffix.clone()),
+            expected: None,
+            fix: None,
+            key: {
+                let mut k = vec![target.as_str().to_string(), suffix.clone()];
+                k.extend(events.iter().cloned());
+                k
+            },
+        },
+    }
+}
+
+impl ToDiagnostic for MeshError {
+    fn exit_code(&self) -> i32 {
+        MeshError::exit_code(self)
+    }
+
+    fn to_diagnostic(&self) -> Diagnostic {
+        let fields = match self {
+            MeshError::Deploy(e) => deploy_fields(e),
+            MeshError::External(e) => external_fields(e),
+            MeshError::Topology(e) => topology_fields(e),
+            MeshError::Codegen(e) => codegen_fields(e),
+            MeshError::Io { path, .. } => MeshDiagFields {
+                code: DiagnosticCode::MeshIo,
+                stage: Stage::Io,
+                actual: None,
+                expected: None,
+                fix: None,
+                key: vec![path.display().to_string()],
+            },
+        };
+
+        let id = mesh_diagnostic_id(fields.code, fields.stage, &fields.key);
+        Diagnostic {
+            schema_version: SCHEMA_VERSION,
+            id,
+            code: fields.code,
+            stage: fields.stage,
+            spec: None,
+            message: self.to_string(),
+            location: None::<Location>,
+            expected: fields.expected,
+            actual: fields.actual,
+            fix: fields.fix,
+        }
+    }
+}

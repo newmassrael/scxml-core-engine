@@ -65,4 +65,15 @@ name = "sce-codegen"
 path = "src/bin/sce_codegen.rs"
 required-features = ["cli"]
 
+# End-to-end CLI contract test. Depends on the sce-codegen binary being
+# built, which requires the `cli` feature. Declaring the dependency
+# explicitly here ensures `cargo test` (with --features cli) builds
+# both the test and the binary; running tests without the feature
+# silently skips this target rather than dangling with a missing
+# CARGO_BIN_EXE_sce-codegen env var.
+[[test]]
+name = "error_format_json"
+path = "tests/error_format_json.rs"
+required-features = ["cli"]
+
 

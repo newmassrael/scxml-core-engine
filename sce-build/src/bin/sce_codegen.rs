@@ -12,22 +12,360 @@
 //   fix-scxml-name — Fix SCXML name attribute (replaces fix_scxml_name.py)
 //   read-metadata  — Extract metadata description (replaces read_test_metadata.py)
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use sce_build::analyzer;
 use sce_build::filters;
+use sce_build::forge::diagnostic::{Diagnostic, DiagnosticCode, Stage, ToDiagnostic, SCHEMA_VERSION};
+use sce_build::forge::error::ForgeError;
+
+/// CLI-driver errors that do not originate in a compiler pipeline.
+///
+/// These cover argument parsing, workspace layout, and I/O at the
+/// CLI boundary — paths that the original implementation handled
+/// with ad-hoc `eprintln!` + `exit(1)` calls. Pulling them into a
+/// structured enum is what lets every subcommand respect
+/// `--error-format=json` uniformly: the flag is not a contract if
+/// half the failure modes still emit prose.
+///
+/// Exit codes match the existing informal convention (raw `exit(1)`
+/// for CLI-boundary failures) unless a finer signal helps triage.
+#[derive(Debug, thiserror::Error)]
+enum CliError {
+    #[error("Unknown language: {lang}. Use rust, cpp, kotlin, or go.")]
+    UnknownLanguage { lang: String },
+
+    #[error("{lang} codegen is not yet supported")]
+    UnsupportedLanguage { lang: String },
+
+    #[error("Cannot read {path}: {source}")]
+    ReadInput { path: String, source: std::io::Error },
+
+    #[error("Cannot write {path}: {source}")]
+    WriteOutput { path: String, source: std::io::Error },
+
+    #[error("Cannot create output directory {path}: {source}")]
+    CreateOutputDir { path: String, source: std::io::Error },
+
+    #[error("Parse error: {detail}")]
+    ScxmlParse { detail: String },
+
+    #[error("{stage}: {detail}")]
+    ScxmlGenerate { stage: &'static str, detail: String },
+
+    #[error("Cannot generate static code for '{name}' (dynamic features)")]
+    DynamicFeatures { name: String },
+
+    #[error("No description field found in {path}")]
+    MissingMetadataField { path: String },
+
+    #[error("Not a directory: {path}")]
+    NotADirectory { path: String },
+
+    #[error("unknown --format {value}; expected {expected}")]
+    InvalidFormatOption { value: String, expected: String },
+
+    #[error("JSON serialization failed: {detail}")]
+    JsonSerialization { detail: String },
+
+    #[error("Cannot find project root. Run from project directory or set --registry/--resources.")]
+    ProjectRootNotFound,
+
+    #[error("--format-style file not found: {path}")]
+    FormatStyleNotFound { path: String },
+
+    #[error("No <scxml> tag found in {path}")]
+    NoScxmlTag { path: String },
+}
+
+impl CliError {
+    fn cli_exit_code(&self) -> i32 {
+        // All CLI-boundary errors share a single exit code (20) so
+        // build systems that branch on 0 / non-zero keep working
+        // while agents use the structured `code` field for finer
+        // routing. Dedicated codes would be over-fitting: the
+        // user-visible distinctions (unknown language vs missing
+        // file) aren't pipeline stages in the forge/mesh sense.
+        20
+    }
+}
+
+fn cli_diag_id(code: DiagnosticCode, key: &[String]) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut h: u64 = OFFSET;
+    let feed = |h: &mut u64, bytes: &[u8]| {
+        for &b in bytes { *h ^= b as u64; *h = h.wrapping_mul(PRIME); }
+    };
+    // Mirror the canonical key format used by forge/mesh: code |
+    // stage | file | frag\x1ffrag... . CLI errors have no source
+    // file so that slot stays empty.
+    feed(&mut h, cli_code_str(code).as_bytes());
+    feed(&mut h, b"|cli|");
+    for f in key {
+        feed(&mut h, &[0x1f]);
+        feed(&mut h, f.as_bytes());
+    }
+    format!("fnv1a:{h:016x}")
+}
+
+fn cli_code_str(c: DiagnosticCode) -> &'static str {
+    use DiagnosticCode::*;
+    match c {
+        CliUnknownLanguage => "cli/unknown-language",
+        CliUnsupportedLanguage => "cli/unsupported-language",
+        CliReadInput => "cli/read-input",
+        CliWriteOutput => "cli/write-output",
+        CliCreateOutputDir => "cli/create-output-dir",
+        CliScxmlParse => "cli/scxml-parse",
+        CliScxmlGenerate => "cli/scxml-generate",
+        CliDynamicFeatures => "cli/dynamic-features",
+        CliMissingMetadataField => "cli/missing-metadata-field",
+        CliNotADirectory => "cli/not-a-directory",
+        CliInvalidFormatOption => "cli/invalid-format-option",
+        CliJsonSerialization => "cli/json-serialization",
+        CliProjectRootNotFound => "cli/project-root-not-found",
+        CliFormatStyleNotFound => "cli/format-style-not-found",
+        CliNoScxmlTag => "cli/no-scxml-tag",
+        other => panic!("cli_diag_id: non-cli code {other:?}"),
+    }
+}
+
+impl ToDiagnostic for CliError {
+    fn exit_code(&self) -> i32 {
+        self.cli_exit_code()
+    }
+
+    fn to_diagnostic(&self) -> Diagnostic {
+        let (code, key, expected, actual) = match self {
+            CliError::UnknownLanguage { lang } => (
+                DiagnosticCode::CliUnknownLanguage,
+                vec![lang.clone()],
+                Some(vec!["rust".into(), "cpp".into(), "kotlin".into(), "go".into()]),
+                Some(lang.clone()),
+            ),
+            CliError::UnsupportedLanguage { lang } => (
+                DiagnosticCode::CliUnsupportedLanguage,
+                vec![lang.clone()],
+                None,
+                Some(lang.clone()),
+            ),
+            CliError::ReadInput { path, .. } => (
+                DiagnosticCode::CliReadInput,
+                vec![path.clone()],
+                None,
+                Some(path.clone()),
+            ),
+            CliError::WriteOutput { path, .. } => (
+                DiagnosticCode::CliWriteOutput,
+                vec![path.clone()],
+                None,
+                Some(path.clone()),
+            ),
+            CliError::CreateOutputDir { path, .. } => (
+                DiagnosticCode::CliCreateOutputDir,
+                vec![path.clone()],
+                None,
+                Some(path.clone()),
+            ),
+            CliError::ScxmlParse { detail } => (
+                DiagnosticCode::CliScxmlParse,
+                vec![detail.clone()],
+                None,
+                None,
+            ),
+            CliError::ScxmlGenerate { stage, detail } => (
+                DiagnosticCode::CliScxmlGenerate,
+                vec![(*stage).to_string(), detail.clone()],
+                None,
+                None,
+            ),
+            CliError::DynamicFeatures { name } => (
+                DiagnosticCode::CliDynamicFeatures,
+                vec![name.clone()],
+                None,
+                Some(name.clone()),
+            ),
+            CliError::MissingMetadataField { path } => (
+                DiagnosticCode::CliMissingMetadataField,
+                vec![path.clone()],
+                None,
+                Some(path.clone()),
+            ),
+            CliError::NotADirectory { path } => (
+                DiagnosticCode::CliNotADirectory,
+                vec![path.clone()],
+                None,
+                Some(path.clone()),
+            ),
+            CliError::InvalidFormatOption { value, expected } => (
+                DiagnosticCode::CliInvalidFormatOption,
+                vec![value.clone(), expected.clone()],
+                Some(expected.split('|').map(str::to_string).collect()),
+                Some(value.clone()),
+            ),
+            CliError::JsonSerialization { detail } => (
+                DiagnosticCode::CliJsonSerialization,
+                vec![detail.clone()],
+                None,
+                None,
+            ),
+            CliError::ProjectRootNotFound => (
+                DiagnosticCode::CliProjectRootNotFound,
+                Vec::new(),
+                None,
+                None,
+            ),
+            CliError::FormatStyleNotFound { path } => (
+                DiagnosticCode::CliFormatStyleNotFound,
+                vec![path.clone()],
+                None,
+                Some(path.clone()),
+            ),
+            CliError::NoScxmlTag { path } => (
+                DiagnosticCode::CliNoScxmlTag,
+                vec![path.clone()],
+                None,
+                Some(path.clone()),
+            ),
+        };
+        Diagnostic {
+            schema_version: SCHEMA_VERSION,
+            id: cli_diag_id(code, &key),
+            code,
+            stage: Stage::Cli,
+            spec: None,
+            message: self.to_string(),
+            location: None,
+            expected,
+            actual,
+            fix: None,
+        }
+    }
+}
+
+/// Write `contents` to `path` or emit a structured `WriteOutput`
+/// diagnostic and terminate. Centralising the write+exit pattern
+/// keeps every file-writing call-site one line and guarantees
+/// `--error-format=json` is honoured uniformly.
+fn write_or_exit<P: AsRef<std::path::Path>, C: AsRef<[u8]>>(
+    fmt: ErrorFormat,
+    path: P,
+    contents: C,
+) {
+    let path = path.as_ref();
+    if let Err(e) = fs::write(path, contents) {
+        fmt.emit_and_exit(
+            &CliError::WriteOutput { path: path.display().to_string(), source: e },
+            "",
+        );
+    }
+}
+
+/// Write a `Diagnostic` as a single NDJSON record to stderr.
+///
+/// The wire contract is *one JSON object per line*. If the diagnostic
+/// itself fails to serialize — only possible under an OOM-class
+/// failure given our schema has no floats or non-UTF-8 bytes — fall
+/// back to `Diagnostic::meta_failure`, which still flows through
+/// serde. Hand-built JSON literals are forbidden: they bypass the
+/// schema and drift silently when the struct changes.
+fn emit_ndjson(diag: &Diagnostic) {
+    match serde_json::to_string(diag) {
+        Ok(line) => eprintln!("{line}"),
+        Err(e) => {
+            let meta = Diagnostic::meta_failure(format!("diagnostic serialization failed: {e}"));
+            // Second serde pass on a schema-identical value. If this
+            // also fails the process is terminally wedged; emit the
+            // shortest legal NDJSON record so downstream parsers at
+            // least advance past the line.
+            let line = serde_json::to_string(&meta)
+                .unwrap_or_else(|_| "{\"v\":1,\"id\":\"fnv1a:0\",\"code\":\"io/filesystem\",\"stage\":\"io\",\"message\":\"double serialization failure\"}".to_string());
+            eprintln!("{line}");
+        }
+    }
+}
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
+
+/// How diagnostics are rendered to stderr.
+///
+/// `Human` is the default and preserves existing CLI output verbatim.
+/// `Json` is the machine-readable contract consumed by upstream agents
+/// (LangGraph triage, IDE LSP bridges, CI bots). In JSON mode each
+/// diagnostic is a single NDJSON line on stderr; stdout continues to
+/// carry artifact paths and progress text so build systems that parse
+/// stdout are unaffected.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ErrorFormat {
+    Human,
+    Json,
+}
+
+/// Process-wide error format, installed once in `main` and read by
+/// every termination path. Using a `OnceLock` (instead of threading
+/// `error_format` through every helper signature) keeps call-sites
+/// one line and guarantees that no subcommand can forget to apply
+/// the flag. Read-only after install — defensible for a one-shot
+/// CLI binary.
+static ERROR_FORMAT: OnceLock<ErrorFormat> = OnceLock::new();
+
+/// Resolve the active error format. If `main` neglected to install
+/// one (e.g. a helper ran before `Cli::parse`), fall back to human
+/// so failures are still observable.
+fn current_error_format() -> ErrorFormat {
+    ERROR_FORMAT.get().copied().unwrap_or(ErrorFormat::Human)
+}
+
+impl ErrorFormat {
+    /// Emit any [`ToDiagnostic`] error and terminate with its exit
+    /// code. Generic over the error family so ForgeError, MeshError,
+    /// and CLI-level errors all funnel through the same code path —
+    /// a subcommand cannot accidentally render JSON on stdout or
+    /// swallow an exit code without failing compilation.
+    fn emit_and_exit<E: ToDiagnostic + std::fmt::Display>(self, err: &E, human_prefix: &str) -> ! {
+        match self {
+            ErrorFormat::Human => {
+                eprintln!("{human_prefix}{err}");
+            }
+            ErrorFormat::Json => emit_ndjson(&err.to_diagnostic()),
+        }
+        std::process::exit(err.exit_code());
+    }
+
+    /// Convenience shim for the most common case: a forge-pipeline
+    /// error that the legacy CLI reported with the "Forge codegen
+    /// error: " banner. Kept so call-sites read the same as before.
+    fn emit_forge_and_exit(self, err: &ForgeError) -> ! {
+        self.emit_and_exit(err, "Forge codegen error: ")
+    }
+}
+
+/// Emit a CLI-level error under the currently-installed format and
+/// exit. One-liner call-site for every raw-exit replacement.
+fn cli_exit(err: CliError) -> ! {
+    current_error_format().emit_and_exit(&err, "")
+}
 
 // ── CLI Definition ──────────────────────────────────────────────
 
 #[derive(Parser)]
 #[command(name = "sce-codegen", about = "SCE SCXML Code Generator")]
 struct Cli {
+    /// Diagnostic output format on stderr. `human` (default) preserves
+    /// the existing CLI text. `json` emits one NDJSON record per error
+    /// for machine consumption; stdout output is unchanged. The flag
+    /// is global — every subcommand routes failure through the same
+    /// emitter (`cli_exit` / `ErrorFormat::emit_and_exit`), so agents
+    /// see a uniform wire contract regardless of which subcommand ran.
+    #[arg(long, value_enum, default_value_t = ErrorFormat::Human, global = true)]
+    error_format: ErrorFormat,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -146,6 +484,12 @@ enum Commands {
 
 fn main() {
     let cli = Cli::parse();
+    let error_format = cli.error_format;
+    // Install the format once so every termination helper can read
+    // it without plumbing through function signatures. Tests that
+    // launch the binary inherit this install via the normal CLI
+    // parse; in-process helpers never run before this point.
+    let _ = ERROR_FORMAT.set(error_format);
     match cli.command {
         Commands::Generate {
             scxml,
@@ -167,6 +511,7 @@ fn main() {
             format_style.as_deref(),
             no_format,
             deploy.as_deref(),
+            error_format,
         ),
         Commands::GenerateW3c {
             language,
@@ -211,10 +556,10 @@ fn cmd_generate(
     format_style: Option<&str>,
     no_format: bool,
     deploy_path: Option<&str>,
+    error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
-        eprintln!("Unknown language: {language}. Use rust, cpp, kotlin, or go.");
-        std::process::exit(1);
+        error_format.emit_and_exit(&CliError::UnknownLanguage { lang: language.to_string() }, "")
     });
 
     // C++ formatter: created once and reused for all output files.
@@ -223,8 +568,10 @@ fn cmd_generate(
     // SCE Forge: detect non-statechart kind and route to forge pipeline.
     // Read the file once; the same content is reused for both detection and compilation.
     let scxml_content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
-        eprintln!("Cannot read {scxml_path}: {e}");
-        std::process::exit(1);
+        error_format.emit_and_exit(
+            &CliError::ReadInput { path: scxml_path.to_string(), source: e },
+            "",
+        )
     });
 
     if sce_build::is_forge_document(&scxml_content) {
@@ -252,8 +599,10 @@ fn cmd_generate(
                 for (filename, code) in &files {
                     let path = out.join(filename);
                     fs::write(&path, code).unwrap_or_else(|e| {
-                        eprintln!("Write error: {e}");
-                        std::process::exit(1);
+                        error_format.emit_and_exit(
+                            &CliError::WriteOutput { path: path.display().to_string(), source: e },
+                            "",
+                        )
                     });
                     println!("Generated: {}", path.display());
                 }
@@ -269,10 +618,7 @@ fn cmd_generate(
                 println!("Needs ScriptEngine: false");
                 return;
             }
-            Err(e) => {
-                eprintln!("Forge codegen error: {e}");
-                std::process::exit(e.exit_code());
-            }
+            Err(e) => error_format.emit_forge_and_exit(&e),
         }
     }
 
@@ -281,10 +627,10 @@ fn cmd_generate(
     let mut parser = SCXMLParser::new();
     let mut model = match parser.parse_file(scxml_path) {
         Ok(m) => m,
-        Err(e) => {
-            eprintln!("Parse error: {e}");
-            std::process::exit(1);
-        }
+        Err(e) => error_format.emit_and_exit(
+            &CliError::ScxmlParse { detail: e.to_string() },
+            "",
+        ),
     };
 
     if as_child {
@@ -316,18 +662,13 @@ fn cmd_generate(
                     name = input_stem, pascal = pascal
                 );
                 let inl = "// W3C SCXML 5.8: Document rejected\n";
-                fs::write(out.join(format!("{input_stem}_sm.h")), &header)
-                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
-                fs::write(out.join(format!("{input_stem}_sm.inl")), inl)
-                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+                write_or_exit(error_format, out.join(format!("{input_stem}_sm.h")), &header);
+                write_or_exit(error_format, out.join(format!("{input_stem}_sm.inl")), inl);
             }
             Language::Rust => {
-                let stub = format!(
-                    "// W3C SCXML 5.8: Document rejected\n\
-                     // This state machine was rejected at parse time.\n"
-                );
-                fs::write(out.join(format!("{input_stem}_sm.rs")), &stub)
-                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+                let stub = "// W3C SCXML 5.8: Document rejected\n\
+                     // This state machine was rejected at parse time.\n";
+                write_or_exit(error_format, out.join(format!("{input_stem}_sm.rs")), stub);
             }
             Language::Kotlin => {
                 let stub = format!(
@@ -335,8 +676,7 @@ fn cmd_generate(
                      package com.sce.generated.{name}\n",
                     name = input_stem
                 );
-                fs::write(out.join(format!("{input_stem}Sm.kt")), &stub)
-                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+                write_or_exit(error_format, out.join(format!("{input_stem}Sm.kt")), &stub);
             }
             Language::Go => {
                 let stub = format!(
@@ -344,13 +684,11 @@ fn cmd_generate(
                      package {name}\n",
                     name = input_stem
                 );
-                fs::write(out.join(format!("{input_stem}_sm.go")), &stub)
-                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+                write_or_exit(error_format, out.join(format!("{input_stem}_sm.go")), &stub);
             }
             Language::Python => {
                 let stub = "# W3C SCXML 5.8: Document rejected\n";
-                fs::write(out.join(format!("{input_stem}_sm.py")), stub)
-                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+                write_or_exit(error_format, out.join(format!("{input_stem}_sm.py")), stub);
             }
         }
         println!("Document rejected (W3C SCXML 5.8): {}", model.name);
@@ -359,9 +697,14 @@ fn cmd_generate(
     }
 
     if !analyzer::can_generate_static(&model) {
-        eprintln!("Cannot generate static code for '{}' (dynamic features)", model.name);
+        // Retain the legacy stdout hint so CMake-side filters that
+        // grep for "Reason:" continue to match. The structured error
+        // lands on stderr via emit_and_exit.
         println!("Reason: static generation not possible");
-        std::process::exit(1);
+        error_format.emit_and_exit(
+            &CliError::DynamicFeatures { name: model.name.clone() },
+            "",
+        );
     }
 
     resolve_source_path(&mut model, Path::new(scxml_path));
@@ -374,8 +717,10 @@ fn cmd_generate(
     let output = match lang {
         Language::Rust => {
             let code = sce_build::generator::generate(&model, &template_dir).unwrap_or_else(|e| {
-                eprintln!("Generation error: {e}");
-                std::process::exit(1);
+                error_format.emit_and_exit(
+                    &CliError::ScxmlGenerate { stage: "rust", detail: e.to_string() },
+                    "",
+                )
             });
             GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
@@ -383,14 +728,18 @@ fn cmd_generate(
         }
         Language::Cpp => {
             sce_build::generator::generate_cpp(&model, &template_dir, input_stem).unwrap_or_else(|e| {
-                eprintln!("Generation error: {e}");
-                std::process::exit(1);
+                error_format.emit_and_exit(
+                    &CliError::ScxmlGenerate { stage: "cpp", detail: e.to_string() },
+                    "",
+                )
             })
         }
         Language::Kotlin => {
             let code = sce_build::generator::generate_kotlin(&model, &template_dir).unwrap_or_else(|e| {
-                eprintln!("Generation error: {e}");
-                std::process::exit(1);
+                error_format.emit_and_exit(
+                    &CliError::ScxmlGenerate { stage: "kotlin", detail: e.to_string() },
+                    "",
+                )
             });
             GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
@@ -398,33 +747,36 @@ fn cmd_generate(
         }
         Language::Go => {
             let code = sce_build::generator::generate_go(&model, &template_dir).unwrap_or_else(|e| {
-                eprintln!("Generation error: {e}");
-                std::process::exit(1);
+                error_format.emit_and_exit(
+                    &CliError::ScxmlGenerate { stage: "go", detail: e.to_string() },
+                    "",
+                )
             });
             GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
             }
         }
         Language::Python => {
-            eprintln!("Python statechart codegen is not yet supported");
-            std::process::exit(1);
+            error_format.emit_and_exit(
+                &CliError::UnsupportedLanguage { lang: "Python statechart".into() },
+                "",
+            )
         }
     };
 
     let out_path = Path::new(output_dir);
     fs::create_dir_all(out_path).unwrap_or_else(|e| {
-        eprintln!("Cannot create output directory: {e}");
-        std::process::exit(1);
+        error_format.emit_and_exit(
+            &CliError::CreateOutputDir { path: out_path.display().to_string(), source: e },
+            "",
+        )
     });
 
     let files = maybe_format_files(output.files, &cpp_formatter);
     let mut output_paths = Vec::new();
     for (filename, code) in &files {
         let file_path = out_path.join(filename);
-        fs::write(&file_path, code).unwrap_or_else(|e| {
-            eprintln!("Cannot write {}: {e}", file_path.display());
-            std::process::exit(1);
-        });
+        write_or_exit(error_format, &file_path, code);
         println!("  Generated: {}", file_path.display());
         output_paths.push(file_path);
     }
@@ -436,10 +788,7 @@ fn cmd_generate(
     let children = collect_invoke_child_names(&model);
     if lang == Language::Cpp && !children.is_empty() {
         let children_file = out_path.join(format!("{input_stem}_children.txt"));
-        fs::write(&children_file, children.join("\n") + "\n").unwrap_or_else(|e| {
-            eprintln!("Cannot write children file: {e}");
-            std::process::exit(1);
-        });
+        write_or_exit(error_format, &children_file, children.join("\n") + "\n");
     }
     // W3C SCXML 6.4: Copy static invoke child SCXML files to the output
     // directory so CMake's post-processing script can find them next to the
@@ -469,18 +818,12 @@ fn cmd_generate(
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
                 for (filename, code) in &mesh_files {
                     let file_path = out_path.join(filename);
-                    fs::write(&file_path, code).unwrap_or_else(|e| {
-                        eprintln!("Cannot write {}: {e}", file_path.display());
-                        std::process::exit(1);
-                    });
+                    write_or_exit(error_format, &file_path, code);
                     println!("  Generated: {}", file_path.display());
                     output_paths.push(file_path);
                 }
             }
-            Err(e) => {
-                eprintln!("Mesh error: {e}");
-                std::process::exit(e.exit_code());
-            }
+            Err(e) => error_format.emit_and_exit(&e, "Mesh error: "),
         }
     }
 
@@ -641,8 +984,7 @@ fn write_depfile(depfile_path: &str, output_paths: &[PathBuf], template_dir: &Pa
         }
         content.push('\n');
         fs::write(depfile_path, content).unwrap_or_else(|e| {
-            eprintln!("Cannot write depfile {depfile_path}: {e}");
-            std::process::exit(1);
+            cli_exit(CliError::WriteOutput { path: depfile_path.to_string(), source: e })
         });
     }
 }
@@ -687,10 +1029,9 @@ fn cmd_generate_w3c(
     format_style: Option<&str>,
     no_format: bool,
 ) {
-    let lang: Language = language.parse().unwrap_or_else(|_| {
-        eprintln!("Unknown language: {language}. Use cpp, rust, kotlin, or go.");
-        std::process::exit(1);
-    });
+    let lang: Language = language
+        .parse()
+        .unwrap_or_else(|_| cli_exit(CliError::UnknownLanguage { lang: language.to_string() }));
 
     // Resolve project root
     let project_root = find_project_root();
@@ -706,10 +1047,7 @@ fn cmd_generate_w3c(
         Language::Go => Box::new(GoBackend::new(&project_root)),
         Language::Kotlin => Box::new(KotlinBackend::new(&project_root)),
         Language::Cpp => Box::new(CppBackend::new(&project_root)),
-        Language::Python => {
-            eprintln!("Python W3C test generation is not yet supported");
-            std::process::exit(1);
-        }
+        Language::Python => cli_exit(CliError::UnsupportedLanguage { lang: "Python W3C".into() }),
     };
 
     // C++ formatter: created once and reused for all generated tests.
@@ -729,15 +1067,13 @@ fn find_project_root() -> PathBuf {
     if cwd.join("tests/CMakeLists.txt").exists() {
         return cwd;
     }
-    eprintln!("Cannot find project root. Run from project directory or set --registry/--resources.");
-    std::process::exit(1);
+    cli_exit(CliError::ProjectRootNotFound);
 }
 
 /// Parse test registrations from CMakeLists.txt.
 fn parse_cmake_tests(cmake_file: &Path) -> BTreeMap<String, TestInfo> {
     let content = fs::read_to_string(cmake_file).unwrap_or_else(|e| {
-        eprintln!("Cannot read {}: {e}", cmake_file.display());
-        std::process::exit(1);
+        cli_exit(CliError::ReadInput { path: cmake_file.display().to_string(), source: e })
     });
 
     let re = regex::Regex::new(
@@ -1156,8 +1492,10 @@ fn generate_w3c_unified(
                             backend.sm_output_base().to_path_buf()
                         };
                         fs::create_dir_all(&test_mod_dir).unwrap_or_else(|e| {
-                            eprintln!("Cannot create dir: {e}");
-                            std::process::exit(1);
+                            cli_exit(CliError::CreateOutputDir {
+                                path: test_mod_dir.display().to_string(),
+                                source: e,
+                            })
                         });
 
                         // Collect parent code for child reference checking
@@ -1287,7 +1625,23 @@ fn generate_w3c_unified(
     }
 
     if !failed.is_empty() {
-        std::process::exit(1);
+        // Per-test failures are already printed above in human mode.
+        // In JSON mode we still emit a single structured summary so
+        // agents see a record (not just a silent non-zero exit) and
+        // can dedup via the id — the failed list is part of the key.
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "w3c-batch",
+            detail: format!(
+                "{} of {} tests failed: {}",
+                failed.len(),
+                test_ids.len(),
+                failed
+                    .iter()
+                    .map(|(id, _)| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        });
     }
 }
 
@@ -1786,8 +2140,7 @@ impl W3cBackend for CppBackend {
 
 fn cmd_fix_scxml_name(scxml_path: &str, name: &str) {
     let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
-        eprintln!("Cannot read {scxml_path}: {e}");
-        std::process::exit(1);
+        cli_exit(CliError::ReadInput { path: scxml_path.to_string(), source: e })
     });
 
     // Find first <scxml...> tag
@@ -1802,15 +2155,11 @@ fn cmd_fix_scxml_name(scxml_path: &str, name: &str) {
             let with_name = cleaned.replacen("<scxml", &format!("<scxml name=\"{name}\""), 1);
             format!("{}{}{}", &content[..m.start()], with_name, &content[m.end()..])
         }
-        None => {
-            eprintln!("No <scxml> tag found in {scxml_path}");
-            std::process::exit(1);
-        }
+        None => cli_exit(CliError::NoScxmlTag { path: scxml_path.to_string() }),
     };
 
     fs::write(scxml_path, fixed).unwrap_or_else(|e| {
-        eprintln!("Cannot write {scxml_path}: {e}");
-        std::process::exit(1);
+        cli_exit(CliError::WriteOutput { path: scxml_path.to_string(), source: e })
     });
 }
 
@@ -1818,8 +2167,7 @@ fn cmd_fix_scxml_name(scxml_path: &str, name: &str) {
 
 fn cmd_read_metadata(metadata_file: &str) {
     let content = fs::read_to_string(metadata_file).unwrap_or_else(|e| {
-        eprintln!("ERROR: Cannot read {metadata_file}: {e}");
-        std::process::exit(1);
+        cli_exit(CliError::ReadInput { path: metadata_file.to_string(), source: e })
     });
 
     for line in content.lines() {
@@ -1831,8 +2179,7 @@ fn cmd_read_metadata(metadata_file: &str) {
         }
     }
 
-    eprintln!("ERROR: No description field found in {metadata_file}");
-    std::process::exit(1);
+    cli_exit(CliError::MissingMetadataField { path: metadata_file.to_string() });
 }
 
 // ── Subcommand: manifest ───────────────────────────────────────
@@ -1840,18 +2187,14 @@ fn cmd_read_metadata(metadata_file: &str) {
 fn cmd_manifest(dir: &str) {
     let dir_path = Path::new(dir);
     if !dir_path.is_dir() {
-        eprintln!("ERROR: Not a directory: {dir}");
-        std::process::exit(1);
+        cli_exit(CliError::NotADirectory { path: dir.to_string() });
     }
 
-    let manifest = sce_build::build_forge_manifest(dir_path).unwrap_or_else(|e| {
-        eprintln!("ERROR: {e}");
-        std::process::exit(e.exit_code());
-    });
+    let manifest = sce_build::build_forge_manifest(dir_path)
+        .unwrap_or_else(|e| current_error_format().emit_and_exit(&e, "Forge codegen error: "));
 
     let json = serde_json::to_string_pretty(&manifest).unwrap_or_else(|e| {
-        eprintln!("ERROR: JSON serialization failed: {e}");
-        std::process::exit(1);
+        cli_exit(CliError::JsonSerialization { detail: e.to_string() })
     });
 
     println!("{json}");
@@ -1860,44 +2203,48 @@ fn cmd_manifest(dir: &str) {
 // ── Subcommand: generate-conformance ───────────────────────────
 
 fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &str) {
-    let lang: Language = language.parse().unwrap_or_else(|_| {
-        eprintln!("Unknown language: {language}. Use rust, cpp, kotlin, go, or python.");
-        std::process::exit(1);
-    });
+    let lang: Language = language
+        .parse()
+        .unwrap_or_else(|_| cli_exit(CliError::UnknownLanguage { lang: language.to_string() }));
 
     let manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
         .unwrap_or_else(|e| {
-            eprintln!("ERROR: {e}");
-            std::process::exit(1);
+            cli_exit(CliError::ReadInput {
+                path: manifest_path.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+            })
         });
 
     let template_base = sce_build::find_template_base();
-    // Resource dir is the sibling of the manifest's parent (manifest lives at
-    // tests/forge/conformance/, SCXML files at tests/forge/resources/).
     let resource_dir = Path::new(manifest_path)
         .parent()
         .and_then(|p| p.parent())
         .map(|p| p.join("resources"))
         .unwrap_or_else(|| {
-            eprintln!("ERROR: cannot derive resource_dir from manifest path {manifest_path}");
-            std::process::exit(1);
+            cli_exit(CliError::ReadInput {
+                path: manifest_path.to_string(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "cannot derive resource_dir from manifest path",
+                ),
+            })
         });
     let rendered =
         sce_build::conformance::render_harness(&manifest, lang, &template_base, &resource_dir)
             .unwrap_or_else(|e| {
-                eprintln!("ERROR: {e}");
-                std::process::exit(1);
+                cli_exit(CliError::ScxmlGenerate {
+                    stage: "conformance",
+                    detail: e.to_string(),
+                })
             });
 
     let out_dir = Path::new(output_dir);
     fs::create_dir_all(out_dir).unwrap_or_else(|e| {
-        eprintln!("ERROR: create {}: {e}", out_dir.display());
-        std::process::exit(1);
+        cli_exit(CliError::CreateOutputDir { path: out_dir.display().to_string(), source: e })
     });
     let out_path = out_dir.join(sce_build::conformance::harness_filename(lang));
     fs::write(&out_path, rendered).unwrap_or_else(|e| {
-        eprintln!("ERROR: write {}: {e}", out_path.display());
-        std::process::exit(1);
+        cli_exit(CliError::WriteOutput { path: out_path.display().to_string(), source: e })
     });
     println!("Generated conformance harness: {}", out_path.display());
 }
@@ -1907,8 +2254,10 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
 fn cmd_list_fixtures(manifest_path: &str, format: &str) {
     let manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
         .unwrap_or_else(|e| {
-            eprintln!("ERROR: {e}");
-            std::process::exit(1);
+            cli_exit(CliError::ReadInput {
+                path: manifest_path.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+            })
         });
     let names: Vec<&str> = manifest.fixtures.iter().map(|f| f.name.as_str()).collect();
     match format {
@@ -1919,10 +2268,10 @@ fn cmd_list_fixtures(manifest_path: &str, format: &str) {
         }
         "cmake" => println!("{}", names.join(";")),
         "space" => println!("{}", names.join(" ")),
-        other => {
-            eprintln!("ERROR: unknown --format {other}; expected plain|cmake|space");
-            std::process::exit(1);
-        }
+        other => cli_exit(CliError::InvalidFormatOption {
+            value: other.to_string(),
+            expected: "plain|cmake|space".into(),
+        }),
     }
 }
 
@@ -1951,8 +2300,7 @@ fn create_cpp_formatter(
             None
         }
         Err(sce_build::formatter::FormatError::StyleNotFound(p)) => {
-            eprintln!("  Error: --format-style file not found: {p}");
-            std::process::exit(1);
+            cli_exit(CliError::FormatStyleNotFound { path: p });
         }
         Err(e) => {
             eprintln!("  Warning: formatter init failed: {e}");
@@ -1986,8 +2334,7 @@ fn write_if_changed(path: &Path, content: &str) -> bool {
         fs::create_dir_all(parent).ok();
     }
     fs::write(path, content).unwrap_or_else(|e| {
-        eprintln!("Cannot write {}: {e}", path.display());
-        std::process::exit(1);
+        cli_exit(CliError::WriteOutput { path: path.display().to_string(), source: e })
     });
     true
 }

@@ -26,11 +26,39 @@ use crate::forge::error::{
 };
 use serde::Serialize;
 
+/// Common interface for any error type that can be rendered to a
+/// machine-readable [`Diagnostic`] and terminate the process with a
+/// stage-specific exit code.
+///
+/// Callers (CLI entrypoints, build.rs helpers) depend only on this
+/// trait. Each error family (`ForgeError`, `MeshError`, CLI-level
+/// errors) provides its own mapping without coupling to the others.
+pub trait ToDiagnostic {
+    fn to_diagnostic(&self) -> Diagnostic;
+    fn exit_code(&self) -> i32;
+}
+
 // ── Top-level diagnostic record ────────────────────────────────
 
+/// Current wire-format version. Bumped on *breaking* changes to the
+/// diagnostic shape (renamed field, dropped field, changed semantics).
+/// Purely additive changes (new optional field) do **not** bump it —
+/// consumers must ignore unknown fields, per NDJSON contract.
+pub const SCHEMA_VERSION: u32 = 1;
+
 /// A single machine-readable diagnostic, one record per NDJSON line.
+///
+/// Serialized field order is fixed: `v` first so any consumer can
+/// version-gate before reading anything else, `id` second so streams
+/// can dedup without a full parse.
 #[derive(Debug, Clone, Serialize)]
 pub struct Diagnostic {
+    /// Wire-format version. Always present, always first. Agents that
+    /// see a higher value than they were built against should fall
+    /// back to a best-effort parse rather than crash.
+    #[serde(rename = "v")]
+    pub schema_version: u32,
+
     /// Content-hash id. Prefix names the algorithm so future migration
     /// (e.g. to blake3) can be rolled out without breaking consumers
     /// that pattern-match the format.
@@ -75,9 +103,12 @@ pub struct Diagnostic {
 }
 
 /// Pipeline stage taxonomy. Variant names mirror the stage comments
-/// in `forge::error` so the two modules stay in lockstep.
+/// in `forge::error` and `mesh::error` so those modules stay in
+/// lockstep with the wire format. `Cli` covers errors that originate
+/// in the command-line driver itself (argument parsing, workspace
+/// layout) rather than in a compiler pipeline.
 #[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum Stage {
     Xml,
     Validation,
@@ -86,11 +117,16 @@ pub enum Stage {
     Manifest,
     Generate,
     Io,
+    Cli,
+    MeshDeploy,
+    MeshExternal,
+    MeshTopology,
+    MeshCodegen,
 }
 
 impl Stage {
     /// Stable short name used in the content hash. Kept in sync with
-    /// the serde `rename_all = "lowercase"` output so JSON and hash
+    /// the serde `rename_all = "kebab-case"` output so JSON and hash
     /// agree on the canonical form.
     fn as_str(&self) -> &'static str {
         match self {
@@ -101,6 +137,11 @@ impl Stage {
             Stage::Manifest => "manifest",
             Stage::Generate => "generate",
             Stage::Io => "io",
+            Stage::Cli => "cli",
+            Stage::MeshDeploy => "mesh-deploy",
+            Stage::MeshExternal => "mesh-external",
+            Stage::MeshTopology => "mesh-topology",
+            Stage::MeshCodegen => "mesh-codegen",
         }
     }
 }
@@ -190,6 +231,139 @@ pub enum DiagnosticCode {
 
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
+
+    // ── CLI-level errors ─────────────────────────────────────
+    #[serde(rename = "cli/unknown-language")]
+    CliUnknownLanguage,
+    #[serde(rename = "cli/unsupported-language")]
+    CliUnsupportedLanguage,
+    #[serde(rename = "cli/read-input")]
+    CliReadInput,
+    #[serde(rename = "cli/write-output")]
+    CliWriteOutput,
+    #[serde(rename = "cli/create-output-dir")]
+    CliCreateOutputDir,
+    #[serde(rename = "cli/scxml-parse")]
+    CliScxmlParse,
+    #[serde(rename = "cli/scxml-generate")]
+    CliScxmlGenerate,
+    #[serde(rename = "cli/dynamic-features")]
+    CliDynamicFeatures,
+    #[serde(rename = "cli/missing-metadata-field")]
+    CliMissingMetadataField,
+    #[serde(rename = "cli/not-a-directory")]
+    CliNotADirectory,
+    #[serde(rename = "cli/invalid-format-option")]
+    CliInvalidFormatOption,
+    #[serde(rename = "cli/json-serialization")]
+    CliJsonSerialization,
+    #[serde(rename = "cli/project-root-not-found")]
+    CliProjectRootNotFound,
+    #[serde(rename = "cli/format-style-not-found")]
+    CliFormatStyleNotFound,
+    #[serde(rename = "cli/no-scxml-tag")]
+    CliNoScxmlTag,
+
+    // ── Mesh pipeline ────────────────────────────────────────
+    // Deploy stage
+    #[serde(rename = "mesh/deploy-read")]
+    MeshDeployRead,
+    #[serde(rename = "mesh/deploy-parse")]
+    MeshDeployParse,
+    #[serde(rename = "mesh/deploy-unsupported-version")]
+    MeshDeployUnsupportedVersion,
+    #[serde(rename = "mesh/deploy-duplicate-machine")]
+    MeshDeployDuplicateMachine,
+    // External config stage
+    #[serde(rename = "mesh/external-read")]
+    MeshExternalRead,
+    #[serde(rename = "mesh/external-parse")]
+    MeshExternalParse,
+    #[serde(rename = "mesh/external-unresolved-names")]
+    MeshExternalUnresolvedNames,
+    #[serde(rename = "mesh/external-ambiguous-event-group")]
+    MeshExternalAmbiguousEventGroup,
+    #[serde(rename = "mesh/external-empty-event-group")]
+    MeshExternalEmptyEventGroup,
+    #[serde(rename = "mesh/external-named-reference-without-config")]
+    MeshExternalNamedReferenceWithoutConfig,
+    #[serde(rename = "mesh/external-reserved-someip-id-keys")]
+    MeshExternalReservedSomeipIdKeys,
+    #[serde(rename = "mesh/external-someip-field-on-non-someip-transport")]
+    MeshExternalSomeipFieldOnNonSomeipTransport,
+    #[serde(rename = "mesh/external-conflicting-event-schema")]
+    MeshExternalConflictingEventSchema,
+    #[serde(rename = "mesh/external-conflicting-event-field-kinds")]
+    MeshExternalConflictingEventFieldKinds,
+    #[serde(rename = "mesh/external-empty-event-entry")]
+    MeshExternalEmptyEventEntry,
+    // Topology stage
+    #[serde(rename = "mesh/topology-unresolved-targets")]
+    MeshTopologyUnresolvedTargets,
+    #[serde(rename = "mesh/topology-machine-not-found")]
+    MeshTopologyMachineNotFound,
+    #[serde(rename = "mesh/topology-receiver-not-declared")]
+    MeshTopologyReceiverNotDeclared,
+    #[serde(rename = "mesh/topology-absolute-source-path")]
+    MeshTopologyAbsoluteSourcePath,
+    #[serde(rename = "mesh/topology-receiver-source-read")]
+    MeshTopologyReceiverSourceRead,
+    #[serde(rename = "mesh/topology-receiver-source-parse")]
+    MeshTopologyReceiverSourceParse,
+    #[serde(rename = "mesh/topology-uncovered-events")]
+    MeshTopologyUncoveredEvents,
+    #[serde(rename = "mesh/topology-pattern-capability-violation")]
+    MeshTopologyPatternCapabilityViolation,
+    #[serde(rename = "mesh/topology-missing-binding-field")]
+    MeshTopologyMissingBindingField,
+    #[serde(rename = "mesh/topology-invalid-binding-field")]
+    MeshTopologyInvalidBindingField,
+    #[serde(rename = "mesh/topology-event-binding-unused")]
+    MeshTopologyEventBindingUnused,
+    // Codegen stage
+    #[serde(rename = "mesh/codegen-unsupported-language")]
+    MeshCodegenUnsupportedLanguage,
+    #[serde(rename = "mesh/codegen-unsupported-transport")]
+    MeshCodegenUnsupportedTransport,
+    #[serde(rename = "mesh/codegen-template-read")]
+    MeshCodegenTemplateRead,
+    #[serde(rename = "mesh/codegen-template-render")]
+    MeshCodegenTemplateRender,
+    #[serde(rename = "mesh/codegen-event-name-collision")]
+    MeshCodegenEventNameCollision,
+    // Mesh I/O
+    #[serde(rename = "mesh/io")]
+    MeshIo,
+}
+
+impl Diagnostic {
+    /// Construct a last-resort diagnostic for failures in the
+    /// diagnostic pipeline itself — e.g. serde serialization error,
+    /// OOM during `to_diagnostic`. Flowing even this path through
+    /// the struct (instead of hand-building a JSON string) keeps the
+    /// wire contract a single source of truth: schema bumps touch
+    /// exactly one place.
+    pub fn meta_failure(message: impl Into<String>) -> Self {
+        let message = message.into();
+        let id = compute_id(
+            DiagnosticCode::IoFilesystem.as_str(),
+            Stage::Io.as_str(),
+            None,
+            std::slice::from_ref(&message),
+        );
+        Diagnostic {
+            schema_version: SCHEMA_VERSION,
+            id,
+            code: DiagnosticCode::IoFilesystem,
+            stage: Stage::Io,
+            spec: None,
+            message,
+            location: None,
+            expected: None,
+            actual: None,
+            fix: None,
+        }
+    }
 }
 
 impl DiagnosticCode {
@@ -234,6 +408,53 @@ impl DiagnosticCode {
             GenerateTemplateLoad => "generate/template-load",
             GenerateTemplateRender => "generate/template-render",
             IoFilesystem => "io/filesystem",
+            CliUnknownLanguage => "cli/unknown-language",
+            CliUnsupportedLanguage => "cli/unsupported-language",
+            CliReadInput => "cli/read-input",
+            CliWriteOutput => "cli/write-output",
+            CliCreateOutputDir => "cli/create-output-dir",
+            CliScxmlParse => "cli/scxml-parse",
+            CliScxmlGenerate => "cli/scxml-generate",
+            CliDynamicFeatures => "cli/dynamic-features",
+            CliMissingMetadataField => "cli/missing-metadata-field",
+            CliNotADirectory => "cli/not-a-directory",
+            CliInvalidFormatOption => "cli/invalid-format-option",
+            CliJsonSerialization => "cli/json-serialization",
+            CliProjectRootNotFound => "cli/project-root-not-found",
+            CliFormatStyleNotFound => "cli/format-style-not-found",
+            CliNoScxmlTag => "cli/no-scxml-tag",
+            MeshDeployRead => "mesh/deploy-read",
+            MeshDeployParse => "mesh/deploy-parse",
+            MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
+            MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
+            MeshExternalRead => "mesh/external-read",
+            MeshExternalParse => "mesh/external-parse",
+            MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
+            MeshExternalAmbiguousEventGroup => "mesh/external-ambiguous-event-group",
+            MeshExternalEmptyEventGroup => "mesh/external-empty-event-group",
+            MeshExternalNamedReferenceWithoutConfig => "mesh/external-named-reference-without-config",
+            MeshExternalReservedSomeipIdKeys => "mesh/external-reserved-someip-id-keys",
+            MeshExternalSomeipFieldOnNonSomeipTransport => "mesh/external-someip-field-on-non-someip-transport",
+            MeshExternalConflictingEventSchema => "mesh/external-conflicting-event-schema",
+            MeshExternalConflictingEventFieldKinds => "mesh/external-conflicting-event-field-kinds",
+            MeshExternalEmptyEventEntry => "mesh/external-empty-event-entry",
+            MeshTopologyUnresolvedTargets => "mesh/topology-unresolved-targets",
+            MeshTopologyMachineNotFound => "mesh/topology-machine-not-found",
+            MeshTopologyReceiverNotDeclared => "mesh/topology-receiver-not-declared",
+            MeshTopologyAbsoluteSourcePath => "mesh/topology-absolute-source-path",
+            MeshTopologyReceiverSourceRead => "mesh/topology-receiver-source-read",
+            MeshTopologyReceiverSourceParse => "mesh/topology-receiver-source-parse",
+            MeshTopologyUncoveredEvents => "mesh/topology-uncovered-events",
+            MeshTopologyPatternCapabilityViolation => "mesh/topology-pattern-capability-violation",
+            MeshTopologyMissingBindingField => "mesh/topology-missing-binding-field",
+            MeshTopologyInvalidBindingField => "mesh/topology-invalid-binding-field",
+            MeshTopologyEventBindingUnused => "mesh/topology-event-binding-unused",
+            MeshCodegenUnsupportedLanguage => "mesh/codegen-unsupported-language",
+            MeshCodegenUnsupportedTransport => "mesh/codegen-unsupported-transport",
+            MeshCodegenTemplateRead => "mesh/codegen-template-read",
+            MeshCodegenTemplateRender => "mesh/codegen-template-render",
+            MeshCodegenEventNameCollision => "mesh/codegen-event-name-collision",
+            MeshIo => "mesh/io",
         }
     }
 }
@@ -264,6 +485,14 @@ pub enum Fix {
     /// Rename a duplicated identifier to something unique. `what`
     /// disambiguates the namespace (state id, event name, …).
     RenameDuplicate { what: String, id: String },
+
+    /// Delete one or more fields at the given config location. Used
+    /// where the producer can name *exactly* what is wrong (reserved
+    /// keys, unused entries) and the repair is a single-direction
+    /// removal. `location` is a dotted path (e.g.
+    /// `"machines.x.bindings.y"`) and `fields` are the keys under it
+    /// that must be removed.
+    RemoveFields { location: String, fields: Vec<String> },
 }
 
 // ── Per-error-variant field extraction ─────────────────────────
@@ -284,9 +513,13 @@ struct DiagnosticFields {
     key_fragments: Vec<String>,
 }
 
-impl ForgeError {
+impl ToDiagnostic for ForgeError {
+    fn exit_code(&self) -> i32 {
+        ForgeError::exit_code(self)
+    }
+
     /// Render this error into a machine-readable [`Diagnostic`].
-    pub fn to_diagnostic(&self) -> Diagnostic {
+    fn to_diagnostic(&self) -> Diagnostic {
         // Unwrap one level of `Located` so the mapping stays simple
         // and the wrapper is handled in exactly one place.
         let (inner, location_ctx): (&ForgeError, Option<&SourceLocation>) = match self {
@@ -294,7 +527,7 @@ impl ForgeError {
             other => (other, None),
         };
 
-        let fields = inner.to_fields();
+        let fields = forge_error_fields(inner);
         let location = location_ctx.map(|loc| Location {
             file: loc.file.clone(),
             line: loc.line,
@@ -309,6 +542,7 @@ impl ForgeError {
         );
 
         Diagnostic {
+            schema_version: SCHEMA_VERSION,
             id,
             code: fields.code,
             stage: fields.stage,
@@ -321,28 +555,29 @@ impl ForgeError {
         }
     }
 
-    fn to_fields(&self) -> DiagnosticFields {
-        match self {
-            ForgeError::Xml(e) => xml_fields(e),
-            ForgeError::Validation(e) => validation_fields(e),
-            ForgeError::Expression(e) => expression_fields(e),
-            ForgeError::Import(e) => import_fields(e),
-            ForgeError::Manifest(e) => manifest_fields(e),
-            ForgeError::Generate(e) => generate_fields(e),
-            ForgeError::Io { path, .. } => DiagnosticFields {
-                code: DiagnosticCode::IoFilesystem,
-                stage: Stage::Io,
-                spec: None,
-                expected: None,
-                actual: None,
-                fix: None,
-                key_fragments: vec![path.display().to_string()],
-            },
-            // `Located` is unwrapped by `to_diagnostic` before this
-            // function is reached. Treat as unreachable; if this ever
-            // fires it is a construction bug, not user input.
-            ForgeError::Located { .. } => unreachable!("Located unwrapped in to_diagnostic"),
-        }
+}
+
+fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
+    match err {
+        ForgeError::Xml(e) => xml_fields(e),
+        ForgeError::Validation(e) => validation_fields(e),
+        ForgeError::Expression(e) => expression_fields(e),
+        ForgeError::Import(e) => import_fields(e),
+        ForgeError::Manifest(e) => manifest_fields(e),
+        ForgeError::Generate(e) => generate_fields(e),
+        ForgeError::Io { path, .. } => DiagnosticFields {
+            code: DiagnosticCode::IoFilesystem,
+            stage: Stage::Io,
+            spec: None,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![path.display().to_string()],
+        },
+        // `Located` is unwrapped by `to_diagnostic` before this
+        // function is reached. Treat as unreachable; if this ever
+        // fires it is a construction bug, not user input.
+        ForgeError::Located { .. } => unreachable!("Located unwrapped in to_diagnostic"),
     }
 }
 
@@ -747,7 +982,9 @@ fn split_expected(s: &str) -> Vec<String> {
 ///
 /// The canonical key is:
 ///
-///     code-str | stage-str | file-or-empty | key-fragments-with-unit-sep
+/// ```text
+/// code-str | stage-str | file-or-empty | key-fragments-with-unit-sep
+/// ```
 ///
 /// Notably excludes the Display message — rewording a thiserror
 /// `#[error(...)]` template must not change the id of the underlying
@@ -945,6 +1182,99 @@ mod tests {
         ] {
             assert!(!json.contains(absent), "unexpected key in: {json}");
         }
+    }
+
+    /// Byte-stable goldens: each error variant listed here produces
+    /// the exact JSON string pinned in the table. A byte mismatch
+    /// means a consumer that dedup'd on `id` yesterday now sees a
+    /// different record for the same semantic error — a wire-format
+    /// regression. Update this table deliberately (alongside a
+    /// schema-version bump, when appropriate), never silently.
+    #[test]
+    fn diagnostic_goldens_are_byte_stable() {
+        use crate::mesh::error::{MeshError, TopologyError};
+        use crate::mesh::target::TargetId;
+
+        // Each entry: (label, actual_json, expected_golden). Entries
+        // are evaluated eagerly so all mismatches surface in one
+        // failure report — no drip-feed debugging.
+        let actual_forge = |e: ForgeError| serde_json::to_string(&e.to_diagnostic()).unwrap();
+        let actual_mesh = |e: MeshError| serde_json::to_string(&e.to_diagnostic()).unwrap();
+
+        let cases: Vec<(&str, String, &str)> = vec![
+            (
+                "forge/missing-attribute",
+                actual_forge(
+                    ValidationError::MissingAttribute {
+                        element: "sce:field".into(),
+                        attr: "id".into(),
+                    }
+                    .into(),
+                ),
+                r#"{"v":1,"id":"fnv1a:1c56b923b2b2b87f","code":"validation/missing-attribute","stage":"validation","message":"sce:field must have an 'id' attribute","fix":{"kind":"add_attribute","element":"sce:field","attr":"id"}}"#,
+            ),
+            (
+                "forge/invalid-attribute",
+                actual_forge(
+                    ValidationError::InvalidAttribute {
+                        element: "sce:field".into(),
+                        attr: "sce:type".into(),
+                        value: "blob".into(),
+                        expected: "u8, u16, u32".into(),
+                    }
+                    .into(),
+                ),
+                r#"{"v":1,"id":"fnv1a:dd04a37de468ffb4","code":"validation/invalid-attribute","stage":"validation","message":"sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)","expected":["u8","u16","u32"],"actual":"blob"}"#,
+            ),
+            (
+                "forge/go-ternary",
+                actual_forge(ExprError::GoTernary.into()),
+                r#"{"v":1,"id":"fnv1a:ef5b56dbf74b8718","code":"expression/go-ternary-unsupported","stage":"expression","message":"cannot transpile ternary expression to Go: Go has no conditional expression"}"#,
+            ),
+            (
+                "forge/not-forge",
+                actual_forge(ImportError::NotForge { src: "neighbour.scxml".into() }.into()),
+                r#"{"v":1,"id":"fnv1a:7cec8a8357830a5a","code":"import/not-forge","stage":"import","message":"<sce:import src=\"neighbour.scxml\">: not a forge document (no sce:kind)","actual":"neighbour.scxml"}"#,
+            ),
+            (
+                "mesh/missing-binding-field",
+                actual_mesh(
+                    TopologyError::MissingBindingField {
+                        machine: "ecu_a".into(),
+                        target: TargetId::new("#motor").unwrap(),
+                        transport: "someip".into(),
+                        field: "service".into(),
+                    }
+                    .into(),
+                ),
+                r#"{"v":1,"id":"fnv1a:d7ba280d1556705e","code":"mesh/topology-missing-binding-field","stage":"mesh-topology","message":"machine 'ecu_a': binding for '#motor' (transport: someip) is missing required field 'service'. Add 'service:' to the binding in deploy.yaml.","fix":{"kind":"add_attribute","element":"machines.ecu_a.bindings.#motor","attr":"service"}}"#,
+            ),
+            (
+                "mesh/event-binding-unused",
+                actual_mesh(
+                    TopologyError::EventBindingUnused {
+                        machine: "ecu_a".into(),
+                        target: TargetId::new("#motor").unwrap(),
+                        event: "legacy.ping".into(),
+                    }
+                    .into(),
+                ),
+                r#"{"v":1,"id":"fnv1a:4fdd02e5a9781de8","code":"mesh/topology-event-binding-unused","stage":"mesh-topology","message":"machine 'ecu_a': binding '#motor' declares events.legacy.ping in deploy.yaml, but the SCXML model never sends 'legacy.ping' to this target. Remove the unused entry, or correct the event name.","actual":"legacy.ping","fix":{"kind":"remove_fields","location":"machines.ecu_a.bindings.#motor.events","fields":["legacy.ping"]}}"#,
+            ),
+        ];
+
+        let mismatches: Vec<String> = cases
+            .iter()
+            .filter(|(_, actual, golden)| actual != golden)
+            .map(|(label, actual, golden)| {
+                format!("\n[{label}]\nexpected: {golden}\n  actual: {actual}")
+            })
+            .collect();
+        assert!(
+            mismatches.is_empty(),
+            "byte-stable goldens drifted:\n{}\n\nIf this change is intentional, update the table AND bump SCHEMA_VERSION if the shape changed.",
+            mismatches.join("\n")
+        );
     }
 
     #[test]
