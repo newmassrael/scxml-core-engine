@@ -759,6 +759,128 @@ fn json_mode_procedure_state_without_transition_reports_state_line() {
     );
 }
 
+/// Lookup with two `<sce:entry>` sharing the same `key` must report
+/// at the duplicate `<sce:entry>` line, not at the surrounding
+/// `<datamodel>`. Pins parse_sce_entries' inline duplicate
+/// detection (which replaced the post-loop check that collapsed to
+/// the parent container).
+fn write_lookup_duplicate_key_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("lookup_dup_key.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="bad_lookup">
+  <datamodel>
+    <data id="i" sce:type="uint8" sce:direction="in"/>
+    <data id="o" sce:type="string" sce:direction="out"/>
+    <data id="m">
+      <sce:entry key="1" value="A"/>
+      <sce:entry key="1" value="B"/>
+    </data>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write lookup duplicate-key fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_lookup_duplicate_key_reports_duplicate_entry_line() {
+    let (_dir, scxml) = write_lookup_duplicate_key_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/duplicate-id");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(10),
+        "must point at the duplicating <sce:entry>, not <datamodel>: {parsed}"
+    );
+}
+
+/// Lookup `<data sce:default="X" sce:on-miss="error">` declares both
+/// an explicit default and an `error` miss policy — the two are
+/// mutually exclusive. The diagnostic must anchor at the
+/// declaring `<data>` element, not the surrounding `<datamodel>`,
+/// so an agent can edit the offending element directly.
+fn write_lookup_default_with_error_policy_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("lookup_incompat.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="bad_lookup">
+  <datamodel>
+    <data id="i" sce:type="uint8" sce:direction="in"/>
+    <data id="o" sce:type="string" sce:direction="out"/>
+    <data id="m" sce:default="X" sce:on-miss="error">
+      <sce:entry key="1" value="A"/>
+    </data>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write lookup incompatible-attrs fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_lookup_default_with_error_policy_reports_data_line() {
+    let (_dir, scxml) = write_lookup_default_with_error_policy_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/incompatible-attributes");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(8),
+        "must point at the <data> declaring both attrs, not <datamodel>: {parsed}"
+    );
+}
+
+/// Lookup `<data sce:on-miss="bogus">` must report at the declaring
+/// `<data>` element — the agent needs to edit *that* element to
+/// repair, not the parent `<datamodel>`.
+fn write_lookup_invalid_on_miss_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("lookup_bad_onmiss.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="bad_lookup">
+  <datamodel>
+    <data id="i" sce:type="uint8" sce:direction="in"/>
+    <data id="o" sce:type="string" sce:direction="out"/>
+    <data id="m" sce:on-miss="bogus">
+      <sce:entry key="1" value="A"/>
+    </data>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write lookup invalid-on-miss fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_lookup_invalid_on_miss_reports_data_line() {
+    let (_dir, scxml) = write_lookup_invalid_on_miss_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/invalid-attribute");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(8),
+        "must point at the <data> declaring sce:on-miss, not <datamodel>: {parsed}"
+    );
+}
+
 /// Build a filter fixture where the output declares `sce:filter=ftype`
 /// but omits the parameter required by that filter type. Used by the
 /// three branch-coverage tests below.

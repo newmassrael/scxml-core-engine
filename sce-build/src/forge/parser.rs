@@ -236,11 +236,21 @@ fn parse_lookup(
         )
     })?;
 
+    // Carry the source `<data>` node alongside the value so the
+    // post-loop policy validators can anchor diagnostics at the
+    // element that declared `sce:default` / `sce:on-miss` instead of
+    // collapsing to the surrounding `<datamodel>`. Node is `Copy`,
+    // so the struct is cheap to pass around.
+    struct DataAttr<'a, 'input: 'a> {
+        value: String,
+        node: roxmltree::Node<'a, 'input>,
+    }
+
     let mut input: Option<ForgeField> = None;
     let mut output: Option<ForgeField> = None;
     let mut entries = Vec::new();
-    let mut explicit_default: Option<String> = None;
-    let mut on_miss_attr: Option<String> = None;
+    let mut explicit_default: Option<DataAttr> = None;
+    let mut on_miss_attr: Option<DataAttr> = None;
 
     for data in data_children(&datamodel) {
         let dir = sce_attr(&data, "direction");
@@ -251,10 +261,10 @@ fn parse_lookup(
             output = Some(parse_forge_field(&data, name)?);
         } else {
             if let Some(def) = sce_attr(&data, "default") {
-                explicit_default = Some(def);
+                explicit_default = Some(DataAttr { value: def, node: data });
             }
             if let Some(oms) = sce_attr(&data, "on-miss") {
-                on_miss_attr = Some(oms);
+                on_miss_attr = Some(DataAttr { value: oms, node: data });
             }
             entries.extend(parse_sce_entries(&data, name)?);
         }
@@ -292,28 +302,22 @@ fn parse_lookup(
         ));
     }
 
-    // Key uniqueness is required by both miss policies: duplicates make the
-    // lookup non-deterministic for the colliding key.
-    let mut seen_keys = std::collections::BTreeSet::new();
-    for entry in &entries {
-        if !seen_keys.insert(entry.key.clone()) {
-            return Err(located(
-                &datamodel,
-                name,
-                ValidationError::DuplicateId {
-                    kind: ForgeKind::Lookup,
-                    what: "key".into(),
-                    id: entry.key.clone(),
-                },
-            ));
-        }
-    }
+    // Key uniqueness is enforced inside parse_sce_entries while the
+    // offending `<sce:entry>` node is still in scope — the raise
+    // anchors at the duplicate row rather than at the surrounding
+    // `<datamodel>`.
 
-    let miss_policy = match on_miss_attr.as_deref() {
-        Some("error") => {
-            if explicit_default.is_some() {
+    // Bind directly on the `Option<DataAttr>` so each arm has the
+    // declaring `<data>` node in scope without an unwrap downstream.
+    let miss_policy = match on_miss_attr {
+        Some(oms) if oms.value == "error" => {
+            if let Some(def) = explicit_default {
+                // Anchor at the `<data>` that declared `sce:default` —
+                // it's the element the agent must edit to resolve the
+                // conflict (deleting the default, or relaxing the
+                // policy on the on-miss element).
                 return Err(located(
-                    &datamodel,
+                    &def.node,
                     name,
                     ValidationError::IncompatibleAttributes {
                         element: "Lookup".into(),
@@ -325,20 +329,29 @@ fn parse_lookup(
             }
             MissPolicy::Error
         }
-        Some("default") | None => {
-            // Absent attribute matches the historical behaviour: fall back to
-            // the explicit sce:default value, or the first entry if none.
-            let value = explicit_default.unwrap_or_else(|| entries[0].value.clone());
+        Some(oms) if oms.value == "default" => {
+            let value = explicit_default
+                .map(|da| da.value)
+                .unwrap_or_else(|| entries[0].value.clone());
             MissPolicy::Default(value)
         }
-        Some(other) => {
+        None => {
+            // Absent attribute matches "default": fall back to the
+            // explicit sce:default value, or the first entry if none.
+            let value = explicit_default
+                .map(|da| da.value)
+                .unwrap_or_else(|| entries[0].value.clone());
+            MissPolicy::Default(value)
+        }
+        Some(oms) => {
+            // Unknown value — anchor at the declaring `<data>`.
             return Err(located(
-                &datamodel,
+                &oms.node,
                 name,
                 ValidationError::InvalidAttribute {
                     element: "Lookup".into(),
                     attr: "sce:on-miss".into(),
-                    value: other.to_string(),
+                    value: oms.value,
                     expected: "default, error".into(),
                 },
             ));
@@ -2085,11 +2098,18 @@ fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
 /// `<sce:entry>` child rather than at the calling `<data>` parent —
 /// the difference an agent sees as "row 12 of the lookup table" vs.
 /// "somewhere in the datamodel".
+///
+/// Duplicate-key detection runs here (with the entry node still in
+/// scope) rather than in the caller — both miss policies require
+/// distinct keys to make the lookup deterministic, and anchoring
+/// the diagnostic at the duplicating entry beats anchoring at the
+/// surrounding `<datamodel>`.
 fn parse_sce_entries(
     node: &roxmltree::Node,
     doc_name: &str,
 ) -> Result<Vec<LookupEntry>, Located<ForgeError>> {
     let mut entries = Vec::new();
+    let mut seen_keys = std::collections::BTreeSet::new();
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().name() == "entry" && child.tag_name().namespace() == Some(SCE_NAMESPACE) {
             let key = child
@@ -2118,6 +2138,17 @@ fn parse_sce_entries(
                     )
                 })?
                 .to_string();
+            if !seen_keys.insert(key.clone()) {
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::DuplicateId {
+                        kind: ForgeKind::Lookup,
+                        what: "key".into(),
+                        id: key,
+                    },
+                ));
+            }
             entries.push(LookupEntry { key, value });
         }
     }
