@@ -544,7 +544,13 @@ impl SCXMLParser {
                             ..Default::default()
                         };
                         state.hybrid_invokes.push(hi.clone());
-                        model.hybrid_invokes.push(hi);
+                        model.hybrid_invokes.push(hi.clone());
+                        // R1: populate the typed sum view alongside legacy
+                        // per-kind vectors. No consumer reads `invokes` yet;
+                        // R2 migrates templates/codegen to branch on
+                        // `invoke.kind`.
+                        state.invokes.push(Invoke::Hybrid(hi.clone()));
+                        model.invokes.push(Invoke::Hybrid(hi));
                     }
                 }
                 if let Some(is_static) = invoke.get("is_static").and_then(|v| v.as_bool()) {
@@ -591,10 +597,14 @@ impl SCXMLParser {
                             ..Default::default()
                         };
                         state.static_invokes.push(si.clone());
-                        model.static_invokes.push(si);
+                        model.static_invokes.push(si.clone());
+                        // R1: populate the typed sum view alongside legacy
+                        // per-kind vectors. See matching Hybrid branch above.
+                        state.invokes.push(Invoke::Scxml(si.clone()));
+                        model.invokes.push(Invoke::Scxml(si));
                     }
                 }
-                state.invokes.push(invoke);
+                state.raw_invoke_json.push(invoke);
             }
 
             model.states.insert(state_id.clone(), state);
@@ -1594,13 +1604,13 @@ impl SCXMLParser {
         let mut inline_child_count = 0u32;
 
         // Build list of (invoke_index, state_invokes_index, has_inline, inline_text, src)
-        // from state.invokes raw JSON to match Python's matching_static logic
+        // from state.raw_invoke_json to match Python's matching_static logic
         let mut invoke_map: Vec<(u32, String, bool, String)> = Vec::new();
         // Iterate states in document order (matching model.static_invokes insertion order)
         let mut states_by_doc_order: Vec<&State> = model.states.values().collect();
         states_by_doc_order.sort_by_key(|s| s.document_order);
         for state in states_by_doc_order {
-            for inv in &state.invokes {
+            for inv in &state.raw_invoke_json {
                 let is_static = inv.get("is_static").and_then(|v| v.as_bool()).unwrap_or(false);
                 if is_static {
                     let has_inline = inv.get("has_inline_scxml").and_then(|v| v.as_bool()).unwrap_or(false);

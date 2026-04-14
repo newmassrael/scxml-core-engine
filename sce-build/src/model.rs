@@ -218,6 +218,66 @@ pub struct ContextObject {
     pub kt_type: String,
 }
 
+/// An invoke declared on a state, keyed by kind.
+///
+/// W3C SCXML §6.4 leaves `<invoke type="...">` open for implementation-defined
+/// values; SCE treats the three supported kinds as distinct lifecycles:
+///
+/// - [`Invoke::Scxml`] — static child SCXML session (`src` or inline `<content>`).
+/// - [`Invoke::Hybrid`] — SCXML session whose target is resolved at runtime
+///   (`srcexpr` / `contentexpr`).
+/// - [`Invoke::MeshRpc`] — single request / single reply RPC over Mesh
+///   (§9.5 `<invoke type="sce:mesh-rpc">`), no child session.
+///
+/// Modelled as a sum type because "exactly one kind per invoke" is the
+/// invariant; two parallel `static_invokes` / `hybrid_invokes` vectors of the
+/// same `InvokeInfo` type, plus a third `mesh_rpc_invokes` of a different
+/// type, would hide that invariant from every consumer.
+///
+/// Serialised with an internal `kind` tag so minijinja templates can dispatch
+/// on `{% if invoke.kind == "Scxml" %}` without needing tuple-style access.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind")]
+pub enum Invoke {
+    Scxml(InvokeInfo),
+    Hybrid(InvokeInfo),
+    MeshRpc(MeshRpcInvokeInfo),
+}
+
+/// SCE Mesh §9.5: short-lived RPC invoke (`<invoke type="sce:mesh-rpc">`).
+///
+/// Distinct from [`InvokeInfo`] because mesh-rpc is a single request / single
+/// reply RPC layered over W3C invoke lifecycle events — no child session, no
+/// `<finalize>` stream, no autoforward. The shape intentionally does not
+/// overlap with `InvokeInfo`; reusing that type with a discriminator would
+/// hide the lifecycle invariant from every consumer.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct MeshRpcInvokeInfo {
+    /// The SCXML invoke id used for `done.invoke.<id>` / `error.invoke.<id>`
+    /// dispatch and for the wire envelope `invoke_id` field.
+    pub invoke_id: String,
+    /// Owning state — used by codegen to emit onentry / onexit hooks.
+    pub state_name: String,
+    /// The raw `src` attribute (`#motor`). Topology resolves it to a target
+    /// binding; at parse time we only store the literal so the validator can
+    /// match against deploy.yaml.
+    pub src: String,
+    /// Value of the required `<param name="_mesh_event">`. This populates the
+    /// envelope `type` field — never taken from any author-named `<param>`.
+    pub mesh_event: String,
+    /// Value of the optional `<param name="_mesh_deadline_ms">`, if present.
+    /// `<param>` deadline overrides any deploy.yaml binding-level deadline
+    /// (§9.5 precedence rule).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deadline_ms: Option<u64>,
+    /// Author-provided `<param>` children, with the two reserved `_mesh_*`
+    /// entries already stripped out. These form the request payload.
+    pub params: Vec<Param>,
+    /// W3C `idlocation` attribute — populated when the runtime needs to
+    /// expose the generated invoke id back to the datamodel.
+    pub idlocation: String,
+}
+
 /// W3C SCXML 6.4: Static invoke information
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct InvokeInfo {
@@ -257,7 +317,15 @@ pub struct State {
     pub on_entry_blocks: Vec<Vec<Action>>,
     pub on_exit_blocks: Vec<Vec<Action>>,
     pub datamodel: Vec<Variable>,
-    pub invokes: Vec<serde_json::Value>,
+    /// Parser-internal raw JSON for each `<invoke>` on this state, carried
+    /// through so `process_static_invokes` can inspect `is_static`,
+    /// `has_inline_scxml`, and inline text without a second parse pass.
+    /// Not exposed to templates — the typed view lives in `invokes`.
+    #[serde(skip)]
+    pub raw_invoke_json: Vec<serde_json::Value>,
+    /// Typed view of each invoke on this state (sum of Scxml / Hybrid /
+    /// MeshRpc). Templates dispatch on `invoke.kind`.
+    pub invokes: Vec<Invoke>,
     pub static_invokes: Vec<InvokeInfo>,
     pub hybrid_invokes: Vec<InvokeInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -316,7 +384,10 @@ pub struct SCXMLModel {
     pub variables: Vec<Variable>,
     pub global_scripts: Vec<Action>,
 
-    // Invoke
+    // Invoke — typed sum view (see `Invoke`) alongside the legacy per-kind
+    // vectors. R2 migrates consumers onto `invokes`; R3 drops the legacy
+    // vectors once templates are branching on `invoke.kind`.
+    pub invokes: Vec<Invoke>,
     pub static_invokes: Vec<InvokeInfo>,
     pub hybrid_invokes: Vec<InvokeInfo>,
 
