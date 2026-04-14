@@ -200,6 +200,13 @@ impl SCXMLParser {
             }
         }
 
+        // R1: rebuild the typed `invokes` sum view from the now-finalised
+        // legacy vectors. `process_static_invokes` mutates `static_invokes`
+        // after parse (child_name, idlocation, child_datamodel_vars), so the
+        // sum-type mirror must be synthesised AFTER all those passes finish.
+        // R3 will invert this relationship, making `invokes` primary.
+        rebuild_invokes_sum(&mut model);
+
         Ok(model)
     }
 
@@ -544,13 +551,7 @@ impl SCXMLParser {
                             ..Default::default()
                         };
                         state.hybrid_invokes.push(hi.clone());
-                        model.hybrid_invokes.push(hi.clone());
-                        // R1: populate the typed sum view alongside legacy
-                        // per-kind vectors. No consumer reads `invokes` yet;
-                        // R2 migrates templates/codegen to branch on
-                        // `invoke.kind`.
-                        state.invokes.push(Invoke::Hybrid(hi.clone()));
-                        model.invokes.push(Invoke::Hybrid(hi));
+                        model.hybrid_invokes.push(hi);
                     }
                 }
                 if let Some(is_static) = invoke.get("is_static").and_then(|v| v.as_bool()) {
@@ -597,11 +598,7 @@ impl SCXMLParser {
                             ..Default::default()
                         };
                         state.static_invokes.push(si.clone());
-                        model.static_invokes.push(si.clone());
-                        // R1: populate the typed sum view alongside legacy
-                        // per-kind vectors. See matching Hybrid branch above.
-                        state.invokes.push(Invoke::Scxml(si.clone()));
-                        model.invokes.push(Invoke::Scxml(si));
+                        model.static_invokes.push(si);
                     }
                 }
                 state.raw_invoke_json.push(invoke);
@@ -2252,6 +2249,46 @@ fn parse_child_metadata(child_path: &Path, invoke_info: &mut InvokeInfo) {
             invoke_info.child_needs_script_engine = true;
             invoke_info.child_datamodel_vars = Some(Vec::new());
         }
+    }
+}
+
+/// R1 helper: project the now-finalised `static_invokes` and `hybrid_invokes`
+/// vectors into the typed `Invoke` sum view on both `SCXMLModel` and every
+/// `State`.
+///
+/// `process_static_invokes` mutates entries in the legacy per-kind vectors
+/// after `parse_states` returns (it resolves inline SCXML, assigns
+/// `child_name`, etc.), so the sum-type mirror must be rebuilt *after* those
+/// passes complete. Insertion order mirrors the legacy vectors: static kinds
+/// first in document order, then hybrid. This matches how the templates
+/// previously iterated the two vectors in sequence, keeping generated output
+/// byte-identical across R1 through R3.
+///
+/// R3 will delete the legacy vectors; at that point `invokes` must become the
+/// primary store populated directly by the parser and mutated in place by
+/// `process_static_invokes`.
+fn rebuild_invokes_sum(model: &mut SCXMLModel) {
+    // Per-state projection first: each state's `invokes` is rebuilt from its
+    // own legacy vectors so template iteration matches 1:1.
+    for state in model.states.values_mut() {
+        state.invokes.clear();
+        for si in &state.static_invokes {
+            state.invokes.push(Invoke::Scxml(si.clone()));
+        }
+        for hi in &state.hybrid_invokes {
+            state.invokes.push(Invoke::Hybrid(hi.clone()));
+        }
+    }
+
+    // Model-level projection: static kinds in document order followed by
+    // hybrid kinds, matching `model.static_invokes` and `model.hybrid_invokes`
+    // insertion order from `parse_states`.
+    model.invokes.clear();
+    for si in &model.static_invokes {
+        model.invokes.push(Invoke::Scxml(si.clone()));
+    }
+    for hi in &model.hybrid_invokes {
+        model.invokes.push(Invoke::Hybrid(hi.clone()));
     }
 }
 

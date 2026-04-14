@@ -46,6 +46,7 @@ const RUST_KEYWORDS: &[&str] = &[
 
 /// Register all Rust-specific filters on the minijinja environment.
 pub fn register_filters(env: &mut minijinja::Environment) {
+    register_invoke_filters(env);
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_rust_type", to_rust_type);
@@ -234,6 +235,67 @@ fn to_lua_script(script: String) -> String {
 
 // ── Cross-engine compatibility filters ────────────────────────────
 
+/// Filter an iterable of serialised `Invoke` sum values by variant discriminator.
+///
+/// Our `Invoke` enum is serialised internally-tagged (`#[serde(tag = "kind")]`),
+/// so each entry has a `kind` field of `"Scxml" | "Hybrid" | "MeshRpc"`. This
+/// helper keeps only the entries whose `kind` matches — giving templates a
+/// short, named filter (e.g. `state.invokes | scxml`) instead of repeating
+/// `selectattr('kind', 'equalto', 'Scxml') | list` at every use site.
+fn filter_invokes_by_kind(value: Value, want_kind: &str) -> Result<Value, minijinja::Error> {
+    let mut out: Vec<Value> = Vec::new();
+    for item in value.try_iter()? {
+        match item.get_attr("kind") {
+            Ok(kind_val) => {
+                if let Some(k) = kind_val.as_str() {
+                    if k == want_kind {
+                        out.push(item.clone());
+                    }
+                }
+            }
+            // Non-Invoke items simply fall through — filter returns only matches.
+            Err(_) => {}
+        }
+    }
+    Ok(Value::from(out))
+}
+
+/// Keep only `Invoke::Scxml` entries.
+fn filter_scxml(value: Value) -> Result<Value, minijinja::Error> {
+    filter_invokes_by_kind(value, "Scxml")
+}
+
+/// Keep only `Invoke::Hybrid` entries.
+fn filter_hybrid(value: Value) -> Result<Value, minijinja::Error> {
+    filter_invokes_by_kind(value, "Hybrid")
+}
+
+/// Keep `Invoke::Scxml` and `Invoke::Hybrid` — the W3C SCXML-session kinds.
+/// Mirrors the legacy `static_invokes or hybrid_invokes` guard used throughout
+/// the codegen templates.
+fn filter_scxml_family(value: Value) -> Result<Value, minijinja::Error> {
+    let mut out: Vec<Value> = Vec::new();
+    for item in value.try_iter()? {
+        if let Ok(kind_val) = item.get_attr("kind") {
+            if let Some(k) = kind_val.as_str() {
+                if k == "Scxml" || k == "Hybrid" {
+                    out.push(item.clone());
+                }
+            }
+        }
+    }
+    Ok(Value::from(out))
+}
+
+/// Register the variant-filtering helpers shared by every backend.
+/// Called from each per-language `register_*_filters` function so the same
+/// filter names are available no matter which template engine is rendering.
+pub fn register_invoke_filters(env: &mut minijinja::Environment) {
+    env.add_filter("scxml", filter_scxml);
+    env.add_filter("hybrid", filter_hybrid);
+    env.add_filter("scxml_family", filter_scxml_family);
+}
+
 /// Split string on whitespace (replaces Python `.split()` method in templates).
 fn filter_split(s: String) -> Vec<Value> {
     s.split_whitespace()
@@ -259,6 +321,7 @@ const GO_KEYWORDS: &[&str] = &[
 
 /// Register all Go-specific filters on the minijinja environment.
 pub fn register_go_filters(env: &mut minijinja::Environment) {
+    register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_camel_case", to_camel_case);
     env.add_filter("to_snake_case", to_snake_case);
@@ -360,6 +423,7 @@ fn to_in_predicate_go(cond_cpp: String) -> String {
 
 /// Register all C++-specific filters on the minijinja environment.
 pub fn register_cpp_filters(env: &mut minijinja::Environment) {
+    register_invoke_filters(env);
     env.add_filter("capitalize", capitalize_state);
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("split", filter_split);
@@ -387,6 +451,7 @@ fn escape_cpp(text: String) -> String {
 
 /// Register all Kotlin-specific filters on the minijinja environment.
 pub fn register_kotlin_filters(env: &mut minijinja::Environment) {
+    register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_camel_case", to_camel_case);
     env.add_filter("to_kotlin_type", to_kotlin_type);

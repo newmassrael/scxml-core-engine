@@ -493,12 +493,12 @@ fn cmd_generate(
 /// Collect child SCXML names from model's static/hybrid invokes.
 fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
     let mut children = Vec::new();
-    for invoke in &model.static_invokes {
+    for invoke in model.iter_scxml_invokes() {
         if !invoke.child_name.is_empty() {
             children.push(invoke.child_name.clone());
         }
     }
-    for invoke in &model.hybrid_invokes {
+    for invoke in model.iter_hybrid_invokes() {
         if !invoke.child_name.is_empty() {
             children.push(invoke.child_name.clone());
         }
@@ -516,7 +516,7 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
 fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir: &Path) {
     let source_dir = scxml_path.parent().unwrap_or(Path::new("."));
 
-    for invoke in &model.static_invokes {
+    for invoke in model.iter_scxml_invokes() {
         if invoke.child_name.is_empty() {
             continue;
         }
@@ -542,7 +542,7 @@ fn generate_hybrid_child_scxmls(model: &SCXMLModel, scxml_path: &Path, output_di
     let parent_dir = scxml_path.parent().unwrap_or(Path::new("."));
     let parent_name = scxml_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
-    for invoke in &model.hybrid_invokes {
+    for invoke in model.iter_hybrid_invokes() {
         if invoke.child_name.is_empty() {
             continue;
         }

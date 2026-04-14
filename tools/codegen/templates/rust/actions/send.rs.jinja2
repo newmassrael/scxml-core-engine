@@ -1,6 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
+
 {# W3C SCXML 6.2: <send> - Event dispatch
    Supports static dispatch, delayexpr, params/namelist data building,
    idlocation storage, internal/external targets, BasicHTTP dispatch,
@@ -425,7 +426,7 @@
 {% endif %}
     }
 {% endif %}
-{% elif not action.targetexpr and action.target and action.target is startingwith('#_') and action.target != '#_internal' and action.target != '#_parent' and model.static_invokes is defined and model.static_invokes | selectattr('invoke_id', 'equalto', action.target | slice_from(2)) | list %}
+{% elif not action.targetexpr and action.target and action.target is startingwith('#_') and action.target != '#_internal' and action.target != '#_parent' and model.invokes | scxml is defined and model.invokes | scxml | selectattr('invoke_id', 'equalto', action.target | slice_from(2)) | list %}
 {# W3C SCXML 6.4: Send to child invoke via #_<invokeId> target #}
 {% set child_invoke_id = action.target | slice_from(2) %}
     // W3C SCXML 6.4: Send to child invoke '{{ child_invoke_id }}' via #_{{ child_invoke_id }}

@@ -28,7 +28,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% endif %}
 	switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or state.static_invokes or state.hybrid_invokes %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or state.invokes | scxml or state.invokes | hybrid %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:
 {% for block in state.on_entry_blocks %}
 		// W3C SCXML 3.8: onentry block {{ loop.index0 }} (break on error stops subsequent actions)
@@ -168,9 +168,9 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% endif %}
 {% endif %}
 {% endif %}
-{% if state.static_invokes or state.hybrid_invokes %}
+{% if state.invokes | scxml or state.invokes | hybrid %}
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
-{% for invoke_info in state.static_invokes %}
+{% for invoke_info in state.invokes | scxml %}
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
 {% if invoke_info.idlocation %}
@@ -187,7 +187,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			})
 		}
 {% endfor %}
-{% for invoke_info in state.hybrid_invokes %}
+{% for invoke_info in state.invokes | hybrid %}
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
 {% if invoke_info.idlocation %}
@@ -291,22 +291,22 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 		return result
 	}()
 {% endif %}
-{% set has_invoke_exits = model.static_invokes or model.hybrid_invokes %}
+{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid %}
 {% if has_invoke_exits %}
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.static_invokes or state.hybrid_invokes %}
+{% if state.invokes | scxml or state.invokes | hybrid %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:
 		sce.CancelInvokesForState(&p.pendingInvokes, {{ machine_name }}State{{ state_id | to_state_variant }})
-{% for invoke_info in state.static_invokes %}
+{% for invoke_info in state.invokes | scxml %}
 		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
 			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
 		}
 		delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
 		p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = false
 {% endfor %}
-{% for invoke_info in state.hybrid_invokes %}
+{% for invoke_info in state.invokes | hybrid %}
 		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
 			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
 		}

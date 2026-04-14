@@ -48,7 +48,7 @@
 #}
 
     template <typename Engine>
-{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
+{% if not model.needs_script_engine and not model.invokes | scxml and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
@@ -74,7 +74,7 @@
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
         case State::{{ state_id | capitalize }}:
-{% if state.datamodel or state.on_entry_blocks or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
+{% if state.datamodel or state.on_entry_blocks or state.invokes | scxml or state.invokes | hybrid or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
                 // ============================================================
@@ -88,13 +88,13 @@
 {{ dm.initialize_state_datamodel(state, state_id, "AOT executeEntryActions: Late binding initialized", base_path) }}
 
 {% endif %}
-{% if state.static_invokes %}
+{% if state.invokes | scxml %}
                 // ============================================================
                 // W3C SCXML 6.4: STATIC INVOKE - Pure AOT Strategy
                 // ARCHITECTURE.md All-or-Nothing: Parent and child both use statically generated code
                 // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
                 // ============================================================
-{% for invoke_info in state.static_invokes %}
+{% for invoke_info in state.invokes | scxml %}
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                 // Include invoke index to ensure uniqueness for multiple invokes in same state
                 std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
@@ -115,13 +115,13 @@
                 AOT_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
 {% endif %}
-{% if state.hybrid_invokes %}
+{% if state.invokes | hybrid %}
                 // ============================================================
                 // W3C SCXML 6.4: HYBRID INVOKE - Static Hybrid Strategy
                 // ARCHITECTURE.md Hybrid Strategy: AOT parent evaluates expr + creates Interpreter child
                 // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
                 // ============================================================
-                {% for invoke_info in state.hybrid_invokes %}
+                {% for invoke_info in state.invokes | hybrid %}
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                 // Include invoke index to ensure uniqueness for multiple invokes in same state
                 std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
@@ -357,7 +357,7 @@
     }
 
     template <typename Engine>
-{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% if not model.needs_script_engine and not model.invokes | scxml and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 
@@ -434,15 +434,15 @@
 {% if model.has_exit_actions %}
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
+{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid %}
         case State::{{ state_id | capitalize }}:
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
-{% if state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
+{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid %}
                 {
-{% if state.static_invokes or state.hybrid_invokes %}
+{% if state.invokes | scxml or state.invokes | hybrid %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (ARCHITECTURE.md Zero Duplication)
                 ::SCE::Core::InvokeHelper::cancelInvokesForState(pendingInvokes_, state);
-                {% for invoke_info in state.static_invokes %}
+                {% for invoke_info in state.invokes | scxml %}
                 if (child_{{ invoke_info.invoke_id }}_) {
 {% if 'cancel.invoke' in model.events %}
                     if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
@@ -453,7 +453,7 @@
                 }
                 activeInvokes_.erase("{{ invoke_info.invoke_id }}");
 {% endfor %}
-                {% for invoke_info in state.hybrid_invokes %}
+                {% for invoke_info in state.invokes | hybrid %}
                 if (child_{{ invoke_info.invoke_id }}_) {
 {% if 'cancel.invoke' in model.events %}
                     if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {

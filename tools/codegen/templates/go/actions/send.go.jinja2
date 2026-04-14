@@ -235,7 +235,7 @@
 {% set invoke_target_id = action.target | slice_from(2) %}
 	// W3C SCXML 6.4: Send to invoked child "{{ invoke_target_id }}"
 {% set ns_found = namespace(v=false) %}
-{% for invoke_info in model.static_invokes %}
+{% for invoke_info in model.invokes | scxml %}
 {% if invoke_info.invoke_id == invoke_target_id %}
 {% set ns_found.v = true %}
 	if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
@@ -250,7 +250,7 @@
 	}
 {% endif %}
 {% endfor %}
-{% for invoke_info in model.hybrid_invokes %}
+{% for invoke_info in model.invokes | hybrid %}
 {% if invoke_info.invoke_id == invoke_target_id %}
 {% set ns_found.v = true %}
 	if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {

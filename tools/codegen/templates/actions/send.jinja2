@@ -187,9 +187,10 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 {% endif %}
 {% elif action.target == '#_child' %}
 // W3C SCXML 6.4.1: Send to invoked child state machine (test347)
-{% if model.static_invokes %}
-{% set invoke_id = model.static_invokes[0].invoke_id %}
-{% set child_name = model.static_invokes[0].child_name %}
+{% set scxml_list = model.invokes | scxml %}
+{% if scxml_list %}
+{% set invoke_id = scxml_list[0].invoke_id %}
+{% set child_name = scxml_list[0].child_name %}
 if (child_{{ invoke_id }}_) {
     // W3C SCXML 6.4.1: Send event to child using child's Event enum
     using ChildEvent = ::SCE::Generated::{{ child_name }}::Event;
@@ -211,8 +212,8 @@ SCE_LOG_ERROR("Cannot send to #_child: no static invokes in model");
 // ARCHITECTURE.md Zero Duplication: Uses SendHelper::isChildInvokeTarget() (Single Source of Truth)
 if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
     std::string invokeId = ::SCE::SendHelper::extractInvokeId("{{ action.target }}");
-{% if model.static_invokes %}
-{% for invoke in model.static_invokes %}
+{% if model.invokes | scxml %}
+{% for invoke in model.invokes | scxml %}
 {% if loop.first %}
     if (invokeId == "{{ invoke.invoke_id }}") {
         if (child_{{ invoke.invoke_id }}_) {

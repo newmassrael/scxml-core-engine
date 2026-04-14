@@ -15,7 +15,7 @@
     - forwardToAutoforwardChildren()    — W3C SCXML 6.4.6 event forwarding
     - executeFinalizeForChildEvent()    — W3C SCXML 6.5 finalize execution
 #}
-{% if model.static_invokes or model.hybrid_invokes %}
+{% if model.invokes | scxml_family %}
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // Uses InvokeHelper defer/cancel/execute pattern (ARCHITECTURE.md Zero Duplication)
@@ -36,9 +36,9 @@
 
                 // Switch on state to find which invoke to execute
                 {% for state_id, state in model.states | dictsort %}
-                {% if state.static_invokes %}
+                {% if state.invokes | scxml %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
-                    {% for invoke_info in state.static_invokes %}
+                    {% for invoke_info in state.invokes | scxml %}
                     // W3C SCXML 3.12.1: Match runtime-generated invoke ID (stateid.platformid.index format)
                     // Full ID example: "s0.123456789._invoke_0" where 123456789 is runtime platformid (pointer address)
                     // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
@@ -163,9 +163,9 @@
                     {% endfor %}
                 }
                 {% endif %}
-                {% if state.hybrid_invokes %}
+                {% if state.invokes | hybrid %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
-                    {% for invoke_info in state.hybrid_invokes %}
+                    {% for invoke_info in state.invokes | hybrid %}
                     if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
                         // W3C SCXML 6.4: Hybrid invoke — evaluate expression, then run pre-generated AOT child
                         {% if invoke_info.srcexpr %}
@@ -246,15 +246,15 @@
     template <typename Engine>
     void tickChildren([[maybe_unused]] Engine& engine) {
         {% for state_id, state in model.states | dictsort %}
-        {% if state.static_invokes %}
-        {% for invoke_info in state.static_invokes %}
+        {% if state.invokes | scxml %}
+        {% for invoke_info in state.invokes | scxml %}
         if (child_{{ invoke_info.invoke_id }}_) {
             child_{{ invoke_info.invoke_id }}_->tick();
         }
         {% endfor %}
         {% endif %}
-        {% if state.hybrid_invokes %}
-        {% for invoke_info in state.hybrid_invokes %}
+        {% if state.invokes | hybrid %}
+        {% for invoke_info in state.invokes | hybrid %}
         if (child_{{ invoke_info.invoke_id }}_) {
             child_{{ invoke_info.invoke_id }}_->tick();
         }
@@ -269,8 +269,8 @@
     void forwardToAutoforwardChildren([[maybe_unused]] const std::string& eventName, [[maybe_unused]] Engine& engine) {
 
         {% for state_id, state in model.states | dictsort %}
-        {% if state.static_invokes %}
-        {% for invoke_info in state.static_invokes %}
+        {% if state.invokes | scxml %}
+        {% for invoke_info in state.invokes | scxml %}
         // Check if child {{ invoke_info.invoke_id }} has autoforward enabled
         {
             auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
@@ -292,7 +292,7 @@
         {% endfor %}
     }
 
-{% if model.static_invokes %}
+{% if model.invokes | scxml %}
     // W3C SCXML 6.5: Execute finalize for events from invoked children
     // Finalize runs BEFORE the event is processed, with _event set to child's event
     template <typename Engine>

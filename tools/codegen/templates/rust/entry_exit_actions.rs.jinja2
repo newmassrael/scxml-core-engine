@@ -28,7 +28,7 @@
 {% if model.has_entry_actions %}
         match state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') or state.static_invokes or state.hybrid_invokes %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% if state.datamodel and model.binding == 'late' %}
                 // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
@@ -69,9 +69,9 @@
 {% endfor %}
                 }
 {% endif %}
-{% if state.static_invokes or state.hybrid_invokes %}
+{% if state.invokes | scxml or state.invokes | hybrid %}
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
-{% for invoke_info in state.static_invokes %}
+{% for invoke_info in state.invokes | scxml %}
                 {
                     let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
                         "{{ state_id }}", self as *const _ as usize);
@@ -95,7 +95,7 @@
                     );
                 }
 {% endfor %}
-{% for invoke_info in state.hybrid_invokes %}
+{% for invoke_info in state.invokes | hybrid %}
                 // W3C SCXML 6.4: Defer hybrid invoke '{{ invoke_info.invoke_id }}' (srcexpr/contentexpr evaluated at macrostep end)
                 {
                     let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
@@ -338,19 +338,19 @@
         }
 {% endfor %}
 {% endif %}
-{% set has_invoke_exits = model.static_invokes or model.hybrid_invokes %}
+{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid %}
 {% if has_invoke_exits %}
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.static_invokes or state.hybrid_invokes %}
+{% if state.invokes | scxml or state.invokes | hybrid %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state
                 sce_rust_runtime::invoke::cancel_invokes_for_state(
                     &mut self.pending_invokes,
                     {{ machine_name }}State::{{ state_id | to_state_variant }},
                 );
-{% for invoke_info in state.static_invokes %}
+{% for invoke_info in state.invokes | scxml %}
                 // W3C SCXML 6.4: Cleanup running static child '{{ invoke_info.invoke_id }}'
                 if self.child_{{ invoke_info.invoke_id }}.is_some() {
                     if !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
@@ -364,7 +364,7 @@
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");
                 self.pending_done_invoke_{{ invoke_info.invoke_id }} = false;
 {% endfor %}
-{% for invoke_info in state.hybrid_invokes %}
+{% for invoke_info in state.invokes | hybrid %}
                 // W3C SCXML 6.4: Cleanup running hybrid child '{{ invoke_info.invoke_id }}'
                 if self.child_{{ invoke_info.invoke_id }}.is_some() {
                     self.child_{{ invoke_info.invoke_id }} = None;

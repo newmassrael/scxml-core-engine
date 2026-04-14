@@ -17,7 +17,7 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
 
     // Named Context: set needs_nonstatic_method
     model.needs_nonstatic_method = model.needs_script_engine
-        || !model.static_invokes.is_empty()
+        || model.has_scxml_invoke()
         || model.has_parent_communication
         || model.has_parallel_states
         || model.uses_in_predicate
@@ -142,8 +142,7 @@ fn analyze_model_features(model: &mut SCXMLModel) {
     // Child invoke script engine propagation
     if !model.needs_script_engine {
         let needs = model.states.values().any(|s| {
-            s.static_invokes
-                .iter()
+            s.iter_scxml_invokes()
                 .any(|si| si.child_needs_script_engine)
         });
         if needs {
@@ -292,7 +291,7 @@ fn add_system_events(model: &mut SCXMLModel) {
         model.events.insert("Wildcard".to_string());
     }
 
-    if !model.static_invokes.is_empty() {
+    if model.has_scxml_invoke() {
         model.events.insert("done.invoke".to_string());
         model.events.insert("cancel.invoke".to_string());
         model.events.insert("error.execution".to_string());

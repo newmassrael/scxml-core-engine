@@ -272,10 +272,10 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
     let mut invoke_entries: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
 
     for (state_id, state) in &model.states {
-        if !state.static_invokes.is_empty() {
+        if state.has_scxml_invoke() {
             let mut entries = Vec::new();
 
-            for si in &state.static_invokes {
+            for si in state.iter_scxml_invokes() {
                 let invoke_id = &si.invoke_id;
                 let specific_done = if !invoke_id.is_empty() {
                     format!("done.invoke.{invoke_id}")
@@ -325,10 +325,10 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
 
     // W3C SCXML 6.4: Hybrid invoke support (srcexpr/contentexpr)
     for (state_id, state) in &model.states {
-        if !state.hybrid_invokes.is_empty() {
+        if state.has_hybrid_invoke() {
             let entries = invoke_entries.entry(state_id.clone()).or_default();
 
-            for hi in &state.hybrid_invokes {
+            for hi in state.iter_hybrid_invokes() {
                 let invoke_id = &hi.invoke_id;
                 let specific_done = if !invoke_id.is_empty() {
                     format!("done.invoke.{invoke_id}")

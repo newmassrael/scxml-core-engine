@@ -144,7 +144,7 @@
     {% include 'process_transition.jinja2' %}
 
 public:
-    {% if model.needs_script_engine or model.static_invokes or model.hybrid_invokes %}
+    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid %}
     {% include 'scriptengine_helpers.jinja2' %}
     {% endif %}
 

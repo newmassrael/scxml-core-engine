@@ -434,7 +434,60 @@ pub struct SCXMLModel {
 /// Maximum recursion depth for resolving nested initial states to leaf states.
 pub(crate) const MAX_STATE_DEPTH: usize = 20;
 
+impl State {
+    /// True iff the state declares any [`Invoke::Scxml`] (a W3C static
+    /// SCXML-session invoke). Equivalent to iterating `invokes` and matching
+    /// on the variant; kept as a method so call sites read at the intent
+    /// level ("does this state spawn a child SCXML session?") rather than
+    /// re-spelling the discriminator each time.
+    pub fn has_scxml_invoke(&self) -> bool {
+        self.invokes.iter().any(|i| matches!(i, Invoke::Scxml(_)))
+    }
+    /// True iff the state declares any [`Invoke::Hybrid`] (SCXML session
+    /// whose target is resolved at runtime via `srcexpr`/`contentexpr`).
+    pub fn has_hybrid_invoke(&self) -> bool {
+        self.invokes.iter().any(|i| matches!(i, Invoke::Hybrid(_)))
+    }
+    /// Iterate over the static-SCXML invoke payloads on this state.
+    pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &InvokeInfo> {
+        self.invokes.iter().filter_map(|i| match i {
+            Invoke::Scxml(info) => Some(info),
+            _ => None,
+        })
+    }
+    /// Iterate over the hybrid-SCXML invoke payloads on this state.
+    pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &InvokeInfo> {
+        self.invokes.iter().filter_map(|i| match i {
+            Invoke::Hybrid(info) => Some(info),
+            _ => None,
+        })
+    }
+}
+
 impl SCXMLModel {
+    /// True iff any state declares a static [`Invoke::Scxml`]. The
+    /// `has_invoke` field is the union across all kinds; `has_hybrid_invoke`
+    /// is already stored as a field. This method completes the pair by
+    /// projecting the Scxml variant out of `invokes`.
+    pub fn has_scxml_invoke(&self) -> bool {
+        self.invokes.iter().any(|i| matches!(i, Invoke::Scxml(_)))
+    }
+    /// Iterate over every static-SCXML invoke payload in the model, in
+    /// parser insertion order.
+    pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &InvokeInfo> {
+        self.invokes.iter().filter_map(|i| match i {
+            Invoke::Scxml(info) => Some(info),
+            _ => None,
+        })
+    }
+    /// Iterate over every hybrid-SCXML invoke payload in the model.
+    pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &InvokeInfo> {
+        self.invokes.iter().filter_map(|i| match i {
+            Invoke::Hybrid(info) => Some(info),
+            _ => None,
+        })
+    }
+
     /// W3C SCXML 3.3/3.4: Resolve state ID to leaf by following initial attrs
     pub fn resolve_to_leaf(&self, state_id: &str) -> String {
         let mut current = state_id.to_string();

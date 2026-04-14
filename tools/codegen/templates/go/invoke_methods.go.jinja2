@@ -9,7 +9,7 @@
 
     Port of Rust invoke_methods.rs.jinja2.
 #}
-{% if model.static_invokes or model.hybrid_invokes %}
+{% if model.invokes | scxml or model.invokes | hybrid %}
 
 // ExecutePendingInvokes starts deferred child state machines (W3C SCXML 6.4).
 // Port of Rust do_execute_pending_invokes().
@@ -25,8 +25,8 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 
 	for _, pending := range invokesToExecute {
 {% for state_id, state in model.states | dictsort %}
-{% if state.static_invokes %}
-{% for invoke_info in state.static_invokes %}
+{% if state.invokes | scxml %}
+{% for invoke_info in state.invokes | scxml %}
 		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
 {% if invoke_info.namelist %}
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
@@ -125,8 +125,8 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% endif %}
 {% endfor %}
 {% for state_id, state in model.states | dictsort %}
-{% if state.hybrid_invokes %}
-{% for invoke_info in state.hybrid_invokes %}
+{% if state.invokes | hybrid %}
+{% for invoke_info in state.invokes | hybrid %}
 		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
 {% if invoke_info.srcexpr %}
 			// W3C SCXML 6.4.3: Evaluate srcexpr at runtime
@@ -196,7 +196,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 // TickChildren ticks child state machines (W3C SCXML 6.4).
 // Port of Rust do_tick_children().
 func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
-{% for invoke_info in model.static_invokes %}
+{% for invoke_info in model.invokes | scxml %}
 	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
 		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
@@ -208,7 +208,7 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 		}
 	}
 {% endfor %}
-{% for invoke_info in model.hybrid_invokes %}
+{% for invoke_info in model.invokes | hybrid %}
 	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
 		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
@@ -222,7 +222,7 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 {% endfor %}
 }
 
-{% set autoforward_invokes = model.static_invokes | selectattr('autoforward') | list %}
+{% set autoforward_invokes = model.invokes | scxml | selectattr('autoforward') | list %}
 {% if autoforward_invokes %}
 // ForwardToAutoforwardChildren forwards external events to children with autoforward=true (W3C SCXML 6.4.6).
 func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
@@ -239,7 +239,7 @@ func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string
 }
 {% endif %}
 
-{% set finalize_invokes = model.static_invokes | selectattr('finalize_content') | list %}
+{% set finalize_invokes = model.invokes | scxml | selectattr('finalize_content') | list %}
 {% if finalize_invokes %}
 // ExecuteFinalizeForChildEvent executes finalize for events from invoked children (W3C SCXML 6.5).
 func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *sce.EventWithMetadata[{{ machine_name }}Event], engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
@@ -281,7 +281,7 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-{% for invoke_info in model.static_invokes %}
+{% for invoke_info in model.invokes | scxml %}
 type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
 	engine *sce.Engine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event]
 	policy *{{ invoke_info.child_name | to_machine_name }}Policy
@@ -293,7 +293,7 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseEx
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
 {% endfor %}
-{% for invoke_info in model.hybrid_invokes %}
+{% for invoke_info in model.invokes | hybrid %}
 type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
 	engine *sce.Engine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event]
 	policy *{{ invoke_info.child_name | to_machine_name }}Policy
