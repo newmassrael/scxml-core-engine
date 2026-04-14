@@ -228,8 +228,21 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
 /// Compile a forge (non-statechart) SCXML from already-read content.
 ///
 /// Uses single-parse path: detects kind and parses model in one XML parse.
-/// Phase 1 supports C++ only.
+///
+/// The error type is [`Located<ForgeError>`]: location is part of the
+/// error contract — every failure ties back to the `name` the caller
+/// supplied, so downstream consumers (CLI diagnostics, build scripts,
+/// agents) never have to attach file context after the fact.
 pub fn compile_forge_from_string(
+    content: &str,
+    name: &str,
+    language: generator::Language,
+) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
+    compile_forge_from_string_inner(content, name, language)
+        .map_err(|e| forge::error::Located::new(e, name, None, None))
+}
+
+fn compile_forge_from_string_inner(
     content: &str,
     name: &str,
     language: generator::Language,
@@ -277,6 +290,17 @@ pub struct ForgeCompileOptions {
 /// forge codegen — the CLI, test harness, and in-process build scripts
 /// all go through here.
 pub fn compile_forge_with_imports(
+    content: &str,
+    name: &str,
+    language: generator::Language,
+    base_dir: &Path,
+    options: &ForgeCompileOptions,
+) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
+    compile_forge_with_imports_inner(content, name, language, base_dir, options)
+        .map_err(|e| forge::error::Located::new(e, name, None, None))
+}
+
+fn compile_forge_with_imports_inner(
     content: &str,
     name: &str,
     language: generator::Language,

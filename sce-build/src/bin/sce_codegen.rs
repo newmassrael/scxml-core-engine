@@ -346,18 +346,15 @@ impl ErrorFormat {
     }
 
     /// Convenience shim for the most common case: a forge-pipeline
-    /// error that the legacy CLI reported with the "Forge codegen
-    /// error: " banner.
+    /// error reported with the legacy "Forge codegen error: " banner.
     ///
-    /// `source_file` is the SCXML path the CLI was asked to compile.
-    /// Wrapping in [`Located<ForgeError>`] routes the error through
-    /// the location-aware diagnostic impl, so every emitted NDJSON
-    /// record carries a `location.file` field at minimum. XSD errors
-    /// are special-cased in `expand_xsd_diagnostics` and emit per-
-    /// violation line data from libxml2, ignoring this outer file.
-    fn emit_forge_and_exit(self, err: ForgeError, source_file: &str) -> ! {
-        let located = sce_build::forge::error::Located::new(err, source_file, None, None);
-        self.emit_and_exit(&located, "Forge codegen error: ")
+    /// The library returns `Located<ForgeError>` directly — location
+    /// is part of the error contract at the library boundary, not a
+    /// CLI-local convention — so this wrapper just adds the banner
+    /// and delegates. XSD errors special-case their own per-violation
+    /// line data inside `expand_xsd_diagnostics`.
+    fn emit_forge_and_exit(self, err: &sce_build::forge::error::Located<ForgeError>) -> ! {
+        self.emit_and_exit(err, "Forge codegen error: ")
     }
 }
 
@@ -718,7 +715,7 @@ fn cmd_generate(
                     emit_generate_manifest(&report);
                     return;
                 }
-                Err(e) => error_format.emit_forge_and_exit(e, scxml_path),
+                Err(e) => error_format.emit_forge_and_exit(&e),
             }
         }
         sce_build::Pipeline::Scxml => {}
