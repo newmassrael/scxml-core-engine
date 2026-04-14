@@ -530,20 +530,22 @@ impl SCXMLParser {
                                     .collect()
                             })
                             .unwrap_or_default();
-                        let hi = InvokeInfo {
-                            invoke_id: json_str(&invoke, "id"),
-                            child_name: format!("{}_hybrid{idx}", model.name),
-                            state_name: state_id.clone(),
-                            autoforward: invoke
-                                .get("autoforward")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("false")
-                                == "true",
-                            params,
-                            idlocation: json_str(&invoke, "idlocation"),
-                            srcexpr: Some(json_str(&invoke, "srcexpr")),
-                            contentexpr: Some(json_str(&invoke, "contentexpr")),
-                            ..Default::default()
+                        let hi = HybridInvokeInfo {
+                            common: InvokeCommon {
+                                invoke_id: json_str(&invoke, "id"),
+                                child_name: format!("{}_hybrid{idx}", model.name),
+                                state_name: state_id.clone(),
+                                autoforward: invoke
+                                    .get("autoforward")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("false")
+                                    == "true",
+                                params,
+                                idlocation: json_str(&invoke, "idlocation"),
+                                ..Default::default()
+                            },
+                            srcexpr: json_str(&invoke, "srcexpr"),
+                            contentexpr: json_str(&invoke, "contentexpr"),
                         };
                         state.invokes.push(Invoke::Hybrid(hi.clone()));
                         model.invokes.push(Invoke::Hybrid(hi));
@@ -576,21 +578,23 @@ impl SCXMLParser {
                             })
                             .unwrap_or_default();
 
-                        let si = InvokeInfo {
-                            invoke_id: json_str(&invoke, "id"),
-                            child_name: String::new(),
-                            state_name: state_id.clone(),
-                            autoforward: invoke
-                                .get("autoforward")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("false")
-                                == "true",
+                        let si = ScxmlInvokeInfo {
+                            common: InvokeCommon {
+                                invoke_id: json_str(&invoke, "id"),
+                                child_name: String::new(),
+                                state_name: state_id.clone(),
+                                autoforward: invoke
+                                    .get("autoforward")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("false")
+                                    == "true",
+                                params,
+                                idlocation: json_str(&invoke, "idlocation"),
+                                ..Default::default()
+                            },
                             finalize_content: json_str(&invoke, "finalize_content"),
                             src: json_str(&invoke, "src"),
-                            params,
-                            idlocation: json_str(&invoke, "idlocation"),
                             namelist: json_str(&invoke, "namelist"),
-                            ..Default::default()
                         };
                         state.invokes.push(Invoke::Scxml(si.clone()));
                         model.invokes.push(Invoke::Scxml(si));
@@ -1489,16 +1493,17 @@ impl SCXMLParser {
         // matching specific event is also added to the model's event set so
         // the generated Event enum exposes it.
         for invoke in model.invokes.iter_mut() {
-            let info = match invoke {
-                Invoke::Scxml(i) | Invoke::Hybrid(i) => i,
+            let common: &mut InvokeCommon = match invoke {
+                Invoke::Scxml(i) => &mut i.common,
+                Invoke::Hybrid(i) => &mut i.common,
                 Invoke::MeshRpc(_) => continue,
             };
-            if info.invoke_id.is_empty() {
+            if common.invoke_id.is_empty() {
                 continue;
             }
-            let specific = format!("done.invoke.{}", info.invoke_id);
-            info.use_specific_event = used_done_invoke_events.contains(&specific);
-            if info.use_specific_event {
+            let specific = format!("done.invoke.{}", common.invoke_id);
+            common.use_specific_event = used_done_invoke_events.contains(&specific);
+            if common.use_specific_event {
                 model.events.insert(specific);
             }
         }
@@ -1506,15 +1511,16 @@ impl SCXMLParser {
         // Propagate use_specific_event to each state's local Invoke copy.
         for state in model.states.values_mut() {
             for invoke in state.invokes.iter_mut() {
-                let info = match invoke {
-                    Invoke::Scxml(i) | Invoke::Hybrid(i) => i,
+                let common: &mut InvokeCommon = match invoke {
+                    Invoke::Scxml(i) => &mut i.common,
+                    Invoke::Hybrid(i) => &mut i.common,
                     Invoke::MeshRpc(_) => continue,
                 };
-                if info.invoke_id.is_empty() {
+                if common.invoke_id.is_empty() {
                     continue;
                 }
-                let specific = format!("done.invoke.{}", info.invoke_id);
-                info.use_specific_event = used_done_invoke_events.contains(&specific);
+                let specific = format!("done.invoke.{}", common.invoke_id);
+                common.use_specific_event = used_done_invoke_events.contains(&specific);
             }
         }
     }
@@ -1535,7 +1541,7 @@ impl SCXMLParser {
         };
         let mut parsed_children: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        let invokes: Vec<InvokeInfo> = model.iter_scxml_invokes().cloned().collect();
+        let invokes: Vec<ScxmlInvokeInfo> = model.iter_scxml_invokes().cloned().collect();
         for si in &invokes {
             if si.child_name.is_empty() || parsed_children.contains(&si.child_name) {
                 continue;
@@ -1657,7 +1663,7 @@ impl SCXMLParser {
                 si.child_name = child_name.clone();
 
                 // Parse extracted child to detect JSEngine needs and datamodel variables
-                parse_child_metadata(&child_scxml_path, si);
+                parse_child_metadata(&child_scxml_path, &mut si.common);
             } else if !si.src.is_empty() && si.child_name.is_empty() {
                 // Handle external src
                 let src = si.src.replace("file:", "");
@@ -1667,7 +1673,7 @@ impl SCXMLParser {
                 }
                 // Parse child to detect script engine needs
                 let child_scxml_path = scxml_dir.join(format!("{}.scxml", si.child_name));
-                parse_child_metadata(&child_scxml_path, si);
+                parse_child_metadata(&child_scxml_path, &mut si.common);
             }
 
             // Auto-generate invoke ID if not specified
@@ -1682,7 +1688,7 @@ impl SCXMLParser {
         // state's per-state `Invoke::Scxml` entry. State-level entries were
         // cloned from pre-mutation data in `parse_states`, so they need a
         // second pass to pick up child_name / idlocation / child metadata.
-        let model_scxml: Vec<InvokeInfo> = model.iter_scxml_invokes().cloned().collect();
+        let model_scxml: Vec<ScxmlInvokeInfo> = model.iter_scxml_invokes().cloned().collect();
         for state in model.states.values_mut() {
             for invoke in state.invokes.iter_mut() {
                 let si = match invoke {
@@ -2240,22 +2246,25 @@ fn extract_inline_child_name(
 }
 
 /// Parse a child SCXML file to extract metadata (needs_script_engine, datamodel vars).
-fn parse_child_metadata(child_path: &Path, invoke_info: &mut InvokeInfo) {
+///
+/// The fields written live on [`InvokeCommon`] so both `ScxmlInvokeInfo` and
+/// `HybridInvokeInfo` can reuse this via `&mut si.common` / `&mut hi.common`.
+fn parse_child_metadata(child_path: &Path, common: &mut InvokeCommon) {
     if !child_path.exists() {
-        invoke_info.child_needs_script_engine = true;
-        invoke_info.child_datamodel_vars = Some(Vec::new());
+        common.child_needs_script_engine = true;
+        common.child_datamodel_vars = Some(Vec::new());
         return;
     }
     match SCXMLParser::new().parse_file(&child_path.to_string_lossy()) {
         Ok(child_model) => {
-            invoke_info.child_needs_script_engine = child_model.needs_script_engine;
-            invoke_info.child_datamodel_vars = Some(
+            common.child_needs_script_engine = child_model.needs_script_engine;
+            common.child_datamodel_vars = Some(
                 child_model.variables.iter().map(|v| v.id.clone()).collect(),
             );
         }
         Err(_) => {
-            invoke_info.child_needs_script_engine = true;
-            invoke_info.child_datamodel_vars = Some(Vec::new());
+            common.child_needs_script_engine = true;
+            common.child_datamodel_vars = Some(Vec::new());
         }
     }
 }

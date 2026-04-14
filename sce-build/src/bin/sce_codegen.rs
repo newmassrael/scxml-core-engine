@@ -554,7 +554,7 @@ fn generate_hybrid_child_scxmls(model: &SCXMLModel, scxml_path: &Path, output_di
             continue;
         }
 
-        let srcexpr = invoke.srcexpr.as_deref().unwrap_or("");
+        let srcexpr = invoke.srcexpr.as_str();
 
         let mut found_child = false;
         if !srcexpr.is_empty() {

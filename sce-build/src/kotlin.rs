@@ -361,8 +361,8 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "state_id": state_id,
                     "child_needs_script_engine": false,
                     "is_hybrid": true,
-                    "srcexpr": hi.srcexpr.as_deref().unwrap_or(""),
-                    "contentexpr": hi.contentexpr.as_deref().unwrap_or(""),
+                    "srcexpr": hi.srcexpr.as_str(),
+                    "contentexpr": hi.contentexpr.as_str(),
                 }));
             }
         }

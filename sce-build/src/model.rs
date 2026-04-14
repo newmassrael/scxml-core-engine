@@ -229,18 +229,21 @@ pub struct ContextObject {
 /// - [`Invoke::MeshRpc`] — single request / single reply RPC over Mesh
 ///   (§9.5 `<invoke type="sce:mesh-rpc">`), no child session.
 ///
-/// Modelled as a sum type because "exactly one kind per invoke" is the
-/// invariant; two parallel `static_invokes` / `hybrid_invokes` vectors of the
-/// same `InvokeInfo` type, plus a third `mesh_rpc_invokes` of a different
-/// type, would hide that invariant from every consumer.
+/// Each variant wraps a dedicated struct that holds only the fields its kind
+/// actually needs — `finalize_content`/`src`/`namelist` never appear on a
+/// hybrid invoke, `srcexpr`/`contentexpr` never appear on a static invoke.
+/// The type system enforces these invariants; nothing at the call site has
+/// to remember which fields apply to which variant.
 ///
 /// Serialised with an internal `kind` tag so minijinja templates can dispatch
 /// on `{% if invoke.kind == "Scxml" %}` without needing tuple-style access.
+/// The inner structs use `#[serde(flatten)]` for `common`, so templates keep
+/// reading `invoke.invoke_id` / `invoke.autoforward` at the top level.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind")]
 pub enum Invoke {
-    Scxml(InvokeInfo),
-    Hybrid(InvokeInfo),
+    Scxml(ScxmlInvokeInfo),
+    Hybrid(HybridInvokeInfo),
     MeshRpc(MeshRpcInvokeInfo),
 }
 
@@ -278,29 +281,86 @@ pub struct MeshRpcInvokeInfo {
     pub idlocation: String,
 }
 
-/// W3C SCXML 6.4: Static invoke information
+/// Fields common to every W3C SCXML-session invoke (Scxml + Hybrid).
+///
+/// Factored into its own struct so the two variants can share DRY access
+/// without carrying each other's kind-specific fields. Flattened into the
+/// parent struct's serialisation so templates keep seeing `invoke.invoke_id`
+/// at the top level (no `invoke.common.invoke_id` dance template-side).
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct InvokeInfo {
+pub struct InvokeCommon {
     pub invoke_id: String,
     pub child_name: String,
     pub state_name: String,
     pub autoforward: bool,
-    pub finalize_content: String,
-    pub src: String,
     pub params: Vec<Param>,
     pub idlocation: String,
-    pub namelist: String,
     pub child_needs_script_engine: bool,
     /// W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke
     #[serde(default)]
     pub use_specific_event: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub child_datamodel_vars: Option<Vec<String>>,
-    // Hybrid invoke fields
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub srcexpr: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contentexpr: Option<String>,
+}
+
+/// W3C SCXML 6.4: Static invoke (`<invoke src="..."` or inline `<content>`).
+///
+/// Holds only the fields the static lifecycle actually uses. Hybrid-only
+/// fields (`srcexpr`, `contentexpr`) do not appear here — the type system
+/// guarantees `Invoke::Scxml` never carries them. Common metadata lives on
+/// [`InvokeCommon`] and is accessible via `Deref` so `scxml_info.invoke_id`
+/// still reads naturally.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ScxmlInvokeInfo {
+    #[serde(flatten)]
+    pub common: InvokeCommon,
+    pub finalize_content: String,
+    pub src: String,
+    pub namelist: String,
+}
+
+/// W3C SCXML 6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).
+///
+/// Scxml-only fields (`finalize_content`, `src`, `namelist`) do not appear
+/// here; hybrid invokes never run a `<finalize>` block and resolve their
+/// target at runtime, so the legacy flat struct's mixed fields are now
+/// variant-scoped.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct HybridInvokeInfo {
+    #[serde(flatten)]
+    pub common: InvokeCommon,
+    /// Runtime expression that resolves to a child SCXML path.
+    /// Empty if `contentexpr` is used instead.
+    pub srcexpr: String,
+    /// Runtime expression that produces inline SCXML content.
+    /// Empty if `srcexpr` is used instead.
+    pub contentexpr: String,
+}
+
+impl std::ops::Deref for ScxmlInvokeInfo {
+    type Target = InvokeCommon;
+    fn deref(&self) -> &Self::Target {
+        &self.common
+    }
+}
+
+impl std::ops::DerefMut for ScxmlInvokeInfo {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.common
+    }
+}
+
+impl std::ops::Deref for HybridInvokeInfo {
+    type Target = InvokeCommon;
+    fn deref(&self) -> &Self::Target {
+        &self.common
+    }
+}
+
+impl std::ops::DerefMut for HybridInvokeInfo {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.common
+    }
 }
 
 /// W3C SCXML 3.3: State element
@@ -445,14 +505,14 @@ impl State {
         self.invokes.iter().any(|i| matches!(i, Invoke::Hybrid(_)))
     }
     /// Iterate over the static-SCXML invoke payloads on this state.
-    pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &InvokeInfo> {
+    pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &ScxmlInvokeInfo> {
         self.invokes.iter().filter_map(|i| match i {
             Invoke::Scxml(info) => Some(info),
             _ => None,
         })
     }
     /// Iterate over the hybrid-SCXML invoke payloads on this state.
-    pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &InvokeInfo> {
+    pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &HybridInvokeInfo> {
         self.invokes.iter().filter_map(|i| match i {
             Invoke::Hybrid(info) => Some(info),
             _ => None,
@@ -470,14 +530,14 @@ impl SCXMLModel {
     }
     /// Iterate over every static-SCXML invoke payload in the model, in
     /// parser insertion order.
-    pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &InvokeInfo> {
+    pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &ScxmlInvokeInfo> {
         self.invokes.iter().filter_map(|i| match i {
             Invoke::Scxml(info) => Some(info),
             _ => None,
         })
     }
     /// Iterate over every hybrid-SCXML invoke payload in the model.
-    pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &InvokeInfo> {
+    pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &HybridInvokeInfo> {
         self.invokes.iter().filter_map(|i| match i {
             Invoke::Hybrid(info) => Some(info),
             _ => None,
