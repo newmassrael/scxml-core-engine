@@ -148,6 +148,83 @@ impl BindingDefaultIds {
     }
 }
 
+/// Per-target transport-specific state. Variant identity replaces the
+/// `transport: String` runtime tag — a reader can no longer reach for
+/// `someip_service` on a non-someip target because the field does not
+/// exist on those variants.
+///
+/// Three sources are merged into the variant payloads at construction
+/// (`finalize_targets` + `build_transport_state`):
+///   1. `transport:` from the deploy.yaml binding selects the variant.
+///   2. Validated typed fields (e.g. `Shm::arena_bytes`) come from
+///      `validate_shm_extras_partial` having already proven the source
+///      yaml value parses cleanly.
+///   3. `extra: HashMap<...>` carries genuinely opaque transport-native
+///      passthrough keys (e.g. someip `protocol:`) — reserved-name keys
+///      that aliased typed fields are stripped before this lands here.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TransportState {
+    /// Same-process direct call. No transport state besides the target
+    /// identity carried by `ResolvedTarget`.
+    Local,
+    /// Shared-memory cross-process channel. Capacity tunables are typed
+    /// here so the template never re-validates them.
+    Shm {
+        /// `None` falls back to `SCE::Mesh::SHM_DEFAULT_ARENA_BYTES`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        arena_bytes: Option<u32>,
+        /// `None` falls back to `SCE::Mesh::SHM_DEFAULT_RING_CAPACITY`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ring_capacity: Option<u32>,
+    },
+    /// SOME/IP via vsomeip. Identity + per-event ID map are inseparable.
+    Someip {
+        /// Service / instance numeric IDs resolved from vsomeip.json.
+        service: SomeipServiceIds,
+        /// Per-event resolved IDs. Topology guarantees one entry per
+        /// `event_patterns` entry — `validate_someip_pattern_fields`
+        /// rejects builds where this invariant is violated.
+        event_bindings: BTreeMap<String, SomeipEventIds>,
+        /// Non-typed passthrough (e.g. `protocol: udp/tcp`). Reserved
+        /// SOME/IP ID keys are stripped upstream.
+        #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+        extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    },
+    /// Zenoh pub/sub. The key expression is mandatory.
+    Zenoh {
+        /// Zenoh key expression (`brake/cmd`, etc).
+        key: String,
+        /// Non-typed passthrough.
+        #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+        extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    },
+    /// Recognised in the registry but not yet implemented (dds, can, …).
+    /// Codegen rejects with `UnsupportedTransport` before this variant
+    /// reaches the template — the variant exists so the sum type
+    /// covers every entry in `transport::lookup`.
+    Unimplemented {
+        /// The deploy.yaml `transport:` string, retained verbatim for
+        /// diagnostics emitted by codegen.
+        transport_name: String,
+    },
+}
+
+impl TransportState {
+    /// Stable string label identifying the transport variant. Used by
+    /// diagnostics that need to refer to the transport by name (e.g.
+    /// `transport::lookup` queries, error messages).
+    pub fn transport_name(&self) -> &str {
+        match self {
+            Self::Local => "local",
+            Self::Shm { .. } => "shm",
+            Self::Someip { .. } => "someip",
+            Self::Zenoh { .. } => "zenoh",
+            Self::Unimplemented { transport_name } => transport_name,
+        }
+    }
+}
+
 /// A resolved send target: SCXML <send> target matched to a deploy.yaml binding.
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedTarget {
@@ -156,27 +233,39 @@ pub struct ResolvedTarget {
     /// Events sent to this target (for documentation/validation).
     pub events: Vec<String>,
     /// Transport type from deploy.yaml binding.
+    ///
+    /// Deprecated: kept temporarily for the in-flight TransportState
+    /// migration. Use `state.transport_name()` instead — `transport`
+    /// disappears in the third commit of the sum-type refactor.
     pub transport: String,
     /// Transport-native configuration from deploy.yaml binding.
     ///
-    /// Reserved for keys the template treats as opaque (zenoh `key:`,
-    /// someip `protocol:`, shm capacity tunables, …). SOME/IP identity
-    /// lives on [`ResolvedTarget::someip_service`], not here.
+    /// Deprecated: kept temporarily for the in-flight TransportState
+    /// migration. Typed values (someip identity, shm capacity, zenoh
+    /// key) live on the `state` variant; `extra` disappears in the
+    /// third commit of the sum-type refactor.
     pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     /// Typed SOME/IP service identity (`service_id` + `instance_id`).
-    /// `Some` for every `transport == "someip"` target after resolution;
-    /// `None` for non-someip targets. Hoisting out of `extra` means the
-    /// template reads one typed field instead of probing the untyped map.
+    ///
+    /// Deprecated: kept temporarily for the in-flight TransportState
+    /// migration. Read `TransportState::Someip { service, .. }`
+    /// instead. Disappears in the third commit of the sum-type refactor.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub someip_service: Option<SomeipServiceIds>,
     /// Per-event pattern metadata for codegen (pattern-aware send + RPC correlation).
     pub event_patterns: Vec<EventPatternInfo>,
     /// Per-event resolved SOME/IP numeric IDs, keyed by SCXML event name.
-    /// Empty for non-someip targets. For someip targets every event that
-    /// has a detected/default pattern gets exactly one entry; if an entry
-    /// is missing, the pipeline rejects the build
-    /// before codegen runs.
+    ///
+    /// Deprecated: kept temporarily for the in-flight TransportState
+    /// migration. Read `TransportState::Someip { event_bindings, .. }`
+    /// instead. Disappears in the third commit of the sum-type refactor.
     pub event_bindings: BTreeMap<String, SomeipEventIds>,
+    /// Tagged transport state — the post-refactor SSOT. Variant identity
+    /// replaces the `transport: String` runtime tag and the
+    /// `Some`/`None`-correlated `someip_service` / `event_bindings`
+    /// fields. The legacy fields above continue to mirror this for the
+    /// duration of the migration.
+    pub state: TransportState,
 }
 
 /// Build-time warning about dynamic targets that cannot be statically resolved.
@@ -663,6 +752,11 @@ pub(crate) fn finalize_targets(
             (None, BTreeMap::new())
         };
 
+        // Build the typed state variant from the same inputs as the
+        // legacy fields. Population is in lockstep — commit 2 migrates
+        // consumers, commit 3 deletes the legacy mirrors.
+        let state = build_transport_state(&pt, someip_service, &event_bindings);
+
         resolved.push(ResolvedTarget {
             target: pt.target,
             events: pt.events,
@@ -671,10 +765,68 @@ pub(crate) fn finalize_targets(
             someip_service,
             event_patterns: pt.event_patterns,
             event_bindings,
+            state,
         });
     }
 
     Ok(resolved)
+}
+
+/// Construct the [`TransportState`] variant for a partial target.
+///
+/// SHM capacity tunables are extracted via `as_u64` after
+/// [`validate_shm_extras_partial`] has already confirmed they fit in
+/// `u32`; the cast is therefore lossless. SOME/IP identity and per-event
+/// IDs are passed in by the caller (already produced by
+/// [`resolve_someip_ids`]). Zenoh `key` is required by the registry
+/// (`required_binding_fields = ["key"]`) so its presence is guaranteed
+/// upstream — non-string values render as the empty string here, which
+/// downstream codegen will surface as a build-time mismatch.
+fn build_transport_state(
+    pt: &PartialTarget,
+    someip_service: Option<SomeipServiceIds>,
+    event_bindings: &BTreeMap<String, SomeipEventIds>,
+) -> TransportState {
+    match pt.transport.as_str() {
+        "local" => TransportState::Local,
+        "shm" => TransportState::Shm {
+            arena_bytes: pt.extra.get("shm_arena_bytes").and_then(|v| v.as_u64()).map(|n| n as u32),
+            ring_capacity: pt.extra.get("shm_ring_capacity").and_then(|v| v.as_u64()).map(|n| n as u32),
+        },
+        "someip" => TransportState::Someip {
+            // `someip_service` is `Some` for every someip target after
+            // `resolve_someip_ids` runs (typed `PerBindingResolution`
+            // invariant). The `expect` pins that contract; reaching
+            // `None` here would be an upstream bug.
+            service: someip_service.expect(
+                "build_transport_state: someip target must have resolved service identity",
+            ),
+            event_bindings: event_bindings.clone(),
+            // `pt.extra` already excludes typed BindingConfig fields
+            // (`service`, `method`, `events`, …) and reserved ID keys
+            // (rejected upstream). Whatever lands here is opaque
+            // passthrough such as `protocol: udp/tcp`.
+            extra: pt.extra.clone(),
+        },
+        "zenoh" => {
+            let key = pt
+                .extra
+                .get("key")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let extra = pt
+                .extra
+                .iter()
+                .filter(|(k, _)| k.as_str() != "key")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            TransportState::Zenoh { key, extra }
+        }
+        other => TransportState::Unimplemented {
+            transport_name: other.to_string(),
+        },
+    }
 }
 
 /// Per-target someip resolution: service identity + per-event IDs.
@@ -1203,6 +1355,7 @@ mod tests {
             someip_service: None,
             event_patterns: Vec::new(),
             event_bindings: Default::default(),
+            state: TransportState::Local,
         }]
     }
 
