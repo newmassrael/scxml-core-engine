@@ -1146,13 +1146,15 @@ impl SCXMLParser {
             let idx = self.hybrid_invoke_counter;
             self.hybrid_invoke_counter += 1;
             return Some(Invoke::Hybrid(HybridInvokeInfo {
-                common: InvokeCommon {
-                    invoke_id,
+                common: InvokeSessionCommon {
+                    base: InvokeBase {
+                        invoke_id,
+                        state_name: state_id.to_string(),
+                        params: hybrid_params,
+                        idlocation,
+                    },
                     child_name: format!("{}_hybrid{idx}", model.name),
-                    state_name: state_id.to_string(),
                     autoforward,
-                    params: hybrid_params,
-                    idlocation,
                     ..Default::default()
                 },
                 srcexpr,
@@ -1166,13 +1168,15 @@ impl SCXMLParser {
                 model.needs_script_engine = true;
             }
             return Some(Invoke::Scxml(ScxmlInvokeInfo {
-                common: InvokeCommon {
-                    invoke_id,
+                common: InvokeSessionCommon {
+                    base: InvokeBase {
+                        invoke_id,
+                        state_name: state_id.to_string(),
+                        params: static_params,
+                        idlocation,
+                    },
                     child_name: String::new(),
-                    state_name: state_id.to_string(),
                     autoforward,
-                    params: static_params,
-                    idlocation,
                     ..Default::default()
                 },
                 finalize_content,
@@ -1449,7 +1453,7 @@ impl SCXMLParser {
         let mut specific_events_to_add: Vec<String> = Vec::new();
         for state in model.states.values_mut() {
             for invoke in state.invokes.iter_mut() {
-                let common: &mut InvokeCommon = match invoke {
+                let common: &mut InvokeSessionCommon = match invoke {
                     Invoke::Scxml(i) => &mut i.common,
                     Invoke::Hybrid(i) => &mut i.common,
                     Invoke::MeshRpc(_) => continue,
@@ -2145,9 +2149,10 @@ fn extract_inline_child_name(
 
 /// Parse a child SCXML file to extract metadata (needs_script_engine, datamodel vars).
 ///
-/// The fields written live on [`InvokeCommon`] so both `ScxmlInvokeInfo` and
-/// `HybridInvokeInfo` can reuse this via `&mut si.common` / `&mut hi.common`.
-fn parse_child_metadata(child_path: &Path, common: &mut InvokeCommon) {
+/// The fields written (`child_needs_script_engine`, `child_datamodel_vars`)
+/// are session-only — they live on [`InvokeSessionCommon`]. Both
+/// `ScxmlInvokeInfo` and `HybridInvokeInfo` expose this via `&mut si.common`.
+fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
     if !child_path.exists() {
         common.child_needs_script_engine = true;
         common.child_datamodel_vars = Some(Vec::new());

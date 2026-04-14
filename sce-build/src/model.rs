@@ -247,20 +247,59 @@ pub enum Invoke {
     MeshRpc(MeshRpcInvokeInfo),
 }
 
+/// Fields every invoke carries regardless of kind: the W3C identity
+/// (`invoke_id`, `state_name`), the declared `<param>` payload, and the
+/// optional `idlocation` attribute. Sits at the base of the invoke type
+/// hierarchy and is flattened into each wrapping struct's serialisation.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct InvokeBase {
+    pub invoke_id: String,
+    pub state_name: String,
+    pub params: Vec<Param>,
+    pub idlocation: String,
+}
+
+/// Fields shared by W3C SCXML-session invokes (Scxml + Hybrid): child
+/// session naming, autoforward, finalize metadata, child datamodel hints.
+/// MeshRpc has no child session and therefore no `InvokeSessionCommon`.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct InvokeSessionCommon {
+    #[serde(flatten)]
+    pub base: InvokeBase,
+    pub child_name: String,
+    pub autoforward: bool,
+    pub child_needs_script_engine: bool,
+    /// W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke
+    #[serde(default)]
+    pub use_specific_event: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub child_datamodel_vars: Option<Vec<String>>,
+}
+
+impl std::ops::Deref for InvokeSessionCommon {
+    type Target = InvokeBase;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl std::ops::DerefMut for InvokeSessionCommon {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
 /// SCE Mesh §9.5: short-lived RPC invoke (`<invoke type="sce:mesh-rpc">`).
 ///
-/// Distinct from [`InvokeInfo`] because mesh-rpc is a single request / single
-/// reply RPC layered over W3C invoke lifecycle events — no child session, no
-/// `<finalize>` stream, no autoforward. The shape intentionally does not
-/// overlap with `InvokeInfo`; reusing that type with a discriminator would
-/// hide the lifecycle invariant from every consumer.
+/// Distinct from the SCXML-session kinds because mesh-rpc is a single
+/// request / single reply RPC layered over W3C invoke lifecycle events — no
+/// child session, no `<finalize>` stream, no autoforward. Only the truly
+/// universal invoke fields ([`InvokeBase`]) are shared; `child_name` /
+/// `autoforward` do not apply here and the type rejects setting them.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct MeshRpcInvokeInfo {
-    /// The SCXML invoke id used for `done.invoke.<id>` / `error.invoke.<id>`
-    /// dispatch and for the wire envelope `invoke_id` field.
-    pub invoke_id: String,
-    /// Owning state — used by codegen to emit onentry / onexit hooks.
-    pub state_name: String,
+    #[serde(flatten)]
+    pub base: InvokeBase,
     /// The raw `src` attribute (`#motor`). Topology resolves it to a target
     /// binding; at parse time we only store the literal so the validator can
     /// match against deploy.yaml.
@@ -273,34 +312,19 @@ pub struct MeshRpcInvokeInfo {
     /// (§9.5 precedence rule).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deadline_ms: Option<u64>,
-    /// Author-provided `<param>` children, with the two reserved `_mesh_*`
-    /// entries already stripped out. These form the request payload.
-    pub params: Vec<Param>,
-    /// W3C `idlocation` attribute — populated when the runtime needs to
-    /// expose the generated invoke id back to the datamodel.
-    pub idlocation: String,
 }
 
-/// Fields common to every W3C SCXML-session invoke (Scxml + Hybrid).
-///
-/// Factored into its own struct so the two variants can share DRY access
-/// without carrying each other's kind-specific fields. Flattened into the
-/// parent struct's serialisation so templates keep seeing `invoke.invoke_id`
-/// at the top level (no `invoke.common.invoke_id` dance template-side).
-#[derive(Debug, Clone, Serialize, Default)]
-pub struct InvokeCommon {
-    pub invoke_id: String,
-    pub child_name: String,
-    pub state_name: String,
-    pub autoforward: bool,
-    pub params: Vec<Param>,
-    pub idlocation: String,
-    pub child_needs_script_engine: bool,
-    /// W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke
-    #[serde(default)]
-    pub use_specific_event: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub child_datamodel_vars: Option<Vec<String>>,
+impl std::ops::Deref for MeshRpcInvokeInfo {
+    type Target = InvokeBase;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl std::ops::DerefMut for MeshRpcInvokeInfo {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
 /// W3C SCXML 6.4: Static invoke (`<invoke src="..."` or inline `<content>`).
@@ -313,7 +337,7 @@ pub struct InvokeCommon {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ScxmlInvokeInfo {
     #[serde(flatten)]
-    pub common: InvokeCommon,
+    pub common: InvokeSessionCommon,
     pub finalize_content: String,
     pub src: String,
     pub namelist: String,
@@ -336,7 +360,7 @@ pub struct ScxmlInvokeInfo {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct HybridInvokeInfo {
     #[serde(flatten)]
-    pub common: InvokeCommon,
+    pub common: InvokeSessionCommon,
     /// Runtime expression that resolves to a child SCXML path.
     /// Empty if `contentexpr` is used instead.
     pub srcexpr: String,
@@ -346,7 +370,7 @@ pub struct HybridInvokeInfo {
 }
 
 impl std::ops::Deref for ScxmlInvokeInfo {
-    type Target = InvokeCommon;
+    type Target = InvokeSessionCommon;
     fn deref(&self) -> &Self::Target {
         &self.common
     }
@@ -359,7 +383,7 @@ impl std::ops::DerefMut for ScxmlInvokeInfo {
 }
 
 impl std::ops::Deref for HybridInvokeInfo {
-    type Target = InvokeCommon;
+    type Target = InvokeSessionCommon;
     fn deref(&self) -> &Self::Target {
         &self.common
     }
