@@ -522,26 +522,35 @@ impl State {
 
 impl SCXMLModel {
     /// True iff any state declares a static [`Invoke::Scxml`]. The
-    /// `has_invoke` field is the union across all kinds; `has_hybrid_invoke`
-    /// is already stored as a field. This method completes the pair by
-    /// projecting the Scxml variant out of `invokes`.
+    /// True iff any state in the model declares a static [`Invoke::Scxml`].
+    /// Computed from states — no cached flag duplicates the truth.
     pub fn has_scxml_invoke(&self) -> bool {
-        self.invokes.iter().any(|i| matches!(i, Invoke::Scxml(_)))
+        self.states.values().any(|s| s.has_scxml_invoke())
     }
-    /// Iterate over every static-SCXML invoke payload in the model, in
-    /// parser insertion order.
+    /// Iterate every static-SCXML invoke across all states in document order.
+    /// Replaces the legacy flat `model.static_invokes` read by the codegen
+    /// layer and sce_codegen binary.
     pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &ScxmlInvokeInfo> {
-        self.invokes.iter().filter_map(|i| match i {
-            Invoke::Scxml(info) => Some(info),
-            _ => None,
-        })
+        let mut ordered: Vec<&State> = self.states.values().collect();
+        ordered.sort_by_key(|s| s.document_order);
+        ordered.into_iter().flat_map(|s| s.iter_scxml_invokes())
     }
-    /// Iterate over every hybrid-SCXML invoke payload in the model.
+    /// Iterate every hybrid-SCXML invoke across all states in document order.
     pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &HybridInvokeInfo> {
-        self.invokes.iter().filter_map(|i| match i {
-            Invoke::Hybrid(info) => Some(info),
-            _ => None,
-        })
+        let mut ordered: Vec<&State> = self.states.values().collect();
+        ordered.sort_by_key(|s| s.document_order);
+        ordered.into_iter().flat_map(|s| s.iter_hybrid_invokes())
+    }
+    /// Rebuild the template-visible `invokes` field from the now-finalised
+    /// per-state data. Called once at the end of parsing; subsequent
+    /// mutations are not expected — state-level invokes are authoritative.
+    pub fn refresh_invokes_view(&mut self) {
+        let mut ordered: Vec<&State> = self.states.values().collect();
+        ordered.sort_by_key(|s| s.document_order);
+        self.invokes = ordered
+            .into_iter()
+            .flat_map(|s| s.invokes.iter().cloned())
+            .collect();
     }
 
     /// W3C SCXML 3.3/3.4: Resolve state ID to leaf by following initial attrs

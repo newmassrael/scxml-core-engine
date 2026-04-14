@@ -200,6 +200,11 @@ impl SCXMLParser {
             }
         }
 
+        // State-level `invokes` is authoritative; `SCXMLModel.invokes` is a
+        // template-visible flat view. Build it once, here, after all
+        // per-state mutations are finalised.
+        model.refresh_invokes_view();
+
         Ok(model)
     }
 
@@ -547,8 +552,7 @@ impl SCXMLParser {
                             srcexpr: json_str(&invoke, "srcexpr"),
                             contentexpr: json_str(&invoke, "contentexpr"),
                         };
-                        state.invokes.push(Invoke::Hybrid(hi.clone()));
-                        model.invokes.push(Invoke::Hybrid(hi));
+                        state.invokes.push(Invoke::Hybrid(hi));
                     }
                 }
                 if let Some(is_static) = invoke.get("is_static").and_then(|v| v.as_bool()) {
@@ -596,8 +600,7 @@ impl SCXMLParser {
                             src: json_str(&invoke, "src"),
                             namelist: json_str(&invoke, "namelist"),
                         };
-                        state.invokes.push(Invoke::Scxml(si.clone()));
-                        model.invokes.push(Invoke::Scxml(si));
+                        state.invokes.push(Invoke::Scxml(si));
                     }
                 }
                 state.raw_invoke_json.push(invoke);
@@ -1488,27 +1491,12 @@ impl SCXMLParser {
             }
         }
 
-        // Set the use_specific_event flag on every model-level Scxml/Hybrid
-        // invoke whose id shows up in a `done.invoke.<id>` transition. The
-        // matching specific event is also added to the model's event set so
-        // the generated Event enum exposes it.
-        for invoke in model.invokes.iter_mut() {
-            let common: &mut InvokeCommon = match invoke {
-                Invoke::Scxml(i) => &mut i.common,
-                Invoke::Hybrid(i) => &mut i.common,
-                Invoke::MeshRpc(_) => continue,
-            };
-            if common.invoke_id.is_empty() {
-                continue;
-            }
-            let specific = format!("done.invoke.{}", common.invoke_id);
-            common.use_specific_event = used_done_invoke_events.contains(&specific);
-            if common.use_specific_event {
-                model.events.insert(specific);
-            }
-        }
-
-        // Propagate use_specific_event to each state's local Invoke copy.
+        // Set the use_specific_event flag on every Scxml/Hybrid invoke whose
+        // id shows up in a `done.invoke.<id>` transition. The matching
+        // specific event is also added to the model's event set so the
+        // generated Event enum exposes it. `state.invokes` is the single
+        // owner — no model-level mirror to keep in sync.
+        let mut specific_events_to_add: Vec<String> = Vec::new();
         for state in model.states.values_mut() {
             for invoke in state.invokes.iter_mut() {
                 let common: &mut InvokeCommon = match invoke {
@@ -1521,7 +1509,13 @@ impl SCXMLParser {
                 }
                 let specific = format!("done.invoke.{}", common.invoke_id);
                 common.use_specific_event = used_done_invoke_events.contains(&specific);
+                if common.use_specific_event {
+                    specific_events_to_add.push(specific);
+                }
             }
+        }
+        for ev in specific_events_to_add {
+            model.events.insert(ev);
         }
     }
 
@@ -1541,7 +1535,11 @@ impl SCXMLParser {
         };
         let mut parsed_children: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        let invokes: Vec<ScxmlInvokeInfo> = model.iter_scxml_invokes().cloned().collect();
+        let invokes: Vec<ScxmlInvokeInfo> = model
+            .states
+            .values()
+            .flat_map(|s| s.iter_scxml_invokes().cloned())
+            .collect();
         for si in &invokes {
             if si.child_name.is_empty() || parsed_children.contains(&si.child_name) {
                 continue;
@@ -1598,114 +1596,101 @@ impl SCXMLParser {
         let mut invoke_count: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         let mut inline_child_count = 0u32;
 
-        // Build list of (invoke_index, state_invokes_index, has_inline, inline_text, src)
-        // from state.raw_invoke_json to match Python's matching_static logic
-        let mut invoke_map: Vec<(u32, String, bool, String)> = Vec::new();
-        // Iterate states in document order (matching model.static_invokes insertion order)
-        let mut states_by_doc_order: Vec<&State> = model.states.values().collect();
-        states_by_doc_order.sort_by_key(|s| s.document_order);
-        for state in states_by_doc_order {
+        // Build list of (has_inline, inline_text) for each Scxml invoke in
+        // document order, read from the parser-internal raw JSON. Used
+        // downstream to drive inline-extraction.
+        let mut invoke_map: Vec<(bool, String)> = Vec::new();
+        let mut state_ids_by_order: Vec<String> = model
+            .states
+            .values()
+            .map(|s| (s.id.clone(), s.document_order))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        // Actually sort by document_order.
+        state_ids_by_order.sort_by_key(|id| model.states[id].document_order);
+        for state_id in &state_ids_by_order {
+            let state = &model.states[state_id];
             for inv in &state.raw_invoke_json {
                 let is_static = inv.get("is_static").and_then(|v| v.as_bool()).unwrap_or(false);
                 if is_static {
                     let has_inline = inv.get("has_inline_scxml").and_then(|v| v.as_bool()).unwrap_or(false);
                     let inline_text = json_str(inv, "inline_scxml_text");
-                    let src = json_str(inv, "src");
-                    invoke_map.push((state.document_order, src, has_inline, inline_text));
+                    invoke_map.push((has_inline, inline_text));
                 }
             }
         }
 
-        // Process model-level Scxml invokes in document order. Only Scxml
-        // variants participate in inline-extraction / src resolution; Hybrid
-        // and MeshRpc are skipped by pattern match.
+        // Walk each state's invokes in document order and mutate the Scxml
+        // variants directly. `state.invokes` is the sole owner of invoke data;
+        // there is no model-level mirror to propagate into.
         let mut scxml_index = 0usize;
-        for invoke in model.invokes.iter_mut() {
-            let si = match invoke {
-                Invoke::Scxml(info) => info,
-                _ => continue,
-            };
-            let i = scxml_index;
-            scxml_index += 1;
-
-            let (_, _, has_inline, ref inline_text) = if i < invoke_map.len() {
-                invoke_map[i].clone()
-            } else {
-                (i as u32, si.src.clone(), false, String::new())
-            };
-
-            if has_inline && !inline_text.is_empty() {
-                // W3C SCXML 6.4: Extract inline <scxml> to separate file
-                // Determine child name from inline <scxml name="..."> or auto-generate
-                let child_name = extract_inline_child_name(
-                    inline_text,
-                    &model.name,
-                    &mut inline_child_count,
-                );
-
-                let child_scxml_path = scxml_dir.join(format!("{child_name}.scxml"));
-
-                // Write inline SCXML to file.
-                // W3C SCXML 6.4: Inline <scxml> inside <content> inherits
-                // the parent document's namespace, but as a standalone file
-                // it needs an explicit xmlns declaration for XSD validation.
-                let inline_with_ns = if !inline_text.contains("xmlns=") {
-                    inline_text.replacen("<scxml", "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"", 1)
-                } else {
-                    inline_text.clone()
-                };
-                let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
-                if let Err(e) = std::fs::write(&child_scxml_path, &xml_content) {
-                    eprintln!("Warning: Cannot write inline SCXML {}: {e}", child_scxml_path.display());
-                }
-
-                si.src = format!("{child_name}.scxml");
-                si.child_name = child_name.clone();
-
-                // Parse extracted child to detect JSEngine needs and datamodel variables
-                parse_child_metadata(&child_scxml_path, &mut si.common);
-            } else if !si.src.is_empty() && si.child_name.is_empty() {
-                // Handle external src
-                let src = si.src.replace("file:", "");
-                let child_path = scxml_dir.join(&src);
-                if let Some(stem) = child_path.file_stem().and_then(|s| s.to_str()) {
-                    si.child_name = stem.to_string();
-                }
-                // Parse child to detect script engine needs
-                let child_scxml_path = scxml_dir.join(format!("{}.scxml", si.child_name));
-                parse_child_metadata(&child_scxml_path, &mut si.common);
-            }
-
-            // Auto-generate invoke ID if not specified
-            if si.invoke_id.is_empty() {
-                let count = invoke_count.entry(si.state_name.clone()).or_insert(0);
-                si.invoke_id = format!("{}_invoke_{count}", si.state_name);
-                *count += 1;
-            }
-        }
-
-        // Propagate the now-finalised model-level Scxml data into each
-        // state's per-state `Invoke::Scxml` entry. State-level entries were
-        // cloned from pre-mutation data in `parse_states`, so they need a
-        // second pass to pick up child_name / idlocation / child metadata.
-        let model_scxml: Vec<ScxmlInvokeInfo> = model.iter_scxml_invokes().cloned().collect();
-        for state in model.states.values_mut() {
+        for state_id in &state_ids_by_order {
+            let state = model.states.get_mut(state_id).unwrap();
             for invoke in state.invokes.iter_mut() {
                 let si = match invoke {
                     Invoke::Scxml(info) => info,
                     _ => continue,
                 };
-                if let Some(model_si) = model_scxml.iter().find(|mi| {
-                    mi.state_name == si.state_name
-                        && (mi.invoke_id == si.invoke_id
-                            || (mi.src == si.src && !mi.src.is_empty())
-                            || mi.child_name == si.child_name)
-                }) {
-                    si.child_name = model_si.child_name.clone();
-                    si.src = model_si.src.clone();
-                    si.invoke_id = model_si.invoke_id.clone();
-                    si.child_needs_script_engine = model_si.child_needs_script_engine;
-                    si.child_datamodel_vars = model_si.child_datamodel_vars.clone();
+                let i = scxml_index;
+                scxml_index += 1;
+
+                let (has_inline, ref inline_text) = if i < invoke_map.len() {
+                    invoke_map[i].clone()
+                } else {
+                    (false, String::new())
+                };
+
+                if has_inline && !inline_text.is_empty() {
+                    // W3C SCXML 6.4: Extract inline <scxml> to separate file
+                    // Determine child name from inline <scxml name="..."> or auto-generate
+                    let child_name = extract_inline_child_name(
+                        inline_text,
+                        &model.name,
+                        &mut inline_child_count,
+                    );
+
+                    let child_scxml_path = scxml_dir.join(format!("{child_name}.scxml"));
+
+                    // Write inline SCXML to file.
+                    // W3C SCXML 6.4: Inline <scxml> inside <content> inherits
+                    // the parent document's namespace, but as a standalone file
+                    // it needs an explicit xmlns declaration for XSD validation.
+                    let inline_with_ns = if !inline_text.contains("xmlns=") {
+                        inline_text.replacen("<scxml", "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"", 1)
+                    } else {
+                        inline_text.clone()
+                    };
+                    let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
+                    if let Err(e) = std::fs::write(&child_scxml_path, &xml_content) {
+                        eprintln!("Warning: Cannot write inline SCXML {}: {e}", child_scxml_path.display());
+                    }
+
+                    si.src = format!("{child_name}.scxml");
+                    si.child_name = child_name.clone();
+
+                    // Parse extracted child to detect JSEngine needs and datamodel variables
+                    parse_child_metadata(&child_scxml_path, &mut si.common);
+                } else if !si.src.is_empty() && si.child_name.is_empty() {
+                    // Handle external src
+                    let src = si.src.replace("file:", "");
+                    let child_path = scxml_dir.join(&src);
+                    if let Some(stem) = child_path.file_stem().and_then(|s| s.to_str()) {
+                        si.child_name = stem.to_string();
+                    }
+                    // Parse child to detect script engine needs
+                    let child_scxml_path = scxml_dir.join(format!("{}.scxml", si.child_name));
+                    parse_child_metadata(&child_scxml_path, &mut si.common);
+                }
+
+                // Auto-generate invoke ID if not specified
+                if si.invoke_id.is_empty() {
+                    let count = invoke_count.entry(si.state_name.clone()).or_insert(0);
+                    si.invoke_id = format!("{}_invoke_{count}", si.state_name);
+                    *count += 1;
                 }
             }
         }
