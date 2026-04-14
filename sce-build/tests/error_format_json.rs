@@ -260,9 +260,8 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
     // Location pinning: XSD diagnostics MUST carry file + line from
     // libxml2. Agents route repairs by `stage + location`, so a
     // missing line here reduces them to prose-parsing the message.
-    // CLI passes the file *stem* (without extension) as the label,
-    // matching the pre-existing convention for `compile_forge_*`
-    // callers — so `location.file` is the stem, not the full name.
+    // CLI passes the full basename (with extension) so downstream
+    // tooling can open the file without guessing the suffix.
     let location = &parsed["location"];
     assert!(
         location.is_object(),
@@ -270,8 +269,8 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
     );
     assert_eq!(
         location["file"].as_str(),
-        scxml.file_stem().and_then(|s| s.to_str()),
-        "location.file must equal the fixture stem: {line}"
+        scxml.file_name().and_then(|s| s.to_str()),
+        "location.file must equal the fixture basename: {line}"
     );
     assert!(
         location["line"].as_u64().is_some_and(|l| l > 0),
@@ -350,8 +349,8 @@ fn json_mode_emits_one_ndjson_record_per_xsd_violation() {
         assert!(location.is_object(), "location object on every record: {line}");
         assert_eq!(
             location["file"].as_str(),
-            Some("multi_violation"),
-            "file must be fixture stem: {line}"
+            Some("multi_violation.scxml"),
+            "file must be fixture basename: {line}"
         );
         let lineno = location["line"]
             .as_u64()

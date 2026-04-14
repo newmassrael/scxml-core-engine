@@ -58,6 +58,54 @@ pub struct XsdErrors {
     pub diagnostics: Vec<XsdDiag>,
 }
 
+impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
+    /// XSD violations have a fixed routing (stage=xml, exit=2) — the
+    /// container's only job is to emit one `Diagnostic` per violation,
+    /// each with libxml2's line data attached. Carries the XSD
+    /// spec anchor on every record for upstream agent grounding.
+    fn exit_code(&self) -> i32 {
+        2
+    }
+
+    fn to_diagnostics(&self) -> Vec<crate::forge::diagnostic::Diagnostic> {
+        use crate::forge::diagnostic::{
+            compute_id, Diagnostic, DiagnosticCode, Location, Stage, SCHEMA_VERSION,
+        };
+        self.diagnostics
+            .iter()
+            .map(|d| {
+                let key_fragments = vec![
+                    self.source_label.clone(),
+                    d.line.map(|l| l.to_string()).unwrap_or_default(),
+                    d.message.clone(),
+                ];
+                let id = compute_id(
+                    DiagnosticCode::XmlSchemaValidation.as_str(),
+                    Stage::Xml.as_str(),
+                    Some(self.source_label.as_str()),
+                    &key_fragments,
+                );
+                Diagnostic {
+                    schema_version: SCHEMA_VERSION,
+                    id,
+                    code: DiagnosticCode::XmlSchemaValidation,
+                    stage: Stage::Xml,
+                    spec: Some("SCE Forge XSD"),
+                    message: d.message.clone(),
+                    location: Some(Location {
+                        file: self.source_label.clone(),
+                        line: d.line,
+                        col: d.col,
+                    }),
+                    expected: None,
+                    actual: None,
+                    fix: None,
+                }
+            })
+            .collect()
+    }
+}
+
 impl std::fmt::Display for XsdErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;

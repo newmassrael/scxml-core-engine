@@ -657,8 +657,16 @@ fn build_qualified_call(
 ///
 /// Scans `dir` for `.scxml` files, extracts `sce:kind` and `<sce:import>`,
 /// and produces a JSON-serializable manifest with topological build order.
-pub fn build_forge_manifest(dir: &std::path::Path) -> Result<forge::model::ForgeManifest, forge::error::ForgeError> {
+///
+/// Errors carry the scanned directory as their `location.file` so CLI
+/// diagnostics and agents see *where* the manifest build failed even
+/// when the failure is a cross-file concern (circular imports, missing
+/// files) rather than a single-document parse error.
+pub fn build_forge_manifest(
+    dir: &std::path::Path,
+) -> Result<forge::model::ForgeManifest, forge::error::Located<forge::error::ForgeError>> {
     forge::manifest::build_manifest(dir)
+        .map_err(|e| forge::error::Located::new(e, dir.display().to_string(), None, None))
 }
 
 /// Result of a mesh transport compilation — generated files plus all

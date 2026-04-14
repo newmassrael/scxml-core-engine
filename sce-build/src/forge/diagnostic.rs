@@ -25,7 +25,6 @@ use crate::forge::error::{
     ExprError, ForgeError, GenerateError, ImportError, Located, ManifestError, SourceLocation,
     ValidationError, XmlError,
 };
-use crate::forge::xsd_validator::XsdErrors;
 use serde::Serialize;
 
 /// Common interface for any error type that can be rendered to a
@@ -140,7 +139,7 @@ impl Stage {
     /// Stable short name used in the content hash. Kept in sync with
     /// the serde `rename_all = "kebab-case"` output so JSON and hash
     /// agree on the canonical form.
-    fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Stage::Xml => "xml",
             Stage::Validation => "validation",
@@ -381,7 +380,7 @@ impl Diagnostic {
 impl DiagnosticCode {
     /// Slash-path string form used in the content hash. Must match the
     /// serde `rename` on each variant exactly.
-    fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         use DiagnosticCode::*;
         match self {
             XmlParse => "xml/parse",
@@ -576,12 +575,16 @@ impl ToDiagnostics for Located<ForgeError> {
 /// `Located<ForgeError>`. Returns a `Vec` because a single error can
 /// represent many violations — XSD validation surfaces one record per
 /// libxml2 diagnostic. All other variants return exactly one record.
+///
+/// Multi-record expansion for XSD is delegated to `XsdErrors`' own
+/// `ToDiagnostics` impl, keeping the per-violation emission logic
+/// next to the data that carries the line numbers.
 fn build_forge_diagnostics(
     err: &ForgeError,
     location_ctx: Option<&SourceLocation>,
 ) -> Vec<Diagnostic> {
     if let ForgeError::Xml(XmlError::SchemaValidation(xsd_errors)) = err {
-        return expand_xsd_diagnostics(xsd_errors);
+        return xsd_errors.to_diagnostics();
     }
     vec![build_single_forge_diagnostic(err, location_ctx)]
 }
@@ -623,46 +626,6 @@ fn build_single_forge_diagnostic(
     }
 }
 
-/// Expand a collection of XSD violations into one diagnostic record
-/// each. `source_label` (on `XsdErrors`) is the file the author sees;
-/// each violation's `line` comes directly from libxml2. Identity is
-/// computed per-violation so deduplication works even when the same
-/// file has three distinct enum-violations on three lines.
-fn expand_xsd_diagnostics(xsd_errors: &XsdErrors) -> Vec<Diagnostic> {
-    xsd_errors
-        .diagnostics
-        .iter()
-        .map(|d| {
-            let key_fragments = vec![
-                xsd_errors.source_label.clone(),
-                d.line.map(|l| l.to_string()).unwrap_or_default(),
-                d.message.clone(),
-            ];
-            let id = compute_id(
-                DiagnosticCode::XmlSchemaValidation.as_str(),
-                Stage::Xml.as_str(),
-                Some(xsd_errors.source_label.as_str()),
-                &key_fragments,
-            );
-            Diagnostic {
-                schema_version: SCHEMA_VERSION,
-                id,
-                code: DiagnosticCode::XmlSchemaValidation,
-                stage: Stage::Xml,
-                spec: Some("SCE Forge XSD"),
-                message: d.message.clone(),
-                location: Some(Location {
-                    file: xsd_errors.source_label.clone(),
-                    line: d.line,
-                    col: d.col,
-                }),
-                expected: None,
-                actual: None,
-                fix: None,
-            }
-        })
-        .collect()
-}
 
 fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
     match err {
@@ -1100,7 +1063,7 @@ fn split_expected(s: &str) -> Vec<String> {
 /// `#[error(...)]` template must not change the id of the underlying
 /// semantic error. Includes the source file when `Located` is present
 /// so the same error reported on two files is distinguishable.
-fn compute_id(
+pub(crate) fn compute_id(
     code: &str,
     stage: &str,
     file: Option<&str>,

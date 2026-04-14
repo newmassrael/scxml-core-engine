@@ -675,6 +675,15 @@ fn cmd_generate(
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown");
+            // Pass the full basename (with extension) as the library
+            // `name` so diagnostics' `location.file` carries enough
+            // to disambiguate fixtures whose stems collide across
+            // directories. Stem alone (pre-existing convention) lost
+            // the `.scxml` suffix and hid that it was an SCXML file.
+            let input_basename = Path::new(scxml_path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(input_stem);
 
             let base_dir = Path::new(scxml_path)
                 .parent()
@@ -684,7 +693,7 @@ fn cmd_generate(
             };
             match sce_build::compile_forge_with_imports(
                 &scxml_content,
-                input_stem,
+                input_basename,
                 lang,
                 base_dir,
                 &forge_opts,
