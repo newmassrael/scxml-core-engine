@@ -485,6 +485,249 @@ fn json_mode_codec_no_output_reports_datamodel_line() {
     );
 }
 
+// ── Leaf-precision regression coverage for remaining kinds ──────
+//
+// These tests pin the per-`<data>` raise sites that prior leaf-
+// precision work introduced (parse_filter / parse_observer /
+// parse_timer / parse_validator / parse_interpolation) plus the
+// container-anchor case for parse_lookup. A future refactor that
+// swaps `located(&data, ...)` → `located(&root, ...)` (or, for
+// lookup, `&datamodel` → `&root`) regresses the contract; at
+// minimum one of these assertions must trip.
+//
+// Lookup's per-entry leaf precision is added separately by the
+// duplicate-key fixture (see Gap A): the post-loop raise sites
+// in parse_lookup currently anchor at `<datamodel>`, and the
+// `<sce:entry>` contract is XSD-enforced (`key` and `value` are
+// `use="required"`), so the parser path tested here is the
+// `entries.is_empty()` raise that legitimately points at the
+// container.
+
+/// Filter output `<data sce:direction="out">` with no `sce:filter`
+/// must report at the output `<data>` line (not `<scxml>` root or
+/// `<datamodel>`). Pins parse_filter L1248-1257.
+fn write_filter_missing_filter_attr_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("filter_missing_filter.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="filter" name="bad_filter">
+  <datamodel>
+    <data id="i" sce:type="float64" sce:direction="in"/>
+    <data id="o" sce:type="float64" sce:direction="out"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write filter fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_filter_missing_filter_attr_reports_output_data_line() {
+    let (_dir, scxml) = write_filter_missing_filter_attr_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/missing-attribute");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(7),
+        "must point at the output <data>, not <scxml> root: {parsed}"
+    );
+}
+
+/// Observer monitor `<data sce:monitor="threshold">` missing
+/// `sce:enter` must report at the monitor `<data>` line. Pins
+/// parse_observer L1850-1859.
+fn write_observer_missing_enter_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("observer_missing_enter.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="observer" name="bad_observer">
+  <datamodel>
+    <data id="x" sce:type="float64" sce:direction="in"/>
+    <data id="warn" sce:monitor="threshold" sce:on-enter="emit"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write observer fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_observer_missing_enter_reports_monitor_data_line() {
+    let (_dir, scxml) = write_observer_missing_enter_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/missing-attribute");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(7),
+        "must point at the monitor <data>, not <scxml> root: {parsed}"
+    );
+}
+
+/// Periodic `<data sce:timer="periodic">` missing `sce:interval`
+/// must report at the timer `<data>` line. Pins parse_timer L1678.
+fn write_timer_missing_interval_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("timer_missing_interval.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="timer" name="bad_timer">
+  <datamodel>
+    <data id="t" sce:timer="periodic" sce:event="tick"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write timer fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_timer_periodic_missing_interval_reports_data_line() {
+    let (_dir, scxml) = write_timer_missing_interval_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/missing-attribute");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(6),
+        "must point at the timer <data>, not <scxml> root: {parsed}"
+    );
+}
+
+/// Validator input `<data>` whose `sce:sample-interval` passes the
+/// XSD pattern (`\d+(\.\d+)?(ms|s|m|h)?`) but fails the parser's
+/// stricter `ms`-or-`s` requirement must report at the input
+/// `<data>` line. Pins parse_validator L622-623 wrapping
+/// parse_time_interval.
+fn write_validator_bad_sample_interval_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("validator_bad_sample.scxml");
+    // `5h` passes the XSD `(ms|s|m|h)?` enum but parse_time_interval
+    // only accepts `ms`/`s`, so the diagnostic comes from the parser
+    // (validation/numeric-parse) rather than the schema validator.
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" name="bad_validator">
+  <datamodel>
+    <data id="x" sce:type="int32" sce:direction="in"
+          sce:max-delta="50" sce:sample-interval="5h"/>
+    <data id="ok" sce:type="bool" sce:direction="out"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write validator fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_validator_bad_sample_interval_reports_input_data_line() {
+    let (_dir, scxml) = write_validator_bad_sample_interval_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/numeric-parse");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(6),
+        "must point at the input <data> (start tag line), not <scxml> root: {parsed}"
+    );
+}
+
+/// Interpolation output `<data sce:direction="out">` missing
+/// `sce:interpolation` must report at the output `<data>` line.
+/// Pins parse_interpolation L1402-1410.
+fn write_interpolation_missing_method_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("interp_missing_method.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="interpolation" name="bad_interp">
+  <datamodel>
+    <data id="r" sce:type="uint16" sce:direction="in"/>
+    <data id="o" sce:type="float64" sce:direction="out"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write interpolation fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_interpolation_missing_method_reports_output_data_line() {
+    let (_dir, scxml) = write_interpolation_missing_method_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/missing-attribute");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(7),
+        "must point at the output <data>, not <scxml> root: {parsed}"
+    );
+}
+
+/// Lookup with no `<sce:entry>` children (empty entries collection)
+/// must report at the `<datamodel>` container line, not the `<scxml>`
+/// root. The `<sce:entry>` element's own attributes (`key`, `value`)
+/// are XSD-required, so the per-entry leaf path is exercised by
+/// parse_sce_entries' direct raises rather than this fixture; the
+/// post-loop `entries.is_empty()` raise legitimately anchors at the
+/// most specific node still in scope (`<datamodel>`). Pins
+/// parse_lookup L272-281.
+fn write_lookup_no_entries_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("leaf-precision");
+    let path = dir.path().join("lookup_no_entries.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="bad_lookup">
+  <datamodel>
+    <data id="i" sce:type="uint8" sce:direction="in"/>
+    <data id="o" sce:type="string" sce:direction="out"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write lookup fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_lookup_no_entries_reports_datamodel_line() {
+    let (_dir, scxml) = write_lookup_no_entries_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(3));
+    let parsed: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
+    assert_eq!(parsed["code"], "validation/empty-collection");
+    assert_eq!(
+        parsed["location"]["line"].as_u64(),
+        Some(5),
+        "must point at <datamodel>, not <scxml> root: {parsed}"
+    );
+}
+
 #[test]
 fn human_mode_remains_plain_text() {
     let (_dir, scxml) = write_missing_datamodel_fixture();

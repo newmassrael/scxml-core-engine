@@ -1076,3 +1076,32 @@ pub struct ParsedForge {
     pub document: ForgeDocument,
     pub imports: Vec<ForgeImport>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn forge_import_serialization_omits_line_field() {
+        let imp = ForgeImport {
+            src: "a.scxml".into(),
+            kind: ForgeKind::Codec,
+            alias: "a".into(),
+            line: Some(42),
+        };
+        let json = serde_json::to_value(&imp).expect("serialize ForgeImport");
+        assert!(
+            json.get("line").is_none(),
+            "ForgeImport.line must be #[serde(skip)] for manifest byte-stability; got {json}"
+        );
+        let actual: BTreeSet<&str> = json
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        let expected: BTreeSet<&str> = ["src", "kind", "alias"].into_iter().collect();
+        assert_eq!(actual, expected, "wire-format keys must remain stable");
+    }
+}
