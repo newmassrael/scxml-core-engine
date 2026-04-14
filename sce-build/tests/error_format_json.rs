@@ -257,6 +257,27 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
     );
     assert_eq!(parsed["v"].as_u64(), Some(1));
 
+    // Location pinning: XSD diagnostics MUST carry file + line from
+    // libxml2. Agents route repairs by `stage + location`, so a
+    // missing line here reduces them to prose-parsing the message.
+    // CLI passes the file *stem* (without extension) as the label,
+    // matching the pre-existing convention for `compile_forge_*`
+    // callers — so `location.file` is the stem, not the full name.
+    let location = &parsed["location"];
+    assert!(
+        location.is_object(),
+        "XSD diagnostic must carry location object: {line}"
+    );
+    assert_eq!(
+        location["file"].as_str(),
+        scxml.file_stem().and_then(|s| s.to_str()),
+        "location.file must equal the fixture stem: {line}"
+    );
+    assert!(
+        location["line"].as_u64().is_some_and(|l| l > 0),
+        "location.line must be populated and > 0: {line}"
+    );
+
     // The `message` field quotes the XSD enumeration so an agent can
     // repair without consulting SCE_ERROR_CONTRACT.md — pin this guarantee.
     let message = parsed["message"].as_str().unwrap_or_default();
@@ -270,6 +291,84 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
             "message must enumerate legal kinds so agents can repair: missing '{legal_kind}' in {line}"
         );
     }
+}
+
+/// Write a codec fixture that violates the XSD in three places so
+/// `validate()` returns three diagnostics in one call. Used to pin
+/// the multi-record emission path.
+///
+///   * `sce:default-endian="sideways"` — not in enum [little|big]
+///   * two fields with `sce:bit-size="bad*"` — not xs:unsignedInt
+fn write_multi_violation_fixture() -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new("xsd-multi");
+    let path = dir.path().join("multi_violation.scxml");
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="sideways" name="x">
+  <datamodel>
+    <data id="a" sce:type="uint8" sce:byte="0" sce:bit-size="bad1"/>
+    <data id="b" sce:type="uint8" sce:byte="1" sce:bit-size="bad2"/>
+  </datamodel>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write multi-violation fixture");
+    (dir, path)
+}
+
+#[test]
+fn json_mode_emits_one_ndjson_record_per_xsd_violation() {
+    let (_dir, scxml) = write_multi_violation_fixture();
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+
+    assert!(!out.status.success(), "process must fail on XSD violations");
+    assert_eq!(out.status.code(), Some(2), "XmlError exit code");
+
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let lines: Vec<&str> = stderr
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+
+    // Each violation gets its own NDJSON line — merging them would hide
+    // the per-line data libxml2 already carries. We expect exactly 3
+    // for this fixture (endian enum + two bit-size values).
+    assert_eq!(
+        lines.len(),
+        3,
+        "expected one NDJSON record per XSD violation, got {}: {stderr}",
+        lines.len()
+    );
+
+    let mut seen_lines = Vec::new();
+    for line in &lines {
+        let parsed: serde_json::Value =
+            serde_json::from_str(line).expect("each line must parse as JSON");
+        assert_eq!(parsed["code"], "xml/schema-validation");
+        assert_eq!(parsed["stage"], "xml");
+        let location = &parsed["location"];
+        assert!(location.is_object(), "location object on every record: {line}");
+        assert_eq!(
+            location["file"].as_str(),
+            Some("multi_violation"),
+            "file must be fixture stem: {line}"
+        );
+        let lineno = location["line"]
+            .as_u64()
+            .expect(&format!("line must be present: {line}"));
+        assert!(lineno > 0, "line must be > 0: {line}");
+        seen_lines.push(lineno);
+    }
+
+    // The three violations live on different source lines (scxml
+    // element at top, two <data> children below). Identity per record
+    // must include line, so `id`s must be distinct — prove it by
+    // checking at least two different line numbers surface.
+    let distinct: std::collections::HashSet<_> = seen_lines.iter().copied().collect();
+    assert!(
+        distinct.len() >= 2,
+        "multi-violation diagnostics must span different lines, got {seen_lines:?}"
+    );
 }
 
 #[test]

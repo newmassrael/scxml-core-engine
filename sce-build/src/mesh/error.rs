@@ -911,7 +911,7 @@ impl ToDiagnostic for MeshError {
         MeshError::exit_code(self)
     }
 
-    fn to_diagnostic(&self) -> Diagnostic {
+    fn to_diagnostics(&self) -> Vec<Diagnostic> {
         let fields = match self {
             MeshError::Deploy(e) => deploy_fields(e),
             MeshError::External(e) => external_fields(e),
@@ -928,7 +928,7 @@ impl ToDiagnostic for MeshError {
         };
 
         let id = mesh_diagnostic_id(fields.code, fields.stage, &fields.key);
-        Diagnostic {
+        vec![Diagnostic {
             schema_version: SCHEMA_VERSION,
             id,
             code: fields.code,
@@ -939,6 +939,6 @@ impl ToDiagnostic for MeshError {
             expected: fields.expected,
             actual: fields.actual,
             fix: fields.fix,
-        }
+        }]
     }
 }

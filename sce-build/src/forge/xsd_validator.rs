@@ -27,13 +27,56 @@ use std::sync::OnceLock;
 use libxml::parser::Parser;
 use libxml::schemas::{SchemaParserContext, SchemaValidationContext};
 
-/// Errors collected during XSD validation. Each entry is a single
-/// human-readable line including the source filename, line number, and
-/// the validator's diagnostic message — the same format an editor's
-/// "go to error" feature can parse.
+/// A single XSD validation violation.
+///
+/// libxml2 reports line (and sometimes column) for every violation,
+/// plus a free-form message. Preserving these as structured fields
+/// — instead of collapsing to a formatted string — lets each violation
+/// emit its own NDJSON diagnostic with accurate `location` data.
+#[derive(Debug, Clone)]
+pub struct XsdDiag {
+    pub line: Option<u32>,
+    pub col: Option<u32>,
+    pub message: String,
+}
+
+/// The collection of XSD violations produced by one `validate()` call.
+///
+/// `source_label` is the filename (or caller-meaningful identifier)
+/// that authors see in error messages; it rides on the container, not
+/// each `XsdDiag`, because it is invariant across a single validation.
+/// `diagnostics` preserves libxml2's natural ordering (top of file to
+/// bottom).
+///
+/// Implements `Display` by rendering one line per violation in the
+/// same format the editor-style "go to error" convention expects, so
+/// human-mode CLI output continues to look as it did when XsdErrors
+/// was `Vec<String>`.
 #[derive(Debug, thiserror::Error)]
-#[error("{}", .0.join("\n"))]
-pub struct XsdErrors(pub Vec<String>);
+pub struct XsdErrors {
+    pub source_label: String,
+    pub diagnostics: Vec<XsdDiag>,
+}
+
+impl std::fmt::Display for XsdErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for d in &self.diagnostics {
+            if !first {
+                writeln!(f)?;
+            }
+            first = false;
+            write!(
+                f,
+                "{}:{}: {}",
+                self.source_label,
+                d.line.unwrap_or(0),
+                d.message
+            )?;
+        }
+        Ok(())
+    }
+}
 
 /// Resolve the absolute path of `schemas/sce-forge.xsd`.
 ///
@@ -89,19 +132,39 @@ pub fn validate(xml_text: &str, source_label: &str, schema_path: &Path) -> Resul
     let xml_parser = Parser::default();
     let doc = xml_parser
         .parse_string(xml_text)
-        .map_err(|e| XsdErrors(vec![format!("{source_label}: XML parse error: {e}")]))?;
+        .map_err(|e| XsdErrors {
+            source_label: source_label.to_string(),
+            diagnostics: vec![XsdDiag {
+                line: None,
+                col: None,
+                message: format!("XML parse error: {e}"),
+            }],
+        })?;
 
     let schema_path_str = schema_path
         .to_str()
-        .ok_or_else(|| XsdErrors(vec![format!("schema path is not valid UTF-8: {schema_path:?}")]))?;
+        .ok_or_else(|| XsdErrors {
+            source_label: source_label.to_string(),
+            diagnostics: vec![XsdDiag {
+                line: None,
+                col: None,
+                message: format!("schema path is not valid UTF-8: {schema_path:?}"),
+            }],
+        })?;
 
     let mut schema_parser = SchemaParserContext::from_file(schema_path_str);
-    let mut schema_ctx = SchemaValidationContext::from_parser(&mut schema_parser)
-        .map_err(|errs| XsdErrors(errs.into_iter().map(|e| format_error(&e, source_label)).collect()))?;
+    let mut schema_ctx =
+        SchemaValidationContext::from_parser(&mut schema_parser).map_err(|errs| XsdErrors {
+            source_label: source_label.to_string(),
+            diagnostics: errs.into_iter().map(|e| format_error(&e)).collect(),
+        })?;
 
     schema_ctx
         .validate_document(&doc)
-        .map_err(|errs| XsdErrors(errs.into_iter().map(|e| format_error(&e, source_label)).collect()))
+        .map_err(|errs| XsdErrors {
+            source_label: source_label.to_string(),
+            diagnostics: errs.into_iter().map(|e| format_error(&e)).collect(),
+        })
 }
 
 /// Convenience: validate using the cached schema path. Returns `Ok(())`
@@ -117,14 +180,21 @@ pub fn validate_or_skip(xml_text: &str, source_label: &str) -> Result<(), XsdErr
     }
 }
 
-fn format_error(err: &libxml::error::StructuredError, source_label: &str) -> String {
-    let line = err.line.unwrap_or(0);
+fn format_error(err: &libxml::error::StructuredError) -> XsdDiag {
     let msg = err
         .message
         .as_deref()
         .unwrap_or("(libxml2 produced no message)")
-        .trim_end_matches('\n');
-    format!("{source_label}:{line}: {msg}")
+        .trim_end_matches('\n')
+        .to_string();
+    XsdDiag {
+        line: err.line.and_then(|l| if l > 0 { u32::try_from(l).ok() } else { None }),
+        // libxml2's StructuredError exposes column only on parse
+        // errors, not schema violations; fall through as None rather
+        // than probe an unreliable field.
+        col: None,
+        message: msg,
+    }
 }
 
 #[cfg(test)]
@@ -177,7 +247,7 @@ mod tests {
     #[test]
     fn bad_kind_is_rejected_with_enum_error() {
         let err = validate(BAD_KIND, "bad_kind.scxml", &schema()).unwrap_err();
-        let combined = err.0.join("\n");
+        let combined = err.to_string();
         assert!(combined.contains("bad_kind.scxml"), "filename in error: {combined}");
         assert!(combined.contains("not_a_kind"), "value cited: {combined}");
         assert!(combined.contains("kind"), "attribute cited: {combined}");
@@ -186,7 +256,7 @@ mod tests {
     #[test]
     fn bad_bit_size_is_rejected() {
         let err = validate(BAD_BIT_SIZE, "bad_bit_size.scxml", &schema()).unwrap_err();
-        let combined = err.0.join("\n");
+        let combined = err.to_string();
         assert!(combined.contains("bit-size"), "attribute cited: {combined}");
         assert!(combined.contains("not-a-number"), "value cited: {combined}");
     }
@@ -194,7 +264,7 @@ mod tests {
     #[test]
     fn bad_direction_is_rejected() {
         let err = validate(BAD_DIRECTION, "bad_direction.scxml", &schema()).unwrap_err();
-        let combined = err.0.join("\n");
+        let combined = err.to_string();
         assert!(combined.contains("direction"), "attribute cited: {combined}");
         assert!(combined.contains("sideways"), "value cited: {combined}");
     }

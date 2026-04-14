@@ -141,7 +141,7 @@ impl ToDiagnostic for CliError {
         self.cli_exit_code()
     }
 
-    fn to_diagnostic(&self) -> Diagnostic {
+    fn to_diagnostics(&self) -> Vec<Diagnostic> {
         let (code, key, expected, actual) = match self {
             CliError::UnknownLanguage { lang } => (
                 DiagnosticCode::CliUnknownLanguage,
@@ -234,7 +234,7 @@ impl ToDiagnostic for CliError {
                 Some(path.clone()),
             ),
         };
-        Diagnostic {
+        vec![Diagnostic {
             schema_version: SCHEMA_VERSION,
             id: cli_diag_id(code, &key),
             code,
@@ -245,7 +245,7 @@ impl ToDiagnostic for CliError {
             expected,
             actual,
             fix: None,
-        }
+        }]
     }
 }
 
@@ -334,16 +334,30 @@ impl ErrorFormat {
             ErrorFormat::Human => {
                 eprintln!("{human_prefix}{err}");
             }
-            ErrorFormat::Json => emit_ndjson(&err.to_diagnostic()),
+            ErrorFormat::Json => {
+                // One NDJSON line per diagnostic. Most errors produce
+                // exactly one; XSD validation can produce many.
+                for diag in err.to_diagnostics() {
+                    emit_ndjson(&diag);
+                }
+            }
         }
         std::process::exit(err.exit_code());
     }
 
     /// Convenience shim for the most common case: a forge-pipeline
     /// error that the legacy CLI reported with the "Forge codegen
-    /// error: " banner. Kept so call-sites read the same as before.
-    fn emit_forge_and_exit(self, err: &ForgeError) -> ! {
-        self.emit_and_exit(err, "Forge codegen error: ")
+    /// error: " banner.
+    ///
+    /// `source_file` is the SCXML path the CLI was asked to compile.
+    /// Wrapping in [`Located<ForgeError>`] routes the error through
+    /// the location-aware diagnostic impl, so every emitted NDJSON
+    /// record carries a `location.file` field at minimum. XSD errors
+    /// are special-cased in `expand_xsd_diagnostics` and emit per-
+    /// violation line data from libxml2, ignoring this outer file.
+    fn emit_forge_and_exit(self, err: ForgeError, source_file: &str) -> ! {
+        let located = sce_build::forge::error::Located::new(err, source_file, None, None);
+        self.emit_and_exit(&located, "Forge codegen error: ")
     }
 }
 
@@ -704,7 +718,7 @@ fn cmd_generate(
                     emit_generate_manifest(&report);
                     return;
                 }
-                Err(e) => error_format.emit_forge_and_exit(&e),
+                Err(e) => error_format.emit_forge_and_exit(e, scxml_path),
             }
         }
         sce_build::Pipeline::Scxml => {}

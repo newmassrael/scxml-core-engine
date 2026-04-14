@@ -19,12 +19,13 @@
 //      file, line, col)` and propagate that instead.
 //
 // Human rendering lives in `Display for ForgeError`. Machine rendering
-// goes through `to_diagnostic()` → `serde_json`.
+// goes through `to_diagnostics()` → `serde_json`.
 
 use crate::forge::error::{
     ExprError, ForgeError, GenerateError, ImportError, Located, ManifestError, SourceLocation,
     ValidationError, XmlError,
 };
+use crate::forge::xsd_validator::XsdErrors;
 use serde::Serialize;
 
 /// Common interface for any error type that can be rendered to a
@@ -35,7 +36,17 @@ use serde::Serialize;
 /// trait. Each error family (`ForgeError`, `MeshError`, CLI-level
 /// errors) provides its own mapping without coupling to the others.
 pub trait ToDiagnostic {
-    fn to_diagnostic(&self) -> Diagnostic;
+    /// Expand this error into one or more diagnostic records.
+    ///
+    /// Returns a `Vec` because a single error may represent multiple
+    /// independent violations — XSD validation is the canonical case:
+    /// one invocation can surface three enum-violations on three
+    /// different lines, and merging them into a single record would
+    /// hide the per-violation line data that upstream agents need.
+    ///
+    /// Call-sites that know the error is single-valued (everything
+    /// except XSD schema validation today) simply return `vec![one]`.
+    fn to_diagnostics(&self) -> Vec<Diagnostic>;
     fn exit_code(&self) -> i32;
 }
 
@@ -533,11 +544,13 @@ impl ToDiagnostic for ForgeError {
         ForgeError::exit_code(self)
     }
 
-    /// Render this error into a machine-readable [`Diagnostic`] with
-    /// no source location. Used for error paths that bubble up before
-    /// any frame with file/line context (e.g. pure I/O failures).
-    fn to_diagnostic(&self) -> Diagnostic {
-        build_forge_diagnostic(self, None)
+    /// Render this error into one or more machine-readable
+    /// [`Diagnostic`]s with no source location. Used for error paths
+    /// that bubble up before any frame with file/line context (e.g.
+    /// pure I/O failures). XSD validation errors expand to one record
+    /// per violation; every other variant returns a single record.
+    fn to_diagnostics(&self) -> Vec<Diagnostic> {
+        build_forge_diagnostics(self, None)
     }
 }
 
@@ -546,22 +559,42 @@ impl ToDiagnostic for Located<ForgeError> {
         self.error.exit_code()
     }
 
-    /// Render this located error into a machine-readable [`Diagnostic`]
-    /// carrying the source location. Preferred emission path — the
-    /// location field is the single largest signal upstream agents
-    /// use for repair routing, so reaching this impl (instead of the
-    /// bare-`ForgeError` one) means a leaf call-site did its job.
-    fn to_diagnostic(&self) -> Diagnostic {
-        build_forge_diagnostic(&self.error, Some(&self.location))
+    /// Render this located error into one or more machine-readable
+    /// [`Diagnostic`]s carrying source location data. Preferred
+    /// emission path — the location field is the single largest
+    /// signal upstream agents use for repair routing, so reaching
+    /// this impl (instead of the bare-`ForgeError` one) means a leaf
+    /// call-site did its job. XSD validation errors ignore the outer
+    /// `location` here: each inner `XsdDiag` already carries its own
+    /// line from libxml2, which is strictly more precise.
+    fn to_diagnostics(&self) -> Vec<Diagnostic> {
+        build_forge_diagnostics(&self.error, Some(&self.location))
     }
 }
 
 /// Shared emission routine used by both `ForgeError` and
-/// `Located<ForgeError>`. The two `ToDiagnostic` impls differ only in
-/// whether they pass `Some(&location)` or `None`; every other field
-/// (code, stage, spec, expected/actual, fix, id) is invariant under
-/// location and computed identically.
-fn build_forge_diagnostic(err: &ForgeError, location_ctx: Option<&SourceLocation>) -> Diagnostic {
+/// `Located<ForgeError>`. Returns a `Vec` because a single error can
+/// represent many violations — XSD validation surfaces one record per
+/// libxml2 diagnostic. All other variants return exactly one record.
+fn build_forge_diagnostics(
+    err: &ForgeError,
+    location_ctx: Option<&SourceLocation>,
+) -> Vec<Diagnostic> {
+    if let ForgeError::Xml(XmlError::SchemaValidation(xsd_errors)) = err {
+        return expand_xsd_diagnostics(xsd_errors);
+    }
+    vec![build_single_forge_diagnostic(err, location_ctx)]
+}
+
+/// Render a non-XSD error as its single diagnostic record.
+///
+/// XSD validation errors must go through [`expand_xsd_diagnostics`]
+/// instead — they carry per-violation line data that would be hidden
+/// by a single-record emission.
+fn build_single_forge_diagnostic(
+    err: &ForgeError,
+    location_ctx: Option<&SourceLocation>,
+) -> Diagnostic {
     let fields = forge_error_fields(err);
     let location = location_ctx.map(|loc| Location {
         file: loc.file.clone(),
@@ -588,6 +621,47 @@ fn build_forge_diagnostic(err: &ForgeError, location_ctx: Option<&SourceLocation
         actual: fields.actual,
         fix: fields.fix,
     }
+}
+
+/// Expand a collection of XSD violations into one diagnostic record
+/// each. `source_label` (on `XsdErrors`) is the file the author sees;
+/// each violation's `line` comes directly from libxml2. Identity is
+/// computed per-violation so deduplication works even when the same
+/// file has three distinct enum-violations on three lines.
+fn expand_xsd_diagnostics(xsd_errors: &XsdErrors) -> Vec<Diagnostic> {
+    xsd_errors
+        .diagnostics
+        .iter()
+        .map(|d| {
+            let key_fragments = vec![
+                xsd_errors.source_label.clone(),
+                d.line.map(|l| l.to_string()).unwrap_or_default(),
+                d.message.clone(),
+            ];
+            let id = compute_id(
+                DiagnosticCode::XmlSchemaValidation.as_str(),
+                Stage::Xml.as_str(),
+                Some(xsd_errors.source_label.as_str()),
+                &key_fragments,
+            );
+            Diagnostic {
+                schema_version: SCHEMA_VERSION,
+                id,
+                code: DiagnosticCode::XmlSchemaValidation,
+                stage: Stage::Xml,
+                spec: Some("SCE Forge XSD"),
+                message: d.message.clone(),
+                location: Some(Location {
+                    file: xsd_errors.source_label.clone(),
+                    line: d.line,
+                    col: d.col,
+                }),
+                expected: None,
+                actual: None,
+                fix: None,
+            }
+        })
+        .collect()
 }
 
 fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
@@ -1083,19 +1157,29 @@ mod tests {
         .into()
     }
 
+    /// Extract the single diagnostic from any `ToDiagnostic`. Panics
+    /// if the error produced zero or multiple records — tests that
+    /// target multi-record paths (XSD) call `.to_diagnostics()`
+    /// directly instead.
+    fn single(err: &impl ToDiagnostic) -> Diagnostic {
+        let mut v = err.to_diagnostics();
+        assert_eq!(v.len(), 1, "expected single diagnostic, got {}", v.len());
+        v.pop().unwrap()
+    }
+
     #[test]
     fn id_is_stable_across_calls() {
         let err = missing_attr("id");
-        assert_eq!(err.to_diagnostic().id, err.to_diagnostic().id);
-        assert!(err.to_diagnostic().id.starts_with("fnv1a:"));
+        assert_eq!(single(&err).id, single(&err).id);
+        assert!(single(&err).id.starts_with("fnv1a:"));
     }
 
     #[test]
     fn id_distinguishes_semantic_payload() {
         // Same variant, different attr → different id.
         assert_ne!(
-            missing_attr("id").to_diagnostic().id,
-            missing_attr("type").to_diagnostic().id
+            single(&missing_attr("id")).id,
+            single(&missing_attr("type")).id
         );
     }
 
@@ -1106,7 +1190,7 @@ mod tests {
         // file, key_fragments), so invoking `compute_id` directly
         // with those fields yields the same id as `to_diagnostic`.
         let err = missing_attr("id");
-        let d = err.to_diagnostic();
+        let d = single(&err);
         let expected = compute_id(
             DiagnosticCode::ValidationMissingAttribute.as_str(),
             Stage::Validation.as_str(),
@@ -1121,8 +1205,8 @@ mod tests {
         let bare = missing_attr("id");
         let located = Located::new(missing_attr("id"), "checkout.scxml", Some(42), None);
 
-        let d_bare = bare.to_diagnostic();
-        let d_loc = located.to_diagnostic();
+        let d_bare = single(&bare);
+        let d_loc = single(&located);
 
         assert!(d_bare.location.is_none());
         let loc = d_loc.location.as_ref().expect("location populated");
@@ -1137,7 +1221,7 @@ mod tests {
     fn located_preserves_stage_and_exit_code() {
         let err = Located::new(missing_attr("id"), "x.scxml", None, None);
         assert_eq!(err.exit_code(), 3); // Validation
-        let d = err.to_diagnostic();
+        let d = single(&err);
         assert!(matches!(d.stage, Stage::Validation));
         assert!(matches!(d.code, DiagnosticCode::ValidationMissingAttribute));
     }
@@ -1145,7 +1229,7 @@ mod tests {
     #[test]
     fn code_serializes_as_slash_path() {
         let err = missing_attr("id");
-        let json = serde_json::to_string(&err.to_diagnostic()).unwrap();
+        let json = serde_json::to_string(&single(&err)).unwrap();
         assert!(json.contains("\"code\":\"validation/missing-attribute\""));
     }
 
@@ -1158,7 +1242,7 @@ mod tests {
             expected: "u8, u16, u32".into(),
         }
         .into();
-        let d = err.to_diagnostic();
+        let d = single(&err);
         assert_eq!(d.actual.as_deref(), Some("blob"));
         assert_eq!(
             d.expected.as_deref(),
@@ -1176,7 +1260,7 @@ mod tests {
             attr: "id".into(),
         }
         .into();
-        let d = err.to_diagnostic();
+        let d = single(&err);
         match d.fix {
             Some(Fix::AddAttribute { element, attr }) => {
                 assert_eq!(element, "sce:field");
@@ -1194,7 +1278,7 @@ mod tests {
             id: "armed".into(),
         }
         .into();
-        let json = serde_json::to_string(&err.to_diagnostic()).unwrap();
+        let json = serde_json::to_string(&single(&err)).unwrap();
         assert!(!json.contains('\n'), "NDJSON records must be single-line");
         assert!(json.starts_with('{'));
         assert!(json.ends_with('}'));
@@ -1208,7 +1292,7 @@ mod tests {
             path: std::path::PathBuf::from("/tmp/x"),
             source: std::io::Error::from(std::io::ErrorKind::NotFound),
         };
-        let json = serde_json::to_string(&err.to_diagnostic()).unwrap();
+        let json = serde_json::to_string(&single(&err)).unwrap();
         for absent in [
             "\"expected\"",
             "\"actual\"",
@@ -1234,8 +1318,8 @@ mod tests {
         // Each entry: (label, actual_json, expected_golden). Entries
         // are evaluated eagerly so all mismatches surface in one
         // failure report — no drip-feed debugging.
-        let actual_forge = |e: ForgeError| serde_json::to_string(&e.to_diagnostic()).unwrap();
-        let actual_mesh = |e: MeshError| serde_json::to_string(&e.to_diagnostic()).unwrap();
+        let actual_forge = |e: ForgeError| serde_json::to_string(&single(&e)).unwrap();
+        let actual_mesh = |e: MeshError| serde_json::to_string(&single(&e)).unwrap();
 
         let cases: Vec<(&str, String, &str)> = vec![
             (
