@@ -286,7 +286,7 @@ The three groups do **not** share a wire format. They share only the logical `(e
 
 **Why three groups, not one**: SCE Mesh's logical model `(name, data)` is universal. The wire format is not — CAN has no name field (frame ID is the routing key), OPC UA has no event concept (only property access). Attempting a single wire format across all groups either constrains byte-stream transports unnecessarily (fixed frame sizes to fit CAN) or loses signal-level type information (opaque bytes over CAN). Each group preserves its native semantics.
 
-Within a group, deploy.yaml-only middleware switching works (e.g., someip ↔ zenoh, both byte-stream). Across groups, a SCXML author may need to match the `sce:pattern` attribute to a transport that supports that pattern (Section 8.2 Transport Capability Matrix).
+Within a group, deploy.yaml-only middleware switching works (e.g., someip ↔ zenoh, both byte-stream). Across groups, build-time pattern inference checks that the transport supports each event's inferred pattern (Section 8.2 Transport Capability Matrix). If unsupported, the build fails with a clear diagnostic.
 
 #### Template Architecture
 
@@ -376,10 +376,10 @@ QoS violation behavior is generated per-transport from deploy.yaml configuration
 
 | Situation | Generated Behavior |
 |-----------|----------|
-| `sce:qos="reliable"` send fails | Transport-native retry (DDS: reliability QoS, SOME/IP: method retry), then `error.communication` |
-| `sce:deadline` exceeded | Timer-based enforcement in generated code, `error.communication` with `reason: "DEADLINE_EXCEEDED"` |
+| Reliable binding send fails | Transport-native retry (DDS: reliability QoS, SOME/IP: method retry), then `error.communication` |
+| `<invoke>` deadline exceeded | Timer-based enforcement in generated code, `error.invoke.ID` with `RpcStatus::DeadlineExceeded` |
 | Transport disconnected | Transport-native disconnect detection, `error.communication`, instance lifecycle → DRAINING |
-| `sce:qos="best-effort"` send fails | Silent drop, no error event (fire-and-forget semantics) |
+| Best-effort binding send fails | Silent drop, no error event (fire-and-forget semantics) |
 
 #### Supported Transports
 
@@ -532,7 +532,7 @@ discovery:
 
 Event deduplication applies **only when the discovery mode or transport can produce duplicates** (Dynamic mode with failover, multi-path delivery). It is not required for Static or Scoped modes with single-path routing.
 
-**When enabled** (Dynamic mode, or explicit `sce:qos="reliable"` with failover):
+**When enabled** (Dynamic mode, or a deploy.yaml binding with reliable QoS + failover):
 
 ```
 SCE Event Header (optional, added by generated transport code):
@@ -563,41 +563,21 @@ Events arriving before READY are buffered (configurable timeout).
 
 ---
 
-## 5. QoS Model: Intent vs Realization
+## 5. QoS Model: Deploy-Time Realization
 
-SCE Mesh separates QoS into two layers:
+QoS is a **deployment concern**, not a state machine concern. A single SCXML document must be deployable across domains (vehicle ECU with DDS QoS profiles, IntraECU with SHM, MMORPG with UDP + best-effort) without rewriting the state logic. Placing QoS in SCXML couples the machine to a specific deployment, which contradicts SCE Mesh's core principle: **the same SCXML runs in three different domains by swapping deploy.yaml**.
 
-1. **SCXML (`sce:qos`, `sce:deadline`, `sce:priority`)** — behavioral intent. "This message needs reliable delivery." Stays transport-agnostic. Used for build-time validation.
-2. **deploy.yaml (transport-native QoS)** — platform realization. "Reliable on DDS means Reliability::Reliable + Durability::TransientLocal + History::KeepLast(5)." Full transport-native feature access.
+**Decision (Session E1 path B/C, 2026-04-14)**: QoS lives entirely in deploy.yaml. SCXML carries only event names and transitions.
 
-### SCXML QoS Attributes (Intent Layer)
+### Rationale
 
-```xml
-<scxml xmlns:sce="http://sce.dev/ext">
+- **Location transparency**: SCXML author writes `<send event="brake.activate" target="#motor"/>`. The QoS policy ("reliable, 1ms deadline, highest priority") is a property of the *deployment*, not the message. Same `<send>` in a test harness may have zero QoS; in production may have full DDS reliability+deadline+history.
+- **Single source of truth**: QoS is already native to each transport (DDS QoS policies, SOME/IP protocol selection, Zenoh reliability). Declaring it in SCXML creates a second source that must stay in sync.
+- **W3C purity**: No SCXML extensions for QoS means graceful execution in any conforming SCXML 1.0 processor.
 
-  <!-- Intent: must deliver, within 1ms, highest priority -->
-  <send event="brake.activate" target="#brake_ecu"
-        sce:qos="reliable"
-        sce:deadline="1ms"
-        sce:priority="critical"/>
+### Deprecated: SCXML QoS Attributes
 
-  <!-- Intent: loss acceptable, fast delivery -->
-  <send event="npc.move" target="zone://forest"
-        sce:qos="best-effort"
-        sce:priority="normal"/>
-
-</scxml>
-```
-
-| Attribute | Values | Role |
-|-----------|--------|------|
-| `sce:qos` | `reliable`, `best-effort` | Build-time validation hint |
-| `sce:deadline` | Duration (e.g. `1ms`, `16ms`) | Build-time validation hint |
-| `sce:priority` | `critical`, `high`, `normal`, `low` | Build-time validation hint |
-
-These attributes **do not directly control generated code**. They are validation hints — sce-build checks that the deploy.yaml QoS configuration for each binding is consistent with the SCXML intent. For example, if SCXML declares `sce:qos="reliable"` but deploy.yaml configures `reliability: BEST_EFFORT`, sce-build emits a **build-time warning**.
-
-If `sce:qos` attributes are omitted, no validation occurs — deploy.yaml QoS is used as-is.
+`sce:qos`, `sce:deadline`, `sce:priority` (and related `sce:*` send-time attributes) are **removed in Session E1**. Removal is staged (warning first, hard error after all in-tree fixtures migrate); the canonical two-stage policy and full migration map live in §13 "Session C/D attribute deprecation". See there for authoritative wording.
 
 ### deploy.yaml QoS (Realization Layer)
 
@@ -656,27 +636,15 @@ static dds_qos_t* make_motor_qos() {
 
 ### Build-Time Validation
 
-sce-build cross-references SCXML intent with deploy.yaml realization:
+With QoS in deploy.yaml only, validation is a one-sided check: each binding's transport-native QoS must be valid for that transport (e.g., a DDS binding must have valid DDS policies). sce-build catches typos via `deny_unknown_fields` on the per-transport config structs.
 
-| SCXML Intent | deploy.yaml Check | Result |
-|-------------|-------------------|--------|
-| `sce:qos="reliable"` | DDS `reliability: BEST_EFFORT` | **Warning**: intent/config mismatch |
-| `sce:deadline="1ms"` | DDS `deadline: 100ms` | **Warning**: deadline exceeds intent |
-| `sce:qos="reliable"` | SOME/IP `protocol: TCP` | OK — TCP provides reliability |
-| `sce:qos="best-effort"` | CAN (inherently best-effort) | OK — matches |
-| No `sce:qos` attribute | Any config | OK — no validation, user takes responsibility |
+Cross-transport policy consistency (e.g., "all brake-critical events across DDS and SOME/IP must be reliable") is expressed via deploy.yaml `pattern_defaults` or binding group labels — not via SCXML hints.
 
-### Shared `sce:` Namespace with SCE Forge
+### `sce:` Namespace Scope
 
-SCE Mesh and SCE Forge share the unified `sce:` extension namespace (`http://sce.dev/ext`). A single `<send>` element may carry attributes from both subsystems:
+SCE Mesh introduces **exactly one** SCXML extension: `<invoke type="sce:mesh-rpc">` (spec in §9.5; wire encoding in §13 MeshEnvelope schema). This is a type *value*, not a new attribute, and W3C SCXML §6.4 explicitly reserves invoke `type` as implementation-defined.
 
-```xml
-<send sce:service="SecurityAccess" sce:subfunc="0x01"
-      sce:qos="reliable" sce:deadline="5ms"/>
-<!--   ^^^^^^^ Forge (codegen)  ^^^^^^^ Mesh (codegen) -->
-```
-
-**Ownership rule**: All `sce:` attributes are now processed at **build time**. SCE Forge attributes (`sce:kind`, `sce:type`, `sce:service`, etc.) control Forge codegen output. SCE Mesh attributes (`sce:qos`, `sce:deadline`, `sce:priority`) serve as build-time validation hints cross-referenced against deploy.yaml. Neither subsystem reads the other's attributes. See SCE_FORGE.md Section 3.6 for the full attribute classification table.
+SCE Forge continues to use `sce:` attributes for its codegen (`sce:kind`, `sce:type`, `sce:service`, etc.). See SCE_FORGE.md §3.6. SCE Mesh does not introduce any attributes in the `sce:` namespace.
 
 ### Future Direction: Distributed Transaction Patterns
 
@@ -869,7 +837,8 @@ Step 6: Generate per-device artifacts (SM + transport + serialization)
 
 Step 7: Build-time validation
   - All <send> targets resolve in deploy.yaml
-  - sce:qos intent matches deploy.yaml QoS config
+  - All deploy.yaml named entities (service/method/event_group) resolve in external infra config (vsomeip.json / zenoh.json5)
+  - Every inferred request↔response pair is complete on both sender and receiver
   - Event coverage: every sent event has at least one receiver
 ```
 
@@ -1296,9 +1265,219 @@ Invoke-specific errors follow W3C SCXML error naming:
 Remote `<invoke>` inherits all distributed system constraints:
 
 - `<finalize>` data arrives asynchronously — parent may have transitioned before data arrives. Per W3C SCXML semantics, if the parent has already exited the invoking state when child data arrives, `<finalize>` is not executed and the data is discarded. This behavior applies identically to remote invoke: the runtime drops late-arriving child events for sessions whose parent has exited the invoking state.
-- `done.invoke` delivery is not guaranteed without `sce:qos="reliable"`
+- `done.invoke` delivery is not guaranteed unless the deploy.yaml binding for the invoked machine is configured with reliable QoS
 - `<cancel>` is best-effort over unreliable transports
 - Child cannot access parent's data model (no shared memory across devices)
+
+### 9.5 `<invoke type="sce:mesh-rpc">` — short-lived RPC
+
+`sce:mesh-rpc` is an **implementation-defined invoke type** (W3C §6.4 explicitly reserves `type` for implementation URIs). Unlike `type="scxml"` which spawns a full child session, `mesh-rpc` is a single request/single reply RPC modeled on top of W3C invoke lifecycle events (`done.invoke.ID`, `error.invoke.ID`, `<cancel>`).
+
+**Semantics**:
+
+| Aspect | `type="scxml"` (§9.6) | `type="sce:mesh-rpc"` |
+|---|---|---|
+| Child session | Full state machine, long-lived | None — stateless RPC handler |
+| `_event` stream from child | Multiple events possible | Single reply event only |
+| `<finalize>` | Called per child event | Not invoked (no event stream) |
+| `done.invoke.ID` | Raised when child reaches `<final>` | Raised when RPC reply arrives |
+| `error.invoke.ID` | Raised on child error or transport loss | Raised on timeout or `RpcStatus != Ok` |
+| `<cancel>` | Terminates child session | Emits `RpcStatus::Cancelled` envelope |
+| Correlation | `invoke_id` throughout session | `invoke_id` single round trip |
+| Reserved `<param>` names | None | `_mesh_event` (request event name), `_mesh_deadline_ms` (timeout). See reserved-name rule below. |
+
+**Reserved `<param>` names** (codegen metadata, stripped from the request payload):
+
+| Name | Meaning | Required |
+|---|---|---|
+| `_mesh_event` | SCXML event name of the request (e.g. `'service.request.compute_force'`) | Yes |
+| `_mesh_deadline_ms` | Request timeout in milliseconds (integer). Absent ⇒ no deadline | No |
+
+The `_mesh_` prefix is W3C-identifier-safe and highly unlikely to collide with natural SCXML author payloads. Any additional `_mesh_*` name is reserved for future metadata; `sce-build` rejects **unknown** `_mesh_*` names at build time.
+
+**Reserved-name conflict is a build-time hard error**: an author cannot shadow a `_mesh_*` reserved name with a business payload. `sce-build` fails:
+```
+error: <param name="_mesh_event"> is reserved metadata for <invoke type="sce:mesh-rpc">.
+       Rename your payload parameter (for example, "event_data") or nest it under
+       a non-reserved object name.
+```
+
+The mesh envelope's `type` (CBOR key 2) is always populated from `_mesh_event`; it is not taken from any author-named `<param>`.
+
+**Deadline precedence** (per-invoke `<param>` vs deploy.yaml binding-level):
+
+| Source | Scope | Precedence |
+|---|---|---|
+| `<param name="_mesh_deadline_ms">` on `<invoke>` | This specific invoke instance | **Authoritative** — wins on conflict |
+| `deploy.yaml bindings.<target>.deadline_ms` | All traffic to this target | Fallback when `<param>` is absent |
+| Transport-native deadline (e.g. DDS `deadline:` QoS) | All traffic through this transport | Applied in parallel by the transport stack; **not** combined with the two above |
+
+Rule: the `<param>` value, if present, **overrides** any deploy.yaml binding-level deadline for this one invocation. Transport-native deadlines from QoS are independent — they enforce delivery SLAs, not RPC response timeouts. Diagnostic: when both `<param>` and deploy.yaml deadline exist with different values, `sce-build` emits an informational notice; it is not an error because per-invoke override is expected usage.
+
+**Wire mapping**:
+- Request: envelope with `pattern=RpcRequest`, `invoke_id=SCXML invoke id (UUID v7)`, `type=<value of _mesh_event>`, `data=<param payload excluding _mesh_* reserved names>`, `deadline_unix_ms=<now + effective deadline>` (effective deadline = `_mesh_deadline_ms` if present, else deploy.yaml binding-level, else absent).
+- Reply: envelope with `pattern=RpcReply`, `invoke_id=<matching>`, `rpc_status=Ok|…`, `data=<reply payload>`.
+- Cancel: envelope with `pattern=RpcReply`, `invoke_id=<matching>`, `rpc_status=Cancelled`, empty data.
+
+**Runtime mapping to `_event`** (on reply delivery to parent):
+- `_event.name` = `done.invoke.<id>` (success) or `error.invoke.<id>` (non-Ok status)
+- `_event.data` = deserialized reply payload (for success) or the structured error object defined in §10.6 (for error)
+- `_event.invokeid` = the SCXML invoke id
+- `_event.origin` = `mesh://<envelope.source>` (URI form per §10.6)
+- `_event.origintype` = `"sce:mesh-rpc"`
+- `_event.sendid` = undefined (RPC reply, not a `<send>`)
+
+**Graceful degradation**: a foreign W3C SCXML 1.0 processor that does not understand `sce:mesh-rpc` raises `error.execution` per §6.4.1. The document author may catch this with `<transition event="error.execution">` for local fallback logic. The structured `_event.data` payload for such errors follows the convention in §10.6.
+
+### 9.6 `<invoke type="scxml">` — full remote SCXML session (Session F)
+
+When `type="scxml"` (or the default, which equals `"http://www.w3.org/TR/scxml/"`) is used with `src="#<machine_id>"` referring to a mesh-registered peer, SCE Mesh provides **full W3C SCXML 1.0 invoke semantics across a transport**. This is not an abbreviation — the parent/child session lifecycle and all its derived behaviors (`<finalize>`, `autoforward`, child→parent events, inline content) are preserved end-to-end.
+
+Implementation scope is **Session F**. Sessions E1 and E2 provide:
+- Wire format for full-session invoke (envelope schema below) — documented but not yet emitted.
+- Conformance guarantees this section makes — stated in spec, not yet verified by tests.
+- Static recognition in parser/model so documents using full remote invoke parse cleanly; at runtime they raise `error.execution` with `_event.data.reason == "SESSION_F_NOT_IMPLEMENTED"` (per the structured convention in §10.6.1) until Session F lands.
+
+#### 9.6.1 Session establishment
+
+```
+Parent P on device D_P                  Child template resolved on device D_C
+  |                                       |
+  |-- InvokeStart { invoke_id,            |
+  |                 type="scxml",         |
+  |                 src="#motor",         |
+  |                 params, content,      |
+  |                 namelist_snapshot } ->|
+  |                                       |-- instantiate new child session C
+  |                                       |   init datamodel from params + content + namelist
+  |                                       |   child session id = "<D_P>:<P.machine>:<invoke_id>"
+  |                                       |
+  |<-- InvokeStarted { invoke_id,         |   (success) parent stashes child endpoint
+  |                    session_id } ------|
+  |                                       |
+  |<-- ChildEvent { invoke_id,            |   (repeated — every child <send target="#_parent">
+  |                 event_name,           |    AND every event raised inside child)
+  |                 data, sendid,         |
+  |                 origintype } ---------|
+  |                                       |
+  | (parent: parent executes <finalize>   |
+  |  on the transition triggered by       |
+  |  the child event, if the transition   |
+  |  is in the invoking state and a       |
+  |  <finalize> is declared on the        |
+  |  <invoke>)                            |
+  |                                       |
+  |-- ParentEvent { invoke_id,            |-- child external queue receives event
+  |                 event_name, data,     |   (fired by autoforward="true" OR explicit
+  |                 sendid } ------------>|    <send target="#_invoke_<id>">)
+  |                                       |
+  |<-- Done { invoke_id,                  |   child reached <final>
+  |           donedata } -----------------|
+  |                                       |
+  |-- Cancel { invoke_id } -------------->| (parent exits invoking state or explicit <cancel>)
+  |                                       |-- child terminated, child final events discarded
+```
+
+#### 9.6.2 Envelope extensions for full remote invoke
+
+Additional wire-stable pattern values (reserved in §13 CBOR key map):
+
+| Pattern | Wire value | Direction | Envelope content |
+|---|---|---|---|
+| `InvokeStart` | 14 | Parent → Child | `invoke_id`, `type`, `data` = CBOR map `{src, params, content, namelist, autoforward}` |
+| `InvokeStarted` | 15 | Child → Parent | `invoke_id`, optional `source` = child's session id string |
+| `ChildEvent` | 16 | Child → Parent | `invoke_id`, `type`=event name, `data`=payload, `subject`=sendid, codec tag |
+| `ParentEvent` | 17 | Parent → Child | `invoke_id`, `type`=event name, `data`=payload, `subject`=sendid |
+| `InvokeDone` | 18 | Child → Parent | `invoke_id`, `data`=donedata payload |
+| `InvokeCancel` | 19 | Parent → Child | `invoke_id`, empty `data` |
+| `InvokeError` | 20 | Child → Parent or Parent → Child | `invoke_id`, `rpc_status`, `rpc_error_message` |
+
+Wire values 10-13 remain reserved for Stream patterns (§13 Phase 4); 14-20 are reserved here for the full remote invoke lifecycle (Session F), declared now to pin assignments and prevent accidental reuse by E1/E2 sessions; 21 is `ParallelRegionDone` (Session E2). Future additions must use unused integers (22+). **No wire value may ever be reused or overloaded — see §13 "Adding a variant requires a new wire value, never reuse."**
+
+#### 9.6.3 `_event` field wiring (W3C §5.10.2 compliance)
+
+When a child event arrives at the parent as `ChildEvent`:
+
+| Standard `_event` field | Wiring source |
+|---|---|
+| `_event.name` | envelope `type` |
+| `_event.type` | `"external"` (per §5.10.1, all invoke-sourced events are external) |
+| `_event.sendid` | envelope `subject` (child's sendid, transparent) |
+| `_event.origin` | child session endpoint URI: `mesh://<child_device>/<child_machine>/<child_session_id>` |
+| `_event.origintype` | `"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"` (standard; remote transport transparent per §6.2) |
+| `_event.invokeid` | envelope `invoke_id` (UUID v7 as hex string) |
+| `_event.data` | deserialized payload according to envelope `datacontenttype` |
+
+The reverse applies to `ParentEvent` arriving at the child: `_event.origin` points at the parent endpoint, `_event.invokeid` is the same UUID v7, and `_event.type = "external"`.
+
+#### 9.6.4 `<finalize>` semantics preserved
+
+Per W3C §6.4.4, `<finalize>` executes **in the context of the invoking state**, **before** the transition triggered by the child event fires, and modifies the parent's datamodel. Remote invoke preserves this ordering:
+
+1. `ChildEvent` arrives at parent's transport layer.
+2. Mesh runtime enqueues the event into the parent's external event queue at macrostep boundary.
+3. During the parent's next macrostep, the event is selected.
+4. The runtime identifies the `<invoke id="X">` matching `_event.invokeid`.
+5. If the parent is still in the invoking state and `<invoke>` has a `<finalize>` child, the runtime executes `<finalize>` **before** evaluating transition selection for this event. The `<finalize>` body may read `_event.data` and write to the parent datamodel.
+6. Transition selection proceeds normally; any transition whose `event` matches may fire.
+
+If the parent has already exited the invoking state when the event arrives (step 4 fails), the event is **discarded silently** per W3C §6.4.5 (finalize not executed, transition not considered). Late events for terminated sessions do not re-activate the invoking state.
+
+#### 9.6.5 `autoforward="true"` semantics
+
+Per W3C §6.4.2, `autoforward="true"` causes the parent to forward every external event in its queue to the invoked child. In remote invoke:
+
+- Parent runtime observes each external event selected during macrostep.
+- For each active `<invoke autoforward="true">`, runtime emits `ParentEvent` envelope to the child with `invoke_id` matching the invoke and the event copied verbatim.
+- `ParentEvent` delivery preserves per-sender FIFO ordering (Transport Contract §10.1).
+- Foreword is **at-most-once-per-parent-event**; if the parent's own transition consumes the event before autoforward emits, forward is still emitted (per §6.4.2 — autoforward is orthogonal to parent's own handling).
+
+Runtime cost: each autoforwarded event adds one envelope emission. Transport Contract reliability/ordering apply. `autoforward` with an unreliable transport is explicitly permitted but the author should expect occasional forward loss (same contract as any mesh `<send>`).
+
+#### 9.6.6 Inline `<content>` and child SCXML precompilation
+
+Per W3C §6.4, `<invoke>` may carry the child machine's SCXML inline via `<content>`:
+
+```xml
+<invoke type="scxml" id="worker">
+  <content>
+    <scxml>
+      <state id="s">
+        ...
+      </state>
+    </scxml>
+  </content>
+</invoke>
+```
+
+**Problem**: remote invoke requires the target device to have executable code for the child. Shipping SCXML text at runtime requires a remote interpreter and violates "build-time resolution" (§1 Core Principle).
+
+**Resolution**: at build time, `sce-build` scans every `<invoke type="scxml">` with inline `<content>` and **extracts the inner `<scxml>` document as a separate logical machine**. The extracted machine is treated exactly like a named peer:
+
+1. Build tool synthesizes a stable machine name: `<parent_machine_id>__sce_synth_invoke__<invoke_id>`. The `__sce_synth_invoke__` infix is reserved: `sce-build` **rejects any author-declared machine id containing this infix** with a build error, so name collisions with synthesized machines are structurally impossible. If a collision is nonetheless detected (e.g., two invokes sharing the same id under the same parent — which is already a W3C violation), `sce-build` fails with:
+   ```
+   error: synthesized machine name '<parent>__sce_synth_invoke__<invoke_id>' collides with
+          another machine. Causes: duplicate <invoke id> under the same parent, or author
+          machine id using the reserved '__sce_synth_invoke__' infix.
+   ```
+2. The inline content is removed from the parent source; the `<invoke>` is rewritten in-memory to `src="#<parent>__sce_synth_invoke__<invoke_id>"` (content field dropped).
+3. The synthesized machine is placed into the same partition as the parent by default. `deploy.yaml` `partitions:` may explicitly reassign it to a different partition (enabling distributed inline invoke).
+4. AOT codegen produces a state machine class for the synthesized machine identical to named peers.
+
+At runtime, the rewritten `<invoke src="#<parent>__sce_synth_invoke__<invoke_id>">` resolves through the normal remote invoke path. The author's intent ("inline content") is preserved — the child is semantically the inline SCXML — but the execution path is the same as named-peer invoke.
+
+Deploy.yaml override example:
+```yaml
+partitions:
+  worker_off_device:
+    machines: [brake]
+    contains:
+      invokes: ["brake__sce_synth_invoke__worker"]   # synthesized from inline <content>
+```
+
+#### 9.6.7 Foreign processor compatibility
+
+A W3C SCXML 1.0 processor that does not understand SCE Mesh's distribution layer will still execute `<invoke type="scxml">` — it will create a **local** child session in the same process. For SCXML documents intended for dual deployment (local-only test + distributed production), this is graceful: the document runs as a self-contained monolith under a foreign processor, and distributes only when loaded via `sce-build` with a matching `deploy.yaml`. No source modification needed.
 
 ---
 
@@ -1380,6 +1559,146 @@ If Instance A generates an event for Instance B during tick N, the event is alwa
 - **Deterministic**: result does not depend on instance processing order within a tick
 - **Simple to implement**: double-buffered event queues — tick N reads from buffer A, writes to buffer B; tick N+1 swaps
 - **W3C consistent**: W3C SCXML requires external events to be processed in the "next stable configuration" after the current macrostep. In tick-based scheduling, the tick boundary is the macrostep boundary — delivering at tick N+1 satisfies this requirement
+
+### 10.4 Transport Contract
+
+A transport is **conformant** for distributed W3C SCXML 1.0 execution iff it provides:
+
+| Property | Rationale (W3C clause) | Canonical provider |
+|---|---|---|
+| **Per-sender FIFO ordering** | §3.13 external event queue is FIFO; each sender is a single queue from the receiver's perspective | TCP stream, SOME/IP-TCP, DDS reliable, Zenoh reliable, gRPC |
+| **At-least-once delivery** | §5.10 no loss permitted — W3C assumes successful receipt or an `error.communication` event | TCP, DDS reliable, application ACK on unreliable transport |
+| **Duplicate tolerance** | §5.10 does not forbid duplicates but the runtime must suppress them (dedup at mesh layer; §10.5) | envelope id (UUID v7) |
+| **Fault signal emission** | §3.2 `error.communication` is raised on transport failure; transport must surface disconnection | all transports (native or wrapper) |
+
+A transport meeting all four is **conformance-complete**. Missing any property makes the transport **conformance-degraded**, and deploy.yaml must flag it:
+
+```yaml
+topology:
+  game_server:
+    transports:
+      udp_fast:
+        kind: udp
+        conformance: degraded      # opt-in explicit declaration
+        degraded_aspects: [ordering, delivery]
+```
+
+`sce-build` fails the build if a binding uses a degraded transport without the explicit `conformance: degraded` declaration on that transport. This prevents accidental conformance loss.
+
+**Reference implementations in-tree**:
+- `local`, `shm`, `someip` (TCP mode), `zenoh` (reliable mode): conformance-complete.
+- `custom_tcp` (Session E2 CI reference): conformance-complete, zero external deps.
+- `udp` (planned): conformance-degraded by default; opt-in sequence-id wrapper can lift to complete.
+
+### 10.5 Duplicate Suppression
+
+Per-envelope duplicate suppression is a **mesh runtime responsibility**, not a transport-layer one. Runtime maintains a **per-sender recent-id window**:
+
+```cpp
+struct DedupWindow {
+    // Ring buffer of UUID v7 envelope ids from this sender. Window size is
+    // configurable; default 256 entries ~= 4KB per sender.
+    std::array<std::array<uint8_t, 16>, 256> recent_ids;
+    size_t head;
+};
+std::unordered_map<std::string /*sender*/, DedupWindow> dedup_;
+```
+
+On envelope receipt:
+1. Look up `dedup_[envelope.source]`.
+2. If `envelope.id` is already in the window → drop (duplicate).
+3. Otherwise, insert into window, forward to engine.
+
+UUID v7's monotonic ms-prefix makes the window a time-bounded sliding filter: a 256-entry window at 1000 events/sec per sender covers 256 ms — longer than any practical retransmit window.
+
+Transports that **inherently suppress duplicates** (TCP single stream, SOME/IP over TCP) may skip the dedup layer; a transport descriptor flag `supplies_dedup: true` disables the runtime check. In-tree transports:
+
+| Transport | `supplies_dedup` |
+|---|---|
+| local, shm | `true` (in-process queueing cannot duplicate) |
+| custom_tcp | `true` (single TCP stream per sender) |
+| someip (TCP) | `true` |
+| zenoh (reliable) | `false` (application id dedup still runs — router reordering possible) |
+| udp, generic unreliable | `false` |
+
+### 10.6 `_event` Field Wiring for Distributed Events
+
+W3C §5.10.2 defines the standard `_event` fields. SCE Mesh populates them deterministically from envelope fields:
+
+| `_event` field | Single-process single instance | Distributed (from inbound envelope) |
+|---|---|---|
+| `name` | dispatched event name | envelope `type` |
+| `type` | `"internal"` or `"external"` | `"external"` (all mesh-delivered events are external per §5.10.1) |
+| `sendid` | `<send>`'s id attribute or generated | envelope `subject` (or unset if not `<send>`-originated) |
+| `origin` | unset (internal) | `mesh://<envelope.source>` (URI form; portable target spec) |
+| `origintype` | unset (internal) | `"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"` for inter-SCXML mesh traffic; transport-specific URIs for bridged traffic (e.g., `"sce:mesh/someip"` for raw bus events) |
+| `invokeid` | unset | envelope `invoke_id` as hex string, or unset if no invoke context |
+| `data` | payload | deserialized per envelope `datacontenttype` |
+
+These fields are surface-compatible with local execution — an author's `<transition cond="_event.origin == 'mesh://chassis'">` works identically whether the event arrives locally or via any transport.
+
+#### 10.6.1 Structured `_event.data` for `error.*` events
+
+W3C SCXML 1.0 does not prescribe a `_event.data` schema for `error.execution` / `error.communication`; the spec only fixes the event names (§5.10.1). SCE Mesh pins a **JSON-shaped convention** so authors have a stable contract:
+
+```
+_event.data = {
+  "errorName":    "execution" | "communication",
+  "reason":       "<machine-readable reason code>",       // required
+  "detail":       "<human-readable detail, optional>",
+  "source":       "<envelope.source or null>",            // communication only
+  "sendid":       "<originating sendid or null>",         // when applicable
+  "envelope_id":  "<UUID v7 hex or null>",                // communication only
+  "invoke_id":    "<UUID v7 hex or null>"                 // invoke-related only
+}
+```
+
+Reason code catalog for `error.communication` is in §16.7. `error.execution` reason codes are SCE-internal; the canonical list is:
+
+| `reason` | Origin |
+|---|---|
+| `INVOKE_TYPE_UNSUPPORTED` | `<invoke type=…>` type URI not recognized (e.g., foreign processor or `sce:mesh-rpc` on a reference impl without the extension) |
+| `INVOKE_SRC_NOT_FOUND` | `src="#X"` references a machine that is not registered in deploy.yaml |
+| `INVOKE_CHILD_INIT_FAILED` | remote child raised an error before reaching its first stable configuration |
+| `RESERVED_PARAM_CONFLICT` | build-time: `<param>` shadows a `_mesh_*` reserved name (build fails before runtime; reason surfaces only if an out-of-band document bypasses the build tool) |
+| `SESSION_F_NOT_IMPLEMENTED` | parser/model accepts full remote `<invoke type="scxml">` but runtime path is not yet implemented (Session E1/E2 transitional) |
+
+Foreign W3C SCXML 1.0 processors that do not implement SCE Mesh will raise `error.execution` with their own `_event.data` shape (if any). Documents that must be portable between foreign and SCE processors should guard on `_event.name == 'error.execution'` only, not on `_event.data.reason`. SCE's own error handlers may read `_event.data.reason` reliably for diagnostics and recovery logic.
+
+### 10.7 Delayed Send + Cancel (Cross-Process)
+
+Per W3C §6.2.4, `<send delay="5s" id="later">` queues an event for future delivery, cancellable by `<cancel sendid="later">`. Distribution extends this as follows:
+
+**Sender-hold model**: the delay timer lives at the **sender** side. The envelope is not emitted until the delay expires:
+
+```
+t=0    <send delay="5s" id="later" target="#peer" event="e1">
+         parent scheduler queues { emit_at=t+5s, id="later", envelope=... }
+         no wire traffic yet
+t=1s   <cancel sendid="later"/>
+         parent scheduler removes the queued entry
+         no wire traffic at all — perfectly cancelled
+```
+
+**Emit boundary**: if the delay expires before cancel, the envelope is sent. Once on the wire, `<cancel>` downgrades to **best-effort**:
+
+```
+t=0    <send delay="50ms" id="fast" target="#peer" event="e2">
+         scheduler queues with emit_at=t+50ms
+t=50ms scheduler emits envelope to transport
+         wire traffic begins
+t=51ms <cancel sendid="fast"/>
+         local record removed; a BestEffortCancel control envelope is
+         emitted with the same envelope id and rpc_status=Cancelled.
+         Peer may or may not have already processed the original event.
+```
+
+**Guarantees**:
+- Cancel **before** emit_at: deterministic, no peer observes the event.
+- Cancel **after** emit_at: peer *may* have processed the event. The cancel control envelope tells the peer to *stop processing if not yet delivered to the SCXML engine* — specifically, if the event is still in the receiver's transport-side inbox (queued but not raised), the runtime removes it; if already delivered to the engine, cancel is a no-op.
+- Cross-process cancels **cannot unwind** effects of an already-processed event. Author must design for this (e.g., compensating transitions).
+
+**Tracking**: the sender's scheduler maintains `{sendid → (emit_at, envelope)}` for unfired delays. Cancel is a local hash-table removal. Emitted sends are tracked in a short-lived `{sendid → envelope.id}` so cancel after emit can generate the best-effort control envelope.
 
 ---
 
@@ -1552,16 +1871,20 @@ All transports share the unified `mesh_transport.h.jinja2` template via `{% elif
 
 Realize the remaining 8 communication patterns at the wire and runtime level. Closes the gap between `pattern.rs` capability advertisements and what transports actually implement.
 
-#### Design decisions (Session A, sign-off 2026-04-13)
+#### Design decisions (Session A, sign-off 2026-04-13; revised Session E1 path B/C, 2026-04-14)
 
 | Axis | Decision | Rationale |
 |---|---|---|
-| Pattern enum | 9 variants + immutable `wire_value: u16` + values 10-15 reserved for future Stream patterns | Protobuf field-number convention; prevents wire breakage on future additions |
+| Pattern enum | 9 base variants + immutable `wire_value: u16` + values 10-13 reserved for future Stream patterns + values 14-20 assigned to full remote invoke lifecycle (§9.6.2) + value 21 `ParallelRegionDone` for distributed parallel-final barrier (§16.5). Discriminator overloading (e.g., reusing a wire value with a subject suffix) is **forbidden** — every semantic pattern has its own wire value. | Protobuf field-number convention; prevents wire breakage on future additions. Explicit wire values keep envelope dispatch a pure pattern-switch. |
 | Wire encoding | **2-layer**: envelope = CBOR (RFC 8949), payload = per-event codec (`json` / `cbor` / `typed` / `raw`) | CloudEvents v1.0 precedent; default safe & debuggable, opt-in zero-overhead path for game/MMORPG workloads |
 | Envelope field naming | Aligned with CloudEvents v1.0 (`id`, `source`, `type`, `subject`, `datacontenttype`, `data`) | Familiar to external integrators; future CloudEvents binding compatibility |
 | Correlation ID | UUID v7 (RFC 9562, 16 bytes); v4 fallback acceptable when language lib lacks v7 | Distributed uniqueness for dynamic peers (zenoh peer mode, MMORPG clients, federated meshes) + monotonic ms-prefix for log ordering |
-| RPC model | **`<invoke type="sce:mesh-rpc">` is the primary, textbook SCXML-native API.** `<send sce:reply-event=...>` retained as convenience shortcut for short-lived single-shot RPC. Blocking RPC rejected (RTC violation). | W3C SCXML §6.4 invoke is the standard external-service mechanism; `done.invoke.ID` carries result via `_event.data`; `<cancel>` provides termination |
-| Subscription lifecycle | Dual-path: (a) state entry/exit binding (Rx Disposable scoping); (b) deploy.yaml machine-lifetime declarations for always-on sensors | Matches SCXML hierarchical composition + supports static sensor topologies |
+| **SCXML purity (Session E1 revision)** | **SCXML remains 100% W3C-standard except the single type value `<invoke type="sce:mesh-rpc">`.** All distribution-specific concerns (pattern classification, reply correlation, subscription scope, QoS) are either *inferred from topology at build time* or *declared in deploy.yaml*. The same SCXML runs in single-process, vehicle, IntraECU, and MMORPG deployments without modification. | "Same SCXML, three domains" is a core principle (§1). `sce:pattern`, `sce:reply-event`, `sce:reply-timeout`, `sce:qos` shipped in Sessions C-D are **deprecated in Session E1** — they leaked deployment concerns into state specification. |
+| RPC model | **`<invoke type="sce:mesh-rpc">` is the sole RPC API.** W3C §6.4 provides the full lifecycle (`done.invoke.ID`, `error.invoke.ID`, `<cancel>`); `invoke_id` is the correlation token. The `<send sce:reply-event=...>` shortcut from Session C is deprecated — equivalent topology is now inferred from request/response event-name pairing. Blocking RPC rejected (RTC violation). | One blessed path eliminates dual documentation and migration ambiguity. |
+| Pattern classification | **Inferred at build time** from event-name convention (`service.request.*` / `service.response.*` / `event.notification.*` / `field.get.*` etc.) + optional deploy.yaml `patterns:` override map. No SCXML-level pattern annotation. | Codegen already analyzes topology (who sends, who receives, who handles). Pattern follows from structure; annotating is redundant. |
+| Request/response pairing | **Inferred at build time** from structural analysis: machine M handles `service.request.X` and raises `service.response.X` → M is the RPC server for X; runtime captures inbound envelope and auto-attaches `correlation_id`/`reply_to` to paired outbound. | Mirrors single-process SCXML where "reply" doesn't exist as a concept — just events. |
+| Transport-native IDs | **deploy.yaml references external infrastructure config files** (`someip_config: ./vsomeip.json`, `zenoh_config: ./zenoh.json5`). sce-build parses the external file at build time to resolve service/method/event names → IDs. Inline `service_id`/`method_id` in deploy.yaml are deprecated. | `vsomeip.json` in automotive is auto-generated from ARXML/Franca IDL by OEM tooling — deploy.yaml duplicating IDs creates a sync burden. Single source of truth wins. |
+| Subscription lifecycle | Dual-path, **both topology-inferred**: (a) `<onentry><send event="event.subscribe.X"/></onentry>` — codegen auto-emits `EventUnsubscribe` at the matching `<onexit>` (no author boilerplate); (b) deploy.yaml `subscriptions:` list for always-on machine-lifetime bindings | Author writes standard SCXML; lifecycle symmetry comes from codegen. |
 
 #### MeshEnvelope schema (final)
 
@@ -1571,7 +1894,9 @@ CloudEvents-aligned field names. Wire form is canonical CBOR (RFC 8949 §4.2.1) 
 namespace SCE::Mesh {
 
 /// Wire-stable pattern discriminator. Values are immutable once shipped.
-/// Range 1-9 is in use; 10-15 is reserved for future Stream patterns
+/// Range 1-9 base patterns; 10-13 reserved for future Stream patterns;
+/// 14-20 full remote invoke lifecycle (§9.6.2); 21 distributed
+/// parallel-final barrier (§16.5).
 /// (Unary/ServerStream/ClientStream/Bidi). Adding a variant requires
 /// a new wire value, never reuse.
 enum class PatternKind : uint16_t {
@@ -1584,7 +1909,23 @@ enum class PatternKind : uint16_t {
     FieldRead          = 7,
     FieldWrite         = 8,
     FieldNotify        = 9,
-    // 10-15 RESERVED for Stream* (Phase 4)
+    // 10-13 RESERVED for Stream* (Phase 4) — DO NOT REASSIGN
+    // 14-20 RESERVED for full remote invoke lifecycle (§9.6.2, Session F).
+    //       Enum variants are declared NOW (Session E1) so wire values are
+    //       pinned before any Session E-or-later session can accidentally
+    //       grab them for an unrelated control pattern. Variants parse as
+    //       valid envelopes in E1/E2 but trigger error.execution with
+    //       SESSION_F_NOT_IMPLEMENTED if processed at runtime until F lands.
+    //       DO NOT REASSIGN any of 14-20 for any other purpose.
+    InvokeStart        = 14,
+    InvokeStarted      = 15,
+    ChildEvent         = 16,
+    ParentEvent        = 17,
+    InvokeDone         = 18,
+    InvokeCancel       = 19,
+    InvokeError        = 20,
+    // 21 Distributed parallel-final barrier (§16.5, Session E2).
+    ParallelRegionDone = 21,
 };
 
 /// Payload codec discriminator. Wire-stable; do not reuse values.
@@ -1680,10 +2021,11 @@ class TransportRouter {
         }
     }
 
-    // RPC correlation table — keyed by correlation_id (or invoke_id for <invoke> path)
+    // RPC correlation table — keyed by invoke_id (<invoke type="sce:mesh-rpc">)
+    // or correlation_id (topology-inferred response path).
     struct PendingRpc {
-        std::string reply_event_name;  // for <send sce:reply-event> path
-        std::optional<std::array<uint8_t,16>> invoke_id;  // for <invoke> path
+        std::string paired_response_event;          // SCXML event name to deliver on reply
+        std::optional<std::array<uint8_t,16>> invoke_id;  // present for <invoke> path
         std::chrono::steady_clock::time_point deadline;
     };
     std::unordered_map<UuidKey, PendingRpc> pending_;
@@ -1711,16 +2053,18 @@ Per-transport native API mapping (codegen target):
 | FieldWrite | field setter | `session.put(key, value)` |
 | FieldNotify | field notifier (`notify` to subscribers) | `declare_publisher` on field key |
 
-#### SCXML extension specification
+#### SCXML authoring model (path B: purity)
 
-**Primary path: `<invoke type="sce:mesh-rpc">` (W3C SCXML §6.4 native semantics)**
+SCXML documents in SCE Mesh are **standard W3C SCXML 1.0** with exactly one extension point: the invoke type value `sce:mesh-rpc`. No `sce:*` attributes. No new elements. The document is portable to any conforming SCXML 1.0 processor (where it degrades gracefully — see compatibility analysis).
+
+**RPC request (`<invoke type="sce:mesh-rpc">`)**
 
 ```xml
 <state id="braking">
   <invoke type="sce:mesh-rpc" src="#brake_service" id="compute_force_inv">
-    <param name="event"    expr="'service.request.compute_force'"/>
-    <param name="velocity" expr="v"/>
-    <param name="deadline_ms" expr="100"/>
+    <param name="_mesh_event"       expr="'service.request.compute_force'"/>
+    <param name="_mesh_deadline_ms" expr="100"/>
+    <param name="velocity"          expr="v"/>
   </invoke>
   <transition event="done.invoke.compute_force_inv"  target="apply_brake"/>
   <transition event="error.invoke.compute_force_inv" target="brake_failed"/>
@@ -1730,37 +2074,72 @@ Per-transport native API mapping (codegen target):
 </state>
 ```
 
-- W3C-compliant: `done.invoke.ID` and `error.invoke.ID` are standard SCXML §6.4.1.
+- **W3C §6.4.1 compliant**: `done.invoke.ID` / `error.invoke.ID` / `<cancel>` are all standard.
 - Result delivered via `_event.data` per spec.
-- `<cancel>` propagates as RpcStatus::Cancelled to remote peer.
-- `invoke_id` field in envelope carries the SCXML invoke ID for correlation.
+- `invoke_id` field in the envelope (CBOR key 9) carries the SCXML invoke ID for correlation across the wire.
+- `<cancel>` emits a `RpcStatus::Cancelled` envelope to the remote peer.
+- Reserved `<param>` names (stripped from payload, used as codegen metadata): `_mesh_event` (required, the SCXML event name), `_mesh_deadline_ms` (optional, request timeout). All other `<param>`s form the request payload. Shadowing a reserved name with a business payload is a build-time hard error (see §9.5 "Reserved-name conflict").
 
-**Convenience shortcut: `<send sce:reply-event="...">`**
+**RPC response (plain SCXML, no annotations)**
+
+The server-side machine is standard SCXML:
 
 ```xml
-<send target="#sensor" event="service.request.read_temp"
-      sce:reply-event="temp.reading"
-      sce:reply-timeout="500"/>
-<transition event="temp.reading"  target="..."/>
-<transition event="error.communication.timeout" target="..."/>
+<state id="serving">
+  <transition event="service.request.compute_force" target="computing">
+    <assign location="v" expr="_event.data.velocity"/>
+  </transition>
+</state>
+<state id="computing">
+  <onentry>
+    <raise event="service.response.compute_force">
+      <param name="force" expr="v * mass"/>
+    </raise>
+  </onentry>
+</state>
 ```
 
-- Non-standard SCXML extension; lighter weight than `<invoke>`.
-- Suitable for short-lived single-shot RPC where invoke lifecycle overhead is unwarranted.
-- Implementation: synthesizes a transient correlation entry; reply arrives as the named event.
+Build-time inference (in `sce-build` topology analyzer):
+1. Machine B has a `<transition>` on `service.request.X` → B is a candidate RPC server for X.
+2. Within B's reachable control flow from that transition, B `<raise>`s `service.response.X` → confirmed server; `(request X, response X)` is a paired tuple.
+3. Codegen emits the transport-native server primitive (`declare_queryable` for Zenoh, `register_message_handler` for SOME/IP).
+4. Runtime captures the inbound envelope on receive (`correlation_id`, `reply_to` stashed in a per-transition slot). When the paired response `<raise>` fires, the transport layer auto-attaches the captured correlation and routes back via `reply_to`.
 
-**Subscription lifecycle**
+The inference is **static** — no SCXML annotation, no `#_reply` virtual target, no `sce:reply-to`. If the name convention is insufficient (e.g., response event name differs), deploy.yaml supplies an explicit pairing override (see `patterns:` in §14).
 
-State-entry binding (recommended for state-scoped interest):
+**Subscription lifecycle — state-entry path (plain SCXML)**
+
 ```xml
 <state id="monitoring_brake">
   <onentry><send target="#bus" event="event.subscribe.brake_status"/></onentry>
-  <onexit><send target="#bus" event="event.unsubscribe.brake_status"/></onexit>
   <transition event="event.notification.brake_status" target="..."/>
 </state>
 ```
 
-Machine-lifetime binding (deploy.yaml, for always-on sensors):
+No explicit `<onexit>` unsubscribe is required in the simple case.
+
+**Auto-symmetry eligibility rules** (build-time analyzer):
+
+An `<onentry>` `<send event="event.subscribe.X">` qualifies for automatic `<onexit>` unsubscribe generation **iff all** of the following hold:
+
+1. **Unconditional direct child**: the `<send>` is a direct child of `<onentry>` — not nested inside `<if>`, `<foreach>`, or any other conditional/iterative executable content.
+2. **Non-iterative**: the `<onentry>` is not the body of a parallel-region fork that the same state can re-enter concurrently. (History re-entry is not a problem — see §3 below.)
+3. **No manual unsubscribe present**: the state's `<onexit>` does not already contain a `<send event="event.unsubscribe.X">` for the same X. An explicit manual unsubscribe takes precedence and suppresses auto-generation.
+
+If any condition fails, auto-generation is suppressed and the analyzer emits a **lint notice** directing the author to write an explicit `<onexit>` unsubscribe. The notice is not a build error — the document still compiles — but subscription lifecycle becomes the author's responsibility.
+
+**Edge case semantics** (runtime, regardless of auto-generation):
+
+- **Conditional subscribe**: `<if cond><send event="event.subscribe.X"/></if>` inside `<onentry>`. No auto-unsubscribe is generated. Author must match with an explicit conditional unsubscribe in `<onexit>`. The mesh runtime maintains a **per-(machine, event)** subscription refcount (§10.5 dedup layer is separate); an `unsubscribe` when refcount is zero is a silent no-op, not an error.
+- **History re-entry**: when a state with an auto-symmetric subscribe is re-entered via `<history>`, standard W3C semantics re-run `<onentry>` on re-entry, which re-issues `event.subscribe.X`. The runtime refcount treats this as a **fresh subscription**; the prior exit had already issued `event.unsubscribe.X`, so refcount returns to 1.
+- **Parallel region subscribe**: a subscribe inside one `<parallel>` region lives for that region's active lifetime. Auto-unsubscribe fires on region exit (which includes the enclosing parallel's exit). If two sibling regions both subscribe to the same X, each has an independent subscribe/unsubscribe pair; refcount reaches 2 while both are active and decrements to 0 when both exit.
+- **Duplicate subscribe in the same `<onentry>`**: structurally redundant; the analyzer emits a warning. Runtime refcount still tracks each pair correctly.
+- **Subscribe without matching unsubscribe**: if analysis determines that a subscribe's state may be exited via a transition path that skips the state's own `<onexit>` (impossible under W3C normal exit-set semantics, but trivially possible for cross-region transitions under permissive mode §16.4 after auto-merge), the analyzer emits a lint. Auto-generated unsubscribes always fire on normal exit-set computation; paths that skip `<onexit>` (there are none in standard SCXML) would leak subscriptions — but W3C guarantees this cannot happen, so the concern is theoretical.
+
+Author opts into automatic symmetry by writing the subscribe in a qualifying position. Explicit manual unsubscribe is always accepted and takes precedence. Mixing is fine — an author may auto-symmetry one state and hand-write another in the same machine.
+
+**Subscription lifecycle — machine-lifetime path (deploy.yaml only)**
+
 ```yaml
 machines:
   ecu_brake:
@@ -1770,26 +2149,117 @@ machines:
         source: "#chassis"
 ```
 
-Runtime semantics: machine-lifetime subscriptions register at engine startup, unregister at shutdown. State-entry subscriptions register on `<onentry>`, unregister on `<onexit>` (including on parallel-region exit).
+Codegen emits subscribe on engine init, unsubscribe on engine shutdown. SCXML document is not touched.
+
+#### External infrastructure config integration
+
+Industrial deployments already carry native transport configuration, often auto-generated from OEM tooling:
+
+- **SOME/IP**: `vsomeip.json` — service/instance/event-group/method IDs, routing manager, security policies. Typically generated from ARXML (AUTOSAR XML) or Franca IDL.
+- **Zenoh**: `zenoh.json5` — session mode, endpoints, scouting config, ACL.
+- **DDS** (Phase 4): `rti_connext.xml` or Cyclone DDS XML profiles.
+
+SCE Mesh **does not duplicate** these. deploy.yaml references the external file by path and resolves names → IDs at build time:
+
+```yaml
+topology:
+  brake_ecu:
+    transports:
+      someip:
+        config: ./config/vsomeip.json        # external file, single source of truth
+        application_name: brake_app          # matches vsomeip.json applications[*].name
+      zenoh:
+        config: ./config/zenoh.json5         # external file
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control           # resolved against vsomeip.json → service_id
+            events:
+              service.request.compute_force:
+                method: compute_force         # resolved → method_id
+              event.notification.status:
+                event_group: status_group     # resolved → event_group_id + event_id
+```
+
+Build-time resolution:
+1. `sce-build` parses `vsomeip.json` at generation time using a **minimal partial-schema serde model** — only the fields SCE Mesh consumes are declared (see table below); all other fields are tolerated (no `deny_unknown_fields`) because vsomeip.json is owned by the platform team / OEM tooling, not by SCE.
+2. For each named entity in deploy.yaml (`service: motor_control`), it looks up the matching entry and embeds the numeric ID in generated code.
+3. Unresolved names → hard build failure (never silent). This replaces the runtime misconfigurations that Session C/D's inline `service_id: 0x1234` style would only catch at bus contact.
+
+Minimum vsomeip.json fields consumed by sce-build:
+
+| deploy.yaml reference | vsomeip.json path | Used for |
+|---|---|---|
+| `service: <name>` | `services[*]` where `services[*].name == <name>` (vsomeip-standard name field) | Resolves `service_id`, `instance_id` |
+| `method: <name>` | `services[*].methods[*]` where matching `name` | Resolves `method_id` |
+| `event_group: <name>` | `services[*].eventgroups[*]` where matching `name` | Resolves `event_group_id` and the contained event id |
+| `getter: <name>` / `setter: <name>` | `services[*].methods[*]` (field accessors are methods in SOME/IP) | Resolves the getter/setter `method_id` |
+| `application_name: <name>` under `topology.<device>.transports.someip` | `applications[*]` with matching `name` | Binds the generated runtime to a vsomeip application identity |
+
+Unresolved names produce a single consolidated error per build:
+```
+error: deploy.yaml references SOME/IP entities that do not exist in
+       ./config/brake_ecu/vsomeip.json:
+         - service "motor_control"     → no services[*] with name == "motor_control"
+         - method "apply_force"        → no methods[*] with name == "apply_force"
+                                         in service "brake_control"
+```
+
+The minimum-schema approach keeps SCE's dependency on vsomeip surface small: any vsomeip configuration feature not listed here (routing manager trace filters, security policies, service-group mappings, etc.) passes through untouched to vsomeip at runtime. SCE never rewrites the file.
+
+Inline numeric IDs in deploy.yaml remain supported for incremental migration of existing Session C/D test fixtures but are **deprecated** and will be removed after migration in Session E1.
+
+**Build-time consistency check (3-way)**
+
+Every named event traverses three declaration points. They must agree:
+
+1. **SCXML**: `<send event="service.request.compute_force"/>` / `<transition event="...">` — defines what the state machine expects.
+2. **deploy.yaml**: `events.service.request.compute_force.method: compute_force` — maps the SCXML event name to an external entity name.
+3. **vsomeip.json**: `services[X].methods[].name == "compute_force"` — defines the numeric ID.
+
+sce-build enforces all three alignments and fails the build on any gap:
+- SCXML event used in `<send>` with no deploy.yaml binding → build failure.
+- deploy.yaml name `compute_force` absent from `vsomeip.json` → build failure.
+- Request/response pair inferred by topology analyzer but one side missing → build failure.
 
 #### W3C SCXML 1.0 compatibility analysis
 
-All extensions confined to the `sce:` namespace (`xmlns:sce="http://newmassrael.org/scxml-extension"`).
+The only SCXML extension is the invoke `type` value `sce:mesh-rpc` (W3C §6.4 allows implementation-defined type URIs). No extension attributes, no extension elements.
 
-| Extension point | Standard? | Behavior in conforming SCXML processor |
+| Extension point | Standard? | Behavior in conforming SCXML 1.0 processor |
 |---|---|---|
-| `<invoke type="sce:mesh-rpc">` | W3C §6.4 — invoke type is implementation-defined | Foreign processor: invoke fails to start; `error.execution` raised. SCXML document remains parseable. |
-| `sce:reply-event`, `sce:reply-timeout` (on `<send>`) | W3C §6.2 — `<send>` allows extension attributes | Foreign processor: attributes ignored; `<send>` still executes (degrades to fire-and-forget). |
-| `sce:pattern` (on `<send>`, existing) | Same — extension attribute | Same — attribute ignored. |
-| `xmlns:sce` declaration | W3C XML namespace standard | Standard XML; always parseable. |
-| Event names with reserved prefixes (`service.request.*`, `field.notify.*` etc.) | W3C §5.10 — event names are dot-delimited, no reserved prefixes | Treated as ordinary event names. No conflict. |
+| `<invoke type="sce:mesh-rpc">` | W3C §6.4 — type is implementation-defined URI | Unknown type → `error.execution` raised per §6.4.1. Document author can catch via standard `<transition event="error.execution">`. Document itself remains parseable. |
+| `<send target="#machine_id">` | W3C §6.2.4 — IO processor target URIs are implementation-defined | Unknown target → `error.execution`. Behavior is domain-standard. |
+| Event names with dot-delimited conventions (`service.request.*`, `event.notification.*`, `field.get.*`) | W3C §5.10 — event names are arbitrary dot-delimited tokens | Plain event names. Conventions are for SCE tooling only; the processor sees ordinary strings. |
+| Target `#_reply`, `#_bus`, etc. | *Not used — rejected in Session E1* | — |
+| `sce:*` attributes | *Not used — removed in Session E1* | — |
 
-**Conclusion**: An SCXML 1.0 conforming processor that does not understand `sce:` extensions will:
-- Parse our documents successfully (XML namespace isolation).
-- Treat our RPC patterns as fire-and-forget sends (graceful degradation).
-- Skip `<invoke type="sce:mesh-rpc">` invocations with `error.execution`, which the document author can handle via standard `<transition event="error.execution">`.
+**Conclusion**: A foreign SCXML 1.0 processor parses the document cleanly (XML is valid; no foreign namespaces except `sce:mesh-rpc` as a type value), and executes every construct except `<invoke type="sce:mesh-rpc">`, which fails locally with `error.execution` — a fault the author already handles for any unsupported invoke type per §6.4.1.
 
-No conflict with W3C SCXML 1.0 normative behavior. Documented with a "Compatibility" subsection in user-facing SCXML guide (Phase 3.5 Step 5).
+Degradation is natural and does not require porting work. A user-facing compatibility guide (`docs/MESH_SCXML_COMPATIBILITY.md`, delivered in Session E1) walks through this with examples.
+
+#### Session C/D attribute deprecation (Session E1 cleanup)
+
+Sessions C and D shipped these `sce:*` attributes on `<send>`. They are **removed in Session E1**. The removal is staged deterministically so migration of in-tree fixtures is tractable:
+
+**Stage 1 (Session E1 start, transitional)**: parser accepts the attribute, emits **one warning per occurrence** (with file + line), and ignores the attribute value. Build succeeds. This lets Session C/D test fixtures continue to compile while they are migrated one by one.
+
+**Stage 2 (Session E1 end, after all in-tree fixtures migrated)**: parser **rejects** the attribute as an error. Build fails with a diagnostic pointing to this deprecation table. Third-party documents carrying the attributes must migrate before upgrading.
+
+§5 QoS summary, §14 deploy.yaml schema, and this table all reference the same two-stage policy. Authors targeting Session E1 or later should read this table as authoritative.
+
+| Shipped attribute | Removed in | Replacement |
+|---|---|---|
+| `sce:pattern="request"` | Session E1 | Topology analyzer infers pattern from event-name convention + optional deploy.yaml `patterns:` override. |
+| `sce:reply-event="..."` | Session E1 | Topology analyzer pairs `service.request.X` ↔ `service.response.X` structurally. For cross-name pairing, deploy.yaml `patterns:` declares the mapping. Primary RPC path is `<invoke type="sce:mesh-rpc">`. |
+| `sce:reply-timeout="500"` | Session E1 | `<invoke>` `<param name="_mesh_deadline_ms">` (textbook W3C path, see §9.5) or deploy.yaml per-binding deadline. |
+| `sce:qos="reliable"` | Session E1 | deploy.yaml transport-native QoS (§5). |
+| `sce:deadline`, `sce:priority` | Session E1 | deploy.yaml transport-native QoS. |
+
+Session C/D test fixtures are migrated to the inferred/deploy.yaml-only form as part of Session E1.
 
 #### Migration plan (existing FireForget E2E acid test)
 
@@ -1817,7 +2287,9 @@ Sessions B-E execute the design above. Each session is a working unit; estimates
 | **B (DONE)** | Replace `MeshSendRequest` with `MeshEnvelope`; CBOR codec (`MeshEnvelopeCodec`); shared dispatch helper (`MeshDispatch.h`); ShmChannel symmetric send/drain; UUID v7 (`sce::uuid`); `MeshSendRequest.h`/`MeshWireFormat.h` deleted | All 4 FireForget E2E tests pass on envelope wire; W3C zero regression; `grep -r MeshSendRequest` → 0 code matches |
 | **C (DONE)** | SOME/IP multi-pattern: pattern-branching send (`send_to_X` switches on `PatternKind`), RPC correlation table (`pending_rpcs_` with mutex), `register_message_handler` for RPC response + event notify + field notify, `sce:reply-event` SCXML attribute parsed + threaded to codegen, `resolvePattern()` build-time event→PatternKind lookup in `wireTo()`, `MeshDispatch.h` handles RpcReply/EventNotify/FieldNotify inbound patterns, deploy.yaml extended with `event_group_id`/`event_id`/`getter_id`/`setter_id`. 32/32 tests GREEN. | Existing `mesh_someip_compile_test` + all 32 ctest pass |
 | **D (DONE)** | Zenoh multi-pattern client-side realization: `send_zenoh` TransportRouter member dispatches on `PatternKind` (put for FireForget/FieldWrite; `session.get` with on_reply closure for RpcRequest/FieldRead; `declare_subscriber` + `zenoh_subscribers_` RAII handle map for EventSubscribe/EventUnsubscribe). Native correlation replaces `pending_rpcs_` — zenoh runtime delivers replies to the capturing closure. `find_package(zenohc)` precedes `find_package(zenohcxx)` to resolve the `zenohcxx::zenohc` target. ZENOH capability descriptor adds `RequestReply`. Multi-pattern compile-only + peer-mode runtime E2E (TCP locator discovery, no daemon) validate all five switch branches. **Post-review textbook refactor**: `wireTo()` removed entirely; `TransportRouter<SenderEngine, LocalEngines...>` takes the sender in its ctor, stores a `SenderEngine& sender_` const reference, installs `setMeshSendCallback` in the ctor body. Replaces type-erased mutable `receive_callback_` with direct `dispatchToSender()` — race on reassignment is structurally impossible. All call sites migrated; no legacy stub. Pattern-capability negative test restored (shm+RPC replaces the deleted zenoh case). | Multi-pattern peer-mode E2E without daemon: `mesh_zenoh_multipattern_runtime` 1/1 PASS (FireForget, RpcRequest round-trip with `sce:reply-event` rewrite, EventSubscribe → EventNotify, FieldRead, EventUnsubscribe handle drop). 35/35 ctest + 369/369 cargo test GREEN. |
-| **E** | `<invoke type="sce:mesh-rpc">` full lifecycle (start, done, error, cancel); subscription dual-lifecycle (state-entry + machine-lifetime); W3C compatibility document; multi-pattern multi-transport integration test | `<invoke>`-based RPC integration test passes; W3C compatibility doc landed |
+| **E1 (path C, in progress)** | **SCXML purity + mesh-rpc correction**. Architectural correction: remove `sce:pattern`/`sce:reply-event`/`sce:reply-timeout`/`sce:qos`/`sce:deadline`/`sce:priority`; migrate Session C/D test fixtures. External config integration: deploy.yaml references `vsomeip.json` / `zenoh.json5`; `sce-build` parses them at build time. 3-way consistency check. Topology-inferred request↔response pairing. `<invoke type="sce:mesh-rpc">` full lifecycle (§9.5). Subscription dual-lifecycle (state-entry auto-symmetry + deploy.yaml machine-lifetime). **W3C compat doc**: `docs/MESH_SCXML_COMPATIBILITY.md`. No partition/distribution machinery yet. | (1) All Session C/D tests migrated, zero `sce:*` attributes remaining on `<send>`; (2) `<invoke type="sce:mesh-rpc">` integration test passes on zenoh or someip; (3) 3-way consistency check rejects a seeded misnamed method at build time; (4) reserved-name conflict rule rejects a seeded `<param name="_mesh_event">` collision at build time; (5) `docs/MESH_SCXML_COMPATIBILITY.md` landed; (6) 35+ ctest + 369+ cargo test green, zero regressions. |
+| **E2 (path C, next)** | **Distributed conformance foundation**. Transport Contract (§10.4); `custom_tcp` reference transport; mesh runtime dedup layer (§10.5); `_event` field wiring (§10.6) including structured `error.*` data (§10.6.1); sender-hold delayed send + cancel (§10.7); `partitions:` schema in deploy.yaml with explicit coverage rule (§14); distributability analyzer + auto-merge (§16.3/16.4); parallel `<final>` barrier runtime + `ParallelRegionDone` wire pattern 21 (§16.5); `error.communication` catalog (§16.7); IRP distributed harness (§16.8) for the `<parallel>`-only distributable subset. | (1) `custom_tcp` transport passes a minimal FireForget E2E; (2) dedup layer suppresses seeded duplicate envelopes; (3) sender-hold cancel test: cancel before emit_at leaves zero wire traffic; (4) Distributed IRP harness runs the `<parallel>`-only `distributable: yes` subset with identical verdicts to single-process; (5) Distributability analyzer correctly flags R1/R2 violations in seeded test documents; (6) `merged_single_partition` label appears for seeded shared-write test; (7) Parallel `<final>` barrier test: N region partitions each reach `<final>` → root raises `done.state.PAR` at correct macrostep boundary; (8) zero regressions of E1 acid tests. |
+| **F (path C, after E2)** | **Full remote `<invoke type="scxml">` + complete IRP distributed coverage**. Wire patterns InvokeStart/InvokeStarted/ChildEvent/ParentEvent/InvokeDone/InvokeCancel/InvokeError (§9.6.2). `_event.invokeid`/`origin` wiring for child events (§9.6.3). `<finalize>` at parent's macrostep on child events (§9.6.4). `autoforward="true"` parent→child forwarding (§9.6.5). Inline `<content>` precompilation — synthesize `<parent>__sce_synth_invoke__<id>` machines (§9.6.6), with collision detection. Extend IRP distributed manifest to cover `<invoke type="scxml">`-using tests. Foreign processor compatibility harness (graceful `error.execution` validation with an external SCXML 1.0 reference interpreter). Mesh Conformance Suite: distributed-only tests exercising §10.4/10.5/10.7/16.5/16.7 edge cases not covered by W3C IRP. | (1) All IRP tests classified `distributable: yes` pass in both single-process and distributed mode; (2) Remote `<invoke>` lifecycle test across processes (done/error/cancel); (3) `autoforward="true"` forwarding test; (4) Inline `<content>` synthesized child executes on a different partition; (5) Synthesized-name collision test is rejected at build time; (6) Mesh Conformance Suite 100% pass; (7) Zero single-process regressions. |
 
 #### Out of Phase 3.5 scope
 
@@ -1861,49 +2333,175 @@ The following capabilities are explicitly deferred. They will be evaluated after
 
 ## 14. deploy.yaml Schema
 
+Revised in Session E (path B, 2026-04-14): deploy.yaml declares **topology and references to external infrastructure config**. Transport-native IDs (SOME/IP service/method IDs, Zenoh session parameters) are never duplicated in deploy.yaml — they live in `vsomeip.json`/`zenoh.json5`/etc. and are resolved by name at build time.
+
 ```yaml
 # SCE Mesh Deployment Descriptor
 version: "1.0"
 
 scheduler:
   type: event_driven | real_time | game_loop | cooperative
-  # Scheduler-specific settings (passed to scheduler constructor)
-  cycle_ms: <integer>              # real_time, cooperative
-  tick_rate: <integer>             # game_loop
+  cycle_ms: <integer>               # real_time, cooperative
+  tick_rate: <integer>              # game_loop
 
 topology:
   <device_name>:
     platform: linux | qnx | autosar | windows
     target: x86_64 | aarch64 | arm32
-    transports:                            # Device-shared transport session config
-      zenoh:                               # One Zenoh session per device
-        mode: peer | client | router
-        connect: [<endpoint>, ...]         # Router endpoints (client/peer mode)
-        listen: [<endpoint>, ...]          # Listen endpoints (router mode)
+
+    # Device-shared transport sessions. Each transport may reference an external
+    # infrastructure config file (single source of truth for IDs).
+    transports:
+      someip:
+        config: <path to vsomeip.json>   # OEM-supplied / ARXML-generated
+        application_name: <name>         # matches vsomeip.json applications[*].name
+      zenoh:
+        config: <path to zenoh.json5>    # Zenoh-native session config
+        # Any deploy-level overrides (mode, connect, listen) merge over the file.
+
     machines:
       <scxml_name>:
-        source: <path.scxml>               # SCXML source, relative to deploy.yaml
+        source: <path.scxml>
         bindings:
           "<target_id>":
             transport: someip | can | zenoh | shm | dds | dbus | grpc | ...
-            # Per-target transport-native settings (flattened via serde)
-            # Each transport defines its own per-binding keys:
-            #   someip: service_id, instance_id, method_id, protocol
-            #   zenoh:  key
-            #   shm:    (no per-target extra)
-            #   local:  (no per-target extra)
+            # For named-entity transports, use NAMES that resolve against the
+            # external config. Never inline numeric IDs.
+            service: <name>              # someip: resolves to service_id + instance_id
+            key: <zenoh key expr>        # zenoh: literal key (no external resolution needed)
+            events:
+              "<scxml event name>":
+                method: <name>           # someip: resolves to method_id
+                event_group: <name>      # someip event: resolves to event_group_id + event_id
+                getter: <name>           # someip field getter
+                setter: <name>           # someip field setter
             qos:
-              # Transport-NATIVE QoS — full feature access
-              # Schema depends on transport type (DDS: 22 policies, SOME/IP: protocol, etc.)
-              <transport-native-key>: <value>
+              <transport-native-key>: <value>  # DDS reliability, SOME/IP protocol, etc.
 
-events: <path to events.yaml>              # Event payload type definitions (Phase 2+)
+        # Machine-lifetime event subscriptions (always-on sensors).
+        # Codegen emits subscribe at init, unsubscribe at shutdown.
+        subscriptions:
+          - event: <scxml event name>
+            source: "<target_id>"
+
+        # Optional explicit pattern override. Scope: user declaration only.
+        # By default sce-build INFERS pattern from the event-name convention
+        # (service.request.* → RpcRequest, service.response.* → RpcReply,
+        #  event.notification.* → EventNotify, field.get.* → FieldRead,
+        #  field.set.* → FieldWrite, field.notify.* → FieldNotify,
+        #  event.subscribe.* → EventSubscribe, event.unsubscribe.* → EventUnsubscribe,
+        #  everything else → FireForget).
+        # Use this block ONLY when:
+        #   - An event name falls outside the convention and must be classified.
+        #   - The author wants RpcRequest↔RpcReply pairing for events whose
+        #     names don't follow the "service.request.X ↔ service.response.X"
+        #     mirror (e.g. service.request.compute_force ↔ force.computed).
+        # Inferred classifications CANNOT be overridden: declaring a different
+        # `kind:` for an event whose name matches a convention is a build error.
+        patterns:
+          "<scxml event name>":
+            kind: RpcRequest | RpcReply | EventSubscribe | EventUnsubscribe |
+                  EventNotify | FieldRead | FieldWrite | FieldNotify | FireForget
+            paired_with: "<other event>"   # REQUIRED iff kind == RpcRequest and
+                                           # the response event name does not
+                                           # follow the "service.response.X" mirror.
+                                           # REJECTED for other kinds.
+
+# Aggressive distribution: partition a single machine across multiple
+# processes along W3C-orthogonal axes (parallel regions and <invoke> children).
+# Omit `partitions:` entirely for default single-process execution per machine.
+# See §16 for the partition distributability rule and §14 schema details.
+partitions:
+  <partition_name>:                      # process identity (CI harness / deploy)
+    device: <device_name>                # where to run; defaults to first device
+    machines: [<machine_id>, ...]        # machines whose pieces this partition hosts
+    contains:
+      parallel_regions:                  # child <state> IDs directly under <parallel>
+        - machine: <machine_id>
+          region: <state_id>
+      invokes:                           # <invoke> ids (including synthesized
+        - machine: <machine_id>          # <parent>__sce_synth_invoke__<id> from §9.6.6
+          invoke: <invoke_id>
+    transport_binding: <transport_name>  # inter-partition traffic within same machine
+                                         # (defaults to device-shared transport of kind tcp/shm)
+    barrier_timeout_ms: <integer|null>   # per-partition parallel-final barrier timeout
+                                         # (§16.5). null = infinity (W3C normative default).
+                                         # Applies only to partitions hosting the "root"
+                                         # of a <parallel> (the partition that will raise
+                                         # done.state.PARALLEL_ID).
+
+events: <path to events.yaml>          # Event payload type definitions
 
 discovery:
-  mode: static | dynamic                   # static = build-time, dynamic = Phase 5
+  mode: static | dynamic               # static = build-time; dynamic = Phase 5
 ```
 
-**Device-shared vs per-target config**: Transports with device-level session state (e.g., Zenoh opens one session shared by all machines on a device) declare session config under `topology.<device>.transports.<transport>`. Per-target settings (e.g., Zenoh `key`, SOME/IP `service_id`) stay on individual bindings. This mirrors the runtime semantics: one session per device, many bindings per session. `deny_unknown_fields` on all config structs catches typos at parse time.
+**Principles**:
+
+1. **No duplication with external infra**: `vsomeip.json` declares `{service: motor_control, id: 0x1001}` exactly once. deploy.yaml says `service: motor_control` and the build tool resolves.
+2. **Names, not numbers**: IDs are implementation details of the transport. SCXML and deploy.yaml talk in stable logical names.
+3. **Same SCXML, multiple deploy.yaml**: A single `brake.scxml` deploys to a vehicle (SOME/IP + vsomeip.json from OEM), an IntraECU bench (SHM, no external config), or an MMORPG server (Zenoh + peer config) just by swapping deploy.yaml.
+4. **Strict validation**: `deny_unknown_fields` on every config struct. Missing names in external configs fail the build. Request/response pairing mismatch fails the build.
+
+**Deprecated (Session E cleanup)**: inline `service_id: 0x1234` / `method_id: 0x0042` / `event_group_id` / `event_id` / `getter_id` / `setter_id` as shipped in Session C. Retained as a parse-tolerant migration path but emitting a warning; removed after all in-tree fixtures are migrated.
+
+### Partition resolution rules
+
+When `partitions:` is present:
+
+1. **Coverage**: every `<parallel>` region and every `<invoke>` in every listed machine must be covered by exactly one partition, OR be explicitly assigned to a default partition (see rule 2). Uncovered orthogonal units are a build error — the analyzer never silently places them anywhere.
+2. **Default partition** (must be explicit):
+   - A machine **not mentioned in any `partitions:` entry** runs single-process on its device with no split. No warning; this is the normal monolithic case.
+   - A machine that IS mentioned but leaves some orthogonal units unassigned — **build error**. The analyzer prints every unassigned orthogonal unit with its path and requires the author to either assign it to an existing partition or add a dedicated `<machine>_default:` partition. There is no silent inheritance. The error diagnostic reads:
+     ```
+     error: machine 'brake' has partitions declared, but the following orthogonal
+            units are unassigned:
+              - parallel_region: brake/monitoring
+              - invoke: brake/compute_force_inv
+            Either add them to an existing partition under machines: [brake],
+            or declare a 'brake_default' partition with contains: entries for each.
+     ```
+   - This explicit-everywhere rule keeps distribution topology readable: any deploy.yaml reader can recover the full state → process map by reading only `partitions:`.
+3. **Distributability check**: each partition boundary is validated against the Parallel Region Distributability rule (§16.3) and Cross-Region Transition rule (§16.4). Violations fail the build in strict mode or auto-merge in permissive mode.
+4. **Transport binding**: inter-partition events (between pieces of the same machine) travel over `transport_binding`. Default is `shm` if all partitions run on the same device; otherwise `custom_tcp` (Session E reference).
+5. **Synthesized machines**: `<invoke type="scxml">` inline `<content>` produces machine `<parent>__sce_synth_invoke__<id>` (§9.6.6). It follows the same partition rules as named peers and may be placed in any partition. The reserved `__sce_synth_invoke__` infix is checked at build time against author-declared machine ids; a collision is a hard error. A synthesized machine's parent's partition assignment **does not** auto-propagate — the synthesized machine must be either explicitly assigned or placed in a default partition per rule 2.
+
+### Example: IRP distributed conformance harness
+
+```yaml
+version: "1.0"
+
+topology:
+  harness_host:
+    platform: linux
+    target: x86_64
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:0"     # ephemeral port; harness assigns
+    machines:
+      test487:
+        source: tests/w3c/test487.scxml
+      test487__sce_synth_invoke__subtask:   # synthesized from inline <content>
+        source: <auto>            # extracted at build time
+
+partitions:
+  test487_main:
+    device: harness_host
+    machines: [test487]
+    contains:
+      parallel_regions:
+        - { machine: test487, region: watchdog }
+  test487_worker:
+    device: harness_host
+    machines: [test487]
+    contains:
+      parallel_regions:
+        - { machine: test487, region: executor }
+      invokes:
+        - { machine: test487, invoke: subtask }
+```
+
+The harness spawns `test487_main` and `test487_worker` as separate OS processes on `harness_host`, wires them via `custom_tcp`, and runs the standard W3C IRP verification against the combined system.
 
 ### Example: Automotive
 
@@ -1914,50 +2512,65 @@ topology:
   brake_ecu:
     platform: qnx
     target: aarch64
+    transports:
+      someip:
+        config: ./config/brake_ecu/vsomeip.json   # OEM-supplied
+        application_name: brake_app
     machines:
       brake:
+        source: brake.scxml
         bindings:
           "#motor":
             transport: someip
-            service: 0x1001
-            instance: 0x01
-            method: 0x01
-            protocol: TCP                    # SOME/IP native: TCP for reliable
+            service: motor_control                 # resolves to service_id/instance_id via vsomeip.json
+            events:
+              service.request.apply_force:
+                method: apply_force                # resolves to method_id
+              event.notification.motor_status:
+                event_group: status_group          # resolves to event_group_id + event_id
+            qos:
+              protocol: TCP                        # SOME/IP native: TCP for reliable
           "#dashboard":
             transport: can
             address: "can0:0x100"
-            signals: "vehicle.dbc"           # CAN native: DBC signal layout
+            signals: "vehicle.dbc"                 # CAN native: DBC signal layout
+        subscriptions:
+          - event: event.notification.vehicle_speed
+            source: "#chassis"
 
   motor_ecu:
     platform: qnx
     target: aarch64
+    transports:
+      someip:
+        config: ./config/motor_ecu/vsomeip.json
+        application_name: motor_app
     machines:
       motor:
+        source: motor.scxml
         bindings:
           "#brake":
             transport: someip
-            service: 0x1002
-            instance: 0x01
+            service: brake_control
 
   dashboard_ecu:
     platform: linux
     target: aarch64
     machines:
       dashboard:
+        source: dashboard.scxml
         bindings:
           "#brake": { transport: can, address: "can0:0x101" }
           "#cloud":
             transport: grpc
             address: "telemetry.oem.com:443"
-            tls: true                        # gRPC native: TLS config
+            tls: true                              # gRPC native: TLS config
 
 discovery:
   mode: static
-
-someip:
-  application_name: "sce_vehicle"
-  routing_manager: "brake_ecu"               # SOME/IP native: routing config
 ```
+
+SOME/IP application routing (`application_name`, routing manager, security) comes from the referenced `vsomeip.json`. `sce-build` never re-declares it.
 
 ### Example: MMORPG
 
@@ -2117,24 +2730,24 @@ void send_to_motor(const EventDescriptor& event) {
 }
 ```
 
-**sce:qos validation**: If the SCXML declares `sce:qos="reliable"` but deploy.yaml sets `reliability: best_effort`, sce-build emits a build-time warning. The deploy.yaml value takes precedence for code generation.
+**QoS is deploy.yaml-only** (see §5, Session E path B). SCXML carries no QoS annotation. The deploy.yaml binding's QoS block is the sole source for code generation.
 
 #### Deadline Enforcement
 
-Zenoh does not natively support delivery deadlines. The codegen template generates timer-based enforcement:
+Zenoh does not natively support delivery deadlines. For `<invoke type="sce:mesh-rpc">`, the deadline comes from `<param name="_mesh_deadline_ms">` and is enforced in generated code:
 
 ```cpp
-// [generated] — deadline enforcement for sce:deadline="1ms"
-void send_to_motor_with_deadline(const EventDescriptor& event) {
-    auto timer = start_deadline_timer(std::chrono::milliseconds(1));
-    z_put(session_, motor_key_, payload, len, &opts);
+// [generated] — deadline enforcement from <invoke> _mesh_deadline_ms param
+void send_invoke_with_deadline(const Envelope& env, uint64_t deadline_ms) {
+    auto timer = start_deadline_timer(std::chrono::milliseconds(deadline_ms));
+    z_put(session_, motor_key_, env_bytes, len, &opts);
     if (timer.expired()) {
-        inject_error_communication(event, "DEADLINE_EXCEEDED");
+        inject_error_invoke(env.invoke_id, RpcStatus::DeadlineExceeded);
     }
 }
 ```
 
-For `sce:qos="best-effort"`, deadline violations are silently ignored (consistent with fire-and-forget semantics).
+For FireForget `<send>` without `<invoke>`, no deadline enforcement applies — the transport-native reliability setting in deploy.yaml governs retry/drop semantics.
 
 ### 15.4 Deployment Topology
 
@@ -2343,3 +2956,415 @@ qos:
     deadline: 10ms
     priority: high
 ```
+
+---
+
+## 16. Distributed W3C SCXML Conformance
+
+This section is the formal conformance statement for distributed execution of W3C SCXML 1.0 under SCE Mesh. It defines what "distributed conformance" means, which constructs are distributable, how partition boundaries are validated, and how the W3C IRP test suite is leveraged as empirical proof.
+
+### 16.1 Conformance claim
+
+**Claim**: SCE Mesh executes a W3C SCXML 1.0 document distributed across multiple OS processes (and optionally multiple devices) such that, for every document and every deployment satisfying the Distributability Rules (§16.3, §16.4, §16.5), the observable behavior is **distributed-equivalent** (§16.2) to single-process execution of the same document.
+
+**Scope of conformance**:
+- All W3C SCXML 1.0 normative constructs: `<state>`, `<parallel>`, `<final>`, `<history>`, `<transition>`, `<onentry>`/`<onexit>`, `<raise>`, `<send>`, `<invoke>` (type=`scxml`), `<cancel>`, `<if>`/`<elseif>`/`<else>`, `<foreach>`, `<log>`, `<assign>`, `<datamodel>`/`<data>`, `<donedata>`, `<script>`, `<finalize>`, `<content>`, `<param>`, `<namelist>`.
+- All executable content semantics including `<finalize>`, `autoforward`, `<send delay>`, `<cancel>`, internal/external event queue ordering.
+- `_event` standard fields including `origin`, `origintype`, `sendid`, `invokeid`, `data`, `type`.
+- Error events: `error.execution`, `error.communication` per the W3C error-naming convention.
+
+**Scope exclusions** (explicitly not claimed):
+- Cross-machine macrostep atomicity. W3C §3.12 requires atomicity only within a single session; SCE Mesh respects this per-session. Cross-session observable ordering is defined by §10.1 (per-sender FIFO) and §16.2 (distributed equivalence), not by macrostep atomicity.
+- Strong real-time ordering guarantees that a physical transport cannot supply (e.g., synchronized wall-clock delivery across continents). Conformance is observational, not chronometric.
+- Execution under transports marked `conformance: degraded` (§10.4). Authors opting into degraded transports accept reduced conformance.
+
+### 16.2 Distributed equivalence (weak)
+
+The observational equivalence relation used for conformance is **weak equivalence**, defined below. Strong equivalence (all interleavings match single-process) is not claimed because it is provably unachievable without a global coordinator, which would eliminate the performance benefit of distribution.
+
+**Weak distributed equivalence** between a distributed execution `E_d` and a single-process reference execution `E_s` of the same document D holds iff:
+
+1. **Final configuration match**: if `E_s` reaches a stable configuration `C_s` (all active states; no more transitions enabled), then `E_d` reaches a configuration `C_d` whose set of active states (projected across all partitions) equals `C_s`.
+2. **Done-state match**: if `E_s` terminates by reaching `<final>` at the session root with donedata `D_s`, then `E_d` terminates with the same final state and equivalent donedata.
+3. **Per-sender causality**: for any two events `e1`, `e2` emitted by the same sender session in `E_s` with `e1` before `e2`, if both are observed in `E_d`, `e1` is observed before `e2` by every receiver.
+4. **Invoke lifecycle match**: for every `<invoke id="X">` in `E_s` that reaches its child's `<final>`, the corresponding `done.invoke.X` is raised in `E_d` at the same invoking state (or later, but before invoking-state exit).
+5. **Error event preservation**: every `error.execution` raised in `E_s` due to a document-level fault is raised in `E_d`. Additional `error.communication` events raised in `E_d` due to transport faults are permitted and not a conformance violation.
+6. **External output equivalence**: for any external observer (`<log>` outputs, `<send target>` to non-mesh endpoints, `sce:output-to-file` or equivalent testing output), the multiset of outputs in `E_d` equals that in `E_s`. Total ordering of outputs across sessions is not required; per-session order is preserved.
+
+These six properties are collectively sufficient to verify W3C IRP test outcomes: every IRP test verdict is a function of final configuration, donedata, and `<log>` outputs — all covered.
+
+### 16.3 Parallel region distributability rule
+
+W3C §3.4 defines `<parallel>` as concurrent orthogonal regions sharing the enclosing session's datamodel. Single-process RTC (§3.12) provides sequential consistency implicitly; distribution must reconstruct this contract without cross-process locks.
+
+**Rule**: A `<parallel>` element's child regions may be placed in separate partitions iff **all** of the following hold. When a violation is detected, `sce-build` either fails the build with a specific diagnostic (strict mode) or auto-merges the offending regions into one partition (permissive mode, default).
+
+**(R1) No shared writable data**. For every `<data>` declared in an ancestor scope of the `<parallel>`:
+- at most one child region (including its descendants) may contain an `<assign location>`, a `<data expr=...>` initializer that depends on the data, or a `<script>` that assigns to it.
+- If two or more regions perform writes to the same ancestor data, those regions must share a partition.
+
+Exception: region-local `<datamodel>` declared inside a region is not ancestor scope from the sibling region's perspective — sibling regions cannot reach it syntactically, so no coordination is needed.
+
+**(R2) No cross-region transitions**. A `<transition target>` must not resolve to a state inside a sibling region. A cross-region transition, when fired, exits and re-enters states across the parallel boundary; preserving the W3C exit-set/enter-set computation across processes requires macrostep atomicity, which distribution cannot supply.
+
+Exception: a transition whose target is the `<parallel>` itself or any of its ancestors is NOT cross-region — it exits the parallel wholesale, which is local to each region (each region exits itself and the combined effect is well-defined).
+
+**(R3) Shared reads are snapshot-scoped**. A region may read an ancestor-scope `<data>` that another region does not write (within the lifetime of the parallel activation). The value is **snapshot-captured** at parallel entry and frozen for each region partition's runtime. If the value is written by the parent outside the parallel scope, re-entries see the new snapshot.
+
+**(R4) Script opacity**. Any `<script>` body that the static analyzer cannot prove side-effect-safe is treated as "writes every ancestor-scope data name observed in the script's lexical context". This is the conservative default. A `sce:script-safe="true"` attribute on `<script>` opts out of the conservative assumption (author promises no ancestor-scope writes); misuse is a documented risk.
+
+**Analyzer implementation** (build-time, in `sce-build`):
+```
+for each <parallel> P in every machine M:
+  for each child region R of P:
+    writes_R = all locations written by R ∪ descendants
+    reads_R  = all locations read by R ∪ descendants
+    targets_R = all transition targets resolving outside R (but inside a sibling)
+  for each data location L in ancestor-scope(P):
+    writers = { R : L ∈ writes_R }
+    if |writers| ≥ 2:
+      emit constraint "regions {writers} must share a partition (R1)"
+    elif |writers| = 1 and L ∈ reads_R' for R' ≠ writers[0]:
+      emit constraint "region {R'} snapshot-reads L; entry-point sync required"
+  for each R with targets_R ≠ ∅:
+    target_regions = { sibling R'' containing a target in targets_R }
+    emit constraint "regions {R, target_regions} must share a partition (R2)"
+```
+
+Emitted constraints are matched against `deploy.yaml partitions:`. If a constraint-group is split across partitions:
+- **Strict mode** (`distributability: strict` in deploy.yaml): build fails with a diagnostic naming the regions and the offending data/target.
+- **Permissive mode** (default): the named regions are silently merged into a single partition (the one with the lowest sort-ordered name). A build-log notice is emitted.
+
+### 16.4 Cross-region transition auto-merge
+
+When (R2) is violated under permissive mode (the default), the two or more regions transitively connected by cross-region transitions are merged into one partition:
+
+```
+violation: regionA has <transition target="regionB.sub">
+  → merge(regionA, regionB)
+  → if regionB was in partition P_B but regionA in P_A:
+      P_A absorbs regionB; P_B loses regionB. If P_B becomes empty,
+      P_B is dropped and its device allocation returned to pool.
+```
+
+Repeat until fixed point. Result is a **minimum-merge partition plan** that satisfies distributability while honoring as much of the author's partition request as possible.
+
+### 16.5 Parallel `<final>` barrier
+
+W3C §3.7: when every child region of a `<parallel>` reaches `<final>`, the enclosing session raises `done.state.<PARALLEL_ID>` with optional donedata. Distribution requires a **convergence barrier** across partitions:
+
+1. A designated **root partition** of each machine owns a `ParallelCompletionTracker` per `<parallel>` in that machine.
+2. **Emission timing**: when the region's `<final>` `<onentry>` executable content completes — i.e., after the final microstep of the macrostep that transitioned into `<final>`, and **before** the region's scheduler yields control — the region partition emits a `ParallelRegionDone` control envelope (wire value 21, dedicated pattern — **not** an overload of another wire value) with:
+   - `subject` = `<parallel_id>/<region_id>` (purely advisory; dispatcher routes on `pattern` alone)
+   - `data` = donedata payload computed from the region's `<final>` `<donedata>` (absent if none declared)
+   Emission is single-shot per region activation: once a region has emitted, further microsteps within that activation do not re-emit. Re-entry of the parallel (via history or new enter-set computation) resets the tracker and starts a fresh activation.
+3. The root partition's tracker records the completion. When all regions of `<parallel_id>` have reported, the root partition raises `done.state.<PARALLEL_ID>` into its **own external queue** at its current macrostep boundary, so W3C §3.7 ordering (done.state raised at the next stable configuration after the final region completes) is preserved from the root's perspective.
+4. **Barrier timeout**: a configurable timer starts when the first `ParallelRegionDone` for a given parallel activation arrives at the root. If not all regions report before the timer expires, the root raises `error.communication` with `reason="PARALLEL_BARRIER_TIMEOUT"` and `_event.data.parallel_id` set. Timeout defaults to **infinity** (W3C normative — parallel final waits indefinitely); finite values are configured per-partition via deploy.yaml `partitions.<name>.barrier_timeout_ms` (§14).
+
+### 16.6 `<history>` in distributed parallel
+
+Each region partition maintains its own `<history>` states locally. On parallel re-entry, each partition restores its own history without cross-partition coordination. Because (R1) forbids cross-region shared writable data, history states are region-local by construction.
+
+### 16.7 `error.communication` raise policy
+
+Runtime conditions that raise `error.communication` with specific `reason` payload:
+
+| Condition | `reason` |
+|---|---|
+| Transport connect/reconnect failure | `TRANSPORT_UNAVAILABLE` |
+| Envelope send returns error from transport API | `SEND_FAILED` |
+| Reliable transport unable to deliver after configured retries | `DELIVERY_EXHAUSTED` |
+| Inbound envelope deserialization fails | `ENVELOPE_CORRUPT` |
+| Invoke child device unreachable | `INVOKE_CHILD_LOST` |
+| Parallel barrier timeout (§16.5) | `PARALLEL_BARRIER_TIMEOUT` |
+| Envelope dedup window overflow (extremely high rate, window exhausted) | `DEDUP_WINDOW_OVERFLOW` |
+
+`error.communication` is always raised into the affected machine's external queue, delivered at the next macrostep. The `_event.data` field carries `{ reason, envelope_id?, source?, sendid? }` for author-level diagnosis.
+
+`error.execution` events arising from invoke setup (§9.3) or document-level faults retain their standard semantics; distribution does not synthesize new `error.execution` occurrences beyond what a single-process engine would raise.
+
+### 16.8 Conformance test harness
+
+SCE Mesh's conformance harness runs the full W3C IRP suite twice per test: once single-process, once distributed. Identical verdicts in both modes is the pass criterion.
+
+#### 16.8.1 Harness architecture
+
+```
+irp_runner
+  |
+  |-- for each test t in tests/w3c/*.scxml:
+  |    |
+  |    |-- mode = single_process:
+  |    |      load t, run via standard AOT engine,
+  |    |      collect { final_config, log_output, donedata, raised_errors }
+  |    |
+  |    |-- mode = distributed:
+  |    |      resolve partition plan via tests/w3c_distributed_manifest.yaml
+  |    |      for each partition p:
+  |    |         spawn ./build/tests/w3c/dist/test_<t>_<p> as OS process
+  |    |      wait for all partitions with global deadline (default: 10x local time)
+  |    |      collect outputs from each partition, merge via §16.2 equivalence
+  |    |
+  |    |-- compare single_process vs distributed under §16.2 equivalence
+  |    |-- emit PASS / FAIL with diagnostic on mismatch
+```
+
+#### 16.8.2 IRP distributable subset
+
+Not every IRP test has distributable structure. Tests without `<parallel>` or `<invoke>` have no W3C-orthogonal split axis; their "distributed" execution is trivially N=1 and adds no signal. These tests remain in the **single-process conformance set**.
+
+Classification in `tests/w3c_distributed_manifest.yaml`. The `distributable` field takes one of four literal values — no "conditional" — so the CI report never conflates an analyzer-merged test with a genuinely distributed one:
+
+| Label | Meaning | Counted toward distributed acid test? |
+|---|---|---|
+| `yes` | Author-declared partition plan passes analyzer with 2+ effective partitions; test runs N ≥ 2 OS processes. | **Yes** |
+| `merged_single_partition` | Analyzer took the path (applied R1/R2), but the result is 1 effective partition. Runs as single process; distributed mode has no new signal. | **No** (reported separately as "analyzer-exercised") |
+| `no` | No `<parallel>`, no `<invoke>` — no orthogonal split axis exists. Single-process only. | **No** |
+| `forbidden` | Author's partition plan violates R1/R2 in strict mode. Test does not compile with distribution. | **No** (CI fails if a `yes` test regresses to `forbidden`) |
+
+```yaml
+# W3C IRP 202 distributed conformance manifest
+
+tests:
+  test144:
+    distributable: no
+    reason: "no <parallel>, no <invoke> — no orthogonal axis"
+
+  test187:
+    distributable: yes
+    partitions:
+      main:    { contains: { parallel_regions: [{ region: p1 }] } }
+      worker:  { contains: { parallel_regions: [{ region: p2 }] } }
+    inferred_constraints: []
+
+  test230:
+    distributable: merged_single_partition
+    reason: "writes shared ancestor 'var1' from both regions (R1 violated)"
+    effective_partitions:
+      merged:
+        contains: { parallel_regions: [{ region: p1 }, { region: p2 }] }
+
+  test216:
+    distributable: yes
+    partitions:
+      parent:        { contains: { invokes: [] } }
+      child_process: { contains: { invokes: [{ invoke: sub1 }] } }
+    notes: "Session F: validates remote invoke lifecycle across processes."
+```
+
+CI output example:
+
+```
+Distributed conformance report
+  yes                        : 42 tests PASS / 42
+  merged_single_partition    : 7 tests (analyzer-exercised, no N≥2 signal)
+  no                         : 148 tests (single-process only, out of scope)
+  forbidden                  : 0 tests
+  REGRESSIONS                : 0
+```
+
+The acid-test claim is measured against the `yes` bucket only. `merged_single_partition` is a reported-but-not-counted category — useful to verify the analyzer fires on known-shared-data fixtures, but not evidence of distribution.
+
+#### 16.8.3 Transport selection for harness
+
+The harness defaults to `custom_tcp` for inter-partition traffic. `custom_tcp` is a minimal conformance-complete transport (§10.4) built specifically for the harness — zero external dependencies, UUID-v7 envelope framing over TCP stream, local-only (IPv4 loopback). Implementation lives in `sce/mesh/transports/custom_tcp/`.
+
+Alternate transports may be selected per-test via manifest `transport_override: someip | zenoh | shm` for cross-transport regression coverage, but do not change the conformance claim — only `custom_tcp` is the reference path for the CI claim.
+
+#### 16.8.4 Harness build integration
+
+Per test `tests/w3c/testXXX.scxml`:
+1. `sce-build` with the distributed manifest entry produces N binaries `testXXX_<partition>` in `build/tests/w3c/dist/`.
+2. A harness driver `tests/w3c/dist/run_distributed.py` (or C++ test) invokes each binary, sets up inter-partition transport endpoints, and collects outputs.
+3. Outputs are merged via §16.2 equivalence and compared to the single-process run.
+4. CTest invokes the harness driver as a single test label `w3c_distributed_conformance`, which expands into one ctest per IRP test.
+
+### 16.9 Incremental delivery: Sessions E1, E2, F
+
+The spec above describes the target state. Implementation is split into three sessions to keep each session's scope tractable; no single session attempts to land all of distribution, purity correction, and full remote invoke at once. Splitting is purely an implementation-sequencing choice — the normative content of this §16 does not change between sessions.
+
+**Session E1 (SCXML purity + mesh-rpc correction)** — no distribution machinery yet:
+- Remove `sce:pattern`/`sce:reply-event`/`sce:reply-timeout`/`sce:qos`/`sce:deadline`/`sce:priority` from parser and model; migrate Session C/D tests.
+- §14 deploy.yaml external-config integration (`vsomeip.json`, `zenoh.json5`) + 3-way consistency check.
+- §13 topology-inferred request/response pairing.
+- §9.5 `<invoke type="sce:mesh-rpc">` full lifecycle with `_mesh_*` reserved-name enforcement.
+- §13 subscription dual-lifecycle (state-entry auto-symmetry with the eligibility rules above, and deploy.yaml `subscriptions:` for machine-lifetime).
+- `docs/MESH_SCXML_COMPATIBILITY.md` published.
+
+**Session E2 (distributed conformance foundation)** — adds the partition machinery and `<parallel>`-only IRP coverage:
+- §10.4 Transport Contract and `custom_tcp` reference transport.
+- §10.5 mesh runtime dedup layer.
+- §10.6 `_event` field wiring for distributed events, including the structured `error.*` convention (§10.6.1).
+- §10.7 sender-hold delayed send + cancel.
+- §14 `partitions:` schema + deploy.yaml partition resolver with explicit coverage rule.
+- §16.3/16.4 distributability analyzer (R1–R4) + cross-region transition auto-merge.
+- §16.5 parallel `<final>` barrier runtime, using the dedicated `ParallelRegionDone` wire value 21.
+- §16.7 `error.communication` raise policy and catalog.
+- §16.8.1–16.8.3 harness architecture and `custom_tcp` harness transport.
+- IRP distributable manifest covering tests that use only `<parallel>` (no remote `<invoke type="scxml">`). Expected ~20 tests in the `yes` bucket, a handful in `merged_single_partition`, remainder `no`.
+
+**Session F (full remote `<invoke type="scxml">` + complete IRP coverage)**:
+- §9.6 full remote session establishment (InvokeStart / InvokeStarted / ChildEvent / ParentEvent / InvokeDone / InvokeCancel / InvokeError wire patterns 14–20).
+- §9.6.3 `_event.invokeid`/`origin` wiring for child events.
+- §9.6.4 `<finalize>` execution on child events at parent's macrostep.
+- §9.6.5 `autoforward="true"` parent → child forwarding.
+- §9.6.6 inline `<content>` precompilation in `sce-build`, with the `__sce_synth_invoke__` collision check.
+- Extension of the IRP distributable manifest to cover tests using `<invoke type="scxml">`.
+- Foreign processor compatibility harness (exercise `error.execution` graceful degrade against an external SCXML 1.0 reference interpreter).
+- Mesh Conformance Suite: distributed-only tests exercising §10.4/10.5/10.7/16.5/16.7 edge cases not covered by W3C IRP.
+
+**Session-scoped acid tests** are in the §13 roadmap table (one row per session). The overall conformance claim of §16.1 is satisfied only when Session F lands; E1 and E2 deliver subsets of the claim against documented subsets of the IRP suite.
+
+### 16.10 Relationship to W3C SCXML 1.0 Normative Text
+
+The distributed execution model in this section is compatible with W3C SCXML 1.0 as follows:
+
+- All normative constructs are supported with identical observable behavior, subject to §16.2 weak equivalence.
+- No normative behavior is altered; distribution only refines the physical execution model, not the language.
+- Extensions (`<invoke type="sce:mesh-rpc">`, `sce:mesh-rpc` as an invoke type URI, and `partitions:` in deploy.yaml) are confined to SCE-specific namespaces and the deploy.yaml file — they do not introduce new SCXML syntax beyond a single implementation-defined invoke type URI (permitted by W3C §6.4).
+- A foreign W3C SCXML 1.0 processor loading the same SCXML file executes it as a single-process monolith with identical observable behavior, except for constructs using `<invoke type="sce:mesh-rpc">` (which raise `error.execution` per §6.4.1, handleable by the author).
+
+This completes the conformance claim.
+
+---
+
+## 17. Distributed-Friendly SCXML Design Principles
+
+This section is a design guide for SCXML authors who want their documents to be distributable while preserving AOT performance. It is normative for SCE Mesh tooling defaults (the analyzer encodes these rules) but advisory to authors.
+
+### 17.1 Why design matters for AOT + distributed
+
+AOT compilation reduces state transition cost to ~1-720 ns (§11.1). Transport overhead for a remote event is 50 μs – 2 ms (§11.2) — roughly **100–1,000,000× more expensive**. The arithmetic of distributed AOT performance is therefore dominated by a single question: **what fraction of event traffic crosses partition boundaries?**
+
+A well-designed SCXML document keeps its **hot path** inside one partition and places only **rare, semantically-important boundaries** at partition edges. A poorly-designed document creates shared writable state between regions or frequent cross-region transitions, forcing the analyzer to merge partitions back or (in strict mode) fail the build.
+
+**The same AOT engine that powers single-process sub-microsecond transitions powers each partition in distributed mode.** Distribution does not slow down intra-partition execution; it adds cost only at boundaries. Every good SCXML design principle for single-process performance (locality, minimal shared state, event-driven composition) is **identical** to the principle for distributed performance.
+
+### 17.2 Five principles
+
+**P1 — Actor identity per region/machine.** Treat each `<parallel>` region and each `<invoke>` child as an actor: encapsulated state, message-only interface. Do not reach into a sibling region's `<data>`.
+
+**P2 — Local-state rule: declare `<datamodel>` at the narrowest scope.** The `<data>` that a region mutates should live in that region's own `<datamodel>`. The ancestor scope holds only immutable configuration and values written by exactly one region.
+
+**P3 — Event-driven composition.** Regions and machines coordinate through events, not through shared variables. Where single-process code might read a sibling's counter, distributed-friendly code receives a `counter.increment` event.
+
+**P4 — `<invoke>` as service boundary.** When a subsystem has its own long-lived state and lifecycle — a sensor driver, a worker pool, a subordinate controller — model it with `<invoke>`. `<invoke>` is the natural process-boundary marker: it maps cleanly to a child partition, preserves W3C `<finalize>`/`done.invoke`/`<cancel>` semantics across processes, and keeps the parent's RTC uncoupled from the subsystem's.
+
+**P5 — Respect region boundaries with transition targets.** Do not `<transition target>` to a state inside a sibling region. If control flow needs to coordinate two regions, use an event. If you find yourself wanting a cross-region transition, that is a signal the two states belong to the same region — the parallel decomposition is wrong.
+
+### 17.3 Good vs bad patterns
+
+#### Shared counter — bad
+
+```xml
+<parallel>
+  <datamodel><data id="shared" expr="0"/></datamodel>
+  <state id="producer">
+    <transition event="tick"><assign location="shared" expr="shared + 1"/></transition>
+  </state>
+  <state id="consumer">
+    <transition cond="shared > 10"><assign location="shared" expr="0"/></transition>
+  </state>
+</parallel>
+```
+
+Violates R1 (both regions write `shared`). Analyzer auto-merges into a single partition — no distribution benefit. Forcing distribution would require a coordinator, destroying the AOT performance advantage.
+
+#### Shared counter — good
+
+```xml
+<parallel>
+  <state id="producer">
+    <datamodel><data id="count" expr="0"/></datamodel>
+    <transition event="tick">
+      <assign location="count" expr="count + 1"/>
+      <send event="counter.inc"/>
+    </transition>
+  </state>
+  <state id="consumer">
+    <datamodel><data id="received" expr="0"/></datamodel>
+    <transition event="counter.inc"><assign location="received" expr="received + 1"/></transition>
+    <transition cond="received > 10" target="done"/>
+  </state>
+</parallel>
+```
+
+Region-local data, event-only coordination. Distributable. Producer's hot path is `<assign>` + single envelope emit (~1 ns + ~50 μs on remote transport). Consumer's hot path is `<assign>` (pure local). The 10:1 ratio of locally-observed ticks to remote increments means ~90% of work stays AOT-fast.
+
+#### Subsystem lifecycle — bad
+
+```xml
+<state id="brake_control">
+  <datamodel>
+    <data id="motor_torque" expr="0"/>
+    <data id="motor_temperature" expr="0"/>
+    <data id="motor_duty_cycle" expr="0"/>
+    <data id="motor_fault_code" expr="0"/>
+  </datamodel>
+  <transition event="motor.telemetry">
+    <assign location="motor_torque" expr="_event.data.torque"/>
+    <assign location="motor_temperature" expr="_event.data.temp"/>
+    <!-- ... -->
+  </transition>
+</state>
+```
+
+Parent's datamodel grows with every attribute of the subsystem. Every telemetry event is an external event for the parent — cannot be locally-scoped.
+
+#### Subsystem lifecycle — good
+
+```xml
+<state id="brake_control">
+  <invoke type="scxml" src="#motor_subsystem" id="motor">
+    <finalize>
+      <assign location="motor_status_summary" expr="_event.data.summary"/>
+    </finalize>
+  </invoke>
+  <transition event="motor.fault" target="fault_recovery"/>
+</state>
+```
+
+Motor internals live in the invoked child. Parent sees only high-level events (`motor.fault`) and summary snapshots via `<finalize>`. In distribution, `motor_subsystem` becomes a separate partition — parent/child boundary is natural. Single-process execution is unchanged.
+
+### 17.4 Data locality rules of thumb
+
+- **Hot path locality**: hot event streams (sensor at 1 kHz, game tick at 60 Hz, trading feed) must be serviced by a region that owns all the data they touch. If a hot event triggers a cross-partition read, AOT performance is lost on every tick.
+- **Cold path tolerance**: rare events (fault escalation, configuration change, human command) may cross partitions freely. 50 μs once per second is invisible; 50 μs per tick is catastrophic.
+- **Snapshot everything immutable**: configuration and sensor calibration at startup, not in the hot path. Region partitions receive snapshots at parallel entry (§16.3 R3); deployments provide constant configs once at process start.
+- **One writer per datum**: if two pieces of logic update the same value, combine them into one region or one machine. Multi-writer discipline is harder than event-driven composition and throws away W3C's sequential-consistency guarantee.
+
+### 17.5 When to pick `<parallel>` vs `<invoke>`
+
+Both split state machine logic into concurrent units. Use this heuristic:
+
+| Aspect | `<parallel>` region | `<invoke>` child |
+|---|---|---|
+| Lifecycle | Active whenever the enclosing parallel is active | Independently started/ended via `<invoke>`/`<cancel>` or child `<final>` |
+| Shared datamodel | Ancestor scope (limited writes per R1) | None (own datamodel) |
+| Best for | Concurrent aspects of a single entity (e.g., a car's braking + steering monitors simultaneously) | Subsystem with its own lifecycle (e.g., a worker job, a long-running sensor, a remote service) |
+| Distribution fit | Natural for symmetric concurrent aspects | Natural for asymmetric client-subsystem relationships |
+| Termination | All regions run until the parallel itself exits | Child exits on own `<final>`, on parent-issued `<cancel>`, or on invoking-state exit |
+
+Concretely: **if the two things have the same lifetime, use `<parallel>`. If one thing's existence is conditional on the other, use `<invoke>`.**
+
+### 17.6 Design checklist before distribution
+
+Before adding `partitions:` to a deploy.yaml:
+
+1. Run `sce-build --analyze-partitions <machine.scxml>`. It prints the dependency graph, shared-data violations, and cross-region transitions.
+2. For every violation, choose: move `<data>` to a narrower scope, replace shared writes with events, or collapse the regions (they were never truly orthogonal).
+3. Once the analyzer reports zero violations, the document is partition-ready. Any partition plan that respects the analyzer's constraint groups will compile.
+4. Benchmark both modes. If distributed mode is slower by more than expected transport cost × cross-partition event rate, the hot path is crossing boundaries — revisit regions' data ownership.
+
+### 17.7 Heterogeneous deployment as a first-class use case
+
+A well-designed SCXML document supports radically heterogeneous deployments from the same source:
+
+- **Single-process**: entire document in one binary. IRP tests, unit tests, monoliths.
+- **Multi-process same host**: partitions on one machine via SHM or `custom_tcp`. Load distribution across cores; process-level fault isolation.
+- **Multi-host same LAN**: partitions across devices via SOME/IP, DDS, or Zenoh. Automotive ECUs, factory-floor PLCs.
+- **Hybrid edge/cloud**: hot-path partitions on the edge, rare/bulky partitions in the cloud via gRPC. IoT, telemetry.
+- **Security-isolated**: sensitive partition (authentication, crypto) in a TEE/SGX enclave; rest in normal-world. Zero-trust architectures.
+
+Each deployment is a different `deploy.yaml` against the **same SCXML source** and the same AOT-generated binaries (per target). This is the payoff of distributed-conformance discipline: one logical design, many physical realizations, no runtime interpretation.
+
