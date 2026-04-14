@@ -492,23 +492,16 @@ fn parse_codec(
             continue;
         }
 
-        // Output fields with byte layout (on <data> elements). The helper
-        // is shared with the statechart parser for inline codec fields, so
-        // it remains `ValidationError`-returning; we wrap at the call-site
-        // so the <data> node's line still anchors the diagnostic.
+        // Output fields with byte layout (on <data> elements).
         if sce_attr(&data, "byte").is_some() {
-            fields.push(
-                parse_codec_field_from_node(&data).map_err(|e| located(&data, name, e))?,
-            );
+            fields.push(parse_codec_field_from_node(&data, name)?);
         }
     }
 
     // Also check for <sce:field> elements (used in both standalone and inline codec)
     for child in datamodel.children().filter(|n| n.is_element()) {
         if child.tag_name().name() == "field" && child.tag_name().namespace() == Some(SCE_NAMESPACE) {
-            fields.push(
-                parse_codec_field_from_node(&child).map_err(|e| located(&child, name, e))?,
-            );
+            fields.push(parse_codec_field_from_node(&child, name)?);
         }
     }
 
@@ -532,57 +525,96 @@ fn parse_codec(
 }
 
 /// Unified codec field parser — works for both `<data>` and `<sce:field>` elements.
-/// Public: also called from SCXMLParser::try_parse_inline_kind() for single-pass extraction.
-pub fn parse_codec_field_from_node(node: &roxmltree::Node) -> Result<CodecField, ValidationError> {
+///
+/// Public so the statechart parser can reuse it for inline codec
+/// extraction; takes `doc_name` so every raise anchors at the field's
+/// own node line. Callers that don't have a meaningful document name
+/// (e.g. inline-codec extraction inside the statechart parser) may
+/// pass a label like `"<inline codec>"`.
+pub fn parse_codec_field_from_node(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<CodecField, Located<ForgeError>> {
     let id = node
         .attribute("id")
-        .ok_or(ValidationError::MissingAttribute {
-            element: "Codec field".into(),
-            attr: "id".into(),
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: "Codec field".into(),
+                    attr: "id".into(),
+                },
+            )
         })?
         .to_string();
 
     let sce_type_str = sce_attr(node, "type").unwrap_or_else(|| "uint8".to_string());
-    let sce_type = SceType::from_attr(&sce_type_str)
-        .ok_or_else(|| ValidationError::InvalidAttribute {
-            element: format!("field '{id}'"),
-            attr: "sce:type".into(),
-            value: sce_type_str.clone(),
-            expected: "uint8, uint16, uint32, int8, int16, int32, float32, float64, bool, string, bytes".into(),
-        })?;
+    let sce_type = SceType::from_attr(&sce_type_str).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("field '{id}'"),
+                attr: "sce:type".into(),
+                value: sce_type_str.clone(),
+                expected: "uint8, uint16, uint32, int8, int16, int32, float32, float64, bool, string, bytes".into(),
+            },
+        )
+    })?;
 
-    let byte_offset_str = sce_attr(node, "byte")
-        .ok_or_else(|| ValidationError::MissingAttribute {
-            element: format!("Codec field '{id}'"),
-            attr: "sce:byte".into(),
-        })?;
-    let byte_offset = parse_int(&byte_offset_str)
-        .ok_or_else(|| ValidationError::NumericParse {
-            element: format!("field '{id}'"),
-            attr: "sce:byte".into(),
-            value: byte_offset_str.clone(),
-            detail: "expected integer".into(),
-        })?;
+    let byte_offset_str = sce_attr(node, "byte").ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("Codec field '{id}'"),
+                attr: "sce:byte".into(),
+            },
+        )
+    })?;
+    let byte_offset = parse_int(&byte_offset_str).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::NumericParse {
+                element: format!("field '{id}'"),
+                attr: "sce:byte".into(),
+                value: byte_offset_str.clone(),
+                detail: "expected integer".into(),
+            },
+        )
+    })?;
 
     let bit_offset = sce_attr(node, "bit-offset").and_then(|s| parse_int(&s));
 
     let bit_size = {
-        let bs = sce_attr(node, "bit-size")
-            .ok_or_else(|| ValidationError::MissingAttribute {
-                element: format!("Codec field '{id}'"),
-                attr: "sce:bit-size".into(),
-            })?;
+        let bs = sce_attr(node, "bit-size").ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: format!("Codec field '{id}'"),
+                    attr: "sce:bit-size".into(),
+                },
+            )
+        })?;
         match bs.as_str() {
             "tail" => BitSize::Tail,
             "length-ref" => BitSize::LengthRef,
             _ => {
-                let n = parse_int(&bs)
-                    .ok_or_else(|| ValidationError::NumericParse {
-                        element: format!("field '{id}'"),
-                        attr: "sce:bit-size".into(),
-                        value: bs.clone(),
-                        detail: "expected integer, 'tail', or 'length-ref'".into(),
-                    })?;
+                let n = parse_int(&bs).ok_or_else(|| {
+                    located(
+                        node,
+                        doc_name,
+                        ValidationError::NumericParse {
+                            element: format!("field '{id}'"),
+                            attr: "sce:bit-size".into(),
+                            value: bs.clone(),
+                            detail: "expected integer, 'tail', or 'length-ref'".into(),
+                        },
+                    )
+                })?;
                 BitSize::Fixed { bits: n }
             }
         }

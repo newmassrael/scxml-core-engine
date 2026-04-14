@@ -345,7 +345,13 @@ impl SCXMLParser {
                     if child.tag_name().name() == "field"
                         && child.tag_name().namespace() == Some(SCE_NAMESPACE)
                     {
-                        fields.push(crate::forge::parser::parse_codec_field_from_node(&child).map_err(|e| e.to_string())?);
+                        fields.push(
+                            crate::forge::parser::parse_codec_field_from_node(
+                                &child,
+                                "<inline codec>",
+                            )
+                            .map_err(|e| e.to_string())?,
+                        );
                     }
                 }
                 if fields.is_empty() {
