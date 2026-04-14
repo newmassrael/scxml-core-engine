@@ -458,7 +458,7 @@ impl MeshError {
 // `(code, stage, key_fragments)` triple.
 
 use crate::forge::diagnostic::{
-    Diagnostic, DiagnosticCode, Fix, Location, Stage, ToDiagnostic, SCHEMA_VERSION,
+    Diagnostic, DiagnosticCode, Fix, Location, Stage, ToDiagnostics, SCHEMA_VERSION,
 };
 
 /// FNV-1a 64-bit content hash used for diagnostic ids.
@@ -906,7 +906,7 @@ fn codegen_fields(e: &CodegenError) -> MeshDiagFields {
     }
 }
 
-impl ToDiagnostic for MeshError {
+impl ToDiagnostics for MeshError {
     fn exit_code(&self) -> i32 {
         MeshError::exit_code(self)
     }

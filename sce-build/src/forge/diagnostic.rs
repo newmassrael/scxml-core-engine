@@ -35,7 +35,7 @@ use serde::Serialize;
 /// Callers (CLI entrypoints, build.rs helpers) depend only on this
 /// trait. Each error family (`ForgeError`, `MeshError`, CLI-level
 /// errors) provides its own mapping without coupling to the others.
-pub trait ToDiagnostic {
+pub trait ToDiagnostics {
     /// Expand this error into one or more diagnostic records.
     ///
     /// Returns a `Vec` because a single error may represent multiple
@@ -539,7 +539,7 @@ struct DiagnosticFields {
     key_fragments: Vec<String>,
 }
 
-impl ToDiagnostic for ForgeError {
+impl ToDiagnostics for ForgeError {
     fn exit_code(&self) -> i32 {
         ForgeError::exit_code(self)
     }
@@ -554,7 +554,7 @@ impl ToDiagnostic for ForgeError {
     }
 }
 
-impl ToDiagnostic for Located<ForgeError> {
+impl ToDiagnostics for Located<ForgeError> {
     fn exit_code(&self) -> i32 {
         self.error.exit_code()
     }
@@ -1157,11 +1157,11 @@ mod tests {
         .into()
     }
 
-    /// Extract the single diagnostic from any `ToDiagnostic`. Panics
+    /// Extract the single diagnostic from any `ToDiagnostics`. Panics
     /// if the error produced zero or multiple records — tests that
     /// target multi-record paths (XSD) call `.to_diagnostics()`
     /// directly instead.
-    fn single(err: &impl ToDiagnostic) -> Diagnostic {
+    fn single(err: &impl ToDiagnostics) -> Diagnostic {
         let mut v = err.to_diagnostics();
         assert_eq!(v.len(), 1, "expected single diagnostic, got {}", v.len());
         v.pop().unwrap()

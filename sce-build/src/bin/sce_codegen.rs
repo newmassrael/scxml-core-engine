@@ -21,7 +21,7 @@ use std::sync::OnceLock;
 
 use sce_build::analyzer;
 use sce_build::filters;
-use sce_build::forge::diagnostic::{Diagnostic, DiagnosticCode, Stage, ToDiagnostic, SCHEMA_VERSION};
+use sce_build::forge::diagnostic::{Diagnostic, DiagnosticCode, Stage, ToDiagnostics, SCHEMA_VERSION};
 use sce_build::forge::error::ForgeError;
 
 /// CLI-driver errors that do not originate in a compiler pipeline.
@@ -136,7 +136,7 @@ fn cli_code_str(c: DiagnosticCode) -> &'static str {
     }
 }
 
-impl ToDiagnostic for CliError {
+impl ToDiagnostics for CliError {
     fn exit_code(&self) -> i32 {
         self.cli_exit_code()
     }
@@ -324,12 +324,12 @@ fn current_error_format() -> ErrorFormat {
 }
 
 impl ErrorFormat {
-    /// Emit any [`ToDiagnostic`] error and terminate with its exit
+    /// Emit any [`ToDiagnostics`] error and terminate with its exit
     /// code. Generic over the error family so ForgeError, MeshError,
     /// and CLI-level errors all funnel through the same code path —
     /// a subcommand cannot accidentally render JSON on stdout or
     /// swallow an exit code without failing compilation.
-    fn emit_and_exit<E: ToDiagnostic + std::fmt::Display>(self, err: &E, human_prefix: &str) -> ! {
+    fn emit_and_exit<E: ToDiagnostics + std::fmt::Display>(self, err: &E, human_prefix: &str) -> ! {
         match self {
             ErrorFormat::Human => {
                 eprintln!("{human_prefix}{err}");
