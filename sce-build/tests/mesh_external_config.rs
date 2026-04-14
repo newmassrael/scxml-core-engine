@@ -243,6 +243,88 @@ fn malformed_external_config_reports_parse_error() {
 }
 
 #[test]
+fn application_name_from_deploy_yaml_reaches_generated_code() {
+    // SCE_MESH.md §13: `transports.someip.application_name` binds the
+    // generated vsomeip::application to an entry in vsomeip.json's
+    // applications[*].name. The template must use that literal instead
+    // of the legacy `<machine>_<target>` default.
+    let fx = Fixture::new("appname");
+    fx.write("vsomeip.json", VSOMEIP_JSON);
+    fx.write("brake.scxml", BRAKE_SCXML);
+    fx.write("motor.scxml", MOTOR_SCXML);
+    let deploy_path = fx.write("deploy.yaml", &deploy_with_names("vsomeip.json"));
+
+    let model = parse_brake();
+    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
+        .expect("compile_mesh_transport");
+
+    let (_name, code) = &result.output.files[0];
+    assert!(
+        code.contains(r#"create_application("brake_app")"#),
+        "generated code must use deploy.yaml application_name literal: {code}"
+    );
+    assert!(
+        !code.contains(r#"create_application("brake_motor")"#),
+        "legacy `<machine>_<target>` default must NOT appear when \
+         application_name is declared: {code}"
+    );
+}
+
+#[test]
+fn zenoh_config_file_reaches_generated_code() {
+    // SCE_MESH.md §14: `transports.zenoh.config:` references an external
+    // zenoh.json5. Generated init() uses `Config::from_file(<path>)` as
+    // the base; deploy.yaml overrides merge on top.
+    let fx = Fixture::new("zenoh_cfg");
+    fx.write("brake.scxml", BRAKE_SCXML);
+    fx.write("motor.scxml", MOTOR_SCXML);
+    // zenoh.json5 need only exist for the Config::from_file call at
+    // runtime; sce-build does not parse it. Write a minimal stub.
+    fx.write("zenoh.json5", "{ mode: \"peer\" }");
+    let deploy = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        config: zenoh.json5
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "brake/cmd"
+      motor:
+        source: motor.scxml
+"##;
+    let deploy_path = fx.write("deploy.yaml", deploy);
+
+    let model = parse_brake();
+    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
+        .expect("compile_mesh_transport");
+
+    let (_name, code) = &result.output.files[0];
+    assert!(
+        code.contains(r#"zenoh::Config::from_file("zenoh.json5")"#),
+        "generated code must emit Config::from_file with the escaped path: {code}"
+    );
+    // The default `create_default()` path must NOT coexist when config
+    // file is set — they are mutually exclusive in the template.
+    let default_call_count = code.matches("zenoh::Config::create_default()").count();
+    assert_eq!(
+        default_call_count, 0,
+        "create_default must not appear when config: is declared: {code}"
+    );
+    // Overrides must still be applied on top.
+    assert!(
+        code.contains(r#"insert_json5("mode""#),
+        "deploy.yaml mode override must still be applied: {code}"
+    );
+}
+
+#[test]
 fn inline_numeric_ids_still_compile_with_deprecation_warning() {
     // Legacy fixture shape: all IDs inline, no transports.someip.config.
     // compile_mesh_transport must still succeed (Stage 1 deprecation) but
@@ -279,11 +361,11 @@ topology:
         "expected at least 3 deprecation warnings, got {:?}",
         result.deprecation_warnings
     );
-    let attrs: Vec<_> = result
+    let fields: Vec<_> = result
         .deprecation_warnings
         .iter()
-        .map(|w| w.attribute.as_str())
+        .map(|w| w.field.as_str())
         .collect();
-    assert!(attrs.contains(&"service_id:"));
-    assert!(attrs.contains(&"method_id:"));
+    assert!(fields.contains(&"service_id"));
+    assert!(fields.contains(&"method_id"));
 }

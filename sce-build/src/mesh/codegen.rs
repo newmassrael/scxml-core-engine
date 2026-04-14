@@ -17,7 +17,7 @@
 
 use crate::filters;
 use crate::generator::{GeneratedOutput, Language};
-use crate::mesh::deploy::ZenohTransportConfig;
+use crate::mesh::deploy::{SomeipTransportConfig, ZenohTransportConfig};
 use crate::mesh::error::CodegenError;
 use crate::mesh::topology::ResolvedTarget;
 use crate::mesh::transport;
@@ -64,6 +64,10 @@ fn cpp_string_literal(s: &str) -> String {
 /// Each field is `None` when the corresponding deploy.yaml key is absent.
 /// When present, the value is a complete C++ quoted string whose runtime
 /// contents are a valid JSON5 fragment (produced by `serde_json`).
+///
+/// `config_file` references the external zenoh.json5 via `Config::from_file`
+/// at runtime (SCE_MESH.md §13, §14) — deploy.yaml-level overrides
+/// (mode/connect/listen) merge over the file.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 struct ZenohSessionJson5 {
     /// e.g. `"\"peer\""` (a C++ literal whose runtime value is `"peer"`).
@@ -71,6 +75,10 @@ struct ZenohSessionJson5 {
     /// e.g. `"[\"tcp/host:7447\"]"` as a C++ literal.
     connect: Option<String>,
     listen: Option<String>,
+    /// External zenoh.json5 path as a C++ string literal. When set, the
+    /// template emits `zenoh::Config::from_file(<this>)` as the base config;
+    /// mode/connect/listen are applied as overrides on top.
+    config_file: Option<String>,
 }
 
 impl ZenohSessionJson5 {
@@ -92,15 +100,54 @@ impl ZenohSessionJson5 {
         let listen_json = cfg.listen.as_ref().map(|endpoints| {
             serde_json::to_string(endpoints).expect("Vec<String> serialize is infallible")
         });
+        let config_file = cfg
+            .config
+            .as_ref()
+            .and_then(|p| p.to_str())
+            .map(cpp_string_literal);
         Self {
             mode: mode_json.as_deref().map(cpp_string_literal),
             connect: connect_json.as_deref().map(cpp_string_literal),
             listen: listen_json.as_deref().map(cpp_string_literal),
+            config_file,
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.mode.is_none() && self.connect.is_none() && self.listen.is_none()
+        self.mode.is_none()
+            && self.connect.is_none()
+            && self.listen.is_none()
+            && self.config_file.is_none()
+    }
+}
+
+/// Template context for SOME/IP device-shared configuration.
+///
+/// Currently carries only `application_name` — the vsomeip application
+/// identity that binds generated per-target `vsomeip::application`
+/// instances to an entry in `applications[*].name` inside vsomeip.json
+/// (SCE_MESH.md §13). The template uses it verbatim as the argument to
+/// `vsomeip::runtime::get()->create_application(<name>)`; when `None`
+/// the template falls back to the legacy `<machine>_<target>` default.
+///
+/// Pre-escaped as a complete C++ string literal so the template embeds
+/// it without manual escaping logic.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+struct SomeipTransportContext {
+    /// Complete C++ string literal of the application name, e.g. `"\"brake_app\""`.
+    /// `None` if deploy.yaml did not declare `application_name:`.
+    application_name: Option<String>,
+}
+
+impl SomeipTransportContext {
+    fn from_config(cfg: &SomeipTransportConfig) -> Self {
+        Self {
+            application_name: cfg.application_name.as_deref().map(cpp_string_literal),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.application_name.is_none()
     }
 }
 
@@ -154,13 +201,15 @@ struct EventPatternContext {
 
 /// Generate mesh transport code for a machine's resolved targets.
 ///
-/// `zenoh_session` is the validated device-shared Zenoh session config from
-/// `DeployConfig::topology[device].transports.zenoh`. Pass `None` when the
-/// device has no zenoh bindings or no zenoh `transports:` block.
+/// `zenoh_session` and `someip_config` come from the owning device's
+/// `transports:` block (`DeployConfig::topology[device].transports.*`).
+/// Each is `None` when the device has no binding of that transport, or
+/// when the corresponding `transports:` block is absent.
 pub fn generate_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
     zenoh_session: Option<&ZenohTransportConfig>,
+    someip_config: Option<&SomeipTransportConfig>,
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -169,7 +218,13 @@ pub fn generate_mesh(
     }
 
     match language {
-        Language::Cpp => generate_cpp_mesh(machine_name, targets, zenoh_session, template_base),
+        Language::Cpp => generate_cpp_mesh(
+            machine_name,
+            targets,
+            zenoh_session,
+            someip_config,
+            template_base,
+        ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
     }
 }
@@ -178,6 +233,7 @@ fn generate_cpp_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
     zenoh_session: Option<&ZenohTransportConfig>,
+    someip_config: Option<&SomeipTransportConfig>,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -265,6 +321,13 @@ fn generate_cpp_mesh(
         .map(|z| !z.is_empty())
         .unwrap_or(false);
 
+    // SOME/IP device-shared context (application_name). None collapses to
+    // empty so the template can treat "no someip config" and "someip config
+    // without application_name" identically — both fall back to the legacy
+    // `<machine>_<target>` default.
+    let someip_transport =
+        someip_config.map(SomeipTransportContext::from_config).filter(|s| !s.is_empty());
+
     let machine_pascal = filters::to_pascal_case(machine_name.to_string());
 
     let template_name = "mesh/cpp/mesh_transport.h.jinja2";
@@ -290,6 +353,7 @@ fn generate_cpp_mesh(
         transport_types => transport_types,
         zenoh_session_json5 => zenoh_session_json5,
         zenoh_session_json5_present => zenoh_session_json5_present,
+        someip_transport => someip_transport,
     };
 
     let code = tmpl

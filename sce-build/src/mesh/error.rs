@@ -147,16 +147,30 @@ pub enum ExternalConfigError {
         event_group: String,
     },
 
-    /// A binding declared a name-based reference (e.g. `service: motor`) but
-    /// the owning device did not declare `transports.someip.config:`. Without
-    /// the config file path there is no way to resolve the name.
+    /// A SOME/IP binding declared a name-based reference (e.g. `service: motor`)
+    /// but the owning device did not declare `transports.someip.config:`.
+    /// Without the config file path there is no way to resolve the name.
     #[error("machine '{machine}': binding '{target}' uses name-based SOME/IP references \
              but device '{device}' does not declare 'transports.someip.config:'. \
              Add the vsomeip.json path to the device's transports block.")]
-    MissingConfigReference {
+    NamedReferenceWithoutConfig {
         machine: String,
         device: String,
         target: String,
+    },
+
+    /// A binding whose `transport:` is not `someip` carries SOME/IP-only
+    /// name-based fields (`service`, `method`, `event_group`, `getter`,
+    /// `setter`). Catches misconfigured deploy.yaml at build time instead
+    /// of silently ignoring the fields.
+    #[error("machine '{machine}': binding '{target}' uses transport '{transport}' but \
+             declares SOME/IP-only fields {fields:?}. Either change the transport to 'someip' \
+             or remove the SOME/IP-specific fields.")]
+    SomeipFieldOnNonSomeipTransport {
+        machine: String,
+        target: String,
+        transport: String,
+        fields: Vec<&'static str>,
     },
 }
 

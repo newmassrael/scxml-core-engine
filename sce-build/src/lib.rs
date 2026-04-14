@@ -644,9 +644,9 @@ pub struct MeshResult {
     pub output: generator::GeneratedOutput,
     /// Dynamic target warnings (targetexpr cannot be statically resolved).
     pub dynamic_target_warnings: Vec<mesh::topology::TopologyWarning>,
-    /// Deprecation warnings from Stage 1 tolerations (inline SOME/IP IDs,
-    /// etc.). Promoted to hard errors in Session E1 Stage 2.
-    pub deprecation_warnings: Vec<crate::diagnostics::DeprecationWarning>,
+    /// Deploy.yaml deprecation warnings from Stage 1 tolerations (inline
+    /// SOME/IP IDs, etc.). Promoted to hard errors in Session E1 Stage 2.
+    pub deprecation_warnings: Vec<crate::diagnostics::DeployDeprecationWarning>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -736,18 +736,19 @@ pub fn compile_mesh_transport(
         .into());
     }
 
-    // Stage 3: transport codegen. Device-shared Zenoh session config is read
-    // directly from the device's `transports.zenoh` block; no merging/
-    // validation pass is needed because the schema makes shared config
-    // structurally singular.
-    let zenoh_session = deploy_cfg
-        .device_for_machine(&model.name)
-        .and_then(|d| d.transports.zenoh.as_ref());
+    // Stage 3: transport codegen. Device-shared transport configs are read
+    // directly from the device's `transports:` block; no merging/validation
+    // pass is needed because the schema makes shared config structurally
+    // singular (one entry per transport type per device).
+    let device = deploy_cfg.device_for_machine(&model.name);
+    let zenoh_session = device.and_then(|d| d.transports.zenoh.as_ref());
+    let someip_config = device.and_then(|d| d.transports.someip.as_ref());
     let template_base = find_template_base();
     let output = mesh::codegen::generate_mesh(
         &model.name,
         &resolved,
         zenoh_session,
+        someip_config,
         language,
         &template_base,
     )?;

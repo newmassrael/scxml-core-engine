@@ -20,13 +20,13 @@
 //
 // Stage 1 deprecation (SCE_MESH.md §13, §14): bindings may carry inline
 // numeric IDs (`service_id: "0x1234"`) alongside name-based references.
-// Inline IDs are tolerated but emit a `DeprecationWarning`; a name-based
-// reference that resolves takes precedence over an inline value.
+// Inline IDs are tolerated but emit a `DeployDeprecationWarning`; a
+// name-based reference that resolves takes precedence over an inline value.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::diagnostics::DeprecationWarning;
+use crate::diagnostics::DeployDeprecationWarning;
 use crate::mesh::deploy::{BindingConfig, DeployConfig};
 use crate::mesh::error::{ExternalConfigError, UnresolvedName};
 use crate::mesh::target::TargetId;
@@ -44,7 +44,7 @@ const KEY_GETTER_ID: &str = "getter_id";
 const KEY_SETTER_ID: &str = "setter_id";
 
 /// Deploy.yaml inline numeric ID keys that are Stage 1 deprecated.
-/// Each appears in a `DeprecationWarning` when encountered.
+/// Each appears in a `DeployDeprecationWarning` when encountered.
 const DEPRECATED_INLINE_IDS: &[&str] = &[
     KEY_SERVICE_ID,
     KEY_INSTANCE_ID,
@@ -58,9 +58,9 @@ const DEPRECATED_INLINE_IDS: &[&str] = &[
 /// Result of the external-config resolution stage.
 #[derive(Debug)]
 pub struct ExternalResolution {
-    /// Deprecation warnings for inline numeric IDs and other Stage 1
-    /// tolerations. Surfaced on `MeshResult` for CLI emission.
-    pub deprecation_warnings: Vec<DeprecationWarning>,
+    /// Deploy.yaml deprecation warnings for inline numeric IDs and other
+    /// Stage 1 tolerations. Surfaced on `MeshResult` for CLI emission.
+    pub deprecation_warnings: Vec<DeployDeprecationWarning>,
 }
 
 /// Resolve all name-based external references in `deploy_cfg` in place.
@@ -101,6 +101,7 @@ pub fn resolve_external_bindings(
 
             // First collect deprecation warnings (read-only, borrow-safe).
             collect_inline_id_deprecations(
+                device_name,
                 machine_name,
                 &machine.bindings,
                 &mut deprecation_warnings,
@@ -109,11 +110,12 @@ pub fn resolve_external_bindings(
             for (target, binding) in machine.bindings.iter_mut() {
                 if binding.transport != "someip" {
                     // Only SOME/IP currently uses name-based resolution.
-                    // Zenoh bindings are resolved at runtime from zenoh.json5;
-                    // other transports have no external config concept.
-                    ensure_no_stray_someip_names(
+                    // Zenoh bindings resolve their key expression at runtime;
+                    // other transports have no external config concept. If a
+                    // non-someip binding carries SOME/IP-only fields that is
+                    // a deploy.yaml bug — catch it here.
+                    reject_someip_fields_on_foreign_transport(
                         machine_name,
-                        device_name,
                         target,
                         binding,
                     )?;
@@ -123,14 +125,14 @@ pub fn resolve_external_bindings(
                 let needs_resolution = binding_uses_named_references(binding);
                 if !needs_resolution {
                     // All-inline binding — Stage 1 deprecation path. The
-                    // DeprecationWarning was already recorded above; nothing
-                    // to resolve.
+                    // DeployDeprecationWarning was already recorded above;
+                    // nothing to resolve.
                     continue;
                 }
 
                 // Resolution needed → device must declare transports.someip.config.
                 let (config_path, someip) = someip_cache.get(device_name).ok_or_else(|| {
-                    ExternalConfigError::MissingConfigReference {
+                    ExternalConfigError::NamedReferenceWithoutConfig {
                         machine: machine_name.clone(),
                         device: device_name.clone(),
                         target: target.as_str().to_string(),
@@ -174,47 +176,75 @@ fn binding_uses_named_references(binding: &BindingConfig) -> bool {
         || binding.setter.is_some()
 }
 
-/// Non-SOME/IP bindings must not carry SOME/IP-only name-based fields —
-/// catches misconfigured deploy.yaml at build time instead of letting the
-/// values be silently ignored by the template.
-fn ensure_no_stray_someip_names(
+/// Non-SOME/IP bindings must not carry SOME/IP-only name-based fields.
+/// The correction is transport-specific (either switch to SOME/IP or drop
+/// the fields), which is semantically different from "declare a config
+/// path" — hence its own error variant.
+fn reject_someip_fields_on_foreign_transport(
     machine: &str,
-    device: &str,
     target: &TargetId,
     binding: &BindingConfig,
 ) -> Result<(), ExternalConfigError> {
-    if binding_uses_named_references(binding) {
-        // Reuse MissingConfigReference's shape for the diagnostic — the
-        // correction path is the same ("declare transports.someip.config
-        // or remove the SOME/IP-only fields").
-        return Err(ExternalConfigError::MissingConfigReference {
-            machine: machine.to_string(),
-            device: device.to_string(),
-            target: target.as_str().to_string(),
-        });
+    if !binding_uses_named_references(binding) {
+        return Ok(());
     }
-    Ok(())
+    let mut fields: Vec<&'static str> = Vec::new();
+    if binding.service.is_some() {
+        fields.push("service");
+    }
+    if binding.method.is_some() {
+        fields.push("method");
+    }
+    if binding.event_group.is_some() {
+        fields.push("event_group");
+    }
+    if binding.getter.is_some() {
+        fields.push("getter");
+    }
+    if binding.setter.is_some() {
+        fields.push("setter");
+    }
+    Err(ExternalConfigError::SomeipFieldOnNonSomeipTransport {
+        machine: machine.to_string(),
+        target: target.as_str().to_string(),
+        transport: binding.transport.clone(),
+        fields,
+    })
 }
 
-/// Record a `DeprecationWarning` for every Stage 1 inline numeric ID
-/// present on any binding of this machine. Deduplicated by (target, key)
-/// so a single deploy.yaml does not spam N identical warnings.
+/// Format the deploy.yaml path of a specific binding field for diagnostics.
+fn binding_path(device: &str, machine: &str, target: &TargetId, field: &str) -> String {
+    format!(
+        "topology.{device}.machines.{machine}.bindings[{target}].{field}",
+        target = target.as_str()
+    )
+}
+
+/// Record a deploy-layer deprecation warning for every Stage 1 inline
+/// numeric ID present on any binding of this machine.
+///
+/// Warnings are emitted one per (binding, field) occurrence so a reader
+/// can locate each site exactly. Deduplication across bindings is not
+/// needed — a deploy.yaml with N inline IDs genuinely has N migration
+/// targets.
 fn collect_inline_id_deprecations(
+    device: &str,
     machine: &str,
     bindings: &HashMap<TargetId, BindingConfig>,
-    out: &mut Vec<DeprecationWarning>,
+    out: &mut Vec<DeployDeprecationWarning>,
 ) {
     for (target, binding) in bindings {
         for &key in DEPRECATED_INLINE_IDS {
             if binding.extra.contains_key(key) {
-                out.push(DeprecationWarning {
-                    attribute: format!("{key}:"),
-                    event: Some(format!("{machine} {target}")),
-                    reason: format!(
-                        "inline SOME/IP numeric IDs are deprecated (SCE_MESH.md §13). \
-                         Replace with name-based reference (e.g. `service:`, `method:`) \
-                         and declare `transports.someip.config:` at the device level."
-                    ),
+                out.push(DeployDeprecationWarning {
+                    field: key.to_string(),
+                    location: binding_path(device, machine, target, key),
+                    reason: "inline SOME/IP numeric IDs are deprecated \
+                             (SCE_MESH.md §13). Replace with a name-based \
+                             reference (e.g. `service:`, `method:`) and \
+                             declare `transports.someip.config:` at the \
+                             device level."
+                        .to_string(),
                 });
             }
         }
@@ -223,13 +253,16 @@ fn collect_inline_id_deprecations(
 
 /// Resolve the name-based references on a single binding by mutating
 /// `binding.extra`. Unresolved names are appended to `missing` (not
-/// returned) so all mismatches for a machine are batched.
+/// returned) so all mismatches for a machine are batched. `machine`,
+/// `target`, and `config_path` are threaded through because the
+/// event-group diagnostics (`EmptyEventGroup`, `AmbiguousEventGroup`)
+/// need all three to point at the exact failure site in vsomeip.json.
 fn resolve_binding_names(
-    _machine: &str,
-    _target: &TargetId,
+    machine: &str,
+    target: &TargetId,
     binding: &mut BindingConfig,
     someip: &VsomeipConfig,
-    _config_path: &Path,
+    config_path: &Path,
     missing: &mut Vec<UnresolvedName>,
 ) -> Result<(), ExternalConfigError> {
     // Service → service_id + instance_id. Without a service there is
@@ -318,9 +351,9 @@ fn resolve_binding_names(
                 match eg.events.len() {
                     0 => {
                         return Err(ExternalConfigError::EmptyEventGroup {
-                            machine: _machine.to_string(),
-                            target: _target.as_str().to_string(),
-                            config_path: _config_path.display().to_string(),
+                            machine: machine.to_string(),
+                            target: target.as_str().to_string(),
+                            config_path: config_path.display().to_string(),
                             event_group: name.to_string(),
                         });
                     }
@@ -329,9 +362,9 @@ fn resolve_binding_names(
                     }
                     n => {
                         return Err(ExternalConfigError::AmbiguousEventGroup {
-                            machine: _machine.to_string(),
-                            target: _target.as_str().to_string(),
-                            config_path: _config_path.display().to_string(),
+                            machine: machine.to_string(),
+                            target: target.as_str().to_string(),
+                            config_path: config_path.display().to_string(),
                             event_group: name.to_string(),
                             count: n,
                         });
@@ -583,11 +616,11 @@ topology:
 "##;
         let mut deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
         match resolve_external_bindings(&mut deploy, Path::new(".")) {
-            Err(ExternalConfigError::MissingConfigReference { device, target, .. }) => {
+            Err(ExternalConfigError::NamedReferenceWithoutConfig { device, target, .. }) => {
                 assert_eq!(device, "ecu1");
                 assert_eq!(target, "#motor");
             }
-            other => panic!("expected MissingConfigReference, got {other:?}"),
+            other => panic!("expected NamedReferenceWithoutConfig, got {other:?}"),
         }
     }
 
@@ -612,14 +645,24 @@ topology:
         let res = resolve_external_bindings(&mut deploy, Path::new(".")).expect("resolve");
         // One warning per inline key
         assert_eq!(res.deprecation_warnings.len(), 3);
-        let attrs: Vec<_> = res
+        let fields: Vec<_> = res
             .deprecation_warnings
             .iter()
-            .map(|w| w.attribute.as_str())
+            .map(|w| w.field.as_str())
             .collect();
-        assert!(attrs.contains(&"service_id:"));
-        assert!(attrs.contains(&"instance_id:"));
-        assert!(attrs.contains(&"method_id:"));
+        assert!(fields.contains(&"service_id"));
+        assert!(fields.contains(&"instance_id"));
+        assert!(fields.contains(&"method_id"));
+        // Location string includes the full YAML path for operator diagnostics.
+        let locations: Vec<_> = res
+            .deprecation_warnings
+            .iter()
+            .map(|w| w.location.clone())
+            .collect();
+        assert!(
+            locations.iter().all(|l| l.contains("topology.ecu1.machines.brake.bindings[#motor]")),
+            "every warning should carry the YAML location: {locations:?}"
+        );
     }
 
     #[test]
@@ -662,11 +705,20 @@ topology:
           "#motor":
             transport: zenoh
             service: motor_control
+            method: compute_force
 "##;
         let mut deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
         match resolve_external_bindings(&mut deploy, Path::new(".")) {
-            Err(ExternalConfigError::MissingConfigReference { .. }) => {}
-            other => panic!("expected MissingConfigReference, got {other:?}"),
+            Err(ExternalConfigError::SomeipFieldOnNonSomeipTransport {
+                transport,
+                fields,
+                ..
+            }) => {
+                assert_eq!(transport, "zenoh");
+                assert!(fields.contains(&"service"));
+                assert!(fields.contains(&"method"));
+            }
+            other => panic!("expected SomeipFieldOnNonSomeipTransport, got {other:?}"),
         }
     }
 

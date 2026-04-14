@@ -448,7 +448,18 @@ struct TransportRouter {
 {%-   elif target.transport == "shm" %}
 {%-     set ns.parts = ns.parts + [target.target_snake ~ "_(SHM_CHANNEL_" ~ (target.target_snake | upper) ~ ", " ~ target.target_pascal ~ "ShmChannel::Mode::Create)"] %}
 {%-   elif target.transport == "someip" %}
-{%-     set ns.parts = ns.parts + [target.target_snake ~ "_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_" ~ target.target_snake ~ "\"))"] %}
+{#-     Application identity: deploy.yaml `transports.someip.application_name`
+        (when present) MUST match an `applications[*].name` in vsomeip.json
+        (SCE_MESH.md §13). Fallback is the legacy `<machine>_<target>` — an
+        auto-generated identity kept for tests that predate the external
+        config integration. `someip_transport.application_name` is a
+        pre-escaped C++ string literal, so the template can drop it into the
+        ctor call verbatim with no further escaping. #}
+{%-     if someip_transport and someip_transport.application_name %}
+{%-       set ns.parts = ns.parts + [target.target_snake ~ "_app_(vsomeip::runtime::get()->create_application(" ~ someip_transport.application_name ~ "))"] %}
+{%-     else %}
+{%-       set ns.parts = ns.parts + [target.target_snake ~ "_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_" ~ target.target_snake ~ "\"))"] %}
+{%-     endif %}
 {%-   endif %}
 {%- endfor %}
 {%- if ns.parts %}
@@ -548,9 +559,18 @@ struct TransportRouter {
 {% endfor %}
 {% if "zenoh" in transport_types %}
         try {
+{# Base config comes from an external zenoh.json5 (SCE_MESH.md §13) when
+   `transports.zenoh.config:` is declared; otherwise the zenoh defaults.
+   `zenoh::Config::from_file` throws `zenoh::ZException` on IO/parse failure;
+   the surrounding `try` below converts this to `init()` returning false. #}
+{% if zenoh_session_json5 and zenoh_session_json5.config_file %}
+            auto config = zenoh::Config::from_file({{ zenoh_session_json5.config_file }});
+{% else %}
             auto config = zenoh::Config::create_default();
+{% endif %}
 {# Session config literals are pre-escaped in Rust (codegen::cpp_string_literal). #}
-{# The template inserts them verbatim — no manual C++/JSON escaping here. #}
+{# The template inserts them verbatim — no manual C++/JSON escaping here.      #}
+{# deploy.yaml overrides merge OVER the external file's values.                #}
 {% if zenoh_session_json5 and zenoh_session_json5.mode %}
             config.insert_json5("mode", {{ zenoh_session_json5.mode }});
 {% endif %}
