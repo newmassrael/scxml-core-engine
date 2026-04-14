@@ -21,8 +21,7 @@ use crate::mesh::deploy::{SomeipTransportConfig, ZenohTransportConfig};
 use crate::mesh::error::CodegenError;
 use crate::mesh::topology::ResolvedTarget;
 use crate::mesh::transport;
-use std::collections::BTreeSet;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 // ── JSON5 → C++ string literal escaping ──────────────────────
@@ -164,6 +163,75 @@ struct SomeipServiceLiterals {
     instance_id: String,
 }
 
+/// Per-target transport-specific state, formatted for the template.
+///
+/// Mirrors [`crate::mesh::topology::TransportState`] but with values
+/// pre-rendered for direct emission: SOME/IP IDs become `0xNNNN` hex
+/// strings, capacity tunables retain their `Option<u32>` so the template's
+/// `| default(...)` filter still produces the legacy fallback constants.
+///
+/// `tag = "kind"` lets the template dispatch on
+/// `target.state.kind == "local" | "shm" | "someip" | "zenoh"` instead of
+/// the deprecated `target.transport == "..."` string. The `Unimplemented`
+/// variant never reaches the template because codegen rejects unsupported
+/// transports up front.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TargetStateView {
+    Local,
+    Shm {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        arena_bytes: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ring_capacity: Option<u32>,
+    },
+    Someip {
+        service: SomeipServiceLiterals,
+        // Always serialize as an object so the template can probe
+        // optional members like `target.state.extra.protocol` with
+        // `is defined` even when the binding declared no passthrough
+        // keys. Skipping an empty map would make the parent undefined
+        // and the probe would error instead of falling back to default.
+        extra: HashMap<String, serde_yaml_ng::Value>,
+    },
+    Zenoh {
+        key: String,
+        extra: HashMap<String, serde_yaml_ng::Value>,
+    },
+}
+
+impl TargetStateView {
+    /// Translate the topology-level [`TransportState`] into a template-ready
+    /// view. The `Unimplemented` variant is unreachable here because
+    /// codegen rejects unsupported transports at the registry-lookup stage
+    /// before any target reaches this function.
+    fn from_topology(state: &crate::mesh::topology::TransportState) -> Self {
+        use crate::mesh::topology::TransportState;
+        match state {
+            TransportState::Local => Self::Local,
+            TransportState::Shm { arena_bytes, ring_capacity } => Self::Shm {
+                arena_bytes: *arena_bytes,
+                ring_capacity: *ring_capacity,
+            },
+            TransportState::Someip { service, extra, .. } => Self::Someip {
+                service: SomeipServiceLiterals {
+                    service_id: fmt_someip_id(service.service_id),
+                    instance_id: fmt_someip_id(service.instance_id),
+                },
+                extra: extra.clone(),
+            },
+            TransportState::Zenoh { key, extra } => Self::Zenoh {
+                key: key.clone(),
+                extra: extra.clone(),
+            },
+            TransportState::Unimplemented { transport_name } => unreachable!(
+                "TargetStateView::from_topology: unimplemented transport '{transport_name}' \
+                 should have been rejected by the registry-lookup stage in generate_cpp_mesh"
+            ),
+        }
+    }
+}
+
 /// Template context for a single resolved send target.
 /// `target` uses `TargetId` directly — `#[serde(transparent)]` makes the
 /// wire form identical to a bare string, so Jinja2 sees `"#motor"` with no
@@ -175,13 +243,11 @@ struct TargetContext {
     target_snake: String,
     target_pascal: String,
     events: Vec<String>,
-    transport: String,
-    extra: HashMap<String, serde_yaml_ng::Value>,
-    /// Typed SOME/IP service identity. Present only when `transport ==
-    /// "someip"` — template dispatches on `{% if target.someip_service %}`
-    /// rather than probing `extra.service_id`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    someip_service: Option<SomeipServiceLiterals>,
+    /// Tagged transport state — the template branches on
+    /// `target.state.kind` and reads typed payload fields off the
+    /// matching variant. Replaces the legacy `transport: String` +
+    /// `extra` + `someip_service` triple.
+    state: TargetStateView,
     /// Emit a per-target field in TransportRouter and a matching ctor
     /// initializer? Data-driven — removes transport-name hardcoding from
     /// the template's field/ctor sections.
@@ -368,16 +434,17 @@ fn generate_cpp_mesh(
     //   - Known but not implemented (capabilities known, no template yet)
     // Both fail here at the Rust level — no deferred C++ #error.
     for t in targets {
-        match transport::lookup(&t.transport) {
+        let name = t.state.transport_name();
+        match transport::lookup(name) {
             None => {
                 return Err(CodegenError::UnsupportedTransport {
-                    transport: t.transport.clone(),
+                    transport: name.to_string(),
                     target: t.target.clone(),
                 });
             }
             Some(desc) if !desc.implemented => {
                 return Err(CodegenError::UnsupportedTransport {
-                    transport: t.transport.clone(),
+                    transport: name.to_string(),
                     target: t.target.clone(),
                 });
             }
@@ -422,18 +489,31 @@ fn generate_cpp_mesh(
         .iter()
         .map(|t| {
             let stripped = t.target.name();
-            let desc = transport::lookup(&t.transport).expect("transport validated");
+            let desc = transport::lookup(t.state.transport_name())
+                .expect("transport validated");
+
+            // Per-event SOME/IP IDs live inside `TransportState::Someip`.
+            // Non-someip variants have no per-event ID map, so the lookup
+            // collapses to `None` and the template's discriminator branch
+            // never reads the (still-`None`) ID slots.
+            let event_bindings_view: Option<&BTreeMap<String, super::topology::SomeipEventIds>> =
+                match &t.state {
+                    super::topology::TransportState::Someip { event_bindings, .. } => {
+                        Some(event_bindings)
+                    }
+                    _ => None,
+                };
 
             let event_patterns: Vec<EventPatternContext> = t
                 .event_patterns
                 .iter()
                 .map(|ep| {
-                    // Per-event SOME/IP IDs come from `event_bindings`,
-                    // populated by `topology::finalize_targets`. For
-                    // non-someip targets `event_bindings` is empty; for
-                    // someip targets every detected event has an entry
-                    // (topology validation enforces this before codegen).
-                    let ctx_ids = t.event_bindings.get(&ep.event).map(event_ids_to_template);
+                    // Per-event SOME/IP IDs come from `event_bindings` on
+                    // the `Someip` variant. Topology validation enforces
+                    // one entry per detected event before codegen runs.
+                    let ctx_ids = event_bindings_view
+                        .and_then(|bs| bs.get(&ep.event))
+                        .map(event_ids_to_template);
                     let (field_kind, method_id, event_group_id, event_id, getter_id, setter_id) =
                         ctx_ids.unwrap_or_default();
                     EventPatternContext {
@@ -481,12 +561,7 @@ fn generate_cpp_mesh(
                 target_snake: filters::to_snake_case(stripped.to_string()),
                 target_pascal: filters::to_pascal_case(stripped.to_string()),
                 events: t.events.clone(),
-                transport: t.transport.clone(),
-                extra: t.extra.clone(),
-                someip_service: t.someip_service.map(|s| SomeipServiceLiterals {
-                    service_id: fmt_someip_id(s.service_id),
-                    instance_id: fmt_someip_id(s.instance_id),
-                }),
+                state: TargetStateView::from_topology(&t.state),
                 has_per_target_field: desc.shape.has_per_target_field,
                 event_patterns,
                 has_rpc,
@@ -497,8 +572,14 @@ fn generate_cpp_mesh(
         })
         .collect();
 
+    // Discriminator names directly off the typed state — same SSOT the
+    // template uses for `target.state.kind`. Sourcing this from
+    // `TransportState::transport_name` (instead of the deprecated
+    // `ResolvedTarget::transport: String`) guarantees the per-transport
+    // include / shared-resource blocks in the template see exactly the
+    // set of variants the per-target dispatch will emit code for.
     let transport_types: BTreeSet<&str> =
-        target_contexts.iter().map(|t| t.transport.as_str()).collect();
+        targets.iter().map(|t| t.state.transport_name()).collect();
 
     // Pre-escape Zenoh session config into C++ string literals so the template
     // never constructs literals by string concatenation.

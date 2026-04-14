@@ -187,16 +187,16 @@ pub enum TransportState {
         /// rejects builds where this invariant is violated.
         event_bindings: BTreeMap<String, SomeipEventIds>,
         /// Non-typed passthrough (e.g. `protocol: udp/tcp`). Reserved
-        /// SOME/IP ID keys are stripped upstream.
-        #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+        /// SOME/IP ID keys are stripped upstream. Always serialised as
+        /// an object so consumers can probe `extra.<key>` with `is
+        /// defined` even on empty bindings.
         extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     },
     /// Zenoh pub/sub. The key expression is mandatory.
     Zenoh {
         /// Zenoh key expression (`brake/cmd`, etc).
         key: String,
-        /// Non-typed passthrough.
-        #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+        /// Non-typed passthrough. Always serialised (see Someip::extra).
         extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     },
     /// Recognised in the registry but not yet implemented (dds, can, …).
