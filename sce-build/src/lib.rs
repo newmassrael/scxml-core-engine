@@ -658,8 +658,8 @@ pub struct MeshResult {
 ///      `mode: pier` are rejected here, before any topology work).
 ///   1b. Resolve external infrastructure config (SCE_MESH.md §13):
 ///       load each device's vsomeip.json and resolve name-based binding
-///       references into numeric IDs before topology runs. Inline numeric
-///       IDs are rejected (hard error — Session E1 Stage 2).
+///       references into numeric IDs before topology runs. Reserved
+///       SOME/IP ID key names in deploy.yaml are hard errors here.
 ///   2. Collect <send> targets from the model (single pass)
 ///   2a. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
 ///   2b. Resolve targets against deploy.yaml bindings

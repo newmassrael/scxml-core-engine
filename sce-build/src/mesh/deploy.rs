@@ -240,9 +240,11 @@ impl EventBinding {
 ///
 /// `extra` uses `serde(flatten)` for per-target transport-native keys not
 /// covered by the explicit fields (e.g. zenoh `key:`, someip `protocol:`,
-/// shm arena/ring settings). Inline SOME/IP numeric IDs (`service_id:`,
-/// `method_id:`, …) are recognised here as keys but are rejected at the
-/// external-resolution stage (`ExternalConfigError::LegacyInlineIds`).
+/// shm arena/ring settings). The SOME/IP numeric-ID key names
+/// (`service_id:`, `method_id:`, …) land in `extra` at parse time but are
+/// reserved and rejected by the external-resolution stage
+/// (`ExternalConfigError::ReservedSomeipIdKeys`) — numeric IDs come from
+/// `transports.someip.config:` (vsomeip.json), referenced by name.
 /// Device-shared session keys live on `DeviceConfig::transports`, not here.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BindingConfig {
@@ -280,9 +282,11 @@ pub struct BindingConfig {
     #[serde(default)]
     pub events: BTreeMap<String, EventBinding>,
 
-    /// Per-target transport-native settings passed through to templates.
-    /// Holds both non-typed fields (zenoh `key:`, someip `protocol:`) and
-    /// the Stage 1 deprecated inline numeric IDs (`service_id:`, etc.).
+    /// Per-target transport-native settings passed through to templates
+    /// (zenoh `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
+    /// Reserved SOME/IP ID key names are collected here at parse time but
+    /// rejected by the external-resolution stage — see
+    /// `ExternalConfigError::ReservedSomeipIdKeys`.
     #[serde(flatten)]
     pub extra: HashMap<String, serde_yaml_ng::Value>,
 }

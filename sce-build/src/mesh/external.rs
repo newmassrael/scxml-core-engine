@@ -19,10 +19,9 @@
 // single `UnresolvedNames` error per machine so operators see every
 // mismatch at once.
 //
-// Inline numeric IDs (`service_id: "0x1234"`, `method_id:`, …) were
-// tolerated during Session E1 Stage 1 as a migration aid. They are now
-// rejected outright: deploy.yaml must reference names and let sce-build
-// resolve against vsomeip.json.
+// deploy.yaml never declares SOME/IP numeric IDs directly — the key names
+// `service_id`, `method_id`, etc. are reserved and rejected here.
+// Numeric IDs come from vsomeip.json, referenced by name.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -33,10 +32,12 @@ use crate::mesh::target::TargetId;
 use crate::mesh::topology::{BindingDefaultIds, SomeipEventIds, SomeipServiceIds};
 use crate::mesh::vsomeip_config::{Service, VsomeipConfig};
 
-/// Deploy.yaml inline numeric ID keys that were tolerated in Stage 1 and
-/// are now hard-rejected. Kept as a grep-locatable list so the rejection
-/// site and the diagnostic list the same keys.
-const REJECTED_INLINE_IDS: &[&str] = &[
+/// deploy.yaml key names reserved for SOME/IP numeric IDs. These are
+/// never user-facing — the IDs come from vsomeip.json, referenced by
+/// name. Any occurrence in `BindingConfig.extra` is rejected as
+/// [`ExternalConfigError::ReservedSomeipIdKeys`]. Kept as a
+/// grep-locatable list so rejection site and diagnostic stay in sync.
+const RESERVED_SOMEIP_ID_KEYS: &[&str] = &[
     "service_id",
     "instance_id",
     "method_id",
@@ -56,13 +57,15 @@ const REJECTED_INLINE_IDS: &[&str] = &[
 /// defaults) — it stays a loose [`BindingDefaultIds`] and is projected
 /// per-event by `finalize_targets`. `default.is_empty()` means no flat
 /// sugar was declared.
-#[derive(Debug, Clone, Default)]
+///
+/// `service_ids` is non-optional: a binding for which `service:` does not
+/// resolve never lands in [`ExternalResolution::bindings`] in the first
+/// place (the failure is recorded as [`UnresolvedName`] and the build
+/// fails with [`ExternalConfigError::UnresolvedNames`]). So topology can
+/// read `service_ids` directly without a probe.
+#[derive(Debug, Clone)]
 pub struct PerBindingResolution {
-    /// Typed SOME/IP service identity produced by name-based resolution of
-    /// `service:` against vsomeip.json. Every SOME/IP binding must declare
-    /// `service:` (inline `service_id:` is rejected) so this is always
-    /// populated for SOME/IP targets reaching topology.
-    pub service_ids: Option<SomeipServiceIds>,
+    pub service_ids: SomeipServiceIds,
     pub by_event: BTreeMap<String, SomeipEventIds>,
     pub default: BindingDefaultIds,
 }
@@ -112,10 +115,10 @@ pub fn resolve_external_bindings(
             let mut missing: Vec<UnresolvedName> = Vec::new();
 
             for (target, binding) in machine.bindings.iter() {
-                // Hard-reject the Stage 1 legacy inline numeric IDs before
+                // Reject the reserved SOME/IP numeric-ID key names before
                 // any other validation so the diagnostic names the exact
                 // keys instead of surfacing as "service: missing" downstream.
-                reject_legacy_inline_ids(machine_name, target, binding)?;
+                reject_reserved_id_keys(machine_name, target, binding)?;
 
                 if binding.transport != "someip" {
                     // Only SOME/IP currently uses name-based resolution.
@@ -159,17 +162,22 @@ pub fn resolve_external_bindings(
                     }
                 })?;
 
-                let per_binding = resolve_binding(
+                // `resolve_binding` only emits an entry when `service:`
+                // actually resolves; an unresolved service pushes a
+                // `UnresolvedName` into `missing` and the entire machine
+                // fails below with a batched diagnostic.
+                if let Some(per_binding) = resolve_binding(
                     machine_name,
                     target,
                     binding,
                     someip,
                     config_path.as_path(),
                     &mut missing,
-                )?;
-                result
-                    .bindings
-                    .insert((machine_name.clone(), target.clone()), per_binding);
+                )? {
+                    result
+                        .bindings
+                        .insert((machine_name.clone(), target.clone()), per_binding);
+                }
             }
 
             if !missing.is_empty() {
@@ -263,16 +271,17 @@ fn reject_someip_fields_on_foreign_transport(
     })
 }
 
-/// Reject any Stage 1 legacy inline numeric ID on a binding. The entire
-/// SOME/IP identity must now go through name-based references against
-/// vsomeip.json (SCE_MESH.md §14). Lists every offending key on the
-/// binding in one error so the operator fixes them all in one pass.
-fn reject_legacy_inline_ids(
+/// Reject the reserved SOME/IP numeric-ID key names on a binding. The
+/// SOME/IP identity goes through name-based references against
+/// vsomeip.json (SCE_MESH.md §14); numeric keys in deploy.yaml have no
+/// defined meaning. Lists every offending key in one error so the
+/// operator fixes them all in one pass.
+fn reject_reserved_id_keys(
     machine: &str,
     target: &TargetId,
     binding: &BindingConfig,
 ) -> Result<(), ExternalConfigError> {
-    let offenders: Vec<&'static str> = REJECTED_INLINE_IDS
+    let offenders: Vec<&'static str> = RESERVED_SOMEIP_ID_KEYS
         .iter()
         .copied()
         .filter(|k| binding.extra.contains_key(*k))
@@ -280,9 +289,10 @@ fn reject_legacy_inline_ids(
     if offenders.is_empty() {
         return Ok(());
     }
-    Err(ExternalConfigError::LegacyInlineIds {
+    Err(ExternalConfigError::ReservedSomeipIdKeys {
         machine: machine.to_string(),
         target: target.as_str().to_string(),
+        transport: binding.transport.clone(),
         fields: offenders,
     })
 }
@@ -295,7 +305,14 @@ fn reject_legacy_inline_ids(
 ///      OR flat sugar (`method:` / `event_group:` / ...) → one
 ///      [`BindingDefaultIds`] that topology fans out to matching events.
 ///
-/// Unresolved names go into `missing` for batched reporting.
+/// Unresolved names go into `missing` for batched reporting. If `service:`
+/// itself does not resolve the function returns `Ok(None)`: without a
+/// service identity there is nothing meaningful for topology to consume,
+/// and the unresolved-service record in `missing` will surface as a
+/// [`ExternalConfigError::UnresolvedNames`] at the end of the outer loop.
+/// Event-level names are still pushed into `missing` in this failure case
+/// so the operator sees every mismatch in one error instead of fixing
+/// them round by round.
 fn resolve_binding(
     machine: &str,
     target: &TargetId,
@@ -303,21 +320,15 @@ fn resolve_binding(
     someip: &VsomeipConfig,
     config_path: &Path,
     missing: &mut Vec<UnresolvedName>,
-) -> Result<PerBindingResolution, ExternalConfigError> {
+) -> Result<Option<PerBindingResolution>, ExternalConfigError> {
     // Service → service_id + instance_id. Without a service there is
-    // nothing for method/event_group/getter/setter to hang off, so the
-    // per-event resolutions short-circuit when service is unset or
-    // unresolved (still recording the unresolved-method as missing for
-    // batched reporting).
+    // nothing for method/event_group/getter/setter to hang off; per-event
+    // resolutions still run so every unresolved name is batched into
+    // `missing` for one consolidated error.
     let service_ref = resolve_service(binding, someip, missing);
 
-    let mut out = PerBindingResolution {
-        service_ids: service_ref.map(|svc| SomeipServiceIds {
-            service_id: svc.service,
-            instance_id: svc.instance,
-        }),
-        ..Default::default()
-    };
+    let mut by_event: BTreeMap<String, SomeipEventIds> = BTreeMap::new();
+    let mut default = BindingDefaultIds::default();
 
     if !binding.events.is_empty() {
         // Per-event path (spec canonical). Each entry is expected to set
@@ -333,7 +344,7 @@ fn resolve_binding(
                 service_ref,
                 missing,
             )? {
-                out.by_event.insert(event_name.clone(), ids);
+                by_event.insert(event_name.clone(), ids);
             }
             // An entry with no field set (`events.foo: {}`) is user error
             // but harmless: nothing lands in `by_event`; topology will
@@ -353,7 +364,7 @@ fn resolve_binding(
             getter: binding.getter.clone(),
             setter: binding.setter.clone(),
         };
-        out.default = resolve_event_binding_to_default(
+        default = resolve_event_binding_to_default(
             machine,
             target,
             config_path,
@@ -364,7 +375,17 @@ fn resolve_binding(
         )?;
     }
 
-    Ok(out)
+    // Only emit a resolution entry when the service identity is real —
+    // `PerBindingResolution.service_ids` is a non-Option so the type
+    // expresses the invariant "service is resolved if we have a record".
+    Ok(service_ref.map(|svc| PerBindingResolution {
+        service_ids: SomeipServiceIds {
+            service_id: svc.service,
+            instance_id: svc.instance,
+        },
+        by_event,
+        default,
+    }))
 }
 
 /// Resolve `binding.service` against vsomeip.json and return the matching
@@ -648,7 +669,7 @@ topology:
         let per_binding = res.bindings.get(&key).expect("binding resolution");
         assert_eq!(
             per_binding.service_ids,
-            Some(SomeipServiceIds { service_id: 0x1234, instance_id: 0x0001 })
+            SomeipServiceIds { service_id: 0x1234, instance_id: 0x0001 },
         );
 
         // Per-event IDs live on the resolution map's `default` slot
@@ -885,11 +906,11 @@ topology:
     }
 
     #[test]
-    fn inline_ids_are_rejected_as_legacy() {
-        // Post Session E1 Stage 2: the Stage 1 tolerance for inline SOME/IP
-        // numeric IDs is gone. A deploy.yaml carrying them fails resolution
-        // with a diagnostic naming every offending key so the operator
-        // migrates them all in one edit.
+    fn reserved_someip_id_keys_rejected() {
+        // deploy.yaml does not declare SOME/IP numeric IDs directly — the
+        // names are reserved and the resolution layer rejects them with a
+        // diagnostic naming every offending key so the operator fixes
+        // them in one edit.
         let yaml = r##"
 version: "1.0"
 topology:
@@ -906,13 +927,13 @@ topology:
 "##;
         let deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
         match resolve_external_bindings(&deploy, Path::new(".")) {
-            Err(ExternalConfigError::LegacyInlineIds { fields, target, .. }) => {
+            Err(ExternalConfigError::ReservedSomeipIdKeys { fields, target, .. }) => {
                 assert_eq!(target, "#motor");
                 assert!(fields.contains(&"service_id"));
                 assert!(fields.contains(&"instance_id"));
                 assert!(fields.contains(&"method_id"));
             }
-            other => panic!("expected LegacyInlineIds, got {other:?}"),
+            other => panic!("expected ReservedSomeipIdKeys, got {other:?}"),
         }
     }
 

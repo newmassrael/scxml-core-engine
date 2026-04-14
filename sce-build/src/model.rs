@@ -133,13 +133,11 @@ pub struct Action {
     #[serde(default)]
     pub is_kt_function: bool,
 
-    // SCE_MESH.md §13 — mesh metadata is no longer carried on individual
+    // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name
     // conventions (mesh::pattern), RPC reply pairing is inferred from
     // topology structure (mesh::topology::detect_rpc_pairs), and QoS is
-    // a transport binding concern (deploy.yaml). The previous
-    // mesh_qos/mesh_pattern/mesh_reply_event fields were removed in
-    // Session E1.
+    // a transport binding concern (deploy.yaml).
 }
 
 /// W3C SCXML if/elseif branch

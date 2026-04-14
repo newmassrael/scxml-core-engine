@@ -924,12 +924,12 @@ impl SCXMLParser {
         }
 
         // SCE_MESH.md §13 path B — SCXML purity: sce:qos / sce:pattern /
-        // sce:reply-event attributes on <send> are no longer part of the
-        // mesh model. Pattern is inferred from event-name conventions
-        // (pattern.rs) and RPC reply pairing from topology structure.
-        // Stage 1: the attributes are tolerated, a structured warning is
-        // recorded on the parser, and the values are dropped. Stage 2
-        // (Session E1 finalization) promotes these to hard errors.
+        // sce:reply-event attributes on <send> are not part of the mesh
+        // model. Pattern is inferred from event-name conventions
+        // (pattern.rs) and RPC reply pairing from topology structure. The
+        // attributes are tolerated here with a structured deprecation
+        // warning so third-party documents that still carry them can be
+        // migrated gradually; the values are dropped.
         use crate::forge::model::SCE_NAMESPACE;
         let _ = model; // deprecation notices live on the parser, not the model
         for deprecated_attr in ["qos", "pattern", "reply-event"] {

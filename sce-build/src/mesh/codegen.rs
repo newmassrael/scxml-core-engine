@@ -128,7 +128,9 @@ impl ZenohSessionJson5 {
 /// instances to an entry in `applications[*].name` inside vsomeip.json
 /// (SCE_MESH.md §13). The template uses it verbatim as the argument to
 /// `vsomeip::runtime::get()->create_application(<name>)`; when `None`
-/// the template falls back to the legacy `<machine>_<target>` default.
+/// the template falls back to the synthetic `<machine>_<target>` name so
+/// test fixtures that predate the external-config integration keep
+/// compiling without a vsomeip.json on the side.
 ///
 /// Pre-escaped as a complete C++ string literal so the template embeds
 /// it without manual escaping logic.
@@ -507,9 +509,9 @@ fn generate_cpp_mesh(
         .unwrap_or(false);
 
     // SOME/IP device-shared context (application_name). None collapses to
-    // empty so the template can treat "no someip config" and "someip config
-    // without application_name" identically — both fall back to the legacy
-    // `<machine>_<target>` default.
+    // empty so the template treats "no someip config" and "someip config
+    // without application_name" identically — both fall back to the
+    // synthetic `<machine>_<target>` name.
     let someip_transport =
         someip_config.map(SomeipTransportContext::from_config).filter(|s| !s.is_empty());
 

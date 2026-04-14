@@ -292,7 +292,7 @@ impl fmt::Display for PatternViolation {
 mod tests {
     use super::*;
 
-    // ── detect_pattern (convention-only, post-Session E1) ──
+    // ── detect_pattern (convention-only) ──────────────────
 
     #[test]
     fn detect_exact_service_request() {

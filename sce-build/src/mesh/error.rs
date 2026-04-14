@@ -159,17 +159,22 @@ pub enum ExternalConfigError {
         target: String,
     },
 
-    /// deploy.yaml carries inline numeric IDs (`service_id: "0x1234"`,
-    /// `method_id:`, …) that were tolerated during Session E1 Stage 1 and
-    /// are now rejected. Every SOME/IP identity must resolve through
-    /// `service:` + `events:` (or flat sugar) against vsomeip.json.
-    #[error("machine '{machine}': binding '{target}' uses inline SOME/IP numeric IDs \
-             {fields:?}. These were deprecated in Session E1 and are no longer accepted. \
-             Move the identity into `transports.someip.config:` (vsomeip.json) and \
-             reference it by name (`service:`, `events.*.method:`, …). See SCE_MESH.md §14.")]
-    LegacyInlineIds {
+    /// A binding declares a reserved SOME/IP numeric-ID key (`service_id`,
+    /// `method_id`, `event_group_id`, `event_id`, `getter_id`, `setter_id`,
+    /// `instance_id`). These key names are reserved: SOME/IP numeric IDs
+    /// come from the external vsomeip.json, not from deploy.yaml. The keys
+    /// are rejected on every transport — they never had a meaning on
+    /// non-SOME/IP transports, and on SOME/IP they are replaced by
+    /// name-based references (`service:`, `events.*.method:`, …) that
+    /// resolve against `transports.someip.config:`. See SCE_MESH.md §14.
+    #[error("machine '{machine}': binding '{target}' (transport: {transport}) uses \
+             reserved SOME/IP numeric-ID key(s) {fields:?}. deploy.yaml does not declare \
+             numeric IDs directly — for SOME/IP bindings reference names against \
+             `transports.someip.config:` (vsomeip.json); on other transports remove these keys.")]
+    ReservedSomeipIdKeys {
         machine: String,
         target: String,
+        transport: String,
         fields: Vec<&'static str>,
     },
 

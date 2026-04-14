@@ -393,7 +393,7 @@ fn application_name_from_deploy_yaml_reaches_generated_code() {
     // SCE_MESH.md §13: `transports.someip.application_name` binds the
     // generated vsomeip::application to an entry in vsomeip.json's
     // applications[*].name. The template must use that literal instead
-    // of the legacy `<machine>_<target>` default.
+    // of the synthetic `<machine>_<target>` fallback.
     let fx = Fixture::new("appname");
     fx.write("vsomeip.json", VSOMEIP_JSON);
     fx.write("brake.scxml", BRAKE_SCXML);
@@ -411,7 +411,7 @@ fn application_name_from_deploy_yaml_reaches_generated_code() {
     );
     assert!(
         !code.contains(r#"create_application("brake_motor")"#),
-        "legacy `<machine>_<target>` default must NOT appear when \
+        "synthetic `<machine>_<target>` fallback must NOT appear when \
          application_name is declared: {code}"
     );
 }
@@ -471,14 +471,14 @@ topology:
 }
 
 #[test]
-fn inline_numeric_ids_rejected_as_legacy() {
-    // Post Session E1 Stage 2: the Stage 1 tolerance for inline SOME/IP
-    // numeric IDs is gone. A deploy.yaml shaped like the old Session C
-    // fixture fails resolution outright, listing every offending key.
-    let fx = Fixture::new("legacy_inline");
+fn reserved_someip_id_keys_rejected_by_compile() {
+    // deploy.yaml does not declare SOME/IP numeric IDs directly — the
+    // names `service_id`, `method_id`, etc. are reserved and rejected
+    // with a single diagnostic listing every offending key.
+    let fx = Fixture::new("reserved_keys");
     fx.write("brake.scxml", BRAKE_SCXML);
     fx.write("motor.scxml", MOTOR_SCXML);
-    let legacy = r##"
+    let yaml = r##"
 version: "1.0"
 topology:
   ecu1:
@@ -495,21 +495,21 @@ topology:
       motor:
         source: motor.scxml
 "##;
-    let deploy_path = fx.write("deploy.yaml", legacy);
+    let deploy_path = fx.write("deploy.yaml", yaml);
 
     let model = parse_brake();
     let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
-        Ok(_) => panic!("legacy inline IDs must be rejected"),
+        Ok(_) => panic!("reserved SOME/IP ID keys must be rejected"),
         Err(e) => e,
     };
     match err {
-        MeshError::External(ExternalConfigError::LegacyInlineIds { fields, target, .. }) => {
+        MeshError::External(ExternalConfigError::ReservedSomeipIdKeys { fields, target, .. }) => {
             assert_eq!(target, "#motor");
             assert!(fields.contains(&"service_id"));
             assert!(fields.contains(&"instance_id"));
             assert!(fields.contains(&"method_id"));
         }
-        other => panic!("expected LegacyInlineIds, got {other}"),
+        other => panic!("expected ReservedSomeipIdKeys, got {other}"),
     }
 }
 

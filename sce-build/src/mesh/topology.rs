@@ -104,14 +104,14 @@ pub struct BindingDefaultIds {
 /// Binding-level SOME/IP service identity (SCE_MESH.md §14). Populated
 /// by name-based resolution of `service:` against vsomeip.json in
 /// `external.rs`; inline `service_id:`/`instance_id:` are rejected
-/// outright (see [`ExternalConfigError::LegacyInlineIds`]).
+/// outright (see [`ExternalConfigError::ReservedSomeipIdKeys`]).
 ///
 /// Held as a typed field on [`ResolvedTarget`] rather than probed out of
 /// the untyped `extra` map at codegen time; this keeps `extra` reserved
 /// for genuinely opaque transport-native passthrough keys.
 ///
-/// [`ExternalConfigError::LegacyInlineIds`]:
-///     crate::mesh::error::ExternalConfigError::LegacyInlineIds
+/// [`ExternalConfigError::ReservedSomeipIdKeys`]:
+///     crate::mesh::error::ExternalConfigError::ReservedSomeipIdKeys
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub struct SomeipServiceIds {
     pub service_id: u16,
@@ -159,11 +159,9 @@ pub struct ResolvedTarget {
     pub transport: String,
     /// Transport-native configuration from deploy.yaml binding.
     ///
-    /// Reserved for keys the template treats as opaque (e.g. zenoh `key:`,
-    /// someip `protocol:`, shm capacity tunables, plus the Stage 1 inline
-    /// numeric IDs that `extra_someip_service_ids` hoists out). SOME/IP
-    /// identity is NOT stored here after resolution — see
-    /// [`ResolvedTarget::someip_service`].
+    /// Reserved for keys the template treats as opaque (zenoh `key:`,
+    /// someip `protocol:`, shm capacity tunables, …). SOME/IP identity
+    /// lives on [`ResolvedTarget::someip_service`], not here.
     pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     /// Typed SOME/IP service identity (`service_id` + `instance_id`).
     /// `Some` for every `transport == "someip"` target after resolution;
@@ -659,7 +657,8 @@ pub(crate) fn finalize_targets(
 
     for pt in partials {
         let (someip_service, event_bindings) = if pt.transport == "someip" {
-            resolve_someip_ids(&pt, machine_name, external)?
+            let (svc, ev) = resolve_someip_ids(&pt, machine_name, external)?;
+            (Some(svc), ev)
         } else {
             (None, BTreeMap::new())
         };
@@ -680,37 +679,34 @@ pub(crate) fn finalize_targets(
 
 /// Per-target someip resolution: service identity + per-event IDs.
 ///
-/// Every SOME/IP binding that reaches topology has already passed through
-/// `external::resolve_external_bindings`, so `per_binding` is always
-/// populated with a resolved `service_ids` and a (possibly empty)
-/// per-event map. The only way a binding reaches here without one is
-/// `transport == "someip"` with no `service:` and no `events:`, which
-/// external rejects outright with `NamedReferenceWithoutConfig`.
+/// Invariants established by `external::resolve_external_bindings`:
+///  * Every SOME/IP target that reached this stage has an entry in
+///    `external.bindings` — targets without `service:` or `events:` are
+///    rejected upstream as `NamedReferenceWithoutConfig`; targets whose
+///    `service:` fails to resolve are filtered out and surface as
+///    `UnresolvedNames`.
+///  * `PerBindingResolution.service_ids` is typed (non-Option) — if the
+///    binding reaches topology the service identity is always concrete.
+///
+/// The two defensive `Err(MissingBindingField)` branches this function
+/// used to emit are therefore unreachable; `unreachable!` pins the
+/// invariant in the type system rather than hiding it behind a
+/// convincing-looking error path.
 fn resolve_someip_ids(
     pt: &PartialTarget,
     machine_name: &str,
     external: &super::external::ExternalResolution,
-) -> Result<(Option<SomeipServiceIds>, BTreeMap<String, SomeipEventIds>), TopologyError> {
+) -> Result<(SomeipServiceIds, BTreeMap<String, SomeipEventIds>), TopologyError> {
     let key = (machine_name.to_string(), pt.target.clone());
-    let per_binding = external.bindings.get(&key).ok_or_else(|| {
-        TopologyError::MissingBindingField {
-            machine: machine_name.to_string(),
-            target: pt.target.clone(),
-            transport: pt.transport.clone(),
-            field: "service".to_string(),
-        }
-    })?;
+    let per_binding = external.bindings.get(&key).unwrap_or_else(|| {
+        unreachable!(
+            "someip target '{}' for machine '{machine_name}' has no ExternalResolution entry; \
+             external::resolve_external_bindings should have rejected it upstream",
+            pt.target.as_str(),
+        )
+    });
 
     let someip_service = per_binding.service_ids;
-    if someip_service.is_none() {
-        return Err(TopologyError::MissingBindingField {
-            machine: machine_name.to_string(),
-            target: pt.target.clone(),
-            transport: pt.transport.clone(),
-            field: "service".to_string(),
-        });
-    }
-
     let default_ids = &per_binding.default;
     let mut event_bindings: BTreeMap<String, SomeipEventIds> = BTreeMap::new();
 
@@ -928,8 +924,7 @@ pub fn validate_event_coverage(
 
 // SCE_MESH.md §13 path B: QoS is a transport binding concern (declared in
 // deploy.yaml or external config such as vsomeip.json), not a per-<send>
-// SCXML annotation. The earlier sce:qos intent/consistency validator was
-// removed with the attribute in Session E1.
+// SCXML annotation — so there is no `sce:qos` consistency validator here.
 
 
 // ── Pattern capability validation ────────────────────────────

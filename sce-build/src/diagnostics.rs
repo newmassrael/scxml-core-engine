@@ -6,8 +6,8 @@
 // Kept out of `model.rs` on purpose: `SCXMLModel` is a rendering/codegen
 // domain model that survives into every template context, while
 // diagnostics are parse-pass artifacts with a different lifecycle and
-// audience. Co-locating them here also gives CLI, build.rs, and future
-// Stage 2 enforcement a single place to look for notice types.
+// audience. Co-locating them here gives the CLI and build.rs a single
+// place to look for notice types.
 
 use std::fmt;
 
@@ -15,14 +15,12 @@ use std::fmt;
 
 /// A build-time deprecation notice emitted by the SCXML parser when it
 /// encounters a syntactic construct that has been removed by the spec but
-/// is still tolerated for a migration window (Stage 1: warn + ignore;
-/// Stage 2: promote to hard error). Kept structured — never `eprintln!` —
-/// so consumers can filter, group, or promote uniformly.
+/// is still tolerated for a migration window. Kept structured — never
+/// `eprintln!` — so consumers can filter, group, or promote uniformly.
 ///
-/// Scope: SCXML document attributes (e.g. `sce:qos` on `<send>`). deploy.yaml
-/// deprecations are hard errors starting at Session E1 Stage 2 (see
-/// `mesh::error::ExternalConfigError::LegacyInlineIds`) and do not pass
-/// through this type.
+/// Scope: SCXML document attributes (e.g. `sce:qos` on `<send>`).
+/// deploy.yaml configuration errors are typed directly on
+/// `mesh::error::ExternalConfigError` and do not pass through here.
 #[derive(Debug, Clone)]
 pub struct DeprecationWarning {
     /// The attribute name, qualified with its namespace prefix
