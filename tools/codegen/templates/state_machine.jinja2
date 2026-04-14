@@ -276,7 +276,7 @@ struct {{ model.name }}Policy {
     {% if model.needs_script_engine %}
     mutable bool scriptEngineInitialized_ = false;
     {% endif %}
-    {% if model.has_hybrid_invoke or model.invokes | scxml %}
+    {% if model.invokes | scxml or model.invokes | hybrid %}
     // W3C SCXML 6.4: Source SCXML file path for child invoke resolution
     // Required for resolving relative child SCXML paths (e.g., "subflow.scxml")
     mutable ::std::string scxmlSourcePath_ = "{{ model.scxml_source_path | replace('\\', '\\\\') }}";

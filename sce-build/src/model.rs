@@ -440,8 +440,6 @@ pub struct SCXMLModel {
     pub has_dynamic_expressions: bool,
     pub has_parallel_states: bool,
     pub has_history_states: bool,
-    pub has_invoke: bool,
-    pub has_hybrid_invoke: bool,
     pub has_event_metadata: bool,
     pub has_parent_communication: bool,
     pub has_child_communication: bool,
@@ -549,10 +547,21 @@ impl State {
 
 impl SCXMLModel {
     /// True iff any state declares a static [`Invoke::Scxml`]. The
+    /// True iff any state in the model declares any `<invoke>` of any kind
+    /// ([`Invoke::Scxml`], [`Invoke::Hybrid`], or [`Invoke::MeshRpc`]).
+    /// Replaces the legacy `has_invoke: bool` field.
+    pub fn has_invoke(&self) -> bool {
+        self.states.values().any(|s| !s.invokes.is_empty())
+    }
     /// True iff any state in the model declares a static [`Invoke::Scxml`].
     /// Computed from states — no cached flag duplicates the truth.
     pub fn has_scxml_invoke(&self) -> bool {
         self.states.values().any(|s| s.has_scxml_invoke())
+    }
+    /// True iff any state in the model declares a hybrid [`Invoke::Hybrid`].
+    /// Replaces the legacy `has_hybrid_invoke: bool` field.
+    pub fn has_hybrid_invoke(&self) -> bool {
+        self.states.values().any(|s| s.has_hybrid_invoke())
     }
     /// Iterate every static-SCXML invoke across all states in document order.
     /// Replaces the legacy flat `model.static_invokes` read by the codegen

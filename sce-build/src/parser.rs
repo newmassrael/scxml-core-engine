@@ -517,7 +517,6 @@ impl SCXMLParser {
             // directly; unsupported classifications are skipped silently.
             for invoke_elem in scxml_children(&child, "invoke") {
                 if let Some(invoke) = self.parse_invoke(&invoke_elem, model, &state_id) {
-                    model.has_invoke = true;
                     state.invokes.push(invoke);
                 }
             }
@@ -1141,7 +1140,6 @@ impl SCXMLParser {
         let is_hybrid_invoke = scxml_type && (!srcexpr.is_empty() || !contentexpr.is_empty());
 
         if is_hybrid_invoke {
-            model.has_hybrid_invoke = true;
             model.needs_script_engine = true;
             let idx = self.hybrid_invoke_counter;
             self.hybrid_invoke_counter += 1;
