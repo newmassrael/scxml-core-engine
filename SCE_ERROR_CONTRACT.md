@@ -10,6 +10,16 @@ defined in [§8 Evolution Policy](#8-evolution-policy). The on-disk
 enforcement is `forge::diagnostic::tests::diagnostic_goldens_are_byte_stable`
 — a byte-level golden check that fires on any accidental drift.
 
+## 0. Counterpart documents
+
+- **Positive-form acceptance spec**: `docs/SCE_ACCEPTED_SUBSET.md`
+  enumerates the SCXML subset SCE accepts and partitions every
+  `DiagnosticCode` into author-preventable (acceptance boundary) vs
+  I/O / infrastructure (diagnostic-only). Adding a new `DiagnosticCode`
+  variant without listing it there fails the
+  `acceptance_doc_covers_every_code` test. Read it together with this
+  contract when deciding whether a new rejection signal is earned.
+
 ## 1. Streams
 
 | Stream | Content |
