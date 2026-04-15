@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Receiver counterpart for brake_invoke's mesh-rpc invoke. Exposes a
+     transition for the request event name so the sender's event-coverage
+     validator accepts the <send>. No bindings on this machine — the
+     fixture verifies sender-side transport emission only. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="motor_invoke" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="ready"/>
+    </state>
+</scxml>

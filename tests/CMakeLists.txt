@@ -1340,6 +1340,66 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_compile_verification COMMAND mesh_compile_test)
 
+    # ── SCE_MESH §9.5: <invoke type="sce:mesh-rpc"> plumbing verification ──
+    # Byte-golden regression for `invoke_sites` threading from analyzer
+    # through codegen::TargetContext into the transport template. A drop of
+    # that plumbing (e.g. TargetContext field removed) yields a router
+    # without invokeMeshRpc / cancelMeshRpc — this test fails to link.
+    set(MESH_INVOKE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_invoke_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_INVOKE_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/brake_invoke.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh: Generating brake_invoke_sm.h (§9.5 invoke)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/motor_invoke.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh: Generating motor_invoke_sm.h (§9.5 invoke receiver)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
+        DEPENDS "${MESH_TEST_DIR}/brake_invoke.scxml" "${MESH_TEST_DIR}/deploy_invoke.yaml"
+                "${MESH_TEST_DIR}/motor_invoke.scxml"
+                "${SCE_CODEGEN}" "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+        COMMENT "Mesh: Generating brake_invoke_transport.h (§9.5 invoke plumbing)"
+        VERBATIM
+    )
+
+    add_executable(mesh_invoke_compile_test
+        mesh/test_mesh_invoke_compile.cpp
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
+    )
+
+    target_include_directories(mesh_invoke_compile_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_INVOKE_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_invoke_compile_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_invoke_compile_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_invoke_compile_test)
+
+    add_test(NAME mesh_invoke_compile_verification COMMAND mesh_invoke_compile_test)
+
     # ── Phase 2: shm_transport compile verification ──────────────
     set(MESH_SHM_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_shm_generated")
 
