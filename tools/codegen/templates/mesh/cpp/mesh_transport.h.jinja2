@@ -503,12 +503,15 @@ struct TransportRouter {
    "is this the first entry?" state machine) makes the ":" / "," layout
    structurally correct for every transport mix — no fixture matrix
    needed to prove the combinatorics. New transports add a single
-   `ns.parts` append; separator logic is a fixed `join(", ")`. #}
+   `ns.parts` append; separator logic is a fixed `join(", ")`.
+
+   Order MUST mirror the member declaration order above (D1 → D2b), or
+   GCC `-Wreorder` (part of `-Wall`) fails compilation at `-Werror`
+   whenever the ctor is actually synthesized for a concrete engine type.
+   Declarations run per-target-fields first, then `sender_`, so the
+   initializers do the same. #}
 {%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v -%}
 {%- set ns = namespace(parts=[]) %}
-{%- if emit_sender %}
-{%-   set ns.parts = ns.parts + ["sender_(sender)"] %}
-{%- endif %}
 {%- for target in targets if target.has_per_target_field %}
 {%-   if target.state.kind == "local" %}
 {%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.target_snake ~ ")"] %}
@@ -529,6 +532,9 @@ struct TransportRouter {
 {%-     endif %}
 {%-   endif %}
 {%- endfor %}
+{%- if emit_sender %}
+{%-   set ns.parts = ns.parts + ["sender_(sender)"] %}
+{%- endif %}
 {%- if ns.parts %}
         : {{ ns.parts | join(", ") }}
 {%- endif %}
