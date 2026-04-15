@@ -1720,7 +1720,6 @@ impl SCXMLParser {
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{Located, ValidationError};
-        use crate::forge::model::ForgeKind;
         for child in root.children().filter(|n| n.is_element()) {
             let is_sce_context =
                 child.tag_name().namespace() == Some("urn:sce:extensions")
@@ -1745,12 +1744,7 @@ impl SCXMLParser {
                 .to_string();
             if model.context_object_ids.contains(&ctx_id) {
                 return Err(Located::new(
-                    ValidationError::DuplicateId {
-                        kind: ForgeKind::Statechart,
-                        what: "sce:context".to_string(),
-                        id: ctx_id,
-                    }
-                    .into(),
+                    ValidationError::DuplicateContextObject { id: ctx_id }.into(),
                     source_name,
                     None,
                     None,
@@ -3381,6 +3375,7 @@ mod tests {
 
     #[test]
     fn error_duplicate_context_id() {
+        use crate::forge::error::{ForgeError, ValidationError};
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
                         xmlns:sce="urn:sce:extensions"
                         version="1.0" initial="s1">
@@ -3389,13 +3384,18 @@ mod tests {
             <state id="s1"/>
         </scxml>"#;
         let mut parser = SCXMLParser::new();
-        let result = parser.parse_string(scxml, "test");
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        let msg = err.to_string();
+        let err = parser
+            .parse_string(scxml, "test")
+            .expect_err("duplicate <sce:context id=\"hw\"> must fail validation");
         assert!(
-            msg.to_lowercase().contains("duplicate") && msg.contains("hw"),
-            "expected duplicate context error, got: {msg}"
+            matches!(
+                err.error,
+                ForgeError::Validation(
+                    ValidationError::DuplicateContextObject { ref id },
+                ) if id == "hw",
+            ),
+            "expected ValidationError::DuplicateContextObject(id=\"hw\"), got: {:?}",
+            err.error,
         );
     }
 

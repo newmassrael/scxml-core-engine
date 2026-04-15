@@ -186,6 +186,8 @@ pub enum DiagnosticCode {
     ValidationUnsupportedKind,
     #[serde(rename = "validation/duplicate-id")]
     ValidationDuplicateId,
+    #[serde(rename = "validation/duplicate-context-object")]
+    ValidationDuplicateContextObject,
     #[serde(rename = "validation/empty-collection")]
     ValidationEmptyCollection,
     #[serde(rename = "validation/count-mismatch")]
@@ -392,6 +394,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationInvalidAttribute,
         ValidationUnsupportedKind,
         ValidationDuplicateId,
+        ValidationDuplicateContextObject,
         ValidationEmptyCollection,
         ValidationCountMismatch,
         ValidationIncompatibleAttributes,
@@ -584,6 +587,7 @@ impl DiagnosticCode {
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationDuplicateId
+            | ValidationDuplicateContextObject
             | ValidationEmptyCollection
             | ValidationCountMismatch
             | ValidationIncompatibleAttributes
@@ -652,6 +656,7 @@ impl DiagnosticCode {
             ValidationInvalidAttribute => "validation/invalid-attribute",
             ValidationUnsupportedKind => "validation/unsupported-kind",
             ValidationDuplicateId => "validation/duplicate-id",
+            ValidationDuplicateContextObject => "validation/duplicate-context-object",
             ValidationEmptyCollection => "validation/empty-collection",
             ValidationCountMismatch => "validation/count-mismatch",
             ValidationIncompatibleAttributes => "validation/incompatible-attributes",
@@ -1021,6 +1026,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
                 id: id.clone(),
             }),
             key_fragments: vec![kind.to_string(), what.clone(), id.clone()],
+        },
+        ValidationError::DuplicateContextObject { id } => DiagnosticFields {
+            code: DiagnosticCode::ValidationDuplicateContextObject,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(id.clone()),
+            // `<sce:context>` is a document-wide scope, so the repair
+            // surface is identical to any other duplicate id — rename
+            // one of the declarations. `what` names the namespace so
+            // agents can disambiguate from state/field/event id reuse.
+            fix: Some(Fix::RenameDuplicate {
+                what: "sce:context id".to_string(),
+                id: id.clone(),
+            }),
+            key_fragments: vec![id.clone()],
         },
         ValidationError::EmptyCollection { kind, what } => DiagnosticFields {
             code: DiagnosticCode::ValidationEmptyCollection,
@@ -1802,6 +1822,7 @@ mod tests {
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationDuplicateId
+            | ValidationDuplicateContextObject
             | ValidationEmptyCollection
             | ValidationCountMismatch
             | ValidationIncompatibleAttributes

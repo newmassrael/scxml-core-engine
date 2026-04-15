@@ -201,6 +201,7 @@ references against a real document and drift silently.
 | `validation/invalid-attribute` | `validation` | `replace_one_of` | |
 | `validation/unsupported-kind` | `validation` | `replace_one_of` | SCE Forge §3.2 |
 | `validation/duplicate-id` | `validation` | `rename_duplicate` | |
+| `validation/duplicate-context-object` | `validation` | `rename_duplicate` | |
 | `validation/empty-collection` | `validation` | no | |
 | `validation/count-mismatch` | `validation` | no | |
 | `validation/incompatible-attributes` | `validation` | no | |

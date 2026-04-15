@@ -172,6 +172,14 @@ pub enum ValidationError {
         id: String,
     },
 
+    /// Duplicate `<sce:context id="...">` declaration. Orthogonal to
+    /// `DuplicateId` because `<sce:context>` is a document-wide
+    /// extension scope that can appear in any forge kind (a codec, a
+    /// procedure, a statechart) — keying its duplicate signal by
+    /// `ForgeKind` would be a semantic lie, so it gets its own variant.
+    #[error("duplicate <sce:context id=\"{id}\"> declaration")]
+    DuplicateContextObject { id: String },
+
     /// A required collection (fields, entries, states, …) is empty.
     /// e.g. "Codec kind requires at least one field with byte layout"
     #[error("{kind} kind requires at least one {what}")]
