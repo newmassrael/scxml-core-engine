@@ -253,7 +253,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (85 codes)
+## Appendix — `DiagnosticCode` index (86 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -356,6 +356,7 @@ or SCE-internal issues.
 | `generate/invalid-config` | Generate | SCE-internal codegen config |
 | `generate/template-load` | Generate | SCE template asset load failure |
 | `generate/template-render` | Generate | SCE template rendering failure |
+| `generate/unsupported-feature` | Generate | SCXML construct exists in the model but the requested target language has no codegen path for it (e.g. `<invoke type="sce:mesh-rpc">` with `--lang rust`) |
 | `io/filesystem` | Io | Generic filesystem failure |
 | `cli/read-input` | Cli | Input file read error |
 | `cli/write-output` | Cli | Output file write error |

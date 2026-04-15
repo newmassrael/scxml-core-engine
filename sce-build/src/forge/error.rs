@@ -391,6 +391,15 @@ pub enum GenerateError {
     /// Template rendering failure.
     #[error("template render error: {0}")]
     TemplateRender(String),
+
+    /// SCXML construct exists in the model but the requested target
+    /// language does not (yet) implement it. Distinct from
+    /// `InvalidConfig` because the model itself is well-formed — the
+    /// gap is in the codegen backend, and the message names both the
+    /// feature and the language so the operator can pick a different
+    /// `--lang` or wait on backend support.
+    #[error("feature unsupported in this language: {0}")]
+    UnsupportedFeature(String),
 }
 
 /// CLI exit code by error category.

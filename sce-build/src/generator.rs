@@ -86,10 +86,37 @@ pub(crate) fn render_error(e: minijinja::Error) -> GenerateError {
     GenerateError::TemplateRender(msg)
 }
 
+// ── Mesh-rpc backend gate ────────────────────────────────────────
+//
+// SCE_MESH.md §9.5 (`<invoke type="sce:mesh-rpc">`) only has codegen
+// emission in the C++ mesh templates today. Other backends parse the
+// invoke happily (the parser is language-agnostic) but produce no
+// transport routing for it — the state's onentry would silently
+// ignore the invoke at runtime, which is exactly the "fail clearly"
+// inversion CLAUDE.md forbids. This helper turns the silent skip
+// into an explicit codegen-time refusal so an operator who picks
+// the wrong `--lang` sees the gap immediately, not at runtime.
+fn reject_mesh_rpc_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: &'static str,
+) -> Result<(), GenerateError> {
+    if !model.has_mesh_rpc_invoke() {
+        return Ok(());
+    }
+    Err(GenerateError::UnsupportedFeature(format!(
+        "<invoke type=\"sce:mesh-rpc\"> in '{}' has no {} codegen path \
+         (mesh transport emission is currently C++-only). \
+         Either generate this machine for `--lang cpp` or remove the \
+         mesh-rpc invokes from the SCXML.",
+        model.name, language
+    )))
+}
+
 // ── Rust generator ───────────────────────────────────────────────
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_filters(&mut env);
@@ -101,6 +128,7 @@ pub fn generate_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_filters(&mut env);
@@ -228,6 +256,7 @@ fn render_cpp(
 
 /// Generate Kotlin code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_kotlin(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
@@ -240,6 +269,7 @@ pub fn generate_kotlin_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
@@ -426,6 +456,7 @@ impl minijinja::value::Object for KotlinDefaultFn {
 
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_go_filters(&mut env);
@@ -437,6 +468,7 @@ pub fn generate_go_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_go_filters(&mut env);
@@ -719,4 +751,92 @@ fn count_braces(line: &str, brace: char) -> i32 {
         prev = c;
     }
     count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::SCXMLParser;
+
+    /// Document with a single `<invoke type="sce:mesh-rpc">` site —
+    /// triggers `model.has_mesh_rpc_invoke()` and exercises the
+    /// rejection path on backends without mesh codegen.
+    const MESH_RPC_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake" initial="idle">
+  <state id="idle">
+    <invoke type="sce:mesh-rpc" src="#motor">
+      <param name="_mesh_event" expr="'service.request.compute_force'"/>
+    </invoke>
+  </state>
+</scxml>"##;
+
+    fn parse(content: &str) -> SCXMLModel {
+        let mut p = SCXMLParser::new();
+        p.parse_string(content, "brake").expect("parse")
+    }
+
+    /// SCE_MESH.md §9.5 mesh-rpc invokes only have a C++ codegen path
+    /// today. `generate` (Rust) MUST refuse — silent skipping would
+    /// hand the operator a state machine where an `<invoke>` quietly
+    /// does nothing at runtime.
+    #[test]
+    fn rust_generate_rejects_mesh_rpc_invoke() {
+        let model = parse(MESH_RPC_SCXML);
+        let templates: &[(&str, &str)] = &[];
+        let err = generate_with_templates(&model, templates).unwrap_err();
+        match err {
+            GenerateError::UnsupportedFeature(msg) => {
+                assert!(msg.contains("sce:mesh-rpc"), "msg names the feature: {msg}");
+                assert!(msg.contains("Rust"), "msg names the language: {msg}");
+                assert!(msg.contains("brake"), "msg names the machine: {msg}");
+            }
+            other => panic!("expected UnsupportedFeature, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn kotlin_generate_rejects_mesh_rpc_invoke() {
+        let model = parse(MESH_RPC_SCXML);
+        let templates: &[(&str, &str)] = &[];
+        let err = generate_kotlin_with_templates(&model, templates).unwrap_err();
+        assert!(matches!(err, GenerateError::UnsupportedFeature(_)));
+    }
+
+    #[test]
+    fn go_generate_rejects_mesh_rpc_invoke() {
+        let model = parse(MESH_RPC_SCXML);
+        let templates: &[(&str, &str)] = &[];
+        let err = generate_go_with_templates(&model, templates).unwrap_err();
+        assert!(matches!(err, GenerateError::UnsupportedFeature(_)));
+    }
+
+    /// Models without mesh-rpc invokes must NOT be rejected — the gate
+    /// is feature-specific, not a blanket non-C++ block.
+    #[test]
+    fn rust_generate_accepts_plain_scxml() {
+        let plain = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="plain" initial="s">
+  <state id="s"><transition event="e" target="s2"/></state>
+  <state id="s2"/>
+</scxml>"##;
+        let model = parse(plain);
+        // We only care that the gate doesn't reject; the actual
+        // template render needs the full template set, which this
+        // unit test deliberately omits to keep it focused. The gate
+        // runs FIRST, so its early-return on Ok(()) lets the call
+        // proceed to the (failing-without-templates) render path —
+        // any error here other than UnsupportedFeature proves the
+        // gate is not the blocker.
+        let templates: &[(&str, &str)] = &[];
+        match generate_with_templates(&model, templates) {
+            Err(GenerateError::UnsupportedFeature(_)) => {
+                panic!("plain SCXML must not trip the mesh-rpc gate")
+            }
+            // Anything else (Ok / template error / etc.) means the
+            // gate let the model through, which is the contract.
+            _ => {}
+        }
+    }
 }

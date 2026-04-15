@@ -61,6 +61,7 @@
         "generate/invalid-config",
         "generate/template-load",
         "generate/template-render",
+        "generate/unsupported-feature",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

@@ -347,6 +347,8 @@ pub enum DiagnosticCode {
     GenerateTemplateLoad,
     #[serde(rename = "generate/template-render")]
     GenerateTemplateRender,
+    #[serde(rename = "generate/unsupported-feature")]
+    GenerateUnsupportedFeature,
 
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
@@ -523,6 +525,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         GenerateInvalidConfig,
         GenerateTemplateLoad,
         GenerateTemplateRender,
+        GenerateUnsupportedFeature,
         // Io
         IoFilesystem,
         // Cli
@@ -703,6 +706,7 @@ impl DiagnosticCode {
             | GenerateInvalidConfig
             | GenerateTemplateLoad
             | GenerateTemplateRender
+            | GenerateUnsupportedFeature
             | IoFilesystem
             | CliUnknownLanguage
             | CliUnsupportedLanguage
@@ -783,6 +787,7 @@ impl DiagnosticCode {
             GenerateInvalidConfig => "generate/invalid-config",
             GenerateTemplateLoad => "generate/template-load",
             GenerateTemplateRender => "generate/template-render",
+            GenerateUnsupportedFeature => "generate/unsupported-feature",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -1422,6 +1427,14 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
+        GenerateError::UnsupportedFeature(detail) => DiagnosticPayload {
+            code: DiagnosticCode::GenerateUnsupportedFeature,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![detail.clone()],
+        },
     }
 }
 
@@ -2022,6 +2035,14 @@ mod tests {
                 GenerateError::TemplateRender("undefined variable `fields` at line 12".into())
                     .into(),
                 r#"{"v":1,"id":"fnv1a:98d75683f2764cff","code":"generate/template-render","stage":"generate","message":"template render error: undefined variable `fields` at line 12"}"#,
+            ),
+            (
+                "forge/generate-unsupported-feature",
+                GenerateError::UnsupportedFeature(
+                    "<invoke type=\"sce:mesh-rpc\"> in 'brake' has no Rust codegen path".into(),
+                )
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6d877591cf4360d3","code":"generate/unsupported-feature","stage":"generate","message":"feature unsupported in this language: <invoke type=\"sce:mesh-rpc\"> in 'brake' has no Rust codegen path"}"#,
             ),
             (
                 "forge/io-filesystem",
@@ -2718,6 +2739,7 @@ mod tests {
             | GenerateInvalidConfig
             | GenerateTemplateLoad
             | GenerateTemplateRender
+            | GenerateUnsupportedFeature
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -2975,7 +2997,8 @@ mod tests {
                 | ExpressionGoTernaryUnsupported | ImportFileNotFound
                 | ImportKindMismatch | ImportNotForge | ImportReadError
                 | ManifestCircularDependency | ManifestIo | GenerateInvalidConfig
-                | GenerateTemplateLoad | GenerateTemplateRender | IoFilesystem
+                | GenerateTemplateLoad | GenerateTemplateRender
+                | GenerateUnsupportedFeature | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
                 | CliMissingMetadataField | CliNotADirectory
@@ -3011,9 +3034,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            85,
+            86,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 85 distinct variants to match the DiagnosticCode \
+             expected 86 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }
