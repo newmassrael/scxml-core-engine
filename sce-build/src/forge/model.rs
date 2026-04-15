@@ -93,6 +93,24 @@ pub enum ForgeKind {
 }
 
 impl ForgeKind {
+    /// Every legal `sce:kind` attribute value, in declaration order.
+    /// Single source of truth for `from_attr()` and any diagnostic
+    /// that needs to surface the closed enumeration (e.g. the
+    /// `validation/unsupported-kind` candidate list).
+    pub const ALL_ATTR_NAMES: &'static [&'static str] = &[
+        "statechart",
+        "transform",
+        "lookup",
+        "condition",
+        "codec",
+        "procedure",
+        "validator",
+        "filter",
+        "interpolation",
+        "timer",
+        "observer",
+    ];
+
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
     pub fn from_attr(s: &str) -> Option<Self> {
         match s {

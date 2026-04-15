@@ -186,14 +186,21 @@ fn json_mode_covers_cli_boundary_errors() {
     assert_eq!(parsed["code"], "cli/unknown-language");
     assert_eq!(parsed["stage"], "cli");
     assert_eq!(parsed["v"].as_u64(), Some(1));
-    // `expected` lists the legal languages so an agent can fix
-    // without parsing the message.
+    // Candidate list rides `fix` — repair signals live in one place
+    // under the non-overlap rule (contract §3.2). `expected` must
+    // stay absent, or upstream agents would face two sources of
+    // truth for the same data.
     assert!(
-        parsed["expected"]
-            .as_array()
-            .map(|a| a.iter().any(|v| v == "rust"))
-            .unwrap_or(false),
-        "expected field missing or malformed: {line}"
+        parsed.get("expected").is_none(),
+        "expected must not duplicate fix.candidates: {line}"
+    );
+    assert_eq!(parsed["fix"]["kind"], "replace_one_of");
+    let candidates = parsed["fix"]["candidates"]
+        .as_array()
+        .expect("fix.candidates must be an array");
+    assert!(
+        candidates.iter().any(|v| v == "rust"),
+        "fix.candidates must include 'rust': {line}"
     );
 }
 

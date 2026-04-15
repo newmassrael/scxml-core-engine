@@ -21,7 +21,9 @@ use std::sync::OnceLock;
 
 use sce_build::analyzer;
 use sce_build::filters;
-use sce_build::forge::diagnostic::{Diagnostic, DiagnosticCode, Stage, ToDiagnostics, SCHEMA_VERSION};
+use sce_build::forge::diagnostic::{
+    Diagnostic, DiagnosticCode, Fix, Stage, ToDiagnostics, SCHEMA_VERSION,
+};
 use sce_build::forge::error::ForgeError;
 
 /// CLI-driver errors that do not originate in a compiler pipeline.
@@ -142,36 +144,44 @@ impl ToDiagnostics for CliError {
     }
 
     fn to_diagnostics(&self) -> Vec<Diagnostic> {
-        let (code, key, expected, actual) = match self {
+        // Per-variant extraction: `key` drives the content-hash id;
+        // `actual` / `fix` populate the corresponding diagnostic
+        // fields. `expected` is never populated from CLI errors —
+        // every case with a candidate list routes it through `fix`
+        // instead, keeping the two fields disjoint as required by
+        // the diagnostic contract.
+        let (code, key, actual, fix) = match self {
             CliError::UnknownLanguage { lang } => (
                 DiagnosticCode::CliUnknownLanguage,
                 vec![lang.clone()],
-                Some(vec!["rust".into(), "cpp".into(), "kotlin".into(), "go".into()]),
                 Some(lang.clone()),
+                Some(Fix::ReplaceOneOf {
+                    candidates: vec!["rust".into(), "cpp".into(), "kotlin".into(), "go".into()],
+                }),
             ),
             CliError::UnsupportedLanguage { lang } => (
                 DiagnosticCode::CliUnsupportedLanguage,
                 vec![lang.clone()],
-                None,
                 Some(lang.clone()),
+                None,
             ),
             CliError::ReadInput { path, .. } => (
                 DiagnosticCode::CliReadInput,
                 vec![path.clone()],
-                None,
                 Some(path.clone()),
+                None,
             ),
             CliError::WriteOutput { path, .. } => (
                 DiagnosticCode::CliWriteOutput,
                 vec![path.clone()],
-                None,
                 Some(path.clone()),
+                None,
             ),
             CliError::CreateOutputDir { path, .. } => (
                 DiagnosticCode::CliCreateOutputDir,
                 vec![path.clone()],
-                None,
                 Some(path.clone()),
+                None,
             ),
             CliError::ScxmlParse { detail } => (
                 DiagnosticCode::CliScxmlParse,
@@ -188,26 +198,28 @@ impl ToDiagnostics for CliError {
             CliError::DynamicFeatures { name } => (
                 DiagnosticCode::CliDynamicFeatures,
                 vec![name.clone()],
-                None,
                 Some(name.clone()),
+                None,
             ),
             CliError::MissingMetadataField { path } => (
                 DiagnosticCode::CliMissingMetadataField,
                 vec![path.clone()],
-                None,
                 Some(path.clone()),
+                None,
             ),
             CliError::NotADirectory { path } => (
                 DiagnosticCode::CliNotADirectory,
                 vec![path.clone()],
-                None,
                 Some(path.clone()),
+                None,
             ),
             CliError::InvalidFormatOption { value, expected } => (
                 DiagnosticCode::CliInvalidFormatOption,
                 vec![value.clone(), expected.clone()],
-                Some(expected.split('|').map(str::to_string).collect()),
                 Some(value.clone()),
+                Some(Fix::ReplaceOneOf {
+                    candidates: expected.split('|').map(str::to_string).collect(),
+                }),
             ),
             CliError::JsonSerialization { detail } => (
                 DiagnosticCode::CliJsonSerialization,
@@ -224,14 +236,14 @@ impl ToDiagnostics for CliError {
             CliError::FormatStyleNotFound { path } => (
                 DiagnosticCode::CliFormatStyleNotFound,
                 vec![path.clone()],
-                None,
                 Some(path.clone()),
+                None,
             ),
             CliError::NoScxmlTag { path } => (
                 DiagnosticCode::CliNoScxmlTag,
                 vec![path.clone()],
-                None,
                 Some(path.clone()),
+                None,
             ),
         };
         vec![Diagnostic {
@@ -242,9 +254,9 @@ impl ToDiagnostics for CliError {
             spec: None,
             message: self.to_string(),
             location: None,
-            expected,
+            expected: None,
             actual,
-            fix: None,
+            fix,
         }]
     }
 }

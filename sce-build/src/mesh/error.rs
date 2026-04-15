@@ -581,8 +581,12 @@ fn deploy_fields(e: &DeployError) -> MeshDiagFields {
             code: DiagnosticCode::MeshDeployUnsupportedVersion,
             stage: Stage::MeshDeploy,
             actual: Some(found.clone()),
-            expected: Some(supported.iter().map(|s| (*s).to_string()).collect()),
-            fix: None,
+            // Candidate list rides `fix`; `expected` stays None so the
+            // two fields never duplicate each other (contract §3.2).
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: supported.iter().map(|s| (*s).to_string()).collect(),
+            }),
             key: vec![found.clone()],
         },
         DeployError::DuplicateMachine { machine, devices } => MeshDiagFields {
@@ -634,6 +638,12 @@ fn external_fields(e: &ExternalConfigError) -> MeshDiagFields {
             code: DiagnosticCode::MeshExternalAmbiguousEventGroup,
             stage: Stage::MeshExternal,
             actual: Some(count.to_string()),
+            // Cardinality metadata: "exactly 1 match expected, got N".
+            // The `1` is not a substitution candidate for `count` —
+            // it describes the rule. No deterministic repair exists
+            // (the author must re-author the event_group mapping), so
+            // `fix` stays None and `expected` carries pure metadata,
+            // which is exactly what the non-overlap contract allows.
             expected: Some(vec!["1".to_string()]),
             fix: None,
             key: vec![machine.clone(), target.clone(), event_group.clone()],
@@ -678,8 +688,11 @@ fn external_fields(e: &ExternalConfigError) -> MeshDiagFields {
             code: DiagnosticCode::MeshExternalSomeipFieldOnNonSomeipTransport,
             stage: Stage::MeshExternal,
             actual: Some(transport.clone()),
-            expected: Some(vec!["someip".to_string()]),
-            fix: None,
+            // Single deterministic answer: the offending fields are
+            // SOME/IP-specific, so the only repair that preserves them
+            // is to switch the binding's transport to `someip`.
+            expected: None,
+            fix: Some(Fix::ReplaceWith { to: "someip".to_string() }),
             key: {
                 let mut k = vec![machine.clone(), target.clone(), transport.clone()];
                 k.extend(fields.iter().map(|f| (*f).to_string()));
@@ -739,8 +752,10 @@ fn topology_fields(e: &TopologyError) -> MeshDiagFields {
             code: DiagnosticCode::MeshTopologyMachineNotFound,
             stage: Stage::MeshTopology,
             actual: Some(machine.clone()),
-            expected: Some(available.clone()),
-            fix: None,
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: available.clone(),
+            }),
             key: vec![machine.clone()],
         },
         TopologyError::ReceiverNotDeclared { sender, target, receiver } => MeshDiagFields {
@@ -864,7 +879,12 @@ fn codegen_fields(e: &CodegenError) -> MeshDiagFields {
             stage: Stage::MeshCodegen,
             actual: Some(lang.clone()),
             expected: None,
-            fix: None,
+            // Closed set of currently-implemented mesh backends.
+            // More languages will join over time; the structured list
+            // lets agents decide without regexing the message.
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: vec!["cpp".to_string()],
+            }),
             key: vec![lang.clone()],
         },
         CodegenError::UnsupportedTransport { transport, target } => MeshDiagFields {
@@ -872,7 +892,15 @@ fn codegen_fields(e: &CodegenError) -> MeshDiagFields {
             stage: Stage::MeshCodegen,
             actual: Some(transport.clone()),
             expected: None,
-            fix: None,
+            // Implemented transports live in a single registry
+            // (`mesh::transport::implemented_names`). The repair path
+            // is authoritative; agents don't parse error prose.
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: super::transport::implemented_names()
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            }),
             key: vec![transport.clone(), target.as_str().to_string()],
         },
         CodegenError::TemplateRead { path, .. } => MeshDiagFields {

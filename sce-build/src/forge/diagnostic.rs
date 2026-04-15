@@ -98,7 +98,13 @@ pub struct Diagnostic {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<Location>,
 
-    /// Legal values the producer would have accepted.
+    /// Non-repair expectation metadata — parser-level expectations
+    /// (e.g. "identifier") or cardinality constraints (e.g. "exactly
+    /// one match"). Never holds a candidate list for substitution;
+    /// that role belongs exclusively to `fix`. The two fields are
+    /// disjoint by contract: a consumer that needs a repair signal
+    /// reads `fix`, a consumer that needs to know what the producer
+    /// was grammatically expecting reads `expected`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expected: Option<Vec<String>>,
 
@@ -106,9 +112,10 @@ pub struct Diagnostic {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual: Option<String>,
 
-    /// Structured repair proposal. Populated only when the fix carries
-    /// enough context to be actionable without re-synthesis from
-    /// `message`. Otherwise `None` — agents must not invent a fix.
+    /// Structured repair proposal. The sole channel for repair
+    /// signals — when populated, agents apply (or choose) based on
+    /// the variant; when absent, no structured repair exists and
+    /// there is no fallback to `expected`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fix: Option<Fix>,
 }
@@ -481,11 +488,25 @@ pub struct Location {
 
 /// Structured repair proposal.
 ///
-/// Every variant must carry enough payload to be *applied* by an agent
-/// without going back to the source file or prose. If a variant would
-/// need empty / placeholder fields to be representable, it is omitted
-/// in favour of `fix: None` — the agent can then fall back to the
-/// `expected` / `actual` fields, which are the honest signal.
+/// `Fix` is the sole channel for repair signals: whenever the producer
+/// knows how the document could be changed to satisfy the rejected
+/// constraint, the payload is attached here. Agents therefore inspect
+/// `fix` and `fix` only to drive repair — `expected` carries a
+/// different kind of information (see `Diagnostic::expected`) and the
+/// two fields never overlap.
+///
+/// The variant encodes the *shape* of the repair:
+///
+/// * Deterministic: `AddAttribute`, `RenameDuplicate`, `RemoveFields`,
+///   `ReplaceWith` — applicable without further judgment.
+/// * Choice-based: `ReplaceOneOf`, `AddOneOf` — the producer lists the
+///   closed candidate set and the agent (or the human) picks.
+///
+/// `fix` is absent when no structured repair can be named — e.g. an
+/// `Io` failure, a `generate/template-render` crash, or cardinality
+/// violations that demand a redesign rather than a local edit. In
+/// those cases `message` is the only remaining signal; there is no
+/// fallback to `expected`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Fix {
@@ -506,18 +527,25 @@ pub enum Fix {
     RemoveFields { location: String, fields: Vec<String> },
 
     /// Replace the offending value — carried in `actual` on the parent
-    /// record — with `to`. Emitted **only** for errors whose repair is
+    /// record — with `to`. Emitted only for errors whose repair is
     /// deterministic and single-valued: e.g. `==` → `===` under strict
     /// equality, or a mismatched `<sce:import kind=…>` where the
     /// imported file's real kind is the one correct answer.
-    ///
-    /// Multi-candidate constraints (unknown language, invalid attribute
-    /// value whose legal set has many members) intentionally stay
-    /// `fix: None` and rely on the `expected` array alone. Emitting a
-    /// `replace_with` for those would misrepresent `Fix` as "pick one
-    /// of" rather than its defined semantics ("apply this repair
-    /// automatically").
     ReplaceWith { to: String },
+
+    /// Replace the offending value — carried in `actual` — with one of
+    /// the listed `candidates`. Emitted when the producer knows the
+    /// closed enumeration of legal values (attribute value constraints,
+    /// cross-reference resolution) but cannot deterministically pick a
+    /// single answer. The agent must choose which candidate fits the
+    /// surrounding context.
+    ReplaceOneOf { candidates: Vec<String> },
+
+    /// Add one of several legal attributes to the named element. Used
+    /// for "require either X or Y" constraints (e.g. `<send>` needs
+    /// `event` or `eventexpr`). The agent must choose which of `attrs`
+    /// to emit based on surrounding context.
+    AddOneOf { element: String, attrs: Vec<String> },
 }
 
 // ── Per-error-variant field extraction ─────────────────────────
@@ -702,9 +730,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             code: DiagnosticCode::ValidationInvalidAttribute,
             stage: Stage::Validation,
             spec: None,
-            expected: Some(split_expected(expected)),
+            // Candidate list rides `fix`; `expected` stays None because
+            // duplicating the list in both fields would violate the
+            // fix/expected non-overlap rule in the contract.
+            expected: None,
             actual: Some(value.clone()),
-            fix: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: split_expected(expected),
+            }),
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
         },
         ValidationError::UnsupportedKind(value) => DiagnosticFields {
@@ -713,7 +746,15 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             spec: None,
             expected: None,
             actual: Some(value.clone()),
-            fix: None,
+            // `sce:kind` has a closed enumeration (`ForgeKind::from_attr`).
+            // The list is authoritative, so agents get a structured
+            // replace-one-of instead of message-prose parsing.
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: crate::forge::model::ForgeKind::ALL_ATTR_NAMES
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            }),
             key_fragments: vec![value.clone()],
         },
         ValidationError::DuplicateId { kind, what, id } => DiagnosticFields {
@@ -764,9 +805,11 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             code: DiagnosticCode::ValidationInvalidReference,
             stage: Stage::Validation,
             spec: None,
-            expected: Some(split_expected(available)),
+            expected: None,
             actual: Some(name.clone()),
-            fix: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: split_expected(available),
+            }),
             key_fragments: vec![kind.to_string(), what.clone(), name.clone()],
         },
         ValidationError::InvalidDirection {
@@ -779,7 +822,13 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             spec: None,
             expected: None,
             actual: Some(direction.clone()),
-            fix: None,
+            // Every forge kind with directional `<data>` fields accepts
+            // exactly `input` and `output`; `internal` and everything
+            // else are rejected. The candidate list is closed, so the
+            // repair is expressible as a `ReplaceOneOf`.
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: vec!["input".to_string(), "output".to_string()],
+            }),
             key_fragments: vec![kind.to_string(), field.clone(), direction.clone()],
         },
         ValidationError::NumericParse {
@@ -824,9 +873,12 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             code: DiagnosticCode::ValidationRequireEither,
             stage: Stage::Validation,
             spec: None,
-            expected: Some(alternatives.clone()),
+            expected: None,
             actual: None,
-            fix: None,
+            fix: Some(Fix::AddOneOf {
+                element: element.clone(),
+                attrs: alternatives.clone(),
+            }),
             key_fragments: {
                 let mut k = vec![element.clone()];
                 k.extend(alternatives.iter().cloned());
@@ -879,12 +931,11 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             code: DiagnosticCode::ExpressionStrictEquality,
             stage: Stage::Expression,
             spec: subset_spec,
-            expected: Some(vec![(*strict).to_string()]),
+            // Single legal replacement (`==` → `===`, `!=` → `!==`).
+            // It rides `fix` as a deterministic `ReplaceWith`;
+            // duplicating it in `expected` would violate non-overlap.
+            expected: None,
             actual: Some((*operator).to_string()),
-            // `==` → `===` and `!=` → `!==` are the only two legal
-            // replacements ECMAScript-5 strict subset permits; no
-            // context can change the mapping, so a deterministic
-            // `ReplaceWith` is honest.
             fix: Some(Fix::ReplaceWith { to: (*strict).to_string() }),
             key_fragments: vec![(*operator).to_string()],
         },
@@ -955,11 +1006,11 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
             code: DiagnosticCode::ImportKindMismatch,
             stage: Stage::Import,
             spec: None,
-            expected: Some(vec![actual.clone()]),
+            // Single deterministic replacement: rewrite
+            // `<sce:import kind="…">` to the imported file's real
+            // kind. `fix.to` is authoritative; `expected` stays None.
+            expected: None,
             actual: Some(declared.clone()),
-            // The imported file's real kind is authoritative. The
-            // declared kind is the fix target — rewrite the
-            // `<sce:import kind="…">` attribute to match.
             fix: Some(Fix::ReplaceWith { to: actual.clone() }),
             key_fragments: vec![src.clone(), declared.clone(), actual.clone()],
         },
@@ -1197,7 +1248,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_attribute_exposes_expected_and_actual_without_fix() {
+    fn invalid_attribute_emits_replace_one_of_fix() {
         let err: ForgeError = ValidationError::InvalidAttribute {
             element: "sce:field".into(),
             attr: "sce:type".into(),
@@ -1207,13 +1258,51 @@ mod tests {
         .into();
         let d = single(&err);
         assert_eq!(d.actual.as_deref(), Some("blob"));
-        assert_eq!(
-            d.expected.as_deref(),
-            Some(&["u8".to_string(), "u16".to_string(), "u32".to_string()][..])
-        );
-        // Fix is intentionally None — the `expected` field already
-        // carries the repair signal, so no redundant Fix variant.
-        assert!(d.fix.is_none());
+        // Non-overlap rule: the candidate list rides only `fix`.
+        // `expected` must stay None so consumers do not see the same
+        // data in two different shapes.
+        assert!(d.expected.is_none(), "expected must not duplicate fix.candidates");
+        let candidates = ["u8".to_string(), "u16".to_string(), "u32".to_string()];
+        match d.fix {
+            Some(Fix::ReplaceOneOf { candidates: got }) => assert_eq!(got, candidates),
+            other => panic!("expected ReplaceOneOf, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn invalid_reference_emits_replace_one_of_fix() {
+        let err: ForgeError = ValidationError::InvalidReference {
+            kind: ForgeKind::Statechart,
+            what: "transition target".into(),
+            name: "missing".into(),
+            available: "armed, disarmed".into(),
+        }
+        .into();
+        let d = single(&err);
+        assert_eq!(d.actual.as_deref(), Some("missing"));
+        let candidates = ["armed".to_string(), "disarmed".to_string()];
+        match d.fix {
+            Some(Fix::ReplaceOneOf { candidates: got }) => assert_eq!(got, candidates),
+            other => panic!("expected ReplaceOneOf, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn require_either_emits_add_one_of_fix() {
+        let err: ForgeError = ValidationError::RequireEither {
+            element: "send".into(),
+            alternatives: vec!["event".into(), "eventexpr".into()],
+        }
+        .into();
+        let d = single(&err);
+        assert!(d.actual.is_none(), "RequireEither has no observed value");
+        match d.fix {
+            Some(Fix::AddOneOf { element, attrs }) => {
+                assert_eq!(element, "send");
+                assert_eq!(attrs, vec!["event".to_string(), "eventexpr".to_string()]);
+            }
+            other => panic!("expected AddOneOf, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1307,7 +1396,31 @@ mod tests {
                     }
                     .into(),
                 ),
-                r#"{"v":1,"id":"fnv1a:dd04a37de468ffb4","code":"validation/invalid-attribute","stage":"validation","message":"sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)","expected":["u8","u16","u32"],"actual":"blob"}"#,
+                r#"{"v":1,"id":"fnv1a:dd04a37de468ffb4","code":"validation/invalid-attribute","stage":"validation","message":"sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)","actual":"blob","fix":{"kind":"replace_one_of","candidates":["u8","u16","u32"]}}"#,
+            ),
+            (
+                "forge/invalid-reference",
+                actual_forge(
+                    ValidationError::InvalidReference {
+                        kind: ForgeKind::Statechart,
+                        what: "transition target".into(),
+                        name: "missing".into(),
+                        available: "armed, disarmed".into(),
+                    }
+                    .into(),
+                ),
+                r#"{"v":1,"id":"fnv1a:2e4c02e2b0e7e383","code":"validation/invalid-reference","stage":"validation","message":"statechart: missing does not match any transition target (available: armed, disarmed)","actual":"missing","fix":{"kind":"replace_one_of","candidates":["armed","disarmed"]}}"#,
+            ),
+            (
+                "forge/require-either",
+                actual_forge(
+                    ValidationError::RequireEither {
+                        element: "send".into(),
+                        alternatives: vec!["event".into(), "eventexpr".into()],
+                    }
+                    .into(),
+                ),
+                r#"{"v":1,"id":"fnv1a:e10a747be1752ef3","code":"validation/require-either","stage":"validation","message":"send must have at least one of: event, eventexpr","fix":{"kind":"add_one_of","element":"send","attrs":["event","eventexpr"]}}"#,
             ),
             (
                 "forge/go-ternary",
@@ -1322,7 +1435,7 @@ mod tests {
             (
                 "forge/strict-equality",
                 actual_forge(ExprError::StrictEquality { operator: "==", strict: "===" }.into()),
-                r#"{"v":1,"id":"fnv1a:056d2165b00f16bd","code":"expression/strict-equality","stage":"expression","spec":"Extended SCXML stateless subset","message":"loose == is not permitted in Extended SCXML. Use === instead.","expected":["==="],"actual":"==","fix":{"kind":"replace_with","to":"==="}}"#,
+                r#"{"v":1,"id":"fnv1a:056d2165b00f16bd","code":"expression/strict-equality","stage":"expression","spec":"Extended SCXML stateless subset","message":"loose == is not permitted in Extended SCXML. Use === instead.","actual":"==","fix":{"kind":"replace_with","to":"==="}}"#,
             ),
             (
                 "forge/import-kind-mismatch",
@@ -1334,7 +1447,7 @@ mod tests {
                     }
                     .into(),
                 ),
-                r#"{"v":1,"id":"fnv1a:5f500ed01d12c1bb","code":"import/kind-mismatch","stage":"import","message":"<sce:import src=\"peer.scxml\" kind=\"validator\">: actual kind is 'codec' (mismatch)","expected":["codec"],"actual":"validator","fix":{"kind":"replace_with","to":"codec"}}"#,
+                r#"{"v":1,"id":"fnv1a:5f500ed01d12c1bb","code":"import/kind-mismatch","stage":"import","message":"<sce:import src=\"peer.scxml\" kind=\"validator\">: actual kind is 'codec' (mismatch)","actual":"validator","fix":{"kind":"replace_with","to":"codec"}}"#,
             ),
             (
                 "mesh/missing-binding-field",
@@ -1375,6 +1488,282 @@ mod tests {
             "byte-stable goldens drifted:\n{}\n\nIf this change is intentional, update the table AND bump SCHEMA_VERSION if the shape changed.",
             mismatches.join("\n")
         );
+    }
+
+    // ── Non-overlap invariant: exhaustive contract table ──────────
+    //
+    // `fix` and `expected` are disjoint by contract (SCE_ERROR_CONTRACT.md
+    // §3.2). The enforcement is a two-layer check:
+    //
+    //   Layer 1 (compile-time): `non_overlap_class()` exhaustively
+    //     classifies every `DiagnosticCode` into one of three buckets.
+    //     Adding a new code without placing it into the match fails
+    //     the build — contributors cannot sidestep the invariant.
+    //
+    //   Layer 2 (runtime): `fix_carries_candidates_emitters_obey_non_overlap`
+    //     and `expected_is_metadata_emitters_obey_non_overlap` construct
+    //     one sample per code in the non-trivial buckets and verify
+    //     that actual emission agrees with classification.
+    //
+    // Together these guarantee: every diagnostic ever emitted satisfies
+    // the invariant, and any new variant forces an explicit decision.
+
+    /// Bucket for the non-overlap rule. Distinct from the `Fix?` column
+    /// in the contract's code catalog — the classes track invariant
+    /// shape, not which fix variant is used.
+    #[derive(Debug, PartialEq)]
+    enum NonOverlapClass {
+        /// Emits `fix` as `ReplaceOneOf` / `AddOneOf`. `expected` must
+        /// be absent; the candidate list rides `fix` alone.
+        FixCarriesCandidates,
+        /// Emits `expected` as non-repair metadata (parser expectation,
+        /// cardinality). `fix` must be absent; the producer cannot name
+        /// a structured repair.
+        ExpectedIsMetadata,
+        /// Either emits a deterministic fix (`AddAttribute`, `ReplaceWith`,
+        /// …) or no fix at all. Either way, `expected` must be absent —
+        /// non-overlap still applies, but neither field carries
+        /// candidate lists.
+        NeutralOrDeterministic,
+    }
+
+    fn non_overlap_class(code: DiagnosticCode) -> NonOverlapClass {
+        use DiagnosticCode::*;
+        use NonOverlapClass::*;
+        // Exhaustive match — adding a new DiagnosticCode fails the
+        // build until it is placed into one of the three buckets.
+        match code {
+            // ── Fix carries a closed candidate / attr list ─────
+            ValidationInvalidAttribute
+            | ValidationInvalidReference
+            | ValidationRequireEither
+            | ValidationUnsupportedKind
+            | ValidationInvalidDirection
+            | MeshDeployUnsupportedVersion
+            | MeshTopologyMachineNotFound
+            | MeshCodegenUnsupportedLanguage
+            | MeshCodegenUnsupportedTransport
+            | CliUnknownLanguage
+            | CliInvalidFormatOption => FixCarriesCandidates,
+
+            // ── `expected` carries non-repair metadata ────────
+            ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
+
+            // ── Deterministic fix or no fix; expected=None ────
+            XmlParse
+            | XmlSchemaValidation
+            | ValidationMissingElement
+            | ValidationMissingAttribute
+            | ValidationDuplicateId
+            | ValidationEmptyCollection
+            | ValidationCountMismatch
+            | ValidationIncompatibleAttributes
+            | ValidationNumericParse
+            | ValidationEmptyValue
+            | ValidationSingletonViolation
+            | ValidationWrongPipeline
+            | ExpressionEmpty
+            | ExpressionLex
+            | ExpressionUnsupportedConstruct
+            | ExpressionStrictEquality
+            | ExpressionUnexpectedToken
+            | ExpressionInvalidLvalue
+            | ExpressionTypeCoercion
+            | ExpressionGoTernaryUnsupported
+            | ImportFileNotFound
+            | ImportKindMismatch
+            | ImportNotForge
+            | ImportReadError
+            | ManifestCircularDependency
+            | ManifestIo
+            | GenerateInvalidConfig
+            | GenerateTemplateLoad
+            | GenerateTemplateRender
+            | IoFilesystem
+            | CliUnsupportedLanguage
+            | CliReadInput
+            | CliWriteOutput
+            | CliCreateOutputDir
+            | CliScxmlParse
+            | CliScxmlGenerate
+            | CliDynamicFeatures
+            | CliMissingMetadataField
+            | CliNotADirectory
+            | CliJsonSerialization
+            | CliProjectRootNotFound
+            | CliFormatStyleNotFound
+            | CliNoScxmlTag
+            | MeshDeployRead
+            | MeshDeployParse
+            | MeshDeployDuplicateMachine
+            | MeshExternalRead
+            | MeshExternalParse
+            | MeshExternalUnresolvedNames
+            | MeshExternalEmptyEventGroup
+            | MeshExternalNamedReferenceWithoutConfig
+            | MeshExternalReservedSomeipIdKeys
+            | MeshExternalSomeipFieldOnNonSomeipTransport
+            | MeshExternalConflictingEventSchema
+            | MeshExternalConflictingEventFieldKinds
+            | MeshExternalEmptyEventEntry
+            | MeshTopologyUnresolvedTargets
+            | MeshTopologyReceiverNotDeclared
+            | MeshTopologyAbsoluteSourcePath
+            | MeshTopologyReceiverSourceRead
+            | MeshTopologyReceiverSourceParse
+            | MeshTopologyUncoveredEvents
+            | MeshTopologyPatternCapabilityViolation
+            | MeshTopologyMissingBindingField
+            | MeshTopologyInvalidBindingField
+            | MeshTopologyEventBindingUnused
+            | MeshCodegenTemplateRead
+            | MeshCodegenTemplateRender
+            | MeshCodegenEventNameCollision
+            | MeshIo => NeutralOrDeterministic,
+        }
+    }
+
+    /// Every code classified as `FixCarriesCandidates` must emit a
+    /// `ReplaceOneOf` or `AddOneOf` fix with no `expected`. CLI codes
+    /// live in the binary so they are covered structurally by the
+    /// `Diagnostic { expected: None, ... }` literal in
+    /// `bin/sce_codegen.rs` — runtime spawning happens in
+    /// `tests/error_format_json.rs`.
+    #[test]
+    fn fix_carries_candidates_emitters_obey_non_overlap() {
+        use crate::mesh::error::{
+            CodegenError as MeshCodegen, DeployError, MeshError, TopologyError,
+        };
+
+        let forge_samples: Vec<ForgeError> = vec![
+            ValidationError::InvalidAttribute {
+                element: "sce:field".into(),
+                attr: "sce:type".into(),
+                value: "blob".into(),
+                expected: "u8, u16, u32".into(),
+            }
+            .into(),
+            ValidationError::InvalidReference {
+                kind: ForgeKind::Statechart,
+                what: "transition target".into(),
+                name: "missing".into(),
+                available: "armed, disarmed".into(),
+            }
+            .into(),
+            ValidationError::RequireEither {
+                element: "send".into(),
+                alternatives: vec!["event".into(), "eventexpr".into()],
+            }
+            .into(),
+            ValidationError::UnsupportedKind("bogus".into()).into(),
+            ValidationError::InvalidDirection {
+                kind: ForgeKind::Transform,
+                direction: "internal".into(),
+                field: "input".into(),
+            }
+            .into(),
+        ];
+
+        let mesh_samples: Vec<MeshError> = vec![
+            DeployError::UnsupportedVersion {
+                found: "99".into(),
+                supported: vec!["1"],
+            }
+            .into(),
+            TopologyError::MachineNotFound {
+                machine: "ecu_z".into(),
+                available: vec!["ecu_a".into(), "ecu_b".into()],
+            }
+            .into(),
+            MeshCodegen::UnsupportedLanguage("ruby".into()).into(),
+            MeshCodegen::UnsupportedTransport {
+                transport: "carrier_pigeon".into(),
+                target: crate::mesh::target::TargetId::new("#motor").unwrap(),
+            }
+            .into(),
+        ];
+
+        let all: Vec<Diagnostic> = forge_samples
+            .into_iter()
+            .map(|e| single(&e))
+            .chain(mesh_samples.into_iter().map(|e| single(&e)))
+            .collect();
+
+        for d in &all {
+            assert_eq!(
+                non_overlap_class(d.code),
+                NonOverlapClass::FixCarriesCandidates,
+                "test sample for {:?} is not in the FixCarriesCandidates bucket",
+                d.code
+            );
+            assert!(
+                matches!(
+                    &d.fix,
+                    Some(Fix::ReplaceOneOf { .. }) | Some(Fix::AddOneOf { .. })
+                ),
+                "{:?}: fix must be ReplaceOneOf or AddOneOf, got {:?}",
+                d.code,
+                d.fix
+            );
+            assert!(
+                d.expected.is_none(),
+                "{:?}: non-overlap violated — expected must be absent when fix carries candidates",
+                d.code
+            );
+        }
+    }
+
+    /// Every code classified as `ExpectedIsMetadata` must emit
+    /// `expected` with no `fix`. The producer has no structured repair
+    /// to propose; the field documents what was grammatically expected
+    /// or what cardinality rule was broken.
+    #[test]
+    fn expected_is_metadata_emitters_obey_non_overlap() {
+        use crate::mesh::error::{ExternalConfigError, MeshError};
+
+        let forge_samples: Vec<ForgeError> = vec![
+            ExprError::ParseMismatch {
+                expected: "identifier".into(),
+                got: ";".into(),
+            }
+            .into(),
+        ];
+
+        let mesh_samples: Vec<MeshError> = vec![
+            ExternalConfigError::AmbiguousEventGroup {
+                machine: "ecu_a".into(),
+                target: "#motor".into(),
+                event_group: "overspeed".into(),
+                count: 3,
+                config_path: "vsomeip.json".into(),
+            }
+            .into(),
+        ];
+
+        let all: Vec<Diagnostic> = forge_samples
+            .into_iter()
+            .map(|e| single(&e))
+            .chain(mesh_samples.into_iter().map(|e| single(&e)))
+            .collect();
+
+        for d in &all {
+            assert_eq!(
+                non_overlap_class(d.code),
+                NonOverlapClass::ExpectedIsMetadata,
+                "test sample for {:?} is not in the ExpectedIsMetadata bucket",
+                d.code
+            );
+            assert!(
+                d.expected.is_some(),
+                "{:?}: expected must be populated with metadata",
+                d.code
+            );
+            assert!(
+                d.fix.is_none(),
+                "{:?}: non-overlap violated — fix must be absent when expected carries metadata",
+                d.code
+            );
+        }
     }
 
     #[test]

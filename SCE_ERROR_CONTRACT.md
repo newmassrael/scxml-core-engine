@@ -25,15 +25,13 @@ stdout looking for errors is reading the wrong stream.
 ```json
 {
   "v": 1,
-  "id": "fnv1a:1c56b923b2b2b87f",
-  "code": "validation/missing-attribute",
+  "id": "fnv1a:dd04a37de468ffb4",
+  "code": "validation/invalid-attribute",
   "stage": "validation",
-  "spec": "W3C SCXML 3.13",
-  "message": "sce:field must have an 'id' attribute",
+  "message": "sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)",
   "location": {"file": "checkout.scxml", "line": 42, "col": 3},
-  "expected": ["u8", "u16", "u32"],
   "actual": "blob",
-  "fix": {"kind": "add_attribute", "element": "sce:field", "attr": "id"}
+  "fix": {"kind": "replace_one_of", "candidates": ["u8", "u16", "u32"]}
 }
 ```
 
@@ -52,9 +50,9 @@ Omitted fields are absent from the JSON entirely (not `null`). Consumers
 | `spec` | string | Specification anchor (e.g. `"W3C SCXML 3.13"`). Present when the rule is spec-derived. Enables LLM grounding. |
 | `message` | English prose | Human-readable one-liner. **Not** machine-parsed. Not part of `id`. |
 | `location` | object | Source location when known. See [§2.2](#22-location-object). |
-| `expected` | array of strings | Legal values the producer would have accepted. |
+| `expected` | array of strings | Non-repair expectation metadata (parser expectations like `"identifier"`, cardinality constraints like `"1"`). **Never** carries a candidate list for substitution — that role belongs to `fix`. The two fields are disjoint by contract (see [§3.2](#32-no-overlap-between-fix-and-expected)). |
 | `actual` | string | The observed value that triggered rejection. |
-| `fix` | object | Structured repair proposal. See [§3 Fixes](#3-fixes). |
+| `fix` | object | Structured repair proposal. The sole channel for repair signals. See [§3 Fixes](#3-fixes). |
 
 ### 2.2 Location object
 
@@ -68,35 +66,67 @@ machine / binding / target names carried by the error fields themselves.
 
 ## 3. Fixes
 
-`fix` is present **only** when the repair is deterministic and requires
-no further judgment. When a legitimate repair exists but demands a
-human decision (e.g. "rename the event OR remove the binding"), the
-field is absent — agents then use `expected` / `actual` as the
-less-structured signal.
+`fix` is the **sole channel** for repair signals. Whenever the producer
+can name a change that would satisfy the rejected constraint — single
+value, closed candidate list, attribute to add — the payload lives on
+this field, never on `expected`. Agents drive repair by dispatching on
+`fix.kind` and reading the variant's payload.
+
+`fix` is absent only when no structured repair can be named — e.g. an
+`Io` failure, a template-render crash, or a cardinality violation that
+requires a redesign rather than a local edit. Absence means "no
+structured repair on the wire"; it does **not** mean "look elsewhere".
+There is no fallback from `fix` to `expected`.
 
 ### 3.1 Fix variants
 
 | `kind` | Payload | Semantics |
 |---|---|---|
-| `add_attribute` | `element`, `attr` | Add the named attribute to the named element. For deploy.yaml errors, `element` is a dotted path (`machines.x.bindings.y`). |
-| `rename_duplicate` | `what`, `id` | The id `id` of kind `what` appears more than once; rename one occurrence. |
-| `remove_fields` | `location`, `fields[]` | At the config path `location`, remove every key in `fields`. The only well-defined repair for reserved-key and unused-entry errors. |
-| `replace_with` | `to` | Replace the value carried in the record's `actual` field with `to`. Emitted only when the replacement is single-valued and context-free — e.g. `==` → `===` under strict equality, or a `<sce:import kind>` declaration corrected to the imported file's real kind. |
+| `add_attribute` | `element`, `attr` | Add the named attribute to the named element. For deploy.yaml errors, `element` is a dotted path (`machines.x.bindings.y`). Deterministic. |
+| `rename_duplicate` | `what`, `id` | The id `id` of kind `what` appears more than once; rename one occurrence. Deterministic. |
+| `remove_fields` | `location`, `fields[]` | At the config path `location`, remove every key in `fields`. Deterministic. |
+| `replace_with` | `to` | Replace the value carried in the record's `actual` field with `to`. Emitted when exactly one legal replacement exists — e.g. `==` → `===` under strict equality, or a `<sce:import kind>` declaration corrected to the imported file's real kind. Deterministic. |
+| `replace_one_of` | `candidates[]` | Replace `actual` with one of `candidates`. Emitted when the producer knows the closed set of legal values (attribute-value enums, cross-reference resolution, supported language list) but cannot pick a single answer — the agent or human chooses from the list. |
+| `add_one_of` | `element`, `attrs[]` | Add one of the listed `attrs` to `element`. Used for "require either X or Y" constraints (e.g. `<send>` needs `event` or `eventexpr`). Choice-based. |
+
+The variant name encodes the *shape* of the repair: deterministic
+variants can be applied without further judgment; choice variants
+(`replace_one_of`, `add_one_of`) require the agent or human to pick
+from the closed candidate set.
 
 Agents holding a dispatch table keyed on `fix.kind` may safely
 enumerate these — the set only grows in backward-compatible ways
 ([§8](#8-evolution-policy)).
 
-### 3.2 Why `expected` is not a fix
+### 3.2 No overlap between `fix` and `expected`
 
-Some codes — `cli/unknown-language`, `validation/invalid-attribute`,
-`mesh/topology-machine-not-found` — carry a closed enumeration in
-`expected` but deliberately leave `fix` absent. That is the honest
-signal: the repair requires user intent (which language? which
-machine?) and no element of the enumeration is a canonical answer.
-Promoting such cases to a `replace_with` where `to` is "one of many"
-would misrepresent `fix` as a multi-valued constraint. Agents must
-branch on `expected`'s length, not on the absence of `fix`.
+`fix` and `expected` are **disjoint**: no diagnostic record ever
+carries the same information in both fields. A consumer that needs a
+repair signal reads `fix`; a consumer that needs to know what the
+producer was grammatically expecting reads `expected`. The two fields
+describe orthogonal aspects of a rejection and are interpreted
+independently.
+
+Concretely:
+
+- `validation/invalid-attribute`, `validation/invalid-reference`,
+  `validation/unsupported-kind`, `validation/invalid-direction`,
+  `cli/unknown-language`, `mesh/topology-machine-not-found`,
+  `mesh/codegen-unsupported-transport`, and similar codes with a
+  closed legal-value enumeration populate `fix.candidates` (or
+  `fix.attrs`) and leave `expected` absent. The candidate list is
+  never duplicated across both fields.
+- `expression/parse-mismatch` populates `expected` with a grammar
+  production name (e.g. `"identifier"`) and leaves `fix` absent — the
+  parser expectation is diagnostic metadata, not a substitution
+  candidate.
+- `mesh/external-ambiguous-event-group` populates `expected` with the
+  required cardinality (e.g. `["1"]`) and leaves `fix` absent — the
+  number is a rule description, not a replacement value for `actual`.
+
+Agents that want "the closed set of legal values" should always read
+`fix`. Agents that want "what the producer was grammatically expecting
+at this position" should read `expected`. These needs never coincide.
 
 ## 4. Stage taxonomy
 
@@ -158,18 +188,18 @@ a schema bump ([§8](#8-evolution-policy)).
 | `xml/schema-validation` | `xml` | no |
 | `validation/missing-element` | `validation` | no |
 | `validation/missing-attribute` | `validation` | `add_attribute` |
-| `validation/invalid-attribute` | `validation` | no (use `expected`) |
-| `validation/unsupported-kind` | `validation` | no |
+| `validation/invalid-attribute` | `validation` | `replace_one_of` |
+| `validation/unsupported-kind` | `validation` | `replace_one_of` |
 | `validation/duplicate-id` | `validation` | `rename_duplicate` |
 | `validation/empty-collection` | `validation` | no |
 | `validation/count-mismatch` | `validation` | no |
 | `validation/incompatible-attributes` | `validation` | no |
-| `validation/invalid-reference` | `validation` | no (use `expected`) |
-| `validation/invalid-direction` | `validation` | no |
+| `validation/invalid-reference` | `validation` | `replace_one_of` |
+| `validation/invalid-direction` | `validation` | `replace_one_of` |
 | `validation/numeric-parse` | `validation` | no |
 | `validation/empty-value` | `validation` | `add_attribute` |
 | `validation/singleton-violation` | `validation` | no |
-| `validation/require-either` | `validation` | no (use `expected`) |
+| `validation/require-either` | `validation` | `add_one_of` |
 | `validation/wrong-pipeline` | `validation` | no |
 | `expression/empty` | `expression` | no |
 | `expression/lex` | `expression` | no |
@@ -195,7 +225,7 @@ a schema bump ([§8](#8-evolution-policy)).
 
 | Code | Stage | Fix? |
 |---|---|---|
-| `cli/unknown-language` | `cli` | no (use `expected`) |
+| `cli/unknown-language` | `cli` | `replace_one_of` |
 | `cli/unsupported-language` | `cli` | no |
 | `cli/read-input` | `cli` | no |
 | `cli/write-output` | `cli` | no |
@@ -205,7 +235,7 @@ a schema bump ([§8](#8-evolution-policy)).
 | `cli/dynamic-features` | `cli` | no |
 | `cli/missing-metadata-field` | `cli` | no |
 | `cli/not-a-directory` | `cli` | no |
-| `cli/invalid-format-option` | `cli` | no (use `expected`) |
+| `cli/invalid-format-option` | `cli` | `replace_one_of` |
 | `cli/json-serialization` | `cli` | no |
 | `cli/project-root-not-found` | `cli` | no |
 | `cli/format-style-not-found` | `cli` | no |
@@ -217,7 +247,7 @@ a schema bump ([§8](#8-evolution-policy)).
 |---|---|---|
 | `mesh/deploy-read` | `mesh-deploy` | no |
 | `mesh/deploy-parse` | `mesh-deploy` | no |
-| `mesh/deploy-unsupported-version` | `mesh-deploy` | no (use `expected`) |
+| `mesh/deploy-unsupported-version` | `mesh-deploy` | `replace_one_of` |
 | `mesh/deploy-duplicate-machine` | `mesh-deploy` | no |
 | `mesh/external-read` | `mesh-external` | no |
 | `mesh/external-parse` | `mesh-external` | no |
@@ -226,12 +256,12 @@ a schema bump ([§8](#8-evolution-policy)).
 | `mesh/external-empty-event-group` | `mesh-external` | no |
 | `mesh/external-named-reference-without-config` | `mesh-external` | no |
 | `mesh/external-reserved-someip-id-keys` | `mesh-external` | `remove_fields` |
-| `mesh/external-someip-field-on-non-someip-transport` | `mesh-external` | no |
+| `mesh/external-someip-field-on-non-someip-transport` | `mesh-external` | `replace_with` |
 | `mesh/external-conflicting-event-schema` | `mesh-external` | no |
 | `mesh/external-conflicting-event-field-kinds` | `mesh-external` | no |
 | `mesh/external-empty-event-entry` | `mesh-external` | no |
 | `mesh/topology-unresolved-targets` | `mesh-topology` | no |
-| `mesh/topology-machine-not-found` | `mesh-topology` | no (use `expected`) |
+| `mesh/topology-machine-not-found` | `mesh-topology` | `replace_one_of` |
 | `mesh/topology-receiver-not-declared` | `mesh-topology` | no |
 | `mesh/topology-absolute-source-path` | `mesh-topology` | no |
 | `mesh/topology-receiver-source-read` | `mesh-topology` | no |
@@ -241,8 +271,8 @@ a schema bump ([§8](#8-evolution-policy)).
 | `mesh/topology-missing-binding-field` | `mesh-topology` | `add_attribute` |
 | `mesh/topology-invalid-binding-field` | `mesh-topology` | no |
 | `mesh/topology-event-binding-unused` | `mesh-topology` | `remove_fields` |
-| `mesh/codegen-unsupported-language` | `mesh-codegen` | no |
-| `mesh/codegen-unsupported-transport` | `mesh-codegen` | no |
+| `mesh/codegen-unsupported-language` | `mesh-codegen` | `replace_one_of` |
+| `mesh/codegen-unsupported-transport` | `mesh-codegen` | `replace_one_of` |
 | `mesh/codegen-template-read` | `mesh-codegen` | no |
 | `mesh/codegen-template-render` | `mesh-codegen` | no |
 | `mesh/codegen-event-name-collision` | `mesh-codegen` | no |
@@ -305,10 +335,16 @@ minor release behind a compatibility flag.
 
 ## 9. Reference implementation
 
-- Trait: `sce_build::forge::diagnostic::ToDiagnostic`
+- Trait: `sce_build::forge::diagnostic::ToDiagnostics`
 - Record: `sce_build::forge::diagnostic::Diagnostic`
 - Goldens: `sce-build/src/forge/diagnostic.rs` →
   `diagnostic_goldens_are_byte_stable` test.
+- Non-overlap invariant: `sce-build/src/forge/diagnostic.rs` →
+  `non_overlap_class`, `fix_carries_candidates_emitters_obey_non_overlap`,
+  `expected_is_metadata_emitters_obey_non_overlap`. The classification
+  `match` is exhaustive over `DiagnosticCode`, so adding a new code
+  fails the build until the author places it in one of the three
+  buckets — the contract cannot drift from the implementation.
 - CLI integration: `sce-build/tests/error_format_json.rs`.
 - Emitter: `sce-build/src/bin/sce_codegen.rs` →
   `ErrorFormat::emit_and_exit` and `cli_exit`.
