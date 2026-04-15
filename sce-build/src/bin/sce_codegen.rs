@@ -1757,9 +1757,11 @@ impl W3cBackend for RustBackend {
     }
 
     fn post_write_parent(&self, _test_id: &str, test_mod_dir: &Path, input_stem: &str) {
+        // Suppressions live on the generated `*_sm.rs` itself (see
+        // `state_machine.rs.jinja2` header comment); the parent mod.rs no
+        // longer needs to redundantly wrap the declaration in `#[allow(...)]`.
         let mod_content = format!(
             "// GENERATED -- DO NOT EDIT (sce-codegen)\n\n\
-             #[allow(dead_code, unused_variables, unused_imports, clippy::all)]\n\
              mod {input_stem}_sm;\n\
              pub use {input_stem}_sm::*;\n"
         );
@@ -1775,8 +1777,7 @@ impl W3cBackend for RustBackend {
         if let Ok(existing) = fs::read_to_string(&mod_file) {
             if !existing.contains(&format!("mod {child_name}_sm;")) {
                 let addition = format!(
-                    "#[allow(dead_code, unused_variables, unused_imports, clippy::all)]\n\
-                     mod {child_name}_sm;\n\
+                    "mod {child_name}_sm;\n\
                      pub use {child_name}_sm::*;\n"
                 );
                 write_if_changed(&mod_file, &format!("{existing}{addition}"));

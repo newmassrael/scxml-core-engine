@@ -12,9 +12,19 @@
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = sce_rust_runtime::ScriptEngineProvider::get();
 
-    // Validate item attribute (1:1 with C++ ForeachHelper::isLegalVariableName)
-    let item_name = "{{ action.item | default("") }}";
-    if item_name.is_empty() || !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
+    // Validate item attribute (1:1 with C++ ForeachHelper::isLegalVariableName).
+    // The empty-`item` case is decided at codegen time and never reaches the
+    // runtime guard; the guard only checks legality of a non-empty name to
+    // mirror the C++ helper for fixtures that supply a syntactically invalid
+    // identifier.
+{% if not action.item %}
+    log::error!("Foreach validation failed: missing 'item' attribute");
+{% if 'error.execution' in model.events %}
+    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+{% else %}
+    let item_name = "{{ action.item }}";
+    if !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
         log::error!("Foreach validation failed: '{}' is not a legal variable name", item_name);
 {% if 'error.execution' in model.events %}
         engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
@@ -82,4 +92,5 @@
             }
         }
     }
+{% endif %}
 }

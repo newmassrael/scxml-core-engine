@@ -19,7 +19,11 @@
 // is purely additive — one new kind fragment per language, zero edits to
 // this file.
 
-#[allow(dead_code, non_snake_case)]
+// `dead_code`: only the kinds enumerated in the `use fixtures::...` block
+// below get consumed by the harness; all other generated fixture modules
+// stay around for the kind-agnostic `include!()` scaffold and produce
+// genuine dead-code warnings without this allow.
+#[allow(dead_code)]
 mod fixtures {
 {% for f in fixtures %}
     pub mod {{ f.name }} {
