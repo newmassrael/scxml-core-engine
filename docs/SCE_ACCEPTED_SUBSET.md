@@ -261,78 +261,85 @@ This appendix is the **drift-guarded coverage target** for the
 below. The prose sections §1–§3 above reference a subset of these
 codes inline, but the appendix is the coverage contract.
 
+The guard matches each code against the table-row anchor
+`` | `code` | ``. Reformatting the tables (extra whitespace between
+`|` and the code, changing to bullet lists, wrapping across lines)
+will break the anchor and fire the test — the markdown shape above
+is the load-bearing format. Keep rows on a single line with exactly
+one space on either side of the leading backtick-wrapped code.
+
 ### Acceptance boundary
 
 Codes that the author can avoid by writing a better SCXML /
 `deploy.yaml` / CLI invocation. Listed in pipeline-stage order.
 
-| Code | Stage | Section |
-|---|---|---|
-| `xml/parse` | Xml | §1 / XML well-formedness |
-| `xml/schema-validation` | Xml | §2 / SCE XSD |
-| `validation/missing-element` | Validation | §3.2 / §2 cardinality |
-| `validation/missing-attribute` | Validation | §2 required attrs |
-| `validation/invalid-attribute` | Validation | §2.2 typed attrs |
-| `validation/unsupported-kind` | Validation | §2.1 closed enum |
-| `validation/duplicate-id` | Validation | §2.2 field ids |
-| `validation/duplicate-context-object` | Validation | §2.3 context ids |
-| `validation/empty-collection` | Validation | §2 per-kind cardinality |
-| `validation/count-mismatch` | Validation | §2 per-kind cardinality |
-| `validation/incompatible-attributes` | Validation | §2 mutual exclusion |
-| `validation/missing-context` | Validation | §2.3 |
-| `validation/invalid-reference` | Validation | §2 ref integrity |
-| `validation/invalid-direction` | Validation | §2 field direction |
-| `validation/numeric-parse` | Validation | §3.4 literals |
-| `validation/empty-value` | Validation | §2 non-empty attrs |
-| `validation/singleton-violation` | Validation | §2 cardinality = 1 |
-| `validation/require-either` | Validation | §3.2 required pairs |
-| `validation/wrong-pipeline` | Validation | §2 kind/pipeline match |
-| `validation/dynamic-features` | Validation | §3.1 dynamic I/O |
-| `expression/empty` | Expression | §3.4 |
-| `expression/lex` | Expression | §3.4 |
-| `expression/unsupported-construct` | Expression | §3.3 / §3.4 |
-| `expression/strict-equality` | Expression | §3.4 strict eq |
-| `expression/parse-mismatch` | Expression | §3.4 |
-| `expression/unexpected-token` | Expression | §3.4 |
-| `expression/invalid-lvalue` | Expression | §3.4 |
-| `expression/type-coercion` | Expression | §3.4 |
-| `expression/go-ternary-unsupported` | Expression | §3.4 go backend |
-| `import/file-not-found` | Import | §2.4 `src` resolves |
-| `import/kind-mismatch` | Import | §2.4 `kind` assertion |
-| `import/not-forge` | Import | §2.4 imported doc shape |
-| `manifest/circular-dependency` | Manifest | §2.4 cyclic import graph |
-| `cli/unknown-language` | Cli | §1 `-l <lang>` closed set |
-| `cli/unsupported-language` | Cli | §1 backend parity |
-| `cli/missing-metadata-field` | Cli | CLI metadata args |
-| `cli/not-a-directory` | Cli | CLI path shape |
-| `cli/invalid-format-option` | Cli | `--error-format` closed set |
-| `cli/format-style-not-found` | Cli | format style name |
-| `cli/no-scxml-tag` | Cli | input is SCXML |
-| `mesh/deploy-parse` | Mesh Deploy | §2.7 deploy.yaml schema |
-| `mesh/deploy-unsupported-version` | Mesh Deploy | §2.7 `version: 1` |
-| `mesh/deploy-duplicate-machine` | Mesh Deploy | §2.7 global uniqueness |
-| `mesh/external-parse` | Mesh External | §2.7 external config parse |
-| `mesh/external-unresolved-names` | Mesh External | §2.7 name resolution |
-| `mesh/external-ambiguous-event-group` | Mesh External | §2.7 event-group rules |
-| `mesh/external-empty-event-group` | Mesh External | §2.7 event-group rules |
-| `mesh/external-named-reference-without-config` | Mesh External | §2.7 |
-| `mesh/external-reserved-someip-id-keys` | Mesh External | §2.7 someip naming |
-| `mesh/external-someip-field-on-non-someip-transport` | Mesh External | §2.7 |
-| `mesh/external-conflicting-event-schema` | Mesh External | §2.7 |
-| `mesh/external-conflicting-event-field-kinds` | Mesh External | §2.7 |
-| `mesh/external-empty-event-entry` | Mesh External | §2.7 |
-| `mesh/topology-unresolved-targets` | Mesh Topology | §2.6 / §2.7 |
-| `mesh/topology-machine-not-found` | Mesh Topology | §2.7 |
-| `mesh/topology-receiver-not-declared` | Mesh Topology | §2.6 |
-| `mesh/topology-absolute-source-path` | Mesh Topology | §2.7 relative paths |
-| `mesh/topology-uncovered-events` | Mesh Topology | §2.7 event coverage |
-| `mesh/topology-pattern-capability-violation` | Mesh Topology | §2.5 pattern/transport |
-| `mesh/topology-missing-binding-field` | Mesh Topology | §2.7 binding schema |
-| `mesh/topology-invalid-binding-field` | Mesh Topology | §2.7 binding schema |
-| `mesh/topology-event-binding-unused` | Mesh Topology | §2.7 binding usage |
-| `mesh/codegen-unsupported-language` | Mesh Codegen | §1 backend parity |
-| `mesh/codegen-unsupported-transport` | Mesh Codegen | §2.5 transport set |
-| `mesh/codegen-event-name-collision` | Mesh Codegen | §2.7 event naming |
+| Code | Stage |
+|---|---|
+| `xml/parse` | Xml |
+| `xml/schema-validation` | Xml |
+| `validation/missing-element` | Validation |
+| `validation/missing-attribute` | Validation |
+| `validation/invalid-attribute` | Validation |
+| `validation/unsupported-kind` | Validation |
+| `validation/duplicate-id` | Validation |
+| `validation/duplicate-context-object` | Validation |
+| `validation/empty-collection` | Validation |
+| `validation/count-mismatch` | Validation |
+| `validation/incompatible-attributes` | Validation |
+| `validation/missing-context` | Validation |
+| `validation/invalid-reference` | Validation |
+| `validation/invalid-direction` | Validation |
+| `validation/numeric-parse` | Validation |
+| `validation/empty-value` | Validation |
+| `validation/singleton-violation` | Validation |
+| `validation/require-either` | Validation |
+| `validation/wrong-pipeline` | Validation |
+| `validation/dynamic-features` | Validation |
+| `expression/empty` | Expression |
+| `expression/lex` | Expression |
+| `expression/unsupported-construct` | Expression |
+| `expression/strict-equality` | Expression |
+| `expression/parse-mismatch` | Expression |
+| `expression/unexpected-token` | Expression |
+| `expression/invalid-lvalue` | Expression |
+| `expression/type-coercion` | Expression |
+| `expression/go-ternary-unsupported` | Expression |
+| `import/file-not-found` | Import |
+| `import/kind-mismatch` | Import |
+| `import/not-forge` | Import |
+| `manifest/circular-dependency` | Manifest |
+| `cli/unknown-language` | Cli |
+| `cli/unsupported-language` | Cli |
+| `cli/missing-metadata-field` | Cli |
+| `cli/not-a-directory` | Cli |
+| `cli/invalid-format-option` | Cli |
+| `cli/format-style-not-found` | Cli |
+| `cli/no-scxml-tag` | Cli |
+| `mesh/deploy-parse` | Mesh Deploy |
+| `mesh/deploy-unsupported-version` | Mesh Deploy |
+| `mesh/deploy-duplicate-machine` | Mesh Deploy |
+| `mesh/external-parse` | Mesh External |
+| `mesh/external-unresolved-names` | Mesh External |
+| `mesh/external-ambiguous-event-group` | Mesh External |
+| `mesh/external-empty-event-group` | Mesh External |
+| `mesh/external-named-reference-without-config` | Mesh External |
+| `mesh/external-reserved-someip-id-keys` | Mesh External |
+| `mesh/external-someip-field-on-non-someip-transport` | Mesh External |
+| `mesh/external-conflicting-event-schema` | Mesh External |
+| `mesh/external-conflicting-event-field-kinds` | Mesh External |
+| `mesh/external-empty-event-entry` | Mesh External |
+| `mesh/topology-unresolved-targets` | Mesh Topology |
+| `mesh/topology-machine-not-found` | Mesh Topology |
+| `mesh/topology-receiver-not-declared` | Mesh Topology |
+| `mesh/topology-absolute-source-path` | Mesh Topology |
+| `mesh/topology-uncovered-events` | Mesh Topology |
+| `mesh/topology-pattern-capability-violation` | Mesh Topology |
+| `mesh/topology-missing-binding-field` | Mesh Topology |
+| `mesh/topology-invalid-binding-field` | Mesh Topology |
+| `mesh/topology-event-binding-unused` | Mesh Topology |
+| `mesh/codegen-unsupported-language` | Mesh Codegen |
+| `mesh/codegen-unsupported-transport` | Mesh Codegen |
+| `mesh/codegen-event-name-collision` | Mesh Codegen |
 
 ### Diagnostic-only
 

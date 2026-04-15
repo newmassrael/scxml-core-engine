@@ -2,9 +2,7 @@
 
 - **ARCHITECTURE.md first**: Read it before modifying Interpreter or AOT engines
 - **COMMIT_FORMAT.md first**: Read it before creating commits
-- **SCE_ERROR_CONTRACT.md first**: Read it before touching diagnostic emission, error types, or the `--error-format=json` wire format (including adding a new `DiagnosticCode` variant, changing a `Fix` shape, or extending a stage)
-- **docs/SCE_ACCEPTED_SUBSET.md first**: Read it alongside the error contract when adding or moving a `DiagnosticCode` variant. New variants must land in the appendix; the `acceptance_doc_covers_every_code` test fails otherwise.
-- **SCE_ERROR_CONTRACT.md §8.1 first**: Read it before changing the diagnostic schema shape or editing `schemas/sce-diagnostic.v1.schema.json`. While `SCHEMA_STATUS = "pre-release"` non-additive changes are allowed; flipping to `"stable"` must update `schemas/sce-diagnostic.v1.schema.json`'s `x-sce-schema-status` in the same commit (`schema_file_declares_status` guards this).
+- **SCE_ERROR_CONTRACT.md + docs/SCE_ACCEPTED_SUBSET.md first**: Read both before touching diagnostic emission, error types, or the `--error-format=json` wire format (including adding a new `DiagnosticCode` variant, changing a `Fix` shape, or extending a stage). New variants must land in the acceptance-doc appendix (`acceptance_doc_covers_every_code`). Schema-shape edits to `schemas/sce-diagnostic.v1.schema.json` follow §8.1 — while `SCHEMA_STATUS = "pre-release"` non-additive changes are allowed, and any flip to `"stable"` must update both the const and the schema file's `x-sce-schema-status` in one commit (`schema_file_declares_status` guards this).
 - **Root cause only**: Never workaround, band-aid, or skip validation. Fix the actual problem.
 - **No Interpreter fallback**: AOT failures must be fixed in the code generator or helpers, not bypassed with Interpreter
 - **W3C SCXML complete algorithms**: Implement full spec sections (e.g., Appendix D.2), not test-specific fixes

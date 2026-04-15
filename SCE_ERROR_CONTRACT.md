@@ -357,18 +357,17 @@ minor release behind a compatibility flag.
 ### 8.1 Stability
 
 Schema `v1` is currently marked `pre-release`. While `pre-release`,
-non-additive shape changes are permitted without a `v` bump — downstream
-consumers should pin to a specific commit rather than rely on `v1`
-stability. Transition to `stable` occurs when **either**:
-
-- (a) an external consumer (outside this repository) declares a
-  dependency on the schema and registers it in an ADR, **or**
-- (b) 30 consecutive days at HEAD elapse without any non-additive
-  change,
-
-whichever comes first. Once `stable`, §8's evolution rules apply
-strictly — any non-additive change requires a `v2` schema coexisting
-with `v1` for at least one minor release cycle.
+non-additive shape changes are permitted without a `v` bump —
+downstream consumers should pin to a specific commit rather than rely
+on `v1` stability. The flip to `stable` is a deliberate editorial act,
+not an automated threshold: a maintainer decides the schema has
+settled (e.g. an external consumer has committed to the format, or
+the surface has been stable long enough that further churn is
+unlikely) and lands a single commit that updates both `SCHEMA_STATUS`
+and the schema file's `x-sce-schema-status`. Once `stable`, §8's
+evolution rules apply strictly — any non-additive change requires a
+`v2` schema coexisting with `v1` for at least one minor release
+cycle.
 
 The current status is encoded in `SCHEMA_STATUS` at
 `sce-build/src/forge/diagnostic.rs` and emitted as `x-sce-schema-status`
