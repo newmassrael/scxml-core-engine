@@ -1226,6 +1226,34 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_envelope_codec_verification COMMAND mesh_envelope_codec_test)
 
+    # ── InvokeCorrelation unit tests (SCE_MESH.md §9.5 F2) ────────
+    # Pure unit tests on the `<invoke type="sce:mesh-rpc">` correlation
+    # registry. Verifies the state machine (register → reply / deadline
+    # / cancel) and the two race conditions §9.5 defines as benign
+    # drop. No transport, no scheduler — the scheduler-driven deadline
+    # timing path is exercised end-to-end in F4 integration tests.
+    add_executable(mesh_invoke_correlation_test
+        mesh/InvokeCorrelationTest.cpp
+    )
+
+    target_include_directories(mesh_invoke_correlation_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_invoke_correlation_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_invoke_correlation_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_invoke_correlation_test)
+
+    add_test(NAME mesh_invoke_correlation_verification COMMAND mesh_invoke_correlation_test)
+
     # Generate brake_sm.h from brake.scxml
     add_custom_command(
         OUTPUT "${MESH_OUTPUT_DIR}/brake_sm.h"
