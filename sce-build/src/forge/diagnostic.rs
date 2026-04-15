@@ -140,6 +140,16 @@ pub(crate) fn forge_to_diagnostics<T: SingleDiagnostic>(
 /// consumers must ignore unknown fields, per NDJSON contract.
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// Stability of wire schema `v1`. Transitions from `"pre-release"` to
+/// `"stable"` when the criterion in `SCE_ERROR_CONTRACT.md` §8.1 is
+/// met (first external consumer dependency, or 30 consecutive days at
+/// HEAD with no non-additive change). Emitted as `x-sce-schema-status`
+/// at the top of `schemas/sce-diagnostic.v1.schema.json` so downstream
+/// consumers can read the signal without linking this crate. The
+/// `schema_file_declares_status` test guards the two declarations
+/// against drift.
+pub const SCHEMA_STATUS: &str = "pre-release";
+
 /// A single machine-readable diagnostic, one record per NDJSON line.
 ///
 /// Serialized field order is fixed: `v` first so any consumer can
@@ -3019,6 +3029,42 @@ mod tests {
              can avoid by writing better SCXML) or 'Diagnostic-only' \
              (I/O / infrastructure failures). Add the missing \
              entries and re-run.",
+        );
+    }
+
+    /// Drift guard between [`SCHEMA_STATUS`] (the Rust source of
+    /// truth) and the `x-sce-schema-status` field in
+    /// `schemas/sce-diagnostic.v1.schema.json` (the downstream-visible
+    /// declaration). Both must agree; otherwise external consumers
+    /// reading the schema file would see a stability claim that
+    /// diverges from the crate.
+    ///
+    /// The check also enforces the closed value set (`pre-release`
+    /// or `stable`) so typos do not slip past review. See
+    /// `SCE_ERROR_CONTRACT.md` §8.1 for the transition criterion.
+    #[test]
+    fn schema_file_declares_status() {
+        let schema_bytes =
+            include_str!("../../../schemas/sce-diagnostic.v1.schema.json");
+        let parsed: serde_json::Value = serde_json::from_str(schema_bytes)
+            .expect("schema file must be valid JSON");
+        let declared = parsed
+            .get("x-sce-schema-status")
+            .and_then(|v| v.as_str())
+            .expect(
+                "schema must declare x-sce-schema-status at top level — \
+                 see SCE_ERROR_CONTRACT.md §8.1",
+            );
+        assert!(
+            matches!(declared, "pre-release" | "stable"),
+            "x-sce-schema-status must be 'pre-release' or 'stable'; \
+             got {declared:?}",
+        );
+        assert_eq!(
+            declared, SCHEMA_STATUS,
+            "schema file's x-sce-schema-status drifted from \
+             SCHEMA_STATUS const — update one to match the other and \
+             verify SCE_ERROR_CONTRACT.md §8.1",
         );
     }
 

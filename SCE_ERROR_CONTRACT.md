@@ -354,6 +354,30 @@ A non-zero exit with no NDJSON record is a contract violation.
 When `v` bumps, the previous format stays available for at least one
 minor release behind a compatibility flag.
 
+### 8.1 Stability
+
+Schema `v1` is currently marked `pre-release`. While `pre-release`,
+non-additive shape changes are permitted without a `v` bump — downstream
+consumers should pin to a specific commit rather than rely on `v1`
+stability. Transition to `stable` occurs when **either**:
+
+- (a) an external consumer (outside this repository) declares a
+  dependency on the schema and registers it in an ADR, **or**
+- (b) 30 consecutive days at HEAD elapse without any non-additive
+  change,
+
+whichever comes first. Once `stable`, §8's evolution rules apply
+strictly — any non-additive change requires a `v2` schema coexisting
+with `v1` for at least one minor release cycle.
+
+The current status is encoded in `SCHEMA_STATUS` at
+`sce-build/src/forge/diagnostic.rs` and emitted as `x-sce-schema-status`
+at the top of `schemas/sce-diagnostic.v1.schema.json`, so downstream
+consumers can read the signal without linking the crate. The
+`schema_file_declares_status` test asserts the two agree; any change
+to the const must update the schema file (or vice versa) in the same
+commit.
+
 ## 9. Reference implementation
 
 - Trait: `sce_build::forge::diagnostic::ToDiagnostics`
