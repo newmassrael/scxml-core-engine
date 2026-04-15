@@ -444,7 +444,7 @@ struct TransportRouter {
     // header for shutdown semantics.
     SCE::Mesh::MeshDeadlineScheduler deadline_scheduler_;
 
-    // active_invokes_: (target + ":" + fieldSuffix) → latest UUID.
+    // active_invokes_: (target, fieldSuffix) → latest invoke UUID.
     // The state-entry callback tracks UUIDs here so state-exit cancel
     // (performMeshCancel) can erase the matching correlation entry
     // without the state machine itself managing UUID storage. Mutex
@@ -452,8 +452,37 @@ struct TransportRouter {
     // transport callback threads that might fire handleReply in
     // parallel and mutate no shared state (handleReply only touches
     // invoke_correlation_, which has its own mutex).
+    //
+    // InvokeSiteKey is a typed composite of (target, fieldSuffix). A
+    // string-concat key (`target + ":" + fieldSuffix`) would have
+    // worked given the SCXML grammar (target starts with `#`, suffix
+    // is identifier-safe — no `:` in either), but the collision-free
+    // property would be an implicit grammar invariant rather than a
+    // type-system guarantee. The struct + dedicated hash makes the
+    // composition explicit and is robust against any future grammar
+    // change that might allow `:` in either component.
+    struct InvokeSiteKey {
+        std::string target;
+        std::string field_suffix;
+        bool operator==(const InvokeSiteKey& o) const noexcept {
+            return target == o.target && field_suffix == o.field_suffix;
+        }
+    };
+    struct InvokeSiteKeyHash {
+        // Hash combiner: boost::hash_combine pattern (golden ratio
+        // mixing constant) — diffuses bits between the two component
+        // hashes so prefix-correlated targets (e.g., `#motor1`,
+        // `#motor2`) do not concentrate in a small slot range.
+        std::size_t operator()(const InvokeSiteKey& k) const noexcept {
+            std::size_t h = std::hash<std::string>{}(k.target);
+            h ^= std::hash<std::string>{}(k.field_suffix)
+                 + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+            return h;
+        }
+    };
     std::mutex active_invokes_mutex_;
-    std::unordered_map<std::string, std::array<std::uint8_t, 16>> active_invokes_;
+    std::unordered_map<InvokeSiteKey, std::array<std::uint8_t, 16>,
+                       InvokeSiteKeyHash> active_invokes_;
 {% endif %}
 
 {# ── (D3) Constructor ──
@@ -852,7 +881,7 @@ struct TransportRouter {
         // onexit can erase the matching correlation + deadline entries.
         {
             std::lock_guard<std::mutex> lock(active_invokes_mutex_);
-            active_invokes_[target + ":" + fieldSuffix] = uuid;
+            active_invokes_[InvokeSiteKey{target, fieldSuffix}] = uuid;
         }
 
         return route_send(target, env);
@@ -872,7 +901,7 @@ struct TransportRouter {
         std::array<std::uint8_t, 16> uuid;
         {
             std::lock_guard<std::mutex> lock(active_invokes_mutex_);
-            auto it = active_invokes_.find(target + ":" + fieldSuffix);
+            auto it = active_invokes_.find(InvokeSiteKey{target, fieldSuffix});
             if (it == active_invokes_.end()) return false;
             uuid = it->second;
             active_invokes_.erase(it);
