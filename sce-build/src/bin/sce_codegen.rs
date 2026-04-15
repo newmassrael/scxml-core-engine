@@ -201,7 +201,7 @@ impl ToDiagnostics for CliError {
             id: compute_id(code, Stage::Cli, None, &key),
             code,
             stage: Stage::Cli,
-            spec: None,
+            spec: code.spec_anchor(),
             message: self.to_string(),
             location: None,
             expected: None,
@@ -262,12 +262,13 @@ fn emit_ndjson(diag: &Diagnostic) {
 /// records, matching the forge / mesh `--error-format=json` behaviour.
 ///
 /// Takes `Located<ForgeError>` so the full diagnostic shape (`code` /
-/// `stage` / `fix` / `location`) survives to NDJSON — parser failures
-/// carry a location populated by `SCXMLParser::parse_file`, with
-/// roxmltree row/col when available. Codegen failures and pass-state
-/// detection still route through unstructured strings; typing those
-/// paths is a separate refactor against the `W3cBackend::generate_sm`
-/// trait.
+/// `stage` / `fix` / `location`) survives to NDJSON. Both call sites —
+/// parser failures (location populated by the parser, with roxmltree
+/// row/col when available) and codegen failures (wrapped at the call
+/// site with scxml path as the file label) — share this one helper.
+/// Pass-state detection is a batch post-condition, not a compiler
+/// error, so it emits `CliError::ScxmlGenerate` inline at its single
+/// site rather than reusing this helper.
 fn emit_batch_failure_ndjson(err: &sce_build::forge::error::Located<ForgeError>) {
     if !matches!(current_error_format(), ErrorFormat::Json) {
         return;
@@ -439,7 +440,32 @@ struct Cli {
     /// is global — every subcommand routes failure through the same
     /// emitter (`cli_exit` / `ErrorFormat::emit_and_exit`), so agents
     /// see a uniform wire contract regardless of which subcommand ran.
-    #[arg(long, value_enum, default_value_t = ErrorFormat::Human, global = true)]
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ErrorFormat::Human,
+        global = true,
+        long_help = "\
+Diagnostic output format on stderr.
+
+  human  (default) Human-readable prose; preserves existing CLI output.
+  json             One NDJSON record per error, one object per line.
+                   Shape is defined by the schema at
+                   schemas/sce-diagnostic.v1.schema.json and documented
+                   in SCE_ERROR_CONTRACT.md. Example stderr line:
+
+    {\"v\":1,\"id\":\"fnv1a:1c56b923b2b2b87f\",\"code\":\"validation/missing-attribute\",\"stage\":\"validation\",\"message\":\"sce:field must have an 'id' attribute\",\"fix\":{\"kind\":\"add_attribute\",\"element\":\"sce:field\",\"attr\":\"id\"}}
+
+                   Required fields: v, id, code, stage, message.
+                   Optional fields (may be absent): spec, location,
+                   expected, actual, fix. Consumers MUST ignore
+                   unknown fields — purely additive schema changes
+                   are backwards-compatible and do not bump `v`.
+
+Stdout is unaffected — the artifact manifest (see
+SCE_ERROR_CONTRACT.md §10) rides there regardless of this flag.
+"
+    )]
     error_format: ErrorFormat,
 
     #[command(subcommand)]
@@ -1315,7 +1341,13 @@ trait W3cBackend {
 
     /// Generate SM code. Returns Vec of (filename, code) pairs.
     /// C++ returns .h + .inl, others return one file.
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String>;
+    /// Produce (filename, code) pairs for the state machine. Errors are
+    /// returned as `ForgeError` so the W3C batch loop can drive them
+    /// through `ToDiagnostics::to_diagnostics()` — preserving the
+    /// structured `code` / `stage` / `fix` / `location` signal all the
+    /// way to NDJSON output. Stringifying here would collapse every
+    /// failure into `cli/scxml-generate` and lose the repair routing.
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError>;
 
     /// Hook after writing parent SM (e.g. Rust writes mod.rs).
     fn post_write_parent(&self, _test_id: &str, _test_mod_dir: &Path, _input_stem: &str) {}
@@ -1643,7 +1675,24 @@ fn generate_w3c_unified(
                                     generated_static.push(test_id.clone());
                                 }
                             } else {
-                                failed.push((test_id.clone(), "pass state not detected".to_string()));
+                                // Pass-state detection is a batch
+                                // post-condition, not a compiler
+                                // pipeline stage, so it emits inline
+                                // as CliError::ScxmlGenerate rather
+                                // than through the shared typed
+                                // emitter (which only carries
+                                // ForgeError codes).
+                                let reason = "pass state not detected";
+                                if matches!(current_error_format(), ErrorFormat::Json) {
+                                    let cli_err = CliError::ScxmlGenerate {
+                                        stage: "pass-state-detection",
+                                        detail: format!("{test_id}: {reason}"),
+                                    };
+                                    for diag in cli_err.to_diagnostics() {
+                                        emit_ndjson(&diag);
+                                    }
+                                }
+                                failed.push((test_id.clone(), reason.to_string()));
                             }
                         } else {
                             // Backend doesn't generate test files (C++); count as generated
@@ -1655,17 +1704,26 @@ fn generate_w3c_unified(
                         }
                     }
                     Err(e) => {
-                        failed.push((test_id.clone(), format!("codegen failed: {e}")));
+                        // Codegen produces bare `ForgeError` (minijinja
+                        // unwinds without row/col), so wrap at the call
+                        // site with the scxml path as the file label
+                        // and leave line/col None — fabricating `(1,1)`
+                        // would mislead the repair loop.
+                        let located = sce_build::forge::error::Located::new(
+                            e,
+                            scxml_path.display().to_string(),
+                            None,
+                            None,
+                        );
+                        let reason = format!("codegen failed: {}", located.error);
+                        emit_batch_failure_ndjson(&located);
+                        failed.push((test_id.clone(), reason));
                     }
                 }
             }
             Err(e) => {
-                // Parser returns Located<ForgeError> with file +
-                // (when available) row/col, so emit straight through
-                // the typed channel. Codegen still produces
-                // unstructured strings on this branch — threading the
-                // typed shape through the `W3cBackend::generate_sm`
-                // trait is a separate refactor.
+                // Parser already populated `Located` with file +
+                // (when available) row/col, so emit straight through.
                 let reason = format!("parse error: {e}");
                 emit_batch_failure_ndjson(&e);
                 failed.push((test_id.clone(), reason));
@@ -1774,9 +1832,8 @@ impl W3cBackend for RustBackend {
     fn sm_output_base(&self) -> &Path { &self.sm_base }
     fn test_output_dir(&self) -> &Path { &self.test_dir }
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
-        let code = sce_build::generator::generate(model, &self.tmpl_dir)
-            .map_err(|e| e.to_string())?;
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+        let code = sce_build::generator::generate(model, &self.tmpl_dir)?;
         Ok(vec![(format!("{input_stem}_sm.rs"), code)])
     }
 
@@ -1920,9 +1977,8 @@ impl W3cBackend for GoBackend {
     fn sm_output_base(&self) -> &Path { &self.sm_base }
     fn test_output_dir(&self) -> &Path { &self.sm_base } // Go tests live in sm dir
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
-        let code = sce_build::generator::generate_go(model, &self.tmpl_dir)
-            .map_err(|e| e.to_string())?;
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+        let code = sce_build::generator::generate_go(model, &self.tmpl_dir)?;
         Ok(vec![(format!("{input_stem}_sm.go"), code)])
     }
 
@@ -2036,9 +2092,8 @@ impl W3cBackend for KotlinBackend {
     fn sm_output_base(&self) -> &Path { &self.sm_base }
     fn test_output_dir(&self) -> &Path { &self.test_dir }
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
-        let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir)
-            .map_err(|e| e.to_string())?;
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+        let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir)?;
         Ok(vec![(format!("{input_stem}Sm.kt"), code)])
     }
 
@@ -2221,9 +2276,8 @@ impl W3cBackend for CppBackend {
     fn sm_output_base(&self) -> &Path { &self.output_dir }
     fn test_output_dir(&self) -> &Path { &self.output_dir }
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
-        let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem)
-            .map_err(|e| e.to_string())?;
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+        let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem)?;
         Ok(output.files)
     }
 
