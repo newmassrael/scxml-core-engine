@@ -32,8 +32,14 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
     /**
      * Opaque handle for JS values (objects, functions, DOM elements) that cannot
      * survive Kotlin round-trip. Stored in JS-side __sce_refs registry.
+     *
+     * `originHandle` records the QuickJS context the ref was created in so that
+     * cross-session reuse (`sessions["A"]` → `sessions["B"].setVariable(...)`)
+     * can be rejected; the `__sce_refs` registry is per-context, so reading
+     * `__sce_refs[refId]` from a different context would silently return the
+     * wrong value (or undefined).
      */
-    private data class QuickJSRef(val refId: Int)
+    private data class QuickJSRef(val refId: Int, val originHandle: Long)
 
     private data class Session(
         val handle: Long,  // QJSSession pointer
@@ -148,6 +154,12 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             is String -> QuickJSNative.setGlobalString(handle, name, value)
             is QuickJSRef -> {
                 requireSafeName()
+                if (value.originHandle != handle) {
+                    throw ScriptEngineException(
+                        "Cross-session QuickJSRef rejected: refId=${value.refId} " +
+                            "origin=0x${value.originHandle.toString(16)} " +
+                            "target=0x${handle.toString(16)}")
+                }
                 // Restore from JS-side registry and release the ref
                 QuickJSNative.eval(handle,
                     "$name = __sce_refs[${value.refId}]; delete __sce_refs[${value.refId}]")
@@ -341,7 +353,7 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
      * Called by StateMachineEngine before processing events.
      */
     fun updateActiveStates(
-        @Suppress("UNUSED_PARAMETER") sessionId: String,
+        sessionId: String,
         activeStateIds: Set<String>
     ) {
         val session = sessions[sessionId] ?: return
@@ -401,7 +413,7 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
      * Decode typed result string from JNI evalExpression.
      * Protocol: U=undefined, N=null, T=true, F=false, I<int>, D<double>, S<str>, R<ref>
      */
-    private fun decodeTypedResult(encoded: String, @Suppress("UNUSED_PARAMETER") session: Session): Any? {
+    private fun decodeTypedResult(encoded: String, session: Session): Any? {
         if (encoded.isEmpty()) return null
         return when (encoded[0]) {
             'U' -> null
@@ -413,7 +425,7 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             'S' -> encoded.substring(1)
             'R' -> {
                 val refId = encoded.substring(1).toIntOrNull() ?: return null
-                QuickJSRef(refId)
+                QuickJSRef(refId, session.handle)
             }
             else -> null
         }

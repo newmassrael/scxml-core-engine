@@ -33,8 +33,13 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * Opaque handle for Lua values (functions, metatabled tables) that cannot survive
      * Kotlin round-trip. Stored in Lua registry via luaL_ref, retrieved via lua_rawgeti.
      * Must be consumed via [setVariable] or explicitly released via [unrefIfNeeded].
+     *
+     * `originHandle` records the lua_State the ref was created in so that
+     * cross-session reuse can be rejected; the registry is per-state, so reading
+     * `rawgeti(otherState, registryIndex, key)` would silently return whatever
+     * happens to live at that key in the other state (or nil).
      */
-    private data class LuaRef(val registryKey: Int)
+    private data class LuaRef(val registryKey: Int, val originHandle: Long)
 
     private data class Session(
         val handle: Long,  // lua_State pointer
@@ -50,7 +55,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val handle = LuaNative.newState()
         if (handle == 0L) throw ScriptEngineException("Failed to create Lua state")
         sessions[sessionId] = Session(handle)
-        registerBuiltins(handle, sessionId)
+        registerBuiltins(handle)
     }
 
     override fun destroySession(sessionId: String) {
@@ -320,7 +325,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
         if (LuaNative.isFunction(L, -1)) {
             val ref = LuaNative.ref(L, LuaNative.registryIndex())
             session.activeRefs.add(ref)
-            return LuaRef(ref)
+            return LuaRef(ref, session.handle)
         }
         if (LuaNative.isTable(L, -1) && LuaNative.getMetatable(L, -1)) {
             // Sentinel tables (_NULL, _UNDEFINED) have metatables but are safe to convert
@@ -329,7 +334,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
                 // DOM object or similar — preserve via registry
                 val ref = LuaNative.ref(L, LuaNative.registryIndex())
                 session.activeRefs.add(ref)
-                return LuaRef(ref)
+                return LuaRef(ref, session.handle)
             }
         }
         val result = luaToKotlin(L, -1)
@@ -349,12 +354,18 @@ class LuaScriptEngine : ScxmlScriptEngine {
     /** Release a consumed LuaRef from the registry and session tracking. */
     private fun unrefIfNeeded(session: Session, value: Any?) {
         if (value is LuaRef) {
+            if (value.originHandle != session.handle) {
+                throw ScriptEngineException(
+                    "Cross-session LuaRef rejected: registryKey=${value.registryKey} " +
+                        "origin=0x${value.originHandle.toString(16)} " +
+                        "target=0x${session.handle.toString(16)}")
+            }
             session.activeRefs.remove(value.registryKey)
             LuaNative.unref(session.handle, LuaNative.registryIndex(), value.registryKey)
         }
     }
 
-    private fun registerBuiltins(L: Long, @Suppress("UNUSED_PARAMETER") sessionId: String) {
+    private fun registerBuiltins(L: Long) {
         // Sandbox — remove dangerous libraries before any user code runs
         LuaNative.doString(L, """
             os = nil
@@ -514,7 +525,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * Update the In() predicate state table for a session.
      * Called by StateMachineEngine before processing events.
      */
-    fun updateActiveStates(@Suppress("UNUSED_PARAMETER") sessionId: String, activeStateIds: Set<String>) {
+    fun updateActiveStates(sessionId: String, activeStateIds: Set<String>) {
         val session = sessions[sessionId] ?: return
         val L = session.handle
 
@@ -543,6 +554,12 @@ class LuaScriptEngine : ScxmlScriptEngine {
         when (value) {
             null -> LuaNative.pushNil(L)
             is LuaRef -> {
+                if (value.originHandle != L) {
+                    throw ScriptEngineException(
+                        "Cross-session LuaRef rejected: registryKey=${value.registryKey} " +
+                            "origin=0x${value.originHandle.toString(16)} " +
+                            "target=0x${L.toString(16)}")
+                }
                 LuaNative.rawGetI(L, LuaNative.registryIndex(), value.registryKey.toLong())
             }
             is Boolean -> LuaNative.pushBoolean(L, value)
