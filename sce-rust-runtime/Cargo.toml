@@ -34,3 +34,6 @@ thiserror = { workspace = true }
 [dev-dependencies]
 # Env-based log output during tests
 env_logger = "0.11"
+
+[lints]
+workspace = true

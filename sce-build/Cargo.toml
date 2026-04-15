@@ -77,3 +77,6 @@ path = "tests/error_format_json.rs"
 required-features = ["cli"]
 
 
+
+[lints]
+workspace = true

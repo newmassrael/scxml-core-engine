@@ -16,3 +16,6 @@ sce-rust-runtime = { path = "../sce-rust-runtime", default-features = false }
 mlua = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

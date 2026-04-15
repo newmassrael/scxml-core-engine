@@ -39,6 +39,10 @@ enum FakeEvent {
 struct FakePolicy;
 
 impl FakePolicy {
+    // Constructor kept for parity with the FakePolicy used in other tests in
+    // this file even though the current test set instantiates the unit
+    // struct directly. Dropping it would diverge from the convention.
+    #[allow(dead_code)]
     fn new() -> Self {
         FakePolicy
     }

@@ -49,3 +49,6 @@ path = "tests/numerical_conformance.rs"
 # target is gated — run with `cargo test -p sce-forge-runtime --features alloc`
 # (or `--all-features`) to exercise the full oracle.
 required-features = ["alloc"]
+
+[lints]
+workspace = true

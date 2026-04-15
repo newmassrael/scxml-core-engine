@@ -30,7 +30,11 @@
 
 use sce_rust_runtime::{Engine, EventWithMetadata, StatePolicy};
 
+// `Fail` mirrors the W3C SCXML enum shape (test144 has both pass and fail
+// terminal states) but the hand-crafted happy-path port never constructs
+// it; matches!() arms still need the variant for exhaustiveness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 enum Test144State {
     Fail,
     Pass,

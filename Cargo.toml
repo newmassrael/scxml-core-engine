@@ -25,6 +25,13 @@ license = "LGPL-2.1-or-later OR LicenseRef-SCE-Commercial"
 repository = "https://github.com/newmassrael/scxml-core-engine"
 authors = ["newmassrael <newmassrael@gmail.com>"]
 
+# Workspace-wide rustc lint policy: any warning fails the build. Each
+# member crate opts in via `[lints] workspace = true`. Clippy categories
+# (style/complexity/pedantic) stay opt-in so generated-code crates do not
+# need blanket suppressions; rustc warnings are the strict guard.
+[workspace.lints.rust]
+warnings = "deny"
+
 [workspace.dependencies]
 # Logging facade — matches C++ spdlog conditional logging pattern
 log = "0.4"
