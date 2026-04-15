@@ -263,6 +263,12 @@ struct TargetContext {
     /// True if target receives responses (RPC, EventNotify, FieldNotify).
     /// Enables receive handler generation in init().
     has_receive: bool,
+    /// `<invoke type="sce:mesh-rpc">` sites targeting this binding.
+    /// Populated from `ResolvedTarget::invoke_sites`. The template gates
+    /// invokeMeshRpc / cancelMeshRpc emission on `target.invoke_sites`
+    /// being non-empty (`has_mesh_rpc.v` flag).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    invoke_sites: Vec<super::topology::MeshRpcInvokeSite>,
 }
 
 /// Per-event pattern context for template rendering.
@@ -568,6 +574,7 @@ fn generate_cpp_mesh(
                 has_pubsub,
                 has_field,
                 has_receive,
+                invoke_sites: t.invoke_sites.clone(),
             }
         })
         .collect();
