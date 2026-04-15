@@ -252,6 +252,30 @@ fn emit_ndjson(diag: &Diagnostic) {
         }
     }
 }
+
+/// Emit one NDJSON record per W3C batch forge failure, JSON mode only.
+///
+/// Batch mode does not terminate on the first failure — the summary at
+/// the end of `generate_w3c_unified` is the contract — so failure sites
+/// must emit non-terminally. Human mode keeps its existing final
+/// summary line; only the machine-readable channel gains per-failure
+/// records, matching the forge / mesh `--error-format=json` behaviour.
+///
+/// Takes `Located<ForgeError>` so the full diagnostic shape (`code` /
+/// `stage` / `fix` / `location`) survives to NDJSON — parser failures
+/// carry a location populated by `SCXMLParser::parse_file`, with
+/// roxmltree row/col when available. Codegen failures and pass-state
+/// detection still route through unstructured strings; typing those
+/// paths is a separate refactor against the `W3cBackend::generate_sm`
+/// trait.
+fn emit_batch_failure_ndjson(err: &sce_build::forge::error::Located<ForgeError>) {
+    if !matches!(current_error_format(), ErrorFormat::Json) {
+        return;
+    }
+    for diag in err.to_diagnostics() {
+        emit_ndjson(&diag);
+    }
+}
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
@@ -1636,7 +1660,15 @@ fn generate_w3c_unified(
                 }
             }
             Err(e) => {
-                failed.push((test_id.clone(), format!("parse error: {e}")));
+                // Parser returns Located<ForgeError> with file +
+                // (when available) row/col, so emit straight through
+                // the typed channel. Codegen still produces
+                // unstructured strings on this branch — threading the
+                // typed shape through the `W3cBackend::generate_sm`
+                // trait is a separate refactor.
+                let reason = format!("parse error: {e}");
+                emit_batch_failure_ndjson(&e);
+                failed.push((test_id.clone(), reason));
             }
         }
     }
