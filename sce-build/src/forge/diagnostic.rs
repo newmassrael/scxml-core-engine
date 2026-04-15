@@ -2278,6 +2278,42 @@ mod tests {
         );
     }
 
+    /// Coverage drift guard: every `DiagnosticCode` variant must have
+    /// at least one entry in [`forge_golden_entries`] or
+    /// [`mesh_golden_entries`]. Without this, the byte-stability and
+    /// human↔JSON parity tests would sample an arbitrary subset of
+    /// variants and miss drift on the uncovered ones.
+    ///
+    /// When this test fails, read the `missing` list and add one
+    /// representative error instance per variant to the appropriate
+    /// golden table. Capture the JSON output with `serde_json::to_string`
+    /// rather than hand-typing the hash — the `fnv1a:` prefix plus the
+    /// content hash is mechanical.
+    #[test]
+    fn every_code_has_a_golden() {
+        use std::collections::HashSet;
+        let mut covered: HashSet<&'static str> = HashSet::new();
+        for (_label, err, _golden) in forge_golden_entries() {
+            covered.insert(single(&err).code.as_str());
+        }
+        for (_label, err, _golden) in mesh_golden_entries() {
+            covered.insert(single(&err).code.as_str());
+        }
+        let missing: Vec<&'static str> = ALL_DIAGNOSTIC_CODES
+            .iter()
+            .map(|c| c.as_str())
+            .filter(|s| !covered.contains(s))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "DiagnosticCode variants without goldens ({}):\n{}\n\n\
+             Add representative cases to forge_golden_entries or \
+             mesh_golden_entries in sce-build/src/forge/diagnostic.rs.",
+            missing.len(),
+            missing.join("\n"),
+        );
+    }
+
     /// Each variant's serde-rendered slash-path must match its
     /// `as_str()` form. The id hash feeds on `as_str`, the wire
     /// contract feeds on serde; a silent rename on one side (or a
