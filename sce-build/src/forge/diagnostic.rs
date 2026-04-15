@@ -2994,41 +2994,53 @@ mod tests {
     /// signals, the acceptance doc enumerates the accepted subset.
     /// The doc's appendix partitions every `DiagnosticCode` into
     /// "Acceptance boundary" (author-preventable) vs "Diagnostic-only"
-    /// (I/O / infrastructure). This test asserts every slash-path in
-    /// `ALL_DIAGNOSTIC_CODES` appears somewhere in the doc — in
-    /// practice, in the appendix tables.
+    /// (I/O / infrastructure).
     ///
-    /// Substring match is intentionally loose. The appendix is the
-    /// coverage contract; reviewers catch appendix bypassing (e.g. a
-    /// code mentioned only in prose) in PR review. The
-    /// `include_str!` binds the check to the file at compile time so
-    /// a stale checkout cannot pass CI with a missing file.
+    /// The check matches each slash-path against the table-row form
+    /// `| `code` |`, not a loose substring. This catches three drift
+    /// modes the loose match would miss:
     ///
-    /// When this fires, add the missing code to exactly one of the
-    /// two appendix tables in `docs/SCE_ACCEPTED_SUBSET.md` —
-    /// "Acceptance boundary" if the author can prevent it by writing
-    /// better SCXML, "Diagnostic-only" if it is an I/O or
+    /// 1. Code mentioned only in prose, never in an appendix table.
+    /// 2. Code placed in both tables (duplicate partition membership).
+    /// 3. Appendix row deleted while the code is still referenced in
+    ///    prose.
+    ///
+    /// The `include_str!` binds the check to the file at compile time
+    /// so a stale checkout cannot pass CI with a missing file. When
+    /// this fires, place the code in exactly one of the two appendix
+    /// tables — "Acceptance boundary" if the author can prevent it by
+    /// writing better SCXML, "Diagnostic-only" if it is an I/O or
     /// infrastructure failure.
     #[test]
     fn acceptance_doc_covers_every_code() {
         let doc = include_str!("../../../docs/SCE_ACCEPTED_SUBSET.md");
-        let mut missing: Vec<&'static str> = Vec::new();
+        let mut not_in_appendix: Vec<&'static str> = Vec::new();
+        let mut duplicated: Vec<(&'static str, usize)> = Vec::new();
         for &code in ALL_DIAGNOSTIC_CODES {
-            let needle = code.as_str();
-            if !doc.contains(needle) {
-                missing.push(needle);
+            let row_anchor = format!("| `{}` |", code.as_str());
+            let hits = doc.matches(&row_anchor).count();
+            match hits {
+                0 => not_in_appendix.push(code.as_str()),
+                1 => {}
+                n => duplicated.push((code.as_str(), n)),
             }
         }
         assert!(
-            missing.is_empty(),
-            "DiagnosticCode entries not referenced in \
-             docs/SCE_ACCEPTED_SUBSET.md:\n{missing:#?}\n\n\
-             Every code must appear in the appendix of \
-             SCE_ACCEPTED_SUBSET.md, either under 'Acceptance \
-             boundary' (if it represents a rejection rule the user \
-             can avoid by writing better SCXML) or 'Diagnostic-only' \
-             (I/O / infrastructure failures). Add the missing \
-             entries and re-run.",
+            not_in_appendix.is_empty(),
+            "DiagnosticCode entries not present as an appendix row in \
+             docs/SCE_ACCEPTED_SUBSET.md (expected a line beginning \
+             `| `<code>` |`):\n{not_in_appendix:#?}\n\n\
+             Place each missing code in exactly one appendix table — \
+             'Acceptance boundary' if the author can prevent it by \
+             writing better SCXML, 'Diagnostic-only' if it is an I/O \
+             or infrastructure failure.",
+        );
+        assert!(
+            duplicated.is_empty(),
+            "DiagnosticCode entries appear in more than one appendix \
+             row of docs/SCE_ACCEPTED_SUBSET.md (code, occurrences):\n\
+             {duplicated:#?}\n\n\
+             Each code must sit in exactly one partition.",
         );
     }
 

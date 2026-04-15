@@ -261,7 +261,7 @@ This appendix is the **drift-guarded coverage target** for the
 below. The prose sections §1–§3 above reference a subset of these
 codes inline, but the appendix is the coverage contract.
 
-### Acceptance boundary (65)
+### Acceptance boundary
 
 Codes that the author can avoid by writing a better SCXML /
 `deploy.yaml` / CLI invocation. Listed in pipeline-stage order.
@@ -334,7 +334,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-unsupported-transport` | Mesh Codegen | §2.5 transport set |
 | `mesh/codegen-event-name-collision` | Mesh Codegen | §2.7 event naming |
 
-### Diagnostic-only (19)
+### Diagnostic-only
 
 I/O and infrastructure failures that the author cannot prevent by
 editing the SCXML document. Consumers routing repairs should not
@@ -375,8 +375,9 @@ or SCE-internal issues.
   runtime check will otherwise fail with the specific missing code
   name.
 - If a code's *classification* changes (boundary ↔ diagnostic-only),
-  move the row between tables and update the row count in the two
-  section headers.
+  move the row between tables. `acceptance_doc_covers_every_code`
+  asserts exactly one appendix row per code, so duplication or
+  deletion during the move is caught.
 - When §1 / §2 / §3 prose gains a new construct, link it from the
   relevant appendix row's "Section" column so reviewers can trace
   prose ↔ code coverage. Inline prose mentions are not guarded; only
