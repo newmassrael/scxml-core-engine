@@ -1750,9 +1750,10 @@ impl SCXMLParser {
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{Located, ValidationError};
+        use crate::forge::model::SCE_NAMESPACE;
         for child in root.children().filter(|n| n.is_element()) {
             let is_sce_context =
-                child.tag_name().namespace() == Some("urn:sce:extensions")
+                child.tag_name().namespace() == Some(SCE_NAMESPACE)
                     && child.tag_name().name() == "context";
             if !is_sce_context {
                 continue;
@@ -3407,7 +3408,7 @@ mod tests {
     fn error_duplicate_context_id() {
         use crate::forge::error::{ForgeError, ValidationError};
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
-                        xmlns:sce="urn:sce:extensions"
+                        xmlns:sce="http://sce.dev/ext"
                         version="1.0" initial="s1">
             <sce:context id="hw"/>
             <sce:context id="hw"/>
@@ -3470,7 +3471,7 @@ mod tests {
         // semantically wrong IncompatibleAttributes.
         use crate::forge::error::{ForgeError, ValidationError};
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
-                        xmlns:sce="urn:sce:extensions"
+                        xmlns:sce="http://sce.dev/ext"
                         version="1.0" initial="s1">
             <state id="s1">
                 <transition cond="cpp:hw.ready()" target="s2"/>
