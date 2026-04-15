@@ -204,6 +204,7 @@ references against a real document and drift silently.
 | `validation/empty-collection` | `validation` | no | |
 | `validation/count-mismatch` | `validation` | no | |
 | `validation/incompatible-attributes` | `validation` | no | |
+| `validation/missing-context` | `validation` | no | |
 | `validation/invalid-reference` | `validation` | `replace_one_of` | |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
 | `validation/numeric-parse` | `validation` | no | |

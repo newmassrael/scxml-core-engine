@@ -192,6 +192,8 @@ pub enum DiagnosticCode {
     ValidationCountMismatch,
     #[serde(rename = "validation/incompatible-attributes")]
     ValidationIncompatibleAttributes,
+    #[serde(rename = "validation/missing-context")]
+    ValidationMissingContext,
     #[serde(rename = "validation/invalid-reference")]
     ValidationInvalidReference,
     #[serde(rename = "validation/invalid-direction")]
@@ -393,6 +395,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationEmptyCollection,
         ValidationCountMismatch,
         ValidationIncompatibleAttributes,
+        ValidationMissingContext,
         ValidationInvalidReference,
         ValidationInvalidDirection,
         ValidationNumericParse,
@@ -584,6 +587,7 @@ impl DiagnosticCode {
             | ValidationEmptyCollection
             | ValidationCountMismatch
             | ValidationIncompatibleAttributes
+            | ValidationMissingContext
             | ValidationInvalidReference
             | ValidationNumericParse
             | ValidationEmptyValue
@@ -651,6 +655,7 @@ impl DiagnosticCode {
             ValidationEmptyCollection => "validation/empty-collection",
             ValidationCountMismatch => "validation/count-mismatch",
             ValidationIncompatibleAttributes => "validation/incompatible-attributes",
+            ValidationMissingContext => "validation/missing-context",
             ValidationInvalidReference => "validation/invalid-reference",
             ValidationInvalidDirection => "validation/invalid-direction",
             ValidationNumericParse => "validation/numeric-parse",
@@ -1040,6 +1045,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             actual: None,
             fix: None,
             key_fragments: vec![element.clone(), detail.clone()],
+        },
+        ValidationError::MissingContext { site, detail } => DiagnosticFields {
+            code: DiagnosticCode::ValidationMissingContext,
+            stage: Stage::Validation,
+            // `actual` carries the offending expression so agents can
+            // locate the reference in the source document; the repair
+            // shape (add a sibling `<sce:context>` element) does not
+            // match any existing `Fix` variant, so `fix` stays `None`
+            // rather than fabricating one that misleads the repair
+            // loop. The message is precise enough for human drivers.
+            expected: None,
+            actual: Some(detail.clone()),
+            fix: None,
+            key_fragments: vec![site.clone(), detail.clone()],
         },
         ValidationError::InvalidReference {
             kind,
@@ -1786,6 +1805,7 @@ mod tests {
             | ValidationEmptyCollection
             | ValidationCountMismatch
             | ValidationIncompatibleAttributes
+            | ValidationMissingContext
             | ValidationNumericParse
             | ValidationEmptyValue
             | ValidationSingletonViolation

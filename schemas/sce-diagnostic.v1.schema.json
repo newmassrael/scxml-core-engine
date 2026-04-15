@@ -31,6 +31,7 @@
         "validation/empty-collection",
         "validation/count-mismatch",
         "validation/incompatible-attributes",
+        "validation/missing-context",
         "validation/invalid-reference",
         "validation/invalid-direction",
         "validation/numeric-parse",

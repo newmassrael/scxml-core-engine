@@ -187,6 +187,15 @@ pub enum ValidationError {
     #[error("{element}: {detail}")]
     IncompatibleAttributes { element: String, detail: String },
 
+    /// Native-code blocks (`<cpp>`, `<kt>`, `cpp:`/`kt:` conditions)
+    /// reference external objects but the document carries no
+    /// matching `<sce:context>` declaration. `site` names the offending
+    /// surface ("cpp: condition", "kt: condition", "<cpp> action",
+    /// "<kt> action") so agents can route the repair at the generator
+    /// that owns that site; `detail` carries the offending expression.
+    #[error("{site}: {detail}")]
+    MissingContext { site: String, detail: String },
+
     /// A reference (target, initial state, …) doesn't resolve.
     /// e.g. "Initial state 'armed' does not match any state"
     #[error("{kind}: {name} does not match any {what} (available: {available})")]

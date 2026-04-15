@@ -1786,10 +1786,10 @@ impl SCXMLParser {
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{Located, ValidationError};
-        let missing_context = |element: &str, detail: String| {
+        let missing_context = |site: &str, detail: String| {
             Located::new(
-                ValidationError::IncompatibleAttributes {
-                    element: element.to_string(),
+                ValidationError::MissingContext {
+                    site: site.to_string(),
                     detail,
                 }
                 .into(),
@@ -3396,6 +3396,35 @@ mod tests {
         assert!(
             msg.to_lowercase().contains("duplicate") && msg.contains("hw"),
             "expected duplicate context error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn error_missing_context_on_cpp_condition() {
+        // cpp: condition references `hw.ready` but no <sce:context id="hw">
+        // is declared — parse must fail with MissingContext, not the
+        // semantically wrong IncompatibleAttributes.
+        use crate::forge::error::{ForgeError, ValidationError};
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                        xmlns:sce="urn:sce:extensions"
+                        version="1.0" initial="s1">
+            <state id="s1">
+                <transition cond="cpp:hw.ready()" target="s2"/>
+            </state>
+            <state id="s2"/>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let err = parser.parse_string(scxml, "test").expect_err(
+            "cpp: condition without <sce:context> must fail validation",
+        );
+        assert!(
+            matches!(
+                err.error,
+                ForgeError::Validation(ValidationError::MissingContext { ref site, .. })
+                    if site == "cpp: condition"
+            ),
+            "expected ValidationError::MissingContext(site=\"cpp: condition\"), got: {:?}",
+            err.error,
         );
     }
 
