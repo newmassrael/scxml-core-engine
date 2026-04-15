@@ -24,7 +24,7 @@ use sce_build::filters;
 use sce_build::forge::diagnostic::{
     compute_id, Diagnostic, DiagnosticCode, Fix, Stage, ToDiagnostics, SCHEMA_VERSION,
 };
-use sce_build::forge::error::ForgeError;
+use sce_build::forge::error::{ForgeError, Located};
 
 /// CLI-driver errors that do not originate in a compiler pipeline.
 ///
@@ -833,44 +833,37 @@ fn cmd_generate(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
 
+    // Typed generator failures route through `Located<ForgeError>` so
+    // the NDJSON wire carries the real `generate/*` code (template-load,
+    // template-render, invalid-config) instead of collapsing to
+    // `cli/scxml-generate`. minijinja does not surface the failing
+    // template's row/col through its public error surface, so `None`
+    // line/col is honest — fabricating `(1, 1)` would misroute agent
+    // repair loops to the top of the source (see
+    // `feedback_correctness_before_features`).
+    let locate_codegen = |e: sce_build::forge::error::GenerateError| -> Located<ForgeError> {
+        Located::new(ForgeError::from(e), scxml_path, None, None)
+    };
     let output = match lang {
         Language::Rust => {
-            let code = sce_build::generator::generate(&model, &template_dir).unwrap_or_else(|e| {
-                error_format.emit_and_exit(
-                    &CliError::ScxmlGenerate { stage: "rust", detail: e.to_string() },
-                    "",
-                )
-            });
+            let code = sce_build::generator::generate(&model, &template_dir)
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
             GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
             }
         }
-        Language::Cpp => {
-            sce_build::generator::generate_cpp(&model, &template_dir, input_stem).unwrap_or_else(|e| {
-                error_format.emit_and_exit(
-                    &CliError::ScxmlGenerate { stage: "cpp", detail: e.to_string() },
-                    "",
-                )
-            })
-        }
+        Language::Cpp => sce_build::generator::generate_cpp(&model, &template_dir, input_stem)
+            .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
         Language::Kotlin => {
-            let code = sce_build::generator::generate_kotlin(&model, &template_dir).unwrap_or_else(|e| {
-                error_format.emit_and_exit(
-                    &CliError::ScxmlGenerate { stage: "kotlin", detail: e.to_string() },
-                    "",
-                )
-            });
+            let code = sce_build::generator::generate_kotlin(&model, &template_dir)
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
             GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
             }
         }
         Language::Go => {
-            let code = sce_build::generator::generate_go(&model, &template_dir).unwrap_or_else(|e| {
-                error_format.emit_and_exit(
-                    &CliError::ScxmlGenerate { stage: "go", detail: e.to_string() },
-                    "",
-                )
-            });
+            let code = sce_build::generator::generate_go(&model, &template_dir)
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
             GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
             }
