@@ -118,8 +118,12 @@ docs/xml/
 claudedocs
 docker_tsan/docker-tsan-build.log
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings — repo-wide hooks are tracked so every
+# clone inherits the same commit audit; personal state (allowlist,
+# memory, session cache) stays local.
+.claude/*
+!.claude/hooks/
+!.claude/hooks/**
 
 __pycache__/
 archive/
