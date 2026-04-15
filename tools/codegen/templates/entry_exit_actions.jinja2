@@ -48,7 +48,7 @@
 #}
 
     template <typename Engine>
-{% if not model.needs_script_engine and not model.invokes | scxml and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
+{% if not model.execute_entry_actions_needs_this %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}

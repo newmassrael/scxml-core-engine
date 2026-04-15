@@ -23,6 +23,19 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
         || model.uses_in_predicate
         || !model.context_objects.is_empty();
 
+    // `executeEntryActions` must be non-static whenever its switch body
+    // emits a reference to `this` or requires engine-bound state that the
+    // static form cannot reach. The set is derived rather than hand-maintained
+    // in the template's conditional — new `this`-bearing features add one
+    // clause here instead of threading another negation into a fragile
+    // multi-line `{% if not A and not B and ... %}`.
+    model.execute_entry_actions_needs_this = model.needs_script_engine
+        || model.has_scxml_invoke()
+        || model.has_parent_communication
+        || model.needs_event_scheduler.unwrap_or(false)
+        || model.has_parallel_states
+        || !model.context_objects.is_empty();
+
     // Rust-specific analysis
     resolve_internal_transitions(model);
     model.scxml_base_path = compute_scxml_base_path(scxml_path);

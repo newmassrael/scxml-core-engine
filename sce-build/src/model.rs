@@ -496,6 +496,23 @@ pub struct SCXMLModel {
     pub context_object_ids: BTreeSet<String>,
     pub needs_nonstatic_method: bool,
 
+    /// True iff the generated `executeEntryActions` body uses `this`.
+    ///
+    /// Drives the static/non-static decision in
+    /// `tools/codegen/templates/entry_exit_actions.jinja2`. Each feature
+    /// that emits a `this`-referencing expression into the body contributes
+    /// to this predicate — adding a new feature means updating only this
+    /// one spot rather than extending the template's conditional. Kept
+    /// separate from `needs_nonstatic_method` (which gates lambda captures
+    /// in parallel-region blocks) because the two sets of features overlap
+    /// but are not identical — notably, mesh-rpc invokes synthesize a
+    /// `reinterpret_cast<uintptr_t>(&engine)`-bearing block directly inside
+    /// `executeEntryActions` but add no lambda captures, and scheduler
+    /// state reached via `engine.scheduleEvent(...)` likewise touches
+    /// `engine` (not `this`) but still leaks through the switch body.
+    #[serde(default)]
+    pub execute_entry_actions_needs_this: bool,
+
     // SCE Forge: Inline kind declarations from <data sce:kind="..."> elements.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub inline_kinds: Vec<InlineKind>,
