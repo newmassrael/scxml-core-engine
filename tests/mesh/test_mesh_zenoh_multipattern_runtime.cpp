@@ -140,7 +140,8 @@ struct TestSenderEngine {
     }
 
     using MeshSendCb = std::function<bool(const std::string&, const std::string&,
-                                          const std::string&, const std::string&)>;
+                                          const std::string&, const std::string&,
+                                          const std::string&)>;
     MeshSendCb mesh_send_cb_;
     void setMeshSendCallback(MeshSendCb cb) { mesh_send_cb_ = std::move(cb); }
 };

@@ -53,15 +53,23 @@ struct HttpSendRequest {
     std::string sendId;
 };
 
-/// Mesh send callback signature: (target, eventName, data, sendId) → accepted.
-/// Kept as raw fields so StaticExecutionEngine.h has zero mesh-layer includes —
-/// the generated TransportRouter's wireTo() lambda builds the wire-format
-/// envelope from these fields, keeping CBOR / UUID / envelope concerns in the
-/// mesh layer where they belong.
+/// Mesh send callback signature: (target, eventName, data, sendId, invokeId)
+/// → accepted. Kept as raw fields so StaticExecutionEngine.h has zero
+/// mesh-layer includes — the generated TransportRouter's wireTo() lambda
+/// builds the wire-format envelope from these fields, keeping CBOR / UUID /
+/// envelope concerns in the mesh layer where they belong.
+///
+/// `invokeId` carries `_event.invokeid` verbatim from the triggering event's
+/// metadata (W3C SCXML 5.10.1). The mesh lambda parses it as a UUID and
+/// stamps `MeshEnvelope.invoke_id` only for patterns that carry correlation
+/// (`RpcReply`); for every other pattern the invokeId is ignored. This
+/// mirrors W3C SCXML 6.4.1's auto-propagation of `_event.invokeid` from
+/// child-to-parent sends and extends the same semantics to mesh-rpc replies.
 using MeshSendCallback = std::function<bool(const std::string& target,
                                             const std::string& eventName,
                                             const std::string& data,
-                                            const std::string& sendId)>;
+                                            const std::string& sendId,
+                                            const std::string& invokeId)>;
 
 /// Mesh-rpc invoke callback signature: (target, fieldSuffix, invokeId, data) → accepted.
 ///
@@ -526,7 +534,8 @@ public:
             if (performMeshSend(eventWithMetadata.target,
                                 policy_.getEventName(eventWithMetadata.event),
                                 eventWithMetadata.data,
-                                eventWithMetadata.sendId)) {
+                                eventWithMetadata.sendId,
+                                eventWithMetadata.invokeId)) {
                 return;  // handled by mesh transport — do not enqueue locally
             }
         }
@@ -934,6 +943,27 @@ public:
     }
 
     /**
+     * @brief Read `_event.invokeid` for the event currently being processed
+     *        (W3C SCXML 5.10.1)
+     *
+     * Templates that emit cross-boundary dispatches (e.g. mesh `<send>`) call
+     * this to auto-propagate the incoming event's invokeId onto the outgoing
+     * envelope — the same W3C SCXML 6.4.1 auto-propagation semantics that
+     * already govern child-to-parent sends, extended to mesh-rpc replies.
+     *
+     * Returns an empty string when the Policy was generated without the
+     * `pendingEventInvokeId_` field (`datamodel="null"` machines that never
+     * touch `_event.invokeid`), keeping non-metadata policies lean.
+     */
+    [[nodiscard]] std::string currentEventInvokeId() const {
+        if constexpr (SCE::Common::detail::has_pendingEventInvokeId<StatePolicy>::value) {
+            return policy_.pendingEventInvokeId_;
+        } else {
+            return {};
+        }
+    }
+
+    /**
      * @brief Process an external event (W3C SCXML 3.12)
      *
      * External events are processed after all internal events have been
@@ -1134,9 +1164,10 @@ public:
      *         (caller should fall back to the external queue).
      */
     bool performMeshSend(const std::string& target, const std::string& eventName,
-                         const std::string& data, const std::string& sendId) {
+                         const std::string& data, const std::string& sendId,
+                         const std::string& invokeId) {
         if (onMeshSend_) {
-            return onMeshSend_(target, eventName, data, sendId);
+            return onMeshSend_(target, eventName, data, sendId, invokeId);
         }
         return false;
     }

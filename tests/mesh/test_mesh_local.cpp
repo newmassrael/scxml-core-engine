@@ -48,7 +48,8 @@ struct MockEngine {
     // sender engine via this method; the mock just stores the callback
     // (ignored by this compile test).
     using MeshSendCb = std::function<bool(const std::string&, const std::string&,
-                                          const std::string&, const std::string&)>;
+                                          const std::string&, const std::string&,
+                                          const std::string&)>;
     MeshSendCb mesh_send_cb_;
     void setMeshSendCallback(MeshSendCb cb) { mesh_send_cb_ = std::move(cb); }
 };

@@ -546,7 +546,8 @@ struct TransportRouter {
         // initialization because the lambda captures `this`.
         sender.setMeshSendCallback(
             [this](const std::string& target, const std::string& eventName,
-                   const std::string& data, const std::string& /*sendId*/) -> bool {
+                   const std::string& data, const std::string& /*sendId*/,
+                   const std::string& /*invokeId*/) -> bool {
                 SCE::Mesh::MeshEnvelope env;
                 env.id = SCE::uuid::v7();
                 env.source = "{{ machine_name }}";
