@@ -57,9 +57,6 @@ enum CliError {
     #[error("{stage}: {detail}")]
     ScxmlGenerate { stage: &'static str, detail: String },
 
-    #[error("Cannot generate static code for '{name}' (dynamic features)")]
-    DynamicFeatures { name: String },
-
     #[error("No description field found in {path}")]
     MissingMetadataField { path: String },
 
@@ -143,12 +140,6 @@ impl ToDiagnostics for CliError {
                 DiagnosticCode::CliScxmlGenerate,
                 vec![(*stage).to_string(), detail.clone()],
                 None,
-                None,
-            ),
-            CliError::DynamicFeatures { name } => (
-                DiagnosticCode::CliDynamicFeatures,
-                vec![name.clone()],
-                Some(name.clone()),
                 None,
             ),
             CliError::MissingMetadataField { path } => (
@@ -821,11 +812,18 @@ fn cmd_generate(
         return;
     }
 
-    if !analyzer::can_generate_static(&model) {
-        error_format.emit_and_exit(
-            &CliError::DynamicFeatures { name: model.name.clone() },
-            "",
+    if let Err(reason) = analyzer::can_generate_static(&model) {
+        let located = sce_build::forge::error::Located::new(
+            sce_build::forge::error::ValidationError::DynamicFeatures {
+                name: model.name.clone(),
+                reason: reason.to_string(),
+            }
+            .into(),
+            scxml_path,
+            None,
+            None,
         );
+        error_format.emit_and_exit(&located, "");
     }
 
     resolve_source_path(&mut model, Path::new(scxml_path));
@@ -1489,7 +1487,7 @@ fn generate_child_sms(
             Ok(mut child_model) => {
                 analyzer::analyze(&mut child_model, child_str);
 
-                if !analyzer::can_generate_static(&child_model) {
+                if analyzer::can_generate_static(&child_model).is_err() {
                     backend.process_child_failure(test_id, &effective_name, test_mod_dir);
                     continue;
                 }
@@ -1600,7 +1598,7 @@ fn generate_w3c_unified(
                 // W3C SCXML 5.8: document_rejected models have initial->pass already
                 // redirected by the parser, so they CAN be generated. Only skip
                 // truly dynamic models.
-                if !analyzer::can_generate_static(&model) && !model.document_rejected {
+                if analyzer::can_generate_static(&model).is_err() && !model.document_rejected {
                     skipped.push((test_id.clone(), "dynamic features".to_string()));
                     continue;
                 }

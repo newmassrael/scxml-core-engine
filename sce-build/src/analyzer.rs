@@ -437,21 +437,35 @@ fn compute_scxml_base_path(scxml_path: &str) -> String {
 }
 
 /// Check if model can be statically code-generated.
-pub fn can_generate_static(model: &SCXMLModel) -> bool {
+///
+/// Returns `Ok(())` when every precondition the static generator relies
+/// on is met. The `Err` arm names *which* precondition failed —
+/// callers funnel the reason into `ValidationError::DynamicFeatures`
+/// so upstream agents see the exact blocker, not a generic
+/// "dynamic features" message that buries the repair signal.
+///
+/// Reasons are `&'static str` because the set is closed (three today)
+/// and the strings flow through the diagnostic layer unchanged —
+/// owning them would allocate per call without adding information.
+pub fn can_generate_static(model: &SCXMLModel) -> Result<(), &'static str> {
     if model.document_rejected {
-        return false;
+        return Err("document rejected by W3C SCXML 5.8");
     }
     if model.initial.is_empty() {
-        return false;
+        return Err("no initial state (runtime default resolution required)");
     }
     let initial_states: Vec<&str> = model.initial.split_whitespace().collect();
-    if initial_states.len() > 1 {
+    let all_known = if initial_states.len() > 1 {
         initial_states
             .iter()
             .all(|s| model.states.contains_key(*s))
     } else {
         model.states.contains_key(&model.initial)
+    };
+    if !all_known {
+        return Err("initial state attribute names a state that is not declared");
     }
+    Ok(())
 }
 
 // ── Shared computed analysis (language-agnostic) ─────────────────

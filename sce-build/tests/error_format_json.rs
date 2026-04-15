@@ -204,6 +204,46 @@ fn json_mode_covers_cli_boundary_errors() {
     );
 }
 
+/// Statechart that the static AOT generator cannot express — the
+/// document carries `<state initial="missing_target">`, tripping
+/// `analyzer::can_generate_static`. Before this path was routed
+/// through the typed diagnostic channel, the reject fired as
+/// `cli/dynamic-features` (Stage::Cli, exit 20) — a CLI-boundary
+/// code for a semantic analyzer verdict. Post-fix it emits
+/// `validation/dynamic-features` (Stage::Validation, exit 3), so
+/// agents can key repair routing on the analyzer, not on the shell.
+#[test]
+fn json_mode_dynamic_features_routes_through_validation_stage() {
+    let dir = ScratchDir::new("dynamic-features");
+    let path = dir.path().join("dyn.scxml");
+    // `initial` names a state that is not declared — the analyzer
+    // rejects with "initial state attribute names a state that is
+    // not declared".
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       initial="nope"
+       name="bad_dyn">
+    <state id="s1"/>
+</scxml>
+"#;
+    std::fs::write(&path, body).expect("write fixture");
+    let out = run_generate(&sce_codegen_bin(), &path, "json");
+    assert!(!out.status.success(), "dynamic-features must fail");
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "validation stage must exit 3, not cli/20",
+    );
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let line = stderr.trim_end().lines().next().expect("at least one ndjson line");
+    let parsed: serde_json::Value =
+        serde_json::from_str(line).expect("dynamic-features line must be JSON");
+    assert_eq!(parsed["code"], "validation/dynamic-features");
+    assert_eq!(parsed["stage"], "validation");
+    assert_eq!(parsed["actual"], "initial state attribute names a state that is not declared");
+}
+
 /// Write a document with an `sce:kind` value outside the XSD enum.
 ///
 /// Pre-fix, `is_forge_document()` returned false for unknown kinds

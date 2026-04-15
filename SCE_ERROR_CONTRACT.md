@@ -213,6 +213,7 @@ references against a real document and drift silently.
 | `validation/singleton-violation` | `validation` | no | |
 | `validation/require-either` | `validation` | `add_one_of` | |
 | `validation/wrong-pipeline` | `validation` | no | SCE Forge §4 |
+| `validation/dynamic-features` | `validation` | no | |
 | `expression/empty` | `expression` | no | SCE Forge §3.4 |
 | `expression/lex` | `expression` | no | SCE Forge §3.4 |
 | `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |

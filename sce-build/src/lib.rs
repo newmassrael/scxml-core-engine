@@ -37,38 +37,57 @@ use std::path::Path;
 
 /// Parse, analyze, and validate an SCXML file for static code generation.
 /// SCE Forge inline kinds are extracted during parsing (single XML pass).
-fn compile_model(scxml_path: &str) -> Result<SCXMLModel, String> {
+///
+/// Returns `Located<ForgeError>` so parser and analyzer failures
+/// travel through the typed wire contract end-to-end; the public
+/// String-returning wrappers (`compile_scxml_to_string`,
+/// `compile_from_string`, `compile_scxml_lang`) shim at their own
+/// boundary because WASM/JS callers marshal only strings. See the
+/// `CompileError` alias below — keeping this signature on the typed
+/// side eliminates mid-function stringification.
+fn compile_model(scxml_path: &str) -> Result<SCXMLModel, CompileError> {
     let mut parser = parser::SCXMLParser::new();
-    // Public boundary stringifies Located<ForgeError> for now; the
-    // follow-up commit threads the typed error through compile_model
-    // and its public wrappers.
-    let mut model = parser.parse_file(scxml_path).map_err(|e| e.to_string())?;
+    let mut model = parser.parse_file(scxml_path)?;
     analyzer::analyze(&mut model, scxml_path);
-    if !analyzer::can_generate_static(&model) {
-        return Err(format!(
-            "Cannot generate static code for '{}' (dynamic features not supported)",
-            model.name
-        ));
-    }
+    guard_static_generatable(&model, scxml_path)?;
     resolve_source_path(&mut model, scxml_path);
     Ok(model)
 }
 
 /// Parse SCXML content string, analyze and validate (no filesystem).
 /// SCE Forge inline kinds are extracted during parsing (single XML pass).
-fn compile_model_from_string(scxml_content: &str, scxml_name: &str) -> Result<SCXMLModel, String> {
+fn compile_model_from_string(
+    scxml_content: &str,
+    scxml_name: &str,
+) -> Result<SCXMLModel, CompileError> {
     let mut parser = parser::SCXMLParser::new();
-    let mut model = parser
-        .parse_string(scxml_content, scxml_name)
-        .map_err(|e| e.to_string())?;
+    let mut model = parser.parse_string(scxml_content, scxml_name)?;
     analyzer::analyze(&mut model, "");
-    if !analyzer::can_generate_static(&model) {
-        return Err(format!(
-            "Cannot generate static code for '{}' (dynamic features not supported)",
-            model.name
-        ));
-    }
+    guard_static_generatable(&model, scxml_name)?;
     Ok(model)
+}
+
+/// Typed error channel for the two `compile_model*` helpers.
+pub type CompileError = forge::error::Located<forge::error::ForgeError>;
+
+/// Promote the `analyzer::can_generate_static` precondition into a
+/// typed `ValidationError::DynamicFeatures` diagnostic. The `reason`
+/// the analyzer returned flows through verbatim so the wire record
+/// names the exact blocker.
+fn guard_static_generatable(model: &SCXMLModel, source_name: &str) -> Result<(), CompileError> {
+    use forge::error::{Located, ValidationError};
+    analyzer::can_generate_static(model).map_err(|reason| {
+        Located::new(
+            ValidationError::DynamicFeatures {
+                name: model.name.clone(),
+                reason: reason.to_string(),
+            }
+            .into(),
+            source_name,
+            None,
+            None,
+        )
+    })
 }
 
 /// Resolve SCXML source path to project-relative path.
@@ -113,7 +132,7 @@ pub fn compile_scxml(scxml_files: &[&str]) {
 ///
 /// This is the core API — parses SCXML, analyzes model, renders templates.
 pub fn compile_scxml_to_string(scxml_path: &str, template_dir: &Path) -> Result<String, String> {
-    let model = compile_model(scxml_path)?;
+    let model = compile_model(scxml_path).map_err(|e| e.to_string())?;
     generator::generate(&model, template_dir).map_err(|e| e.to_string())
 }
 
@@ -125,7 +144,8 @@ pub fn compile_from_string(
     scxml_name: &str,
     templates: &[(&str, &str)],
 ) -> Result<String, String> {
-    let model = compile_model_from_string(scxml_content, scxml_name)?;
+    let model = compile_model_from_string(scxml_content, scxml_name)
+        .map_err(|e| e.to_string())?;
     generator::generate_with_templates(&model, templates).map_err(|e| e.to_string())
 }
 
@@ -136,7 +156,8 @@ pub fn compile_from_string_lang(
     templates: &[(&str, &str)],
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, String> {
-    let model = compile_model_from_string(scxml_content, scxml_name)?;
+    let model = compile_model_from_string(scxml_content, scxml_name)
+        .map_err(|e| e.to_string())?;
 
     match language {
         generator::Language::Rust => {
@@ -176,7 +197,7 @@ pub fn compile_scxml_lang(
     template_dir: &Path,
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, String> {
-    let model = compile_model(scxml_path)?;
+    let model = compile_model(scxml_path).map_err(|e| e.to_string())?;
 
     let input_stem = Path::new(scxml_path)
         .file_stem()

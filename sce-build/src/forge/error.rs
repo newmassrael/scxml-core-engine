@@ -255,6 +255,15 @@ pub enum ValidationError {
     /// e.g. statechart kind sent to the forge pipeline, or imported as forge
     #[error("{kind} kind cannot be processed by the forge pipeline")]
     WrongPipeline { kind: ForgeKind },
+
+    /// Statechart uses features the static AOT generator cannot
+    /// express (`<invoke srcexpr=...>`, missing initial state,
+    /// `_event` metadata, …). `reason` carries which specific blocker
+    /// the analyzer detected so agents know whether to rewrite the
+    /// document (missing initial) or accept the Interpreter fallback
+    /// (dynamic invoke).
+    #[error("cannot generate static code for '{name}': {reason}")]
+    DynamicFeatures { name: String, reason: String },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

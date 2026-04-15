@@ -40,6 +40,7 @@
         "validation/singleton-violation",
         "validation/require-either",
         "validation/wrong-pipeline",
+        "validation/dynamic-features",
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",

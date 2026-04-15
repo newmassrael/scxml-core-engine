@@ -210,6 +210,8 @@ pub enum DiagnosticCode {
     ValidationRequireEither,
     #[serde(rename = "validation/wrong-pipeline")]
     ValidationWrongPipeline,
+    #[serde(rename = "validation/dynamic-features")]
+    ValidationDynamicFeatures,
 
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
@@ -406,6 +408,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationSingletonViolation,
         ValidationRequireEither,
         ValidationWrongPipeline,
+        ValidationDynamicFeatures,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -597,6 +600,7 @@ impl DiagnosticCode {
             | ValidationEmptyValue
             | ValidationSingletonViolation
             | ValidationRequireEither
+            | ValidationDynamicFeatures
             | ImportFileNotFound
             | ImportKindMismatch
             | ImportNotForge
@@ -668,6 +672,7 @@ impl DiagnosticCode {
             ValidationSingletonViolation => "validation/singleton-violation",
             ValidationRequireEither => "validation/require-either",
             ValidationWrongPipeline => "validation/wrong-pipeline",
+            ValidationDynamicFeatures => "validation/dynamic-features",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
@@ -1170,6 +1175,18 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             actual: Some(kind.to_string()),
             fix: None,
             key_fragments: vec![kind.to_string()],
+        },
+        ValidationError::DynamicFeatures { name, reason } => DiagnosticFields {
+            code: DiagnosticCode::ValidationDynamicFeatures,
+            stage: Stage::Validation,
+            // `actual` carries the specific blocker so agents route
+            // between Interpreter fallback (dynamic invoke) and
+            // document rewrite (missing initial); no closed candidate
+            // set exists for the repair, so `fix` stays `None`.
+            expected: None,
+            actual: Some(reason.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), reason.clone()],
         },
     }
 }
@@ -1831,6 +1848,7 @@ mod tests {
             | ValidationEmptyValue
             | ValidationSingletonViolation
             | ValidationWrongPipeline
+            | ValidationDynamicFeatures
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
