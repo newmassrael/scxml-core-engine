@@ -1392,7 +1392,10 @@ pub fn load_receiver_models(
 
 /// Strict event coverage check for a single sender: every `<send event="Y"/>`
 /// to a static target must have a matching `<transition event="Y"/>` in the
-/// receiver.
+/// receiver — with the §9.5 exemption that RpcReply events targeting a
+/// receiver that declares `<invoke type="sce:mesh-rpc">` are consumed by the
+/// correlation table before reaching SCXML, so the reply event name will
+/// never appear on a literal transition and must not be flagged.
 ///
 /// Sender-scoped by construction: only the sender's target_events are
 /// iterated, so the cost is proportional to the sender's `<send>` count
@@ -1409,6 +1412,30 @@ pub fn check_sender_event_coverage(
         .map(|(name, m)| (name.as_str(), collect_transition_events(m)))
         .collect();
 
+    // Collect each receiver's §9.5 reply-event exemption set: for every
+    // `<invoke type="sce:mesh-rpc">` the receiver hosts, the paired reply
+    // event (derived via `CommunicationPattern::infer_reply_event`) is
+    // delivered through InvokeCorrelation, not a literal transition.
+    let receiver_rpc_replies: BTreeMap<&str, BTreeSet<String>> = receiver_models
+        .iter()
+        .map(|(name, m)| {
+            let replies = m
+                .states
+                .values()
+                .flat_map(|s| s.invokes.iter())
+                .filter_map(|i| match i {
+                    Invoke::MeshRpc(info) => Some(info),
+                    _ => None,
+                })
+                .filter_map(|info| {
+                    super::pattern::detect_pattern(&info.mesh_event)
+                        .and_then(|p| p.infer_reply_event(&info.mesh_event))
+                })
+                .collect::<BTreeSet<String>>();
+            (name.as_str(), replies)
+        })
+        .collect();
+
     let mut findings = Vec::new();
     for (target, event) in &summary.target_events {
         if event.is_empty() {
@@ -1419,6 +1446,11 @@ pub fn check_sender_event_coverage(
             Some(s) => s,
             None => continue, // receiver model not supplied — out of scope
         };
+        if let Some(rpc_replies) = receiver_rpc_replies.get(receiver_name) {
+            if rpc_replies.contains(event) {
+                continue; // §9.5 reply consumed by correlation, not SCXML
+            }
+        }
         if !event_matches_any(event, rx_events) {
             findings.push(EventCoverageWarning {
                 sender: sender_name.to_string(),
@@ -1695,6 +1727,59 @@ topology:
         let summary = summary_for(&brake);
         let findings = check_sender_event_coverage("brake", &summary, &receivers, &deploy);
         assert!(findings.is_empty(), "expected no findings, got {findings:?}");
+    }
+
+    #[test]
+    fn check_sender_event_coverage_exempts_mesh_rpc_reply() {
+        // §9.5 scenario: brake hosts <invoke type="sce:mesh-rpc"> with
+        // mesh_event="service.request.compute_force"; motor replies with
+        // "service.response.compute_force" targeting #brake. Brake has NO
+        // literal transition for the reply event (it rides the correlation
+        // table), so the coverage check must exempt it.
+        const BRAKE_INVOKE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="brake" initial="idle">
+    <state id="idle">
+        <transition event="go" target="computing"/>
+    </state>
+    <state id="computing">
+        <invoke type="sce:mesh-rpc" src="#motor">
+            <param name="_mesh_event" expr="'service.request.compute_force'"/>
+        </invoke>
+        <transition event="done.invoke.*" target="ok"/>
+    </state>
+    <final id="ok"/>
+</scxml>"##;
+        const MOTOR_REPLIES_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="motor" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="replying"/>
+    </state>
+    <state id="replying">
+        <onentry>
+            <send target="#brake" event="service.response.compute_force"/>
+        </onentry>
+    </state>
+</scxml>"##;
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml, bindings: { "#brake": { transport: local } } }
+"##,
+        )
+        .unwrap();
+        let motor = parse_model(MOTOR_REPLIES_SCXML, "motor");
+        let brake = parse_model(BRAKE_INVOKE_SCXML, "brake");
+        let receivers = vec![("brake".to_string(), brake)];
+
+        let summary = summary_for(&motor);
+        let findings = check_sender_event_coverage("motor", &summary, &receivers, &deploy);
+        assert!(
+            findings.is_empty(),
+            "expected RpcReply exemption, got {findings:?}"
+        );
     }
 
     #[test]
