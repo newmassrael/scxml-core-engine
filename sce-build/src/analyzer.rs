@@ -314,9 +314,16 @@ fn add_system_events(model: &mut SCXMLModel) {
     // and error.invoke.<id> on timeout or non-Ok status. cancel.invoke is
     // scxml-specific (W3C §6.4 child-session cancel) and not raised for
     // mesh-rpc — cancellation erases the correlation entry silently.
+    // error.execution (W3C §6.4.1) is raised when `performMeshInvoke`
+    // returns false — i.e. the document was rendered without a
+    // TransportRouter installing the mesh-invoke callback. Same error
+    // event scxml invokes emit on invocation failure; listing it here
+    // keeps the generated `Event::Error_execution` enum value resolvable
+    // whether or not the author wrote an explicit handler.
     if model.has_mesh_rpc_invoke() {
         model.events.insert("done.invoke".to_string());
         model.events.insert("error.invoke".to_string());
+        model.events.insert("error.execution".to_string());
     }
 }
 
