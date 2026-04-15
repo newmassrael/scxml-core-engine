@@ -31,6 +31,7 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     // multi-line `{% if not A and not B and ... %}`.
     model.execute_entry_actions_needs_this = model.needs_script_engine
         || model.has_scxml_invoke()
+        || model.has_mesh_rpc_invoke()
         || model.has_parent_communication
         || model.needs_event_scheduler.unwrap_or(false)
         || model.has_parallel_states
