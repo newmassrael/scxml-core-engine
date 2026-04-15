@@ -256,9 +256,22 @@ pub enum Invoke {
 /// (`invoke_id`, `state_name`), the declared `<param>` payload, and the
 /// optional `idlocation` attribute. Sits at the base of the invoke type
 /// hierarchy and is flattened into each wrapping struct's serialisation.
+///
+/// `invoke_id` is preserved verbatim — including the leading underscore on
+/// auto-generated ids — because W3C SCXML 6.4.1 surfaces it in event names
+/// (`done.invoke._invoke_0`) and `_event.invokeid`. Codegen sites that need
+/// an *identifier-safe* suffix for generated field/variable names must use
+/// [`InvokeBase::field_suffix`] instead, otherwise concatenations like
+/// `child_` + `_invoke_0` produce the double-underscore artifact
+/// `child__invoke_0`.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct InvokeBase {
     pub invoke_id: String,
+    /// Identifier suffix derived from [`Self::invoke_id`] by trimming the
+    /// SCXML auto-id leading underscore. User-supplied ids round-trip
+    /// unchanged. Used by Rust/C++ templates to compose field names like
+    /// `child_{field_suffix}` without producing double underscores.
+    pub field_suffix: String,
     pub state_name: String,
     pub params: Vec<Param>,
     pub idlocation: String,

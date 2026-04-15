@@ -443,24 +443,24 @@
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (ARCHITECTURE.md Zero Duplication)
                 ::SCE::Core::InvokeHelper::cancelInvokesForState(pendingInvokes_, state);
                 {% for invoke_info in state.invokes | scxml %}
-                if (child_{{ invoke_info.invoke_id }}_) {
+                if (child_{{ invoke_info.field_suffix }}_) {
 {% if 'cancel.invoke' in model.events %}
                     if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
                         engine.raise(typename Engine::EventWithMetadata(Event::Cancel_invoke));
                     }
 {% endif %}
-                    child_{{ invoke_info.invoke_id }}_.reset();
+                    child_{{ invoke_info.field_suffix }}_.reset();
                 }
                 activeInvokes_.erase("{{ invoke_info.invoke_id }}");
 {% endfor %}
                 {% for invoke_info in state.invokes | hybrid %}
-                if (child_{{ invoke_info.invoke_id }}_) {
+                if (child_{{ invoke_info.field_suffix }}_) {
 {% if 'cancel.invoke' in model.events %}
                     if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
                         engine.raise(typename Engine::EventWithMetadata(Event::Cancel_invoke));
                     }
 {% endif %}
-                    child_{{ invoke_info.invoke_id }}_.reset();
+                    child_{{ invoke_info.field_suffix }}_.reset();
                 }
                 activeInvokes_.erase("{{ invoke_info.invoke_id }}");
 {% endfor %}

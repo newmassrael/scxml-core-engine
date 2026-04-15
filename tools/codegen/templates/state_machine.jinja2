@@ -326,10 +326,10 @@ struct {{ model.name }}Policy {
     mutable ::SCE::Core::EventMetadata currentEventMetadata_;
     // W3C SCXML 6.4: Invoke child state machines (static and hybrid, all pure AOT)
     {% for invoke_info in model.invokes | scxml %}
-    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.invoke_id }}_;
+    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
     {% endfor %}
     {% for invoke_info in model.invokes | hybrid %}
-    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.invoke_id }}_;
+    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
     {% endfor %}
 
     // W3C SCXML 6.4: Pending done.invoke flags for child completion

@@ -75,8 +75,8 @@ pub struct Test232Policy {
     // W3C SCXML 6.4: Active child sessions (invoke_id -> ChildSession)
     active_invokes: std::collections::HashMap<String, sce_rust_runtime::invoke::ChildSession>,
     // W3C SCXML 6.4: Static invoke child '_invoke_0' (test232_child0)
-    child__invoke_0: Option<Box<sce_rust_runtime::Engine<super::test232_child0_sm::Test232Child0Policy>>>,
-    pending_done_invoke__invoke_0: bool,
+    child_invoke_0: Option<Box<sce_rust_runtime::Engine<super::test232_child0_sm::Test232Child0Policy>>>,
+    pending_done_invoke_invoke_0: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated — any SM can be invoked as a child
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
@@ -95,8 +95,8 @@ impl Test232Policy {
             session_id: None,
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
-            child__invoke_0: None,
-            pending_done_invoke__invoke_0: false,
+            child_invoke_0: None,
+            pending_done_invoke_invoke_0: false,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -158,19 +158,19 @@ impl Test232Policy {
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
-                self.child__invoke_0 = Some(Box::new(child_engine));
+                self.child_invoke_0 = Some(Box::new(child_engine));
 
                 // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self.child__invoke_0.as_ref().unwrap().policy().parent_external_queue,
+                    &self.child_invoke_0.as_ref().unwrap().policy().parent_external_queue,
                     &self.active_invokes,
                     "_invoke_0",
                     engine,
                 );
 
                 // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self.child__invoke_0.as_ref().map_or(false, |c| c.is_in_final_state()) {
-                    self.pending_done_invoke__invoke_0 = true;
+                if self.child_invoke_0.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                    self.pending_done_invoke_invoke_0 = true;
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "_invoke_0",
                         engine,
@@ -183,9 +183,9 @@ impl Test232Policy {
 
     // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
     fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        if !self.pending_done_invoke__invoke_0 {
+        if !self.pending_done_invoke_invoke_0 {
             // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
-            if let Some(mut child) = self.child__invoke_0.take() {
+            if let Some(mut child) = self.child_invoke_0.take() {
                 // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -205,8 +205,8 @@ impl Test232Policy {
                 );
 
                 // W3C SCXML 6.4: Check if child reached final state after tick
-                if child.is_in_final_state() && !self.pending_done_invoke__invoke_0 {
-                    self.pending_done_invoke__invoke_0 = true;
+                if child.is_in_final_state() && !self.pending_done_invoke_invoke_0 {
+                    self.pending_done_invoke_invoke_0 = true;
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "_invoke_0",
                         engine,
@@ -214,7 +214,7 @@ impl Test232Policy {
                 }
 
                 // Put child back
-                self.child__invoke_0 = Some(child);
+                self.child_invoke_0 = Some(child);
             }
         }
     }
@@ -453,15 +453,15 @@ impl StatePolicy for Test232Policy {
                     Test232State::S0,
                 );
                 // W3C SCXML 6.4: Cleanup running static child '_invoke_0'
-                if self.child__invoke_0.is_some() {
-                    if !self.pending_done_invoke__invoke_0 {
+                if self.child_invoke_0.is_some() {
+                    if !self.pending_done_invoke_invoke_0 {
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             Test232Event::CancelInvoke));
                     }
-                    self.child__invoke_0 = None;
+                    self.child_invoke_0 = None;
                 }
                 self.active_invokes.remove("_invoke_0");
-                self.pending_done_invoke__invoke_0 = false;
+                self.pending_done_invoke_invoke_0 = false;
             }
             _ => {}
         }

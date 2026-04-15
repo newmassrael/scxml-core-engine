@@ -136,19 +136,19 @@
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
-                self.child_{{ invoke_info.invoke_id }} = Some(Box::new(child_engine));
+                self.child_{{ invoke_info.field_suffix }} = Some(Box::new(child_engine));
 
                 // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self.child_{{ invoke_info.invoke_id }}.as_ref().unwrap().policy().parent_external_queue,
+                    &self.child_{{ invoke_info.field_suffix }}.as_ref().unwrap().policy().parent_external_queue,
                     &self.active_invokes,
                     "{{ invoke_info.invoke_id }}",
                     engine,
                 );
 
                 // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self.child_{{ invoke_info.invoke_id }}.as_ref().map_or(false, |c| c.is_in_final_state()) {
-                    self.pending_done_invoke_{{ invoke_info.invoke_id }} = true;
+                if self.child_{{ invoke_info.field_suffix }}.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                    self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "{{ invoke_info.invoke_id }}",
                         engine,
@@ -234,19 +234,19 @@
                 child_engine.set_completion_callback(|| {});
                 child_engine.initialize();
 
-                self.child_{{ invoke_info.invoke_id }} = Some(Box::new(child_engine));
+                self.child_{{ invoke_info.field_suffix }} = Some(Box::new(child_engine));
 
                 // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self.child_{{ invoke_info.invoke_id }}.as_ref().unwrap().policy().parent_external_queue,
+                    &self.child_{{ invoke_info.field_suffix }}.as_ref().unwrap().policy().parent_external_queue,
                     &self.active_invokes,
                     "{{ invoke_info.invoke_id }}",
                     engine,
                 );
 
                 // W3C SCXML 6.4: Check if child completed during initialize
-                if self.child_{{ invoke_info.invoke_id }}.as_ref().map_or(false, |c| c.is_in_final_state()) {
-                    self.pending_done_invoke_{{ invoke_info.invoke_id }} = true;
+                if self.child_{{ invoke_info.field_suffix }}.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                    self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "{{ invoke_info.invoke_id }}",
                         engine,
@@ -263,9 +263,9 @@
     // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
     fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
 {% for invoke_info in model.invokes | scxml %}
-        if !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
+        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
             // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
-            if let Some(mut child) = self.child_{{ invoke_info.invoke_id }}.take() {
+            if let Some(mut child) = self.child_{{ invoke_info.field_suffix }}.take() {
                 // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -285,8 +285,8 @@
                 );
 
                 // W3C SCXML 6.4: Check if child reached final state after tick
-                if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
-                    self.pending_done_invoke_{{ invoke_info.invoke_id }} = true;
+                if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+                    self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "{{ invoke_info.invoke_id }}",
                         engine,
@@ -294,13 +294,13 @@
                 }
 
                 // Put child back
-                self.child_{{ invoke_info.invoke_id }} = Some(child);
+                self.child_{{ invoke_info.field_suffix }} = Some(child);
             }
         }
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
-        if !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
-            if let Some(mut child) = self.child_{{ invoke_info.invoke_id }}.take() {
+        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+            if let Some(mut child) = self.child_{{ invoke_info.field_suffix }}.take() {
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
                     &self.active_invokes,
@@ -314,14 +314,14 @@
                     "{{ invoke_info.invoke_id }}",
                     engine,
                 );
-                if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
-                    self.pending_done_invoke_{{ invoke_info.invoke_id }} = true;
+                if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+                    self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "{{ invoke_info.invoke_id }}",
                         engine,
                     );
                 }
-                self.child_{{ invoke_info.invoke_id }} = Some(child);
+                self.child_{{ invoke_info.field_suffix }} = Some(child);
             }
         }
 {% endfor %}
@@ -339,7 +339,7 @@
                 .get("{{ invoke_info.invoke_id }}")
                 .map_or(false, |cs| cs.autoforward);
             if is_autoforward {
-                if let Some(ref mut child) = self.child_{{ invoke_info.invoke_id }} {
+                if let Some(ref mut child) = self.child_{{ invoke_info.field_suffix }} {
                     // W3C SCXML 6.4.6: Forward by event name string to child
                     child.raise_external_by_name(event_name, "");
                 }

@@ -190,16 +190,17 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 {% set scxml_list = model.invokes | scxml %}
 {% if scxml_list %}
 {% set invoke_id = scxml_list[0].invoke_id %}
+{% set field_suffix = scxml_list[0].field_suffix %}
 {% set child_name = scxml_list[0].child_name %}
-if (child_{{ invoke_id }}_) {
+if (child_{{ field_suffix }}_) {
     // W3C SCXML 6.4.1: Send event to child using child's Event enum
     using ChildEvent = ::SCE::Generated::{{ child_name }}::Event;
     AOT_DEBUG("Sending event {{ action.event }} to child {{ invoke_id }}");
-    child_{{ invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+    child_{{ field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
     AOT_DEBUG("Processing child {{ invoke_id }} event queues");
     // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
-    child_{{ invoke_id }}_->step();
-    AOT_DEBUG("Child {{ invoke_id }} processing complete, isInFinalState={}", child_{{ invoke_id }}_->isInFinalState());
+    child_{{ field_suffix }}_->step();
+    AOT_DEBUG("Child {{ invoke_id }} processing complete, isInFinalState={}", child_{{ field_suffix }}_->isInFinalState());
 } else {
     SCE_LOG_WARN("Child {{ invoke_id }} not initialized, cannot send event");
 }
@@ -216,26 +217,26 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
 {% for invoke in model.invokes | scxml %}
 {% if loop.first %}
     if (invokeId == "{{ invoke.invoke_id }}") {
-        if (child_{{ invoke.invoke_id }}_) {
+        if (child_{{ invoke.field_suffix }}_) {
             // W3C SCXML 6.4: Send event to child using child's Event enum
             using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
             AOT_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
-            child_{{ invoke.invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+            child_{{ invoke.field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
             AOT_DEBUG("Processing child {} event queues", invokeId);
             // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
-            child_{{ invoke.invoke_id }}_->step();
-            AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
+            child_{{ invoke.field_suffix }}_->step();
+            AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.field_suffix }}_->isInFinalState());
         } else {
             SCE_LOG_WARN("Child {} not initialized, cannot send event", invokeId);
         }
 {% else %}
     } else if (invokeId == "{{ invoke.invoke_id }}") {
-        if (child_{{ invoke.invoke_id }}_) {
+        if (child_{{ invoke.field_suffix }}_) {
             using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
             AOT_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
-            child_{{ invoke.invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
-            child_{{ invoke.invoke_id }}_->step();
-            AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
+            child_{{ invoke.field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+            child_{{ invoke.field_suffix }}_->step();
+            AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.field_suffix }}_->isInFinalState());
         } else {
             SCE_LOG_WARN("Child {} not initialized, cannot send event", invokeId);
         }

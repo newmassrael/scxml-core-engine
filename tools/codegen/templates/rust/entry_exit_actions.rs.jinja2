@@ -352,25 +352,25 @@
                 );
 {% for invoke_info in state.invokes | scxml %}
                 // W3C SCXML 6.4: Cleanup running static child '{{ invoke_info.invoke_id }}'
-                if self.child_{{ invoke_info.invoke_id }}.is_some() {
-                    if !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
+                if self.child_{{ invoke_info.field_suffix }}.is_some() {
+                    if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
 {% if 'cancel.invoke' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             {{ machine_name }}Event::{{ 'cancel.invoke' | to_event_variant }}));
 {% endif %}
                     }
-                    self.child_{{ invoke_info.invoke_id }} = None;
+                    self.child_{{ invoke_info.field_suffix }} = None;
                 }
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");
-                self.pending_done_invoke_{{ invoke_info.invoke_id }} = false;
+                self.pending_done_invoke_{{ invoke_info.field_suffix }} = false;
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
                 // W3C SCXML 6.4: Cleanup running hybrid child '{{ invoke_info.invoke_id }}'
-                if self.child_{{ invoke_info.invoke_id }}.is_some() {
-                    self.child_{{ invoke_info.invoke_id }} = None;
+                if self.child_{{ invoke_info.field_suffix }}.is_some() {
+                    self.child_{{ invoke_info.field_suffix }} = None;
                 }
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");
-                self.pending_done_invoke_{{ invoke_info.invoke_id }} = false;
+                self.pending_done_invoke_{{ invoke_info.field_suffix }} = false;
 {% endfor %}
             }
 {% endif %}

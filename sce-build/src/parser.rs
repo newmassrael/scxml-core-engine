@@ -1070,12 +1070,16 @@ impl SCXMLParser {
         state_id: &str,
         base_dir: Option<&Path>,
     ) -> Option<Invoke> {
-        // W3C SCXML 6.4.1: Generate invoke ID if not provided
+        // W3C SCXML 6.4.1: Generate invoke ID if not provided. Auto-ids carry
+        // a leading underscore by spec convention; templates building
+        // identifiers (`child_<suffix>`) consume `field_suffix` instead so the
+        // leading underscore does not double up.
         let mut invoke_id = elem.attribute("id").unwrap_or("").to_string();
         if invoke_id.is_empty() {
             invoke_id = format!("_invoke_{}", self.invoke_counter);
             self.invoke_counter += 1;
         }
+        let field_suffix = invoke_id.trim_start_matches('_').to_string();
 
         let invoke_type = elem.attribute("type").unwrap_or("").to_string();
         let src = elem.attribute("src").unwrap_or("").to_string();
@@ -1156,6 +1160,7 @@ impl SCXMLParser {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
                         invoke_id,
+                        field_suffix,
                         state_name: state_id.to_string(),
                         params: hybrid_params,
                         idlocation,
@@ -1232,6 +1237,7 @@ impl SCXMLParser {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
                         invoke_id,
+                        field_suffix,
                         state_name: state_id.to_string(),
                         params: static_params,
                         idlocation,
@@ -3272,5 +3278,53 @@ mod tests {
         let mut parser = SCXMLParser::new();
         // Parser may trim or not — should not panic
         let _model = parser.parse_string(scxml, "test").unwrap();
+    }
+
+    // ── InvokeBase.field_suffix derivation ───────────────────────────
+
+    /// Helper: parse an SCXML fragment with a single `<invoke>` and return its
+    /// (invoke_id, field_suffix) pair.
+    fn first_invoke_ids(scxml: &str) -> (String, String) {
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        let invoke = model
+            .states
+            .values()
+            .find_map(|s| s.invokes.first())
+            .expect("expected at least one invoke");
+        let base = match invoke {
+            Invoke::Scxml(info) => &info.common.base,
+            Invoke::Hybrid(info) => &info.common.base,
+            Invoke::MeshRpc(_) => panic!("mesh-rpc invokes have no field_suffix yet"),
+        };
+        (base.invoke_id.clone(), base.field_suffix.clone())
+    }
+
+    #[test]
+    fn invoke_field_suffix_strips_auto_id_leading_underscore() {
+        // No `id` attribute → parser auto-generates `_invoke_0` per W3C SCXML 6.4.1.
+        // field_suffix drops the leading underscore so `child_` + suffix is
+        // `child_invoke_0`, not `child__invoke_0`.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="scxml" src="child.scxml"/>
+            </state>
+        </scxml>"#;
+        let (invoke_id, field_suffix) = first_invoke_ids(scxml);
+        assert_eq!(invoke_id, "_invoke_0");
+        assert_eq!(field_suffix, "invoke_0");
+    }
+
+    #[test]
+    fn invoke_field_suffix_preserves_user_supplied_id() {
+        // User-supplied id has no leading underscore — round-trips unchanged.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke id="invokedChild" type="scxml" src="child.scxml"/>
+            </state>
+        </scxml>"#;
+        let (invoke_id, field_suffix) = first_invoke_ids(scxml);
+        assert_eq!(invoke_id, "invokedChild");
+        assert_eq!(field_suffix, "invokedChild");
     }
 }

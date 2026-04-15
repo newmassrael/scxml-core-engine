@@ -431,7 +431,7 @@
 {% set child_invoke_id = action.target | slice_from(2) %}
     // W3C SCXML 6.4: Send to child invoke '{{ child_invoke_id }}' via #_{{ child_invoke_id }}
 {% if action.event %}
-    if let Some(ref mut child) = self.child_{{ child_invoke_id }} {
+    if let Some(ref mut child) = self.child_{{ child_invoke_id | to_field_suffix }} {
         child.raise_external_by_name("{{ action.event }}", &event_data);
     }
 {% endif %}
