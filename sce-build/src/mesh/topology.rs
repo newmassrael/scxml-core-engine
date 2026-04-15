@@ -7,7 +7,7 @@
 use crate::mesh::deploy::{BindingConfig, DeployConfig};
 use crate::mesh::error::TopologyError;
 use crate::mesh::target::TargetId;
-use crate::model::SCXMLModel;
+use crate::model::{Invoke, Param, SCXMLModel};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -148,6 +148,46 @@ impl BindingDefaultIds {
     }
 }
 
+/// SCE Mesh §9.5: a single `<invoke type="sce:mesh-rpc">` attached to
+/// a resolved target. Collected from `SCXMLModel.invokes` in
+/// [`collect_send_summary`] and attached to the matching
+/// [`ResolvedTarget`] in [`finalize_targets`].
+///
+/// The data duplicates a subset of [`crate::model::MeshRpcInvokeInfo`]
+/// but deliberately lives in the topology layer: the parser artifact
+/// describes what the author wrote, while this struct describes what
+/// codegen needs per target (invoke methods on `TransportRouter`,
+/// state-entry/exit hooks). Keeping them distinct lets topology skip
+/// fields like `idlocation` that are irrelevant to the wire and also
+/// keeps parser output independent of codegen shape.
+#[derive(Debug, Clone, Serialize)]
+pub struct MeshRpcInvokeSite {
+    /// Enclosing SCXML state — the parent that runs `<invoke>` on
+    /// entry. Matches `Invoke::MeshRpc.base.state_name`.
+    pub state_name: String,
+    /// SCXML invoke id (possibly auto-generated like `_invoke_0`).
+    /// Surfaces as `_event.invokeid` / `done.invoke.<id>` /
+    /// `error.invoke.<id>` on the parent engine.
+    pub invoke_id: String,
+    /// Identifier-safe suffix for generated field / method names.
+    /// Equal to `invoke_id` with the W3C auto-id leading underscore
+    /// stripped, mirroring `InvokeBase::field_suffix` so codegen sites
+    /// compose `invoke_<suffix>` / `cancel_<suffix>` cleanly.
+    pub field_suffix: String,
+    /// Value of the required `<param name="_mesh_event">`. Populates
+    /// the outbound envelope's `type` field per §9.5 wire mapping.
+    pub mesh_event: String,
+    /// Value of the optional `<param name="_mesh_deadline_ms">`.
+    /// `None` means no per-invoke deadline; the deploy.yaml binding
+    /// deadline (if any) applies, otherwise no timeout.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deadline_ms: Option<u64>,
+    /// Author payload — the `<param>` entries that remained after the
+    /// reserved `_mesh_*` names were stripped by
+    /// `parse_mesh_rpc_invoke`.
+    pub params: Vec<Param>,
+}
+
 /// Per-target transport-specific state. Variant identity replaces the
 /// `transport: String` runtime tag — a reader can no longer reach for
 /// `someip_service` on a non-someip target because the field does not
@@ -246,6 +286,12 @@ pub struct ResolvedTarget {
     /// `event_bindings: BTreeMap<...>` + `extra: HashMap<...>` quartet
     /// whose populated/empty correlation was a runtime invariant.
     pub state: TransportState,
+    /// `<invoke type="sce:mesh-rpc">` sites whose `src="#<target>"`
+    /// resolves to this target. Empty for targets that only receive
+    /// `<send>` traffic. Populated by [`finalize_targets`] from the
+    /// summary collected in [`collect_send_summary`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub invoke_sites: Vec<MeshRpcInvokeSite>,
 }
 
 /// Build-time warning about dynamic targets that cannot be statically resolved.
@@ -330,7 +376,12 @@ pub struct SendActionDetail {
 /// Eliminates redundant model traversals.
 #[derive(Debug)]
 pub struct SendActionSummary {
-    /// Deduplicated external send targets (e.g. "#motor").
+    /// Deduplicated external targets from both `<send target="#X">`
+    /// and `<invoke type="sce:mesh-rpc" src="#X">`. Unified in one
+    /// set so the deploy.yaml resolution pipeline handles every
+    /// cross-machine interaction through a single path; a target
+    /// reached only by mesh-rpc invokes is just as "external" as one
+    /// reached only by `<send>`.
     pub targets: BTreeSet<TargetId>,
     /// Dynamic target warnings (`targetexpr` cannot be statically resolved).
     pub dynamic_warnings: Vec<TopologyWarning>,
@@ -338,6 +389,12 @@ pub struct SendActionSummary {
     pub target_events: Vec<(TargetId, String)>,
     /// Per-action details for QoS and pattern validation.
     pub actions: Vec<SendActionDetail>,
+    /// Mesh-RPC invoke sites keyed by the target their `src="#X"`
+    /// resolves to. Consumed by [`resolve_partials`] — each partial
+    /// target pops its bucket and carries the sites through to
+    /// [`ResolvedTarget::invoke_sites`]. Absent targets yield an
+    /// empty site list (i.e. a pure-`<send>` target).
+    pub invoke_sites_by_target: BTreeMap<TargetId, Vec<MeshRpcInvokeSite>>,
 }
 
 /// Collect all `<send>` action data from an SCXML model in a single pass.
@@ -383,11 +440,49 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
         });
     });
 
+    // SCE Mesh §9.5: collect `<invoke type="sce:mesh-rpc">` sites.
+    // Each invoke's `src="#target"` becomes an external target that
+    // goes through the same deploy.yaml resolution as `<send>`
+    // targets — the transport selects the RPC wire (SOME/IP method
+    // call, Zenoh get/reply) and the deadline binding supplies any
+    // fallback for missing per-invoke deadlines (§9.5 precedence).
+    let mut invoke_sites_by_target: BTreeMap<TargetId, Vec<MeshRpcInvokeSite>> = BTreeMap::new();
+    for invoke in &model.invokes {
+        let Invoke::MeshRpc(info) = invoke else {
+            continue;
+        };
+        let Some(tid) = TargetId::new(&info.src) else {
+            // `src` absent / malformed — mesh-rpc without a resolvable
+            // target is a pure-parse problem that should have been
+            // flagged at parse time. Skip here rather than invent a
+            // diagnostic in the wrong layer.
+            continue;
+        };
+        if tid.is_internal() {
+            // `src="#_internal"` or sibling — not a mesh target. Skip;
+            // W3C semantics already cover the internal delivery.
+            continue;
+        }
+        targets.insert(tid.clone());
+        invoke_sites_by_target
+            .entry(tid)
+            .or_default()
+            .push(MeshRpcInvokeSite {
+                state_name: info.base.state_name.clone(),
+                invoke_id: info.base.invoke_id.clone(),
+                field_suffix: info.base.field_suffix.clone(),
+                mesh_event: info.mesh_event.clone(),
+                deadline_ms: info.deadline_ms,
+                params: info.base.params.clone(),
+            });
+    }
+
     SendActionSummary {
         targets,
         dynamic_warnings,
         target_events,
         actions,
+        invoke_sites_by_target,
     }
 }
 
@@ -463,6 +558,11 @@ pub(crate) struct PartialTarget {
     pub transport: String,
     pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     pub event_patterns: Vec<EventPatternInfo>,
+    /// Mesh-RPC invoke sites targeting this binding. Carried through
+    /// to the final [`ResolvedTarget`] unchanged — no external-config
+    /// stage touches invokes (per-invoke deadlines / event names are
+    /// authoritative from `<param>`, no vsomeip.json lookup needed).
+    pub invoke_sites: Vec<MeshRpcInvokeSite>,
 }
 
 /// Resolve SCXML send targets against deploy.yaml bindings for a specific
@@ -514,6 +614,11 @@ pub(crate) fn resolve_partials(
                     transport: binding.transport.clone(),
                     extra: binding.extra.clone(),
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
+                    invoke_sites: summary
+                        .invoke_sites_by_target
+                        .get(target)
+                        .cloned()
+                        .unwrap_or_default(),
                 });
             }
             None => {
@@ -742,6 +847,7 @@ pub(crate) fn finalize_targets(
             events: pt.events,
             event_patterns: pt.event_patterns,
             state,
+            invoke_sites: pt.invoke_sites,
         });
     }
 
@@ -1336,6 +1442,7 @@ mod tests {
             events: vec!["brake.activate".to_string()],
             event_patterns: Vec::new(),
             state: TransportState::Local,
+            invoke_sites: Vec::new(),
         }]
     }
 
