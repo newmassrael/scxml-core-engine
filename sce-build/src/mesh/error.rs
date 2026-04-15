@@ -458,97 +458,8 @@ impl MeshError {
 // `(code, stage, key_fragments)` triple.
 
 use crate::forge::diagnostic::{
-    Diagnostic, DiagnosticCode, Fix, Location, Stage, ToDiagnostics, SCHEMA_VERSION,
+    compute_id, Diagnostic, DiagnosticCode, Fix, Location, Stage, ToDiagnostics, SCHEMA_VERSION,
 };
-
-/// FNV-1a 64-bit content hash used for diagnostic ids.
-///
-/// Duplicated (not imported) because the function in `diagnostic.rs`
-/// is private to that module — intentionally, so the schema surface
-/// stays small. The constants are a stable standard; re-using them
-/// here preserves the `fnv1a:<16hex>` id format across every error
-/// type. A future cleanup could promote a small `hash::Fnv1a64` into
-/// a shared helper; for now the cost is 20 lines to avoid widening
-/// the public API.
-fn mesh_diagnostic_id(code: DiagnosticCode, stage: Stage, key_fragments: &[String]) -> String {
-    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    let mut h: u64 = OFFSET;
-    let feed = |h: &mut u64, bytes: &[u8]| {
-        for &b in bytes {
-            *h ^= b as u64;
-            *h = h.wrapping_mul(PRIME);
-        }
-    };
-    feed(&mut h, code_str(code).as_bytes());
-    feed(&mut h, b"|");
-    feed(&mut h, stage_str(stage).as_bytes());
-    feed(&mut h, b"|");
-    // Mesh errors do not currently attach a file location (mesh
-    // inputs are deploy.yaml / vsomeip.json, referenced from the
-    // error's own payload fields), so the file slot is always empty.
-    feed(&mut h, b"");
-    for frag in key_fragments {
-        feed(&mut h, &[0x1f]);
-        feed(&mut h, frag.as_bytes());
-    }
-    format!("fnv1a:{h:016x}")
-}
-
-/// Match the `DiagnosticCode::as_str` private helper so mesh ids are
-/// computed over the exact same byte sequence as forge ids.
-fn code_str(c: DiagnosticCode) -> &'static str {
-    use DiagnosticCode::*;
-    match c {
-        MeshDeployRead => "mesh/deploy-read",
-        MeshDeployParse => "mesh/deploy-parse",
-        MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
-        MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
-        MeshExternalRead => "mesh/external-read",
-        MeshExternalParse => "mesh/external-parse",
-        MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
-        MeshExternalAmbiguousEventGroup => "mesh/external-ambiguous-event-group",
-        MeshExternalEmptyEventGroup => "mesh/external-empty-event-group",
-        MeshExternalNamedReferenceWithoutConfig => "mesh/external-named-reference-without-config",
-        MeshExternalReservedSomeipIdKeys => "mesh/external-reserved-someip-id-keys",
-        MeshExternalSomeipFieldOnNonSomeipTransport => "mesh/external-someip-field-on-non-someip-transport",
-        MeshExternalConflictingEventSchema => "mesh/external-conflicting-event-schema",
-        MeshExternalConflictingEventFieldKinds => "mesh/external-conflicting-event-field-kinds",
-        MeshExternalEmptyEventEntry => "mesh/external-empty-event-entry",
-        MeshTopologyUnresolvedTargets => "mesh/topology-unresolved-targets",
-        MeshTopologyMachineNotFound => "mesh/topology-machine-not-found",
-        MeshTopologyReceiverNotDeclared => "mesh/topology-receiver-not-declared",
-        MeshTopologyAbsoluteSourcePath => "mesh/topology-absolute-source-path",
-        MeshTopologyReceiverSourceRead => "mesh/topology-receiver-source-read",
-        MeshTopologyReceiverSourceParse => "mesh/topology-receiver-source-parse",
-        MeshTopologyUncoveredEvents => "mesh/topology-uncovered-events",
-        MeshTopologyPatternCapabilityViolation => "mesh/topology-pattern-capability-violation",
-        MeshTopologyMissingBindingField => "mesh/topology-missing-binding-field",
-        MeshTopologyInvalidBindingField => "mesh/topology-invalid-binding-field",
-        MeshTopologyEventBindingUnused => "mesh/topology-event-binding-unused",
-        MeshCodegenUnsupportedLanguage => "mesh/codegen-unsupported-language",
-        MeshCodegenUnsupportedTransport => "mesh/codegen-unsupported-transport",
-        MeshCodegenTemplateRead => "mesh/codegen-template-read",
-        MeshCodegenTemplateRender => "mesh/codegen-template-render",
-        MeshCodegenEventNameCollision => "mesh/codegen-event-name-collision",
-        MeshIo => "mesh/io",
-        // Non-mesh codes are not used in mesh id computation; panic
-        // here catches a wiring bug (accidentally using a forge code
-        // for a mesh error) at first use rather than silently.
-        other => panic!("mesh_diagnostic_id called with non-mesh code: {other:?}"),
-    }
-}
-
-fn stage_str(s: Stage) -> &'static str {
-    match s {
-        Stage::MeshDeploy => "mesh-deploy",
-        Stage::MeshExternal => "mesh-external",
-        Stage::MeshTopology => "mesh-topology",
-        Stage::MeshCodegen => "mesh-codegen",
-        Stage::Io => "io",
-        other => panic!("mesh_diagnostic_id called with non-mesh stage: {other:?}"),
-    }
-}
 
 struct MeshDiagFields {
     code: DiagnosticCode,
@@ -955,7 +866,7 @@ impl ToDiagnostics for MeshError {
             },
         };
 
-        let id = mesh_diagnostic_id(fields.code, fields.stage, &fields.key);
+        let id = compute_id(fields.code, fields.stage, None, &fields.key);
         vec![Diagnostic {
             schema_version: SCHEMA_VERSION,
             id,

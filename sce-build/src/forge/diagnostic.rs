@@ -364,8 +364,8 @@ impl Diagnostic {
     pub fn meta_failure(message: impl Into<String>) -> Self {
         let message = message.into();
         let id = compute_id(
-            DiagnosticCode::IoFilesystem.as_str(),
-            Stage::Io.as_str(),
+            DiagnosticCode::IoFilesystem,
+            Stage::Io,
             None,
             std::slice::from_ref(&message),
         );
@@ -634,8 +634,8 @@ fn build_single_forge_diagnostic(
     });
 
     let id = compute_id(
-        fields.code.as_str(),
-        fields.stage.as_str(),
+        fields.code,
+        fields.stage,
         location.as_ref().map(|l| l.file.as_str()),
         &fields.key_fragments,
     );
@@ -1107,28 +1107,37 @@ fn split_expected(s: &str) -> Vec<String> {
 /// The canonical key is:
 ///
 /// ```text
-/// code-str | stage-str | file-or-empty | key-fragments-with-unit-sep
+/// code-str | stage-str | file-or-empty | <US>frag<US>frag...
 /// ```
 ///
-/// Notably excludes the Display message — rewording a thiserror
+/// - `code` / `stage` are typed so the canonical string form (and thus
+///   the id bytes) is controlled in exactly one place: their `as_str`
+///   impls. Callers cannot pass arbitrary strings.
+/// - `file` is `None` for errors with no source file (mesh deploy.yaml,
+///   CLI-boundary failures); the slot is serialised as an empty string
+///   so `Some("")` and `None` hash identically.
+/// - Fragments are separated by ASCII unit separator (0x1f) so that
+///   e.g. `["ab", "c"]` and `["a", "bc"]` hash differently.
+///
+/// Excludes the Display message on purpose: rewording a thiserror
 /// `#[error(...)]` template must not change the id of the underlying
-/// semantic error. Includes the source file when `Located` is present
-/// so the same error reported on two files is distinguishable.
-pub(crate) fn compute_id(
-    code: &str,
-    stage: &str,
+/// semantic error. Public so the CLI binary (separate crate) can
+/// compute ids for its own error family using the same canonical
+/// shape; the canonical key format is part of the error contract
+/// (see SCE_ERROR_CONTRACT.md §3).
+pub fn compute_id(
+    code: DiagnosticCode,
+    stage: Stage,
     file: Option<&str>,
     key_fragments: &[String],
 ) -> String {
     let mut hasher = Fnv1a64::new();
-    hasher.write(code.as_bytes());
+    hasher.write(code.as_str().as_bytes());
     hasher.write(b"|");
-    hasher.write(stage.as_bytes());
+    hasher.write(stage.as_str().as_bytes());
     hasher.write(b"|");
     hasher.write(file.unwrap_or("").as_bytes());
     for frag in key_fragments {
-        // ASCII unit separator disambiguates fragment boundaries so
-        // e.g. ["ab", "c"] and ["a", "bc"] hash differently.
         hasher.write(&[0x1f]);
         hasher.write(frag.as_bytes());
     }
@@ -1206,8 +1215,8 @@ mod tests {
         let err = missing_attr("id");
         let d = single(&err);
         let expected = compute_id(
-            DiagnosticCode::ValidationMissingAttribute.as_str(),
-            Stage::Validation.as_str(),
+            DiagnosticCode::ValidationMissingAttribute,
+            Stage::Validation,
             None,
             &["sce:field".to_string(), "id".to_string()],
         );

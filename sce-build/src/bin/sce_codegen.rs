@@ -22,7 +22,7 @@ use std::sync::OnceLock;
 use sce_build::analyzer;
 use sce_build::filters;
 use sce_build::forge::diagnostic::{
-    Diagnostic, DiagnosticCode, Fix, Stage, ToDiagnostics, SCHEMA_VERSION,
+    compute_id, Diagnostic, DiagnosticCode, Fix, Stage, ToDiagnostics, SCHEMA_VERSION,
 };
 use sce_build::forge::error::ForgeError;
 
@@ -94,47 +94,6 @@ impl CliError {
         // user-visible distinctions (unknown language vs missing
         // file) aren't pipeline stages in the forge/mesh sense.
         20
-    }
-}
-
-fn cli_diag_id(code: DiagnosticCode, key: &[String]) -> String {
-    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    let mut h: u64 = OFFSET;
-    let feed = |h: &mut u64, bytes: &[u8]| {
-        for &b in bytes { *h ^= b as u64; *h = h.wrapping_mul(PRIME); }
-    };
-    // Mirror the canonical key format used by forge/mesh: code |
-    // stage | file | frag\x1ffrag... . CLI errors have no source
-    // file so that slot stays empty.
-    feed(&mut h, cli_code_str(code).as_bytes());
-    feed(&mut h, b"|cli|");
-    for f in key {
-        feed(&mut h, &[0x1f]);
-        feed(&mut h, f.as_bytes());
-    }
-    format!("fnv1a:{h:016x}")
-}
-
-fn cli_code_str(c: DiagnosticCode) -> &'static str {
-    use DiagnosticCode::*;
-    match c {
-        CliUnknownLanguage => "cli/unknown-language",
-        CliUnsupportedLanguage => "cli/unsupported-language",
-        CliReadInput => "cli/read-input",
-        CliWriteOutput => "cli/write-output",
-        CliCreateOutputDir => "cli/create-output-dir",
-        CliScxmlParse => "cli/scxml-parse",
-        CliScxmlGenerate => "cli/scxml-generate",
-        CliDynamicFeatures => "cli/dynamic-features",
-        CliMissingMetadataField => "cli/missing-metadata-field",
-        CliNotADirectory => "cli/not-a-directory",
-        CliInvalidFormatOption => "cli/invalid-format-option",
-        CliJsonSerialization => "cli/json-serialization",
-        CliProjectRootNotFound => "cli/project-root-not-found",
-        CliFormatStyleNotFound => "cli/format-style-not-found",
-        CliNoScxmlTag => "cli/no-scxml-tag",
-        other => panic!("cli_diag_id: non-cli code {other:?}"),
     }
 }
 
@@ -248,7 +207,7 @@ impl ToDiagnostics for CliError {
         };
         vec![Diagnostic {
             schema_version: SCHEMA_VERSION,
-            id: cli_diag_id(code, &key),
+            id: compute_id(code, Stage::Cli, None, &key),
             code,
             stage: Stage::Cli,
             spec: None,

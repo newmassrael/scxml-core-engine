@@ -80,8 +80,8 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
                     d.message.clone(),
                 ];
                 let id = compute_id(
-                    DiagnosticCode::XmlSchemaValidation.as_str(),
-                    Stage::Xml.as_str(),
+                    DiagnosticCode::XmlSchemaValidation,
+                    Stage::Xml,
                     Some(self.source_label.as_str()),
                     &key_fragments,
                 );
