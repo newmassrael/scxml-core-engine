@@ -287,6 +287,15 @@ fn filter_scxml_family(value: Value) -> Result<Value, minijinja::Error> {
     Ok(Value::from(out))
 }
 
+/// Keep only `Invoke::MeshRpc` entries — the SCE_MESH.md §9.5 short-lived RPC
+/// invoke kind. Consumed by state templates that emit onentry/onexit hooks
+/// around the generated `TransportRouter::invoke_<suffix>` / `cancel_<suffix>`
+/// methods; paired with the topology-side `ResolvedTarget.invoke_sites` that
+/// drives those method emissions.
+fn filter_mesh_rpc(value: Value) -> Result<Value, minijinja::Error> {
+    filter_invokes_by_kind(value, "MeshRpc")
+}
+
 /// Register the variant-filtering helpers shared by every backend.
 /// Called from each per-language `register_*_filters` function so the same
 /// filter names are available no matter which template engine is rendering.
@@ -294,6 +303,7 @@ pub fn register_invoke_filters(env: &mut minijinja::Environment) {
     env.add_filter("scxml", filter_scxml);
     env.add_filter("hybrid", filter_hybrid);
     env.add_filter("scxml_family", filter_scxml_family);
+    env.add_filter("mesh_rpc", filter_mesh_rpc);
     env.add_filter("to_field_suffix", filter_to_field_suffix);
 }
 
