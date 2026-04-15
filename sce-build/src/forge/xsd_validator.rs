@@ -71,6 +71,8 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
         use crate::forge::diagnostic::{
             compute_id, Diagnostic, DiagnosticCode, Location, Stage, SCHEMA_VERSION,
         };
+        let code = DiagnosticCode::XmlSchemaValidation;
+        let stage = Stage::Xml;
         self.diagnostics
             .iter()
             .map(|d| {
@@ -80,17 +82,17 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
                     d.message.clone(),
                 ];
                 let id = compute_id(
-                    DiagnosticCode::XmlSchemaValidation,
-                    Stage::Xml,
+                    code,
+                    stage,
                     Some(self.source_label.as_str()),
                     &key_fragments,
                 );
                 Diagnostic {
                     schema_version: SCHEMA_VERSION,
                     id,
-                    code: DiagnosticCode::XmlSchemaValidation,
-                    stage: Stage::Xml,
-                    spec: Some("SCE Forge XSD"),
+                    code,
+                    stage,
+                    spec: code.spec_anchor(),
                     message: d.message.clone(),
                     location: Some(Location {
                         file: self.source_label.clone(),

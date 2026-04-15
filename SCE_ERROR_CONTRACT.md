@@ -180,103 +180,113 @@ The full enumeration of `code` values, grouped by stage. The set is
 extended additively — a code is never renamed or repurposed without
 a schema bump ([§8](#8-evolution-policy)).
 
+The `Spec` column names the authoritative section that defines the rule
+being enforced. An empty `Spec` column means the code records an
+operational failure (I/O, template render, argument parsing) rather
+than a specification violation. Section references follow
+`DiagnosticCode::spec_anchor` in `sce-build/src/forge/diagnostic.rs` and
+must point at a real section — adding a plausible-looking anchor for a
+rule that is not actually documented there is strictly worse than
+leaving the column empty, because consumers ground hallucinated
+references against a real document and drift silently.
+
 ### 5.1 Forge
 
-| Code | Stage | Fix? |
-|---|---|---|
-| `xml/parse` | `xml` | no |
-| `xml/schema-validation` | `xml` | no |
-| `validation/missing-element` | `validation` | no |
-| `validation/missing-attribute` | `validation` | `add_attribute` |
-| `validation/invalid-attribute` | `validation` | `replace_one_of` |
-| `validation/unsupported-kind` | `validation` | `replace_one_of` |
-| `validation/duplicate-id` | `validation` | `rename_duplicate` |
-| `validation/empty-collection` | `validation` | no |
-| `validation/count-mismatch` | `validation` | no |
-| `validation/incompatible-attributes` | `validation` | no |
-| `validation/invalid-reference` | `validation` | `replace_one_of` |
-| `validation/invalid-direction` | `validation` | `replace_one_of` |
-| `validation/numeric-parse` | `validation` | no |
-| `validation/empty-value` | `validation` | `add_attribute` |
-| `validation/singleton-violation` | `validation` | no |
-| `validation/require-either` | `validation` | `add_one_of` |
-| `validation/wrong-pipeline` | `validation` | no |
-| `expression/empty` | `expression` | no |
-| `expression/lex` | `expression` | no |
-| `expression/unsupported-construct` | `expression` | no |
-| `expression/strict-equality` | `expression` | `replace_with` |
-| `expression/parse-mismatch` | `expression` | no |
-| `expression/unexpected-token` | `expression` | no |
-| `expression/invalid-lvalue` | `expression` | no |
-| `expression/type-coercion` | `expression` | no |
-| `expression/go-ternary-unsupported` | `expression` | no |
-| `import/file-not-found` | `import` | no |
-| `import/kind-mismatch` | `import` | `replace_with` |
-| `import/not-forge` | `import` | no |
-| `import/read-error` | `import` | no |
-| `manifest/circular-dependency` | `manifest` | no |
-| `manifest/io` | `manifest` | no |
-| `generate/invalid-config` | `generate` | no |
-| `generate/template-load` | `generate` | no |
-| `generate/template-render` | `generate` | no |
-| `io/filesystem` | `io` | no |
+| Code | Stage | Fix? | Spec |
+|---|---|---|---|
+| `xml/parse` | `xml` | no | |
+| `xml/schema-validation` | `xml` | no | SCE Forge XSD |
+| `validation/missing-element` | `validation` | no | |
+| `validation/missing-attribute` | `validation` | `add_attribute` | |
+| `validation/invalid-attribute` | `validation` | `replace_one_of` | |
+| `validation/unsupported-kind` | `validation` | `replace_one_of` | SCE Forge §3.2 |
+| `validation/duplicate-id` | `validation` | `rename_duplicate` | |
+| `validation/empty-collection` | `validation` | no | |
+| `validation/count-mismatch` | `validation` | no | |
+| `validation/incompatible-attributes` | `validation` | no | |
+| `validation/invalid-reference` | `validation` | `replace_one_of` | |
+| `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
+| `validation/numeric-parse` | `validation` | no | |
+| `validation/empty-value` | `validation` | `add_attribute` | |
+| `validation/singleton-violation` | `validation` | no | |
+| `validation/require-either` | `validation` | `add_one_of` | |
+| `validation/wrong-pipeline` | `validation` | no | SCE Forge §4 |
+| `expression/empty` | `expression` | no | SCE Forge §3.4 |
+| `expression/lex` | `expression` | no | SCE Forge §3.4 |
+| `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |
+| `expression/strict-equality` | `expression` | `replace_with` | SCE Forge §3.4 |
+| `expression/parse-mismatch` | `expression` | no | SCE Forge §3.4 |
+| `expression/unexpected-token` | `expression` | no | SCE Forge §3.4 |
+| `expression/invalid-lvalue` | `expression` | no | SCE Forge §3.4 |
+| `expression/type-coercion` | `expression` | no | SCE Forge §3.4 |
+| `expression/go-ternary-unsupported` | `expression` | no | SCE Forge §3.4 |
+| `import/file-not-found` | `import` | no | |
+| `import/kind-mismatch` | `import` | `replace_with` | |
+| `import/not-forge` | `import` | no | |
+| `import/read-error` | `import` | no | |
+| `manifest/circular-dependency` | `manifest` | no | |
+| `manifest/io` | `manifest` | no | |
+| `generate/invalid-config` | `generate` | no | |
+| `generate/template-load` | `generate` | no | |
+| `generate/template-render` | `generate` | no | |
+| `io/filesystem` | `io` | no | |
 
 ### 5.2 CLI
 
-| Code | Stage | Fix? |
-|---|---|---|
-| `cli/unknown-language` | `cli` | `replace_one_of` |
-| `cli/unsupported-language` | `cli` | no |
-| `cli/read-input` | `cli` | no |
-| `cli/write-output` | `cli` | no |
-| `cli/create-output-dir` | `cli` | no |
-| `cli/scxml-parse` | `cli` | no |
-| `cli/scxml-generate` | `cli` | no |
-| `cli/dynamic-features` | `cli` | no |
-| `cli/missing-metadata-field` | `cli` | no |
-| `cli/not-a-directory` | `cli` | no |
-| `cli/invalid-format-option` | `cli` | `replace_one_of` |
-| `cli/json-serialization` | `cli` | no |
-| `cli/project-root-not-found` | `cli` | no |
-| `cli/format-style-not-found` | `cli` | no |
-| `cli/no-scxml-tag` | `cli` | no |
+| Code | Stage | Fix? | Spec |
+|---|---|---|---|
+| `cli/unknown-language` | `cli` | `replace_one_of` | |
+| `cli/unsupported-language` | `cli` | no | |
+| `cli/read-input` | `cli` | no | |
+| `cli/write-output` | `cli` | no | |
+| `cli/create-output-dir` | `cli` | no | |
+| `cli/scxml-parse` | `cli` | no | |
+| `cli/scxml-generate` | `cli` | no | |
+| `cli/dynamic-features` | `cli` | no | |
+| `cli/missing-metadata-field` | `cli` | no | |
+| `cli/not-a-directory` | `cli` | no | |
+| `cli/invalid-format-option` | `cli` | `replace_one_of` | |
+| `cli/json-serialization` | `cli` | no | |
+| `cli/project-root-not-found` | `cli` | no | |
+| `cli/format-style-not-found` | `cli` | no | |
+| `cli/no-scxml-tag` | `cli` | no | |
 
 ### 5.3 Mesh
 
-| Code | Stage | Fix? |
-|---|---|---|
-| `mesh/deploy-read` | `mesh-deploy` | no |
-| `mesh/deploy-parse` | `mesh-deploy` | no |
-| `mesh/deploy-unsupported-version` | `mesh-deploy` | `replace_one_of` |
-| `mesh/deploy-duplicate-machine` | `mesh-deploy` | no |
-| `mesh/external-read` | `mesh-external` | no |
-| `mesh/external-parse` | `mesh-external` | no |
-| `mesh/external-unresolved-names` | `mesh-external` | no |
-| `mesh/external-ambiguous-event-group` | `mesh-external` | no |
-| `mesh/external-empty-event-group` | `mesh-external` | no |
-| `mesh/external-named-reference-without-config` | `mesh-external` | no |
-| `mesh/external-reserved-someip-id-keys` | `mesh-external` | `remove_fields` |
-| `mesh/external-someip-field-on-non-someip-transport` | `mesh-external` | `replace_with` |
-| `mesh/external-conflicting-event-schema` | `mesh-external` | no |
-| `mesh/external-conflicting-event-field-kinds` | `mesh-external` | no |
-| `mesh/external-empty-event-entry` | `mesh-external` | no |
-| `mesh/topology-unresolved-targets` | `mesh-topology` | no |
-| `mesh/topology-machine-not-found` | `mesh-topology` | `replace_one_of` |
-| `mesh/topology-receiver-not-declared` | `mesh-topology` | no |
-| `mesh/topology-absolute-source-path` | `mesh-topology` | no |
-| `mesh/topology-receiver-source-read` | `mesh-topology` | no |
-| `mesh/topology-receiver-source-parse` | `mesh-topology` | no |
-| `mesh/topology-uncovered-events` | `mesh-topology` | no |
-| `mesh/topology-pattern-capability-violation` | `mesh-topology` | no |
-| `mesh/topology-missing-binding-field` | `mesh-topology` | `add_attribute` |
-| `mesh/topology-invalid-binding-field` | `mesh-topology` | no |
-| `mesh/topology-event-binding-unused` | `mesh-topology` | `remove_fields` |
-| `mesh/codegen-unsupported-language` | `mesh-codegen` | `replace_one_of` |
-| `mesh/codegen-unsupported-transport` | `mesh-codegen` | `replace_one_of` |
-| `mesh/codegen-template-read` | `mesh-codegen` | no |
-| `mesh/codegen-template-render` | `mesh-codegen` | no |
-| `mesh/codegen-event-name-collision` | `mesh-codegen` | no |
-| `mesh/io` | `io` | no |
+| Code | Stage | Fix? | Spec |
+|---|---|---|---|
+| `mesh/deploy-read` | `mesh-deploy` | no | |
+| `mesh/deploy-parse` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-unsupported-version` | `mesh-deploy` | `replace_one_of` | SCE Mesh §14 |
+| `mesh/deploy-duplicate-machine` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/external-read` | `mesh-external` | no | |
+| `mesh/external-parse` | `mesh-external` | no | |
+| `mesh/external-unresolved-names` | `mesh-external` | no | |
+| `mesh/external-ambiguous-event-group` | `mesh-external` | no | |
+| `mesh/external-empty-event-group` | `mesh-external` | no | |
+| `mesh/external-named-reference-without-config` | `mesh-external` | no | |
+| `mesh/external-reserved-someip-id-keys` | `mesh-external` | `remove_fields` | |
+| `mesh/external-someip-field-on-non-someip-transport` | `mesh-external` | `replace_with` | |
+| `mesh/external-conflicting-event-schema` | `mesh-external` | no | |
+| `mesh/external-conflicting-event-field-kinds` | `mesh-external` | no | |
+| `mesh/external-empty-event-entry` | `mesh-external` | no | |
+| `mesh/topology-unresolved-targets` | `mesh-topology` | no | SCE Mesh §9 |
+| `mesh/topology-machine-not-found` | `mesh-topology` | `replace_one_of` | SCE Mesh §14 |
+| `mesh/topology-receiver-not-declared` | `mesh-topology` | no | SCE Mesh §9 |
+| `mesh/topology-absolute-source-path` | `mesh-topology` | no | |
+| `mesh/topology-receiver-source-read` | `mesh-topology` | no | |
+| `mesh/topology-receiver-source-parse` | `mesh-topology` | no | |
+| `mesh/topology-uncovered-events` | `mesh-topology` | no | SCE Mesh §9 |
+| `mesh/topology-pattern-capability-violation` | `mesh-topology` | no | SCE Mesh §9 |
+| `mesh/topology-missing-binding-field` | `mesh-topology` | `add_attribute` | SCE Mesh §14 |
+| `mesh/topology-invalid-binding-field` | `mesh-topology` | no | SCE Mesh §14 |
+| `mesh/topology-event-binding-unused` | `mesh-topology` | `remove_fields` | SCE Mesh §14 |
+| `mesh/codegen-unsupported-language` | `mesh-codegen` | `replace_one_of` | SCE Mesh §7 |
+| `mesh/codegen-unsupported-transport` | `mesh-codegen` | `replace_one_of` | SCE Mesh §8 |
+| `mesh/codegen-template-read` | `mesh-codegen` | no | |
+| `mesh/codegen-template-render` | `mesh-codegen` | no | |
+| `mesh/codegen-event-name-collision` | `mesh-codegen` | no | |
+| `mesh/io` | `io` | no | |
 
 ## 6. Exit codes
 
@@ -337,6 +347,18 @@ minor release behind a compatibility flag.
 
 - Trait: `sce_build::forge::diagnostic::ToDiagnostics`
 - Record: `sce_build::forge::diagnostic::Diagnostic`
+- JSON Schema: `schemas/sce-diagnostic.v1.schema.json` — draft-07
+  validator input for consumers that do not link the sce-build
+  library. Drift is caught by
+  `json_schema_enums_match_rust_source_of_truth` in
+  `sce-build/src/forge/diagnostic.rs`: the test reads the schema at
+  compile time (via `include_str!`) and asserts that `properties.code.enum`
+  and `properties.stage.enum` match `DiagnosticCode::as_str` and
+  `Stage::as_str` in source order.
+- Spec anchors: `DiagnosticCode::spec_anchor` in
+  `sce-build/src/forge/diagnostic.rs` maps each code to the
+  authoritative section. Emission sites route through the method;
+  the per-code table here is the documented counterpart.
 - Goldens: `sce-build/src/forge/diagnostic.rs` →
   `diagnostic_goldens_are_byte_stable` test.
 - Non-overlap invariant: `sce-build/src/forge/diagnostic.rs` →
@@ -345,9 +367,15 @@ minor release behind a compatibility flag.
   `match` is exhaustive over `DiagnosticCode`, so adding a new code
   fails the build until the author places it in one of the three
   buckets — the contract cannot drift from the implementation.
-- CLI integration: `sce-build/tests/error_format_json.rs`.
+- CLI integration: `sce-build/tests/error_format_json.rs` (forge/CLI
+  boundary) and `sce-build/tests/mesh_error_format_json.rs` (mesh
+  codegen via `--deploy`).
 - Emitter: `sce-build/src/bin/sce_codegen.rs` →
   `ErrorFormat::emit_and_exit` and `cli_exit`.
+- Flag naming rationale: `docs/adr/0001-error-format-flag-naming.md`
+  documents the alternatives considered for the `--error-format`
+  flag and the reason the current spelling is compatible with future
+  wire shapes (SARIF, protobuf).
 
 ## 10. Stdout manifest
 

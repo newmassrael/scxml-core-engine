@@ -1,0 +1,230 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-diagnostic.v1.schema.json",
+  "title": "SCE Diagnostic (wire schema v1)",
+  "description": "Machine-readable diagnostic record emitted on stderr as a single NDJSON line. Authoritative definition lives in sce-build/src/forge/diagnostic.rs (struct Diagnostic); see SCE_ERROR_CONTRACT.md §2 for the wire contract and §5 for the code catalog. Consumers MUST ignore unknown fields: any purely additive schema change (new optional field) is compatible with v1 and does not bump the schema_version.",
+  "type": "object",
+  "required": ["v", "id", "code", "stage", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "description": "Wire-format version. Always 1 for this schema revision.",
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "description": "Content-addressed identifier. Prefix names the hash family (future migrations add new prefixes rather than redefining fnv1a). The canonical key is (code, stage, file, key_fragments) — re-wording the message never shifts the id.",
+      "type": "string",
+      "pattern": "^fnv1a:[0-9a-f]{16}$"
+    },
+    "code": {
+      "description": "Closed enum of diagnostic codes. Adding a new entry is backwards-compatible; renaming an existing entry requires a schema bump per SCE_ERROR_CONTRACT.md §8.",
+      "type": "string",
+      "enum": [
+        "xml/parse",
+        "xml/schema-validation",
+        "validation/missing-element",
+        "validation/missing-attribute",
+        "validation/invalid-attribute",
+        "validation/unsupported-kind",
+        "validation/duplicate-id",
+        "validation/empty-collection",
+        "validation/count-mismatch",
+        "validation/incompatible-attributes",
+        "validation/invalid-reference",
+        "validation/invalid-direction",
+        "validation/numeric-parse",
+        "validation/empty-value",
+        "validation/singleton-violation",
+        "validation/require-either",
+        "validation/wrong-pipeline",
+        "expression/empty",
+        "expression/lex",
+        "expression/unsupported-construct",
+        "expression/strict-equality",
+        "expression/parse-mismatch",
+        "expression/unexpected-token",
+        "expression/invalid-lvalue",
+        "expression/type-coercion",
+        "expression/go-ternary-unsupported",
+        "import/file-not-found",
+        "import/kind-mismatch",
+        "import/not-forge",
+        "import/read-error",
+        "manifest/circular-dependency",
+        "manifest/io",
+        "generate/invalid-config",
+        "generate/template-load",
+        "generate/template-render",
+        "io/filesystem",
+        "cli/unknown-language",
+        "cli/unsupported-language",
+        "cli/read-input",
+        "cli/write-output",
+        "cli/create-output-dir",
+        "cli/scxml-parse",
+        "cli/scxml-generate",
+        "cli/dynamic-features",
+        "cli/missing-metadata-field",
+        "cli/not-a-directory",
+        "cli/invalid-format-option",
+        "cli/json-serialization",
+        "cli/project-root-not-found",
+        "cli/format-style-not-found",
+        "cli/no-scxml-tag",
+        "mesh/deploy-read",
+        "mesh/deploy-parse",
+        "mesh/deploy-unsupported-version",
+        "mesh/deploy-duplicate-machine",
+        "mesh/external-read",
+        "mesh/external-parse",
+        "mesh/external-unresolved-names",
+        "mesh/external-ambiguous-event-group",
+        "mesh/external-empty-event-group",
+        "mesh/external-named-reference-without-config",
+        "mesh/external-reserved-someip-id-keys",
+        "mesh/external-someip-field-on-non-someip-transport",
+        "mesh/external-conflicting-event-schema",
+        "mesh/external-conflicting-event-field-kinds",
+        "mesh/external-empty-event-entry",
+        "mesh/topology-unresolved-targets",
+        "mesh/topology-machine-not-found",
+        "mesh/topology-receiver-not-declared",
+        "mesh/topology-absolute-source-path",
+        "mesh/topology-receiver-source-read",
+        "mesh/topology-receiver-source-parse",
+        "mesh/topology-uncovered-events",
+        "mesh/topology-pattern-capability-violation",
+        "mesh/topology-missing-binding-field",
+        "mesh/topology-invalid-binding-field",
+        "mesh/topology-event-binding-unused",
+        "mesh/codegen-unsupported-language",
+        "mesh/codegen-unsupported-transport",
+        "mesh/codegen-template-read",
+        "mesh/codegen-template-render",
+        "mesh/codegen-event-name-collision",
+        "mesh/io"
+      ]
+    },
+    "stage": {
+      "description": "Pipeline stage that raised the diagnostic. Exit codes are routed by prefix (see SCE_ERROR_CONTRACT.md §6).",
+      "type": "string",
+      "enum": [
+        "xml",
+        "validation",
+        "expression",
+        "import",
+        "manifest",
+        "generate",
+        "io",
+        "cli",
+        "mesh-deploy",
+        "mesh-external",
+        "mesh-topology",
+        "mesh-codegen"
+      ]
+    },
+    "spec": {
+      "description": "Optional specification anchor (e.g. 'SCE Forge §3.4', 'SCE Mesh §14'). Absent when the code records an operational failure rather than a spec violation.",
+      "type": "string"
+    },
+    "message": {
+      "description": "English one-line rendering. Not machine-parsed; agents dispatch on `code` and drive repair from `fix`/`expected`. Present as a tiebreaker for ambiguous triage and as UI text.",
+      "type": "string"
+    },
+    "location": {
+      "description": "Source location carried when the error was raised through a Located<E> wrapper. Absent for pure I/O and CLI-boundary failures.",
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "col": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "expected": {
+      "description": "Non-repair metadata. Holds grammatical expectations (parser token names) or cardinality notes. Never a substitution candidate list — see SCE_ERROR_CONTRACT.md §3.2 (non-overlap rule).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "actual": {
+      "description": "Observed value that triggered the rejection.",
+      "type": "string"
+    },
+    "fix": {
+      "description": "Structured repair proposal. Sole channel for substitution candidates and additive repairs — never overlaps with `expected` (SCE_ERROR_CONTRACT.md §3.2). The `kind` discriminator selects the payload shape.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "element", "attr"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "add_attribute" },
+            "element": { "type": "string" },
+            "attr": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "what", "id"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "rename_duplicate" },
+            "what": { "type": "string" },
+            "id": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "location", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "remove_fields" },
+            "location": { "type": "string" },
+            "fields": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "replace_with" },
+            "to": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "candidates"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "replace_one_of" },
+            "candidates": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "element", "attrs"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "add_one_of" },
+            "element": { "type": "string" },
+            "attrs": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

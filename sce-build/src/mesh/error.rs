@@ -872,7 +872,7 @@ impl ToDiagnostics for MeshError {
             id,
             code: fields.code,
             stage: fields.stage,
-            spec: None,
+            spec: fields.code.spec_anchor(),
             message: self.to_string(),
             location: None::<Location>,
             expected: fields.expected,

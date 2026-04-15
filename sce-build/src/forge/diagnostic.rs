@@ -354,6 +354,132 @@ pub enum DiagnosticCode {
     MeshIo,
 }
 
+/// Canonical enumeration of every `DiagnosticCode` variant.
+///
+/// The enum is the declarative source of truth; this slice is the
+/// runtime counterpart needed by tests that iterate all variants
+/// (serde/as_str parity, JSON-Schema drift guard). Without a derive
+/// macro (strum) Rust cannot enumerate enum variants, so the slice
+/// is hand-maintained.
+///
+/// Drift protection is layered:
+///
+///   1. Adding a new variant forces compile errors in three
+///      exhaustive matches — [`DiagnosticCode::as_str`],
+///      [`DiagnosticCode::spec_anchor`], and (in the test module)
+///      `non_overlap_class`. Contributors must touch each one.
+///   2. The JSON-Schema enum in
+///      `schemas/sce-diagnostic.v1.schema.json` duplicates this
+///      list verbatim, with byte-for-byte drift caught by
+///      `json_schema_enums_match_rust_source_of_truth`. Any slice
+///      shrinkage or omission surfaces as a schema/slice mismatch,
+///      not a silent test pass.
+///
+/// Entries are ordered by pipeline stage, matching the enum's source
+/// order so a `diff` against the enum definition reveals any gap.
+#[cfg(test)]
+pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
+    use DiagnosticCode::*;
+    &[
+        // Xml
+        XmlParse,
+        XmlSchemaValidation,
+        // Validation
+        ValidationMissingElement,
+        ValidationMissingAttribute,
+        ValidationInvalidAttribute,
+        ValidationUnsupportedKind,
+        ValidationDuplicateId,
+        ValidationEmptyCollection,
+        ValidationCountMismatch,
+        ValidationIncompatibleAttributes,
+        ValidationInvalidReference,
+        ValidationInvalidDirection,
+        ValidationNumericParse,
+        ValidationEmptyValue,
+        ValidationSingletonViolation,
+        ValidationRequireEither,
+        ValidationWrongPipeline,
+        // Expression
+        ExpressionEmpty,
+        ExpressionLex,
+        ExpressionUnsupportedConstruct,
+        ExpressionStrictEquality,
+        ExpressionParseMismatch,
+        ExpressionUnexpectedToken,
+        ExpressionInvalidLvalue,
+        ExpressionTypeCoercion,
+        ExpressionGoTernaryUnsupported,
+        // Import
+        ImportFileNotFound,
+        ImportKindMismatch,
+        ImportNotForge,
+        ImportReadError,
+        // Manifest
+        ManifestCircularDependency,
+        ManifestIo,
+        // Generate
+        GenerateInvalidConfig,
+        GenerateTemplateLoad,
+        GenerateTemplateRender,
+        // Io
+        IoFilesystem,
+        // Cli
+        CliUnknownLanguage,
+        CliUnsupportedLanguage,
+        CliReadInput,
+        CliWriteOutput,
+        CliCreateOutputDir,
+        CliScxmlParse,
+        CliScxmlGenerate,
+        CliDynamicFeatures,
+        CliMissingMetadataField,
+        CliNotADirectory,
+        CliInvalidFormatOption,
+        CliJsonSerialization,
+        CliProjectRootNotFound,
+        CliFormatStyleNotFound,
+        CliNoScxmlTag,
+        // Mesh Deploy
+        MeshDeployRead,
+        MeshDeployParse,
+        MeshDeployUnsupportedVersion,
+        MeshDeployDuplicateMachine,
+        // Mesh External config
+        MeshExternalRead,
+        MeshExternalParse,
+        MeshExternalUnresolvedNames,
+        MeshExternalAmbiguousEventGroup,
+        MeshExternalEmptyEventGroup,
+        MeshExternalNamedReferenceWithoutConfig,
+        MeshExternalReservedSomeipIdKeys,
+        MeshExternalSomeipFieldOnNonSomeipTransport,
+        MeshExternalConflictingEventSchema,
+        MeshExternalConflictingEventFieldKinds,
+        MeshExternalEmptyEventEntry,
+        // Mesh Topology
+        MeshTopologyUnresolvedTargets,
+        MeshTopologyMachineNotFound,
+        MeshTopologyReceiverNotDeclared,
+        MeshTopologyAbsoluteSourcePath,
+        MeshTopologyReceiverSourceRead,
+        MeshTopologyReceiverSourceParse,
+        MeshTopologyUncoveredEvents,
+        MeshTopologyPatternCapabilityViolation,
+        MeshTopologyMissingBindingField,
+        MeshTopologyInvalidBindingField,
+        MeshTopologyEventBindingUnused,
+        // Mesh Codegen
+        MeshCodegenUnsupportedLanguage,
+        MeshCodegenUnsupportedTransport,
+        MeshCodegenTemplateRead,
+        MeshCodegenTemplateRender,
+        MeshCodegenEventNameCollision,
+        // Mesh Io
+        MeshIo,
+    ]
+};
+
 impl Diagnostic {
     /// Construct a last-resort diagnostic for failures in the
     /// diagnostic pipeline itself — e.g. serde serialization error,
@@ -363,18 +489,15 @@ impl Diagnostic {
     /// exactly one place.
     pub fn meta_failure(message: impl Into<String>) -> Self {
         let message = message.into();
-        let id = compute_id(
-            DiagnosticCode::IoFilesystem,
-            Stage::Io,
-            None,
-            std::slice::from_ref(&message),
-        );
+        let code = DiagnosticCode::IoFilesystem;
+        let stage = Stage::Io;
+        let id = compute_id(code, stage, None, std::slice::from_ref(&message));
         Diagnostic {
             schema_version: SCHEMA_VERSION,
             id,
-            code: DiagnosticCode::IoFilesystem,
-            stage: Stage::Io,
-            spec: None,
+            code,
+            stage,
+            spec: code.spec_anchor(),
             message,
             location: None,
             expected: None,
@@ -385,6 +508,134 @@ impl Diagnostic {
 }
 
 impl DiagnosticCode {
+    /// Specification anchor for this code, when the rule it enforces
+    /// has a well-defined section in an authoritative document.
+    ///
+    /// Single source of truth for the `spec` wire field. Emission
+    /// sites no longer carry a per-variant `spec: Some(...)` /
+    /// `spec: None` literal — they all route through this method so
+    /// that a spec reference bumps cost once per code, not once per
+    /// call-site. Returning `None` is explicit: a code with no
+    /// anchor means "no verifiable citation exists". Inventing a
+    /// plausible-looking section label here is strictly worse than
+    /// leaving it empty, because agents would ground hallucinated
+    /// references against a real document and silently drift.
+    ///
+    /// Anchors currently use the following convention:
+    ///   - `"SCE Forge §N.M"` → section N.M of SCE_FORGE.md
+    ///   - `"SCE Mesh §N"` → section N of SCE_MESH.md
+    ///   - `"SCE Forge XSD"` → the XSD schema (schemas/sce-forge*.xsd)
+    pub fn spec_anchor(&self) -> Option<&'static str> {
+        use DiagnosticCode::*;
+        match self {
+            // ── Forge XSD ────────────────────────────────────────
+            XmlSchemaValidation => Some("SCE Forge XSD"),
+
+            // ── Forge kind system (SCE_FORGE.md) ─────────────────
+            ValidationUnsupportedKind => Some("SCE Forge §3.2"),
+            ValidationInvalidDirection => Some("SCE Forge §3.3"),
+            ValidationWrongPipeline => Some("SCE Forge §4"),
+
+            // ── Forge expression language (SCE_FORGE.md §3.4) ────
+            ExpressionEmpty
+            | ExpressionLex
+            | ExpressionUnsupportedConstruct
+            | ExpressionStrictEquality
+            | ExpressionParseMismatch
+            | ExpressionUnexpectedToken
+            | ExpressionInvalidLvalue
+            | ExpressionTypeCoercion
+            | ExpressionGoTernaryUnsupported => Some("SCE Forge §3.4"),
+
+            // ── Mesh deploy.yaml schema (SCE_MESH.md §14) ────────
+            MeshDeployParse
+            | MeshDeployUnsupportedVersion
+            | MeshDeployDuplicateMachine
+            | MeshTopologyMachineNotFound
+            | MeshTopologyMissingBindingField
+            | MeshTopologyInvalidBindingField
+            | MeshTopologyEventBindingUnused => Some("SCE Mesh §14"),
+
+            // ── Mesh remote invoke / topology (SCE_MESH.md §9) ───
+            MeshTopologyUnresolvedTargets
+            | MeshTopologyReceiverNotDeclared
+            | MeshTopologyUncoveredEvents
+            | MeshTopologyPatternCapabilityViolation => Some("SCE Mesh §9"),
+
+            // ── Mesh build pipeline (SCE_MESH.md §7) ─────────────
+            MeshCodegenUnsupportedLanguage => Some("SCE Mesh §7"),
+
+            // ── Mesh protocol mapping (SCE_MESH.md §8) ───────────
+            MeshCodegenUnsupportedTransport => Some("SCE Mesh §8"),
+
+            // ── No authoritative citation ────────────────────────
+            //
+            // Anchors are deliberately narrow: a code lands here when
+            // the rule is operational (I/O failures, template render
+            // crashes, CLI argument parsing) or tied to policy that
+            // does not have a pinned section yet. Leaving `None` keeps
+            // the wire format honest; the message still carries the
+            // repair guidance.
+            XmlParse
+            | ValidationMissingElement
+            | ValidationMissingAttribute
+            | ValidationInvalidAttribute
+            | ValidationDuplicateId
+            | ValidationEmptyCollection
+            | ValidationCountMismatch
+            | ValidationIncompatibleAttributes
+            | ValidationInvalidReference
+            | ValidationNumericParse
+            | ValidationEmptyValue
+            | ValidationSingletonViolation
+            | ValidationRequireEither
+            | ImportFileNotFound
+            | ImportKindMismatch
+            | ImportNotForge
+            | ImportReadError
+            | ManifestCircularDependency
+            | ManifestIo
+            | GenerateInvalidConfig
+            | GenerateTemplateLoad
+            | GenerateTemplateRender
+            | IoFilesystem
+            | CliUnknownLanguage
+            | CliUnsupportedLanguage
+            | CliReadInput
+            | CliWriteOutput
+            | CliCreateOutputDir
+            | CliScxmlParse
+            | CliScxmlGenerate
+            | CliDynamicFeatures
+            | CliMissingMetadataField
+            | CliNotADirectory
+            | CliInvalidFormatOption
+            | CliJsonSerialization
+            | CliProjectRootNotFound
+            | CliFormatStyleNotFound
+            | CliNoScxmlTag
+            | MeshDeployRead
+            | MeshExternalRead
+            | MeshExternalParse
+            | MeshExternalUnresolvedNames
+            | MeshExternalAmbiguousEventGroup
+            | MeshExternalEmptyEventGroup
+            | MeshExternalNamedReferenceWithoutConfig
+            | MeshExternalReservedSomeipIdKeys
+            | MeshExternalSomeipFieldOnNonSomeipTransport
+            | MeshExternalConflictingEventSchema
+            | MeshExternalConflictingEventFieldKinds
+            | MeshExternalEmptyEventEntry
+            | MeshTopologyAbsoluteSourcePath
+            | MeshTopologyReceiverSourceRead
+            | MeshTopologyReceiverSourceParse
+            | MeshCodegenTemplateRead
+            | MeshCodegenTemplateRender
+            | MeshCodegenEventNameCollision
+            | MeshIo => None,
+        }
+    }
+
     /// Slash-path string form used in the content hash. Must match the
     /// serde `rename` on each variant exactly.
     pub(crate) fn as_str(&self) -> &'static str {
@@ -553,10 +804,15 @@ pub enum Fix {
 /// Structured fields extracted from a single `ForgeError`. Collected
 /// into a struct (instead of a big tuple) so the variant-mapping code
 /// below reads as data rather than positional arguments.
+///
+/// The `spec` wire field is intentionally absent here: it is a
+/// property of the `DiagnosticCode`, resolved at emission time via
+/// [`DiagnosticCode::spec_anchor`]. Keeping the anchor on the code
+/// rather than on the per-variant payload means contributors update
+/// one table when they add a new code, not two.
 struct DiagnosticFields {
     code: DiagnosticCode,
     stage: Stage,
-    spec: Option<&'static str>,
     expected: Option<Vec<String>>,
     actual: Option<String>,
     fix: Option<Fix>,
@@ -645,7 +901,7 @@ fn build_single_forge_diagnostic(
         id,
         code: fields.code,
         stage: fields.stage,
-        spec: fields.spec,
+        spec: fields.code.spec_anchor(),
         message: err.to_string(),
         location,
         expected: fields.expected,
@@ -666,7 +922,6 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
         ForgeError::Io { path, .. } => DiagnosticFields {
             code: DiagnosticCode::IoFilesystem,
             stage: Stage::Io,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -680,7 +935,6 @@ fn xml_fields(e: &XmlError) -> DiagnosticFields {
         XmlError::Parse(detail) => DiagnosticFields {
             code: DiagnosticCode::XmlParse,
             stage: Stage::Xml,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -689,7 +943,6 @@ fn xml_fields(e: &XmlError) -> DiagnosticFields {
         XmlError::SchemaValidation(_) => DiagnosticFields {
             code: DiagnosticCode::XmlSchemaValidation,
             stage: Stage::Xml,
-            spec: Some("SCE Forge XSD"),
             expected: None,
             actual: None,
             fix: None,
@@ -703,7 +956,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::MissingElement { kind, element } => DiagnosticFields {
             code: DiagnosticCode::ValidationMissingElement,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -712,7 +964,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::MissingAttribute { element, attr } => DiagnosticFields {
             code: DiagnosticCode::ValidationMissingAttribute,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: None,
             fix: Some(Fix::AddAttribute {
@@ -729,7 +980,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         } => DiagnosticFields {
             code: DiagnosticCode::ValidationInvalidAttribute,
             stage: Stage::Validation,
-            spec: None,
             // Candidate list rides `fix`; `expected` stays None because
             // duplicating the list in both fields would violate the
             // fix/expected non-overlap rule in the contract.
@@ -743,7 +993,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::UnsupportedKind(value) => DiagnosticFields {
             code: DiagnosticCode::ValidationUnsupportedKind,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: Some(value.clone()),
             // `sce:kind` has a closed enumeration (`ForgeKind::from_attr`).
@@ -760,7 +1009,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::DuplicateId { kind, what, id } => DiagnosticFields {
             code: DiagnosticCode::ValidationDuplicateId,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: Some(id.clone()),
             fix: Some(Fix::RenameDuplicate {
@@ -772,7 +1020,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::EmptyCollection { kind, what } => DiagnosticFields {
             code: DiagnosticCode::ValidationEmptyCollection,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -781,7 +1028,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::CountMismatch { kind, detail } => DiagnosticFields {
             code: DiagnosticCode::ValidationCountMismatch,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -790,7 +1036,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::IncompatibleAttributes { element, detail } => DiagnosticFields {
             code: DiagnosticCode::ValidationIncompatibleAttributes,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -804,7 +1049,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         } => DiagnosticFields {
             code: DiagnosticCode::ValidationInvalidReference,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: Some(name.clone()),
             fix: Some(Fix::ReplaceOneOf {
@@ -819,7 +1063,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         } => DiagnosticFields {
             code: DiagnosticCode::ValidationInvalidDirection,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: Some(direction.clone()),
             // Every forge kind with directional `<data>` fields accepts
@@ -839,7 +1082,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         } => DiagnosticFields {
             code: DiagnosticCode::ValidationNumericParse,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: Some(value.clone()),
             fix: None,
@@ -848,7 +1090,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::EmptyValue { element, attr } => DiagnosticFields {
             code: DiagnosticCode::ValidationEmptyValue,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: None,
             fix: Some(Fix::AddAttribute {
@@ -860,7 +1101,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::SingletonViolation { kind, attr } => DiagnosticFields {
             code: DiagnosticCode::ValidationSingletonViolation,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -872,7 +1112,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         } => DiagnosticFields {
             code: DiagnosticCode::ValidationRequireEither,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: None,
             fix: Some(Fix::AddOneOf {
@@ -888,7 +1127,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::WrongPipeline { kind } => DiagnosticFields {
             code: DiagnosticCode::ValidationWrongPipeline,
             stage: Stage::Validation,
-            spec: None,
             expected: None,
             actual: Some(kind.to_string()),
             fix: None,
@@ -898,12 +1136,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
 }
 
 fn expression_fields(e: &ExprError) -> DiagnosticFields {
-    let subset_spec = Some("Extended SCXML stateless subset");
     match e {
         ExprError::Empty { what } => DiagnosticFields {
             code: DiagnosticCode::ExpressionEmpty,
             stage: Stage::Expression,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -912,7 +1148,6 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
         ExprError::Lex { position, detail } => DiagnosticFields {
             code: DiagnosticCode::ExpressionLex,
             stage: Stage::Expression,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -921,7 +1156,6 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
         ExprError::UnsupportedConstruct { construct } => DiagnosticFields {
             code: DiagnosticCode::ExpressionUnsupportedConstruct,
             stage: Stage::Expression,
-            spec: subset_spec,
             expected: None,
             actual: Some(construct.clone()),
             fix: None,
@@ -930,7 +1164,6 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
         ExprError::StrictEquality { operator, strict } => DiagnosticFields {
             code: DiagnosticCode::ExpressionStrictEquality,
             stage: Stage::Expression,
-            spec: subset_spec,
             // Single legal replacement (`==` → `===`, `!=` → `!==`).
             // It rides `fix` as a deterministic `ReplaceWith`;
             // duplicating it in `expected` would violate non-overlap.
@@ -942,7 +1175,6 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
         ExprError::ParseMismatch { expected, got } => DiagnosticFields {
             code: DiagnosticCode::ExpressionParseMismatch,
             stage: Stage::Expression,
-            spec: None,
             expected: Some(vec![expected.clone()]),
             actual: Some(got.clone()),
             fix: None,
@@ -951,7 +1183,6 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
         ExprError::UnexpectedToken { token } => DiagnosticFields {
             code: DiagnosticCode::ExpressionUnexpectedToken,
             stage: Stage::Expression,
-            spec: None,
             expected: None,
             actual: Some(token.clone()),
             fix: None,
@@ -960,7 +1191,6 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
         ExprError::InvalidLvalue { location, detail } => DiagnosticFields {
             code: DiagnosticCode::ExpressionInvalidLvalue,
             stage: Stage::Expression,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -969,7 +1199,6 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
         ExprError::TypeCoercion { lang, detail } => DiagnosticFields {
             code: DiagnosticCode::ExpressionTypeCoercion,
             stage: Stage::Expression,
-            spec: None,
             expected: None,
             actual: Some((*lang).to_string()),
             fix: None,
@@ -978,7 +1207,6 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
         ExprError::GoTernary => DiagnosticFields {
             code: DiagnosticCode::ExpressionGoTernaryUnsupported,
             stage: Stage::Expression,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -992,7 +1220,6 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
         ImportError::FileNotFound { src, .. } => DiagnosticFields {
             code: DiagnosticCode::ImportFileNotFound,
             stage: Stage::Import,
-            spec: None,
             expected: None,
             actual: Some(src.clone()),
             fix: None,
@@ -1005,7 +1232,6 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
         } => DiagnosticFields {
             code: DiagnosticCode::ImportKindMismatch,
             stage: Stage::Import,
-            spec: None,
             // Single deterministic replacement: rewrite
             // `<sce:import kind="…">` to the imported file's real
             // kind. `fix.to` is authoritative; `expected` stays None.
@@ -1017,7 +1243,6 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
         ImportError::NotForge { src } => DiagnosticFields {
             code: DiagnosticCode::ImportNotForge,
             stage: Stage::Import,
-            spec: None,
             expected: None,
             actual: Some(src.clone()),
             fix: None,
@@ -1026,7 +1251,6 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
         ImportError::ReadError { src, .. } => DiagnosticFields {
             code: DiagnosticCode::ImportReadError,
             stage: Stage::Import,
-            spec: None,
             expected: None,
             actual: Some(src.clone()),
             fix: None,
@@ -1040,7 +1264,6 @@ fn manifest_fields(e: &ManifestError) -> DiagnosticFields {
         ManifestError::CircularDependency(cycle) => DiagnosticFields {
             code: DiagnosticCode::ManifestCircularDependency,
             stage: Stage::Manifest,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -1049,7 +1272,6 @@ fn manifest_fields(e: &ManifestError) -> DiagnosticFields {
         ManifestError::Io { context, .. } => DiagnosticFields {
             code: DiagnosticCode::ManifestIo,
             stage: Stage::Manifest,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -1063,7 +1285,6 @@ fn generate_fields(e: &GenerateError) -> DiagnosticFields {
         GenerateError::InvalidConfig(detail) => DiagnosticFields {
             code: DiagnosticCode::GenerateInvalidConfig,
             stage: Stage::Generate,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -1072,7 +1293,6 @@ fn generate_fields(e: &GenerateError) -> DiagnosticFields {
         GenerateError::TemplateLoad(detail) => DiagnosticFields {
             code: DiagnosticCode::GenerateTemplateLoad,
             stage: Stage::Generate,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -1081,7 +1301,6 @@ fn generate_fields(e: &GenerateError) -> DiagnosticFields {
         GenerateError::TemplateRender(detail) => DiagnosticFields {
             code: DiagnosticCode::GenerateTemplateRender,
             stage: Stage::Generate,
-            spec: None,
             expected: None,
             actual: None,
             fix: None,
@@ -1434,7 +1653,7 @@ mod tests {
             (
                 "forge/go-ternary",
                 actual_forge(ExprError::GoTernary.into()),
-                r#"{"v":1,"id":"fnv1a:ef5b56dbf74b8718","code":"expression/go-ternary-unsupported","stage":"expression","message":"cannot transpile ternary expression to Go: Go has no conditional expression"}"#,
+                r#"{"v":1,"id":"fnv1a:ef5b56dbf74b8718","code":"expression/go-ternary-unsupported","stage":"expression","spec":"SCE Forge §3.4","message":"cannot transpile ternary expression to Go: Go has no conditional expression"}"#,
             ),
             (
                 "forge/not-forge",
@@ -1444,7 +1663,7 @@ mod tests {
             (
                 "forge/strict-equality",
                 actual_forge(ExprError::StrictEquality { operator: "==", strict: "===" }.into()),
-                r#"{"v":1,"id":"fnv1a:056d2165b00f16bd","code":"expression/strict-equality","stage":"expression","spec":"Extended SCXML stateless subset","message":"loose == is not permitted in Extended SCXML. Use === instead.","actual":"==","fix":{"kind":"replace_with","to":"==="}}"#,
+                r#"{"v":1,"id":"fnv1a:056d2165b00f16bd","code":"expression/strict-equality","stage":"expression","spec":"SCE Forge §3.4","message":"loose == is not permitted in Extended SCXML. Use === instead.","actual":"==","fix":{"kind":"replace_with","to":"==="}}"#,
             ),
             (
                 "forge/import-kind-mismatch",
@@ -1469,7 +1688,7 @@ mod tests {
                     }
                     .into(),
                 ),
-                r#"{"v":1,"id":"fnv1a:d7ba280d1556705e","code":"mesh/topology-missing-binding-field","stage":"mesh-topology","message":"machine 'ecu_a': binding for '#motor' (transport: someip) is missing required field 'service'. Add 'service:' to the binding in deploy.yaml.","fix":{"kind":"add_attribute","element":"machines.ecu_a.bindings.#motor","attr":"service"}}"#,
+                r#"{"v":1,"id":"fnv1a:d7ba280d1556705e","code":"mesh/topology-missing-binding-field","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding for '#motor' (transport: someip) is missing required field 'service'. Add 'service:' to the binding in deploy.yaml.","fix":{"kind":"add_attribute","element":"machines.ecu_a.bindings.#motor","attr":"service"}}"#,
             ),
             (
                 "mesh/event-binding-unused",
@@ -1481,7 +1700,7 @@ mod tests {
                     }
                     .into(),
                 ),
-                r#"{"v":1,"id":"fnv1a:4fdd02e5a9781de8","code":"mesh/topology-event-binding-unused","stage":"mesh-topology","message":"machine 'ecu_a': binding '#motor' declares events.legacy.ping in deploy.yaml, but the SCXML model never sends 'legacy.ping' to this target. Remove the unused entry, or correct the event name.","actual":"legacy.ping","fix":{"kind":"remove_fields","location":"machines.ecu_a.bindings.#motor.events","fields":["legacy.ping"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4fdd02e5a9781de8","code":"mesh/topology-event-binding-unused","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding '#motor' declares events.legacy.ping in deploy.yaml, but the SCXML model never sends 'legacy.ping' to this target. Remove the unused entry, or correct the event name.","actual":"legacy.ping","fix":{"kind":"remove_fields","location":"machines.ecu_a.bindings.#motor.events","fields":["legacy.ping"]}}"#,
             ),
         ];
 
@@ -1792,5 +2011,116 @@ mod tests {
             let expected = format!("\"{}\"", stage.as_str());
             assert_eq!(via_serde, expected, "stage {stage:?} str vs serde disagree");
         }
+    }
+
+    /// No two entries in [`ALL_DIAGNOSTIC_CODES`] resolve to the
+    /// same slash-path. Duplicates would silently skew the serde and
+    /// schema-drift tests (both iterate the slice), so catching them
+    /// as their own assertion keeps failure messages sharp. Accidental
+    /// slice shrinkage is caught by
+    /// `json_schema_enums_match_rust_source_of_truth`, which compares
+    /// the slice to the schema's 83-entry code enum.
+    #[test]
+    fn all_diagnostic_codes_are_distinct() {
+        let mut slash_paths: Vec<&'static str> =
+            ALL_DIAGNOSTIC_CODES.iter().map(|c| c.as_str()).collect();
+        slash_paths.sort_unstable();
+        let total = slash_paths.len();
+        slash_paths.dedup();
+        assert_eq!(
+            slash_paths.len(),
+            total,
+            "ALL_DIAGNOSTIC_CODES contains duplicate slash-path entries",
+        );
+    }
+
+    /// Each variant's serde-rendered slash-path must match its
+    /// `as_str()` form. The id hash feeds on `as_str`, the wire
+    /// contract feeds on serde; a silent rename on one side (or a
+    /// missing `#[serde(rename = ...)]` on a newly added variant)
+    /// would split the two consumers without otherwise failing any
+    /// existing test.
+    #[test]
+    fn code_serde_rename_matches_as_str() {
+        for code in ALL_DIAGNOSTIC_CODES {
+            let via_serde = serde_json::to_string(code).unwrap();
+            let expected = format!("\"{}\"", code.as_str());
+            assert_eq!(
+                via_serde, expected,
+                "diagnostic code {code:?}: serde rename vs as_str disagree",
+            );
+        }
+    }
+
+    /// External JSON Schema at `schemas/sce-diagnostic.v1.schema.json`
+    /// duplicates the `code` enumeration and the `stage` enumeration
+    /// for consumers that validate records without linking the
+    /// sce-build library. Those enums must agree with the Rust source
+    /// of truth or agents will reject (or accept) the wrong records.
+    ///
+    /// Loaded via `include_str!` so the test fires at compile time —
+    /// no external filesystem assumptions — and parsed with `serde_json`
+    /// rather than a schema validator because the guard's concern is
+    /// source-of-truth parity, not self-consistency of the schema.
+    #[test]
+    fn json_schema_enums_match_rust_source_of_truth() {
+        const SCHEMA_BYTES: &str =
+            include_str!("../../../schemas/sce-diagnostic.v1.schema.json");
+        let schema: serde_json::Value = serde_json::from_str(SCHEMA_BYTES)
+            .expect("diagnostic schema is valid JSON");
+
+        let code_enum: Vec<String> = schema["properties"]["code"]["enum"]
+            .as_array()
+            .expect("code.enum is an array")
+            .iter()
+            .map(|v| v.as_str().expect("code enum member is a string").to_string())
+            .collect();
+        let rust_codes: Vec<String> = ALL_DIAGNOSTIC_CODES
+            .iter()
+            .map(|c| c.as_str().to_string())
+            .collect();
+        assert_eq!(
+            code_enum, rust_codes,
+            "schemas/sce-diagnostic.v1.schema.json code.enum drifted from \
+             DiagnosticCode::as_str. Regenerate the schema's code enum in \
+             the source order of ALL_DIAGNOSTIC_CODES.",
+        );
+
+        let stage_enum: Vec<String> = schema["properties"]["stage"]["enum"]
+            .as_array()
+            .expect("stage.enum is an array")
+            .iter()
+            .map(|v| v.as_str().expect("stage enum member is a string").to_string())
+            .collect();
+        let rust_stages: Vec<String> = [
+            Stage::Xml,
+            Stage::Validation,
+            Stage::Expression,
+            Stage::Import,
+            Stage::Manifest,
+            Stage::Generate,
+            Stage::Io,
+            Stage::Cli,
+            Stage::MeshDeploy,
+            Stage::MeshExternal,
+            Stage::MeshTopology,
+            Stage::MeshCodegen,
+        ]
+        .iter()
+        .map(|s| s.as_str().to_string())
+        .collect();
+        assert_eq!(
+            stage_enum, rust_stages,
+            "schemas/sce-diagnostic.v1.schema.json stage.enum drifted from \
+             Stage::as_str.",
+        );
+
+        let schema_version = schema["properties"]["v"]["const"]
+            .as_u64()
+            .expect("v.const is an integer");
+        assert_eq!(
+            schema_version as u32, SCHEMA_VERSION,
+            "schemas/sce-diagnostic.v1.schema.json v.const disagrees with SCHEMA_VERSION",
+        );
     }
 }

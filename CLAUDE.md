@@ -2,6 +2,7 @@
 
 - **ARCHITECTURE.md first**: Read it before modifying Interpreter or AOT engines
 - **COMMIT_FORMAT.md first**: Read it before creating commits
+- **SCE_ERROR_CONTRACT.md first**: Read it before touching diagnostic emission, error types, or the `--error-format=json` wire format (including adding a new `DiagnosticCode` variant, changing a `Fix` shape, or extending a stage)
 - **Root cause only**: Never workaround, band-aid, or skip validation. Fix the actual problem.
 - **No Interpreter fallback**: AOT failures must be fixed in the code generator or helpers, not bypassed with Interpreter
 - **W3C SCXML complete algorithms**: Implement full spec sections (e.g., Appendix D.2), not test-specific fixes

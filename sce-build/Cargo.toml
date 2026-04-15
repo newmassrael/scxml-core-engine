@@ -76,6 +76,16 @@ name = "error_format_json"
 path = "tests/error_format_json.rs"
 required-features = ["cli"]
 
+# End-to-end CLI contract test for the mesh pipeline (--deploy). Shares
+# the binary target of `error_format_json` and the same `cli` feature
+# gate so mesh codegen errors get the same NDJSON wire-format coverage
+# the forge / CLI tests already enforce. Listed separately so `cargo
+# test mesh_error` can run only the mesh integration path.
+[[test]]
+name = "mesh_error_format_json"
+path = "tests/mesh_error_format_json.rs"
+required-features = ["cli"]
+
 
 
 [lints]
