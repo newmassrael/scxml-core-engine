@@ -1254,6 +1254,34 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_invoke_correlation_verification COMMAND mesh_invoke_correlation_test)
 
+    # ── MeshDeadlineScheduler unit tests (SCE_MESH.md §9.5 F3c) ───
+    # Pure unit tests on the callback-based deadline timer that backs
+    # the mesh-rpc `_mesh_deadline_ms` behaviour. Covers the register /
+    # fire / cancel / shutdown state machine plus the cancel-vs-fire
+    # race and re-register-after-cancel edge cases. No codegen, no
+    # transport — the end-to-end wiring is exercised in F4.
+    add_executable(mesh_deadline_scheduler_test
+        mesh/MeshDeadlineSchedulerTest.cpp
+    )
+
+    target_include_directories(mesh_deadline_scheduler_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_deadline_scheduler_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_deadline_scheduler_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_deadline_scheduler_test)
+
+    add_test(NAME mesh_deadline_scheduler_verification COMMAND mesh_deadline_scheduler_test)
+
     # Generate brake_sm.h from brake.scxml
     add_custom_command(
         OUTPUT "${MESH_OUTPUT_DIR}/brake_sm.h"
