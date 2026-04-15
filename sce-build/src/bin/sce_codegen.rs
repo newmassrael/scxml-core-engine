@@ -22,7 +22,7 @@ use std::sync::OnceLock;
 use sce_build::analyzer;
 use sce_build::cli_error::CliError;
 use sce_build::filters;
-use sce_build::forge::diagnostic::{Diagnostic, Stage, ToDiagnostics};
+use sce_build::forge::diagnostic::{Diagnostic, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located};
 
 /// Write `contents` to `path` or emit a structured `WriteOutput`
