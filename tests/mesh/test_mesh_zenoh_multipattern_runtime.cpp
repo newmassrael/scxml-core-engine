@@ -110,9 +110,11 @@ struct ReceivedEvents {
 //
 //   - getPolicy() returning a Policy with getEventFromName(const char*)
 //     → required by MeshDispatch::dispatchEnvelope
-//   - raiseExternal(event)  /  raiseExternal(event, data)
+//   - raiseExternal(event)  /  raiseExternal(event, data)  /  raiseExternal(EventWithMetadata)
 //     → called by dispatchEnvelope for inbound patterns (FireForget,
-//       RpcReply, EventNotify, FieldNotify)
+//       RpcRequest, RpcReply, EventNotify, FieldNotify); the metadata
+//       overload preserves env.invoke_id as _event.invokeid per W3C SCXML
+//       5.10.1 and is what production engines receive.
 //   - setMeshSendCallback(cb)
 //     → called by TransportRouter's ctor to install the outbound hook
 //
@@ -128,8 +130,18 @@ struct TestSenderEngine {
             return Event{name};
         }
     };
+    // Mirror StaticExecutionEngine's metadata surface so dispatchEnvelope
+    // routes the mock through the same raiseExternal(EventWithMetadata)
+    // path as production engines — keeps test observations identical to
+    // what the generated receivers would see on the wire.
+    struct EventWithMetadata {
+        Event event;
+        std::string data;
+        std::string invokeId;
+    };
     Policy policy_;
     Policy& getPolicy() { return policy_; }
+    std::string currentEventInvokeId() const { return {}; }
 
     ReceivedEvents received_;
     void raiseExternal(const Event& event_name) {
@@ -137,6 +149,9 @@ struct TestSenderEngine {
     }
     void raiseExternal(const Event& event_name, const std::string& data) {
         received_.push({event_name, data});
+    }
+    void raiseExternal(const EventWithMetadata& meta) {
+        received_.push({meta.event, meta.data});
     }
 
     using MeshSendCb = std::function<bool(const std::string&, const std::string&,

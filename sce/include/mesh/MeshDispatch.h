@@ -16,18 +16,22 @@
 // `<invoke type="sce:mesh-rpc">` (SCE_MESH.md §9.5) emits an envelope whose
 // `type` is the request event name (e.g. `service.request.compute_force`),
 // which is enqueued on the receiver engine just like any FireForget event.
-// The correlation UUID in `env.invoke_id` is a reply-path concern — the
-// receiver's engine-facing `_event.invokeid` is populated by the engine's
-// metadata pipeline, not by this dispatcher.
+// The correlation UUID in `env.invoke_id` is surfaced to the receiver SCXML
+// as `_event.invokeid` (W3C SCXML 5.10.1) through the engine's metadata
+// pipeline — dispatchEnvelope always constructs `Engine::EventWithMetadata`
+// and calls the metadata overload so test doubles observe the same path
+// production engines take (no SFINAE fallback that could silently diverge).
 //
 // Returns false for outbound-only patterns (misconfigured echo-back) and
 // unknown pattern kinds (forward compatibility).
 
 #pragma once
 
+#include "common/Uuid.h"
 #include "mesh/MeshEnvelope.h"
 
 #include <string>
+#include <utility>
 
 namespace SCE::Mesh {
 
@@ -63,11 +67,13 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     case PatternKind::RpcReply: {
         auto ev = Policy::getEventFromName(env.type.c_str());
         if (!ev) return false;
-        if (env.data.empty()) {
-            engine.raiseExternal(*ev);
-        } else {
-            engine.raiseExternal(*ev, std::string(env.data.begin(), env.data.end()));
+        typename Engine::EventWithMetadata meta;
+        meta.event = *ev;
+        meta.data = std::string(env.data.begin(), env.data.end());
+        if (env.invoke_id) {
+            meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
         }
+        engine.raiseExternal(std::move(meta));
         return true;
     }
     // Outbound-only patterns: these are sent by the engine, not received.

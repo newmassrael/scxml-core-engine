@@ -32,7 +32,9 @@ namespace {
 
 /// Minimal receiver double. Policy::getEventFromName recognises two event
 /// names; the engine records every raiseExternal invocation so tests can
-/// assert both delivery and payload preservation.
+/// assert both delivery and payload preservation. Recording covers both the
+/// simple and metadata overloads so the SFINAE branch in dispatchEnvelope is
+/// exercised on whichever path is selected.
 struct RecordingEngine {
     enum class Event { Request, Reply, Unknown };
 
@@ -48,18 +50,28 @@ struct RecordingEngine {
         }
     };
 
+    struct EventWithMetadata {
+        Event event{Event::Unknown};
+        std::string data;
+        std::string invokeId;
+    };
+
     struct Raised {
         Event event;
         std::string data;
+        std::string invokeId;
     };
 
     std::vector<Raised> events;
 
     void raiseExternal(Event ev) {
-        events.push_back({ev, {}});
+        events.push_back({ev, {}, {}});
     }
     void raiseExternal(Event ev, const std::string& data) {
-        events.push_back({ev, data});
+        events.push_back({ev, data, {}});
+    }
+    void raiseExternal(EventWithMetadata meta) {
+        events.push_back({meta.event, std::move(meta.data), std::move(meta.invokeId)});
     }
 };
 
@@ -111,6 +123,31 @@ TEST(MeshDispatchTest, FireForgetIsStillDelivered) {
     EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
     ASSERT_EQ(engine.events.size(), 1u);
     EXPECT_EQ(engine.events[0].event, RecordingEngine::Event::Reply);
+}
+
+TEST(MeshDispatchTest, RpcRequestPreservesInvokeIdAsStringifiedUuid) {
+    RecordingEngine engine;
+    auto env = makeRequest("service.request.compute_force");
+    // Fixed UUID so the stringified _event.invokeid is stable for assertion.
+    env.invoke_id = std::array<std::uint8_t, 16>{
+        0xf8, 0x1d, 0x4f, 0xae, 0x7d, 0xec, 0x11, 0xd0,
+        0xa7, 0x65, 0x00, 0xa0, 0xc9, 0x1e, 0x6b, 0xf6,
+    };
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    EXPECT_EQ(engine.events[0].event, RecordingEngine::Event::Request);
+    EXPECT_EQ(engine.events[0].invokeId, "f81d4fae-7dec-11d0-a765-00a0c91e6bf6");
+}
+
+TEST(MeshDispatchTest, RpcRequestWithoutInvokeIdYieldsEmptyMetadata) {
+    RecordingEngine engine;
+    auto env = makeRequest("service.request.compute_force");
+    // No invoke_id set — metadata path still fires but invokeId stays empty.
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    EXPECT_TRUE(engine.events[0].invokeId.empty());
 }
 
 TEST(MeshDispatchTest, OutboundOnlyPatternsAreRejected) {

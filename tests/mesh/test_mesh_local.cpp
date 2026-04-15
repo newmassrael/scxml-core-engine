@@ -40,10 +40,22 @@ struct MockEngine {
         }
     };
 
+    // Mirror the production engine's metadata surface so MeshDispatch routes
+    // this mock through the same raiseExternal(EventWithMetadata) overload —
+    // a simpler shape would force dispatchEnvelope into a feature-detected
+    // fallback and let test paths silently diverge from production.
+    struct EventWithMetadata {
+        Event event{Event::dummy};
+        std::string data;
+        std::string invokeId;
+    };
+
     Policy policy_;
     Policy& getPolicy() { return policy_; }
+    std::string currentEventInvokeId() const { return {}; }
     void processEvent(Event) {}
     void raiseExternal(Event, const std::string& = {}) {}
+    void raiseExternal(const EventWithMetadata&) {}
     // TransportRouter's ctor installs the outbound dispatch hook on the
     // sender engine via this method; the mock just stores the callback
     // (ignored by this compile test).
