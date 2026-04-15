@@ -74,7 +74,7 @@
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
         case State::{{ state_id | capitalize }}:
-{% if state.datamodel or state.on_entry_blocks or state.invokes | scxml or state.invokes | hybrid or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
+{% if state.datamodel or state.on_entry_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
                 // ============================================================
@@ -113,6 +113,81 @@
                 ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
                     PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
                 AOT_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+{% endfor %}
+{% endif %}
+{% if state.invokes | mesh_rpc %}
+                // ============================================================
+                // SCE_MESH.md §9.5: <invoke type="sce:mesh-rpc"> — short-lived RPC
+                // Fires a MeshEnvelope request at entry; onexit cancels via
+                // correlation table. Parent sees done.invoke.<id> on reply
+                // or error.invoke.<id> on timeout / non-Ok status.
+                // ============================================================
+{% for invoke_info in state.invokes | mesh_rpc %}
+                {
+                    // SCXML invoke id (W3C 3.12.1 `stateid.platformid.index` form),
+                    // surfaced as `_event.invokeid` on delivery of done.invoke /
+                    // error.invoke to the parent engine.
+                    std::string _mesh_invoke_id_{{ invoke_info.invoke_id }} =
+                        "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+
+                    {% if invoke_info.idlocation %}
+                    // W3C SCXML 6.4.1: idlocation — store generated invoke id
+                    // into the parent datamodel so transitions can match on it.
+                    {
+                        ensureScriptEngine();
+                        auto& scriptEngine = getScriptEngine();
+                        scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", _mesh_invoke_id_{{ invoke_info.invoke_id }}).get();
+                    }
+                    {% endif %}
+
+{% if invoke_info.params %}
+                    // SCE_MESH.md §9.5 wire mapping: `data` = JSON payload of
+                    // non-reserved <param> entries. Reserved `_mesh_*` names
+                    // have already been stripped by parse_mesh_rpc_invoke.
+                    std::map<std::string, std::vector<std::string>> _mesh_params_{{ invoke_info.invoke_id }};
+                    std::map<std::string, ScriptValue> _mesh_typed_params_{{ invoke_info.invoke_id }};
+{% set mesh_needs_scripts = invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
+{% if mesh_needs_scripts %}
+                    this->ensureScriptEngine();
+                    auto& scriptEngine_mesh_{{ invoke_info.invoke_id }} = getScriptEngine();
+{% endif %}
+{% for param in invoke_info.params %}
+{% if param.is_static_literal %}
+                    _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name }}"].push_back("{{ param.static_value }}");
+{% else %}
+                    {
+                        auto paramResult = scriptEngine_mesh_{{ invoke_info.invoke_id }}.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+                        if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+                            _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+                            _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name }}"] = paramResult.getInternalValue();
+                        } else {
+                            SCE_LOG_ERROR("mesh-rpc invoke {{ invoke_info.invoke_id }} param '{{ param.name }}' expr evaluation failed: {{ param.expr }}");
+                            _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name }}"].push_back("");
+                        }
+                    }
+{% endif %}
+{% endfor %}
+                    std::string _mesh_data_{{ invoke_info.invoke_id }} = ::SCE::EventDataHelper::buildEventDataJson(
+                        _mesh_params_{{ invoke_info.invoke_id }},
+                        _mesh_typed_params_{{ invoke_info.invoke_id }});
+{% else %}
+                    std::string _mesh_data_{{ invoke_info.invoke_id }};  // no params → empty payload
+{% endif %}
+
+                    // Dispatch via the engine's mesh-invoke callback. The
+                    // generated TransportRouter installs the callback in its
+                    // ctor (gated on has_mesh_rpc.v); absence of the callback
+                    // here means the document was rendered without mesh
+                    // wiring — raise error.execution per W3C §6.4.1.
+                    if (!engine.performMeshInvoke("{{ invoke_info.src }}",
+                                                   "{{ invoke_info.field_suffix }}",
+                                                   _mesh_invoke_id_{{ invoke_info.invoke_id }},
+                                                   _mesh_data_{{ invoke_info.invoke_id }})) {
+                        engine.raise(typename Engine::EventWithMetadata(
+                            Event::Error_execution,
+                            "mesh-rpc invoke '{{ invoke_info.invoke_id }}' failed: no transport router wired or target unknown"));
+                    }
+                }
 {% endfor %}
 {% endif %}
 {% if state.invokes | hybrid %}
@@ -434,10 +509,10 @@
 {% if model.has_exit_actions %}
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid %}
+{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc %}
         case State::{{ state_id | capitalize }}:
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
-{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid %}
+{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc %}
                 {
 {% if state.invokes | scxml or state.invokes | hybrid %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (ARCHITECTURE.md Zero Duplication)
@@ -464,6 +539,17 @@
                 }
                 activeInvokes_.erase("{{ invoke_info.invoke_id }}");
 {% endfor %}
+{% endif %}
+{% if state.invokes | mesh_rpc %}
+                // SCE_MESH.md §9.5: cancel pending mesh-rpc invokes on exit.
+                // performMeshCancel erases the correlation entry and the
+                // armed deadline atomically; no cancel envelope is placed
+                // on the wire (late replies are silently dropped). W3C §6.4
+                // <cancel> semantics for mesh-rpc do not raise done/error,
+                // so no event is emitted here.
+                {% for invoke_info in state.invokes | mesh_rpc %}
+                (void)engine.performMeshCancel("{{ invoke_info.src }}", "{{ invoke_info.field_suffix }}");
+                {% endfor %}
 {% endif %}
 {% if state.on_exit_blocks %}
 {% set single_cpp_exit_action = (state.on_exit_blocks|length == 1 and state.on_exit_blocks[0]|length == 1 and state.on_exit_blocks[0][0].type == 'script' and state.on_exit_blocks[0][0].is_cpp_function) %}

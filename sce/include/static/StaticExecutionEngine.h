@@ -63,6 +63,38 @@ using MeshSendCallback = std::function<bool(const std::string& target,
                                             const std::string& data,
                                             const std::string& sendId)>;
 
+/// Mesh-rpc invoke callback signature: (target, fieldSuffix, invokeId, data) → accepted.
+///
+/// Fires when a state with `<invoke type="sce:mesh-rpc">` is entered. The
+/// generated TransportRouter installs a lambda that constructs a
+/// `MeshEnvelope` with a fresh UUID v7 as `invoke_id`, registers a deliver
+/// callback in the `InvokeCorrelation` table keyed on that UUID, optionally
+/// arms a deadline timer, and dispatches the request to the matching
+/// transport. Raw fields (no mesh-layer types) preserve the "engine has zero
+/// mesh includes" invariant in the same way `MeshSendCallback` does.
+///
+/// * `target`       — SCXML `src="#..."` (e.g. `"#motor"`)
+/// * `fieldSuffix`  — codegen-generated identifier (e.g. `"invoke_0"`)
+/// * `invokeId`     — SCXML-side invoke id, used to raise
+///                    `done.invoke.<invokeId>` / `error.invoke.<invokeId>`
+/// * `data`         — JSON-encoded param payload (reserved `_mesh_*`
+///                    names already stripped by the parser)
+using MeshInvokeCallback = std::function<bool(const std::string& target,
+                                              const std::string& fieldSuffix,
+                                              const std::string& invokeId,
+                                              const std::string& data)>;
+
+/// Mesh-rpc cancel callback signature: (target, fieldSuffix) → accepted.
+///
+/// Fires from onexit when a state with a pending mesh-rpc invoke is left
+/// before the reply arrives. SCE_MESH.md §9.5: `<cancel>` semantics for
+/// mesh-rpc erase the correlation entry without raising `done`/`error`.
+/// Takes `(target, fieldSuffix)` — the router's `active_invokes_` map
+/// translates the pair to the UUID of the latest registration so the
+/// correlation table and deadline scheduler can be cleared together.
+using MeshCancelCallback = std::function<bool(const std::string& target,
+                                              const std::string& fieldSuffix)>;
+
 /**
  * @brief Template-based SCXML execution engine for static code generation
  *
@@ -404,7 +436,9 @@ private:
     bool isRunning_ = false;
     std::function<void()> completionCallback_;  // W3C SCXML 6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // W3C SCXML C.2: BasicHTTP callback
-    MeshSendCallback onMeshSend_;  // SCE Mesh: cross-machine callback
+    MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
+    MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> entry hook
+    MeshCancelCallback onMeshCancel_;  // SCE Mesh §9.5: mesh-rpc exit / cancel hook
     SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
 protected:
@@ -1103,6 +1137,61 @@ public:
                          const std::string& data, const std::string& sendId) {
         if (onMeshSend_) {
             return onMeshSend_(target, eventName, data, sendId);
+        }
+        return false;
+    }
+
+    /**
+     * @brief Register a mesh-rpc invoke callback (SCE_MESH.md §9.5)
+     *
+     * Installed by the generated TransportRouter ctor when any target's
+     * `invoke_sites` is non-empty. The callback receives (target,
+     * fieldSuffix, invokeId, data) and returns true on successful
+     * dispatch. Applications typically do not call this directly.
+     */
+    void setMeshInvokeCallback(MeshInvokeCallback callback) {
+        onMeshInvoke_ = std::move(callback);
+    }
+
+    /**
+     * @brief Dispatch a mesh-rpc invoke via the registered callback
+     *
+     * Emitted from the generated onentry block for states with
+     * `<invoke type="sce:mesh-rpc">`. Returns false when no callback is
+     * installed — that is a deployment-time error (mesh-rpc document
+     * rendered without TransportRouter wiring) and the generated code
+     * raises `error.execution` per W3C SCXML §6.4.1 graceful-degrade
+     * semantics.
+     */
+    bool performMeshInvoke(const std::string& target, const std::string& fieldSuffix,
+                           const std::string& invokeId, const std::string& data) {
+        if (onMeshInvoke_) {
+            return onMeshInvoke_(target, fieldSuffix, invokeId, data);
+        }
+        return false;
+    }
+
+    /**
+     * @brief Register a mesh-rpc cancel callback (SCE_MESH.md §9.5)
+     *
+     * Installed alongside `setMeshInvokeCallback`. Applications typically
+     * do not call this directly.
+     */
+    void setMeshCancelCallback(MeshCancelCallback callback) {
+        onMeshCancel_ = std::move(callback);
+    }
+
+    /**
+     * @brief Dispatch a mesh-rpc cancel via the registered callback
+     *
+     * Emitted from the generated onexit block for states with
+     * `<invoke type="sce:mesh-rpc">`. Returns false if no callback is
+     * installed or there is no active invoke to cancel — both cases are
+     * benign (nothing to clean up).
+     */
+    bool performMeshCancel(const std::string& target, const std::string& fieldSuffix) {
+        if (onMeshCancel_) {
+            return onMeshCancel_(target, fieldSuffix);
         }
         return false;
     }

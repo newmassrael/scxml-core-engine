@@ -296,6 +296,14 @@ fn add_system_events(model: &mut SCXMLModel) {
         model.events.insert("cancel.invoke".to_string());
         model.events.insert("error.execution".to_string());
     }
+    // SCE_MESH.md §9.5: mesh-rpc invokes raise done.invoke.<id> on reply
+    // and error.invoke.<id> on timeout or non-Ok status. cancel.invoke is
+    // scxml-specific (W3C §6.4 child-session cancel) and not raised for
+    // mesh-rpc — cancellation erases the correlation entry silently.
+    if model.has_mesh_rpc_invoke() {
+        model.events.insert("done.invoke".to_string());
+        model.events.insert("error.invoke".to_string());
+    }
 }
 
 /// W3C SCXML 3.12.1: Build prefix matching for event transitions.

@@ -109,6 +109,25 @@
 #include "mesh/MeshEnvelopeCodec.h"
 #include "common/Uuid.h"
 
+{# Detect whether any target hosts <invoke type="sce:mesh-rpc"> sites.
+   Drives conditional emission of InvokeCorrelation / MeshDeadlineScheduler
+   fields and the invoke/cancel member methods. Flag is "sticky" via
+   namespace so the loop does not reset it per target. #}
+{% set has_mesh_rpc = namespace(v=false) %}
+{% for target in targets if target.invoke_sites %}
+{% set has_mesh_rpc.v = true %}
+{% endfor %}
+
+{% if has_mesh_rpc.v %}
+#include <array>
+#include <chrono>
+#include <mutex>
+#include <unordered_map>
+#include "mesh/InvokeCorrelation.h"
+#include "mesh/MeshDeadlineScheduler.h"
+#include "mesh/RpcStatus.h"
+{% endif %}
+
 {# ── (A) Transport includes (NEW TRANSPORT: add conditional) ── #}
 {% if "local" in transport_types %}
 #include <type_traits>
@@ -346,7 +365,7 @@ struct TransportRouter {
    (instead of a std::function like pre-Session D) keeps the dispatch
    call direct (no type erasure) and makes "bound exactly once" a
    compile-time guarantee via `const` — there is no setter to misuse. ── #}
-{% if "someip" in transport_types or "zenoh" in transport_types %}
+{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v %}
     // Sender engine reference. Bound in the ctor and never rebound.
     //
     // Thread-safety: the ctor completes-then-publishes the router before
@@ -409,6 +428,34 @@ struct TransportRouter {
     std::unordered_map<CorrelationKey, std::string, CorrelationKeyHash> pending_rpcs_;
 {% endif %}
 
+{# ── (D2d) sce:mesh-rpc invoke bookkeeping (SCE_MESH.md §9.5) ── #}
+{% if has_mesh_rpc.v %}
+    // invoke_correlation_: 16-byte UUID → deliver callback. Fires at
+    // most once per registration, on RpcReply, deadline, or never (on
+    // cancel). Correlates mesh-rpc replies back to their originating
+    // invoke so the sender engine can raise done.invoke.<id> /
+    // error.invoke.<id> with the right EventWithMetadata.invokeId.
+    SCE::Mesh::InvokeCorrelation invoke_correlation_;
+
+    // deadline_scheduler_: callback-based timer for _mesh_deadline_ms.
+    // Fires invoke_correlation_.handleDeadline(uuid) on expiry, which
+    // delivers error.invoke.<id> via the deliver callback registered
+    // below. Destructor joins the timer thread; see MeshDeadlineScheduler
+    // header for shutdown semantics.
+    SCE::Mesh::MeshDeadlineScheduler deadline_scheduler_;
+
+    // active_invokes_: (target + ":" + fieldSuffix) → latest UUID.
+    // The state-entry callback tracks UUIDs here so state-exit cancel
+    // (performMeshCancel) can erase the matching correlation entry
+    // without the state machine itself managing UUID storage. Mutex
+    // guards concurrent enter/exit from the engine thread against
+    // transport callback threads that might fire handleReply in
+    // parallel and mutate no shared state (handleReply only touches
+    // invoke_correlation_, which has its own mutex).
+    std::mutex active_invokes_mutex_;
+    std::unordered_map<std::string, std::array<std::uint8_t, 16>> active_invokes_;
+{% endif %}
+
 {# ── (D3) Constructor ──
    Sender-first binding: the ctor takes the sender engine and any local
    target engines, wires the mesh-send callback onto the sender in the
@@ -428,7 +475,7 @@ struct TransportRouter {
    structurally correct for every transport mix — no fixture matrix
    needed to prove the combinatorics. New transports add a single
    `ns.parts` append; separator logic is a fixed `join(", ")`. #}
-{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types -%}
+{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v -%}
 {%- set ns = namespace(parts=[]) %}
 {%- if emit_sender %}
 {%-   set ns.parts = ns.parts + ["sender_(sender)"] %}
@@ -491,8 +538,27 @@ struct TransportRouter {
 {% endif %}
                 return route_send(target, env);
             });
+{% if has_mesh_rpc.v %}
+
+        // SCE_MESH.md §9.5: install the mesh-rpc invoke + cancel hooks
+        // so generated onentry / onexit blocks can dispatch through
+        // `performMeshInvoke` / `performMeshCancel` without having a
+        // direct router reference. The lambdas forward to the member
+        // functions below, which own envelope construction, correlation
+        // registration, deadline arming, and the active_invokes_
+        // bookkeeping that pairs cancel to the right UUID.
+        sender.setMeshInvokeCallback(
+            [this](const std::string& target, const std::string& fieldSuffix,
+                   const std::string& invokeId, const std::string& data) -> bool {
+                return this->invokeMeshRpc(target, fieldSuffix, invokeId, data);
+            });
+        sender.setMeshCancelCallback(
+            [this](const std::string& target, const std::string& fieldSuffix) -> bool {
+                return this->cancelMeshRpc(target, fieldSuffix);
+            });
+{% endif %}
     }
-{% if "someip" in transport_types or "zenoh" in transport_types %}
+{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v %}
 
 {# ── (D4) init() / shutdown() — lifecycle for shared transport resources ── #}
     /// Initialize transport connections and open shared sessions.
@@ -658,7 +724,7 @@ struct TransportRouter {
         return PK::FireForget;
     }
 
-{% if "someip" in transport_types or "zenoh" in transport_types %}
+{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v %}
     /// Look up the paired reply event for an RPC request (build-time table).
     /// SCE_MESH.md §13 path B: the pair is inferred by convention —
     /// `service.request.X` ↔ `service.response.X`. Returns empty string
@@ -674,7 +740,7 @@ struct TransportRouter {
     }
 {% endif %}
 
-{% if "someip" in transport_types or "zenoh" in transport_types %}
+{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v %}
     /// Dispatch an incoming envelope to the sender engine via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
@@ -685,9 +751,136 @@ struct TransportRouter {
     ///
     /// @return true if MeshDispatch delivered the envelope
     [[nodiscard]] bool dispatchToSender(const SCE::Mesh::MeshEnvelope& env) {
+{% if has_mesh_rpc.v %}
+        // SCE_MESH.md §9.5: RpcReply + invoke_id = mesh-rpc reply.
+        // Consult the correlation table first — if the invoke_id owns
+        // a live registration, its deliver callback raises done.invoke /
+        // error.invoke on the sender with the reply payload and the
+        // envelope is consumed. Cancel any deadline still armed (reply
+        // beat it to the correlation entry, so the deadline firing
+        // later would be a no-op but wastes a wakeup). Non-matching
+        // replies fall through to generic MeshDispatch — they may be
+        // session-level RPCs routed through the SOME/IP pending_rpcs_
+        // table, for example.
+        if (env.pattern == SCE::Mesh::PatternKind::RpcReply && env.invoke_id) {
+            const auto status = env.rpc_status.value_or(SCE::Mesh::RpcStatus::Ok);
+            if (invoke_correlation_.handleReply(*env.invoke_id, status, env.data)) {
+                deadline_scheduler_.cancelDeadline(*env.invoke_id);
+                return true;
+            }
+        }
+{% endif %}
         using SenderPolicy = std::decay_t<decltype(sender_.getPolicy())>;
         return SCE::Mesh::dispatchEnvelope<SenderPolicy>(env, sender_);
     }
+
+{% if has_mesh_rpc.v %}
+    /// Dispatch a `<invoke type="sce:mesh-rpc">` request (SCE_MESH.md §9.5).
+    ///
+    /// Generates a UUID v7 as the wire-level `invoke_id`, registers a
+    /// deliver callback keyed on that UUID, arms the deadline timer if
+    /// the invoke site declared `_mesh_deadline_ms`, and routes the
+    /// envelope to the target transport via `route_send`. The deliver
+    /// callback captures only the SCXML invoke id and a pointer to
+    /// `sender_`, so it can raise `done.invoke.<id>` or
+    /// `error.invoke.<id>` on the sender engine once the reply or
+    /// deadline outcome resolves.
+    ///
+    /// @return true if the request was submitted to the transport;
+    ///         false if (target, fieldSuffix) has no matching invoke
+    ///         site (caller-error — indicates codegen/runtime drift)
+    ///         or the transport rejected the send.
+    [[nodiscard]] bool invokeMeshRpc(const std::string& target,
+                                     const std::string& fieldSuffix,
+                                     const std::string& invokeId,
+                                     const std::string& data) {
+        SCE::Mesh::MeshEnvelope env;
+        const auto uuid = SCE::uuid::v7();
+        env.id = uuid;
+        env.invoke_id = uuid;
+        env.source = "{{ machine_name }}";
+        env.pattern = SCE::Mesh::PatternKind::RpcRequest;
+        env.datacontenttype = data.empty()
+            ? SCE::Mesh::PayloadCodec::None
+            : SCE::Mesh::PayloadCodec::Json;
+        env.data.assign(data.begin(), data.end());
+
+        bool matched_site = false;
+{% for target in targets %}
+{% for site in target.invoke_sites %}
+        if (target == "{{ target.target }}" && fieldSuffix == "{{ site.field_suffix }}") {
+            env.type = "{{ site.mesh_event }}";
+{% if site.deadline_ms is not none %}
+            // Per-invoke deadline from <param name="_mesh_deadline_ms">.
+            // Fires handleDeadline on the invoke_correlation_ table which
+            // invokes the deliver callback with RpcStatus::DeadlineExceeded —
+            // surfaced to the parent as error.invoke.<invokeId>.
+            deadline_scheduler_.registerDeadline(uuid,
+                std::chrono::milliseconds({{ site.deadline_ms }}),
+                [this, uuid]{ (void)invoke_correlation_.handleDeadline(uuid); });
+{% endif %}
+            matched_site = true;
+        }
+{% endfor %}
+{% endfor %}
+        if (!matched_site) {
+            return false;  // codegen drift — (target, suffix) not in invoke_sites
+        }
+
+        // Register deliver callback BEFORE route_send so a synchronous
+        // reply (local transport) cannot race with registration. The
+        // callback captures `&sender_` by raw pointer — TransportRouter
+        // outlives the sender engine per the ctor contract, so the
+        // pointer is stable until shutdown joins all callback threads.
+        SenderEngine* sender_ptr = &sender_;
+        std::string captured_invoke_id = invokeId;
+        invoke_correlation_.registerInvoke(uuid,
+            [sender_ptr, captured_invoke_id](
+                SCE::Mesh::RpcStatus status,
+                std::vector<std::uint8_t> payload) {
+                typename SenderEngine::EventWithMetadata evt;
+                evt.event = (status == SCE::Mesh::RpcStatus::Ok)
+                    ? SenderEngine::Event::Done_invoke
+                    : SenderEngine::Event::Error_invoke;
+                evt.data.assign(payload.begin(), payload.end());
+                evt.invokeId = captured_invoke_id;
+                evt.originType = "sce:mesh-rpc";
+                sender_ptr->raiseExternal(evt);
+            });
+
+        // Track (target, fieldSuffix) → uuid so a later cancel from
+        // onexit can erase the matching correlation + deadline entries.
+        {
+            std::lock_guard<std::mutex> lock(active_invokes_mutex_);
+            active_invokes_[target + ":" + fieldSuffix] = uuid;
+        }
+
+        return route_send(target, env);
+    }
+
+    /// Cancel a pending mesh-rpc invoke (SCE_MESH.md §9.5 `<cancel>`).
+    ///
+    /// Called from generated onexit blocks when a state with a pending
+    /// mesh-rpc invoke is left before the reply lands. Erases both the
+    /// correlation entry and any armed deadline — a late reply arriving
+    /// after cancel is silently dropped because `handleReply` finds no
+    /// entry to fire. No cancel envelope is placed on the wire: §9.5
+    /// "benign drop" semantics. Returns true if there was something to
+    /// cancel, false if already fired or never registered.
+    [[nodiscard]] bool cancelMeshRpc(const std::string& target,
+                                     const std::string& fieldSuffix) {
+        std::array<std::uint8_t, 16> uuid;
+        {
+            std::lock_guard<std::mutex> lock(active_invokes_mutex_);
+            auto it = active_invokes_.find(target + ":" + fieldSuffix);
+            if (it == active_invokes_.end()) return false;
+            uuid = it->second;
+            active_invokes_.erase(it);
+        }
+        (void)deadline_scheduler_.cancelDeadline(uuid);
+        return invoke_correlation_.handleCancel(uuid);
+    }
+{% endif %}
 {% endif %}
 
     /// Dispatch an incoming envelope to an arbitrary receiver engine.

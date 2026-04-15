@@ -1768,6 +1768,7 @@ impl SCXMLParser {
                 if !state.on_entry_blocks.is_empty()
                     || state.has_scxml_invoke()
                     || state.has_hybrid_invoke()
+                    || state.has_mesh_rpc_invoke()
                     || !state.datamodel.is_empty()
                     || !state.initial_transition_actions.is_empty()
                     || !state.initial_history_id.is_empty()
@@ -1780,6 +1781,7 @@ impl SCXMLParser {
                 if !state.on_exit_blocks.is_empty()
                     || state.has_scxml_invoke()
                     || state.has_hybrid_invoke()
+                    || state.has_mesh_rpc_invoke()
                 {
                     model.has_exit_actions = true;
                 }

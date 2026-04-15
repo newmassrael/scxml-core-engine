@@ -544,6 +544,13 @@ impl State {
     pub fn has_hybrid_invoke(&self) -> bool {
         self.invokes.iter().any(|i| matches!(i, Invoke::Hybrid(_)))
     }
+    /// True iff the state declares any [`Invoke::MeshRpc`] (SCE_MESH.md §9.5
+    /// short-lived RPC invoke). Used by codegen to decide whether the state
+    /// needs onentry / onexit hooks that fire into the generated transport
+    /// router's `performMeshInvoke` / `performMeshCancel` callbacks.
+    pub fn has_mesh_rpc_invoke(&self) -> bool {
+        self.invokes.iter().any(|i| matches!(i, Invoke::MeshRpc(_)))
+    }
     /// Iterate over the static-SCXML invoke payloads on this state.
     pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &ScxmlInvokeInfo> {
         self.invokes.iter().filter_map(|i| match i {
@@ -577,6 +584,11 @@ impl SCXMLModel {
     /// Replaces the legacy `has_hybrid_invoke: bool` field.
     pub fn has_hybrid_invoke(&self) -> bool {
         self.states.values().any(|s| s.has_hybrid_invoke())
+    }
+    /// True iff any state in the model declares a mesh-rpc [`Invoke::MeshRpc`].
+    /// Computed from states — see [`State::has_mesh_rpc_invoke`].
+    pub fn has_mesh_rpc_invoke(&self) -> bool {
+        self.states.values().any(|s| s.has_mesh_rpc_invoke())
     }
     /// Iterate every static-SCXML invoke across all states in document order.
     /// Replaces the legacy flat `model.static_invokes` read by the codegen
