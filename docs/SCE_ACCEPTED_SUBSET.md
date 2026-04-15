@@ -253,7 +253,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (84 codes)
+## Appendix — `DiagnosticCode` index (85 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -295,6 +295,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/require-either` | Validation |
 | `validation/wrong-pipeline` | Validation |
 | `validation/dynamic-features` | Validation |
+| `validation/mesh-rpc-reserved-param` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
 | `expression/unsupported-construct` | Expression |

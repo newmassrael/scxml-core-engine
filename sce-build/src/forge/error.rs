@@ -264,6 +264,23 @@ pub enum ValidationError {
     /// (dynamic invoke).
     #[error("cannot generate static code for '{name}': {reason}")]
     DynamicFeatures { name: String, reason: String },
+
+    /// Reserved `_mesh_*` `<param>` rule violation on
+    /// `<invoke type="sce:mesh-rpc">` (SCE Mesh §9.5). Covers the four
+    /// cases the spec calls out as hard build-time errors: the required
+    /// `_mesh_event` is missing; `_mesh_event` (or any other reserved
+    /// name) appears more than once; an unknown `_mesh_*` name is used
+    /// (the prefix is reserved for future metadata); or
+    /// `_mesh_deadline_ms` carries a non-integer value.
+    ///
+    /// `param` names the offending `<param name="...">` so agents can
+    /// target the repair at the exact child element; `detail` explains
+    /// which specific rule was broken. One variant covers the whole
+    /// family because the repair surface is uniform — the author must
+    /// rename or retype the param — and an unstructured detail string
+    /// follows the existing precedent of `IncompatibleAttributes`.
+    #[error("<invoke type=\"sce:mesh-rpc\">: {detail} (param '{param}')")]
+    MeshRpcReservedParam { param: String, detail: String },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

@@ -42,6 +42,7 @@
         "validation/require-either",
         "validation/wrong-pipeline",
         "validation/dynamic-features",
+        "validation/mesh-rpc-reserved-param",
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",

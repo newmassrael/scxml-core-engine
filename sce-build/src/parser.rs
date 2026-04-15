@@ -165,7 +165,7 @@ impl SCXMLParser {
         self.parse_sce_contexts(&root, &mut model, name)?;
 
         // Parse states recursively
-        self.parse_states(&root, None, &mut model, base_dir);
+        self.parse_states(&root, None, &mut model, base_dir, name)?;
 
         // Feature detection
         self.detect_features(&mut model);
@@ -563,13 +563,19 @@ impl SCXMLParser {
         }
     }
 
+    /// Threaded `source_name` lets leaf validation errors
+    /// (`parse_invoke` mesh-rpc reserved-param rules) construct
+    /// `Located<ForgeError>` records with the same file label the
+    /// top-level parse used, without reaching back to `model.name` at
+    /// every call site.
     fn parse_states(
         &mut self,
         parent_elem: &roxmltree::Node,
         parent_id: Option<&str>,
         model: &mut SCXMLModel,
         base_dir: Option<&Path>,
-    ) {
+        source_name: &str,
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         // Parse <state> elements
         for child in scxml_children(parent_elem, "state") {
             let state_id = match child.attribute("id") {
@@ -647,10 +653,12 @@ impl SCXMLParser {
             }
 
             // Parse invokes — parse_invoke returns the typed Invoke variant
-            // directly; unsupported classifications are skipped silently.
+            // directly. Unsupported classifications yield `Ok(None)` and
+            // are skipped silently; reserved-param violations on
+            // `<invoke type="sce:mesh-rpc">` short-circuit via `?`.
             for invoke_elem in scxml_children(&child, "invoke") {
                 if let Some(invoke) =
-                    self.parse_invoke(&invoke_elem, model, &state_id, base_dir)
+                    self.parse_invoke(&invoke_elem, model, &state_id, base_dir, source_name)?
                 {
                     state.invokes.push(invoke);
                 }
@@ -659,7 +667,7 @@ impl SCXMLParser {
             model.states.insert(state_id.clone(), state);
 
             // Recurse into child states
-            self.parse_states(&child, Some(&state_id), model, base_dir);
+            self.parse_states(&child, Some(&state_id), model, base_dir, source_name)?;
 
             // Set default initial (first child in document order)
             let state = model.states.get_mut(&state_id).unwrap();
@@ -760,7 +768,7 @@ impl SCXMLParser {
 
             model.states.insert(parallel_id.clone(), state);
             model.has_parallel_states = true;
-            self.parse_states(&child, Some(&parallel_id), model, base_dir);
+            self.parse_states(&child, Some(&parallel_id), model, base_dir, source_name)?;
         }
 
         // Parse <history> elements
@@ -798,6 +806,7 @@ impl SCXMLParser {
                 model.has_history_states = true;
             }
         }
+        Ok(())
     }
 
     fn parse_transition(
@@ -1190,13 +1199,27 @@ impl SCXMLParser {
     /// session (`src` / inline `<content><scxml>`) nor to a hybrid session
     /// (`srcexpr` / `contentexpr`). The caller pushes the result directly
     /// onto `state.invokes`; there is no intermediate JSON representation.
+    /// Parse a single `<invoke>` element into a typed [`Invoke`] variant.
+    ///
+    /// Returns `Ok(Some(_))` for a successful classification (scxml,
+    /// hybrid, or sce:mesh-rpc), `Ok(None)` for unsupported invoke
+    /// types that the parser skips silently, and `Err(_)` for SCE
+    /// Mesh §9.5 reserved-param rule violations on
+    /// `<invoke type="sce:mesh-rpc">`. The error surfaces the source
+    /// label (`source_name`) and roxmltree row/col so downstream
+    /// NDJSON diagnostics land with the same precision as every other
+    /// parser-stage failure.
     fn parse_invoke(
         &mut self,
         elem: &roxmltree::Node,
         model: &mut SCXMLModel,
         state_id: &str,
         base_dir: Option<&Path>,
-    ) -> Option<Invoke> {
+        source_name: &str,
+    ) -> Result<
+        Option<Invoke>,
+        crate::forge::error::Located<crate::forge::error::ForgeError>,
+    > {
         // W3C SCXML 6.4.1: Generate invoke ID if not provided. Auto-ids carry
         // a leading underscore by spec convention; templates building
         // identifiers (`child_<suffix>`) consume `field_suffix` instead so the
@@ -1214,6 +1237,18 @@ impl SCXMLParser {
         let idlocation = elem.attribute("idlocation").unwrap_or("").to_string();
         let autoforward = elem.attribute("autoforward").unwrap_or("false") == "true";
         let namelist = elem.attribute("namelist").unwrap_or("").to_string();
+
+        // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> — short-lived RPC
+        // layered on W3C invoke lifecycle. Parsed through a dedicated
+        // path because reserved `_mesh_*` `<param>` names are structural
+        // metadata (strip from payload, populate envelope fields) rather
+        // than author data, and the static/hybrid classifier below
+        // would otherwise silently drop the invoke (scxml_type=false).
+        if invoke_type == "sce:mesh-rpc" {
+            return self
+                .parse_mesh_rpc_invoke(elem, state_id, source_name, invoke_id, field_suffix, src, idlocation)
+                .map(|info| Some(Invoke::MeshRpc(info)));
+        }
 
         let mut contentexpr = String::new();
         let mut has_inline_scxml = false;
@@ -1283,7 +1318,7 @@ impl SCXMLParser {
             model.needs_script_engine = true;
             let idx = self.hybrid_invoke_counter;
             self.hybrid_invoke_counter += 1;
-            return Some(Invoke::Hybrid(HybridInvokeInfo {
+            return Ok(Some(Invoke::Hybrid(HybridInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
                         invoke_id,
@@ -1298,7 +1333,7 @@ impl SCXMLParser {
                 },
                 srcexpr,
                 contentexpr,
-            }));
+            })));
         }
 
         if is_static_invoke {
@@ -1388,13 +1423,149 @@ impl SCXMLParser {
                 }
             }
 
-            return Some(Invoke::Scxml(scxml_info));
+            return Ok(Some(Invoke::Scxml(scxml_info)));
         }
 
-        // Neither static nor hybrid — currently a no-op classification path
-        // (e.g. invokes with an unsupported `type`). MeshRpc will plug in
-        // here once §9.5 support lands (Task #6 F-phase).
-        None
+        // Neither static, hybrid, nor sce:mesh-rpc — skip silently.
+        // Unknown `type` URIs are documented in W3C §6.4.1 as producing
+        // `error.execution` at runtime on foreign processors; the
+        // parser declines to statically reject them so forward-compatible
+        // documents still parse.
+        Ok(None)
+    }
+
+    /// SCE Mesh §9.5: parse an `<invoke type="sce:mesh-rpc">` element.
+    ///
+    /// Enforces the reserved-`_mesh_*` `<param>` rules at parse time
+    /// (missing required, duplicate, unknown prefix, invalid deadline)
+    /// and strips the reserved names from the payload passed to the
+    /// envelope. All four rule variants surface as the same
+    /// [`ValidationError::MeshRpcReservedParam`] variant — the repair
+    /// surface is uniform ("rename or retype your `<param>`"), and a
+    /// single `DiagnosticCode` keeps the wire catalog tight.
+    fn parse_mesh_rpc_invoke(
+        &mut self,
+        elem: &roxmltree::Node,
+        state_id: &str,
+        source_name: &str,
+        invoke_id: String,
+        field_suffix: String,
+        src: String,
+        idlocation: String,
+    ) -> Result<
+        MeshRpcInvokeInfo,
+        crate::forge::error::Located<crate::forge::error::ForgeError>,
+    > {
+        use crate::forge::error::{Located, ValidationError};
+
+        let locate = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
+            let pos = elem.document().text_pos_at(elem.range().start);
+            Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+        };
+
+        // First pass: scan every `<param>` to detect reserved-name
+        // violations and extract `_mesh_event` / `_mesh_deadline_ms`.
+        // Only after all four rules pass do we construct the final
+        // struct, so author errors report before the downstream
+        // payload is assembled.
+        let mut mesh_event: Option<String> = None;
+        let mut mesh_event_count = 0usize;
+        let mut deadline_ms: Option<u64> = None;
+        let mut deadline_count = 0usize;
+        let mut payload_params: Vec<Param> = Vec::new();
+
+        for param in scxml_children(elem, "param") {
+            let name = param.attribute("name").unwrap_or("").to_string();
+            let expr = param.attribute("expr").unwrap_or("").to_string();
+            let location = param.attribute("location").unwrap_or("").to_string();
+
+            if name == "_mesh_event" {
+                mesh_event_count += 1;
+                // Rule 1: exactly-one. Even the first duplicate fires
+                // eagerly so the diagnostic pinpoints the second
+                // occurrence rather than waiting for the end of the
+                // loop to count and lose the document order signal.
+                if mesh_event_count > 1 {
+                    return Err(locate(ValidationError::MeshRpcReservedParam {
+                        param: "_mesh_event".into(),
+                        detail: "<param name=\"_mesh_event\"> must appear exactly once"
+                            .into(),
+                    }));
+                }
+                mesh_event = Some(extract_static_string_literal(&expr));
+            } else if name == "_mesh_deadline_ms" {
+                deadline_count += 1;
+                if deadline_count > 1 {
+                    return Err(locate(ValidationError::MeshRpcReservedParam {
+                        param: "_mesh_deadline_ms".into(),
+                        detail:
+                            "<param name=\"_mesh_deadline_ms\"> may appear at most once"
+                                .into(),
+                    }));
+                }
+                // §9.5: `_mesh_deadline_ms` is an integer in
+                // milliseconds. The literal may be quoted (`expr="'50'"`)
+                // or bare (`expr="50"`); both resolve to a non-negative
+                // decimal integer string via the existing static-literal
+                // extractor.
+                let raw = if is_static_string_literal(&expr) {
+                    extract_static_string_literal(&expr)
+                } else {
+                    expr.trim().to_string()
+                };
+                match raw.parse::<u64>() {
+                    Ok(v) => deadline_ms = Some(v),
+                    Err(_) => {
+                        return Err(locate(ValidationError::MeshRpcReservedParam {
+                            param: "_mesh_deadline_ms".into(),
+                            detail: format!(
+                                "value '{raw}' is not a non-negative integer (milliseconds)"
+                            ),
+                        }));
+                    }
+                }
+            } else if name.starts_with("_mesh_") {
+                return Err(locate(ValidationError::MeshRpcReservedParam {
+                    param: name.clone(),
+                    detail:
+                        "unknown _mesh_* name is reserved for future envelope metadata"
+                            .into(),
+                }));
+            } else {
+                let is_sl = is_static_string_literal(&expr);
+                payload_params.push(Param {
+                    name,
+                    expr: expr.clone(),
+                    location,
+                    is_static_literal: is_sl,
+                    static_value: if is_sl {
+                        extract_static_string_literal(&expr)
+                    } else {
+                        String::new()
+                    },
+                });
+            }
+        }
+
+        let mesh_event = mesh_event.ok_or_else(|| {
+            locate(ValidationError::MeshRpcReservedParam {
+                param: "_mesh_event".into(),
+                detail: "required <param name=\"_mesh_event\"> is missing".into(),
+            })
+        })?;
+
+        Ok(MeshRpcInvokeInfo {
+            base: InvokeBase {
+                invoke_id,
+                field_suffix,
+                state_name: state_id.to_string(),
+                params: payload_params,
+                idlocation,
+            },
+            src,
+            mesh_event,
+            deadline_ms,
+        })
     }
 
     fn parse_donedata(
@@ -3541,7 +3712,7 @@ mod tests {
         let base = match invoke {
             Invoke::Scxml(info) => &info.common.base,
             Invoke::Hybrid(info) => &info.common.base,
-            Invoke::MeshRpc(_) => panic!("mesh-rpc invokes have no field_suffix yet"),
+            Invoke::MeshRpc(info) => &info.base,
         };
         (base.invoke_id.clone(), base.field_suffix.clone())
     }
@@ -3572,5 +3743,149 @@ mod tests {
         let (invoke_id, field_suffix) = first_invoke_ids(scxml);
         assert_eq!(invoke_id, "invokedChild");
         assert_eq!(field_suffix, "invokedChild");
+    }
+
+    // ── <invoke type="sce:mesh-rpc"> reserved-param rules (§9.5) ────
+
+    /// Helper: parse a fragment and pull the first [`Invoke::MeshRpc`].
+    fn first_mesh_rpc_invoke(scxml: &str) -> MeshRpcInvokeInfo {
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        let invoke = model
+            .states
+            .values()
+            .find_map(|s| s.invokes.first())
+            .expect("expected at least one invoke");
+        match invoke {
+            Invoke::MeshRpc(info) => info.clone(),
+            other => panic!("expected MeshRpc invoke, got {other:?}"),
+        }
+    }
+
+    /// Helper: parse a fragment, expect `MeshRpcReservedParam`, return the
+    /// `(param, detail)` pair. Any other outcome is a test failure.
+    fn first_mesh_rpc_violation(scxml: &str) -> (String, String) {
+        use crate::forge::error::{ForgeError, ValidationError};
+        let mut parser = SCXMLParser::new();
+        let err = parser.parse_string(scxml, "test").unwrap_err();
+        match err.error {
+            ForgeError::Validation(ValidationError::MeshRpcReservedParam {
+                param,
+                detail,
+            }) => (param, detail),
+            other => panic!("expected MeshRpcReservedParam, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_happy_path_populates_envelope_fields() {
+        // Extra `#` on the raw-string delimiter because `src="#motor"`
+        // literally contains a `"#` byte sequence that would otherwise
+        // terminate the standard `r#"..."#` form early.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'service.request.compute_force'"/>
+                    <param name="_mesh_deadline_ms" expr="'250'"/>
+                    <param name="torque" expr="'42'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let info = first_mesh_rpc_invoke(scxml);
+        assert_eq!(info.src, "#motor");
+        assert_eq!(info.mesh_event, "service.request.compute_force");
+        assert_eq!(info.deadline_ms, Some(250));
+        // Reserved names are stripped from the payload; author params
+        // pass through unchanged.
+        assert_eq!(info.base.params.len(), 1);
+        assert_eq!(info.base.params[0].name, "torque");
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_rejects_missing_mesh_event() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="torque" expr="'42'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let (param, detail) = first_mesh_rpc_violation(scxml);
+        assert_eq!(param, "_mesh_event");
+        assert!(
+            detail.contains("required") && detail.contains("_mesh_event"),
+            "expected 'required _mesh_event' phrasing, got: {detail}",
+        );
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_rejects_duplicate_mesh_event() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'x'"/>
+                    <param name="_mesh_event" expr="'y'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let (param, detail) = first_mesh_rpc_violation(scxml);
+        assert_eq!(param, "_mesh_event");
+        assert!(
+            detail.contains("exactly once"),
+            "expected 'exactly once' phrasing, got: {detail}",
+        );
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_rejects_unknown_reserved_prefix() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'x'"/>
+                    <param name="_mesh_oracle" expr="'42'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let (param, detail) = first_mesh_rpc_violation(scxml);
+        assert_eq!(param, "_mesh_oracle");
+        assert!(
+            detail.contains("reserved"),
+            "expected 'reserved' phrasing, got: {detail}",
+        );
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_rejects_non_integer_deadline() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'x'"/>
+                    <param name="_mesh_deadline_ms" expr="'abc'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let (param, detail) = first_mesh_rpc_violation(scxml);
+        assert_eq!(param, "_mesh_deadline_ms");
+        assert!(
+            detail.contains("non-negative integer"),
+            "expected 'non-negative integer' phrasing, got: {detail}",
+        );
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_accepts_bare_deadline_literal() {
+        // Bare numeric literal (`expr="50"` not `expr="'50'"`) is the
+        // idiomatic shape for integer-typed params and should parse
+        // through the same path as the quoted form.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'x'"/>
+                    <param name="_mesh_deadline_ms" expr="50"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let info = first_mesh_rpc_invoke(scxml);
+        assert_eq!(info.deadline_ms, Some(50));
     }
 }

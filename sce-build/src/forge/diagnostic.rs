@@ -305,6 +305,8 @@ pub enum DiagnosticCode {
     ValidationWrongPipeline,
     #[serde(rename = "validation/dynamic-features")]
     ValidationDynamicFeatures,
+    #[serde(rename = "validation/mesh-rpc-reserved-param")]
+    ValidationMeshRpcReservedParam,
 
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
@@ -498,6 +500,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationRequireEither,
         ValidationWrongPipeline,
         ValidationDynamicFeatures,
+        ValidationMeshRpcReservedParam,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -658,6 +661,9 @@ impl DiagnosticCode {
             | MeshTopologyUncoveredEvents
             | MeshTopologyPatternCapabilityViolation => Some("SCE Mesh §9"),
 
+            // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
+            ValidationMeshRpcReservedParam => Some("SCE Mesh §9.5"),
+
             // ── Mesh build pipeline (SCE_MESH.md §7) ─────────────
             MeshCodegenUnsupportedLanguage => Some("SCE Mesh §7"),
 
@@ -758,6 +764,7 @@ impl DiagnosticCode {
             ValidationRequireEither => "validation/require-either",
             ValidationWrongPipeline => "validation/wrong-pipeline",
             ValidationDynamicFeatures => "validation/dynamic-features",
+            ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
@@ -1226,6 +1233,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(reason.clone()),
             fix: None,
             key_fragments: vec![name.clone(), reason.clone()],
+        },
+        ValidationError::MeshRpcReservedParam { param, detail } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMeshRpcReservedParam,
+            stage: Stage::Validation,
+            // `actual` carries the offending reserved param name so
+            // agents can locate the element to repair; `detail` flows
+            // out in `message` via Display. No `Fix` — the repair
+            // ("rename or retype your `<param>`") is author-specific,
+            // not a closed candidate list, so fabricating a
+            // `ReplaceOneOf` would mislead the repair loop.
+            expected: None,
+            actual: Some(param.clone()),
+            fix: None,
+            key_fragments: vec![param.clone(), detail.clone()],
         },
     }
 }
@@ -1884,6 +1905,15 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:aaaac1f1c1e4cf6e","code":"validation/dynamic-features","stage":"validation","message":"cannot generate static code for 'chart': initial state attribute names a state that is not declared","actual":"initial state attribute names a state that is not declared"}"#,
+            ),
+            (
+                "forge/mesh-rpc-reserved-param",
+                ValidationError::MeshRpcReservedParam {
+                    param: "_mesh_event".into(),
+                    detail: "required <param name=\"_mesh_event\"> is missing".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ea4f2baf300b7c54","code":"validation/mesh-rpc-reserved-param","stage":"validation","spec":"SCE Mesh §9.5","message":"<invoke type=\"sce:mesh-rpc\">: required <param name=\"_mesh_event\"> is missing (param '_mesh_event')","actual":"_mesh_event"}"#,
             ),
             (
                 "forge/expression-empty",
@@ -2670,6 +2700,7 @@ mod tests {
             | ValidationSingletonViolation
             | ValidationWrongPipeline
             | ValidationDynamicFeatures
+            | ValidationMeshRpcReservedParam
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -2936,7 +2967,8 @@ mod tests {
                 | ValidationInvalidDirection | ValidationNumericParse
                 | ValidationEmptyValue | ValidationSingletonViolation
                 | ValidationRequireEither | ValidationWrongPipeline
-                | ValidationDynamicFeatures | ExpressionEmpty | ExpressionLex
+                | ValidationDynamicFeatures | ValidationMeshRpcReservedParam
+                | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
@@ -2979,9 +3011,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            84,
+            85,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 84 distinct variants to match the DiagnosticCode \
+             expected 85 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }
