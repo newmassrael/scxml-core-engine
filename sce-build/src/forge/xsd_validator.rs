@@ -58,11 +58,17 @@ pub struct XsdErrors {
     pub diagnostics: Vec<XsdDiag>,
 }
 
+/// `XsdErrors` is a *multi-record container*: one libxml2 validation
+/// run surfaces N violations and each violation becomes its own
+/// `Diagnostic` with its own `message` (from libxml2) and line number.
+/// Collapsing them into a single record would hide the per-violation
+/// line data upstream agents rely on, so this type deliberately does
+/// **not** implement
+/// [`SingleDiagnostic`](crate::forge::diagnostic::SingleDiagnostic) —
+/// the trait split at the diagnostic layer makes "no single payload"
+/// expressible directly instead of via `unreachable!` escape.
 impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
-    /// XSD violations have a fixed routing (stage=xml, exit=2) — the
-    /// container's only job is to emit one `Diagnostic` per violation,
-    /// each with libxml2's line data attached. Carries the XSD
-    /// spec anchor on every record for upstream agent grounding.
+    /// XSD violations have a fixed routing (stage=xml, exit=2).
     fn exit_code(&self) -> i32 {
         2
     }

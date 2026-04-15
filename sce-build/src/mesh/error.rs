@@ -458,37 +458,28 @@ impl MeshError {
 // `(code, stage, key_fragments)` triple.
 
 use crate::forge::diagnostic::{
-    compute_id, Diagnostic, DiagnosticCode, Fix, Location, Stage, ToDiagnostics, SCHEMA_VERSION,
+    Diagnostic, DiagnosticCode, DiagnosticPayload, Fix, SingleDiagnostic, Stage, ToDiagnostics,
 };
 
-struct MeshDiagFields {
-    code: DiagnosticCode,
-    stage: Stage,
-    actual: Option<String>,
-    expected: Option<Vec<String>>,
-    fix: Option<Fix>,
-    key: Vec<String>,
-}
-
-fn deploy_fields(e: &DeployError) -> MeshDiagFields {
+fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
     match e {
-        DeployError::ReadFile { path, .. } => MeshDiagFields {
+        DeployError::ReadFile { path, .. } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployRead,
             stage: Stage::MeshDeploy,
             actual: Some(path.clone()),
             expected: None,
             fix: None,
-            key: vec![path.clone()],
+            key_fragments: vec![path.clone()],
         },
-        DeployError::Yaml(reason) => MeshDiagFields {
+        DeployError::Yaml(reason) => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployParse,
             stage: Stage::MeshDeploy,
             actual: None,
             expected: None,
             fix: None,
-            key: vec![reason.clone()],
+            key_fragments: vec![reason.clone()],
         },
-        DeployError::UnsupportedVersion { found, supported } => MeshDiagFields {
+        DeployError::UnsupportedVersion { found, supported } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployUnsupportedVersion,
             stage: Stage::MeshDeploy,
             actual: Some(found.clone()),
@@ -498,15 +489,15 @@ fn deploy_fields(e: &DeployError) -> MeshDiagFields {
             fix: Some(Fix::ReplaceOneOf {
                 candidates: supported.iter().map(|s| (*s).to_string()).collect(),
             }),
-            key: vec![found.clone()],
+            key_fragments: vec![found.clone()],
         },
-        DeployError::DuplicateMachine { machine, devices } => MeshDiagFields {
+        DeployError::DuplicateMachine { machine, devices } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployDuplicateMachine,
             stage: Stage::MeshDeploy,
             actual: Some(machine.clone()),
             expected: None,
             fix: None,
-            key: {
+            key_fragments: {
                 let mut k = vec![machine.clone()];
                 k.extend(devices.iter().cloned());
                 k
@@ -515,37 +506,37 @@ fn deploy_fields(e: &DeployError) -> MeshDiagFields {
     }
 }
 
-fn external_fields(e: &ExternalConfigError) -> MeshDiagFields {
+fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
     match e {
-        ExternalConfigError::Read { path, .. } => MeshDiagFields {
+        ExternalConfigError::Read { path, .. } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalRead,
             stage: Stage::MeshExternal,
             actual: Some(path.clone()),
             expected: None,
             fix: None,
-            key: vec![path.clone()],
+            key_fragments: vec![path.clone()],
         },
-        ExternalConfigError::Parse { path, reason } => MeshDiagFields {
+        ExternalConfigError::Parse { path, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalParse,
             stage: Stage::MeshExternal,
             actual: None,
             expected: None,
             fix: None,
-            key: vec![path.clone(), reason.clone()],
+            key_fragments: vec![path.clone(), reason.clone()],
         },
-        ExternalConfigError::UnresolvedNames { machine, config_path, missing } => MeshDiagFields {
+        ExternalConfigError::UnresolvedNames { machine, config_path, missing } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalUnresolvedNames,
             stage: Stage::MeshExternal,
             actual: None,
             expected: None,
             fix: None,
-            key: {
+            key_fragments: {
                 let mut k = vec![machine.clone(), config_path.clone()];
                 k.extend(missing.iter().map(|m| format!("{}:{}", m.kind, m.name)));
                 k
             },
         },
-        ExternalConfigError::AmbiguousEventGroup { machine, target, event_group, count, .. } => MeshDiagFields {
+        ExternalConfigError::AmbiguousEventGroup { machine, target, event_group, count, .. } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalAmbiguousEventGroup,
             stage: Stage::MeshExternal,
             actual: Some(count.to_string()),
@@ -557,25 +548,25 @@ fn external_fields(e: &ExternalConfigError) -> MeshDiagFields {
             // which is exactly what the non-overlap contract allows.
             expected: Some(vec!["1".to_string()]),
             fix: None,
-            key: vec![machine.clone(), target.clone(), event_group.clone()],
+            key_fragments: vec![machine.clone(), target.clone(), event_group.clone()],
         },
-        ExternalConfigError::EmptyEventGroup { machine, target, event_group, .. } => MeshDiagFields {
+        ExternalConfigError::EmptyEventGroup { machine, target, event_group, .. } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalEmptyEventGroup,
             stage: Stage::MeshExternal,
             actual: None,
             expected: None,
             fix: None,
-            key: vec![machine.clone(), target.clone(), event_group.clone()],
+            key_fragments: vec![machine.clone(), target.clone(), event_group.clone()],
         },
-        ExternalConfigError::NamedReferenceWithoutConfig { machine, device, target } => MeshDiagFields {
+        ExternalConfigError::NamedReferenceWithoutConfig { machine, device, target } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalNamedReferenceWithoutConfig,
             stage: Stage::MeshExternal,
             actual: None,
             expected: None,
             fix: None,
-            key: vec![machine.clone(), device.clone(), target.clone()],
+            key_fragments: vec![machine.clone(), device.clone(), target.clone()],
         },
-        ExternalConfigError::ReservedSomeipIdKeys { machine, target, transport, fields } => MeshDiagFields {
+        ExternalConfigError::ReservedSomeipIdKeys { machine, target, transport, fields } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalReservedSomeipIdKeys,
             stage: Stage::MeshExternal,
             actual: None,
@@ -589,13 +580,13 @@ fn external_fields(e: &ExternalConfigError) -> MeshDiagFields {
                 location: format!("machines.{machine}.bindings.{target}"),
                 fields: fields.iter().map(|f| (*f).to_string()).collect(),
             }),
-            key: {
+            key_fragments: {
                 let mut k = vec![machine.clone(), target.clone(), transport.clone()];
                 k.extend(fields.iter().map(|f| (*f).to_string()));
                 k
             },
         },
-        ExternalConfigError::SomeipFieldOnNonSomeipTransport { machine, target, transport, fields } => MeshDiagFields {
+        ExternalConfigError::SomeipFieldOnNonSomeipTransport { machine, target, transport, fields } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalSomeipFieldOnNonSomeipTransport,
             stage: Stage::MeshExternal,
             actual: Some(transport.clone()),
@@ -604,62 +595,62 @@ fn external_fields(e: &ExternalConfigError) -> MeshDiagFields {
             // is to switch the binding's transport to `someip`.
             expected: None,
             fix: Some(Fix::ReplaceWith { to: "someip".to_string() }),
-            key: {
+            key_fragments: {
                 let mut k = vec![machine.clone(), target.clone(), transport.clone()];
                 k.extend(fields.iter().map(|f| (*f).to_string()));
                 k
             },
         },
-        ExternalConfigError::ConflictingEventSchema { machine, target, flat_fields } => MeshDiagFields {
+        ExternalConfigError::ConflictingEventSchema { machine, target, flat_fields } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalConflictingEventSchema,
             stage: Stage::MeshExternal,
             actual: None,
             expected: None,
             fix: None,
-            key: {
+            key_fragments: {
                 let mut k = vec![machine.clone(), target.clone()];
                 k.extend(flat_fields.iter().map(|f| (*f).to_string()));
                 k
             },
         },
-        ExternalConfigError::ConflictingEventFieldKinds { machine, target, event, fields } => MeshDiagFields {
+        ExternalConfigError::ConflictingEventFieldKinds { machine, target, event, fields } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalConflictingEventFieldKinds,
             stage: Stage::MeshExternal,
             actual: None,
             expected: None,
             fix: None,
-            key: {
+            key_fragments: {
                 let mut k = vec![machine.clone(), target.clone(), event.clone()];
                 k.extend(fields.iter().cloned());
                 k
             },
         },
-        ExternalConfigError::EmptyEventEntry { machine, target, event } => MeshDiagFields {
+        ExternalConfigError::EmptyEventEntry { machine, target, event } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalEmptyEventEntry,
             stage: Stage::MeshExternal,
             actual: None,
             expected: None,
             fix: None,
-            key: vec![machine.clone(), target.clone(), event.clone()],
+            key_fragments: vec![machine.clone(), target.clone(), event.clone()],
         },
     }
 }
 
-fn topology_fields(e: &TopologyError) -> MeshDiagFields {
+fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
     match e {
-        TopologyError::UnresolvedTargets { machine, targets } => MeshDiagFields {
+        TopologyError::UnresolvedTargets { machine, targets } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyUnresolvedTargets,
             stage: Stage::MeshTopology,
             actual: None,
             expected: None,
             fix: None,
-            key: {
+            key_fragments: {
                 let mut k = vec![machine.clone()];
                 k.extend(targets.iter().map(|t| t.as_str().to_string()));
                 k
             },
         },
-        TopologyError::MachineNotFound { machine, available } => MeshDiagFields {
+        TopologyError::MachineNotFound { machine, available } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyMachineNotFound,
             stage: Stage::MeshTopology,
             actual: Some(machine.clone()),
@@ -667,47 +658,47 @@ fn topology_fields(e: &TopologyError) -> MeshDiagFields {
             fix: Some(Fix::ReplaceOneOf {
                 candidates: available.clone(),
             }),
-            key: vec![machine.clone()],
+            key_fragments: vec![machine.clone()],
         },
-        TopologyError::ReceiverNotDeclared { sender, target, receiver } => MeshDiagFields {
+        TopologyError::ReceiverNotDeclared { sender, target, receiver } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyReceiverNotDeclared,
             stage: Stage::MeshTopology,
             actual: Some(receiver.clone()),
             expected: None,
             fix: None,
-            key: vec![sender.clone(), target.as_str().to_string(), receiver.clone()],
+            key_fragments: vec![sender.clone(), target.as_str().to_string(), receiver.clone()],
         },
-        TopologyError::AbsoluteSourcePath { machine, path } => MeshDiagFields {
+        TopologyError::AbsoluteSourcePath { machine, path } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyAbsoluteSourcePath,
             stage: Stage::MeshTopology,
             actual: Some(path.clone()),
             expected: None,
             fix: None,
-            key: vec![machine.clone(), path.clone()],
+            key_fragments: vec![machine.clone(), path.clone()],
         },
-        TopologyError::ReceiverSourceRead { machine, path, .. } => MeshDiagFields {
+        TopologyError::ReceiverSourceRead { machine, path, .. } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyReceiverSourceRead,
             stage: Stage::MeshTopology,
             actual: Some(path.clone()),
             expected: None,
             fix: None,
-            key: vec![machine.clone(), path.clone()],
+            key_fragments: vec![machine.clone(), path.clone()],
         },
-        TopologyError::ReceiverSourceParse { machine, path, reason } => MeshDiagFields {
+        TopologyError::ReceiverSourceParse { machine, path, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyReceiverSourceParse,
             stage: Stage::MeshTopology,
             actual: None,
             expected: None,
             fix: None,
-            key: vec![machine.clone(), path.clone(), reason.clone()],
+            key_fragments: vec![machine.clone(), path.clone(), reason.clone()],
         },
-        TopologyError::UncoveredEvents { sender, findings } => MeshDiagFields {
+        TopologyError::UncoveredEvents { sender, findings } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyUncoveredEvents,
             stage: Stage::MeshTopology,
             actual: None,
             expected: None,
             fix: None,
-            key: {
+            key_fragments: {
                 let mut k = vec![sender.clone()];
                 for f in findings {
                     k.push(format!("{}:{}", f.target.as_str(), f.event));
@@ -715,19 +706,19 @@ fn topology_fields(e: &TopologyError) -> MeshDiagFields {
                 k
             },
         },
-        TopologyError::PatternCapabilityViolation { sender, violations } => MeshDiagFields {
+        TopologyError::PatternCapabilityViolation { sender, violations } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyPatternCapabilityViolation,
             stage: Stage::MeshTopology,
             actual: None,
             expected: None,
             fix: None,
-            key: {
+            key_fragments: {
                 let mut k = vec![sender.clone()];
                 k.extend(violations.iter().map(|v| v.to_string()));
                 k
             },
         },
-        TopologyError::MissingBindingField { machine, target, transport, field } => MeshDiagFields {
+        TopologyError::MissingBindingField { machine, target, transport, field } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyMissingBindingField,
             stage: Stage::MeshTopology,
             actual: None,
@@ -740,20 +731,20 @@ fn topology_fields(e: &TopologyError) -> MeshDiagFields {
                 element: format!("machines.{machine}.bindings.{}", target.as_str()),
                 attr: field.clone(),
             }),
-            key: vec![
+            key_fragments: vec![
                 machine.clone(),
                 target.as_str().to_string(),
                 transport.clone(),
                 field.clone(),
             ],
         },
-        TopologyError::InvalidBindingField { machine, target, transport, field, reason } => MeshDiagFields {
+        TopologyError::InvalidBindingField { machine, target, transport, field, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyInvalidBindingField,
             stage: Stage::MeshTopology,
             actual: None,
             expected: None,
             fix: None,
-            key: vec![
+            key_fragments: vec![
                 machine.clone(),
                 target.as_str().to_string(),
                 transport.clone(),
@@ -761,7 +752,7 @@ fn topology_fields(e: &TopologyError) -> MeshDiagFields {
                 reason.clone(),
             ],
         },
-        TopologyError::EventBindingUnused { machine, target, event } => MeshDiagFields {
+        TopologyError::EventBindingUnused { machine, target, event } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyEventBindingUnused,
             stage: Stage::MeshTopology,
             actual: Some(event.clone()),
@@ -778,14 +769,14 @@ fn topology_fields(e: &TopologyError) -> MeshDiagFields {
                 ),
                 fields: vec![event.clone()],
             }),
-            key: vec![machine.clone(), target.as_str().to_string(), event.clone()],
+            key_fragments: vec![machine.clone(), target.as_str().to_string(), event.clone()],
         },
     }
 }
 
-fn codegen_fields(e: &CodegenError) -> MeshDiagFields {
+fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
     match e {
-        CodegenError::UnsupportedLanguage(lang) => MeshDiagFields {
+        CodegenError::UnsupportedLanguage(lang) => DiagnosticPayload {
             code: DiagnosticCode::MeshCodegenUnsupportedLanguage,
             stage: Stage::MeshCodegen,
             actual: Some(lang.clone()),
@@ -796,9 +787,9 @@ fn codegen_fields(e: &CodegenError) -> MeshDiagFields {
             fix: Some(Fix::ReplaceOneOf {
                 candidates: vec!["cpp".to_string()],
             }),
-            key: vec![lang.clone()],
+            key_fragments: vec![lang.clone()],
         },
-        CodegenError::UnsupportedTransport { transport, target } => MeshDiagFields {
+        CodegenError::UnsupportedTransport { transport, target } => DiagnosticPayload {
             code: DiagnosticCode::MeshCodegenUnsupportedTransport,
             stage: Stage::MeshCodegen,
             actual: Some(transport.clone()),
@@ -812,31 +803,31 @@ fn codegen_fields(e: &CodegenError) -> MeshDiagFields {
                     .map(|s| (*s).to_string())
                     .collect(),
             }),
-            key: vec![transport.clone(), target.as_str().to_string()],
+            key_fragments: vec![transport.clone(), target.as_str().to_string()],
         },
-        CodegenError::TemplateRead { path, .. } => MeshDiagFields {
+        CodegenError::TemplateRead { path, .. } => DiagnosticPayload {
             code: DiagnosticCode::MeshCodegenTemplateRead,
             stage: Stage::MeshCodegen,
             actual: Some(path.clone()),
             expected: None,
             fix: None,
-            key: vec![path.clone()],
+            key_fragments: vec![path.clone()],
         },
-        CodegenError::TemplateRender(detail) => MeshDiagFields {
+        CodegenError::TemplateRender(detail) => DiagnosticPayload {
             code: DiagnosticCode::MeshCodegenTemplateRender,
             stage: Stage::MeshCodegen,
             actual: None,
             expected: None,
             fix: None,
-            key: vec![detail.clone()],
+            key_fragments: vec![detail.clone()],
         },
-        CodegenError::EventNameCollision { target, suffix, events } => MeshDiagFields {
+        CodegenError::EventNameCollision { target, suffix, events } => DiagnosticPayload {
             code: DiagnosticCode::MeshCodegenEventNameCollision,
             stage: Stage::MeshCodegen,
             actual: Some(suffix.clone()),
             expected: None,
             fix: None,
-            key: {
+            key_fragments: {
                 let mut k = vec![target.as_str().to_string(), suffix.clone()];
                 k.extend(events.iter().cloned());
                 k
@@ -851,33 +842,25 @@ impl ToDiagnostics for MeshError {
     }
 
     fn to_diagnostics(&self) -> Vec<Diagnostic> {
-        let fields = match self {
+        vec![self.to_single_diagnostic()]
+    }
+}
+
+impl SingleDiagnostic for MeshError {
+    fn diagnostic_payload(&self) -> DiagnosticPayload {
+        match self {
             MeshError::Deploy(e) => deploy_fields(e),
             MeshError::External(e) => external_fields(e),
             MeshError::Topology(e) => topology_fields(e),
             MeshError::Codegen(e) => codegen_fields(e),
-            MeshError::Io { path, .. } => MeshDiagFields {
+            MeshError::Io { path, .. } => DiagnosticPayload {
                 code: DiagnosticCode::MeshIo,
                 stage: Stage::Io,
                 actual: None,
                 expected: None,
                 fix: None,
-                key: vec![path.display().to_string()],
+                key_fragments: vec![path.display().to_string()],
             },
-        };
-
-        let id = compute_id(fields.code, fields.stage, None, &fields.key);
-        vec![Diagnostic {
-            schema_version: SCHEMA_VERSION,
-            id,
-            code: fields.code,
-            stage: fields.stage,
-            spec: fields.code.spec_anchor(),
-            message: self.to_string(),
-            location: None::<Location>,
-            expected: fields.expected,
-            actual: fields.actual,
-            fix: fields.fix,
-        }]
+        }
     }
 }

@@ -22,31 +22,114 @@
 // goes through `to_diagnostics()` → `serde_json`.
 
 use crate::forge::error::{
-    ExprError, ForgeError, GenerateError, ImportError, Located, ManifestError, SourceLocation,
-    ValidationError, XmlError,
+    ExprError, ForgeError, GenerateError, ImportError, Located, ManifestError, ValidationError,
+    XmlError,
 };
 use serde::Serialize;
 
 /// Common interface for any error type that can be rendered to a
-/// machine-readable [`Diagnostic`] and terminate the process with a
-/// stage-specific exit code.
+/// machine-readable [`Diagnostic`] stream and terminate the process
+/// with a stage-specific exit code.
 ///
 /// Callers (CLI entrypoints, build.rs helpers) depend only on this
 /// trait. Each error family (`ForgeError`, `MeshError`, CLI-level
 /// errors) provides its own mapping without coupling to the others.
-pub trait ToDiagnostics {
-    /// Expand this error into one or more diagnostic records.
-    ///
-    /// Returns a `Vec` because a single error may represent multiple
-    /// independent violations — XSD validation is the canonical case:
-    /// one invocation can surface three enum-violations on three
-    /// different lines, and merging them into a single record would
-    /// hide the per-violation line data that upstream agents need.
-    ///
-    /// Call-sites that know the error is single-valued (everything
-    /// except XSD schema validation today) simply return `vec![one]`.
-    fn to_diagnostics(&self) -> Vec<Diagnostic>;
+///
+/// # Single- vs multi-record emission
+///
+/// Most error types are *single-record*: one error produces one
+/// `Diagnostic`. They implement [`SingleDiagnostic`], which provides
+/// the defaulted [`SingleDiagnostic::to_single_diagnostic`] assembly
+/// method that derives `message` from `Display` at the one call site
+/// in the codebase — the structural guarantee that human-mode text
+/// and JSON `message` cannot diverge.
+///
+/// A few container types are *multi-record*: one error fans out to
+/// several `Diagnostic`s, each with its own `message`. Today that
+/// is only [`XsdErrors`], which emits one record per libxml2
+/// violation. These types implement `ToDiagnostics` directly and do
+/// **not** implement `SingleDiagnostic` — there is nothing the type
+/// system lets them pretend about in terms of a single payload.
+pub trait ToDiagnostics: std::fmt::Display {
     fn exit_code(&self) -> i32;
+
+    /// Expand this error into one or more diagnostic records.
+    fn to_diagnostics(&self) -> Vec<Diagnostic>;
+}
+
+/// Implemented by single-record error types.
+///
+/// Required: [`diagnostic_payload`](Self::diagnostic_payload) —
+/// classifies the variant. Defaulted:
+/// [`diagnostic_location`](Self::diagnostic_location) (no location)
+/// and [`to_single_diagnostic`](Self::to_single_diagnostic), which is
+/// the **single source of truth for `message: self.to_string()`** in
+/// the entire crate. Overriding `to_single_diagnostic` is not needed
+/// by any current type and is strongly discouraged — if an emitter
+/// wants a bespoke `message`, it should emit records directly via
+/// `ToDiagnostics` (the multi-record path) so the intent is explicit.
+///
+/// Multi-record containers like [`XsdErrors`] do **not** implement
+/// this trait. They implement only `ToDiagnostics`, which is why the
+/// trait split exists: there is no `unreachable!` payload method on
+/// any type, because multi-record containers are not obliged by the
+/// type system to have a single payload in the first place.
+pub trait SingleDiagnostic: ToDiagnostics {
+    /// Per-variant structured payload: code, stage, key fragments, and
+    /// optional `expected` / `actual` / `fix` fields.
+    fn diagnostic_payload(&self) -> DiagnosticPayload;
+
+    /// Optional source location. Default `None` — override in wrapper
+    /// types that carry file/line/col context (`Located<E>`).
+    fn diagnostic_location(&self) -> Option<Location> {
+        None
+    }
+
+    /// Build the single-record diagnostic. The default body is the
+    /// canonical assembly site: it reads the payload, projects the
+    /// location, computes the id, and — crucially — sets
+    /// `message: self.to_string()`, the one place in the crate where
+    /// a `Diagnostic`'s `message` is derived from `Display`.
+    fn to_single_diagnostic(&self) -> Diagnostic {
+        let payload = self.diagnostic_payload();
+        let location = self.diagnostic_location();
+        let id = compute_id(
+            payload.code,
+            payload.stage,
+            location.as_ref().map(|l| l.file.as_str()),
+            &payload.key_fragments,
+        );
+        Diagnostic {
+            schema_version: SCHEMA_VERSION,
+            id,
+            code: payload.code,
+            stage: payload.stage,
+            spec: payload.code.spec_anchor(),
+            message: self.to_string(),
+            location,
+            expected: payload.expected,
+            actual: payload.actual,
+            fix: payload.fix,
+        }
+    }
+}
+
+/// Shared `ToDiagnostics::to_diagnostics` body for any error whose
+/// inner classification is a `ForgeError`. Handles the XSD multi-record
+/// fan-out in one place so `ForgeError` and `Located<ForgeError>`
+/// cannot drift.
+///
+/// `outer` provides the `SingleDiagnostic` behaviour (payload and
+/// location) for the non-XSD path; `inner` is the underlying
+/// `ForgeError` that may carry `Xml(SchemaValidation)`.
+pub(crate) fn forge_to_diagnostics<T: SingleDiagnostic>(
+    outer: &T,
+    inner: &ForgeError,
+) -> Vec<Diagnostic> {
+    if let ForgeError::Xml(XmlError::SchemaValidation(xsd_errors)) = inner {
+        return xsd_errors.to_diagnostics();
+    }
+    vec![outer.to_single_diagnostic()]
 }
 
 // ── Top-level diagnostic record ────────────────────────────────
@@ -825,16 +908,16 @@ pub enum Fix {
 /// [`DiagnosticCode::spec_anchor`]. Keeping the anchor on the code
 /// rather than on the per-variant payload means contributors update
 /// one table when they add a new code, not two.
-struct DiagnosticFields {
-    code: DiagnosticCode,
-    stage: Stage,
-    expected: Option<Vec<String>>,
-    actual: Option<String>,
-    fix: Option<Fix>,
+pub struct DiagnosticPayload {
+    pub code: DiagnosticCode,
+    pub stage: Stage,
+    pub expected: Option<Vec<String>>,
+    pub actual: Option<String>,
+    pub fix: Option<Fix>,
     /// Canonical identifying payload for hashing. Distinct from
     /// `actual` — e.g. `MissingAttribute` identity is (element, attr),
     /// not any single value. Order matters: it is the canonical key.
-    key_fragments: Vec<String>,
+    pub key_fragments: Vec<String>,
 }
 
 impl ToDiagnostics for ForgeError {
@@ -842,13 +925,14 @@ impl ToDiagnostics for ForgeError {
         ForgeError::exit_code(self)
     }
 
-    /// Render this error into one or more machine-readable
-    /// [`Diagnostic`]s with no source location. Used for error paths
-    /// that bubble up before any frame with file/line context (e.g.
-    /// pure I/O failures). XSD validation errors expand to one record
-    /// per violation; every other variant returns a single record.
     fn to_diagnostics(&self) -> Vec<Diagnostic> {
-        build_forge_diagnostics(self, None)
+        forge_to_diagnostics(self, self)
+    }
+}
+
+impl SingleDiagnostic for ForgeError {
+    fn diagnostic_payload(&self) -> DiagnosticPayload {
+        forge_error_fields(self)
     }
 }
 
@@ -857,76 +941,31 @@ impl ToDiagnostics for Located<ForgeError> {
         self.error.exit_code()
     }
 
-    /// Render this located error into one or more machine-readable
-    /// [`Diagnostic`]s carrying source location data. Preferred
-    /// emission path — the location field is the single largest
-    /// signal upstream agents use for repair routing, so reaching
-    /// this impl (instead of the bare-`ForgeError` one) means a leaf
-    /// call-site did its job. XSD validation errors ignore the outer
-    /// `location` here: each inner `XsdDiag` already carries its own
-    /// line from libxml2, which is strictly more precise.
+    /// XSD validation errors ignore the outer `Located` location:
+    /// each inner `XsdDiag` already carries its own libxml2 line,
+    /// which is strictly more precise. The XSD dispatch itself lives
+    /// in `forge_to_diagnostics` so both `ForgeError` and
+    /// `Located<ForgeError>` share the same fan-out logic.
     fn to_diagnostics(&self) -> Vec<Diagnostic> {
-        build_forge_diagnostics(&self.error, Some(&self.location))
+        forge_to_diagnostics(self, &self.error)
     }
 }
 
-/// Shared emission routine used by both `ForgeError` and
-/// `Located<ForgeError>`. Returns a `Vec` because a single error can
-/// represent many violations — XSD validation surfaces one record per
-/// libxml2 diagnostic. All other variants return exactly one record.
-///
-/// Multi-record expansion for XSD is delegated to `XsdErrors`' own
-/// `ToDiagnostics` impl, keeping the per-violation emission logic
-/// next to the data that carries the line numbers.
-fn build_forge_diagnostics(
-    err: &ForgeError,
-    location_ctx: Option<&SourceLocation>,
-) -> Vec<Diagnostic> {
-    if let ForgeError::Xml(XmlError::SchemaValidation(xsd_errors)) = err {
-        return xsd_errors.to_diagnostics();
+impl SingleDiagnostic for Located<ForgeError> {
+    fn diagnostic_payload(&self) -> DiagnosticPayload {
+        self.error.diagnostic_payload()
     }
-    vec![build_single_forge_diagnostic(err, location_ctx)]
-}
 
-/// Render a non-XSD error as its single diagnostic record.
-///
-/// XSD validation errors must go through [`expand_xsd_diagnostics`]
-/// instead — they carry per-violation line data that would be hidden
-/// by a single-record emission.
-fn build_single_forge_diagnostic(
-    err: &ForgeError,
-    location_ctx: Option<&SourceLocation>,
-) -> Diagnostic {
-    let fields = forge_error_fields(err);
-    let location = location_ctx.map(|loc| Location {
-        file: loc.file.clone(),
-        line: loc.line,
-        col: loc.col,
-    });
-
-    let id = compute_id(
-        fields.code,
-        fields.stage,
-        location.as_ref().map(|l| l.file.as_str()),
-        &fields.key_fragments,
-    );
-
-    Diagnostic {
-        schema_version: SCHEMA_VERSION,
-        id,
-        code: fields.code,
-        stage: fields.stage,
-        spec: fields.code.spec_anchor(),
-        message: err.to_string(),
-        location,
-        expected: fields.expected,
-        actual: fields.actual,
-        fix: fields.fix,
+    fn diagnostic_location(&self) -> Option<Location> {
+        Some(Location {
+            file: self.location.file.clone(),
+            line: self.location.line,
+            col: self.location.col,
+        })
     }
 }
 
-
-fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
+fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
     match err {
         ForgeError::Xml(e) => xml_fields(e),
         ForgeError::Validation(e) => validation_fields(e),
@@ -934,7 +973,7 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
         ForgeError::Import(e) => import_fields(e),
         ForgeError::Manifest(e) => manifest_fields(e),
         ForgeError::Generate(e) => generate_fields(e),
-        ForgeError::Io { path, .. } => DiagnosticFields {
+        ForgeError::Io { path, .. } => DiagnosticPayload {
             code: DiagnosticCode::IoFilesystem,
             stage: Stage::Io,
             expected: None,
@@ -945,9 +984,9 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticFields {
     }
 }
 
-fn xml_fields(e: &XmlError) -> DiagnosticFields {
+fn xml_fields(e: &XmlError) -> DiagnosticPayload {
     match e {
-        XmlError::Parse(detail) => DiagnosticFields {
+        XmlError::Parse(detail) => DiagnosticPayload {
             code: DiagnosticCode::XmlParse,
             stage: Stage::Xml,
             expected: None,
@@ -955,7 +994,7 @@ fn xml_fields(e: &XmlError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
-        XmlError::SchemaValidation(_) => DiagnosticFields {
+        XmlError::SchemaValidation(_) => DiagnosticPayload {
             code: DiagnosticCode::XmlSchemaValidation,
             stage: Stage::Xml,
             expected: None,
@@ -966,9 +1005,9 @@ fn xml_fields(e: &XmlError) -> DiagnosticFields {
     }
 }
 
-fn validation_fields(e: &ValidationError) -> DiagnosticFields {
+fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
     match e {
-        ValidationError::MissingElement { kind, element } => DiagnosticFields {
+        ValidationError::MissingElement { kind, element } => DiagnosticPayload {
             code: DiagnosticCode::ValidationMissingElement,
             stage: Stage::Validation,
             expected: None,
@@ -976,7 +1015,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![kind.to_string(), element.clone()],
         },
-        ValidationError::MissingAttribute { element, attr } => DiagnosticFields {
+        ValidationError::MissingAttribute { element, attr } => DiagnosticPayload {
             code: DiagnosticCode::ValidationMissingAttribute,
             stage: Stage::Validation,
             expected: None,
@@ -992,7 +1031,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             attr,
             value,
             expected,
-        } => DiagnosticFields {
+        } => DiagnosticPayload {
             code: DiagnosticCode::ValidationInvalidAttribute,
             stage: Stage::Validation,
             // Candidate list rides `fix`; `expected` stays None because
@@ -1005,7 +1044,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             }),
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
         },
-        ValidationError::UnsupportedKind(value) => DiagnosticFields {
+        ValidationError::UnsupportedKind(value) => DiagnosticPayload {
             code: DiagnosticCode::ValidationUnsupportedKind,
             stage: Stage::Validation,
             expected: None,
@@ -1021,7 +1060,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             }),
             key_fragments: vec![value.clone()],
         },
-        ValidationError::DuplicateId { kind, what, id } => DiagnosticFields {
+        ValidationError::DuplicateId { kind, what, id } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDuplicateId,
             stage: Stage::Validation,
             expected: None,
@@ -1032,7 +1071,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             }),
             key_fragments: vec![kind.to_string(), what.clone(), id.clone()],
         },
-        ValidationError::DuplicateContextObject { id } => DiagnosticFields {
+        ValidationError::DuplicateContextObject { id } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDuplicateContextObject,
             stage: Stage::Validation,
             expected: None,
@@ -1047,7 +1086,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             }),
             key_fragments: vec![id.clone()],
         },
-        ValidationError::EmptyCollection { kind, what } => DiagnosticFields {
+        ValidationError::EmptyCollection { kind, what } => DiagnosticPayload {
             code: DiagnosticCode::ValidationEmptyCollection,
             stage: Stage::Validation,
             expected: None,
@@ -1055,7 +1094,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![kind.to_string(), what.clone()],
         },
-        ValidationError::CountMismatch { kind, detail } => DiagnosticFields {
+        ValidationError::CountMismatch { kind, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationCountMismatch,
             stage: Stage::Validation,
             expected: None,
@@ -1063,7 +1102,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![kind.to_string(), detail.clone()],
         },
-        ValidationError::IncompatibleAttributes { element, detail } => DiagnosticFields {
+        ValidationError::IncompatibleAttributes { element, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationIncompatibleAttributes,
             stage: Stage::Validation,
             expected: None,
@@ -1071,7 +1110,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![element.clone(), detail.clone()],
         },
-        ValidationError::MissingContext { site, detail } => DiagnosticFields {
+        ValidationError::MissingContext { site, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationMissingContext,
             stage: Stage::Validation,
             // `actual` carries the offending expression so agents can
@@ -1090,7 +1129,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             name,
             what,
             available,
-        } => DiagnosticFields {
+        } => DiagnosticPayload {
             code: DiagnosticCode::ValidationInvalidReference,
             stage: Stage::Validation,
             expected: None,
@@ -1104,7 +1143,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             kind,
             direction,
             field,
-        } => DiagnosticFields {
+        } => DiagnosticPayload {
             code: DiagnosticCode::ValidationInvalidDirection,
             stage: Stage::Validation,
             expected: None,
@@ -1123,7 +1162,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             attr,
             value,
             ..
-        } => DiagnosticFields {
+        } => DiagnosticPayload {
             code: DiagnosticCode::ValidationNumericParse,
             stage: Stage::Validation,
             expected: None,
@@ -1131,7 +1170,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
         },
-        ValidationError::EmptyValue { element, attr } => DiagnosticFields {
+        ValidationError::EmptyValue { element, attr } => DiagnosticPayload {
             code: DiagnosticCode::ValidationEmptyValue,
             stage: Stage::Validation,
             expected: None,
@@ -1142,7 +1181,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             }),
             key_fragments: vec![element.clone(), attr.clone()],
         },
-        ValidationError::SingletonViolation { kind, attr } => DiagnosticFields {
+        ValidationError::SingletonViolation { kind, attr } => DiagnosticPayload {
             code: DiagnosticCode::ValidationSingletonViolation,
             stage: Stage::Validation,
             expected: None,
@@ -1153,7 +1192,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
         ValidationError::RequireEither {
             element,
             alternatives,
-        } => DiagnosticFields {
+        } => DiagnosticPayload {
             code: DiagnosticCode::ValidationRequireEither,
             stage: Stage::Validation,
             expected: None,
@@ -1168,7 +1207,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
                 k
             },
         },
-        ValidationError::WrongPipeline { kind } => DiagnosticFields {
+        ValidationError::WrongPipeline { kind } => DiagnosticPayload {
             code: DiagnosticCode::ValidationWrongPipeline,
             stage: Stage::Validation,
             expected: None,
@@ -1176,7 +1215,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![kind.to_string()],
         },
-        ValidationError::DynamicFeatures { name, reason } => DiagnosticFields {
+        ValidationError::DynamicFeatures { name, reason } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDynamicFeatures,
             stage: Stage::Validation,
             // `actual` carries the specific blocker so agents route
@@ -1191,9 +1230,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticFields {
     }
 }
 
-fn expression_fields(e: &ExprError) -> DiagnosticFields {
+fn expression_fields(e: &ExprError) -> DiagnosticPayload {
     match e {
-        ExprError::Empty { what } => DiagnosticFields {
+        ExprError::Empty { what } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionEmpty,
             stage: Stage::Expression,
             expected: None,
@@ -1201,7 +1240,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![(*what).to_string()],
         },
-        ExprError::Lex { position, detail } => DiagnosticFields {
+        ExprError::Lex { position, detail } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionLex,
             stage: Stage::Expression,
             expected: None,
@@ -1209,7 +1248,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![position.to_string(), detail.clone()],
         },
-        ExprError::UnsupportedConstruct { construct } => DiagnosticFields {
+        ExprError::UnsupportedConstruct { construct } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionUnsupportedConstruct,
             stage: Stage::Expression,
             expected: None,
@@ -1217,7 +1256,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![construct.clone()],
         },
-        ExprError::StrictEquality { operator, strict } => DiagnosticFields {
+        ExprError::StrictEquality { operator, strict } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionStrictEquality,
             stage: Stage::Expression,
             // Single legal replacement (`==` → `===`, `!=` → `!==`).
@@ -1228,7 +1267,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             fix: Some(Fix::ReplaceWith { to: (*strict).to_string() }),
             key_fragments: vec![(*operator).to_string()],
         },
-        ExprError::ParseMismatch { expected, got } => DiagnosticFields {
+        ExprError::ParseMismatch { expected, got } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionParseMismatch,
             stage: Stage::Expression,
             expected: Some(vec![expected.clone()]),
@@ -1236,7 +1275,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![expected.clone(), got.clone()],
         },
-        ExprError::UnexpectedToken { token } => DiagnosticFields {
+        ExprError::UnexpectedToken { token } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionUnexpectedToken,
             stage: Stage::Expression,
             expected: None,
@@ -1244,7 +1283,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![token.clone()],
         },
-        ExprError::InvalidLvalue { location, detail } => DiagnosticFields {
+        ExprError::InvalidLvalue { location, detail } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionInvalidLvalue,
             stage: Stage::Expression,
             expected: None,
@@ -1252,7 +1291,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![location.clone(), detail.clone()],
         },
-        ExprError::TypeCoercion { lang, detail } => DiagnosticFields {
+        ExprError::TypeCoercion { lang, detail } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionTypeCoercion,
             stage: Stage::Expression,
             expected: None,
@@ -1260,7 +1299,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![(*lang).to_string(), detail.clone()],
         },
-        ExprError::GoTernary => DiagnosticFields {
+        ExprError::GoTernary => DiagnosticPayload {
             code: DiagnosticCode::ExpressionGoTernaryUnsupported,
             stage: Stage::Expression,
             expected: None,
@@ -1271,9 +1310,9 @@ fn expression_fields(e: &ExprError) -> DiagnosticFields {
     }
 }
 
-fn import_fields(e: &ImportError) -> DiagnosticFields {
+fn import_fields(e: &ImportError) -> DiagnosticPayload {
     match e {
-        ImportError::FileNotFound { src, .. } => DiagnosticFields {
+        ImportError::FileNotFound { src, .. } => DiagnosticPayload {
             code: DiagnosticCode::ImportFileNotFound,
             stage: Stage::Import,
             expected: None,
@@ -1285,7 +1324,7 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
             src,
             declared,
             actual,
-        } => DiagnosticFields {
+        } => DiagnosticPayload {
             code: DiagnosticCode::ImportKindMismatch,
             stage: Stage::Import,
             // Single deterministic replacement: rewrite
@@ -1296,7 +1335,7 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
             fix: Some(Fix::ReplaceWith { to: actual.clone() }),
             key_fragments: vec![src.clone(), declared.clone(), actual.clone()],
         },
-        ImportError::NotForge { src } => DiagnosticFields {
+        ImportError::NotForge { src } => DiagnosticPayload {
             code: DiagnosticCode::ImportNotForge,
             stage: Stage::Import,
             expected: None,
@@ -1304,7 +1343,7 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![src.clone()],
         },
-        ImportError::ReadError { src, .. } => DiagnosticFields {
+        ImportError::ReadError { src, .. } => DiagnosticPayload {
             code: DiagnosticCode::ImportReadError,
             stage: Stage::Import,
             expected: None,
@@ -1315,9 +1354,9 @@ fn import_fields(e: &ImportError) -> DiagnosticFields {
     }
 }
 
-fn manifest_fields(e: &ManifestError) -> DiagnosticFields {
+fn manifest_fields(e: &ManifestError) -> DiagnosticPayload {
     match e {
-        ManifestError::CircularDependency(cycle) => DiagnosticFields {
+        ManifestError::CircularDependency(cycle) => DiagnosticPayload {
             code: DiagnosticCode::ManifestCircularDependency,
             stage: Stage::Manifest,
             expected: None,
@@ -1325,7 +1364,7 @@ fn manifest_fields(e: &ManifestError) -> DiagnosticFields {
             fix: None,
             key_fragments: cycle.clone(),
         },
-        ManifestError::Io { context, .. } => DiagnosticFields {
+        ManifestError::Io { context, .. } => DiagnosticPayload {
             code: DiagnosticCode::ManifestIo,
             stage: Stage::Manifest,
             expected: None,
@@ -1336,9 +1375,9 @@ fn manifest_fields(e: &ManifestError) -> DiagnosticFields {
     }
 }
 
-fn generate_fields(e: &GenerateError) -> DiagnosticFields {
+fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
     match e {
-        GenerateError::InvalidConfig(detail) => DiagnosticFields {
+        GenerateError::InvalidConfig(detail) => DiagnosticPayload {
             code: DiagnosticCode::GenerateInvalidConfig,
             stage: Stage::Generate,
             expected: None,
@@ -1346,7 +1385,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
-        GenerateError::TemplateLoad(detail) => DiagnosticFields {
+        GenerateError::TemplateLoad(detail) => DiagnosticPayload {
             code: DiagnosticCode::GenerateTemplateLoad,
             stage: Stage::Generate,
             expected: None,
@@ -1354,7 +1393,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticFields {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
-        GenerateError::TemplateRender(detail) => DiagnosticFields {
+        GenerateError::TemplateRender(detail) => DiagnosticPayload {
             code: DiagnosticCode::GenerateTemplateRender,
             stage: Stage::Generate,
             expected: None,
@@ -1785,18 +1824,20 @@ mod tests {
         );
     }
 
-    /// Structural invariant: for every first-party error
+    /// Defense-in-depth guardrail: for every first-party error
     /// (`ForgeError`, `MeshError`), the human-mode `Display` output
     /// equals the JSON `message` field byte-for-byte.
     ///
-    /// Held by construction today — `ToDiagnostics` impls at
-    /// `diagnostic.rs:920` and `mesh/error.rs:876` set
-    /// `message: self.to_string()`, so the two surfaces cannot drift
-    /// independently. The test locks that derivation in: anyone
-    /// refactoring a `ToDiagnostics::to_diagnostics` impl to compute a
-    /// bespoke `message` string (instead of delegating to `Display`)
-    /// must either keep this test green or delete it with a documented
-    /// rationale in `SCE_ERROR_CONTRACT.md`.
+    /// **Structurally enforced by the `ToDiagnostics` trait.** The
+    /// default `to_single_diagnostic` body sets `message:
+    /// self.to_string()` at the single call site in the codebase, so a
+    /// conforming implementer cannot diverge the two surfaces without
+    /// overriding `to_diagnostics` or `to_single_diagnostic` entirely.
+    /// This test therefore exists as a guardrail against two futures:
+    ///   1. a new override that silently diverges (e.g. a second
+    ///      multi-record emitter that inlines its own `message`);
+    ///   2. manual `Diagnostic` construction outside the trait (e.g.
+    ///      `Diagnostic::meta_failure`, should its contract change).
     ///
     /// Why this matters: operators read `format!("{}", err)` on stderr
     /// via `ErrorFormat::Human`; upstream agents consume
@@ -1804,8 +1845,7 @@ mod tests {
     /// diverge, the same error gets described two different ways —
     /// operator pages the agent, agent's memory references a wording
     /// the operator has never seen. The JSON byte-goldens cover the
-    /// JSON surface; this test covers the human surface via the
-    /// invariant that derives one from the other.
+    /// JSON surface; this test covers the human surface.
     ///
     /// Cases are shared with [`diagnostic_goldens_are_byte_stable`]
     /// via [`forge_golden_entries`] / [`mesh_golden_entries`] — the
@@ -1834,10 +1874,13 @@ mod tests {
         assert!(
             mismatches.is_empty(),
             "human-mode Display diverged from JSON message field:\n{}\n\n\
-             First-party ToDiagnostics impls must derive `message` from \
-             `self.to_string()` (see diagnostic.rs:920, mesh/error.rs:876). \
-             If a bespoke message is intentional, remove the offending case \
-             and document the exception in SCE_ERROR_CONTRACT.md §3.",
+             The `ToDiagnostics` default `to_single_diagnostic` body sets \
+             `message: self.to_string()`. A failure here means either a \
+             `to_diagnostics`/`to_single_diagnostic` override now builds \
+             `message` from something other than `Display`, or a manual \
+             `Diagnostic` is being constructed outside the trait. If the \
+             divergence is intentional, remove the offending case and \
+             document the exception in SCE_ERROR_CONTRACT.md §3.",
             mismatches.join("\n")
         );
     }

@@ -22,7 +22,7 @@ use std::sync::OnceLock;
 use sce_build::analyzer;
 use sce_build::filters;
 use sce_build::forge::diagnostic::{
-    compute_id, Diagnostic, DiagnosticCode, Fix, Stage, ToDiagnostics, SCHEMA_VERSION,
+    Diagnostic, DiagnosticCode, DiagnosticPayload, Fix, SingleDiagnostic, Stage, ToDiagnostics,
 };
 use sce_build::forge::error::{ForgeError, Located};
 
@@ -97,13 +97,19 @@ impl ToDiagnostics for CliError {
     }
 
     fn to_diagnostics(&self) -> Vec<Diagnostic> {
-        // Per-variant extraction: `key` drives the content-hash id;
-        // `actual` / `fix` populate the corresponding diagnostic
-        // fields. `expected` is never populated from CLI errors —
-        // every case with a candidate list routes it through `fix`
-        // instead, keeping the two fields disjoint as required by
-        // the diagnostic contract.
-        let (code, key, actual, fix) = match self {
+        vec![self.to_single_diagnostic()]
+    }
+}
+
+impl SingleDiagnostic for CliError {
+    /// Per-variant extraction: `key_fragments` drives the content-hash
+    /// id; `actual` / `fix` populate the corresponding diagnostic
+    /// fields. `expected` is never populated from CLI errors — every
+    /// case with a candidate list routes it through `fix` instead,
+    /// keeping the two fields disjoint as required by the diagnostic
+    /// contract.
+    fn diagnostic_payload(&self) -> DiagnosticPayload {
+        let (code, key_fragments, actual, fix) = match self {
             CliError::UnknownLanguage { lang } => (
                 DiagnosticCode::CliUnknownLanguage,
                 vec![lang.clone()],
@@ -187,18 +193,14 @@ impl ToDiagnostics for CliError {
                 None,
             ),
         };
-        vec![Diagnostic {
-            schema_version: SCHEMA_VERSION,
-            id: compute_id(code, Stage::Cli, None, &key),
+        DiagnosticPayload {
             code,
             stage: Stage::Cli,
-            spec: code.spec_anchor(),
-            message: self.to_string(),
-            location: None,
             expected: None,
             actual,
             fix,
-        }]
+            key_fragments,
+        }
     }
 }
 
