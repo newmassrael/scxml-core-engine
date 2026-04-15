@@ -38,26 +38,23 @@ using Bytes = std::array<uint8_t, 16>;
 /// Thread-safe; uses the same thread-local PRNG as v7().
 [[nodiscard]] Bytes v4();
 
-/// RFC 4122 §3 canonical textual form: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-/// (36 chars, lowercase hex, dashes at positions 8/13/18/23). Inverse of
-/// `from_string` on valid input.
-[[nodiscard]] inline std::string to_string(const Bytes &uuid) {
-    constexpr char kHex[] = "0123456789abcdef";
-    std::string out(36, '-');
-    std::size_t byte = 0;
-    for (std::size_t i = 0; i < 36; ++i) {
-        if (i == 8 || i == 13 || i == 18 || i == 23) {
-            continue;  // dash positions — already initialised
-        }
-        const std::uint8_t b = uuid[byte / 2];
-        const bool hi_nibble = (byte % 2 == 0);
-        out[i] = kHex[hi_nibble ? (b >> 4) : (b & 0x0F)];
-        ++byte;
-    }
-    return out;
-}
-
 namespace detail {
+
+/// RFC 4122 §3 canonical text form is exactly 36 characters.
+inline constexpr std::size_t kCanonicalTextLen = 36;
+
+/// RFC 4122 §3 dash positions — the only single source of truth for where
+/// the `-` separators fall in `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.
+/// Every consumer (to_string, from_string) goes through this array; a
+/// future spec amendment (or regression) changes one place.
+inline constexpr std::array<std::size_t, 4> kCanonicalDashPositions = {8, 13, 18, 23};
+
+[[nodiscard]] inline constexpr bool is_dash_position(std::size_t i) {
+    for (auto p : kCanonicalDashPositions) {
+        if (i == p) return true;
+    }
+    return false;
+}
 
 [[nodiscard]] inline std::optional<std::uint8_t> parse_hex_nibble(char c) {
     if (c >= '0' && c <= '9') return static_cast<std::uint8_t>(c - '0');
@@ -68,15 +65,34 @@ namespace detail {
 
 }  // namespace detail
 
+/// RFC 4122 §3 canonical textual form: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+/// (36 chars, lowercase hex, dashes at positions 8/13/18/23). Inverse of
+/// `from_string` on valid input. Dash positions and length are sourced from
+/// `detail::kCanonicalDashPositions` / `detail::kCanonicalTextLen` so the
+/// spec constants have one authoritative definition.
+[[nodiscard]] inline std::string to_string(const Bytes &uuid) {
+    constexpr char kHex[] = "0123456789abcdef";
+    std::string out(detail::kCanonicalTextLen, '-');
+    std::size_t byte = 0;
+    for (std::size_t i = 0; i < detail::kCanonicalTextLen; ++i) {
+        if (detail::is_dash_position(i)) continue;
+        const std::uint8_t b = uuid[byte / 2];
+        const bool hi_nibble = (byte % 2 == 0);
+        out[i] = kHex[hi_nibble ? (b >> 4) : (b & 0x0F)];
+        ++byte;
+    }
+    return out;
+}
+
 /// Parse an RFC 4122 §3 canonical 36-character UUID string. Accepts both
 /// upper- and lower-case hex. Returns `std::nullopt` on any length,
 /// separator, or hex-digit mismatch. No allocations on the failure path.
 [[nodiscard]] inline std::optional<Bytes> from_string(std::string_view text) {
-    if (text.size() != 36) return std::nullopt;
+    if (text.size() != detail::kCanonicalTextLen) return std::nullopt;
     Bytes out{};
     std::size_t byte = 0;
-    for (std::size_t i = 0; i < 36; ) {
-        if (i == 8 || i == 13 || i == 18 || i == 23) {
+    for (std::size_t i = 0; i < detail::kCanonicalTextLen; ) {
+        if (detail::is_dash_position(i)) {
             if (text[i] != '-') return std::nullopt;
             ++i;
             continue;

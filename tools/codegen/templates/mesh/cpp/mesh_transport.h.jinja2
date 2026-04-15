@@ -104,6 +104,7 @@
 #include <cassert>
 #include <cstring>
 
+#include "core/LogMacros.h"
 #include "mesh/MeshDispatch.h"
 #include "mesh/MeshEnvelope.h"
 #include "mesh/MeshEnvelopeCodec.h"
@@ -562,9 +563,20 @@ struct TransportRouter {
                 // so the original invoker's correlation table resolves the
                 // reply. Non-reply patterns leave env.invoke_id unset —
                 // invokeId is ignored rather than leaked cross-pattern.
+                // A non-parseable invokeId on an RpcReply usually means the
+                // triggering event was a non-mesh invoke (e.g. W3C child
+                // session "_invoke_0"); log at warn so the mismatch is
+                // diagnosable rather than surfacing as a silent deadline
+                // timeout on the invoker side.
                 if (env.pattern == SCE::Mesh::PatternKind::RpcReply && !invokeId.empty()) {
                     if (auto parsed = SCE::uuid::from_string(invokeId)) {
                         env.invoke_id = *parsed;
+                    } else {
+                        SCE_LOG_WARN(
+                            "Mesh RpcReply to '{}' for event '{}': invokeId '{}' is not "
+                            "an RFC 4122 canonical UUID; env.invoke_id left unset and "
+                            "receiver correlation will not match",
+                            target, eventName, invokeId);
                     }
                 }
 {% if "someip" in transport_types %}
