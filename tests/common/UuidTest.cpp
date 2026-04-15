@@ -128,3 +128,58 @@ TEST(UuidTest, V4CollisionFreeOneMillion) {
     }
     EXPECT_EQ(seen.size(), N);
 }
+
+// ── RFC 4122 §3 canonical text form ─────────────────────────────
+
+TEST(UuidTest, ToStringCanonicalFormat) {
+    // Fixed fixture taken from RFC 4122 §3 example, verifying exact byte →
+    // character mapping including dash positions.
+    SCE::uuid::Bytes fixture = {
+        0xf8, 0x1d, 0x4f, 0xae, 0x7d, 0xec, 0x11, 0xd0,
+        0xa7, 0x65, 0x00, 0xa0, 0xc9, 0x1e, 0x6b, 0xf6,
+    };
+    EXPECT_EQ(SCE::uuid::to_string(fixture), "f81d4fae-7dec-11d0-a765-00a0c91e6bf6");
+}
+
+TEST(UuidTest, ToStringLengthIs36) {
+    auto id = SCE::uuid::v7();
+    EXPECT_EQ(SCE::uuid::to_string(id).size(), 36u);
+}
+
+TEST(UuidTest, FromStringRoundTripsToString) {
+    auto bytes = SCE::uuid::v7();
+    auto text = SCE::uuid::to_string(bytes);
+    auto parsed = SCE::uuid::from_string(text);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, bytes);
+}
+
+TEST(UuidTest, FromStringAcceptsUppercase) {
+    auto lower = SCE::uuid::from_string("f81d4fae-7dec-11d0-a765-00a0c91e6bf6");
+    auto upper = SCE::uuid::from_string("F81D4FAE-7DEC-11D0-A765-00A0C91E6BF6");
+    ASSERT_TRUE(lower.has_value());
+    ASSERT_TRUE(upper.has_value());
+    EXPECT_EQ(*lower, *upper);
+}
+
+TEST(UuidTest, FromStringRejectsWrongLength) {
+    EXPECT_FALSE(SCE::uuid::from_string("").has_value());
+    EXPECT_FALSE(SCE::uuid::from_string("f81d4fae").has_value());
+    EXPECT_FALSE(SCE::uuid::from_string("f81d4fae-7dec-11d0-a765-00a0c91e6bf6-extra").has_value());
+}
+
+TEST(UuidTest, FromStringRejectsMisplacedDashes) {
+    // 36 chars total but dashes shifted — rejects instead of silently mapping
+    // the wrong bytes.
+    EXPECT_FALSE(
+        SCE::uuid::from_string("f81d4fae7-dec-11d0-a765-00a0c91e6bf6").has_value());
+    EXPECT_FALSE(
+        SCE::uuid::from_string("f81d4fa-e7dec-11d0-a765-00a0c91e6bf6").has_value());
+}
+
+TEST(UuidTest, FromStringRejectsNonHex) {
+    EXPECT_FALSE(
+        SCE::uuid::from_string("f81d4fae-7dec-11d0-z765-00a0c91e6bf6").has_value());
+    EXPECT_FALSE(
+        SCE::uuid::from_string("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX").has_value());
+}

@@ -11,14 +11,20 @@
 // v4 (fallback): 122 fully random bits + version/variant. Use when time
 // source is unavailable or monotonic ordering is not required.
 //
-// Returns raw 16-byte arrays (big-endian wire form per RFC 9562 §4). String
-// formatting is the caller's concern — kept here as raw bytes to avoid
-// allocations on the mesh hot path.
+// Returns raw 16-byte arrays (big-endian wire form per RFC 9562 §4). Byte
+// form is preferred on hot paths (envelope codec, correlation tables) to
+// avoid allocations; `to_string` / `from_string` bridge to the RFC 4122
+// canonical 36-character textual form when the value crosses the engine
+// metadata boundary (`_event.invokeid`, logs, deploy manifests).
 
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
 
 namespace SCE::uuid {
 
@@ -31,5 +37,58 @@ using Bytes = std::array<uint8_t, 16>;
 /// Generate a UUID v4 (RFC 9562 §5.4). Big-endian wire bytes.
 /// Thread-safe; uses the same thread-local PRNG as v7().
 [[nodiscard]] Bytes v4();
+
+/// RFC 4122 §3 canonical textual form: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+/// (36 chars, lowercase hex, dashes at positions 8/13/18/23). Inverse of
+/// `from_string` on valid input.
+[[nodiscard]] inline std::string to_string(const Bytes &uuid) {
+    constexpr char kHex[] = "0123456789abcdef";
+    std::string out(36, '-');
+    std::size_t byte = 0;
+    for (std::size_t i = 0; i < 36; ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            continue;  // dash positions — already initialised
+        }
+        const std::uint8_t b = uuid[byte / 2];
+        const bool hi_nibble = (byte % 2 == 0);
+        out[i] = kHex[hi_nibble ? (b >> 4) : (b & 0x0F)];
+        ++byte;
+    }
+    return out;
+}
+
+namespace detail {
+
+[[nodiscard]] inline std::optional<std::uint8_t> parse_hex_nibble(char c) {
+    if (c >= '0' && c <= '9') return static_cast<std::uint8_t>(c - '0');
+    if (c >= 'a' && c <= 'f') return static_cast<std::uint8_t>(c - 'a' + 10);
+    if (c >= 'A' && c <= 'F') return static_cast<std::uint8_t>(c - 'A' + 10);
+    return std::nullopt;
+}
+
+}  // namespace detail
+
+/// Parse an RFC 4122 §3 canonical 36-character UUID string. Accepts both
+/// upper- and lower-case hex. Returns `std::nullopt` on any length,
+/// separator, or hex-digit mismatch. No allocations on the failure path.
+[[nodiscard]] inline std::optional<Bytes> from_string(std::string_view text) {
+    if (text.size() != 36) return std::nullopt;
+    Bytes out{};
+    std::size_t byte = 0;
+    for (std::size_t i = 0; i < 36; ) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (text[i] != '-') return std::nullopt;
+            ++i;
+            continue;
+        }
+        auto hi = detail::parse_hex_nibble(text[i]);
+        auto lo = detail::parse_hex_nibble(text[i + 1]);
+        if (!hi || !lo) return std::nullopt;
+        out[byte] = static_cast<std::uint8_t>((*hi << 4) | *lo);
+        ++byte;
+        i += 2;
+    }
+    return out;
+}
 
 }  // namespace SCE::uuid
