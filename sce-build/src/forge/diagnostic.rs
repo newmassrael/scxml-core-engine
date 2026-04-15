@@ -1640,136 +1640,204 @@ mod tests {
         }
     }
 
-    /// Byte-stable goldens: each error variant listed here produces
-    /// the exact JSON string pinned in the table. A byte mismatch
-    /// means a consumer that dedup'd on `id` yesterday now sees a
-    /// different record for the same semantic error — a wire-format
-    /// regression. Update this table deliberately (alongside a
-    /// schema-version bump, when appropriate), never silently.
-    #[test]
-    fn diagnostic_goldens_are_byte_stable() {
-        use crate::mesh::error::{MeshError, TopologyError};
-        use crate::mesh::target::TargetId;
-
-        // Each entry: (label, actual_json, expected_golden). Entries
-        // are evaluated eagerly so all mismatches surface in one
-        // failure report — no drip-feed debugging.
-        let actual_forge = |e: ForgeError| serde_json::to_string(&single(&e)).unwrap();
-        let actual_mesh = |e: MeshError| serde_json::to_string(&single(&e)).unwrap();
-
-        let cases: Vec<(&str, String, &str)> = vec![
+    /// Shared golden table for first-party `ForgeError` cases.
+    ///
+    /// Single source of truth consumed by both
+    /// [`diagnostic_goldens_are_byte_stable`] (JSON wire shape) and
+    /// [`human_mode_matches_json_message`] (Display↔`message` invariant).
+    /// A contributor adding a new variant updates both surfaces
+    /// atomically — the tests cannot drift apart because neither owns
+    /// its own cases list.
+    ///
+    /// Each entry: `(label, error_instance, expected_json_golden)`.
+    /// Update the JSON string deliberately alongside a `SCHEMA_VERSION`
+    /// bump when the wire shape changes.
+    fn forge_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
+        vec![
             (
                 "forge/missing-attribute",
-                actual_forge(
-                    ValidationError::MissingAttribute {
-                        element: "sce:field".into(),
-                        attr: "id".into(),
-                    }
-                    .into(),
-                ),
+                ValidationError::MissingAttribute {
+                    element: "sce:field".into(),
+                    attr: "id".into(),
+                }
+                .into(),
                 r#"{"v":1,"id":"fnv1a:1c56b923b2b2b87f","code":"validation/missing-attribute","stage":"validation","message":"sce:field must have an 'id' attribute","fix":{"kind":"add_attribute","element":"sce:field","attr":"id"}}"#,
             ),
             (
                 "forge/invalid-attribute",
-                actual_forge(
-                    ValidationError::InvalidAttribute {
-                        element: "sce:field".into(),
-                        attr: "sce:type".into(),
-                        value: "blob".into(),
-                        expected: "u8, u16, u32".into(),
-                    }
-                    .into(),
-                ),
+                ValidationError::InvalidAttribute {
+                    element: "sce:field".into(),
+                    attr: "sce:type".into(),
+                    value: "blob".into(),
+                    expected: "u8, u16, u32".into(),
+                }
+                .into(),
                 r#"{"v":1,"id":"fnv1a:dd04a37de468ffb4","code":"validation/invalid-attribute","stage":"validation","message":"sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)","actual":"blob","fix":{"kind":"replace_one_of","candidates":["u8","u16","u32"]}}"#,
             ),
             (
                 "forge/invalid-reference",
-                actual_forge(
-                    ValidationError::InvalidReference {
-                        kind: ForgeKind::Statechart,
-                        what: "transition target".into(),
-                        name: "missing".into(),
-                        available: "armed, disarmed".into(),
-                    }
-                    .into(),
-                ),
+                ValidationError::InvalidReference {
+                    kind: ForgeKind::Statechart,
+                    what: "transition target".into(),
+                    name: "missing".into(),
+                    available: "armed, disarmed".into(),
+                }
+                .into(),
                 r#"{"v":1,"id":"fnv1a:2e4c02e2b0e7e383","code":"validation/invalid-reference","stage":"validation","message":"statechart: missing does not match any transition target (available: armed, disarmed)","actual":"missing","fix":{"kind":"replace_one_of","candidates":["armed","disarmed"]}}"#,
             ),
             (
                 "forge/require-either",
-                actual_forge(
-                    ValidationError::RequireEither {
-                        element: "send".into(),
-                        alternatives: vec!["event".into(), "eventexpr".into()],
-                    }
-                    .into(),
-                ),
+                ValidationError::RequireEither {
+                    element: "send".into(),
+                    alternatives: vec!["event".into(), "eventexpr".into()],
+                }
+                .into(),
                 r#"{"v":1,"id":"fnv1a:e10a747be1752ef3","code":"validation/require-either","stage":"validation","message":"send must have at least one of: event, eventexpr","fix":{"kind":"add_one_of","element":"send","attrs":["event","eventexpr"]}}"#,
             ),
             (
                 "forge/go-ternary",
-                actual_forge(ExprError::GoTernary.into()),
+                ExprError::GoTernary.into(),
                 r#"{"v":1,"id":"fnv1a:ef5b56dbf74b8718","code":"expression/go-ternary-unsupported","stage":"expression","spec":"SCE Forge §3.4","message":"cannot transpile ternary expression to Go: Go has no conditional expression"}"#,
             ),
             (
                 "forge/not-forge",
-                actual_forge(ImportError::NotForge { src: "neighbour.scxml".into() }.into()),
+                ImportError::NotForge { src: "neighbour.scxml".into() }.into(),
                 r#"{"v":1,"id":"fnv1a:7cec8a8357830a5a","code":"import/not-forge","stage":"import","message":"<sce:import src=\"neighbour.scxml\">: not a forge document (no sce:kind)","actual":"neighbour.scxml"}"#,
             ),
             (
                 "forge/strict-equality",
-                actual_forge(ExprError::StrictEquality { operator: "==", strict: "===" }.into()),
+                ExprError::StrictEquality { operator: "==", strict: "===" }.into(),
                 r#"{"v":1,"id":"fnv1a:056d2165b00f16bd","code":"expression/strict-equality","stage":"expression","spec":"SCE Forge §3.4","message":"loose == is not permitted in Extended SCXML. Use === instead.","actual":"==","fix":{"kind":"replace_with","to":"==="}}"#,
             ),
             (
                 "forge/import-kind-mismatch",
-                actual_forge(
-                    ImportError::KindMismatch {
-                        src: "peer.scxml".into(),
-                        declared: "validator".into(),
-                        actual: "codec".into(),
-                    }
-                    .into(),
-                ),
+                ImportError::KindMismatch {
+                    src: "peer.scxml".into(),
+                    declared: "validator".into(),
+                    actual: "codec".into(),
+                }
+                .into(),
                 r#"{"v":1,"id":"fnv1a:5f500ed01d12c1bb","code":"import/kind-mismatch","stage":"import","message":"<sce:import src=\"peer.scxml\" kind=\"validator\">: actual kind is 'codec' (mismatch)","actual":"validator","fix":{"kind":"replace_with","to":"codec"}}"#,
             ),
+        ]
+    }
+
+    /// Shared golden table for first-party `MeshError` cases. See
+    /// [`forge_golden_entries`] for the rationale; same shape.
+    fn mesh_golden_entries() -> Vec<(&'static str, crate::mesh::error::MeshError, &'static str)> {
+        use crate::mesh::error::TopologyError;
+        use crate::mesh::target::TargetId;
+        vec![
             (
                 "mesh/missing-binding-field",
-                actual_mesh(
-                    TopologyError::MissingBindingField {
-                        machine: "ecu_a".into(),
-                        target: TargetId::new("#motor").unwrap(),
-                        transport: "someip".into(),
-                        field: "service".into(),
-                    }
-                    .into(),
-                ),
+                TopologyError::MissingBindingField {
+                    machine: "ecu_a".into(),
+                    target: TargetId::new("#motor").unwrap(),
+                    transport: "someip".into(),
+                    field: "service".into(),
+                }
+                .into(),
                 r#"{"v":1,"id":"fnv1a:d7ba280d1556705e","code":"mesh/topology-missing-binding-field","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding for '#motor' (transport: someip) is missing required field 'service'. Add 'service:' to the binding in deploy.yaml.","fix":{"kind":"add_attribute","element":"machines.ecu_a.bindings.#motor","attr":"service"}}"#,
             ),
             (
                 "mesh/event-binding-unused",
-                actual_mesh(
-                    TopologyError::EventBindingUnused {
-                        machine: "ecu_a".into(),
-                        target: TargetId::new("#motor").unwrap(),
-                        event: "legacy.ping".into(),
-                    }
-                    .into(),
-                ),
+                TopologyError::EventBindingUnused {
+                    machine: "ecu_a".into(),
+                    target: TargetId::new("#motor").unwrap(),
+                    event: "legacy.ping".into(),
+                }
+                .into(),
                 r#"{"v":1,"id":"fnv1a:4fdd02e5a9781de8","code":"mesh/topology-event-binding-unused","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding '#motor' declares events.legacy.ping in deploy.yaml, but the SCXML model never sends 'legacy.ping' to this target. Remove the unused entry, or correct the event name.","actual":"legacy.ping","fix":{"kind":"remove_fields","location":"machines.ecu_a.bindings.#motor.events","fields":["legacy.ping"]}}"#,
             ),
-        ];
+        ]
+    }
 
-        let mismatches: Vec<String> = cases
-            .iter()
-            .filter(|(_, actual, golden)| actual != golden)
-            .map(|(label, actual, golden)| {
-                format!("\n[{label}]\nexpected: {golden}\n  actual: {actual}")
-            })
-            .collect();
+    /// Byte-stable goldens: each error variant in
+    /// [`forge_golden_entries`] / [`mesh_golden_entries`] produces the
+    /// exact JSON string pinned in the table. A byte mismatch means a
+    /// consumer that dedup'd on `id` yesterday now sees a different
+    /// record for the same semantic error — a wire-format regression.
+    /// Update the goldens deliberately (alongside a schema-version
+    /// bump, when appropriate), never silently.
+    #[test]
+    fn diagnostic_goldens_are_byte_stable() {
+        let mut mismatches: Vec<String> = Vec::new();
+        for (label, err, golden) in forge_golden_entries() {
+            let actual = serde_json::to_string(&single(&err)).unwrap();
+            if actual != golden {
+                mismatches.push(format!(
+                    "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
+                ));
+            }
+        }
+        for (label, err, golden) in mesh_golden_entries() {
+            let actual = serde_json::to_string(&single(&err)).unwrap();
+            if actual != golden {
+                mismatches.push(format!(
+                    "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
+                ));
+            }
+        }
         assert!(
             mismatches.is_empty(),
             "byte-stable goldens drifted:\n{}\n\nIf this change is intentional, update the table AND bump SCHEMA_VERSION if the shape changed.",
+            mismatches.join("\n")
+        );
+    }
+
+    /// Structural invariant: for every first-party error
+    /// (`ForgeError`, `MeshError`), the human-mode `Display` output
+    /// equals the JSON `message` field byte-for-byte.
+    ///
+    /// Held by construction today — `ToDiagnostics` impls at
+    /// `diagnostic.rs:920` and `mesh/error.rs:876` set
+    /// `message: self.to_string()`, so the two surfaces cannot drift
+    /// independently. The test locks that derivation in: anyone
+    /// refactoring a `ToDiagnostics::to_diagnostics` impl to compute a
+    /// bespoke `message` string (instead of delegating to `Display`)
+    /// must either keep this test green or delete it with a documented
+    /// rationale in `SCE_ERROR_CONTRACT.md`.
+    ///
+    /// Why this matters: operators read `format!("{}", err)` on stderr
+    /// via `ErrorFormat::Human`; upstream agents consume
+    /// `Diagnostic.message` via `--error-format=json`. If the two ever
+    /// diverge, the same error gets described two different ways —
+    /// operator pages the agent, agent's memory references a wording
+    /// the operator has never seen. The JSON byte-goldens cover the
+    /// JSON surface; this test covers the human surface via the
+    /// invariant that derives one from the other.
+    ///
+    /// Cases are shared with [`diagnostic_goldens_are_byte_stable`]
+    /// via [`forge_golden_entries`] / [`mesh_golden_entries`] — the
+    /// two tests cannot drift out of coverage parity by construction.
+    #[test]
+    fn human_mode_matches_json_message() {
+        let mut mismatches: Vec<String> = Vec::new();
+        for (label, err, _golden) in forge_golden_entries() {
+            let human = format!("{err}");
+            let json_message = single(&err).message;
+            if human != json_message {
+                mismatches.push(format!(
+                    "\n[{label}]\n  human: {human}\n   json: {json_message}"
+                ));
+            }
+        }
+        for (label, err, _golden) in mesh_golden_entries() {
+            let human = format!("{err}");
+            let json_message = single(&err).message;
+            if human != json_message {
+                mismatches.push(format!(
+                    "\n[{label}]\n  human: {human}\n   json: {json_message}"
+                ));
+            }
+        }
+        assert!(
+            mismatches.is_empty(),
+            "human-mode Display diverged from JSON message field:\n{}\n\n\
+             First-party ToDiagnostics impls must derive `message` from \
+             `self.to_string()` (see diagnostic.rs:920, mesh/error.rs:876). \
+             If a bespoke message is intentional, remove the offending case \
+             and document the exception in SCE_ERROR_CONTRACT.md §3.",
             mismatches.join("\n")
         );
     }
