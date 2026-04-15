@@ -1241,7 +1241,6 @@ pub fn check_sender_event_coverage(
 mod tests {
     use super::*;
     use crate::mesh::deploy::parse_deploy_str;
-    use std::collections::HashMap;
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
 
