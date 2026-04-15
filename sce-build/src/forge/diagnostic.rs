@@ -2976,6 +2976,52 @@ mod tests {
         );
     }
 
+    /// Drift guard between [`ALL_DIAGNOSTIC_CODES`] and the
+    /// positive-form acceptance spec at `docs/SCE_ACCEPTED_SUBSET.md`.
+    ///
+    /// The acceptance doc is the build-time counterpart to
+    /// `SCE_ERROR_CONTRACT.md`: the contract enumerates rejection
+    /// signals, the acceptance doc enumerates the accepted subset.
+    /// The doc's appendix partitions every `DiagnosticCode` into
+    /// "Acceptance boundary" (author-preventable) vs "Diagnostic-only"
+    /// (I/O / infrastructure). This test asserts every slash-path in
+    /// `ALL_DIAGNOSTIC_CODES` appears somewhere in the doc — in
+    /// practice, in the appendix tables.
+    ///
+    /// Substring match is intentionally loose. The appendix is the
+    /// coverage contract; reviewers catch appendix bypassing (e.g. a
+    /// code mentioned only in prose) in PR review. The
+    /// `include_str!` binds the check to the file at compile time so
+    /// a stale checkout cannot pass CI with a missing file.
+    ///
+    /// When this fires, add the missing code to exactly one of the
+    /// two appendix tables in `docs/SCE_ACCEPTED_SUBSET.md` —
+    /// "Acceptance boundary" if the author can prevent it by writing
+    /// better SCXML, "Diagnostic-only" if it is an I/O or
+    /// infrastructure failure.
+    #[test]
+    fn acceptance_doc_covers_every_code() {
+        let doc = include_str!("../../../docs/SCE_ACCEPTED_SUBSET.md");
+        let mut missing: Vec<&'static str> = Vec::new();
+        for &code in ALL_DIAGNOSTIC_CODES {
+            let needle = code.as_str();
+            if !doc.contains(needle) {
+                missing.push(needle);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "DiagnosticCode entries not referenced in \
+             docs/SCE_ACCEPTED_SUBSET.md:\n{missing:#?}\n\n\
+             Every code must appear in the appendix of \
+             SCE_ACCEPTED_SUBSET.md, either under 'Acceptance \
+             boundary' (if it represents a rejection rule the user \
+             can avoid by writing better SCXML) or 'Diagnostic-only' \
+             (I/O / infrastructure failures). Add the missing \
+             entries and re-run.",
+        );
+    }
+
     /// Coverage drift guard: every `DiagnosticCode` variant must have
     /// at least one entry in [`forge_golden_entries`] or
     /// [`mesh_golden_entries`]. Without this, the byte-stability and
