@@ -943,13 +943,13 @@ pub fn validate_mesh_event_coverage(
 ///
 /// The last row is the contract-critical case. An author who wrote
 /// `sce:kind="bogus"` intended a forge document; reporting that failure
-/// through the SCXML parser would mis-label the `stage` field as
-/// `cli/scxml-parse` when the truth is an `sce:kind` violation caught by
+/// through the SCXML parser would mis-label the diagnostic as a plain
+/// XML parse error when the truth is an `sce:kind` violation caught by
 /// the Forge XSD. Routing such documents to [`Self::Forge`] lets the
 /// forge pipeline emit the honest stage (`xml/schema-validation` when
 /// the bundled XSD is reachable, or `validation/unsupported-kind` when
 /// the schemas were not vendored) — either of which is strictly more
-/// actionable than `cli/scxml-parse`.
+/// actionable than a generic SCXML-parser error.
 ///
 /// Documents whose XML is too malformed for `roxmltree` to reach the
 /// root attribute list fall back to [`Self::Scxml`]: intent is not

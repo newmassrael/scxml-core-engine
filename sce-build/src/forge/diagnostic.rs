@@ -350,12 +350,8 @@ pub enum DiagnosticCode {
     CliWriteOutput,
     #[serde(rename = "cli/create-output-dir")]
     CliCreateOutputDir,
-    #[serde(rename = "cli/scxml-parse")]
-    CliScxmlParse,
     #[serde(rename = "cli/scxml-generate")]
     CliScxmlGenerate,
-    #[serde(rename = "cli/dynamic-features")]
-    CliDynamicFeatures,
     #[serde(rename = "cli/missing-metadata-field")]
     CliMissingMetadataField,
     #[serde(rename = "cli/not-a-directory")]
@@ -522,9 +518,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliReadInput,
         CliWriteOutput,
         CliCreateOutputDir,
-        CliScxmlParse,
         CliScxmlGenerate,
-        CliDynamicFeatures,
         CliMissingMetadataField,
         CliNotADirectory,
         CliInvalidFormatOption,
@@ -699,9 +693,7 @@ impl DiagnosticCode {
             | CliReadInput
             | CliWriteOutput
             | CliCreateOutputDir
-            | CliScxmlParse
             | CliScxmlGenerate
-            | CliDynamicFeatures
             | CliMissingMetadataField
             | CliNotADirectory
             | CliInvalidFormatOption
@@ -780,9 +772,7 @@ impl DiagnosticCode {
             CliReadInput => "cli/read-input",
             CliWriteOutput => "cli/write-output",
             CliCreateOutputDir => "cli/create-output-dir",
-            CliScxmlParse => "cli/scxml-parse",
             CliScxmlGenerate => "cli/scxml-generate",
-            CliDynamicFeatures => "cli/dynamic-features",
             CliMissingMetadataField => "cli/missing-metadata-field",
             CliNotADirectory => "cli/not-a-directory",
             CliInvalidFormatOption => "cli/invalid-format-option",
@@ -2472,91 +2462,6 @@ mod tests {
         ]
     }
 
-    /// Synthetic goldens for codes with **no** production emitter.
-    ///
-    /// Today this covers only the two reserved-zombie codes —
-    /// `cli/scxml-parse` and `cli/dynamic-features` — retained in the
-    /// wire vocabulary for schema back-compat after the routing
-    /// overhaul that redirected unknown-kind documents through the
-    /// forge XSD (`xml/schema-validation`) and analyzer rejects
-    /// through `validation/dynamic-features`. See SCE_ERROR_CONTRACT.md
-    /// §3 and the `Pipeline` doc in `lib.rs`. The synthetic records
-    /// document the agreed-upon field shape so schema consumers that
-    /// still dispatch on these codes continue to see consistent
-    /// records, even though no code path emits them today.
-    ///
-    /// Participates in [`diagnostic_goldens_are_byte_stable`] and
-    /// [`every_code_has_a_golden`] but **not**
-    /// [`human_mode_matches_json_message`] — there is no Display
-    /// source; these are direct `Diagnostic` constructions.
-    fn synthetic_golden_entries() -> Vec<(&'static str, Diagnostic, &'static str)> {
-        // Build a Diagnostic the same way the single-record trait
-        // default would, but with hand-picked `message` and payload —
-        // no `ToDiagnostics` source exists for reserved zombies.
-        fn synth(
-            code: DiagnosticCode,
-            stage: Stage,
-            message: &str,
-            key_fragments: &[&str],
-            expected: Option<Vec<String>>,
-            actual: Option<String>,
-            fix: Option<Fix>,
-        ) -> Diagnostic {
-            let key: Vec<String> = key_fragments.iter().map(|s| (*s).to_string()).collect();
-            Diagnostic {
-                schema_version: SCHEMA_VERSION,
-                id: compute_id(code, stage, None, &key),
-                code,
-                stage,
-                spec: code.spec_anchor(),
-                message: message.to_string(),
-                location: None,
-                expected,
-                actual,
-                fix,
-            }
-        }
-        vec![
-            (
-                "cli/scxml-parse",
-                // Reserved zombie: no current emitter routes through
-                // this code — unknown `sce:kind` now flows through the
-                // forge XSD and reports `xml/schema-validation`. Kept
-                // in the wire vocabulary for schema back-compat. The
-                // payload below matches the legacy emission so old
-                // dispatch tables keep interpreting records correctly.
-                synth(
-                    DiagnosticCode::CliScxmlParse,
-                    Stage::Cli,
-                    "SCXML parse failed: unexpected end tag",
-                    &["chart.scxml"],
-                    None,
-                    Some("chart.scxml".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:585c496f1a5b3f69","code":"cli/scxml-parse","stage":"cli","message":"SCXML parse failed: unexpected end tag","actual":"chart.scxml"}"#,
-            ),
-            (
-                "cli/dynamic-features",
-                // Reserved zombie: analyzer rejects now route through
-                // `validation/dynamic-features` so agents can key
-                // repair on the analyzer (Stage::Validation, exit 3)
-                // rather than the CLI boundary. Retained for schema
-                // back-compat.
-                synth(
-                    DiagnosticCode::CliDynamicFeatures,
-                    Stage::Cli,
-                    "cannot generate static code: uses dynamic invoke",
-                    &["chart", "dynamic invoke"],
-                    None,
-                    Some("dynamic invoke".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:4547c865ab1e58f4","code":"cli/dynamic-features","stage":"cli","message":"cannot generate static code: uses dynamic invoke","actual":"dynamic invoke"}"#,
-            ),
-        ]
-    }
-
     /// Byte-stable goldens: each error variant in
     /// [`forge_golden_entries`] / [`mesh_golden_entries`] produces the
     /// exact JSON string pinned in the table. A byte mismatch means a
@@ -2597,14 +2502,6 @@ mod tests {
         }
         for (label, err, golden) in cli_golden_entries() {
             let actual = serde_json::to_string(&single(&err)).unwrap();
-            if actual != golden {
-                mismatches.push(format!(
-                    "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
-                ));
-            }
-        }
-        for (label, diag, golden) in synthetic_golden_entries() {
-            let actual = serde_json::to_string(&diag).unwrap();
             if actual != golden {
                 mismatches.push(format!(
                     "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
@@ -2785,9 +2682,7 @@ mod tests {
             | CliReadInput
             | CliWriteOutput
             | CliCreateOutputDir
-            | CliScxmlParse
             | CliScxmlGenerate
-            | CliDynamicFeatures
             | CliMissingMetadataField
             | CliNotADirectory
             | CliJsonSerialization
@@ -2992,7 +2887,7 @@ mod tests {
     /// as their own assertion keeps failure messages sharp. Accidental
     /// slice shrinkage is caught by
     /// `json_schema_enums_match_rust_source_of_truth`, which compares
-    /// the slice to the schema's 83-entry code enum.
+    /// the slice to the schema's code enum.
     #[test]
     fn all_diagnostic_codes_are_distinct() {
         let mut slash_paths: Vec<&'static str> =
@@ -3040,9 +2935,9 @@ mod tests {
                 | ManifestCircularDependency | ManifestIo | GenerateInvalidConfig
                 | GenerateTemplateLoad | GenerateTemplateRender | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
-                | CliWriteOutput | CliCreateOutputDir | CliScxmlParse
-                | CliScxmlGenerate | CliDynamicFeatures | CliMissingMetadataField
-                | CliNotADirectory | CliInvalidFormatOption | CliJsonSerialization
+                | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
+                | CliMissingMetadataField | CliNotADirectory
+                | CliInvalidFormatOption | CliJsonSerialization
                 | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshExternalRead | MeshExternalParse
@@ -3074,9 +2969,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            86,
+            84,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 86 distinct variants to match the DiagnosticCode \
+             expected 84 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }
@@ -3108,9 +3003,6 @@ mod tests {
         for (_label, err, _golden) in cli_golden_entries() {
             covered.insert(single(&err).code.as_str());
         }
-        for (_label, diag, _golden) in synthetic_golden_entries() {
-            covered.insert(diag.code.as_str());
-        }
         let missing: Vec<&'static str> = ALL_DIAGNOSTIC_CODES
             .iter()
             .map(|c| c.as_str())
@@ -3120,8 +3012,8 @@ mod tests {
             missing.is_empty(),
             "DiagnosticCode variants without goldens ({}):\n{}\n\n\
              Add representative cases to forge_golden_entries, \
-             mesh_golden_entries, xsd_golden_entries, cli_golden_entries, \
-             or synthetic_golden_entries in sce-build/src/forge/diagnostic.rs.",
+             mesh_golden_entries, xsd_golden_entries, or \
+             cli_golden_entries in sce-build/src/forge/diagnostic.rs.",
             missing.len(),
             missing.join("\n"),
         );

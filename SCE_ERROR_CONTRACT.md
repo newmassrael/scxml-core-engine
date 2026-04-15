@@ -153,8 +153,8 @@ the document happens to parse successfully:
 
 | `sce:kind` value                       | Pipeline         | Diagnostic source          |
 |----------------------------------------|------------------|----------------------------|
-| absent                                 | SCXML parser     | `cli/scxml-parse`, etc.    |
-| `"statechart"`                         | SCXML parser     | `cli/scxml-parse`, etc.    |
+| absent                                 | SCXML parser     | `xml/parse` / `validation/*` |
+| `"statechart"`                         | SCXML parser     | `xml/parse` / `validation/*` |
 | known forge kind (e.g. `"lookup"`)     | Forge            | `xml` / `validation` / ... |
 | unknown value (e.g. `"bogus"`)         | Forge            | `xml/schema-validation`    |
 
@@ -162,8 +162,8 @@ The last row is a contract guarantee. An author who wrote
 `sce:kind="bogus"` intended a forge document, so the failure must
 surface through the forge pipeline — where the bundled XSD identifies
 the violation and the `message` field enumerates the legal values.
-Reporting such a failure as `cli/scxml-parse` would mis-route repair
-agents and is explicitly forbidden.
+Reporting such a failure through the SCXML parser's XML stage would
+mis-route repair agents and is explicitly forbidden.
 
 Malformed XML that never reaches the root attribute list falls back
 to the SCXML parser: intent cannot be inferred, and the SCXML
@@ -243,9 +243,7 @@ references against a real document and drift silently.
 | `cli/read-input` | `cli` | no | |
 | `cli/write-output` | `cli` | no | |
 | `cli/create-output-dir` | `cli` | no | |
-| `cli/scxml-parse` | `cli` | no | |
 | `cli/scxml-generate` | `cli` | no | |
-| `cli/dynamic-features` | `cli` | no | |
 | `cli/missing-metadata-field` | `cli` | no | |
 | `cli/not-a-directory` | `cli` | no | |
 | `cli/invalid-format-option` | `cli` | `replace_one_of` | |
