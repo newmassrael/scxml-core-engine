@@ -795,6 +795,10 @@ pub struct MeshResult {
     pub output: generator::GeneratedOutput,
     /// Dynamic target warnings (targetexpr cannot be statically resolved).
     pub dynamic_target_warnings: Vec<mesh::topology::TopologyWarning>,
+    /// Informational notices when SCE_MESH.md §9.5 deadline precedence
+    /// silently overrides a deploy.yaml binding-level deadline with a
+    /// per-invoke `<param name="_mesh_deadline_ms">` value.
+    pub deadline_override_notices: Vec<mesh::topology::DeadlineOverrideNotice>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -851,18 +855,21 @@ pub fn compile_mesh_transport(
     // attach per-event SOME/IP IDs, and validate per-event field presence
     // in a single pipeline — callers cannot observe the half-built state
     // between resolution and attach.
-    let resolved = mesh::topology::build_resolved_targets(
+    let resolution = mesh::topology::build_resolved_targets(
         &summary,
         &deploy_cfg,
         &model.name,
         &external_resolution,
     )?;
+    let resolved = resolution.targets;
+    let deadline_override_notices = resolution.deadline_overrides;
 
     if resolved.is_empty() {
         let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
             dynamic_target_warnings,
+            deadline_override_notices,
         });
     }
 
@@ -910,6 +917,7 @@ pub fn compile_mesh_transport(
     Ok(MeshResult {
         output,
         dynamic_target_warnings,
+        deadline_override_notices,
     })
 }
 

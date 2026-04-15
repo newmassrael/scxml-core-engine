@@ -282,6 +282,16 @@ pub struct BindingConfig {
     #[serde(default)]
     pub events: BTreeMap<String, EventBinding>,
 
+    /// Binding-level fallback for `<invoke type="sce:mesh-rpc">`
+    /// deadline (SCE_MESH.md §9.5 precedence). Applied when a per-invoke
+    /// `<param name="_mesh_deadline_ms">` is absent. A per-invoke value
+    /// always overrides; if both are present with different values
+    /// `sce-build` emits an informational notice (per-invoke override is
+    /// expected usage). Absent here AND on the `<param>` ⇒ no deadline
+    /// (the request can wait indefinitely for a reply).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline_ms: Option<u64>,
+
     /// Per-target transport-native settings passed through to templates
     /// (zenoh `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
     /// Reserved SOME/IP ID key names are collected here at parse time but

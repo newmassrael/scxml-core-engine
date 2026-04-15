@@ -314,6 +314,62 @@ impl std::fmt::Display for TopologyWarning {
     }
 }
 
+/// Informational notice emitted when SCE_MESH.md §9.5 deadline precedence
+/// silently overrides a deploy.yaml binding-level value with a per-invoke
+/// `<param name="_mesh_deadline_ms">`. The override itself is the spec's
+/// expected usage (per-invoke wins); the notice surfaces the divergence
+/// so the deploy.yaml author can see whether the binding-level fallback
+/// is still meaningful for this target. Not an error — printed to stderr,
+/// not propagated to MeshError.
+#[derive(Debug, Clone)]
+pub struct DeadlineOverrideNotice {
+    /// State that hosts the `<invoke>` whose `<param>` won.
+    pub state: String,
+    /// Resolved mesh target the invoke fires against (e.g. `#motor`).
+    pub target: TargetId,
+    /// SCXML invoke id (parser-assigned, e.g. `_invoke_0`).
+    pub invoke_id: String,
+    /// Per-invoke `<param name="_mesh_deadline_ms">` value (the winner).
+    pub param_value: u64,
+    /// deploy.yaml `bindings.<target>.deadline_ms` value (the fallback).
+    pub binding_value: u64,
+}
+
+impl std::fmt::Display for DeadlineOverrideNotice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "state '{}', invoke '{}' targeting {}: per-invoke \
+             _mesh_deadline_ms={}ms overrides deploy.yaml \
+             binding deadline_ms={}ms (per SCE_MESH.md §9.5 precedence; \
+             remove either value if the override is unintended)",
+            self.state,
+            self.invoke_id,
+            self.target.as_str(),
+            self.param_value,
+            self.binding_value
+        )
+    }
+}
+
+/// Result of [`resolve_partials`] / [`build_resolved_targets`]: the
+/// payload (targets) plus any informational notices the resolution
+/// stage produced. Named struct rather than a tuple so call sites read
+/// `outcome.targets` / `outcome.deadline_overrides` instead of
+/// positional `.0` / `.1` — keeps intent explicit when the second
+/// vector is forwarded several layers up to the CLI.
+#[derive(Debug, Clone, Default)]
+pub struct TargetResolution {
+    /// Per-target resolved binding state, in deterministic
+    /// `summary.targets` (BTreeSet) iteration order.
+    pub targets: Vec<ResolvedTarget>,
+    /// SCE_MESH.md §9.5 deadline-precedence notices emitted when a
+    /// per-invoke value silently overrode a binding-level fallback.
+    /// Empty in the common case where the two agree (or only one is
+    /// present).
+    pub deadline_overrides: Vec<DeadlineOverrideNotice>,
+}
+
 // ── Common action traversal ──────────────────────────────────
 
 /// Visit every `<send>` action in the model, providing state ID and action ref.
@@ -580,9 +636,9 @@ pub(crate) fn resolve_partials(
     summary: &SendActionSummary,
     deploy: &DeployConfig,
     machine_name: &str,
-) -> Result<Vec<PartialTarget>, TopologyError> {
+) -> Result<(Vec<PartialTarget>, Vec<DeadlineOverrideNotice>), TopologyError> {
     if summary.targets.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
 
     // Find the machine's bindings in deploy.yaml topology
@@ -604,21 +660,51 @@ pub(crate) fn resolve_partials(
     // Validate: every SCXML target must have a deploy.yaml binding
     let mut unresolved: Vec<TargetId> = Vec::new();
     let mut partials = Vec::new();
+    let mut deadline_overrides: Vec<DeadlineOverrideNotice> = Vec::new();
 
     for target in &summary.targets {
         match bindings.get(target) {
             Some(binding) => {
+                // SCE_MESH.md §9.5 deadline precedence:
+                //   1. per-invoke <param name="_mesh_deadline_ms">    (authoritative)
+                //   2. deploy.yaml bindings.<target>.deadline_ms      (fallback)
+                //   3. absent ⇒ no deadline
+                // Apply (2) when (1) is None; emit a notice when both
+                // are present with different values so the deploy author
+                // can see the override took effect.
+                let raw_sites = summary
+                    .invoke_sites_by_target
+                    .get(target)
+                    .cloned()
+                    .unwrap_or_default();
+                let merged_sites = raw_sites
+                    .into_iter()
+                    .map(|mut site| {
+                        match (site.deadline_ms, binding.deadline_ms) {
+                            (Some(per), Some(bind)) if per != bind => {
+                                deadline_overrides.push(DeadlineOverrideNotice {
+                                    state: site.state_name.clone(),
+                                    target: target.clone(),
+                                    invoke_id: site.invoke_id.clone(),
+                                    param_value: per,
+                                    binding_value: bind,
+                                });
+                            }
+                            (None, Some(bind)) => {
+                                site.deadline_ms = Some(bind);
+                            }
+                            _ => {}
+                        }
+                        site
+                    })
+                    .collect();
                 partials.push(PartialTarget {
                     target: target.clone(),
                     events: events_map.remove(target).unwrap_or_default(),
                     transport: binding.transport.clone(),
                     extra: binding.extra.clone(),
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
-                    invoke_sites: summary
-                        .invoke_sites_by_target
-                        .get(target)
-                        .cloned()
-                        .unwrap_or_default(),
+                    invoke_sites: merged_sites,
                 });
             }
             None => {
@@ -662,7 +748,7 @@ pub(crate) fn resolve_partials(
         // has fanned the per-binding resolution out into per-event entries.
     }
 
-    Ok(partials)
+    Ok((partials, deadline_overrides))
 }
 
 /// Public pipeline entry: resolve, attach, validate in a single step so
@@ -670,16 +756,25 @@ pub(crate) fn resolve_partials(
 /// [`ResolvedTarget`]. Replaces the sequence
 /// `resolve_targets → attach_event_bindings → validate_someip_event_fields`
 /// that previously required correct caller ordering.
+///
+/// Returns both the resolved targets and any informational notices the
+/// resolution stage produced (currently: deadline overrides per
+/// SCE_MESH.md §9.5). Notices are non-fatal and exposed for the CLI to
+/// surface to the operator; consumers that only care about the targets
+/// can pattern-match `(resolved, _)`.
 pub fn build_resolved_targets(
     summary: &SendActionSummary,
     deploy: &DeployConfig,
     machine_name: &str,
     external: &super::external::ExternalResolution,
-) -> Result<Vec<ResolvedTarget>, TopologyError> {
-    let partials = resolve_partials(summary, deploy, machine_name)?;
+) -> Result<TargetResolution, TopologyError> {
+    let (partials, deadline_overrides) = resolve_partials(summary, deploy, machine_name)?;
     let resolved = finalize_targets(partials, machine_name, external)?;
     validate_someip_event_fields(&resolved, machine_name)?;
-    Ok(resolved)
+    Ok(TargetResolution {
+        targets: resolved,
+        deadline_overrides,
+    })
 }
 
 /// Validate SOME/IP per-event field presence.
@@ -1827,6 +1922,7 @@ topology:
         let model = parse_model(SHM_SCXML, "sender");
         let external = super::super::external::ExternalResolution::default();
         build_resolved_targets(&summary_for(&model), &deploy, "sender", &external)
+            .map(|r| r.targets)
     }
 
     #[test]
@@ -2005,5 +2101,102 @@ topology:
             }
             other => panic!("expected InvalidBindingField, got {other:?}"),
         }
+    }
+
+    // ── SCE_MESH.md §9.5: per-invoke vs binding-level deadline ─────
+
+    /// Build a sender model with one `<invoke type="sce:mesh-rpc">`
+    /// targeting `#motor`, optionally embedding a per-invoke deadline.
+    fn mesh_rpc_sender_scxml(per_invoke_deadline: Option<u64>) -> String {
+        let dl_param = match per_invoke_deadline {
+            Some(ms) => format!("\n        <param name=\"_mesh_deadline_ms\" expr=\"{ms}\"/>"),
+            None => String::new(),
+        };
+        format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake" initial="idle">
+  <state id="idle">
+    <invoke type="sce:mesh-rpc" src="#motor">
+      <param name="_mesh_event" expr="'service.request.compute_force'"/>{dl_param}
+    </invoke>
+  </state>
+</scxml>"##
+        )
+    }
+
+    fn deploy_with_motor_binding(deadline_yaml_line: &str) -> String {
+        format!(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: local{deadline_yaml_line}
+      motor: {{ source: motor.scxml }}
+"##
+        )
+    }
+
+    fn resolve_for_mesh_rpc(
+        per_invoke: Option<u64>,
+        binding_yaml: &str,
+    ) -> TargetResolution {
+        let model = parse_model(&mesh_rpc_sender_scxml(per_invoke), "brake");
+        let deploy = parse_deploy_str(&deploy_with_motor_binding(binding_yaml)).unwrap();
+        let external = super::super::external::ExternalResolution::default();
+        build_resolved_targets(&summary_for(&model), &deploy, "brake", &external)
+            .expect("resolve")
+    }
+
+    #[test]
+    fn deadline_per_invoke_only_no_notice_no_inheritance() {
+        let res = resolve_for_mesh_rpc(Some(50), "");
+        assert!(res.deadline_overrides.is_empty(), "no binding-level deadline → no notice");
+        let site = &res.targets[0].invoke_sites[0];
+        assert_eq!(site.deadline_ms, Some(50));
+    }
+
+    #[test]
+    fn deadline_binding_only_inherits_to_site() {
+        let res = resolve_for_mesh_rpc(None, "\n            deadline_ms: 75");
+        assert!(res.deadline_overrides.is_empty(), "per-invoke absent → no notice");
+        let site = &res.targets[0].invoke_sites[0];
+        assert_eq!(site.deadline_ms, Some(75), "binding fallback should populate site");
+    }
+
+    #[test]
+    fn deadline_both_set_equal_no_notice() {
+        let res = resolve_for_mesh_rpc(Some(40), "\n            deadline_ms: 40");
+        assert!(res.deadline_overrides.is_empty(), "equal values → silent");
+        assert_eq!(res.targets[0].invoke_sites[0].deadline_ms, Some(40));
+    }
+
+    #[test]
+    fn deadline_both_set_diverge_emits_notice_and_per_invoke_wins() {
+        let res = resolve_for_mesh_rpc(Some(50), "\n            deadline_ms: 200");
+        assert_eq!(res.deadline_overrides.len(), 1, "diverging values → exactly one notice");
+        let n = &res.deadline_overrides[0];
+        assert_eq!(n.param_value, 50);
+        assert_eq!(n.binding_value, 200);
+        assert_eq!(n.invoke_id, "_invoke_0");
+        assert_eq!(n.target.as_str(), "#motor");
+        // §9.5: per-invoke is authoritative.
+        assert_eq!(res.targets[0].invoke_sites[0].deadline_ms, Some(50));
+        // Display message must name both values so a deploy author can
+        // diff intent vs effect without re-running with --verbose.
+        let msg = format!("{n}");
+        assert!(msg.contains("50ms"), "notice should name per-invoke value: {msg}");
+        assert!(msg.contains("200ms"), "notice should name binding value: {msg}");
+    }
+
+    #[test]
+    fn deadline_both_absent_remains_none() {
+        let res = resolve_for_mesh_rpc(None, "");
+        assert!(res.deadline_overrides.is_empty());
+        assert_eq!(res.targets[0].invoke_sites[0].deadline_ms, None);
     }
 }
