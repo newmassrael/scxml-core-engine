@@ -39,7 +39,10 @@ use std::path::Path;
 /// SCE Forge inline kinds are extracted during parsing (single XML pass).
 fn compile_model(scxml_path: &str) -> Result<SCXMLModel, String> {
     let mut parser = parser::SCXMLParser::new();
-    let mut model = parser.parse_file(scxml_path)?;
+    // Public boundary stringifies Located<ForgeError> for now; the
+    // follow-up commit threads the typed error through compile_model
+    // and its public wrappers.
+    let mut model = parser.parse_file(scxml_path).map_err(|e| e.to_string())?;
     analyzer::analyze(&mut model, scxml_path);
     if !analyzer::can_generate_static(&model) {
         return Err(format!(
@@ -55,7 +58,9 @@ fn compile_model(scxml_path: &str) -> Result<SCXMLModel, String> {
 /// SCE Forge inline kinds are extracted during parsing (single XML pass).
 fn compile_model_from_string(scxml_content: &str, scxml_name: &str) -> Result<SCXMLModel, String> {
     let mut parser = parser::SCXMLParser::new();
-    let mut model = parser.parse_string(scxml_content, scxml_name)?;
+    let mut model = parser
+        .parse_string(scxml_content, scxml_name)
+        .map_err(|e| e.to_string())?;
     analyzer::analyze(&mut model, "");
     if !analyzer::can_generate_static(&model) {
         return Err(format!(

@@ -54,9 +54,6 @@ enum CliError {
     #[error("Cannot create output directory {path}: {source}")]
     CreateOutputDir { path: String, source: std::io::Error },
 
-    #[error("Parse error: {detail}")]
-    ScxmlParse { detail: String },
-
     #[error("{stage}: {detail}")]
     ScxmlGenerate { stage: &'static str, detail: String },
 
@@ -140,12 +137,6 @@ impl ToDiagnostics for CliError {
                 DiagnosticCode::CliCreateOutputDir,
                 vec![path.clone()],
                 Some(path.clone()),
-                None,
-            ),
-            CliError::ScxmlParse { detail } => (
-                DiagnosticCode::CliScxmlParse,
-                vec![detail.clone()],
-                None,
                 None,
             ),
             CliError::ScxmlGenerate { stage, detail } => (
@@ -704,12 +695,13 @@ fn cmd_generate(
     let template_dir = sce_build::find_template_dir_for(lang);
 
     let mut parser = SCXMLParser::new();
+    // Typed parser failures (XML/XSD/validation) flow straight to the
+    // unified diagnostic emitter — the old CliError::ScxmlParse
+    // wrapper collapsed forge codes into cli/scxml-parse, losing the
+    // xml/* / validation/* signal agents dispatch on.
     let mut model = match parser.parse_file(scxml_path) {
         Ok(m) => m,
-        Err(e) => error_format.emit_and_exit(
-            &CliError::ScxmlParse { detail: e.to_string() },
-            "",
-        ),
+        Err(e) => error_format.emit_and_exit(&e, ""),
     };
 
     if as_child {

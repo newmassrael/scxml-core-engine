@@ -1169,11 +1169,17 @@ pub fn load_receiver_models(
         })?;
 
         let mut parser = crate::parser::SCXMLParser::new();
-        let rx_model = parser.parse_string(&content, &receiver).map_err(|reason| {
+        let rx_model = parser.parse_string(&content, &receiver).map_err(|e| {
+            // Flatten the typed parser error into the mesh-topology
+            // diagnostic channel; adding a typed `source: ForgeError`
+            // field here would require a mesh::error shape change and
+            // is out of scope for the parser-typing refactor. The
+            // machine + path context already tells operators which
+            // receiver file to inspect.
             TopologyError::ReceiverSourceParse {
                 machine: receiver.clone(),
                 path: source_path.display().to_string(),
-                reason,
+                reason: e.to_string(),
             }
         })?;
 

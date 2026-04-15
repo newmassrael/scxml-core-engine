@@ -48,27 +48,48 @@ impl SCXMLParser {
         std::mem::take(&mut self.deprecation_warnings)
     }
 
-    pub fn parse_file(&mut self, scxml_path: &str) -> Result<SCXMLModel, String> {
-        let content =
-            std::fs::read_to_string(scxml_path).map_err(|e| format!("Cannot read {scxml_path}: {e}"))?;
+    /// Parse an SCXML file from disk.
+    ///
+    /// The error type is `Located<ForgeError>`: location is part of the
+    /// error contract — every failure ties back to the file path so
+    /// downstream diagnostics (CLI NDJSON, build scripts, agents) do
+    /// not have to attach file context after the fact. I/O errors
+    /// carry the path as `ForgeError::Io`; XML / validation errors
+    /// use the file stem as the location label to match the naming
+    /// W3C batch diagnostics expect.
+    pub fn parse_file(
+        &mut self,
+        scxml_path: &str,
+    ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        use crate::forge::error::{ForgeError, Located};
+        let content = std::fs::read_to_string(scxml_path).map_err(|e| {
+            Located::new(
+                ForgeError::Io {
+                    path: Path::new(scxml_path).to_path_buf(),
+                    source: e,
+                },
+                scxml_path,
+                None,
+                None,
+            )
+        })?;
         let name = Path::new(scxml_path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown")
             .to_string();
         let base_dir = Path::new(scxml_path).parent().map(|p| p.to_path_buf());
-        // Public API stays String for now — the typed shape lives on
-        // `parse_impl` and is rewired at the public boundary in a
-        // follow-up commit. Display on `Located<ForgeError>` delegates
-        // to the wrapped error, so existing callers see the same text.
         self.parse_impl(&content, &name, base_dir.as_deref())
-            .map_err(|e| e.to_string())
     }
 
     /// Parse SCXML from a string (no filesystem access).
     /// Suitable for WASM and in-memory code generation.
-    pub fn parse_string(&mut self, content: &str, name: &str) -> Result<SCXMLModel, String> {
-        self.parse_impl(content, name, None).map_err(|e| e.to_string())
+    pub fn parse_string(
+        &mut self,
+        content: &str,
+        name: &str,
+    ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        self.parse_impl(content, name, None)
     }
 
     fn parse_impl(
@@ -3371,9 +3392,10 @@ mod tests {
         let result = parser.parse_string(scxml, "test");
         assert!(result.is_err());
         let err = result.unwrap_err();
+        let msg = err.to_string();
         assert!(
-            err.to_lowercase().contains("duplicate") && err.contains("hw"),
-            "expected duplicate context error, got: {err}"
+            msg.to_lowercase().contains("duplicate") && msg.contains("hw"),
+            "expected duplicate context error, got: {msg}"
         );
     }
 
