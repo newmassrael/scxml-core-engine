@@ -2364,31 +2364,135 @@ mod tests {
         ]
     }
 
-    /// Synthetic goldens for codes whose production emitter lives
-    /// outside this crate.
+    /// Production-routed goldens for the CLI-boundary error family.
     ///
-    /// Today this covers:
+    /// These exercise the same `ToDiagnostics` path the `sce-codegen`
+    /// binary uses — each entry constructs a real [`CliError`] and
+    /// renders it via `to_single_diagnostic`, so Display, payload, and
+    /// wire shape are pinned from the library-owned type.
+    /// Participates in all three invariant tests
+    /// ([`diagnostic_goldens_are_byte_stable`],
+    /// [`human_mode_matches_json_message`],
+    /// [`every_code_has_a_golden`]).
+    fn cli_golden_entries() -> Vec<(&'static str, crate::cli_error::CliError, &'static str)> {
+        use crate::cli_error::CliError;
+        vec![
+            (
+                "cli/unknown-language",
+                CliError::UnknownLanguage { lang: "ruby".into() },
+                r#"{"v":1,"id":"fnv1a:0b7cd966f5ada566","code":"cli/unknown-language","stage":"cli","message":"Unknown language: ruby. Use rust, cpp, kotlin, or go.","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go"]}}"#,
+            ),
+            (
+                "cli/unsupported-language",
+                CliError::UnsupportedLanguage {
+                    lang: "Python statechart".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:d4b360b4aec82aca","code":"cli/unsupported-language","stage":"cli","message":"Python statechart codegen is not yet supported","actual":"Python statechart"}"#,
+            ),
+            (
+                "cli/read-input",
+                CliError::ReadInput {
+                    path: "chart.scxml".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                },
+                r#"{"v":1,"id":"fnv1a:5f6b3cd5af06c049","code":"cli/read-input","stage":"cli","message":"Cannot read chart.scxml: entity not found","actual":"chart.scxml"}"#,
+            ),
+            (
+                "cli/write-output",
+                CliError::WriteOutput {
+                    path: "out/chart.rs".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                },
+                r#"{"v":1,"id":"fnv1a:b097092587b48b16","code":"cli/write-output","stage":"cli","message":"Cannot write out/chart.rs: permission denied","actual":"out/chart.rs"}"#,
+            ),
+            (
+                "cli/create-output-dir",
+                CliError::CreateOutputDir {
+                    path: "out/".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                },
+                r#"{"v":1,"id":"fnv1a:d5090869606d1afc","code":"cli/create-output-dir","stage":"cli","message":"Cannot create output directory out/: permission denied","actual":"out/"}"#,
+            ),
+            (
+                "cli/scxml-generate",
+                CliError::ScxmlGenerate {
+                    stage: "validation",
+                    detail: "state id 'armed' duplicated".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:add14c90ed7da6d2","code":"cli/scxml-generate","stage":"cli","message":"validation: state id 'armed' duplicated"}"#,
+            ),
+            (
+                "cli/missing-metadata-field",
+                CliError::MissingMetadataField {
+                    path: "metadata.txt".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:0492d0b2283e41f1","code":"cli/missing-metadata-field","stage":"cli","message":"No description field found in metadata.txt","actual":"metadata.txt"}"#,
+            ),
+            (
+                "cli/not-a-directory",
+                CliError::NotADirectory {
+                    path: "build/out.rs".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:11b8224ce9934d18","code":"cli/not-a-directory","stage":"cli","message":"Not a directory: build/out.rs","actual":"build/out.rs"}"#,
+            ),
+            (
+                "cli/invalid-format-option",
+                CliError::InvalidFormatOption {
+                    value: "yaml".into(),
+                    expected: "human|json".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:0cdfa05d11fc5b3d","code":"cli/invalid-format-option","stage":"cli","message":"unknown --format yaml; expected human|json","actual":"yaml","fix":{"kind":"replace_one_of","candidates":["human","json"]}}"#,
+            ),
+            (
+                "cli/json-serialization",
+                CliError::JsonSerialization {
+                    detail: "control character in string".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:60be469b9af31308","code":"cli/json-serialization","stage":"cli","message":"JSON serialization failed: control character in string"}"#,
+            ),
+            (
+                "cli/project-root-not-found",
+                CliError::ProjectRootNotFound,
+                r#"{"v":1,"id":"fnv1a:8ef6a814f15343f7","code":"cli/project-root-not-found","stage":"cli","message":"Cannot find project root. Run from project directory or set --registry/--resources."}"#,
+            ),
+            (
+                "cli/format-style-not-found",
+                CliError::FormatStyleNotFound {
+                    path: ".rustfmt.toml".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:84e445e58bbb1bde","code":"cli/format-style-not-found","stage":"cli","message":"--format-style file not found: .rustfmt.toml","actual":".rustfmt.toml"}"#,
+            ),
+            (
+                "cli/no-scxml-tag",
+                CliError::NoScxmlTag {
+                    path: "notes.txt".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:94f3f36322d6b380","code":"cli/no-scxml-tag","stage":"cli","message":"No <scxml> tag found in notes.txt","actual":"notes.txt"}"#,
+            ),
+        ]
+    }
+
+    /// Synthetic goldens for codes with **no** production emitter.
     ///
-    /// * CLI-boundary codes emitted by the `CliError` enum in
-    ///   `src/bin/sce_codegen.rs`. That enum lives in the binary
-    ///   crate, not reachable from library tests, so its records are
-    ///   reconstructed here with the same (code, stage, actual, fix)
-    ///   shape the binary produces. End-to-end emission is pinned by
-    ///   `tests/error_format_json.rs`, which spawns the binary.
-    /// * Reserved zombie codes (`cli/scxml-parse`,
-    ///   `cli/dynamic-features`) retained in the wire vocabulary for
-    ///   schema back-compat — see SCE_ERROR_CONTRACT.md §3. They have
-    ///   no active emitter; the synthetic records document their
-    ///   agreed-upon field shape.
+    /// Today this covers only the two reserved-zombie codes —
+    /// `cli/scxml-parse` and `cli/dynamic-features` — retained in the
+    /// wire vocabulary for schema back-compat after the routing
+    /// overhaul that redirected unknown-kind documents through the
+    /// forge XSD (`xml/schema-validation`) and analyzer rejects
+    /// through `validation/dynamic-features`. See SCE_ERROR_CONTRACT.md
+    /// §3 and the `Pipeline` doc in `lib.rs`. The synthetic records
+    /// document the agreed-upon field shape so schema consumers that
+    /// still dispatch on these codes continue to see consistent
+    /// records, even though no code path emits them today.
     ///
     /// Participates in [`diagnostic_goldens_are_byte_stable`] and
     /// [`every_code_has_a_golden`] but **not**
     /// [`human_mode_matches_json_message`] — there is no Display
-    /// source in this crate to parity-check against.
+    /// source; these are direct `Diagnostic` constructions.
     fn synthetic_golden_entries() -> Vec<(&'static str, Diagnostic, &'static str)> {
         // Build a Diagnostic the same way the single-record trait
         // default would, but with hand-picked `message` and payload —
-        // no ToDiagnostics source exists.
+        // no `ToDiagnostics` source exists for reserved zombies.
         fn synth(
             code: DiagnosticCode,
             stage: Stage,
@@ -2414,79 +2518,13 @@ mod tests {
         }
         vec![
             (
-                "cli/unknown-language",
-                synth(
-                    DiagnosticCode::CliUnknownLanguage,
-                    Stage::Cli,
-                    "Unknown language: ruby. Use rust, cpp, kotlin, or go.",
-                    &["ruby"],
-                    None,
-                    Some("ruby".into()),
-                    Some(Fix::ReplaceOneOf {
-                        candidates: vec!["rust".into(), "cpp".into(), "kotlin".into(), "go".into()],
-                    }),
-                ),
-                r#"{"v":1,"id":"fnv1a:0b7cd966f5ada566","code":"cli/unknown-language","stage":"cli","message":"Unknown language: ruby. Use rust, cpp, kotlin, or go.","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go"]}}"#,
-            ),
-            (
-                "cli/unsupported-language",
-                synth(
-                    DiagnosticCode::CliUnsupportedLanguage,
-                    Stage::Cli,
-                    "Python statechart codegen is not yet supported",
-                    &["Python statechart"],
-                    None,
-                    Some("Python statechart".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:d4b360b4aec82aca","code":"cli/unsupported-language","stage":"cli","message":"Python statechart codegen is not yet supported","actual":"Python statechart"}"#,
-            ),
-            (
-                "cli/read-input",
-                synth(
-                    DiagnosticCode::CliReadInput,
-                    Stage::Cli,
-                    "Cannot read chart.scxml: file not found",
-                    &["chart.scxml"],
-                    None,
-                    Some("chart.scxml".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:5f6b3cd5af06c049","code":"cli/read-input","stage":"cli","message":"Cannot read chart.scxml: file not found","actual":"chart.scxml"}"#,
-            ),
-            (
-                "cli/write-output",
-                synth(
-                    DiagnosticCode::CliWriteOutput,
-                    Stage::Cli,
-                    "Cannot write out/chart.rs: permission denied",
-                    &["out/chart.rs"],
-                    None,
-                    Some("out/chart.rs".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:b097092587b48b16","code":"cli/write-output","stage":"cli","message":"Cannot write out/chart.rs: permission denied","actual":"out/chart.rs"}"#,
-            ),
-            (
-                "cli/create-output-dir",
-                synth(
-                    DiagnosticCode::CliCreateOutputDir,
-                    Stage::Cli,
-                    "Cannot create output directory out/: permission denied",
-                    &["out/"],
-                    None,
-                    Some("out/".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:d5090869606d1afc","code":"cli/create-output-dir","stage":"cli","message":"Cannot create output directory out/: permission denied","actual":"out/"}"#,
-            ),
-            (
                 "cli/scxml-parse",
                 // Reserved zombie: no current emitter routes through
-                // this code — unknown sce:kind now flows through the
-                // forge XSD and reports xml/schema-validation. Kept in
-                // the wire vocabulary for schema back-compat. Shape
-                // below matches the legacy emission.
+                // this code — unknown `sce:kind` now flows through the
+                // forge XSD and reports `xml/schema-validation`. Kept
+                // in the wire vocabulary for schema back-compat. The
+                // payload below matches the legacy emission so old
+                // dispatch tables keep interpreting records correctly.
                 synth(
                     DiagnosticCode::CliScxmlParse,
                     Stage::Cli,
@@ -2499,24 +2537,12 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:585c496f1a5b3f69","code":"cli/scxml-parse","stage":"cli","message":"SCXML parse failed: unexpected end tag","actual":"chart.scxml"}"#,
             ),
             (
-                "cli/scxml-generate",
-                synth(
-                    DiagnosticCode::CliScxmlGenerate,
-                    Stage::Cli,
-                    "validation: state id 'armed' duplicated",
-                    &["validation", "state id 'armed' duplicated"],
-                    None,
-                    None,
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:add14c90ed7da6d2","code":"cli/scxml-generate","stage":"cli","message":"validation: state id 'armed' duplicated"}"#,
-            ),
-            (
                 "cli/dynamic-features",
                 // Reserved zombie: analyzer rejects now route through
-                // validation/dynamic-features so agents can key repair
-                // on the analyzer (Stage::Validation, exit 3) rather
-                // than the CLI boundary. Retained for back-compat.
+                // `validation/dynamic-features` so agents can key
+                // repair on the analyzer (Stage::Validation, exit 3)
+                // rather than the CLI boundary. Retained for schema
+                // back-compat.
                 synth(
                     DiagnosticCode::CliDynamicFeatures,
                     Stage::Cli,
@@ -2527,99 +2553,6 @@ mod tests {
                     None,
                 ),
                 r#"{"v":1,"id":"fnv1a:4547c865ab1e58f4","code":"cli/dynamic-features","stage":"cli","message":"cannot generate static code: uses dynamic invoke","actual":"dynamic invoke"}"#,
-            ),
-            (
-                "cli/missing-metadata-field",
-                synth(
-                    DiagnosticCode::CliMissingMetadataField,
-                    Stage::Cli,
-                    "No description field found in metadata.txt",
-                    &["metadata.txt"],
-                    None,
-                    Some("metadata.txt".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:0492d0b2283e41f1","code":"cli/missing-metadata-field","stage":"cli","message":"No description field found in metadata.txt","actual":"metadata.txt"}"#,
-            ),
-            (
-                "cli/not-a-directory",
-                synth(
-                    DiagnosticCode::CliNotADirectory,
-                    Stage::Cli,
-                    "Not a directory: build/out.rs",
-                    &["build/out.rs"],
-                    None,
-                    Some("build/out.rs".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:11b8224ce9934d18","code":"cli/not-a-directory","stage":"cli","message":"Not a directory: build/out.rs","actual":"build/out.rs"}"#,
-            ),
-            (
-                "cli/invalid-format-option",
-                synth(
-                    DiagnosticCode::CliInvalidFormatOption,
-                    Stage::Cli,
-                    "unknown --format yaml; expected human|json",
-                    &["yaml", "human|json"],
-                    None,
-                    Some("yaml".into()),
-                    Some(Fix::ReplaceOneOf {
-                        candidates: vec!["human".into(), "json".into()],
-                    }),
-                ),
-                r#"{"v":1,"id":"fnv1a:0cdfa05d11fc5b3d","code":"cli/invalid-format-option","stage":"cli","message":"unknown --format yaml; expected human|json","actual":"yaml","fix":{"kind":"replace_one_of","candidates":["human","json"]}}"#,
-            ),
-            (
-                "cli/json-serialization",
-                synth(
-                    DiagnosticCode::CliJsonSerialization,
-                    Stage::Cli,
-                    "JSON serialization failed: control character in string",
-                    &["control character in string"],
-                    None,
-                    None,
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:60be469b9af31308","code":"cli/json-serialization","stage":"cli","message":"JSON serialization failed: control character in string"}"#,
-            ),
-            (
-                "cli/project-root-not-found",
-                synth(
-                    DiagnosticCode::CliProjectRootNotFound,
-                    Stage::Cli,
-                    "Cannot find project root. Run from project directory or set --registry/--resources.",
-                    &[],
-                    None,
-                    None,
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:8ef6a814f15343f7","code":"cli/project-root-not-found","stage":"cli","message":"Cannot find project root. Run from project directory or set --registry/--resources."}"#,
-            ),
-            (
-                "cli/format-style-not-found",
-                synth(
-                    DiagnosticCode::CliFormatStyleNotFound,
-                    Stage::Cli,
-                    "--format-style file not found: .rustfmt.toml",
-                    &[".rustfmt.toml"],
-                    None,
-                    Some(".rustfmt.toml".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:84e445e58bbb1bde","code":"cli/format-style-not-found","stage":"cli","message":"--format-style file not found: .rustfmt.toml","actual":".rustfmt.toml"}"#,
-            ),
-            (
-                "cli/no-scxml-tag",
-                synth(
-                    DiagnosticCode::CliNoScxmlTag,
-                    Stage::Cli,
-                    "No <scxml> tag found in notes.txt",
-                    &["notes.txt"],
-                    None,
-                    Some("notes.txt".into()),
-                    None,
-                ),
-                r#"{"v":1,"id":"fnv1a:94f3f36322d6b380","code":"cli/no-scxml-tag","stage":"cli","message":"No <scxml> tag found in notes.txt","actual":"notes.txt"}"#,
             ),
         ]
     }
@@ -2655,6 +2588,14 @@ mod tests {
             // diagnostic instance so `single()` applies. Structure is
             // validated the same way as forge/mesh: serialize and
             // compare to the pinned JSON.
+            let actual = serde_json::to_string(&single(&err)).unwrap();
+            if actual != golden {
+                mismatches.push(format!(
+                    "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
+                ));
+            }
+        }
+        for (label, err, golden) in cli_golden_entries() {
             let actual = serde_json::to_string(&single(&err)).unwrap();
             if actual != golden {
                 mismatches.push(format!(
@@ -2716,6 +2657,15 @@ mod tests {
             }
         }
         for (label, err, _golden) in mesh_golden_entries() {
+            let human = format!("{err}");
+            let json_message = single(&err).message;
+            if human != json_message {
+                mismatches.push(format!(
+                    "\n[{label}]\n  human: {human}\n   json: {json_message}"
+                ));
+            }
+        }
+        for (label, err, _golden) in cli_golden_entries() {
             let human = format!("{err}");
             let json_message = single(&err).message;
             if human != json_message {
@@ -3155,6 +3105,9 @@ mod tests {
         for (_label, err, _golden) in xsd_golden_entries() {
             covered.insert(single(&err).code.as_str());
         }
+        for (_label, err, _golden) in cli_golden_entries() {
+            covered.insert(single(&err).code.as_str());
+        }
         for (_label, diag, _golden) in synthetic_golden_entries() {
             covered.insert(diag.code.as_str());
         }
@@ -3167,8 +3120,8 @@ mod tests {
             missing.is_empty(),
             "DiagnosticCode variants without goldens ({}):\n{}\n\n\
              Add representative cases to forge_golden_entries, \
-             mesh_golden_entries, xsd_golden_entries, or \
-             synthetic_golden_entries in sce-build/src/forge/diagnostic.rs.",
+             mesh_golden_entries, xsd_golden_entries, cli_golden_entries, \
+             or synthetic_golden_entries in sce-build/src/forge/diagnostic.rs.",
             missing.len(),
             missing.join("\n"),
         );
