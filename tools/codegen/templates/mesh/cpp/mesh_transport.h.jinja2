@@ -547,7 +547,7 @@ struct TransportRouter {
         sender.setMeshSendCallback(
             [this](const std::string& target, const std::string& eventName,
                    const std::string& data, const std::string& /*sendId*/,
-                   const std::string& /*invokeId*/) -> bool {
+                   const std::string& invokeId) -> bool {
                 SCE::Mesh::MeshEnvelope env;
                 env.id = SCE::uuid::v7();
                 env.source = "{{ machine_name }}";
@@ -557,6 +557,16 @@ struct TransportRouter {
                     ? SCE::Mesh::PayloadCodec::None
                     : SCE::Mesh::PayloadCodec::Json;
                 env.data.assign(data.begin(), data.end());
+                // W3C SCXML 6.4.1 auto-propagation extended to mesh-rpc:
+                // stamp env.invoke_id when the outbound pattern is RpcReply
+                // so the original invoker's correlation table resolves the
+                // reply. Non-reply patterns leave env.invoke_id unset —
+                // invokeId is ignored rather than leaked cross-pattern.
+                if (env.pattern == SCE::Mesh::PatternKind::RpcReply && !invokeId.empty()) {
+                    if (auto parsed = SCE::uuid::from_string(invokeId)) {
+                        env.invoke_id = *parsed;
+                    }
+                }
 {% if "someip" in transport_types %}
                 // RPC correlation: generate correlation_id and register reply-event
                 // (SOME/IP-only — Zenoh's session.get on_reply closure correlates
