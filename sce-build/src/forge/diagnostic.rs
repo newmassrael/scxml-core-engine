@@ -2204,6 +2204,80 @@ mod tests {
         );
     }
 
+    /// Compile-time drift guard that binds [`ALL_DIAGNOSTIC_CODES`] to
+    /// the `DiagnosticCode` enum. Adding a new variant fails to compile
+    /// here — contributors must update both the enum and the slice in
+    /// the same change. Do **not** add a `_ => true` wildcard arm: it
+    /// defeats the guard.
+    ///
+    /// The `len()` assertion complements the exhaustive match: a
+    /// variant named in the match but omitted from the slice survives
+    /// the build but fires this assertion. Keep the count in sync with
+    /// the enum definition when intentionally adding or removing codes.
+    #[test]
+    fn all_diagnostic_codes_is_exhaustive() {
+        fn must_be_listed(code: DiagnosticCode) -> bool {
+            use DiagnosticCode::*;
+            match code {
+                XmlParse | XmlSchemaValidation | ValidationMissingElement
+                | ValidationMissingAttribute | ValidationInvalidAttribute
+                | ValidationUnsupportedKind | ValidationDuplicateId
+                | ValidationDuplicateContextObject | ValidationEmptyCollection
+                | ValidationCountMismatch | ValidationIncompatibleAttributes
+                | ValidationMissingContext | ValidationInvalidReference
+                | ValidationInvalidDirection | ValidationNumericParse
+                | ValidationEmptyValue | ValidationSingletonViolation
+                | ValidationRequireEither | ValidationWrongPipeline
+                | ValidationDynamicFeatures | ExpressionEmpty | ExpressionLex
+                | ExpressionUnsupportedConstruct | ExpressionStrictEquality
+                | ExpressionParseMismatch | ExpressionUnexpectedToken
+                | ExpressionInvalidLvalue | ExpressionTypeCoercion
+                | ExpressionGoTernaryUnsupported | ImportFileNotFound
+                | ImportKindMismatch | ImportNotForge | ImportReadError
+                | ManifestCircularDependency | ManifestIo | GenerateInvalidConfig
+                | GenerateTemplateLoad | GenerateTemplateRender | IoFilesystem
+                | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
+                | CliWriteOutput | CliCreateOutputDir | CliScxmlParse
+                | CliScxmlGenerate | CliDynamicFeatures | CliMissingMetadataField
+                | CliNotADirectory | CliInvalidFormatOption | CliJsonSerialization
+                | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
+                | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
+                | MeshDeployDuplicateMachine | MeshExternalRead | MeshExternalParse
+                | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
+                | MeshExternalEmptyEventGroup
+                | MeshExternalNamedReferenceWithoutConfig
+                | MeshExternalReservedSomeipIdKeys
+                | MeshExternalSomeipFieldOnNonSomeipTransport
+                | MeshExternalConflictingEventSchema
+                | MeshExternalConflictingEventFieldKinds
+                | MeshExternalEmptyEventEntry | MeshTopologyUnresolvedTargets
+                | MeshTopologyMachineNotFound | MeshTopologyReceiverNotDeclared
+                | MeshTopologyAbsoluteSourcePath | MeshTopologyReceiverSourceRead
+                | MeshTopologyReceiverSourceParse | MeshTopologyUncoveredEvents
+                | MeshTopologyPatternCapabilityViolation
+                | MeshTopologyMissingBindingField | MeshTopologyInvalidBindingField
+                | MeshTopologyEventBindingUnused | MeshCodegenUnsupportedLanguage
+                | MeshCodegenUnsupportedTransport | MeshCodegenTemplateRead
+                | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
+                | MeshIo => true,
+            }
+        }
+        for &code in ALL_DIAGNOSTIC_CODES {
+            assert!(
+                must_be_listed(code),
+                "{code:?} is in ALL_DIAGNOSTIC_CODES but missing from \
+                 the exhaustive match — paste-typo?",
+            );
+        }
+        assert_eq!(
+            ALL_DIAGNOSTIC_CODES.len(),
+            86,
+            "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
+             expected 86 distinct variants to match the DiagnosticCode \
+             enum.",
+        );
+    }
+
     /// Each variant's serde-rendered slash-path must match its
     /// `as_str()` form. The id hash feeds on `as_str`, the wire
     /// contract feeds on serde; a silent rename on one side (or a
