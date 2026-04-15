@@ -1282,6 +1282,34 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_deadline_scheduler_verification COMMAND mesh_deadline_scheduler_test)
 
+    # ── MeshDispatch unit tests (SCE_MESH.md §9.5 G1) ────────────
+    # Pure unit tests on the envelope-to-engine dispatch helper used by
+    # ShmChannel::drain, TransportRouter::onIncoming, and local
+    # TransportRouter::route_send. Locks in the inbound-vs-outbound pattern
+    # classification so `RpcRequest` stays deliverable on the receiver side
+    # (a prior revision rejected it, which hid the §9.5 request path end-to-end).
+    add_executable(mesh_dispatch_test
+        mesh/MeshDispatchTest.cpp
+    )
+
+    target_include_directories(mesh_dispatch_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_dispatch_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_dispatch_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_dispatch_test)
+
+    add_test(NAME mesh_dispatch_verification COMMAND mesh_dispatch_test)
+
     # Generate brake_sm.h from brake.scxml
     add_custom_command(
         OUTPUT "${MESH_OUTPUT_DIR}/brake_sm.h"
