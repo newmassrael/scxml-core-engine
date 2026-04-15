@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/422/test422_child2.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,12 +7,14 @@ package com.sce.generated.test422
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test422Child2State : State {
     data object Sub2 : Test422Child2State
     data object SubFinal2 : Test422Child2State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test422Child2Event : Event {
@@ -72,6 +75,8 @@ class Test422Child2StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test422Child2State,
@@ -98,12 +103,15 @@ class Test422Child2StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test422Child2State) {
         when (state) {
             is Test422Child2State.Sub2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub2")) return
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("invokeS12", "")
             }
@@ -129,6 +137,7 @@ class Test422Child2StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test422Child2State,

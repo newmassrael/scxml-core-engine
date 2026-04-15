@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/401/test401.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test401
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test401State : State {
@@ -13,6 +15,7 @@ sealed interface Test401State : State {
     data object Pass : Test401State
     data object S0 : Test401State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test401Event : Event {
@@ -83,6 +86,7 @@ class Test401StateMachine(
         is Test401Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -179,6 +183,7 @@ class Test401StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test401State,
@@ -206,6 +211,7 @@ class Test401StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test401State) {
         when (state) {
@@ -224,7 +230,11 @@ class Test401StateMachine(
             is Test401State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test401Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+
+
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test401Event.Error.Execution, EventMetadata.platform())
             }
@@ -247,6 +257,7 @@ class Test401StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test401State,

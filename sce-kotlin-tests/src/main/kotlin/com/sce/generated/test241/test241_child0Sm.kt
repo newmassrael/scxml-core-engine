@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/241/test241_child0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,12 +7,14 @@ package com.sce.generated.test241
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test241Child0State : State {
     data object Sub01 : Test241Child0State
     data object SubFinal1 : Test241Child0State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test241Child0Event : Event {
@@ -81,6 +84,7 @@ class Test241Child0StateMachine(
         is Test241Child0Event.Success -> "success"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -184,6 +188,7 @@ class Test241Child0StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test241Child0State,
@@ -215,6 +220,7 @@ class Test241Child0StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test241Child0State) {
         when (state) {
@@ -244,6 +250,7 @@ class Test241Child0StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test241Child0State,
@@ -252,10 +259,14 @@ class Test241Child0StateMachine(
         when (source) {
         is Test241Child0State.Sub01 -> when {
             event == null && safeEvaluateGuard("Var1 == 1") -> {
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
             }
             event == null -> {
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("failure", "")
             }

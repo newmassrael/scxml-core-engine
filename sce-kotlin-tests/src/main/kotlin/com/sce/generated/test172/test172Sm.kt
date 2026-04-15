@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/172/test172.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test172
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test172State : State {
@@ -13,6 +15,7 @@ sealed interface Test172State : State {
     data object Pass : Test172State
     data object S0 : Test172State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test172Event : Event {
@@ -82,6 +85,7 @@ class Test172StateMachine(
         is Test172Event.Event2 -> "event2"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -185,6 +189,7 @@ class Test172StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test172State,
@@ -210,6 +215,7 @@ class Test172StateMachine(
         else -> TransitionResult.External(Test172State.Fail, Test172State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test172State) {
         when (state) {
@@ -228,7 +234,11 @@ class Test172StateMachine(
             is Test172State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             executeAssign("Var1", "'event2'")
+
+
             // W3C SCXML 6.2: Dynamic event name evaluation (test172)
             run {
                 ensureScriptEngine()
@@ -267,6 +277,7 @@ class Test172StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test172State,

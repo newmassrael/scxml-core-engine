@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/423/test423.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test423
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test423State : State {
     data object S0 : Test423State
     data object S1 : Test423State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test423Event : Event {
@@ -69,6 +72,8 @@ class Test423StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test423State,
@@ -101,6 +106,7 @@ class Test423StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test423State) {
         when (state) {
@@ -119,8 +125,13 @@ class Test423StateMachine(
             is Test423State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test423Event.ExternalEvent1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+
+
             scheduleSend("__send_1", 1000L, Test423Event.ExternalEvent2)
+
             raiseInternal(Test423Event.InternalEvent)
             }
             is Test423State.S1 -> {
@@ -149,6 +160,7 @@ class Test423StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test423State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/237/test237.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test237
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test237State : State {
     data object S0 : Test237State
     data object S1 : Test237State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test237Event : Event {
@@ -93,6 +96,8 @@ class Test237StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test237State,
@@ -123,6 +128,7 @@ class Test237StateMachine(
         else -> TransitionResult.External(Test237State.Pass, Test237State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test237State) {
         when (state) {
@@ -141,6 +147,8 @@ class Test237StateMachine(
             is Test237State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test237Event.Timeout1)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -156,6 +164,8 @@ class Test237StateMachine(
             is Test237State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             scheduleSend("__send_1", 1500L, Test237Event.Timeout2)
             }
             else -> {}
@@ -184,6 +194,7 @@ class Test237StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test237State,

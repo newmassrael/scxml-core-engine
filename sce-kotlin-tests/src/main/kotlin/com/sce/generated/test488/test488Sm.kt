@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/488/test488.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test488
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test488State : State {
     data object S02 : Test488State
     data object S1 : Test488State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test488Event : Event {
@@ -108,6 +111,7 @@ class Test488StateMachine(
         is Test488Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -204,6 +208,7 @@ class Test488StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test488State,
@@ -268,6 +273,7 @@ class Test488StateMachine(
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test488State.Fail, Test488State.S1)
     }
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test488State) {
@@ -351,6 +357,7 @@ class Test488StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test488State,

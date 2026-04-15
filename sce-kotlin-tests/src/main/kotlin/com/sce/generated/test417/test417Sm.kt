@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/417/test417.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test417
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -20,6 +22,7 @@ sealed interface Test417State : State {
     data object S1p121 : Test417State
     data object S1p12final : Test417State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test417Event : Event {
@@ -129,6 +132,8 @@ class Test417StateMachine(
         is Test417State.S1p12final -> 7
         else -> 0
     }
+
+
 
 
 
@@ -242,6 +247,7 @@ class Test417StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test417State) {
         when (state) {
@@ -260,6 +266,8 @@ class Test417StateMachine(
             is Test417State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             scheduleSend("__send_0", 1000L, Test417Event.Timeout)
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
@@ -386,6 +394,7 @@ class Test417StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test417State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/311/test311.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test311
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test311State : State {
@@ -13,6 +15,7 @@ sealed interface Test311State : State {
     data object Pass : Test311State
     data object S0 : Test311State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test311Event : Event {
@@ -80,6 +83,7 @@ class Test311StateMachine(
         is Test311Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -176,6 +180,7 @@ class Test311StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test311State,
@@ -201,6 +206,7 @@ class Test311StateMachine(
         else -> TransitionResult.External(Test311State.Fail, Test311State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test311State) {
         when (state) {
@@ -219,7 +225,11 @@ class Test311StateMachine(
             is Test311State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test311Event.Timeout)
+
+
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test311Event.Error.Execution, EventMetadata.platform())
             }
@@ -242,6 +252,7 @@ class Test311StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test311State,

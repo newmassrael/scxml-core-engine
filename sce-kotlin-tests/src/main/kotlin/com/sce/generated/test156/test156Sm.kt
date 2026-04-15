@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/156/test156.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test156
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test156State : State {
@@ -13,6 +15,7 @@ sealed interface Test156State : State {
     data object Pass : Test156State
     data object S0 : Test156State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test156Event : Event {
@@ -79,6 +82,7 @@ class Test156StateMachine(
         is Test156Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -194,6 +198,7 @@ class Test156StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test156State,
@@ -225,6 +230,7 @@ class Test156StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test156State) {
         when (state) {
@@ -243,13 +249,19 @@ class Test156StateMachine(
             is Test156State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var3", "Var2", "") {
+
+
             engine.assign(sid, "Var1", "Var1 + 1")
+
+
             engine.assign(sid, "Var5", "undefined.invalidProperty")
                     }
                 } catch (e: Exception) {
@@ -276,6 +288,7 @@ class Test156StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test156State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/148/test148.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test148
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test148State : State {
@@ -13,6 +15,7 @@ sealed interface Test148State : State {
     data object Pass : Test148State
     data object S0 : Test148State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test148Event : Event {
@@ -91,6 +94,7 @@ class Test148StateMachine(
         is Test148Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -194,6 +198,7 @@ class Test148StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test148State,
@@ -219,6 +224,7 @@ class Test148StateMachine(
         else -> TransitionResult.External(Test148State.Fail, Test148State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test148State) {
         when (state) {
@@ -237,16 +243,28 @@ class Test148StateMachine(
             is Test148State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             if (safeEvaluateGuard("false")) {
+
             raiseInternal(Test148Event.Foo)
+
+
             executeAssign("Var1", "Var1 + 1")
             } else if (safeEvaluateGuard("false")) {
+
             raiseInternal(Test148Event.Bar)
+
+
             executeAssign("Var1", "Var1 + 1")
             } else {
+
             raiseInternal(Test148Event.Baz)
+
+
             executeAssign("Var1", "Var1 + 1")
             }
+
             raiseInternal(Test148Event.Bat)
             }
             else -> {}
@@ -268,6 +286,7 @@ class Test148StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test148State,

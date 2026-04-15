@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/444/test444.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test444
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test444State : State {
@@ -13,6 +15,7 @@ sealed interface Test444State : State {
     data object Pass : Test444State
     data object S0 : Test444State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test444Event : Event {
@@ -79,6 +82,7 @@ class Test444StateMachine(
         is Test444Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -182,6 +186,7 @@ class Test444StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test444State,
@@ -212,6 +217,7 @@ class Test444StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test444State) {
@@ -251,6 +257,7 @@ class Test444StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test444State,

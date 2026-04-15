@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/186/test186.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test186
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test186State : State {
     data object S0 : Test186State
     data object S1 : Test186State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test186Event : Event {
@@ -86,6 +89,7 @@ class Test186StateMachine(
         is Test186Event.Event1 -> "event1"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -194,6 +198,7 @@ class Test186StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test186State,
@@ -235,6 +240,7 @@ class Test186StateMachine(
         else -> TransitionResult.External(Test186State.Fail, Test186State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test186State) {
         when (state) {
@@ -253,6 +259,8 @@ class Test186StateMachine(
             is Test186State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 5.10: Evaluate params/namelist for event data
             run {
                 ensureScriptEngine()
@@ -263,6 +271,8 @@ class Test186StateMachine(
                 val eventDataE = buildJsonFromParams(paramsE)
                 scheduleSend("__send_0", 1000L, Test186Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = eventDataE))
             }
+
+
             executeAssign("Var1", "2")
             }
             is Test186State.S1 -> {
@@ -291,6 +301,7 @@ class Test186StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test186State,
@@ -299,6 +310,8 @@ class Test186StateMachine(
         when (source) {
         is Test186State.S0 -> when {
             event is Test186Event.Event1 -> {
+
+
             executeAssign("Var2", "_event.data.aParam")
             }
             else -> {}

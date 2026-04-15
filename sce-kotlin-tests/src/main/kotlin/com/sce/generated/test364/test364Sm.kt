@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/364/test364.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test364
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -39,6 +41,7 @@ sealed interface Test364State : State {
     data object S312 : Test364State
     data object S32 : Test364State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test364Event : Event {
@@ -238,6 +241,8 @@ class Test364StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test364State,
@@ -422,6 +427,7 @@ class Test364StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test364State) {
         when (state) {
@@ -440,6 +446,8 @@ class Test364StateMachine(
             is Test364State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             scheduleSend("__send_0", 1000L, Test364Event.Timeout)
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.6: Enter deep initial targets (C++ enterDeepInitialTargets pattern)
@@ -486,6 +494,7 @@ class Test364StateMachine(
             is Test364State.S11p112 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p112")) return
+
             raiseInternal(Test364Event.InS11p112)
             }
             is Test364State.S11p12 -> {
@@ -552,6 +561,7 @@ class Test364StateMachine(
             is Test364State.S21p112 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p112")) return
+
             raiseInternal(Test364Event.InS21p112)
             }
             is Test364State.S21p12 -> {
@@ -763,6 +773,7 @@ class Test364StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test364State,

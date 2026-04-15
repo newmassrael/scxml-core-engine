@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/377/test377.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test377
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test377State : State {
     data object S1 : Test377State
     data object S2 : Test377State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test377Event : Event {
@@ -69,6 +72,8 @@ class Test377StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test377State,
@@ -114,6 +119,7 @@ class Test377StateMachine(
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test377State.Fail, Test377State.S2)
     }
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test377State) {
@@ -161,12 +167,14 @@ class Test377StateMachine(
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+
             raiseInternal(Test377Event.Event1)
                 }
                 // W3C SCXML 3.9: Onexit block 2/2
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+
             raiseInternal(Test377Event.Event2)
                 }
             }
@@ -179,6 +187,7 @@ class Test377StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test377State,

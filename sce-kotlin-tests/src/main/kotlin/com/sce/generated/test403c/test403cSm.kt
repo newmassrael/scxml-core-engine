@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/403/test403c.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test403c
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -19,6 +21,7 @@ sealed interface Test403cState : State {
     data object S0 : Test403cState
     data object S1 : Test403cState
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test403cEvent : Event {
@@ -142,6 +145,7 @@ class Test403cStateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -244,6 +248,7 @@ class Test403cStateMachine(
             invokeId = meta.invokeId
         )
     }
+
 
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
@@ -362,6 +367,7 @@ class Test403cStateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test403cState) {
         when (state) {
@@ -406,7 +412,10 @@ class Test403cStateMachine(
             is Test403cState.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
             raiseInternal(Test403cEvent.Event1)
+
+
             scheduleSend("__send_0", 1000L, Test403cEvent.Timeout)
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
@@ -476,6 +485,7 @@ class Test403cStateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test403cState,
@@ -484,12 +494,15 @@ class Test403cStateMachine(
         when (source) {
         is Test403cState.P0s2 -> when {
             event is Test403cEvent.Event1 -> {
+
             raiseInternal(Test403cEvent.Event2)
             }
             else -> {}
         }
         is Test403cState.P0s4 -> when {
             event != null -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             else -> {}

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/286/test286.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test286
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test286State : State {
@@ -13,6 +15,7 @@ sealed interface Test286State : State {
     data object Pass : Test286State
     data object S0 : Test286State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test286Event : Event {
@@ -80,6 +83,7 @@ class Test286StateMachine(
         is Test286Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -176,6 +180,7 @@ class Test286StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test286State,
@@ -201,6 +206,7 @@ class Test286StateMachine(
         else -> TransitionResult.External(Test286State.Fail, Test286State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test286State) {
         when (state) {
@@ -219,8 +225,11 @@ class Test286StateMachine(
             is Test286State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test286Event.Error.Execution, EventMetadata.platform())
+
             raiseInternal(Test286Event.Foo)
             }
             else -> {}
@@ -242,6 +251,7 @@ class Test286StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test286State,

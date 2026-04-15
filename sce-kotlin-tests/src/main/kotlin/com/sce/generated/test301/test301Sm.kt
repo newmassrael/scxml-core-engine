@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/301/test301.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test301
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test301State : State {
@@ -13,6 +15,7 @@ sealed interface Test301State : State {
     data object Pass : Test301State
     data object S0 : Test301State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test301Event : Event {
@@ -60,6 +63,8 @@ class Test301StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test301State,
@@ -85,6 +90,7 @@ class Test301StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test301State) {
@@ -124,6 +130,7 @@ class Test301StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test301State,

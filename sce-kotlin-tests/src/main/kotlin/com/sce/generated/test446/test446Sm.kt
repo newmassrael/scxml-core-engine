@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/446/test446.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test446
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test446State : State {
     data object S0 : Test446State
     data object S1 : Test446State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test446Event : Event {
@@ -83,6 +86,7 @@ class Test446StateMachine(
         is Test446Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -196,6 +200,7 @@ class Test446StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test446State,
@@ -234,6 +239,7 @@ class Test446StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test446State) {
@@ -280,6 +286,7 @@ class Test446StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test446State,

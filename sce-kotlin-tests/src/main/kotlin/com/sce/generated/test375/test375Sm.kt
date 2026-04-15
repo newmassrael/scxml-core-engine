@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/375/test375.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test375
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test375State : State {
     data object S0 : Test375State
     data object S1 : Test375State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test375Event : Event {
@@ -65,6 +68,8 @@ class Test375StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test375State,
@@ -96,6 +101,7 @@ class Test375StateMachine(
         else -> TransitionResult.External(Test375State.Fail, Test375State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test375State) {
         when (state) {
@@ -118,12 +124,14 @@ class Test375StateMachine(
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+
             raiseInternal(Test375Event.Event1)
                 }
                 // W3C SCXML 3.8: Onentry block 2/2
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+
             raiseInternal(Test375Event.Event2)
                 }
             }
@@ -153,6 +161,7 @@ class Test375StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test375State,

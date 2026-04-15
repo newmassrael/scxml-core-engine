@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/409/test409.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test409
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test409State : State {
     data object S011 : Test409State
     data object S02 : Test409State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test409Event : Event {
@@ -91,6 +94,8 @@ class Test409StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test409State,
@@ -146,6 +151,7 @@ class Test409StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test409State) {
         when (state) {
@@ -164,6 +170,8 @@ class Test409StateMachine(
             is Test409State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test409Event.Timeout)
             }
             is Test409State.S01 -> {
@@ -196,7 +204,10 @@ class Test409StateMachine(
             }
             is Test409State.S01 -> {
                 activeStateIds.remove("s01")
+
+
             if (isStateActive("s011")) {
+
             raiseInternal(Test409Event.Event1)
             }
             }
@@ -209,6 +220,7 @@ class Test409StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test409State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/336/test336.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test336
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test336State : State {
     data object S0 : Test336State
     data object S1 : Test336State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test336Event : Event {
@@ -93,6 +96,7 @@ class Test336StateMachine(
         is Test336Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -189,6 +193,7 @@ class Test336StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test336State,
@@ -224,6 +229,7 @@ class Test336StateMachine(
         else -> TransitionResult.External(Test336State.Fail, Test336State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test336State) {
         when (state) {
@@ -242,11 +248,15 @@ class Test336StateMachine(
             is Test336State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test336Event.Foo, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             is Test336State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             send(Test336Event.Baz, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -271,6 +281,7 @@ class Test336StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test336State,
@@ -279,6 +290,8 @@ class Test336StateMachine(
         when (source) {
         is Test336State.S0 -> when {
             event is Test336Event.Foo -> {
+
+
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_event.origin")
             var _resolvedTarget: String? = null
             run resolveTarget@{

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/242/test242.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test242
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test242State : State {
     data object S02 : Test242State
     data object S03 : Test242State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test242Event : Event {
@@ -103,6 +106,8 @@ class Test242StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test242State,
@@ -149,6 +154,7 @@ class Test242StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test242State) {
         when (state) {
@@ -167,6 +173,8 @@ class Test242StateMachine(
             is Test242State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test242Event.Timeout1)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -182,6 +190,8 @@ class Test242StateMachine(
             is Test242State.S02 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
+
+
             scheduleSend("__send_1", 1000L, Test242Event.Timeout2)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -197,6 +207,8 @@ class Test242StateMachine(
             is Test242State.S03 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s03")) return
+
+
             scheduleSend("__send_2", 1000L, Test242Event.Timeout3)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -246,6 +258,7 @@ class Test242StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test242State,

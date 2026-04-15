@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/403/test403a.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test403a
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test403aState : State {
     data object S01 : Test403aState
     data object S02 : Test403aState
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test403aEvent : Event {
@@ -85,6 +88,8 @@ class Test403aStateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test403aState,
@@ -148,6 +153,7 @@ class Test403aStateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test403aState) {
         when (state) {
@@ -166,16 +172,20 @@ class Test403aStateMachine(
             is Test403aState.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test403aEvent.Timeout)
             }
             is Test403aState.S01 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
+
             raiseInternal(Test403aEvent.Event1)
             }
             is Test403aState.S02 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
+
             raiseInternal(Test403aEvent.Event2)
             }
             else -> {}
@@ -203,6 +213,7 @@ class Test403aStateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test403aState,

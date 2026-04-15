@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/355/test355.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test355
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test355State : State {
     data object S0 : Test355State
     data object S1 : Test355State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test355Event : Event {
@@ -64,6 +67,8 @@ class Test355StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test355State,
@@ -96,6 +101,7 @@ class Test355StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test355State) {
@@ -142,6 +148,7 @@ class Test355StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test355State,

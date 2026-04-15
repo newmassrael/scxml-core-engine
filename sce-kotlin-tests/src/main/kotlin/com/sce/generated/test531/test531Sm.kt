@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/531/test531.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test531
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test531State : State {
@@ -13,6 +15,7 @@ sealed interface Test531State : State {
     data object Pass : Test531State
     data object S0 : Test531State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test531Event : Event {
@@ -79,6 +82,8 @@ class Test531StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test531State,
@@ -100,6 +105,7 @@ class Test531StateMachine(
         else -> TransitionResult.External(Test531State.Fail, Test531State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test531State) {
         when (state) {
@@ -118,7 +124,12 @@ class Test531StateMachine(
             is Test531State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 3000L, Test531Event.Timeout)
+
+
+
             // W3C SCXML C.2: BasicHTTP send with static params
             run {
                 val httpParams = mutableMapOf<String, List<String>>()
@@ -145,6 +156,7 @@ class Test531StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test531State,

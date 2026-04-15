@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/230/test230_child0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,12 +7,14 @@ package com.sce.generated.test230
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test230Child0State : State {
     data object Sub0 : Test230Child0State
     data object SubFinal : Test230Child0State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test230Child0Event : Event {
@@ -79,6 +82,7 @@ class Test230Child0StateMachine(
         is Test230Child0Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -175,6 +179,7 @@ class Test230Child0StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test230Child0State,
@@ -200,14 +205,19 @@ class Test230Child0StateMachine(
         else -> TransitionResult.External(Test230Child0State.SubFinal, Test230Child0State.Sub0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test230Child0State) {
         when (state) {
             is Test230Child0State.Sub0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub0")) return
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childToParent", "")
+
+
             scheduleSend("__send_1", 2000L, Test230Child0Event.Timeout)
             }
             is Test230Child0State.SubFinal -> {
@@ -232,6 +242,7 @@ class Test230Child0StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test230Child0State,
@@ -240,30 +251,37 @@ class Test230Child0StateMachine(
         when (source) {
         is Test230Child0State.Sub0 -> when {
             event is Test230Child0Event.ChildToParent -> {
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("name is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.name")?.toString() ?: ""))
             } catch (_: Exception) {}
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("type is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.type")?.toString() ?: ""))
             } catch (_: Exception) {}
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("sendid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.sendid")?.toString() ?: ""))
             } catch (_: Exception) {}
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("origin is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.origin")?.toString() ?: ""))
             } catch (_: Exception) {}
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("origintype is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.origintype")?.toString() ?: ""))
             } catch (_: Exception) {}
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("invokeid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.invokeid")?.toString() ?: ""))
             } catch (_: Exception) {}
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("data is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.data")?.toString() ?: ""))

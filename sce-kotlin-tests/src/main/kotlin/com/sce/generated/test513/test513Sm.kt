@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/513/test513.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test513
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test513State : State {
@@ -13,6 +15,7 @@ sealed interface Test513State : State {
     data object Pass : Test513State
     data object S0 : Test513State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test513Event : Event {
@@ -83,6 +86,7 @@ class Test513StateMachine(
         is Test513Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -179,6 +183,7 @@ class Test513StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test513State,
@@ -205,12 +210,14 @@ class Test513StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test513State) {
         when (state) {
             is Test513State.Fail -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\"")?.toString() ?: ""))
@@ -221,6 +228,7 @@ class Test513StateMachine(
             is Test513State.Pass -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\"")?.toString() ?: ""))
@@ -231,7 +239,12 @@ class Test513StateMachine(
             is Test513State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 30000L, Test513Event.Timeout)
+
+
+
             performHttpSend("http://localhost:8080/test", "test", "", emptyMap(), "__send_1")
             }
             else -> {}
@@ -253,6 +266,7 @@ class Test513StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test513State,
@@ -261,12 +275,14 @@ class Test513StateMachine(
         when (source) {
         is Test513State.S0 -> when {
             event is Test513Event.Test -> {
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513: Received HTTP event - server responded with 200 OK\"")?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             event is Test513Event.Timeout -> {
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513: Timeout - no HTTP event received\"")?.toString() ?: ""))

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/331/test331.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test331
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -18,6 +20,7 @@ sealed interface Test331State : State {
     data object S4 : Test331State
     data object S5 : Test331State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test331Event : Event {
@@ -105,6 +108,7 @@ class Test331StateMachine(
         is Test331Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -206,6 +210,7 @@ class Test331StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test331State,
@@ -284,6 +289,7 @@ class Test331StateMachine(
         else -> TransitionResult.External(Test331State.Fail, Test331State.S4)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test331State) {
         when (state) {
@@ -302,6 +308,7 @@ class Test331StateMachine(
             is Test331State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
             raiseInternal(Test331Event.Foo)
             }
             is Test331State.S1 -> {
@@ -311,6 +318,8 @@ class Test331StateMachine(
             is Test331State.S2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
+
+
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test331Event.Error.Execution, EventMetadata.platform())
             }
@@ -321,6 +330,8 @@ class Test331StateMachine(
             is Test331State.S4 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s4")) return
+
+
             send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             is Test331State.S5 -> {
@@ -361,6 +372,7 @@ class Test331StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test331State,
@@ -369,18 +381,24 @@ class Test331StateMachine(
         when (source) {
         is Test331State.S0 -> when {
             event is Test331Event.Foo -> {
+
+
             executeAssign("Var1", "_event.type")
             }
             else -> {}
         }
         is Test331State.S2 -> when {
             (event is Test331Event.Error || event is Test331Event.Error.Execution) -> {
+
+
             executeAssign("Var1", "_event.type")
             }
             else -> {}
         }
         is Test331State.S4 -> when {
             event is Test331Event.Foo -> {
+
+
             executeAssign("Var1", "_event.type")
             }
             else -> {}

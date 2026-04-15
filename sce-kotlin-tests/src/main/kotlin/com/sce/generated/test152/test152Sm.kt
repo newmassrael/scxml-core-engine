@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/152/test152.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test152
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test152State : State {
     data object S1 : Test152State
     data object S2 : Test152State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test152Event : Event {
@@ -93,6 +96,7 @@ class Test152StateMachine(
         is Test152Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -218,6 +222,7 @@ class Test152StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test152State,
@@ -270,6 +275,7 @@ class Test152StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test152State) {
         when (state) {
@@ -288,15 +294,21 @@ class Test152StateMachine(
             is Test152State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 4.6: Missing required foreach attribute (array/item)
             raiseInternal(Test152Event.Error.Execution)
+
             raiseInternal(Test152Event.Foo)
             }
             is Test152State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             // W3C SCXML 4.6: Missing required foreach attribute (array/item)
             raiseInternal(Test152Event.Error.Execution)
+
             raiseInternal(Test152Event.Bar)
             }
             is Test152State.S2 -> {
@@ -328,6 +340,7 @@ class Test152StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test152State,

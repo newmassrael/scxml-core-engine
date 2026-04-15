@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/223/test223.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test223
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test223State : State {
     data object S0 : Test223State
     data object S1 : Test223State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test223Event : Event {
@@ -96,6 +99,7 @@ class Test223StateMachine(
         is Test223Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -197,6 +201,7 @@ class Test223StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test223State,
@@ -236,6 +241,7 @@ class Test223StateMachine(
         else -> TransitionResult.External(Test223State.S1, Test223State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test223State) {
         when (state) {
@@ -254,6 +260,8 @@ class Test223StateMachine(
             is Test223State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test223Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -303,6 +311,7 @@ class Test223StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test223State,

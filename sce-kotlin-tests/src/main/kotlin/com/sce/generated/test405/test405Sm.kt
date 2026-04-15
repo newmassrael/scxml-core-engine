@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/405/test405.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test405
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -23,6 +25,7 @@ sealed interface Test405State : State {
     data object S03 : Test405State
     data object S04 : Test405State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test405Event : Event {
@@ -141,6 +144,8 @@ class Test405StateMachine(
         is Test405State.S04 -> 3
         else -> 0
     }
+
+
 
 
 
@@ -311,6 +316,7 @@ class Test405StateMachine(
         else -> TransitionResult.External(Test405State.Fail, Test405State.S04)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test405State) {
         when (state) {
@@ -329,6 +335,8 @@ class Test405StateMachine(
             is Test405State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test405Event.Timeout)
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
@@ -439,6 +447,7 @@ class Test405StateMachine(
             }
             is Test405State.S01p11 -> {
                 activeStateIds.remove("s01p11")
+
             raiseInternal(Test405Event.Event2)
             }
             is Test405State.S01p12 -> {
@@ -449,6 +458,7 @@ class Test405StateMachine(
             }
             is Test405State.S01p21 -> {
                 activeStateIds.remove("s01p21")
+
             raiseInternal(Test405Event.Event1)
             }
             is Test405State.S01p22 -> {
@@ -466,6 +476,7 @@ class Test405StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test405State,
@@ -474,12 +485,14 @@ class Test405StateMachine(
         when (source) {
         is Test405State.S01p11 -> when {
             event == null -> {
+
             raiseInternal(Test405Event.Event3)
             }
             else -> {}
         }
         is Test405State.S01p21 -> when {
             event == null -> {
+
             raiseInternal(Test405Event.Event4)
             }
             else -> {}

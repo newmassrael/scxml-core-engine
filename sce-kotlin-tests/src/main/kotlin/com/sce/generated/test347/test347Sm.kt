@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/347/test347.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test347
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test347State : State {
     data object S01 : Test347State
     data object S02 : Test347State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test347Event : Event {
@@ -115,6 +118,8 @@ class Test347StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test347State,
@@ -174,6 +179,7 @@ class Test347StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test347State) {
         when (state) {
@@ -192,6 +198,8 @@ class Test347StateMachine(
             is Test347State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 20000L, Test347Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -211,6 +219,8 @@ class Test347StateMachine(
             is Test347State.S02 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
+
+
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("child", "parentToChild")
             }
@@ -243,6 +253,7 @@ class Test347StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test347State,

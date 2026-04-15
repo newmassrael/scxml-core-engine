@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/342/test342.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test342
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test342State : State {
     data object S0 : Test342State
     data object S1 : Test342State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test342Event : Event {
@@ -86,6 +89,7 @@ class Test342StateMachine(
         is Test342Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -194,6 +198,7 @@ class Test342StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test342State,
@@ -235,6 +240,7 @@ class Test342StateMachine(
         else -> TransitionResult.External(Test342State.Fail, Test342State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test342State) {
         when (state) {
@@ -253,6 +259,8 @@ class Test342StateMachine(
             is Test342State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 6.2: Dynamic event name evaluation (test172)
             run {
                 ensureScriptEngine()
@@ -298,6 +306,7 @@ class Test342StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test342State,
@@ -306,6 +315,8 @@ class Test342StateMachine(
         when (source) {
         is Test342State.S0 -> when {
             event is Test342Event.Foo -> {
+
+
             executeAssign("Var2", "_event.name")
             }
             else -> {}

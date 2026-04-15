@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/505/test505.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test505
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test505State : State {
     data object S2 : Test505State
     data object S3 : Test505State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test505Event : Event {
@@ -108,6 +111,7 @@ class Test505StateMachine(
         is Test505Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -225,6 +229,7 @@ class Test505StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test505State,
@@ -283,6 +288,7 @@ class Test505StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test505State) {
         when (state) {
@@ -301,7 +307,9 @@ class Test505StateMachine(
             is Test505State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
             raiseInternal(Test505Event.Foo)
+
             raiseInternal(Test505Event.Bar)
             }
             is Test505State.S11 -> {
@@ -331,10 +339,14 @@ class Test505StateMachine(
             }
             is Test505State.S1 -> {
                 activeStateIds.remove("s1")
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             is Test505State.S11 -> {
                 activeStateIds.remove("s11")
+
+
             executeAssign("Var2", "Var2 + 1")
             }
             is Test505State.S2 -> {
@@ -346,6 +358,7 @@ class Test505StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test505State,
@@ -354,12 +367,16 @@ class Test505StateMachine(
         when (source) {
         is Test505State.S1 -> when {
             event is Test505Event.Foo -> {
+
+
             executeAssign("Var3", "Var3 + 1")
             }
             else -> {}
         }
         is Test505State.S11 -> when {
             event is Test505Event.Foo -> {
+
+
             executeAssign("Var3", "Var3 + 1")
             }
             else -> {}

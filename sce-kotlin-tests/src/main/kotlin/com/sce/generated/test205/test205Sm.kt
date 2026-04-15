@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/205/test205.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test205
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test205State : State {
     data object S0 : Test205State
     data object S1 : Test205State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test205Event : Event {
@@ -89,6 +92,7 @@ class Test205StateMachine(
         is Test205Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -190,6 +194,7 @@ class Test205StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test205State,
@@ -231,6 +236,7 @@ class Test205StateMachine(
         else -> TransitionResult.External(Test205State.Fail, Test205State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test205State) {
         when (state) {
@@ -249,6 +255,8 @@ class Test205StateMachine(
             is Test205State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 5.10: Evaluate params/namelist for event data
             run {
                 ensureScriptEngine()
@@ -259,6 +267,8 @@ class Test205StateMachine(
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test205Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = eventDataE))
             }
+
+
             send(Test205Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             is Test205State.S1 -> {
@@ -287,6 +297,7 @@ class Test205StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test205State,
@@ -295,6 +306,8 @@ class Test205StateMachine(
         when (source) {
         is Test205State.S0 -> when {
             event is Test205Event.Event1 -> {
+
+
             executeAssign("Var1", "_event.data.aParam")
             }
             else -> {}

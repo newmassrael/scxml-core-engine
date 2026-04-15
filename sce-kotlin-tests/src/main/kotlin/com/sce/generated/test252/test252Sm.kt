@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/252/test252.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test252
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test252State : State {
     data object S01 : Test252State
     data object S02 : Test252State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test252Event : Event {
@@ -112,6 +115,8 @@ class Test252StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test252State,
@@ -160,6 +165,7 @@ class Test252StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test252State) {
         when (state) {
@@ -178,11 +184,15 @@ class Test252StateMachine(
             is Test252State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test252Event.Timeout)
             }
             is Test252State.S01 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
+
+
             send(Test252Event.Foo, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -228,6 +238,7 @@ class Test252StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test252State,

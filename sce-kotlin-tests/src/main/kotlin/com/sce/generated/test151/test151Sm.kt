@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/151/test151.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test151
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test151State : State {
     data object S1 : Test151State
     data object S2 : Test151State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test151Event : Event {
@@ -96,6 +99,7 @@ class Test151StateMachine(
         is Test151Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -209,6 +213,7 @@ class Test151StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test151State,
@@ -262,6 +267,7 @@ class Test151StateMachine(
         else -> TransitionResult.External(Test151State.S2, Test151State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test151State) {
         when (state) {
@@ -280,6 +286,8 @@ class Test151StateMachine(
             is Test151State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
@@ -291,11 +299,14 @@ class Test151StateMachine(
                     raiseInternal(Test151Event.Error.Execution)
                 }
             }
+
             raiseInternal(Test151Event.Foo)
             }
             is Test151State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
@@ -307,6 +318,7 @@ class Test151StateMachine(
                     raiseInternal(Test151Event.Error.Execution)
                 }
             }
+
             raiseInternal(Test151Event.Bar)
             }
             is Test151State.S2 -> {
@@ -338,6 +350,7 @@ class Test151StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test151State,

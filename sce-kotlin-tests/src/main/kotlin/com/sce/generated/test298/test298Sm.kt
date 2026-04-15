@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/298/test298.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test298
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test298State : State {
     data object S01 : Test298State
     data object S02 : Test298State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test298Event : Event {
@@ -109,6 +112,7 @@ class Test298StateMachine(
         is Test298Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -212,6 +216,7 @@ class Test298StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test298State,
@@ -264,6 +269,7 @@ class Test298StateMachine(
         else -> TransitionResult.External(Test298State.Fail, Test298State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test298State) {
         when (state) {
@@ -282,6 +288,8 @@ class Test298StateMachine(
             is Test298State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test298Event.Timeout)
             }
             is Test298State.S01 -> {
@@ -300,12 +308,9 @@ class Test298StateMachine(
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
                     var doneParamStructuralError = false
-                    try {
-                        doneParams["Var3"] = engineDD.evaluateExpr(sidDD, "")
-                    } catch (_: Exception) {
-                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
-                        raiseInternal(Test298Event.Error.Execution, EventMetadata.platform())
-                    }
+                    // W3C SCXML 5.7: Empty location — structural error (C++ DoneDataHelper returns false)
+                    raiseInternal(Test298Event.Error.Execution, EventMetadata.platform())
+                    doneParamStructuralError = true
                     // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
                     if (doneParamStructuralError) return@run
                     if (doneParams.isNotEmpty()) {
@@ -340,6 +345,7 @@ class Test298StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test298State,

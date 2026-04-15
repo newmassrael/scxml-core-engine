@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/350/test350.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test350
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test350State : State {
@@ -13,6 +15,7 @@ sealed interface Test350State : State {
     data object Pass : Test350State
     data object S0 : Test350State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test350Event : Event {
@@ -85,6 +88,7 @@ class Test350StateMachine(
         is Test350Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -195,6 +199,7 @@ class Test350StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test350State,
@@ -220,6 +225,7 @@ class Test350StateMachine(
         else -> TransitionResult.External(Test350State.Fail, Test350State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test350State) {
         when (state) {
@@ -238,7 +244,11 @@ class Test350StateMachine(
             is Test350State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 5000L, Test350Event.Timeout)
+
+
             send(Test350Event.S0Event, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -260,6 +270,7 @@ class Test350StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test350State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/250/test250_child0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test250
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test250Child0State : State {
@@ -13,6 +15,7 @@ sealed interface Test250Child0State : State {
     data object Sub01 : Test250Child0State
     data object SubFinal : Test250Child0State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test250Child0Event : Event {
@@ -91,6 +94,7 @@ class Test250Child0StateMachine(
         is Test250Child0Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -187,6 +191,7 @@ class Test250Child0StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test250Child0State,
@@ -217,12 +222,15 @@ class Test250Child0StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test250Child0State) {
         when (state) {
             is Test250Child0State.Sub0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub0")) return
+
+
             scheduleSend("__send_0", 2000L, Test250Child0Event.Timeout)
             }
             is Test250Child0State.Sub01 -> {
@@ -232,6 +240,7 @@ class Test250Child0StateMachine(
             is Test250Child0State.SubFinal -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal")) return
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'entering final state, invocation was not cancelled'")?.toString() ?: ""))
@@ -248,6 +257,7 @@ class Test250Child0StateMachine(
         when (state) {
             is Test250Child0State.Sub0 -> {
                 activeStateIds.remove("sub0")
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub0'")?.toString() ?: ""))
@@ -255,6 +265,7 @@ class Test250Child0StateMachine(
             }
             is Test250Child0State.Sub01 -> {
                 activeStateIds.remove("sub01")
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub01'")?.toString() ?: ""))
@@ -266,6 +277,7 @@ class Test250Child0StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test250Child0State,

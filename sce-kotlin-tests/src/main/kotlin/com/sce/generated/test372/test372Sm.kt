@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/372/test372.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test372
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test372State : State {
     data object S0 : Test372State
     data object S0final : Test372State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test372Event : Event {
@@ -104,6 +107,7 @@ class Test372StateMachine(
         is Test372Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -207,6 +211,7 @@ class Test372StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test372State,
@@ -238,6 +243,7 @@ class Test372StateMachine(
         else -> TransitionResult.External(Test372State.Fail, Test372State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test372State) {
         when (state) {
@@ -256,11 +262,15 @@ class Test372StateMachine(
             is Test372State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test372Event.Timeout)
             }
             is Test372State.S0final -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0final")) return
+
+
             executeAssign("Var1", "2")
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test372Event.Done.State.S0, EventMetadata.platform())
@@ -283,11 +293,14 @@ class Test372StateMachine(
             }
             is Test372State.S0final -> {
                 activeStateIds.remove("s0final")
+
+
             executeAssign("Var1", "3")
             }
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test372State,

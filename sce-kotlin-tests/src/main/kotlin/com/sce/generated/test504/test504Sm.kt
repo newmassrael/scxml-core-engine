@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/504/test504.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test504
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -21,6 +23,7 @@ sealed interface Test504State : State {
     data object S5 : Test504State
     data object S6 : Test504State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test504Event : Event {
@@ -143,6 +146,7 @@ class Test504StateMachine(
         is Test504Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -276,6 +280,7 @@ class Test504StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test504State,
@@ -362,6 +367,7 @@ class Test504StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test504State) {
         when (state) {
@@ -396,7 +402,9 @@ class Test504StateMachine(
             is Test504State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
             raiseInternal(Test504Event.Foo)
+
             raiseInternal(Test504Event.Bar)
             }
             is Test504State.S2 -> {
@@ -451,6 +459,8 @@ class Test504StateMachine(
                     onExit(desc)
                 }
                 activeStateIds.remove("p")
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             is Test504State.Pass -> {
@@ -458,10 +468,14 @@ class Test504StateMachine(
             }
             is Test504State.Ps1 -> {
                 activeStateIds.remove("ps1")
+
+
             executeAssign("Var2", "Var2 + 1")
             }
             is Test504State.Ps2 -> {
                 activeStateIds.remove("ps2")
+
+
             executeAssign("Var3", "Var3 + 1")
             }
             is Test504State.S1 -> {
@@ -469,6 +483,8 @@ class Test504StateMachine(
             }
             is Test504State.S2 -> {
                 activeStateIds.remove("s2")
+
+
             executeAssign("Var5", "Var5 + 1")
             }
             is Test504State.S3 -> {
@@ -486,6 +502,7 @@ class Test504StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test504State,
@@ -494,18 +511,24 @@ class Test504StateMachine(
         when (source) {
         is Test504State.P -> when {
             event is Test504Event.Foo -> {
+
+
             executeAssign("Var4", "Var4 + 1")
             }
             else -> {}
         }
         is Test504State.Ps1 -> when {
             event is Test504Event.Foo -> {
+
+
             executeAssign("Var4", "Var4 + 1")
             }
             else -> {}
         }
         is Test504State.Ps2 -> when {
             event is Test504Event.Foo -> {
+
+
             executeAssign("Var4", "Var4 + 1")
             }
             else -> {}

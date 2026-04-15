@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/330/test330.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test330
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test330State : State {
     data object S0 : Test330State
     data object S1 : Test330State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test330Event : Event {
@@ -67,6 +70,8 @@ class Test330StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test330State,
@@ -98,6 +103,7 @@ class Test330StateMachine(
         else -> TransitionResult.External(Test330State.Fail, Test330State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test330State) {
         when (state) {
@@ -116,11 +122,14 @@ class Test330StateMachine(
             is Test330State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
             raiseInternal(Test330Event.Foo)
             }
             is Test330State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             send(Test330Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -145,6 +154,7 @@ class Test330StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test330State,

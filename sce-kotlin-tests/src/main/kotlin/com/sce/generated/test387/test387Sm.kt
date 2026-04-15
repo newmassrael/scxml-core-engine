@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/387/test387.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test387
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -28,6 +30,7 @@ sealed interface Test387State : State {
     data object S3 : Test387State
     data object S4 : Test387State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test387Event : Event {
@@ -163,6 +166,8 @@ class Test387StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test387State,
@@ -288,6 +293,7 @@ class Test387StateMachine(
         else -> TransitionResult.External(Test387State.Fail, Test387State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test387State) {
         when (state) {
@@ -314,11 +320,13 @@ class Test387StateMachine(
             is Test387State.S011 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s011")) return
+
             raiseInternal(Test387Event.EnteringS011)
             }
             is Test387State.S012 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s012")) return
+
             raiseInternal(Test387Event.EnteringS012)
             }
             is Test387State.S02 -> {
@@ -328,11 +336,13 @@ class Test387StateMachine(
             is Test387State.S021 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s021")) return
+
             raiseInternal(Test387Event.EnteringS021)
             }
             is Test387State.S022 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s022")) return
+
             raiseInternal(Test387Event.EnteringS022)
             }
             is Test387State.S1 -> {
@@ -346,11 +356,13 @@ class Test387StateMachine(
             is Test387State.S111 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s111")) return
+
             raiseInternal(Test387Event.EnteringS111)
             }
             is Test387State.S112 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s112")) return
+
             raiseInternal(Test387Event.EnteringS112)
             }
             is Test387State.S12 -> {
@@ -360,16 +372,20 @@ class Test387StateMachine(
             is Test387State.S121 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s121")) return
+
             raiseInternal(Test387Event.EnteringS121)
             }
             is Test387State.S122 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s122")) return
+
             raiseInternal(Test387Event.EnteringS122)
             }
             is Test387State.S3 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
+
+
             scheduleSend("__send_0", 1000L, Test387Event.Timeout)
             }
             is Test387State.S4 -> {
@@ -462,6 +478,7 @@ class Test387StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test387State,

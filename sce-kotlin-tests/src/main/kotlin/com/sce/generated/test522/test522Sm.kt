@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/522/test522.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test522
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test522State : State {
@@ -13,6 +15,7 @@ sealed interface Test522State : State {
     data object Pass : Test522State
     data object S0 : Test522State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test522Event : Event {
@@ -82,6 +85,8 @@ class Test522StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test522State,
@@ -106,6 +111,7 @@ class Test522StateMachine(
         else -> TransitionResult.External(Test522State.Pass, Test522State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test522State) {
         when (state) {
@@ -124,7 +130,12 @@ class Test522StateMachine(
             is Test522State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 30000L, Test522Event.Timeout)
+
+
+
             performHttpSend("http://localhost:8080/test", "test", "", emptyMap(), "__send_1")
             }
             else -> {}
@@ -146,6 +157,7 @@ class Test522StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test522State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/519/test519.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test519
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test519State : State {
@@ -13,6 +15,7 @@ sealed interface Test519State : State {
     data object Pass : Test519State
     data object S0 : Test519State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test519Event : Event {
@@ -83,6 +86,7 @@ class Test519StateMachine(
         is Test519Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -179,6 +183,7 @@ class Test519StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test519State,
@@ -204,6 +209,7 @@ class Test519StateMachine(
         else -> TransitionResult.External(Test519State.Fail, Test519State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test519State) {
         when (state) {
@@ -222,7 +228,12 @@ class Test519StateMachine(
             is Test519State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 30000L, Test519Event.Timeout)
+
+
+
             // W3C SCXML C.2: BasicHTTP send with script engine evaluation
             run {
                 ensureScriptEngine()
@@ -258,6 +269,7 @@ class Test519StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test519State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/412/test412.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test412
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -18,6 +20,7 @@ sealed interface Test412State : State {
     data object S03 : Test412State
     data object S04 : Test412State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test412Event : Event {
@@ -100,6 +103,8 @@ class Test412StateMachine(
         is Test412State.S04 -> 5
         else -> 0
     }
+
+
 
 
 
@@ -211,6 +216,7 @@ class Test412StateMachine(
         else -> TransitionResult.External(Test412State.Fail, Test412State.S04)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test412State) {
         when (state) {
@@ -229,18 +235,23 @@ class Test412StateMachine(
             is Test412State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test412Event.Timeout)
             }
             is Test412State.S01 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
+
             raiseInternal(Test412Event.Event1)
                 // W3C SCXML 3.3.2: Execute initial transition content
+
             raiseInternal(Test412Event.Event2)
             }
             is Test412State.S011 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s011")) return
+
             raiseInternal(Test412Event.Event3)
             }
             is Test412State.S02 -> {
@@ -289,6 +300,7 @@ class Test412StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test412State,

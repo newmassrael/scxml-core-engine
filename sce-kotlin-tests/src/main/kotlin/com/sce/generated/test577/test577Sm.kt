@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/577/test577.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test577
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test577State : State {
@@ -13,6 +15,7 @@ sealed interface Test577State : State {
     data object Pass : Test577State
     data object S0 : Test577State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test577Event : Event {
@@ -65,6 +68,8 @@ class Test577StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test577State,
@@ -86,6 +91,7 @@ class Test577StateMachine(
         else -> TransitionResult.External(Test577State.Fail, Test577State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test577State) {
         when (state) {
@@ -104,7 +110,11 @@ class Test577StateMachine(
             is Test577State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test577Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+
+
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
             raiseInternal(Test577Event.Error.Communication, EventMetadata.platform())
             return  // W3C SCXML 5.10: Stop subsequent executable content
@@ -128,6 +138,7 @@ class Test577StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test577State,

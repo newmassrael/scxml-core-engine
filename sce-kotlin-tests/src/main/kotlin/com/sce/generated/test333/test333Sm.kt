@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/333/test333.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test333
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test333State : State {
@@ -13,6 +15,7 @@ sealed interface Test333State : State {
     data object Pass : Test333State
     data object S0 : Test333State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test333Event : Event {
@@ -63,6 +66,8 @@ class Test333StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test333State,
@@ -84,6 +89,7 @@ class Test333StateMachine(
         else -> TransitionResult.External(Test333State.Fail, Test333State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test333State) {
         when (state) {
@@ -102,6 +108,8 @@ class Test333StateMachine(
             is Test333State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test333Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -123,6 +131,7 @@ class Test333StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test333State,

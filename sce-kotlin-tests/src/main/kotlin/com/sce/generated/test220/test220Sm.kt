@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/220/test220.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test220
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test220State : State {
@@ -13,6 +15,7 @@ sealed interface Test220State : State {
     data object Pass : Test220State
     data object S0 : Test220State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test220Event : Event {
@@ -86,6 +89,8 @@ class Test220StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test220State,
@@ -107,6 +112,7 @@ class Test220StateMachine(
         else -> TransitionResult.External(Test220State.Fail, Test220State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test220State) {
         when (state) {
@@ -125,6 +131,8 @@ class Test220StateMachine(
             is Test220State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 5000L, Test220Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -160,6 +168,7 @@ class Test220StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test220State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/460/test460.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test460
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test460State : State {
@@ -13,6 +15,7 @@ sealed interface Test460State : State {
     data object Pass : Test460State
     data object S0 : Test460State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test460Event : Event {
@@ -79,6 +82,7 @@ class Test460StateMachine(
         is Test460Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -189,6 +193,7 @@ class Test460StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test460State,
@@ -220,12 +225,14 @@ class Test460StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test460State) {
         when (state) {
             is Test460State.Fail -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
@@ -236,6 +243,7 @@ class Test460StateMachine(
             is Test460State.Pass -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
@@ -246,13 +254,19 @@ class Test460StateMachine(
             is Test460State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var1", "Var3", "") {
+
+
             engine.assign(sid, "Var1", "[].concat(Var1, [4])")
+
+
             engine.assign(sid, "Var2", "Var2 + 1")
                     }
                 } catch (e: Exception) {
@@ -279,6 +293,7 @@ class Test460StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test460State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/313/test313.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test313
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test313State : State {
@@ -13,6 +15,7 @@ sealed interface Test313State : State {
     data object Pass : Test313State
     data object S0 : Test313State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test313Event : Event {
@@ -82,6 +85,7 @@ class Test313StateMachine(
         is Test313Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -185,6 +189,7 @@ class Test313StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test313State,
@@ -210,6 +215,7 @@ class Test313StateMachine(
         else -> TransitionResult.External(Test313State.Fail, Test313State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test313State) {
         when (state) {
@@ -228,7 +234,10 @@ class Test313StateMachine(
             is Test313State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             executeAssign("Var1", "undefined.invalidProperty")
+
             raiseInternal(Test313Event.Foo)
             }
             else -> {}
@@ -250,6 +259,7 @@ class Test313StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test313State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/403/test403b.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test403b
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test403bState : State {
     data object Pass : Test403bState
     data object S0 : Test403bState
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test403bEvent : Event {
@@ -125,6 +128,7 @@ class Test403bStateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -228,6 +232,7 @@ class Test403bStateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test403bState,
@@ -294,6 +299,7 @@ class Test403bStateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test403bState) {
         when (state) {
@@ -306,7 +312,9 @@ class Test403bStateMachine(
             is Test403bState.P0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
+
             raiseInternal(Test403bEvent.Event1)
+
             raiseInternal(Test403bEvent.Event2)
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
                 // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
@@ -379,6 +387,7 @@ class Test403bStateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test403bState,
@@ -387,33 +396,47 @@ class Test403bStateMachine(
         when (source) {
         is Test403bState.P0 -> when {
             event is Test403bEvent.Event1 -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             event is Test403bEvent.Event1 -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             else -> {}
         }
         is Test403bState.P0s1 -> when {
             event is Test403bEvent.Event1 -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             event is Test403bEvent.Event1 -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             else -> {}
         }
         is Test403bState.P0s2 -> when {
             event is Test403bEvent.Event1 -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             event is Test403bEvent.Event1 -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             else -> {}
         }
         is Test403bState.S0 -> when {
             event is Test403bEvent.Event1 -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             else -> {}

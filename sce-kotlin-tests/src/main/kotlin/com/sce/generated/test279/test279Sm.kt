@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/279/test279.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test279
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test279State : State {
     data object S0 : Test279State
     data object S1 : Test279State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test279Event : Event {
@@ -81,6 +84,7 @@ class Test279StateMachine(
         is Test279Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -185,6 +189,7 @@ class Test279StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test279State,
@@ -215,6 +220,7 @@ class Test279StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test279State) {
@@ -261,6 +267,7 @@ class Test279StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test279State,

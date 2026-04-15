@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/178/test178.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test178
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test178State : State {
@@ -13,6 +15,7 @@ sealed interface Test178State : State {
     data object Final : Test178State
     data object S0 : Test178State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test178Event : Event {
@@ -80,6 +83,7 @@ class Test178StateMachine(
         is Test178Event.Event1 -> "event1"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -176,6 +180,7 @@ class Test178StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test178State,
@@ -201,6 +206,7 @@ class Test178StateMachine(
         else -> TransitionResult.External(Test178State.Fail, Test178State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test178State) {
         when (state) {
@@ -219,6 +225,8 @@ class Test178StateMachine(
             is Test178State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 5.10: Evaluate params/namelist for event data
             run {
                 ensureScriptEngine()
@@ -250,6 +258,7 @@ class Test178StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test178State,
@@ -258,6 +267,7 @@ class Test178StateMachine(
         when (source) {
         is Test178State.S0 -> when {
             event is Test178Event.Event1 -> {
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("_event : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.raw")?.toString() ?: ""))

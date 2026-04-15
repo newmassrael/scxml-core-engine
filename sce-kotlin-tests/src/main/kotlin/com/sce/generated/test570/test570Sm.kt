@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/570/test570.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test570
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -20,6 +22,7 @@ sealed interface Test570State : State {
     data object Pass : Test570State
     data object S1 : Test570State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test570Event : Event {
@@ -162,6 +165,7 @@ class Test570StateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -265,6 +269,7 @@ class Test570StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test570State,
@@ -362,6 +367,7 @@ class Test570StateMachine(
         else -> TransitionResult.External(Test570State.Fail, Test570State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test570State) {
         when (state) {
@@ -374,8 +380,12 @@ class Test570StateMachine(
             is Test570State.P0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
+
+
             scheduleSend("__send_0", 2000L, Test570Event.Timeout)
+
             raiseInternal(Test570Event.E1)
+
             raiseInternal(Test570Event.E2)
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
                 // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
@@ -504,6 +514,7 @@ class Test570StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test570State,
@@ -512,42 +523,56 @@ class Test570StateMachine(
         when (source) {
         is Test570State.P0 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+
+
             executeAssign("Var1", "1")
             }
             else -> {}
         }
         is Test570State.P0s1 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+
+
             executeAssign("Var1", "1")
             }
             else -> {}
         }
         is Test570State.P0s11 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+
+
             executeAssign("Var1", "1")
             }
             else -> {}
         }
         is Test570State.P0s1final -> when {
             event is Test570Event.Done.State.P0s1 -> {
+
+
             executeAssign("Var1", "1")
             }
             else -> {}
         }
         is Test570State.P0s2 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+
+
             executeAssign("Var1", "1")
             }
             else -> {}
         }
         is Test570State.P0s21 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+
+
             executeAssign("Var1", "1")
             }
             else -> {}
         }
         is Test570State.P0s2final -> when {
             event is Test570Event.Done.State.P0s1 -> {
+
+
             executeAssign("Var1", "1")
             }
             else -> {}

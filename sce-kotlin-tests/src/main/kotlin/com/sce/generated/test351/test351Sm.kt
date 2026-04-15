@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/351/test351.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test351
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test351State : State {
     data object S2 : Test351State
     data object S3 : Test351State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test351Event : Event {
@@ -100,6 +103,7 @@ class Test351StateMachine(
         is Test351Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -206,6 +210,7 @@ class Test351StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test351State,
@@ -264,6 +269,7 @@ class Test351StateMachine(
         else -> TransitionResult.External(Test351State.Fail, Test351State.S2)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test351State) {
         when (state) {
@@ -282,7 +288,11 @@ class Test351StateMachine(
             is Test351State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 5000L, Test351Event.Timeout)
+
+
             send(Test351Event.S0Event, EventMetadata.external(sendId = "send1", origin = scriptSessionId ?: ""))
             }
             is Test351State.S1 -> {
@@ -292,7 +302,11 @@ class Test351StateMachine(
             is Test351State.S2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
+
+
             scheduleSend("__send_1", 5000L, Test351Event.Timeout)
+
+
             send(Test351Event.S0Event2, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: ""))
             }
             is Test351State.S3 -> {
@@ -327,6 +341,7 @@ class Test351StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test351State,
@@ -335,12 +350,16 @@ class Test351StateMachine(
         when (source) {
         is Test351State.S0 -> when {
             event is Test351Event.S0Event -> {
+
+
             executeAssign("Var1", "_event.sendid")
             }
             else -> {}
         }
         is Test351State.S2 -> when {
             event is Test351Event.S0Event2 -> {
+
+
             executeAssign("Var2", "_event.sendid")
             }
             else -> {}

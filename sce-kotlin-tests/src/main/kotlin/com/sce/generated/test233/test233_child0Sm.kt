@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/233/test233_child0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,11 +7,13 @@ package com.sce.generated.test233
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test233Child0State : State {
     data object SubFinal : Test233Child0State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test233Child0Event : Event {
@@ -72,6 +75,7 @@ class Test233Child0StateMachine(
         is Test233Child0Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -168,6 +172,7 @@ class Test233Child0StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test233Child0State,
@@ -183,12 +188,15 @@ class Test233Child0StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test233Child0State) {
         when (state) {
             is Test233Child0State.SubFinal -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal")) return
+
+
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
             run {
                 ensureScriptEngine()
@@ -215,6 +223,7 @@ class Test233Child0StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test233Child0State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/399/test399.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test399
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -19,6 +21,7 @@ sealed interface Test399State : State {
     data object S05 : Test399State
     data object S06 : Test399State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test399Event : Event {
@@ -106,6 +109,8 @@ class Test399StateMachine(
         is Test399State.S06 -> 6
         else -> 0
     }
+
+
 
 
 
@@ -242,6 +247,7 @@ class Test399StateMachine(
         else -> TransitionResult.External(Test399State.Pass, Test399State.S06)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test399State) {
         when (state) {
@@ -260,36 +266,44 @@ class Test399StateMachine(
             is Test399State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 2000L, Test399Event.Timeout)
             }
             is Test399State.S01 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
+
             raiseInternal(Test399Event.Foo.Self)
             }
             is Test399State.S02 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
+
             raiseInternal(Test399Event.Bar)
             }
             is Test399State.S03 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s03")) return
+
             raiseInternal(Test399Event.Foo.Zoo)
             }
             is Test399State.S04 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s04")) return
+
             raiseInternal(Test399Event.Foos)
             }
             is Test399State.S05 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s05")) return
+
             raiseInternal(Test399Event.Foo.Zoo)
             }
             is Test399State.S06 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s06")) return
+
             raiseInternal(Test399Event.Foo.Self)
             }
             else -> {}
@@ -329,6 +343,7 @@ class Test399StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test399State,

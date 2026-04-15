@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/253/test253_child0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test253
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test253Child0State : State {
@@ -13,6 +15,7 @@ sealed interface Test253Child0State : State {
     data object Sub1 : Test253Child0State
     data object SubFinal : Test253Child0State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test253Child0Event : Event {
@@ -91,6 +94,7 @@ class Test253Child0StateMachine(
         is Test253Child0Event.Success -> "success"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -192,6 +196,7 @@ class Test253Child0StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test253Child0State,
@@ -233,12 +238,15 @@ class Test253Child0StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test253Child0State) {
         when (state) {
             is Test253Child0State.Sub0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub0")) return
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childRunning", "")
             }
@@ -271,6 +279,7 @@ class Test253Child0StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test253Child0State,
@@ -279,20 +288,28 @@ class Test253Child0StateMachine(
         when (source) {
         is Test253Child0State.Sub0 -> when {
             event is Test253Child0Event.ParentToChild -> {
+
+
             executeAssign("Var2", "_event.origintype")
             }
             else -> {}
         }
         is Test253Child0State.Sub1 -> when {
             event == null && safeEvaluateGuard("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> {
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
             }
             event == null && safeEvaluateGuard("Var2 == 'scxml'") -> {
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
             }
             event == null -> {
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("failure", "")
             }

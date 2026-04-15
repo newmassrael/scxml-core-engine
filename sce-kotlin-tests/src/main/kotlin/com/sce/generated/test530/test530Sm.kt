@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/530/test530.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -7,6 +8,7 @@ package com.sce.generated.test530
 import com.sce.runtime.*
 import com.sce.interpreter.ScxmlRuntimeInterpreter
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test530State : State {
@@ -14,6 +16,7 @@ sealed interface Test530State : State {
     data object Pass : Test530State
     data object S0 : Test530State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test530Event : Event {
@@ -88,6 +91,7 @@ class Test530StateMachine(
         is Test530Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -191,6 +195,7 @@ class Test530StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test530State,
@@ -216,6 +221,7 @@ class Test530StateMachine(
         else -> TransitionResult.External(Test530State.Fail, Test530State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test530State) {
         when (state) {
@@ -234,7 +240,11 @@ class Test530StateMachine(
             is Test530State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             executeAssign("Var1", "'<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"><final></final></scxml>'")
+
+
             scheduleSend("__send_0", 2000L, Test530Event.Timeout)
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
@@ -280,6 +290,7 @@ class Test530StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test530State,

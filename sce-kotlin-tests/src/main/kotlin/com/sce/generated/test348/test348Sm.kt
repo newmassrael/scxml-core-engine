@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/348/test348.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test348
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test348State : State {
@@ -13,6 +15,7 @@ sealed interface Test348State : State {
     data object Pass : Test348State
     data object S0 : Test348State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test348Event : Event {
@@ -63,6 +66,8 @@ class Test348StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test348State,
@@ -84,6 +89,7 @@ class Test348StateMachine(
         else -> TransitionResult.External(Test348State.Fail, Test348State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test348State) {
         when (state) {
@@ -102,6 +108,8 @@ class Test348StateMachine(
             is Test348State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test348Event.S0Event, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -123,6 +131,7 @@ class Test348StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test348State,

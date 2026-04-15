@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/240/test240.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test240
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test240State : State {
     data object S01 : Test240State
     data object S02 : Test240State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test240Event : Event {
@@ -120,6 +123,7 @@ class Test240StateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -221,6 +225,7 @@ class Test240StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test240State,
@@ -285,6 +290,7 @@ class Test240StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test240State) {
         when (state) {
@@ -303,6 +309,8 @@ class Test240StateMachine(
             is Test240State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 2000L, Test240Event.Timeout)
             }
             is Test240State.S01 -> {
@@ -390,6 +398,7 @@ class Test240StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test240State,

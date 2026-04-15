@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/421/test421.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test421
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test421State : State {
     data object S11 : Test421State
     data object S12 : Test421State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test421Event : Event {
@@ -87,6 +90,8 @@ class Test421StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test421State,
@@ -143,6 +148,7 @@ class Test421StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test421State) {
         when (state) {
@@ -161,10 +167,16 @@ class Test421StateMachine(
             is Test421State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             send(Test421Event.ExternalEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+
             raiseInternal(Test421Event.InternalEvent1)
+
             raiseInternal(Test421Event.InternalEvent2)
+
             raiseInternal(Test421Event.InternalEvent3)
+
             raiseInternal(Test421Event.InternalEvent4)
             }
             is Test421State.S11 -> {
@@ -200,6 +212,7 @@ class Test421StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test421State,

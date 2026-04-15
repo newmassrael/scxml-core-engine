@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/175/test175.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test175
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test175State : State {
     data object S0 : Test175State
     data object S1 : Test175State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test175Event : Event {
@@ -89,6 +92,7 @@ class Test175StateMachine(
         is Test175Event.Event2 -> "event2"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -192,6 +196,7 @@ class Test175StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test175State,
@@ -228,6 +233,7 @@ class Test175StateMachine(
         else -> TransitionResult.External(Test175State.Fail, Test175State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test175State) {
         when (state) {
@@ -246,7 +252,11 @@ class Test175StateMachine(
             is Test175State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             executeAssign("Var1", "'1s'")
+
+
             // W3C SCXML 6.2: Dynamic delay evaluation
             run {
                 ensureScriptEngine()
@@ -263,6 +273,8 @@ class Test175StateMachine(
                 val delayMsE = parseDelay(delayStrE)
                 scheduleSend("__send_0", delayMsE, Test175Event.Event2)
             }
+
+
             scheduleSend("__send_1", 500L, Test175Event.Event1)
             }
             is Test175State.S1 -> {
@@ -291,6 +303,7 @@ class Test175StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test175State,

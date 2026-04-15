@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/580/test580.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test580
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -17,6 +19,7 @@ sealed interface Test580State : State {
     data object S11 : Test580State
     data object S12 : Test580State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test580Event : Event {
@@ -127,6 +130,7 @@ class Test580StateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -230,6 +234,7 @@ class Test580StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test580State,
@@ -295,6 +300,7 @@ class Test580StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test580State) {
         when (state) {
@@ -307,6 +313,8 @@ class Test580StateMachine(
             is Test580State.P1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p1")) return
+
+
             scheduleSend("__send_0", 2000L, Test580Event.Timeout)
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
                 // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
@@ -400,6 +408,8 @@ class Test580StateMachine(
                     parentOf(st)?.let { stateIdOf(it) } == "s1"
                 }.toList()
                 activeStateIds.remove("s1")
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             is Test580State.S11 -> {
@@ -411,6 +421,7 @@ class Test580StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test580State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/307/test307.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test307
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test307State : State {
@@ -13,6 +15,7 @@ sealed interface Test307State : State {
     data object S0 : Test307State
     data object S1 : Test307State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test307Event : Event {
@@ -86,6 +89,7 @@ class Test307StateMachine(
         is Test307Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -182,6 +186,7 @@ class Test307StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test307State,
@@ -221,6 +226,7 @@ class Test307StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test307State) {
         when (state) {
@@ -233,10 +239,12 @@ class Test307StateMachine(
             is Test307State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("entering s0 value of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "Var1")?.toString() ?: ""))
             } catch (_: Exception) {}
+
             raiseInternal(Test307Event.Foo)
             }
             is Test307State.S1 -> {
@@ -254,10 +262,12 @@ class Test307StateMachine(
                         raiseInternal(Test307Event.Error.Execution)
                     }
                 }
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("entering s1, value of non-existent substructure of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "Var1.foo")?.toString() ?: ""))
             } catch (_: Exception) {}
+
             raiseInternal(Test307Event.Bar)
             }
             else -> {}
@@ -279,6 +289,7 @@ class Test307StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test307State,
@@ -287,24 +298,28 @@ class Test307StateMachine(
         when (source) {
         is Test307State.S0 -> when {
             (event is Test307Event.Error || event is Test307Event.Error.Execution) -> {
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("error in state s0: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event")?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             event is Test307Event.Foo -> {
+
             println("no error in s0")
             }
             else -> {}
         }
         is Test307State.S1 -> when {
             (event is Test307Event.Error || event is Test307Event.Error.Execution) -> {
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("error in state s1: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event")?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             event is Test307Event.Bar -> {
+
             println("No error in s1")
             }
             else -> {}

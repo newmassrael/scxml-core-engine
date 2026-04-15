@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/554/test554.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test554
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test554State : State {
@@ -13,6 +15,7 @@ sealed interface Test554State : State {
     data object Pass : Test554State
     data object S0 : Test554State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test554Event : Event {
@@ -90,6 +93,7 @@ class Test554StateMachine(
         is Test554Event.Timer -> "timer"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -186,6 +190,7 @@ class Test554StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test554State,
@@ -212,6 +217,7 @@ class Test554StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test554State) {
         when (state) {
@@ -230,6 +236,8 @@ class Test554StateMachine(
             is Test554State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test554Event.Timer)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -277,6 +285,7 @@ class Test554StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test554State,

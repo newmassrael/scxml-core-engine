@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/216/test216.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -7,6 +8,7 @@ package com.sce.generated.test216
 import com.sce.runtime.*
 import com.sce.interpreter.ScxmlRuntimeInterpreter
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test216State : State {
@@ -14,6 +16,7 @@ sealed interface Test216State : State {
     data object Pass : Test216State
     data object S0 : Test216State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test216Event : Event {
@@ -88,6 +91,7 @@ class Test216StateMachine(
         is Test216Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -191,6 +195,7 @@ class Test216StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test216State,
@@ -216,6 +221,7 @@ class Test216StateMachine(
         else -> TransitionResult.External(Test216State.Fail, Test216State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test216State) {
         when (state) {
@@ -234,7 +240,11 @@ class Test216StateMachine(
             is Test216State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 5000L, Test216Event.Timeout)
+
+
             executeAssign("Var1", "'file:test216sub1.scxml'")
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
@@ -280,6 +290,7 @@ class Test216StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test216State,

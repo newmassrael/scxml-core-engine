@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/190/test190.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test190
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test190State : State {
     data object S0 : Test190State
     data object S1 : Test190State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test190Event : Event {
@@ -95,6 +98,7 @@ class Test190StateMachine(
         is Test190Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -205,6 +209,7 @@ class Test190StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test190State,
@@ -240,6 +245,7 @@ class Test190StateMachine(
         else -> TransitionResult.External(Test190State.Fail, Test190State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test190State) {
         when (state) {
@@ -258,6 +264,8 @@ class Test190StateMachine(
             is Test190State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="Var1")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -292,7 +300,10 @@ class Test190StateMachine(
                 send(Test190Event.Event2, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             } // end of _resolvedTarget?.let
+
             raiseInternal(Test190Event.Event1)
+
+
             send(Test190Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             is Test190State.S1 -> {
@@ -321,6 +332,7 @@ class Test190StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test190State,

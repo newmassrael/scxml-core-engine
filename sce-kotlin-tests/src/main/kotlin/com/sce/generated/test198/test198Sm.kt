@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/198/test198.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test198
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test198State : State {
@@ -13,6 +15,7 @@ sealed interface Test198State : State {
     data object Pass : Test198State
     data object S0 : Test198State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test198Event : Event {
@@ -83,6 +86,7 @@ class Test198StateMachine(
         is Test198Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -179,6 +183,7 @@ class Test198StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test198State,
@@ -204,6 +209,7 @@ class Test198StateMachine(
         else -> TransitionResult.External(Test198State.Fail, Test198State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test198State) {
         when (state) {
@@ -222,7 +228,11 @@ class Test198StateMachine(
             is Test198State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test198Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+
+
             send(Test198Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -244,6 +254,7 @@ class Test198StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test198State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/406/test406.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test406
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -20,6 +22,7 @@ sealed interface Test406State : State {
     data object S05 : Test406State
     data object S0p2 : Test406State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test406Event : Event {
@@ -122,6 +125,8 @@ class Test406StateMachine(
         is Test406State.S0p2 -> 5
         else -> 0
     }
+
+
 
 
 
@@ -251,6 +256,7 @@ class Test406StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test406State) {
         when (state) {
@@ -269,6 +275,8 @@ class Test406StateMachine(
             is Test406State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test406Event.Timeout)
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
@@ -282,11 +290,13 @@ class Test406StateMachine(
             is Test406State.S01p21 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p21")) return
+
             raiseInternal(Test406Event.Event3)
             }
             is Test406State.S01p22 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p22")) return
+
             raiseInternal(Test406Event.Event4)
             }
             is Test406State.S03 -> {
@@ -304,6 +314,7 @@ class Test406StateMachine(
             is Test406State.S0p2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0p2")) return
+
             raiseInternal(Test406Event.Event2)
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
                 // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
@@ -366,6 +377,7 @@ class Test406StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test406State,
@@ -374,6 +386,7 @@ class Test406StateMachine(
         when (source) {
         is Test406State.S01 -> when {
             event == null -> {
+
             raiseInternal(Test406Event.Event1)
             }
             else -> {}

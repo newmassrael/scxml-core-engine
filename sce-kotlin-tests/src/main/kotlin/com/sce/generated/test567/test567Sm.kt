@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/567/test567.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test567
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test567State : State {
     data object S0 : Test567State
     data object S1 : Test567State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test567Event : Event {
@@ -89,6 +92,7 @@ class Test567StateMachine(
         is Test567Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -192,6 +196,7 @@ class Test567StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test567State,
@@ -233,6 +238,7 @@ class Test567StateMachine(
         else -> TransitionResult.External(Test567State.Fail, Test567State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test567State) {
         when (state) {
@@ -251,7 +257,12 @@ class Test567StateMachine(
             is Test567State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 3000L, Test567Event.Timeout)
+
+
+
             // W3C SCXML C.2: BasicHTTP send with script engine evaluation
             run {
                 ensureScriptEngine()
@@ -294,6 +305,7 @@ class Test567StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test567State,
@@ -302,6 +314,8 @@ class Test567StateMachine(
         when (source) {
         is Test567State.S0 -> when {
             event is Test567Event.Test -> {
+
+
             executeAssign("Var1", "_event.data.param1")
             }
             else -> {}

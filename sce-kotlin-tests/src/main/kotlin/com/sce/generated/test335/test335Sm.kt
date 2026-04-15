@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/335/test335.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test335
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test335State : State {
@@ -13,6 +15,7 @@ sealed interface Test335State : State {
     data object Pass : Test335State
     data object S0 : Test335State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test335Event : Event {
@@ -60,6 +63,8 @@ class Test335StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test335State,
@@ -81,6 +86,7 @@ class Test335StateMachine(
         else -> TransitionResult.External(Test335State.Fail, Test335State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test335State) {
         when (state) {
@@ -99,6 +105,7 @@ class Test335StateMachine(
             is Test335State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
             raiseInternal(Test335Event.Foo)
             }
             else -> {}
@@ -120,6 +127,7 @@ class Test335StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test335State,

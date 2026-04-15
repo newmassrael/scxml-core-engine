@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/415/test415.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,11 +7,13 @@ package com.sce.generated.test415
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test415State : State {
     data object Final : Test415State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test415Event : Event {
@@ -52,6 +55,8 @@ class Test415StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test415State,
@@ -63,12 +68,14 @@ class Test415StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test415State) {
         when (state) {
             is Test415State.Final -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("final")) return
+
             raiseInternal(Test415Event.Event1)
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
@@ -86,6 +93,7 @@ class Test415StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test415State,

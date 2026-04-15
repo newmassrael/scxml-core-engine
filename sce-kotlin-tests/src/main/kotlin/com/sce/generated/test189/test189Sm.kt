@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/189/test189.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test189
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test189State : State {
@@ -13,6 +15,7 @@ sealed interface Test189State : State {
     data object Pass : Test189State
     data object S0 : Test189State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test189Event : Event {
@@ -64,6 +67,8 @@ class Test189StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test189State,
@@ -86,6 +91,7 @@ class Test189StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test189State) {
         when (state) {
@@ -104,7 +110,11 @@ class Test189StateMachine(
             is Test189State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test189Event.Event2, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+
+
             raiseInternal(Test189Event.Event1)
             }
             else -> {}
@@ -126,6 +136,7 @@ class Test189StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test189State,

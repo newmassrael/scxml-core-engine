@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/349/test349.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test349
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test349State : State {
     data object S0 : Test349State
     data object S2 : Test349State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test349Event : Event {
@@ -89,6 +92,7 @@ class Test349StateMachine(
         is Test349Event.S0Event2 -> "s0Event2"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -190,6 +194,7 @@ class Test349StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test349State,
@@ -225,6 +230,7 @@ class Test349StateMachine(
         else -> TransitionResult.External(Test349State.Fail, Test349State.S2)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test349State) {
         when (state) {
@@ -243,11 +249,15 @@ class Test349StateMachine(
             is Test349State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test349Event.S0Event, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             is Test349State.S2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
+
+
             send(Test349Event.S0Event2, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -272,6 +282,7 @@ class Test349StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test349State,
@@ -280,6 +291,8 @@ class Test349StateMachine(
         when (source) {
         is Test349State.S0 -> when {
             event is Test349Event.S0Event -> {
+
+
             executeAssign("Var1", "_event.origin")
             }
             else -> {}

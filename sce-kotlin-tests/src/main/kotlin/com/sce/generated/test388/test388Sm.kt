@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/388/test388.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test388
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -21,6 +23,7 @@ sealed interface Test388State : State {
     data object S1 : Test388State
     data object S2 : Test388State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test388Event : Event {
@@ -153,6 +156,7 @@ class Test388StateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -254,6 +258,7 @@ class Test388StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test388State,
@@ -348,6 +353,7 @@ class Test388StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test388State) {
         when (state) {
@@ -366,6 +372,8 @@ class Test388StateMachine(
             is Test388State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             is Test388State.S01 -> {
@@ -375,11 +383,13 @@ class Test388StateMachine(
             is Test388State.S011 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s011")) return
+
             raiseInternal(Test388Event.Entering.S011)
             }
             is Test388State.S012 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s012")) return
+
             raiseInternal(Test388Event.Entering.S012)
             }
             is Test388State.S02 -> {
@@ -389,11 +399,13 @@ class Test388StateMachine(
             is Test388State.S021 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s021")) return
+
             raiseInternal(Test388Event.Entering.S021)
             }
             is Test388State.S022 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s022")) return
+
             raiseInternal(Test388Event.Entering.S022)
             }
             is Test388State.S1 -> {
@@ -458,6 +470,7 @@ class Test388StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test388State,
@@ -466,42 +479,56 @@ class Test388StateMachine(
         when (source) {
         is Test388State.S0 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+
+
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
             }
             else -> {}
         }
         is Test388State.S01 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+
+
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
             }
             else -> {}
         }
         is Test388State.S011 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+
+
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
             }
             else -> {}
         }
         is Test388State.S012 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+
+
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
             }
             else -> {}
         }
         is Test388State.S02 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+
+
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
             }
             else -> {}
         }
         is Test388State.S021 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+
+
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
             }
             else -> {}
         }
         is Test388State.S022 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
+
+
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
             }
             else -> {}

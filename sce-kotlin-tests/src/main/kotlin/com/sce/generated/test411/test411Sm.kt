@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/411/test411.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test411
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test411State : State {
     data object S0 : Test411State
     data object S01 : Test411State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test411Event : Event {
@@ -80,6 +83,8 @@ class Test411StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test411State,
@@ -110,6 +115,7 @@ class Test411StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test411State) {
         when (state) {
@@ -128,15 +134,23 @@ class Test411StateMachine(
             is Test411State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test411Event.Timeout)
+
+
             if (isStateActive("s01")) {
+
             raiseInternal(Test411Event.Event1)
             }
             }
             is Test411State.S01 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
+
+
             if (isStateActive("s01")) {
+
             raiseInternal(Test411Event.Event2)
             }
             }
@@ -162,6 +176,7 @@ class Test411StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test411State,

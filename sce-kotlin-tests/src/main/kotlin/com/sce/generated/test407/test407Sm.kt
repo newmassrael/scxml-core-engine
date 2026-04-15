@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/407/test407.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test407
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test407State : State {
     data object S0 : Test407State
     data object S1 : Test407State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test407Event : Event {
@@ -83,6 +86,7 @@ class Test407StateMachine(
         is Test407Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -186,6 +190,7 @@ class Test407StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test407State,
@@ -223,6 +228,7 @@ class Test407StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test407State) {
@@ -262,6 +268,8 @@ class Test407StateMachine(
             }
             is Test407State.S0 -> {
                 activeStateIds.remove("s0")
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             is Test407State.S1 -> {
@@ -270,6 +278,7 @@ class Test407StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test407State,

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/576/test576.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test576
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -23,6 +25,7 @@ sealed interface Test576State : State {
     data object S11p121 : Test576State
     data object S11p122 : Test576State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test576Event : Event {
@@ -142,6 +145,8 @@ class Test576StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test576State,
@@ -237,6 +242,7 @@ class Test576StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test576State) {
         when (state) {
@@ -259,6 +265,8 @@ class Test576StateMachine(
             is Test576State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             scheduleSend("__send_0", 1000L, Test576Event.Timeout)
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
@@ -300,6 +308,7 @@ class Test576StateMachine(
             is Test576State.S11p112 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p112")) return
+
             raiseInternal(Test576Event.InS11p112)
             }
             is Test576State.S11p12 -> {
@@ -395,6 +404,7 @@ class Test576StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test576State,

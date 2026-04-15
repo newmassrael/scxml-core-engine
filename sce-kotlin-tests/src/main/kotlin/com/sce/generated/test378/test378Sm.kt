@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/378/test378.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test378
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test378State : State {
     data object S0 : Test378State
     data object S1 : Test378State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test378Event : Event {
@@ -86,6 +89,7 @@ class Test378StateMachine(
         is Test378Event.Event1 -> "event1"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -189,6 +193,7 @@ class Test378StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test378State,
@@ -226,6 +231,7 @@ class Test378StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test378State) {
@@ -269,6 +275,8 @@ class Test378StateMachine(
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+
+
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raiseInternal(Test378Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
             return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
@@ -277,6 +285,8 @@ class Test378StateMachine(
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+
+
             executeAssign("Var1", "Var1 + 1")
                 }
             }
@@ -286,6 +296,7 @@ class Test378StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test378State,

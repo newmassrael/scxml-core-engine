@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/413/test413.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test413
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -21,6 +23,7 @@ sealed interface Test413State : State {
     data object S2p121 : Test413State
     data object S2p122 : Test413State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test413Event : Event {
@@ -126,6 +129,8 @@ class Test413StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test413State,
@@ -219,6 +224,7 @@ class Test413StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test413State) {
@@ -358,6 +364,7 @@ class Test413StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test413State,

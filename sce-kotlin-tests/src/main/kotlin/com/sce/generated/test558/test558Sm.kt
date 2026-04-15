@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/558/test558.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test558
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test558State : State {
     data object S0 : Test558State
     data object S1 : Test558State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test558Event : Event {
@@ -83,6 +86,7 @@ class Test558StateMachine(
         is Test558Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -196,6 +200,7 @@ class Test558StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test558State,
@@ -234,6 +239,7 @@ class Test558StateMachine(
     }
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test558State) {
@@ -280,6 +286,7 @@ class Test558StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test558State,

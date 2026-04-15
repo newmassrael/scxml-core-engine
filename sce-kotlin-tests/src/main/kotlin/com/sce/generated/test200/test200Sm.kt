@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/200/test200.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test200
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test200State : State {
@@ -13,6 +15,7 @@ sealed interface Test200State : State {
     data object Pass : Test200State
     data object S0 : Test200State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test200Event : Event {
@@ -64,6 +67,8 @@ class Test200StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test200State,
@@ -85,6 +90,7 @@ class Test200StateMachine(
         else -> TransitionResult.External(Test200State.Fail, Test200State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test200State) {
         when (state) {
@@ -103,7 +109,11 @@ class Test200StateMachine(
             is Test200State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test200Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+
+
             send(Test200Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -125,6 +135,7 @@ class Test200StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test200State,

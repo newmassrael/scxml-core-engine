@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/234/test234.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test234
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test234State : State {
     data object Pass : Test234State
     data object S1 : Test234State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test234Event : Event {
@@ -132,6 +135,7 @@ class Test234StateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -242,6 +246,7 @@ class Test234StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test234State,
@@ -307,6 +312,7 @@ class Test234StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test234State) {
         when (state) {
@@ -319,6 +325,8 @@ class Test234StateMachine(
             is Test234State.P0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
+
+
             scheduleSend("__send_0", 3000L, Test234Event.Timeout)
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
                 // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
@@ -415,6 +423,7 @@ class Test234StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test234State,

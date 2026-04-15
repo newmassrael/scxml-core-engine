@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/521/test521.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test521
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test521State : State {
@@ -13,6 +15,7 @@ sealed interface Test521State : State {
     data object Pass : Test521State
     data object S0 : Test521State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test521Event : Event {
@@ -86,6 +89,7 @@ class Test521StateMachine(
         is Test521Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -182,6 +186,7 @@ class Test521StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test521State,
@@ -207,6 +212,7 @@ class Test521StateMachine(
         else -> TransitionResult.External(Test521State.Fail, Test521State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test521State) {
         when (state) {
@@ -225,6 +231,8 @@ class Test521StateMachine(
             is Test521State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 6.2: Resolve dynamic target (targetexpr="undefined")
             var _resolvedTarget: String? = null
             run resolveTarget@{
@@ -259,6 +267,8 @@ class Test521StateMachine(
                 send(Test521Event.Event2, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             } // end of _resolvedTarget?.let
+
+
             send(Test521Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -280,6 +290,7 @@ class Test521StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test521State,

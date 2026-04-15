@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/579/test579.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test579
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -18,6 +20,7 @@ sealed interface Test579State : State {
     data object S2 : Test579State
     data object S3 : Test579State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test579Event : Event {
@@ -124,6 +127,7 @@ class Test579StateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -226,6 +230,7 @@ class Test579StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test579State,
@@ -294,6 +299,7 @@ class Test579StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test579State) {
         when (state) {
@@ -312,13 +318,18 @@ class Test579StateMachine(
             is Test579State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test579Event.Timeout)
+
             raiseInternal(Test579Event.Event1)
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
+
             raiseInternal(Test579Event.Event2)
                     // W3C SCXML 3.11: Execute history default transition content only if no stored history
                     if (!historyStore.containsKey("sh1") || historyStore["sh1"].isNullOrEmpty()) {
+
             raiseInternal(Test579Event.Event3)
                     }
                     // W3C SCXML 3.11: Enter history-restored state or default target
@@ -378,6 +389,8 @@ class Test579StateMachine(
                     parentOf(st)?.let { stateIdOf(it) } == "s0"
                 }.toList()
                 activeStateIds.remove("s0")
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             is Test579State.S01 -> {
@@ -398,6 +411,7 @@ class Test579StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test579State,

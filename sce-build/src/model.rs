@@ -196,13 +196,18 @@ pub struct DoneData {
     pub contentexpr: String,
 }
 
-/// W3C SCXML 5.7: Done data parameter
+/// W3C SCXML 5.7: Done data parameter.
+///
+/// `expr` and `location` are `Option<String>` because W3C SCXML 6.2.4 mandates
+/// exactly one of them on each `<param>`. They are serialized as JSON `null`
+/// when absent (no `skip_serializing_if`) so that minijinja templates can
+/// distinguish "attribute omitted" (none) from "attribute present but empty"
+/// (Some("")) via the canonical `is none` test — undefined-vs-null ambiguity
+/// would otherwise mis-route the empty-location structural-error branch.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct DoneDataParam {
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
 }
 

@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/280/test280.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test280
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -14,6 +16,7 @@ sealed interface Test280State : State {
     data object S0 : Test280State
     data object S1 : Test280State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test280Event : Event {
@@ -83,6 +86,7 @@ class Test280StateMachine(
         is Test280Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -184,6 +188,7 @@ class Test280StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test280State,
@@ -222,6 +227,7 @@ class Test280StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test280State) {
         when (state) {
@@ -256,6 +262,8 @@ class Test280StateMachine(
                         raiseInternal(Test280Event.Error.Execution)
                     }
                 }
+
+
             executeAssign("Var1", "Var2")
             }
             else -> {}
@@ -280,6 +288,7 @@ class Test280StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test280State,

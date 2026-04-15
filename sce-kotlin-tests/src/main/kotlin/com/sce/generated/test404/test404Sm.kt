@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/404/test404.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test404
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -20,6 +22,7 @@ sealed interface Test404State : State {
     data object S04 : Test404State
     data object S05 : Test404State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test404Event : Event {
@@ -121,6 +124,8 @@ class Test404StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test404State,
@@ -187,6 +192,7 @@ class Test404StateMachine(
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test404State.Fail, Test404State.S05)
     }
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test404State) {
@@ -277,14 +283,17 @@ class Test404StateMachine(
                     onExit(desc)
                 }
                 activeStateIds.remove("s01p")
+
             raiseInternal(Test404Event.Event3)
             }
             is Test404State.S01p1 -> {
                 activeStateIds.remove("s01p1")
+
             raiseInternal(Test404Event.Event2)
             }
             is Test404State.S01p2 -> {
                 activeStateIds.remove("s01p2")
+
             raiseInternal(Test404Event.Event1)
             }
             is Test404State.S02 -> {
@@ -302,6 +311,7 @@ class Test404StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test404State,
@@ -310,18 +320,21 @@ class Test404StateMachine(
         when (source) {
         is Test404State.S01p -> when {
             event == null -> {
+
             raiseInternal(Test404Event.Event4)
             }
             else -> {}
         }
         is Test404State.S01p1 -> when {
             event == null -> {
+
             raiseInternal(Test404Event.Event4)
             }
             else -> {}
         }
         is Test404State.S01p2 -> when {
             event == null -> {
+
             raiseInternal(Test404Event.Event4)
             }
             else -> {}

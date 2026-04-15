@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/525/test525.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test525
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test525State : State {
@@ -13,6 +15,7 @@ sealed interface Test525State : State {
     data object Pass : Test525State
     data object S0 : Test525State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test525Event : Event {
@@ -79,6 +82,7 @@ class Test525StateMachine(
         is Test525Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -189,6 +193,7 @@ class Test525StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test525State,
@@ -220,6 +225,7 @@ class Test525StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test525State) {
         when (state) {
@@ -238,12 +244,16 @@ class Test525StateMachine(
             is Test525State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var1", "Var3", "") {
+
+
             engine.assign(sid, "Var2", "Var2 + 1")
                     }
                 } catch (e: Exception) {
@@ -270,6 +280,7 @@ class Test525StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test525State,

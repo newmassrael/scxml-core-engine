@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/192/test192.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test192
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test192State : State {
     data object S01 : Test192State
     data object S02 : Test192State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test192Event : Event {
@@ -115,6 +118,8 @@ class Test192StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test192State,
@@ -173,6 +178,7 @@ class Test192StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test192State) {
         when (state) {
@@ -191,6 +197,8 @@ class Test192StateMachine(
             is Test192State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 5000L, Test192Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -240,6 +248,7 @@ class Test192StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test192State,
@@ -248,6 +257,8 @@ class Test192StateMachine(
         when (source) {
         is Test192State.S01 -> when {
             event is Test192Event.ChildToParent -> {
+
+
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("invokedChild", "parentToChild")
             }

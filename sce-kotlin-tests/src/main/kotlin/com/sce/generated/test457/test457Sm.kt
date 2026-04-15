@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/457/test457.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test457
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test457State : State {
     data object S2 : Test457State
     data object S3 : Test457State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test457Event : Event {
@@ -97,6 +100,7 @@ class Test457StateMachine(
         is Test457Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -229,6 +233,7 @@ class Test457StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test457State,
@@ -289,12 +294,14 @@ class Test457StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test457State) {
         when (state) {
             is Test457State.Fail -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
@@ -305,6 +312,7 @@ class Test457StateMachine(
             is Test457State.Pass -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
+
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
@@ -315,35 +323,45 @@ class Test457StateMachine(
             is Test457State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var4", "Var2", "Var3") {
+
+
             engine.assign(sid, "Var1", "Var1 + 1")
                     }
                 } catch (e: Exception) {
                     raiseInternal(Test457Event.Error.Execution)
                 }
             }
+
             raiseInternal(Test457Event.Foo)
             }
             is Test457State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var5", "'continue'", "Var3") {
+
+
             engine.assign(sid, "Var1", "Var1 + 1")
                     }
                 } catch (e: Exception) {
                     raiseInternal(Test457Event.Error.Execution)
                 }
             }
+
             raiseInternal(Test457Event.Bar)
             }
             is Test457State.S2 -> {
@@ -353,13 +371,19 @@ class Test457StateMachine(
             is Test457State.S3 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
+
+
             executeAssign("Var6", "0")
+
+
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var5", "Var2", "") {
+
+
             engine.assign(sid, "Var6", "Var6 + Var2")
                     }
                 } catch (e: Exception) {
@@ -395,6 +419,7 @@ class Test457StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test457State,

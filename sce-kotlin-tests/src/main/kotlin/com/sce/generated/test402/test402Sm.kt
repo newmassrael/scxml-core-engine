@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/402/test402.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test402
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test402State : State {
     data object S02 : Test402State
     data object S03 : Test402State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test402Event : Event {
@@ -116,6 +119,7 @@ class Test402StateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -210,6 +214,7 @@ class Test402StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test402State,
@@ -292,6 +297,7 @@ class Test402StateMachine(
         else -> TransitionResult.External(Test402State.Fail, Test402State.S03)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test402State) {
         when (state) {
@@ -310,12 +316,17 @@ class Test402StateMachine(
             is Test402State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 1000L, Test402Event.Timeout)
             }
             is Test402State.S01 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
+
             raiseInternal(Test402Event.Event1)
+
+
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test402Event.Error.Execution, EventMetadata.platform())
             }
@@ -355,6 +366,7 @@ class Test402StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test402State,
@@ -363,6 +375,7 @@ class Test402StateMachine(
         when (source) {
         is Test402State.S01 -> when {
             event is Test402Event.Event1 -> {
+
             raiseInternal(Test402Event.Event2)
             }
             else -> {}

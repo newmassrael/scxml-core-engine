@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/242/test242_child0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,11 +7,13 @@ package com.sce.generated.test242
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test242Child0State : State {
     data object SubFinal1 : Test242Child0State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test242Child0Event : Event {
@@ -52,6 +55,8 @@ class Test242Child0StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test242Child0State,
@@ -62,6 +67,7 @@ class Test242Child0StateMachine(
 
 
     // --- Per-State Event Handlers ---
+
 
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test242Child0State) {
@@ -85,6 +91,7 @@ class Test242Child0StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test242Child0State,

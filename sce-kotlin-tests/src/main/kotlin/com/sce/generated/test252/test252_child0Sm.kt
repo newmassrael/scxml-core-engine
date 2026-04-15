@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/252/test252_child0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,12 +7,14 @@ package com.sce.generated.test252
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test252Child0State : State {
     data object Sub0 : Test252Child0State
     data object SubFinal : Test252Child0State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test252Child0Event : Event {
@@ -75,6 +78,8 @@ class Test252Child0StateMachine(
     }
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test252Child0State,
@@ -95,12 +100,15 @@ class Test252Child0StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test252Child0State) {
         when (state) {
             is Test252Child0State.Sub0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub0")) return
+
+
             scheduleSend("__send_0", 500L, Test252Child0Event.Timeout)
             }
             is Test252Child0State.SubFinal -> {
@@ -118,6 +126,8 @@ class Test252Child0StateMachine(
         when (state) {
             is Test252Child0State.Sub0 -> {
                 activeStateIds.remove("sub0")
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childToParent", "")
             }
@@ -127,6 +137,7 @@ class Test252Child0StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test252Child0State,

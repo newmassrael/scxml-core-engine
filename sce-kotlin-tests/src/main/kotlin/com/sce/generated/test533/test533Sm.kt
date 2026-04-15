@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/533/test533.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test533
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -19,6 +21,7 @@ sealed interface Test533State : State {
     data object S3 : Test533State
     data object S4 : Test533State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test533Event : Event {
@@ -132,6 +135,7 @@ class Test533StateMachine(
         is Test533Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -258,6 +262,7 @@ class Test533StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test533State,
@@ -336,6 +341,7 @@ class Test533StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test533State) {
         when (state) {
@@ -370,7 +376,9 @@ class Test533StateMachine(
             is Test533State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
             raiseInternal(Test533Event.Foo)
+
             raiseInternal(Test533Event.Bar)
             }
             is Test533State.S2 -> {
@@ -413,6 +421,8 @@ class Test533StateMachine(
                     onExit(desc)
                 }
                 activeStateIds.remove("p")
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             is Test533State.Pass -> {
@@ -420,10 +430,14 @@ class Test533StateMachine(
             }
             is Test533State.Ps1 -> {
                 activeStateIds.remove("ps1")
+
+
             executeAssign("Var2", "Var2 + 1")
             }
             is Test533State.Ps2 -> {
                 activeStateIds.remove("ps2")
+
+
             executeAssign("Var3", "Var3 + 1")
             }
             is Test533State.S1 -> {
@@ -441,6 +455,7 @@ class Test533StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test533State,
@@ -449,18 +464,24 @@ class Test533StateMachine(
         when (source) {
         is Test533State.P -> when {
             event is Test533Event.Foo -> {
+
+
             executeAssign("Var4", "Var4 + 1")
             }
             else -> {}
         }
         is Test533State.Ps1 -> when {
             event is Test533Event.Foo -> {
+
+
             executeAssign("Var4", "Var4 + 1")
             }
             else -> {}
         }
         is Test533State.Ps2 -> when {
             event is Test533Event.Foo -> {
+
+
             executeAssign("Var4", "Var4 + 1")
             }
             else -> {}

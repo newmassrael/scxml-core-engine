@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/194/test194.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test194
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test194State : State {
@@ -13,6 +15,7 @@ sealed interface Test194State : State {
     data object Pass : Test194State
     data object S0 : Test194State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test194Event : Event {
@@ -64,6 +67,8 @@ class Test194StateMachine(
 
 
 
+
+
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: Test194State,
@@ -85,6 +90,7 @@ class Test194StateMachine(
         else -> TransitionResult.External(Test194State.Fail, Test194State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test194State) {
         when (state) {
@@ -103,9 +109,13 @@ class Test194StateMachine(
             is Test194State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raiseInternal(Test194Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
             return  // W3C SCXML 5.10: Stop subsequent executable content
+
+
             send(Test194Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -127,6 +137,7 @@ class Test194StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test194State,

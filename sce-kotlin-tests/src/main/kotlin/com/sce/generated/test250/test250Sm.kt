@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/250/test250.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,12 +7,14 @@ package com.sce.generated.test250
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test250State : State {
     data object Final : Test250State
     data object S0 : Test250State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test250Event : Event {
@@ -86,6 +89,7 @@ class Test250StateMachine(
         is Test250Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -182,6 +186,7 @@ class Test250StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test250State,
@@ -206,6 +211,7 @@ class Test250StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test250State) {
         when (state) {
@@ -218,6 +224,8 @@ class Test250StateMachine(
             is Test250State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             send(Test250Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -250,6 +258,7 @@ class Test250StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test250State,

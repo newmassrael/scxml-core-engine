@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/354/test354.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test354
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test354State : State {
     data object S2 : Test354State
     data object S3 : Test354State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test354Event : Event {
@@ -100,6 +103,7 @@ class Test354StateMachine(
         is Test354Event.Timeout -> "timeout"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -213,6 +217,7 @@ class Test354StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test354State,
@@ -272,6 +277,7 @@ class Test354StateMachine(
         else -> TransitionResult.External(Test354State.Fail, Test354State.S3)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test354State) {
         when (state) {
@@ -290,7 +296,11 @@ class Test354StateMachine(
             is Test354State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             scheduleSend("__send_0", 5000L, Test354Event.Timeout)
+
+
             // W3C SCXML 5.10: Evaluate params/namelist for event data
             run {
                 ensureScriptEngine()
@@ -322,7 +332,11 @@ class Test354StateMachine(
             is Test354State.S3 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
+
+
             scheduleSend("__send_2", 5000L, Test354Event.Timeout)
+
+
             send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: ""))
             }
             else -> {}
@@ -353,6 +367,7 @@ class Test354StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test354State,
@@ -361,7 +376,11 @@ class Test354StateMachine(
         when (source) {
         is Test354State.S0 -> when {
             event is Test354Event.Event1 -> {
+
+
             executeAssign("Var2", "_event.data.Var1")
+
+
             executeAssign("Var3", "_event.data.param1")
             }
             else -> {}

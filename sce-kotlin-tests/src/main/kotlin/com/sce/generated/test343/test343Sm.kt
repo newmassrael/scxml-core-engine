@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/343/test343.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test343
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test343State : State {
     data object S02 : Test343State
     data object S1 : Test343State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test343Event : Event {
@@ -108,6 +111,7 @@ class Test343StateMachine(
         is Test343Event.Error.Execution -> "error.execution"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -204,6 +208,7 @@ class Test343StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test343State,
@@ -269,6 +274,7 @@ class Test343StateMachine(
         else -> TransitionResult.External(Test343State.Fail, Test343State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test343State) {
         when (state) {
@@ -305,9 +311,10 @@ class Test343StateMachine(
                     val doneParams = mutableMapOf<String, Any?>()
                     var doneParamStructuralError = false
                     try {
-                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, "")
+                        val locVal = engineDD.evaluateExpr(sidDD, "foo")
+                        doneParams["someParam"] = locVal
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        // W3C SCXML 5.7: Runtime location error — raise error.execution but continue
                         raiseInternal(Test343Event.Error.Execution, EventMetadata.platform())
                     }
                     // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
@@ -351,6 +358,7 @@ class Test343StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test343State,

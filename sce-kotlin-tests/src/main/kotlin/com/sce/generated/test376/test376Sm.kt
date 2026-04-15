@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/376/test376.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test376
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test376State : State {
@@ -13,6 +15,7 @@ sealed interface Test376State : State {
     data object Pass : Test376State
     data object S0 : Test376State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test376Event : Event {
@@ -82,6 +85,7 @@ class Test376StateMachine(
         is Test376Event.Event1 -> "event1"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -185,6 +189,7 @@ class Test376StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test376State,
@@ -216,6 +221,7 @@ class Test376StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test376State) {
         when (state) {
@@ -238,6 +244,8 @@ class Test376StateMachine(
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+
+
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raiseInternal(Test376Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
             return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
@@ -246,6 +254,8 @@ class Test376StateMachine(
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+
+
             executeAssign("Var1", "Var1 + 1")
                 }
             }
@@ -268,6 +278,7 @@ class Test376StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test376State,

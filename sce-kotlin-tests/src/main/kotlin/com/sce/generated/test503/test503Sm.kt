@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/503/test503.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test503
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test503State : State {
     data object S2 : Test503State
     data object S3 : Test503State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test503Event : Event {
@@ -93,6 +96,7 @@ class Test503StateMachine(
         is Test503Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -203,6 +207,7 @@ class Test503StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test503State,
@@ -254,6 +259,7 @@ class Test503StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test503State) {
         when (state) {
@@ -272,7 +278,9 @@ class Test503StateMachine(
             is Test503State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
             raiseInternal(Test503Event.Foo)
+
             raiseInternal(Test503Event.Bar)
             }
             is Test503State.S2 -> {
@@ -301,6 +309,8 @@ class Test503StateMachine(
             }
             is Test503State.S2 -> {
                 activeStateIds.remove("s2")
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             is Test503State.S3 -> {
@@ -309,6 +319,7 @@ class Test503StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test503State,
@@ -317,6 +328,8 @@ class Test503StateMachine(
         when (source) {
         is Test503State.S2 -> when {
             event is Test503Event.Foo -> {
+
+
             executeAssign("Var2", "Var2 + 1")
             }
             else -> {}

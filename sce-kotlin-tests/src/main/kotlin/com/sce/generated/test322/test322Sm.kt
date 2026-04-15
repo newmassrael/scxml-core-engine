@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/322/test322.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test322
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test322State : State {
     data object S1 : Test322State
     data object S2 : Test322State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test322Event : Event {
@@ -90,6 +93,7 @@ class Test322StateMachine(
         is Test322Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -198,6 +202,7 @@ class Test322StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test322State,
@@ -246,6 +251,7 @@ class Test322StateMachine(
         else -> TransitionResult.External(Test322State.Fail, Test322State.S1)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test322State) {
         when (state) {
@@ -268,7 +274,10 @@ class Test322StateMachine(
             is Test322State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             executeAssign("_sessionid", "'otherName'")
+
             raiseInternal(Test322Event.Foo)
             }
             is Test322State.S2 -> {
@@ -300,6 +309,7 @@ class Test322StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test322State,

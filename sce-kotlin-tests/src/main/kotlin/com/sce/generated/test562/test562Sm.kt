@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/562/test562.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,6 +7,7 @@ package com.sce.generated.test562
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test562State : State {
@@ -13,6 +15,7 @@ sealed interface Test562State : State {
     data object Pass : Test562State
     data object S0 : Test562State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test562Event : Event {
@@ -80,6 +83,7 @@ class Test562StateMachine(
         is Test562Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -176,6 +180,7 @@ class Test562StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test562State,
@@ -201,6 +206,7 @@ class Test562StateMachine(
         else -> TransitionResult.External(Test562State.Fail, Test562State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test562State) {
         when (state) {
@@ -219,6 +225,8 @@ class Test562StateMachine(
             is Test562State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
+
             // W3C SCXML B.2: Set event data from <content> (C++ EventDataHelper::jsonStringToScriptValue pattern)
             send(Test562Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = "this is  a  \nstring"))
             }
@@ -241,6 +249,7 @@ class Test562StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test562State,

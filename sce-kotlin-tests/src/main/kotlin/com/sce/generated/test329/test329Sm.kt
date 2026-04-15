@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/329/test329.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test329
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -16,6 +18,7 @@ sealed interface Test329State : State {
     data object S2 : Test329State
     data object S3 : Test329State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test329Event : Event {
@@ -94,6 +97,7 @@ class Test329StateMachine(
         is Test329Event.Foo -> "foo"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -210,6 +214,7 @@ class Test329StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test329State,
@@ -267,6 +272,7 @@ class Test329StateMachine(
         else -> TransitionResult.External(Test329State.Fail, Test329State.S0)
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test329State) {
         when (state) {
@@ -285,26 +291,43 @@ class Test329StateMachine(
             is Test329State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+
             raiseInternal(Test329Event.Foo)
+
+
             executeAssign("Var1", "_sessionid")
+
+
             executeAssign("_sessionid", "'invalid_session_id'")
             }
             is Test329State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             executeAssign("Var2", "_event")
+
+
             executeAssign("_event", "27")
             }
             is Test329State.S2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
+
+
             executeAssign("Var3", "_name")
+
+
             executeAssign("_name", "27")
             }
             is Test329State.S3 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
+
+
             executeAssign("Var4", "_ioprocessors")
+
+
             executeAssign("_ioprocessors", "27")
             }
             else -> {}
@@ -335,6 +358,7 @@ class Test329StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test329State,

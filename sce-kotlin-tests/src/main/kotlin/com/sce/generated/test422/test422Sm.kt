@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/422/test422.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -5,6 +6,7 @@
 package com.sce.generated.test422
 
 import com.sce.runtime.*
+
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -15,6 +17,7 @@ sealed interface Test422State : State {
     data object S11 : Test422State
     data object S12 : Test422State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test422Event : Event {
@@ -123,6 +126,7 @@ class Test422StateMachine(
     }
 
 
+
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
     // W3C SCXML B.1: Lazy script engine initialization
@@ -224,6 +228,7 @@ class Test422StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test422State,
@@ -281,6 +286,7 @@ class Test422StateMachine(
         else -> TransitionResult.Ignored
     }
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test422State) {
         when (state) {
@@ -299,6 +305,8 @@ class Test422StateMachine(
             is Test422State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
+
+
             scheduleSend("__send_0", 2000L, Test422Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -376,6 +384,7 @@ class Test422StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test422State,
@@ -384,18 +393,24 @@ class Test422StateMachine(
         when (source) {
         is Test422State.S1 -> when {
             (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             else -> {}
         }
         is Test422State.S11 -> when {
             (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             else -> {}
         }
         is Test422State.S12 -> when {
             (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
+
+
             executeAssign("Var1", "Var1 + 1")
             }
             else -> {}

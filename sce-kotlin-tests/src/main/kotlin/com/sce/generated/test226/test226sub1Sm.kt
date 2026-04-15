@@ -1,3 +1,4 @@
+
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/226/test226sub1.scxml
 // Generator: SCE Kotlin Code Generator v1.0
@@ -6,12 +7,14 @@ package com.sce.generated.test226
 
 import com.sce.runtime.*
 
+
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface Test226sub1State : State {
     data object Final : Test226sub1State
     data object S0 : Test226sub1State
 }
+
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface Test226sub1Event : Event {
@@ -78,6 +81,7 @@ class Test226sub1StateMachine(
         is Test226sub1Event.VarBound -> "varBound"
         else -> null
     }
+
 
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
@@ -179,6 +183,7 @@ class Test226sub1StateMachine(
         )
     }
 
+
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test226sub1State,
@@ -210,6 +215,7 @@ class Test226sub1StateMachine(
 
     // --- Per-State Event Handlers ---
 
+
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test226sub1State) {
         when (state) {
@@ -239,6 +245,7 @@ class Test226sub1StateMachine(
             else -> {}
         }
     }
+
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: Test226sub1State,
@@ -247,6 +254,8 @@ class Test226sub1StateMachine(
         when (source) {
         is Test226sub1State.S0 -> when {
             event == null && safeEvaluateGuard("typeof Var1 !== 'undefined'") -> {
+
+
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("varBound", "")
             }
