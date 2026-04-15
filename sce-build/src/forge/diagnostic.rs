@@ -1692,7 +1692,22 @@ mod tests {
     /// Update the JSON string deliberately alongside a `SCHEMA_VERSION`
     /// bump when the wire shape changes.
     fn forge_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
+        use crate::forge::error::{ExprError, GenerateError, ImportError, ManifestError, XmlError};
         vec![
+            (
+                "forge/xml-parse",
+                ForgeError::Xml(XmlError::Parse("unexpected end tag </scxml>".into())),
+                r#"{"v":1,"id":"fnv1a:16e2e2901e2b9b96","code":"xml/parse","stage":"xml","message":"XML parse error: unexpected end tag </scxml>"}"#,
+            ),
+            (
+                "forge/missing-element",
+                ValidationError::MissingElement {
+                    kind: ForgeKind::Transform,
+                    element: "datamodel".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f647afe305a652e4","code":"validation/missing-element","stage":"validation","message":"transform kind requires a <datamodel> element"}"#,
+            ),
             (
                 "forge/missing-attribute",
                 ValidationError::MissingAttribute {
@@ -1758,15 +1773,515 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5f500ed01d12c1bb","code":"import/kind-mismatch","stage":"import","message":"<sce:import src=\"peer.scxml\" kind=\"validator\">: actual kind is 'codec' (mismatch)","actual":"validator","fix":{"kind":"replace_with","to":"codec"}}"#,
             ),
+            (
+                "forge/unsupported-kind",
+                ValidationError::UnsupportedKind("bogus".into()).into(),
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer"]}}"#,
+            ),
+            (
+                "forge/duplicate-id",
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::Statechart,
+                    what: "state id".into(),
+                    id: "armed".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b7a473dbee90ecba","code":"validation/duplicate-id","stage":"validation","message":"statechart: duplicate state id: 'armed'","actual":"armed","fix":{"kind":"rename_duplicate","what":"state id","id":"armed"}}"#,
+            ),
+            (
+                "forge/duplicate-context-object",
+                ValidationError::DuplicateContextObject { id: "ctx1".into() }.into(),
+                r#"{"v":1,"id":"fnv1a:5915eba3f66f34b0","code":"validation/duplicate-context-object","stage":"validation","message":"duplicate <sce:context id=\"ctx1\"> declaration","actual":"ctx1","fix":{"kind":"rename_duplicate","what":"sce:context id","id":"ctx1"}}"#,
+            ),
+            (
+                "forge/empty-collection",
+                ValidationError::EmptyCollection {
+                    kind: ForgeKind::Codec,
+                    what: "field with byte layout".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:85bab620d8b00304","code":"validation/empty-collection","stage":"validation","message":"codec kind requires at least one field with byte layout"}"#,
+            ),
+            (
+                "forge/count-mismatch",
+                ValidationError::CountMismatch {
+                    kind: ForgeKind::Lookup,
+                    detail: "value count (5) must match axis breakpoints (4)".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b084f9ec0d995866","code":"validation/count-mismatch","stage":"validation","message":"lookup: value count (5) must match axis breakpoints (4)"}"#,
+            ),
+            (
+                "forge/incompatible-attributes",
+                ValidationError::IncompatibleAttributes {
+                    element: "sce:field".into(),
+                    detail: "sce:on-miss='error' is incompatible with sce:default".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:916c56cb5f75059f","code":"validation/incompatible-attributes","stage":"validation","message":"sce:field: sce:on-miss='error' is incompatible with sce:default"}"#,
+            ),
+            (
+                "forge/missing-context",
+                ValidationError::MissingContext {
+                    site: "cpp: condition".into(),
+                    detail: "ctx.nonexistent".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b34a86196217f3b4","code":"validation/missing-context","stage":"validation","message":"cpp: condition: ctx.nonexistent","actual":"ctx.nonexistent"}"#,
+            ),
+            (
+                "forge/invalid-direction",
+                ValidationError::InvalidDirection {
+                    kind: ForgeKind::Transform,
+                    direction: "internal".into(),
+                    field: "input".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0975034c3bd4f30d","code":"validation/invalid-direction","stage":"validation","spec":"SCE Forge §3.3","message":"transform kind does not support 'internal' direction (field 'input')","actual":"internal","fix":{"kind":"replace_one_of","candidates":["input","output"]}}"#,
+            ),
+            (
+                "forge/numeric-parse",
+                ValidationError::NumericParse {
+                    element: "sce:field".into(),
+                    attr: "sce:byte".into(),
+                    value: "0xZZ".into(),
+                    detail: "invalid hex digit".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4bbe0c088c2db6ae","code":"validation/numeric-parse","stage":"validation","message":"invalid sce:byte value '0xZZ' on sce:field: invalid hex digit","actual":"0xZZ"}"#,
+            ),
+            (
+                "forge/empty-value",
+                ValidationError::EmptyValue {
+                    element: "sce:helper".into(),
+                    attr: "name".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d944a323b238f66f","code":"validation/empty-value","stage":"validation","message":"sce:helper 'name' attribute must not be empty","fix":{"kind":"add_attribute","element":"sce:helper","attr":"name"}}"#,
+            ),
+            (
+                "forge/singleton-violation",
+                ValidationError::SingletonViolation {
+                    kind: ForgeKind::Lookup,
+                    attr: "sce:plausibility".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:dd928fd5d29f9ebd","code":"validation/singleton-violation","stage":"validation","message":"only one sce:plausibility attribute allowed per lookup kind"}"#,
+            ),
+            (
+                "forge/wrong-pipeline",
+                ValidationError::WrongPipeline {
+                    kind: ForgeKind::Statechart,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:71f73dde2407223e","code":"validation/wrong-pipeline","stage":"validation","spec":"SCE Forge §4","message":"statechart kind cannot be processed by the forge pipeline","actual":"statechart"}"#,
+            ),
+            (
+                "forge/dynamic-features",
+                ValidationError::DynamicFeatures {
+                    name: "chart".into(),
+                    reason: "initial state attribute names a state that is not declared".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:aaaac1f1c1e4cf6e","code":"validation/dynamic-features","stage":"validation","message":"cannot generate static code for 'chart': initial state attribute names a state that is not declared","actual":"initial state attribute names a state that is not declared"}"#,
+            ),
+            (
+                "forge/expression-empty",
+                ExprError::Empty { what: "condition" }.into(),
+                r#"{"v":1,"id":"fnv1a:87a50d789871d4b9","code":"expression/empty","stage":"expression","spec":"SCE Forge §3.4","message":"empty condition"}"#,
+            ),
+            (
+                "forge/expression-lex",
+                ExprError::Lex {
+                    position: 7,
+                    detail: "unterminated string literal".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:317e5d0fc5f07ffe","code":"expression/lex","stage":"expression","spec":"SCE Forge §3.4","message":"at position 7: unterminated string literal"}"#,
+            ),
+            (
+                "forge/expression-unsupported-construct",
+                ExprError::UnsupportedConstruct {
+                    construct: "arrow function".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d953d35f95a3575d","code":"expression/unsupported-construct","stage":"expression","spec":"SCE Forge §3.4","message":"unsupported ECMAScript construct: arrow function. Extended SCXML expressions must use the stateless subset.","actual":"arrow function"}"#,
+            ),
+            (
+                "forge/expression-parse-mismatch",
+                ExprError::ParseMismatch {
+                    expected: "identifier".into(),
+                    got: ";".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:68b81585decce3e8","code":"expression/parse-mismatch","stage":"expression","spec":"SCE Forge §3.4","message":"expected identifier, got ';'","expected":["identifier"],"actual":";"}"#,
+            ),
+            (
+                "forge/expression-unexpected-token",
+                ExprError::UnexpectedToken { token: "else".into() }.into(),
+                r#"{"v":1,"id":"fnv1a:2f9a3376c0ed3f13","code":"expression/unexpected-token","stage":"expression","spec":"SCE Forge §3.4","message":"unexpected token: 'else'","actual":"else"}"#,
+            ),
+            (
+                "forge/expression-invalid-lvalue",
+                ExprError::InvalidLvalue {
+                    location: "call expression".into(),
+                    detail: "cannot assign to a function call".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0b54880b78b1e343","code":"expression/invalid-lvalue","stage":"expression","spec":"SCE Forge §3.4","message":"assign location \"call expression\" is not an lvalue: cannot assign to a function call"}"#,
+            ),
+            (
+                "forge/expression-type-coercion",
+                ExprError::TypeCoercion {
+                    lang: "Rust",
+                    detail: "mixing i32 and String".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:af0be9fbfaff2085","code":"expression/type-coercion","stage":"expression","spec":"SCE Forge §3.4","message":"cannot coerce Rust expression: mixing i32 and String","actual":"Rust"}"#,
+            ),
+            (
+                "forge/import-file-not-found",
+                ImportError::FileNotFound {
+                    src: "peer.scxml".into(),
+                    searched: "./scxml/peer.scxml, ./peer.scxml".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c42ab6780d3198c3","code":"import/file-not-found","stage":"import","message":"<sce:import src=\"peer.scxml\">: file not found (searched: ./scxml/peer.scxml, ./peer.scxml)","actual":"peer.scxml"}"#,
+            ),
+            (
+                "forge/import-read-error",
+                ImportError::ReadError {
+                    src: "peer.scxml".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a446640c76415d17","code":"import/read-error","stage":"import","message":"<sce:import src=\"peer.scxml\">: cannot read: permission denied","actual":"peer.scxml"}"#,
+            ),
+            (
+                "forge/manifest-circular-dependency",
+                ManifestError::CircularDependency(vec![
+                    "a.scxml".into(),
+                    "b.scxml".into(),
+                    "a.scxml".into(),
+                ])
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f8d8d18f937c5411","code":"manifest/circular-dependency","stage":"manifest","message":"circular dependency detected among: a.scxml, b.scxml, a.scxml"}"#,
+            ),
+            (
+                "forge/manifest-io",
+                ManifestError::Io {
+                    context: "scanning ./forge".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:dc01746049886012","code":"manifest/io","stage":"manifest","message":"scanning ./forge: entity not found"}"#,
+            ),
+            (
+                "forge/generate-invalid-config",
+                GenerateError::InvalidConfig("missing `targets` section".into()).into(),
+                r#"{"v":1,"id":"fnv1a:326c68123b3f4738","code":"generate/invalid-config","stage":"generate","message":"missing `targets` section"}"#,
+            ),
+            (
+                "forge/generate-template-load",
+                GenerateError::TemplateLoad("codec.cpp.jinja2 not found in template dir".into())
+                    .into(),
+                r#"{"v":1,"id":"fnv1a:71b634149cbd2384","code":"generate/template-load","stage":"generate","message":"template load error: codec.cpp.jinja2 not found in template dir"}"#,
+            ),
+            (
+                "forge/generate-template-render",
+                GenerateError::TemplateRender("undefined variable `fields` at line 12".into())
+                    .into(),
+                r#"{"v":1,"id":"fnv1a:98d75683f2764cff","code":"generate/template-render","stage":"generate","message":"template render error: undefined variable `fields` at line 12"}"#,
+            ),
+            (
+                "forge/io-filesystem",
+                ForgeError::Io {
+                    path: std::path::PathBuf::from("/tmp/build/out.rs"),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                },
+                r#"{"v":1,"id":"fnv1a:dac850da181d48e9","code":"io/filesystem","stage":"io","message":"I/O error on /tmp/build/out.rs: entity not found"}"#,
+            ),
+        ]
+    }
+
+    /// Multi-record emitter goldens. `XsdErrors` is the one production
+    /// type where Display (a per-violation `file:line: message` line)
+    /// deliberately diverges from JSON `message` (bare libxml2 text).
+    /// Documented in `xsd_validator.rs`: each violation rides its own
+    /// record with `location.line` set — the inline file:line form in
+    /// Display is the editor-friendly counterpart.
+    ///
+    /// Participates in [`diagnostic_goldens_are_byte_stable`] and
+    /// [`every_code_has_a_golden`], but **not** in
+    /// [`human_mode_matches_json_message`] — that invariant does not
+    /// hold by construction here.
+    fn xsd_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
+        use crate::forge::error::XmlError;
+        use crate::forge::xsd_validator::{XsdDiag, XsdErrors};
+        vec![
+            (
+                "forge/xml-schema-validation",
+                ForgeError::Xml(XmlError::SchemaValidation(XsdErrors {
+                    source_label: "chart.scxml".into(),
+                    diagnostics: vec![XsdDiag {
+                        line: Some(7),
+                        col: None,
+                        message: "Element 'sce:field': missing required attribute 'id'.".into(),
+                    }],
+                })),
+                r#"{"v":1,"id":"fnv1a:cd97e1d8cb41cb8c","code":"xml/schema-validation","stage":"xml","spec":"SCE Forge XSD","message":"Element 'sce:field': missing required attribute 'id'.","location":{"file":"chart.scxml","line":7}}"#,
+            ),
         ]
     }
 
     /// Shared golden table for first-party `MeshError` cases. See
     /// [`forge_golden_entries`] for the rationale; same shape.
     fn mesh_golden_entries() -> Vec<(&'static str, crate::mesh::error::MeshError, &'static str)> {
-        use crate::mesh::error::TopologyError;
+        use crate::mesh::error::{
+            CodegenError, DeployError, ExternalConfigError, MeshError, TopologyError,
+            UnresolvedName,
+        };
+        use crate::mesh::pattern::{CommunicationPattern, PatternViolation};
         use crate::mesh::target::TargetId;
+        use crate::mesh::topology::EventCoverageWarning;
+        use crate::mesh::transport::TransportCapability;
         vec![
+            (
+                "mesh/deploy-read",
+                DeployError::ReadFile {
+                    path: "deploy.yaml".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bb3b4a7b769b5da5","code":"mesh/deploy-read","stage":"mesh-deploy","message":"cannot read deploy config 'deploy.yaml': entity not found","actual":"deploy.yaml"}"#,
+            ),
+            (
+                "mesh/deploy-parse",
+                DeployError::Yaml("line 3: unexpected token".into()).into(),
+                r#"{"v":1,"id":"fnv1a:e4569cf099b99bad","code":"mesh/deploy-parse","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"deploy.yaml parse error: line 3: unexpected token"}"#,
+            ),
+            (
+                "mesh/deploy-unsupported-version",
+                DeployError::UnsupportedVersion {
+                    found: "99".into(),
+                    supported: vec!["1"],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1ca45c4f97a6bbad","code":"mesh/deploy-unsupported-version","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"deploy.yaml version '99' is not supported. Supported: 1. Update sce-codegen or change the `version:` field.","actual":"99","fix":{"kind":"replace_one_of","candidates":["1"]}}"#,
+            ),
+            (
+                "mesh/deploy-duplicate-machine",
+                DeployError::DuplicateMachine {
+                    machine: "motor".into(),
+                    devices: vec!["ecu_a".into(), "ecu_b".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2696f6f9c7da22b8","code":"mesh/deploy-duplicate-machine","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'motor' is declared on multiple devices: ecu_a, ecu_b. Machine names must be globally unique across the deployment.","actual":"motor"}"#,
+            ),
+            (
+                "mesh/external-read",
+                ExternalConfigError::Read {
+                    path: "vsomeip.json".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:aa558451e9e2d96a","code":"mesh/external-read","stage":"mesh-external","message":"cannot read external config 'vsomeip.json': entity not found","actual":"vsomeip.json"}"#,
+            ),
+            (
+                "mesh/external-parse",
+                ExternalConfigError::Parse {
+                    path: "vsomeip.json".into(),
+                    reason: "expected `}` at line 5".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bb3ddd8b1609d557","code":"mesh/external-parse","stage":"mesh-external","message":"external config 'vsomeip.json' parse error: expected `}` at line 5"}"#,
+            ),
+            (
+                "mesh/external-unresolved-names",
+                ExternalConfigError::UnresolvedNames {
+                    machine: "ecu_a".into(),
+                    config_path: "vsomeip.json".into(),
+                    missing: vec![UnresolvedName {
+                        kind: "service",
+                        name: "motor".into(),
+                        context: None,
+                    }],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:087408c4f27fcc9f","code":"mesh/external-unresolved-names","stage":"mesh-external","message":"deploy.yaml for machine 'ecu_a' references SOME/IP entities that do not exist in\nvsomeip.json:\n  - service \"motor\" → no match"}"#,
+            ),
+            (
+                "mesh/external-ambiguous-event-group",
+                ExternalConfigError::AmbiguousEventGroup {
+                    machine: "ecu_a".into(),
+                    target: "#motor".into(),
+                    config_path: "vsomeip.json".into(),
+                    event_group: "overspeed".into(),
+                    count: 3,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9bca8939ab487cd2","code":"mesh/external-ambiguous-event-group","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' references event_group 'overspeed' in 'vsomeip.json', which contains 3 events. Per-event fanout is not yet supported; declare a single-event group or add a per-event binding.","expected":["1"],"actual":"3"}"#,
+            ),
+            (
+                "mesh/external-empty-event-group",
+                ExternalConfigError::EmptyEventGroup {
+                    machine: "ecu_a".into(),
+                    target: "#motor".into(),
+                    config_path: "vsomeip.json".into(),
+                    event_group: "overspeed".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:80fb287b140e259b","code":"mesh/external-empty-event-group","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' references event_group 'overspeed' in 'vsomeip.json', which has no events declared. Add the event id in vsomeip.json."}"#,
+            ),
+            (
+                "mesh/external-named-reference-without-config",
+                ExternalConfigError::NamedReferenceWithoutConfig {
+                    machine: "ecu_a".into(),
+                    device: "dev0".into(),
+                    target: "#motor".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:66693396e8f7200e","code":"mesh/external-named-reference-without-config","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' uses name-based SOME/IP references but device 'dev0' does not declare 'transports.someip.config:'. Add the vsomeip.json path to the device's transports block."}"#,
+            ),
+            (
+                "mesh/external-reserved-someip-id-keys",
+                ExternalConfigError::ReservedSomeipIdKeys {
+                    machine: "ecu_a".into(),
+                    target: "#motor".into(),
+                    transport: "someip".into(),
+                    fields: vec!["service_id", "method_id"],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7fad79aaf5b8d7e8","code":"mesh/external-reserved-someip-id-keys","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' (transport: someip) uses reserved SOME/IP numeric-ID key(s) [\"service_id\", \"method_id\"]. deploy.yaml does not declare numeric IDs directly — for SOME/IP bindings reference names against `transports.someip.config:` (vsomeip.json); on other transports remove these keys.","fix":{"kind":"remove_fields","location":"machines.ecu_a.bindings.#motor","fields":["service_id","method_id"]}}"#,
+            ),
+            (
+                "mesh/external-someip-field-on-non-someip-transport",
+                ExternalConfigError::SomeipFieldOnNonSomeipTransport {
+                    machine: "ecu_a".into(),
+                    target: "#motor".into(),
+                    transport: "zenoh".into(),
+                    fields: vec!["service", "method"],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a86f56b42fa5fd7e","code":"mesh/external-someip-field-on-non-someip-transport","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' uses transport 'zenoh' but declares SOME/IP-only fields [\"service\", \"method\"]. Either change the transport to 'someip' or remove the SOME/IP-specific fields.","actual":"zenoh","fix":{"kind":"replace_with","to":"someip"}}"#,
+            ),
+            (
+                "mesh/external-conflicting-event-schema",
+                ExternalConfigError::ConflictingEventSchema {
+                    machine: "ecu_a".into(),
+                    target: "#motor".into(),
+                    flat_fields: vec!["method", "event_group"],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:85d4a28ba6402f73","code":"mesh/external-conflicting-event-schema","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' declares both flat fields ([\"method\", \"event_group\"]) and an 'events:' block. These are mutually exclusive — use 'events:' for per-event mappings, or the flat fields for a single mapping shared by every event on this target."}"#,
+            ),
+            (
+                "mesh/external-conflicting-event-field-kinds",
+                ExternalConfigError::ConflictingEventFieldKinds {
+                    machine: "ecu_a".into(),
+                    target: "#motor".into(),
+                    event: "brake.activate".into(),
+                    fields: vec!["method".into(), "getter".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b020ea734bf7eacc","code":"mesh/external-conflicting-event-field-kinds","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' event 'brake.activate' sets multiple field kinds ([\"method\", \"getter\"]). Each per-event entry must declare exactly one of method / event_group / getter / setter."}"#,
+            ),
+            (
+                "mesh/external-empty-event-entry",
+                ExternalConfigError::EmptyEventEntry {
+                    machine: "ecu_a".into(),
+                    target: "#motor".into(),
+                    event: "brake.activate".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1c24ba9d4506b785","code":"mesh/external-empty-event-entry","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' event 'brake.activate' declares no field. Each per-event entry must set exactly one of method / event_group / getter / setter."}"#,
+            ),
+            (
+                "mesh/topology-unresolved-targets",
+                TopologyError::UnresolvedTargets {
+                    machine: "ecu_a".into(),
+                    targets: vec![TargetId::new("#motor").unwrap()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7cf5ee3bd9f38fc1","code":"mesh/topology-unresolved-targets","stage":"mesh-topology","spec":"SCE Mesh §9","message":"unresolved send targets for machine 'ecu_a': #motor. Each <send target=\"...\"> in SCXML must have a corresponding binding in deploy.yaml"}"#,
+            ),
+            (
+                "mesh/topology-machine-not-found",
+                TopologyError::MachineNotFound {
+                    machine: "ecu_z".into(),
+                    available: vec!["ecu_a".into(), "ecu_b".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:24627485b3d1728d","code":"mesh/topology-machine-not-found","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_z' not found in deploy.yaml topology. Available: ecu_a, ecu_b","actual":"ecu_z","fix":{"kind":"replace_one_of","candidates":["ecu_a","ecu_b"]}}"#,
+            ),
+            (
+                "mesh/topology-receiver-not-declared",
+                TopologyError::ReceiverNotDeclared {
+                    sender: "ecu_a".into(),
+                    target: TargetId::new("#motor").unwrap(),
+                    receiver: "motor".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0df0ff337a608f8b","code":"mesh/topology-receiver-not-declared","stage":"mesh-topology","spec":"SCE Mesh §9","message":"machine 'ecu_a' sends to '#motor' but no machine 'motor' is declared in deploy.yaml. Add the receiver under topology.*.machines with its `source:` path.","actual":"motor"}"#,
+            ),
+            (
+                "mesh/topology-absolute-source-path",
+                TopologyError::AbsoluteSourcePath {
+                    machine: "motor".into(),
+                    path: "/absolute/path.scxml".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d48777da2ca3f441","code":"mesh/topology-absolute-source-path","stage":"mesh-topology","message":"machine 'motor' has absolute source path '/absolute/path.scxml'. Use a path relative to the deploy.yaml file instead.","actual":"/absolute/path.scxml"}"#,
+            ),
+            (
+                "mesh/topology-receiver-source-read",
+                TopologyError::ReceiverSourceRead {
+                    machine: "motor".into(),
+                    path: "motor.scxml".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b607ba8f6eede073","code":"mesh/topology-receiver-source-read","stage":"mesh-topology","message":"cannot read receiver SCXML 'motor.scxml' (for machine 'motor'): entity not found. Check the `source:` field in deploy.yaml for this machine.","actual":"motor.scxml"}"#,
+            ),
+            (
+                "mesh/topology-receiver-source-parse",
+                TopologyError::ReceiverSourceParse {
+                    machine: "motor".into(),
+                    path: "motor.scxml".into(),
+                    reason: "unexpected end tag".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:665c9e5b41ae8ce7","code":"mesh/topology-receiver-source-parse","stage":"mesh-topology","message":"cannot parse receiver SCXML 'motor.scxml' (for machine 'motor'): unexpected end tag"}"#,
+            ),
+            (
+                "mesh/topology-uncovered-events",
+                TopologyError::UncoveredEvents {
+                    sender: "ecu_a".into(),
+                    findings: vec![EventCoverageWarning {
+                        sender: "ecu_a".into(),
+                        target: TargetId::new("#motor").unwrap(),
+                        event: "brake.activate".into(),
+                    }],
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:40828afc2df752c2","code":"mesh/topology-uncovered-events","stage":"mesh-topology","spec":"SCE Mesh §9","message":"event coverage violations in machine 'ecu_a':\n  - send target=\"#motor\" event=\"brake.activate\" has no matching transition in 'motor'\nEach <send event=\"X\"> must have a matching <transition event=\"X\"> in the receiver. Fix: add the missing transition in the receiver, or correct the event name in the sender."}"##,
+            ),
+            (
+                "mesh/topology-pattern-capability-violation",
+                TopologyError::PatternCapabilityViolation {
+                    sender: "ecu_a".into(),
+                    violations: vec![PatternViolation {
+                        state: "on".into(),
+                        target: TargetId::new("#motor").unwrap(),
+                        event: "service.request.stop".into(),
+                        pattern: CommunicationPattern::ServiceRequest,
+                        required: TransportCapability::RequestReply,
+                        transport: "local_fire_forget".into(),
+                    }],
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:1facc4cb6fb444ba","code":"mesh/topology-pattern-capability-violation","stage":"mesh-topology","spec":"SCE Mesh §9","message":"pattern capability violations in machine 'ecu_a':\n  - send target=\"#motor\" event=\"service.request.stop\" uses pattern 'service.request' (requires request/reply capability), but transport 'local_fire_forget' does not support it\nEach communication pattern must be supported by the bound transport. Fix: change the transport in deploy.yaml, or use a different event pattern."}"##,
+            ),
             (
                 "mesh/missing-binding-field",
                 TopologyError::MissingBindingField {
@@ -1779,6 +2294,18 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:d7ba280d1556705e","code":"mesh/topology-missing-binding-field","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding for '#motor' (transport: someip) is missing required field 'service'. Add 'service:' to the binding in deploy.yaml.","fix":{"kind":"add_attribute","element":"machines.ecu_a.bindings.#motor","attr":"service"}}"#,
             ),
             (
+                "mesh/topology-invalid-binding-field",
+                TopologyError::InvalidBindingField {
+                    machine: "ecu_a".into(),
+                    target: TargetId::new("#motor").unwrap(),
+                    transport: "shm".into(),
+                    field: "size".into(),
+                    reason: "must be a power of two".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:17263f5574103176","code":"mesh/topology-invalid-binding-field","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding '#motor' (transport: shm) has invalid 'size': must be a power of two"}"#,
+            ),
+            (
                 "mesh/event-binding-unused",
                 TopologyError::EventBindingUnused {
                     machine: "ecu_a".into(),
@@ -1787,6 +2314,312 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:4fdd02e5a9781de8","code":"mesh/topology-event-binding-unused","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding '#motor' declares events.legacy.ping in deploy.yaml, but the SCXML model never sends 'legacy.ping' to this target. Remove the unused entry, or correct the event name.","actual":"legacy.ping","fix":{"kind":"remove_fields","location":"machines.ecu_a.bindings.#motor.events","fields":["legacy.ping"]}}"#,
+            ),
+            (
+                "mesh/codegen-unsupported-language",
+                CodegenError::UnsupportedLanguage("ruby".into()).into(),
+                r#"{"v":1,"id":"fnv1a:7d6e0a4752f9975b","code":"mesh/codegen-unsupported-language","stage":"mesh-codegen","spec":"SCE Mesh §7","message":"mesh codegen not yet supported for language 'ruby'","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["cpp"]}}"#,
+            ),
+            (
+                "mesh/codegen-unsupported-transport",
+                CodegenError::UnsupportedTransport {
+                    transport: "carrier_pigeon".into(),
+                    target: TargetId::new("#motor").unwrap(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:aa145685cde035e6","code":"mesh/codegen-unsupported-transport","stage":"mesh-codegen","spec":"SCE Mesh §8","message":"transport 'carrier_pigeon' not yet supported (target '#motor')","actual":"carrier_pigeon","fix":{"kind":"replace_one_of","candidates":["local","shm","someip","zenoh"]}}"#,
+            ),
+            (
+                "mesh/codegen-template-read",
+                CodegenError::TemplateRead {
+                    path: "mesh/someip.cpp.jinja2".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5a1fa3fbe4418aba","code":"mesh/codegen-template-read","stage":"mesh-codegen","message":"cannot read mesh template 'mesh/someip.cpp.jinja2': entity not found","actual":"mesh/someip.cpp.jinja2"}"#,
+            ),
+            (
+                "mesh/codegen-template-render",
+                CodegenError::TemplateRender("unknown filter `upper_camel`".into()).into(),
+                r#"{"v":1,"id":"fnv1a:17464f8403ad70d9","code":"mesh/codegen-template-render","stage":"mesh-codegen","message":"mesh template render error: unknown filter `upper_camel`"}"#,
+            ),
+            (
+                "mesh/codegen-event-name-collision",
+                CodegenError::EventNameCollision {
+                    target: TargetId::new("#motor").unwrap(),
+                    suffix: "SERVICE_REQUEST_X".into(),
+                    events: vec!["service.request.x".into(), "service-request-x".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:97c61b17b678ca97","code":"mesh/codegen-event-name-collision","stage":"mesh-codegen","message":"target '#motor': SCXML events [\"service.request.x\", \"service-request-x\"] both map to the same C++ constant suffix 'SERVICE_REQUEST_X'. Rename one of the events (or use a per-event explicit mapping) so generated constants are unique.","actual":"SERVICE_REQUEST_X"}"#,
+            ),
+            (
+                "mesh/io",
+                MeshError::Io {
+                    path: std::path::PathBuf::from("/tmp/mesh.log"),
+                    source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                },
+                r#"{"v":1,"id":"fnv1a:8d27e49c9b609f34","code":"mesh/io","stage":"io","message":"I/O error on /tmp/mesh.log: entity not found"}"#,
+            ),
+        ]
+    }
+
+    /// Synthetic goldens for codes whose production emitter lives
+    /// outside this crate.
+    ///
+    /// Today this covers:
+    ///
+    /// * CLI-boundary codes emitted by the `CliError` enum in
+    ///   `src/bin/sce_codegen.rs`. That enum lives in the binary
+    ///   crate, not reachable from library tests, so its records are
+    ///   reconstructed here with the same (code, stage, actual, fix)
+    ///   shape the binary produces. End-to-end emission is pinned by
+    ///   `tests/error_format_json.rs`, which spawns the binary.
+    /// * Reserved zombie codes (`cli/scxml-parse`,
+    ///   `cli/dynamic-features`) retained in the wire vocabulary for
+    ///   schema back-compat — see SCE_ERROR_CONTRACT.md §3. They have
+    ///   no active emitter; the synthetic records document their
+    ///   agreed-upon field shape.
+    ///
+    /// Participates in [`diagnostic_goldens_are_byte_stable`] and
+    /// [`every_code_has_a_golden`] but **not**
+    /// [`human_mode_matches_json_message`] — there is no Display
+    /// source in this crate to parity-check against.
+    fn synthetic_golden_entries() -> Vec<(&'static str, Diagnostic, &'static str)> {
+        // Build a Diagnostic the same way the single-record trait
+        // default would, but with hand-picked `message` and payload —
+        // no ToDiagnostics source exists.
+        fn synth(
+            code: DiagnosticCode,
+            stage: Stage,
+            message: &str,
+            key_fragments: &[&str],
+            expected: Option<Vec<String>>,
+            actual: Option<String>,
+            fix: Option<Fix>,
+        ) -> Diagnostic {
+            let key: Vec<String> = key_fragments.iter().map(|s| (*s).to_string()).collect();
+            Diagnostic {
+                schema_version: SCHEMA_VERSION,
+                id: compute_id(code, stage, None, &key),
+                code,
+                stage,
+                spec: code.spec_anchor(),
+                message: message.to_string(),
+                location: None,
+                expected,
+                actual,
+                fix,
+            }
+        }
+        vec![
+            (
+                "cli/unknown-language",
+                synth(
+                    DiagnosticCode::CliUnknownLanguage,
+                    Stage::Cli,
+                    "Unknown language: ruby. Use rust, cpp, kotlin, or go.",
+                    &["ruby"],
+                    None,
+                    Some("ruby".into()),
+                    Some(Fix::ReplaceOneOf {
+                        candidates: vec!["rust".into(), "cpp".into(), "kotlin".into(), "go".into()],
+                    }),
+                ),
+                r#"{"v":1,"id":"fnv1a:0b7cd966f5ada566","code":"cli/unknown-language","stage":"cli","message":"Unknown language: ruby. Use rust, cpp, kotlin, or go.","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go"]}}"#,
+            ),
+            (
+                "cli/unsupported-language",
+                synth(
+                    DiagnosticCode::CliUnsupportedLanguage,
+                    Stage::Cli,
+                    "Python statechart codegen is not yet supported",
+                    &["Python statechart"],
+                    None,
+                    Some("Python statechart".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:d4b360b4aec82aca","code":"cli/unsupported-language","stage":"cli","message":"Python statechart codegen is not yet supported","actual":"Python statechart"}"#,
+            ),
+            (
+                "cli/read-input",
+                synth(
+                    DiagnosticCode::CliReadInput,
+                    Stage::Cli,
+                    "Cannot read chart.scxml: file not found",
+                    &["chart.scxml"],
+                    None,
+                    Some("chart.scxml".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:5f6b3cd5af06c049","code":"cli/read-input","stage":"cli","message":"Cannot read chart.scxml: file not found","actual":"chart.scxml"}"#,
+            ),
+            (
+                "cli/write-output",
+                synth(
+                    DiagnosticCode::CliWriteOutput,
+                    Stage::Cli,
+                    "Cannot write out/chart.rs: permission denied",
+                    &["out/chart.rs"],
+                    None,
+                    Some("out/chart.rs".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:b097092587b48b16","code":"cli/write-output","stage":"cli","message":"Cannot write out/chart.rs: permission denied","actual":"out/chart.rs"}"#,
+            ),
+            (
+                "cli/create-output-dir",
+                synth(
+                    DiagnosticCode::CliCreateOutputDir,
+                    Stage::Cli,
+                    "Cannot create output directory out/: permission denied",
+                    &["out/"],
+                    None,
+                    Some("out/".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:d5090869606d1afc","code":"cli/create-output-dir","stage":"cli","message":"Cannot create output directory out/: permission denied","actual":"out/"}"#,
+            ),
+            (
+                "cli/scxml-parse",
+                // Reserved zombie: no current emitter routes through
+                // this code — unknown sce:kind now flows through the
+                // forge XSD and reports xml/schema-validation. Kept in
+                // the wire vocabulary for schema back-compat. Shape
+                // below matches the legacy emission.
+                synth(
+                    DiagnosticCode::CliScxmlParse,
+                    Stage::Cli,
+                    "SCXML parse failed: unexpected end tag",
+                    &["chart.scxml"],
+                    None,
+                    Some("chart.scxml".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:585c496f1a5b3f69","code":"cli/scxml-parse","stage":"cli","message":"SCXML parse failed: unexpected end tag","actual":"chart.scxml"}"#,
+            ),
+            (
+                "cli/scxml-generate",
+                synth(
+                    DiagnosticCode::CliScxmlGenerate,
+                    Stage::Cli,
+                    "validation: state id 'armed' duplicated",
+                    &["validation", "state id 'armed' duplicated"],
+                    None,
+                    None,
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:add14c90ed7da6d2","code":"cli/scxml-generate","stage":"cli","message":"validation: state id 'armed' duplicated"}"#,
+            ),
+            (
+                "cli/dynamic-features",
+                // Reserved zombie: analyzer rejects now route through
+                // validation/dynamic-features so agents can key repair
+                // on the analyzer (Stage::Validation, exit 3) rather
+                // than the CLI boundary. Retained for back-compat.
+                synth(
+                    DiagnosticCode::CliDynamicFeatures,
+                    Stage::Cli,
+                    "cannot generate static code: uses dynamic invoke",
+                    &["chart", "dynamic invoke"],
+                    None,
+                    Some("dynamic invoke".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:4547c865ab1e58f4","code":"cli/dynamic-features","stage":"cli","message":"cannot generate static code: uses dynamic invoke","actual":"dynamic invoke"}"#,
+            ),
+            (
+                "cli/missing-metadata-field",
+                synth(
+                    DiagnosticCode::CliMissingMetadataField,
+                    Stage::Cli,
+                    "No description field found in metadata.txt",
+                    &["metadata.txt"],
+                    None,
+                    Some("metadata.txt".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:0492d0b2283e41f1","code":"cli/missing-metadata-field","stage":"cli","message":"No description field found in metadata.txt","actual":"metadata.txt"}"#,
+            ),
+            (
+                "cli/not-a-directory",
+                synth(
+                    DiagnosticCode::CliNotADirectory,
+                    Stage::Cli,
+                    "Not a directory: build/out.rs",
+                    &["build/out.rs"],
+                    None,
+                    Some("build/out.rs".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:11b8224ce9934d18","code":"cli/not-a-directory","stage":"cli","message":"Not a directory: build/out.rs","actual":"build/out.rs"}"#,
+            ),
+            (
+                "cli/invalid-format-option",
+                synth(
+                    DiagnosticCode::CliInvalidFormatOption,
+                    Stage::Cli,
+                    "unknown --format yaml; expected human|json",
+                    &["yaml", "human|json"],
+                    None,
+                    Some("yaml".into()),
+                    Some(Fix::ReplaceOneOf {
+                        candidates: vec!["human".into(), "json".into()],
+                    }),
+                ),
+                r#"{"v":1,"id":"fnv1a:0cdfa05d11fc5b3d","code":"cli/invalid-format-option","stage":"cli","message":"unknown --format yaml; expected human|json","actual":"yaml","fix":{"kind":"replace_one_of","candidates":["human","json"]}}"#,
+            ),
+            (
+                "cli/json-serialization",
+                synth(
+                    DiagnosticCode::CliJsonSerialization,
+                    Stage::Cli,
+                    "JSON serialization failed: control character in string",
+                    &["control character in string"],
+                    None,
+                    None,
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:60be469b9af31308","code":"cli/json-serialization","stage":"cli","message":"JSON serialization failed: control character in string"}"#,
+            ),
+            (
+                "cli/project-root-not-found",
+                synth(
+                    DiagnosticCode::CliProjectRootNotFound,
+                    Stage::Cli,
+                    "Cannot find project root. Run from project directory or set --registry/--resources.",
+                    &[],
+                    None,
+                    None,
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:8ef6a814f15343f7","code":"cli/project-root-not-found","stage":"cli","message":"Cannot find project root. Run from project directory or set --registry/--resources."}"#,
+            ),
+            (
+                "cli/format-style-not-found",
+                synth(
+                    DiagnosticCode::CliFormatStyleNotFound,
+                    Stage::Cli,
+                    "--format-style file not found: .rustfmt.toml",
+                    &[".rustfmt.toml"],
+                    None,
+                    Some(".rustfmt.toml".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:84e445e58bbb1bde","code":"cli/format-style-not-found","stage":"cli","message":"--format-style file not found: .rustfmt.toml","actual":".rustfmt.toml"}"#,
+            ),
+            (
+                "cli/no-scxml-tag",
+                synth(
+                    DiagnosticCode::CliNoScxmlTag,
+                    Stage::Cli,
+                    "No <scxml> tag found in notes.txt",
+                    &["notes.txt"],
+                    None,
+                    Some("notes.txt".into()),
+                    None,
+                ),
+                r#"{"v":1,"id":"fnv1a:94f3f36322d6b380","code":"cli/no-scxml-tag","stage":"cli","message":"No <scxml> tag found in notes.txt","actual":"notes.txt"}"#,
             ),
         ]
     }
@@ -1811,6 +2644,26 @@ mod tests {
         }
         for (label, err, golden) in mesh_golden_entries() {
             let actual = serde_json::to_string(&single(&err)).unwrap();
+            if actual != golden {
+                mismatches.push(format!(
+                    "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
+                ));
+            }
+        }
+        for (label, err, golden) in xsd_golden_entries() {
+            // XsdErrors is multi-record by design; sample a single-
+            // diagnostic instance so `single()` applies. Structure is
+            // validated the same way as forge/mesh: serialize and
+            // compare to the pinned JSON.
+            let actual = serde_json::to_string(&single(&err)).unwrap();
+            if actual != golden {
+                mismatches.push(format!(
+                    "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
+                ));
+            }
+        }
+        for (label, diag, golden) in synthetic_golden_entries() {
+            let actual = serde_json::to_string(&diag).unwrap();
             if actual != golden {
                 mismatches.push(format!(
                     "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
@@ -2299,6 +3152,12 @@ mod tests {
         for (_label, err, _golden) in mesh_golden_entries() {
             covered.insert(single(&err).code.as_str());
         }
+        for (_label, err, _golden) in xsd_golden_entries() {
+            covered.insert(single(&err).code.as_str());
+        }
+        for (_label, diag, _golden) in synthetic_golden_entries() {
+            covered.insert(diag.code.as_str());
+        }
         let missing: Vec<&'static str> = ALL_DIAGNOSTIC_CODES
             .iter()
             .map(|c| c.as_str())
@@ -2307,10 +3166,18 @@ mod tests {
         assert!(
             missing.is_empty(),
             "DiagnosticCode variants without goldens ({}):\n{}\n\n\
-             Add representative cases to forge_golden_entries or \
-             mesh_golden_entries in sce-build/src/forge/diagnostic.rs.",
+             Add representative cases to forge_golden_entries, \
+             mesh_golden_entries, xsd_golden_entries, or \
+             synthetic_golden_entries in sce-build/src/forge/diagnostic.rs.",
             missing.len(),
             missing.join("\n"),
+        );
+        assert_eq!(
+            covered.len(),
+            ALL_DIAGNOSTIC_CODES.len(),
+            "golden coverage out of sync with enum: covered={}, enum={}",
+            covered.len(),
+            ALL_DIAGNOSTIC_CODES.len(),
         );
     }
 
