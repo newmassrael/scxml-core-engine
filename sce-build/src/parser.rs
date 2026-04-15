@@ -325,8 +325,9 @@ impl SCXMLParser {
     /// would mask the author's intent and hand the generator a type
     /// the rest of the pipeline was never told about (see the
     /// `feedback_silently_broken_hooks` memory). Errors flow through
-    /// `Located<ForgeError>` so the file context reaches the wire
-    /// contract; the already-located codec-field error is propagated
+    /// `Located<ForgeError>` with roxmltree-derived row/col so agents
+    /// receive the same precision the codec-field parser already
+    /// delivers; the already-located codec-field error is propagated
     /// unchanged (no `.map_err(|l| l.error)` unwrap).
     fn try_parse_inline_kind(
         data: &roxmltree::Node,
@@ -340,14 +341,19 @@ impl SCXMLParser {
         use crate::forge::model::*;
 
         // Lift a leaf `ValidationError` into a `Located<ForgeError>`
-        // tied to the current source_name. `line`/`col` stay `None`
-        // rather than fabricating `(1, 1)` — pointing the repair loop
-        // at a bogus position would be worse than pointing at the
-        // file alone (see the `feedback_correctness_before_features`
-        // memory).
-        let locate = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
-            Located::new(err.into(), source_name, None, None)
-        };
+        // anchored at the given node. `text_pos_at(range().start)`
+        // recovers libxml2-style (row, col) for any node the
+        // roxmltree document owns — the same mechanism the forge
+        // codec-field parser uses, so inline-kind diagnostics reach
+        // NDJSON with matching precision.
+        let locate_at =
+            |node: &roxmltree::Node,
+             err: ValidationError|
+             -> Located<crate::forge::error::ForgeError> {
+                let pos = node.document().text_pos_at(node.range().start);
+                Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+            };
+        let locate = |err: ValidationError| locate_at(data, err);
 
         let kind = match ForgeKind::from_attr(kind_attr) {
             Some(k) => k,
@@ -384,7 +390,7 @@ impl SCXMLParser {
                         let key = child
                             .attribute("key")
                             .ok_or_else(|| {
-                                locate(ValidationError::MissingAttribute {
+                                locate_at(&child, ValidationError::MissingAttribute {
                                     element: format!("<sce:entry> in inline lookup '{id}'"),
                                     attr: "key".to_string(),
                                 })
@@ -393,7 +399,7 @@ impl SCXMLParser {
                         let value = child
                             .attribute("value")
                             .ok_or_else(|| {
-                                locate(ValidationError::MissingAttribute {
+                                locate_at(&child, ValidationError::MissingAttribute {
                                     element: format!("<sce:entry> in inline lookup '{id}'"),
                                     attr: "value".to_string(),
                                 })
@@ -3462,6 +3468,11 @@ mod tests {
             err.error,
         );
         assert_eq!(err.location.file, "test", "located error must carry source name");
+        assert!(
+            err.location.line.is_some() && err.location.col.is_some(),
+            "inline-kind leaf errors must carry roxmltree row/col, got: {:?}",
+            err.location,
+        );
     }
 
     #[test]
