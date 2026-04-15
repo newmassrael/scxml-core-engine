@@ -27,6 +27,7 @@ pub mod lua_transformer;
 pub mod conformance;
 pub mod forge;
 pub mod mesh;
+pub mod cli_error;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod formatter;
 #[cfg(feature = "wasm")]
