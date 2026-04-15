@@ -128,76 +128,132 @@ pub fn compile_scxml(scxml_files: &[&str]) {
     }
 }
 
+/// Adapt an arbitrary ForgeError-convertible codegen error into the
+/// public typed channel. `source_name` tags the file/record label so
+/// downstream agents can route repairs; `line`/`col` stay `None`
+/// because `GenerateError` is raised by minijinja well after the DOM
+/// is discarded — fabricating `(1, 1)` would mislead the repair loop
+/// (see the `feedback_correctness_before_features` memory).
+fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
+    err: E,
+    source_name: &str,
+) -> CompileError {
+    forge::error::Located::new(err.into(), source_name, None, None)
+}
+
+/// Typed analogue of [`compile_scxml_to_string`] — consumers that can
+/// observe `Located<ForgeError>` should prefer this entry point so they
+/// receive structured `code` / `stage` / `fix` data instead of a
+/// stringified message.
+pub fn compile_scxml_to_string_typed(
+    scxml_path: &str,
+    template_dir: &Path,
+) -> Result<String, CompileError> {
+    let model = compile_model(scxml_path)?;
+    generator::generate(&model, template_dir)
+        .map_err(|e| locate_codegen_error(e, scxml_path))
+}
+
 /// Compile a single SCXML file to Rust source code string.
 ///
 /// This is the core API — parses SCXML, analyzes model, renders templates.
+/// String-returning shim over [`compile_scxml_to_string_typed`]; callers
+/// that can consume `CompileError` should use the typed entry point.
 pub fn compile_scxml_to_string(scxml_path: &str, template_dir: &Path) -> Result<String, String> {
-    let model = compile_model(scxml_path).map_err(|e| e.to_string())?;
-    generator::generate(&model, template_dir).map_err(|e| e.to_string())
+    compile_scxml_to_string_typed(scxml_path, template_dir).map_err(|e| e.to_string())
+}
+
+/// Typed analogue of [`compile_from_string`] — see the typed file-based
+/// sibling for routing rationale.
+pub fn compile_from_string_typed(
+    scxml_content: &str,
+    scxml_name: &str,
+    templates: &[(&str, &str)],
+) -> Result<String, CompileError> {
+    let model = compile_model_from_string(scxml_content, scxml_name)?;
+    generator::generate_with_templates(&model, templates)
+        .map_err(|e| locate_codegen_error(e, scxml_name))
 }
 
 /// Compile SCXML content string to Rust code (no filesystem access).
 ///
 /// This is the WASM-compatible API. Templates must be provided as (name, content) pairs.
+/// String-returning shim over [`compile_from_string_typed`].
 pub fn compile_from_string(
     scxml_content: &str,
     scxml_name: &str,
     templates: &[(&str, &str)],
 ) -> Result<String, String> {
-    let model = compile_model_from_string(scxml_content, scxml_name)
-        .map_err(|e| e.to_string())?;
-    generator::generate_with_templates(&model, templates).map_err(|e| e.to_string())
+    compile_from_string_typed(scxml_content, scxml_name, templates).map_err(|e| e.to_string())
 }
 
-/// Compile SCXML content string for a specific language (WASM-compatible).
-pub fn compile_from_string_lang(
+/// Typed analogue of [`compile_from_string_lang`].
+pub fn compile_from_string_lang_typed(
     scxml_content: &str,
     scxml_name: &str,
     templates: &[(&str, &str)],
     language: generator::Language,
-) -> Result<generator::GeneratedOutput, String> {
-    let model = compile_model_from_string(scxml_content, scxml_name)
-        .map_err(|e| e.to_string())?;
+) -> Result<generator::GeneratedOutput, CompileError> {
+    let model = compile_model_from_string(scxml_content, scxml_name)?;
 
     match language {
         generator::Language::Rust => {
             let code = generator::generate_with_templates(&model, templates)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.rs"), code)],
             })
         }
         generator::Language::Cpp => {
             generator::generate_cpp_with_templates(&model, templates, scxml_name)
-                .map_err(|e| e.to_string())
+                .map_err(|e| locate_codegen_error(e, scxml_name))
         }
         generator::Language::Kotlin => {
             let code = generator::generate_kotlin_with_templates(&model, templates)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}Sm.kt"), code)],
             })
         }
         generator::Language::Go => {
             let code = generator::generate_go_with_templates(&model, templates)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.go"), code)],
             })
         }
-        generator::Language::Python => Err(
-            "Python statechart codegen is not yet supported".to_string(),
-        ),
+        generator::Language::Python => Err(locate_codegen_error(
+            // Python statechart codegen is an un-implemented target,
+            // not a per-document configuration error — but at the
+            // library boundary the caller opted into an unsupported
+            // combination, so it lands here with a clear message.
+            forge::error::GenerateError::InvalidConfig(
+                "Python statechart codegen is not yet supported".into(),
+            ),
+            scxml_name,
+        )),
     }
 }
 
-/// Compile SCXML file for a specific language (filesystem-based).
-pub fn compile_scxml_lang(
+/// Compile SCXML content string for a specific language (WASM-compatible).
+/// String-returning shim over [`compile_from_string_lang_typed`].
+pub fn compile_from_string_lang(
+    scxml_content: &str,
+    scxml_name: &str,
+    templates: &[(&str, &str)],
+    language: generator::Language,
+) -> Result<generator::GeneratedOutput, String> {
+    compile_from_string_lang_typed(scxml_content, scxml_name, templates, language)
+        .map_err(|e| e.to_string())
+}
+
+/// Typed analogue of [`compile_scxml_lang`].
+pub fn compile_scxml_lang_typed(
     scxml_path: &str,
     template_dir: &Path,
     language: generator::Language,
-) -> Result<generator::GeneratedOutput, String> {
-    let model = compile_model(scxml_path).map_err(|e| e.to_string())?;
+) -> Result<generator::GeneratedOutput, CompileError> {
+    let model = compile_model(scxml_path)?;
 
     let input_stem = Path::new(scxml_path)
         .file_stem()
@@ -207,31 +263,44 @@ pub fn compile_scxml_lang(
     match language {
         generator::Language::Rust => {
             let code = generator::generate(&model, template_dir)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| locate_codegen_error(e, scxml_path))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
             })
         }
         generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem)
-            .map_err(|e| e.to_string()),
+            .map_err(|e| locate_codegen_error(e, scxml_path)),
         generator::Language::Kotlin => {
             let code = generator::generate_kotlin(&model, template_dir)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| locate_codegen_error(e, scxml_path))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
             })
         }
         generator::Language::Go => {
             let code = generator::generate_go(&model, template_dir)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| locate_codegen_error(e, scxml_path))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
             })
         }
-        generator::Language::Python => Err(
-            "Python statechart codegen is not yet supported".to_string(),
-        ),
+        generator::Language::Python => Err(locate_codegen_error(
+            forge::error::GenerateError::InvalidConfig(
+                "Python statechart codegen is not yet supported".into(),
+            ),
+            scxml_path,
+        )),
     }
+}
+
+/// Compile SCXML file for a specific language (filesystem-based).
+/// String-returning shim over [`compile_scxml_lang_typed`].
+pub fn compile_scxml_lang(
+    scxml_path: &str,
+    template_dir: &Path,
+    language: generator::Language,
+) -> Result<generator::GeneratedOutput, String> {
+    compile_scxml_lang_typed(scxml_path, template_dir, language).map_err(|e| e.to_string())
 }
 
 /// Locate template directory for a specific language.
@@ -943,4 +1012,37 @@ pub fn find_template_base() -> std::path::PathBuf {
 /// Delegates to `find_template_dir_for(Language::Rust)` for consistent behavior.
 pub fn find_template_dir() -> std::path::PathBuf {
     find_template_dir_for(generator::Language::Rust)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The typed entry point surfaces `ValidationError::DynamicFeatures`
+    /// as a structured `Located<ForgeError>` so Rust consumers can
+    /// dispatch on the variant instead of parsing the human message.
+    /// Pins the post-Task-D invariant that parser+analyzer failures
+    /// travel the wire contract end-to-end for both WASM/JS (String
+    /// shim) and in-process Rust callers (typed).
+    #[test]
+    fn typed_entry_exposes_structured_validation_error() {
+        use forge::error::{ForgeError, ValidationError};
+        // `initial="nope"` names a non-existent state — analyzer
+        // rejects with DynamicFeatures carrying the specific blocker.
+        let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="nope" name="typed_probe">
+    <state id="s1"/>
+</scxml>"#;
+        let err = compile_from_string_typed(scxml, "typed_probe", &[])
+            .expect_err("initial points at undeclared state must reject");
+        assert!(
+            matches!(
+                err.error,
+                ForgeError::Validation(ValidationError::DynamicFeatures { ref name, .. })
+                    if name == "typed_probe",
+            ),
+            "expected ValidationError::DynamicFeatures(name=\"typed_probe\"), got: {:?}",
+            err.error,
+        );
+    }
 }
