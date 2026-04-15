@@ -6,6 +6,10 @@ pluginManagement {
     }
 }
 
+// Justification (UnstableApiUsage): dependencyResolutionManagement is the
+// Gradle 8 idiom for project-wide repository configuration; the API is
+// marked incubating but is the only supported way to enforce
+// FAIL_ON_PROJECT_REPOS for a multi-module build.
 @Suppress("UnstableApiUsage")
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)

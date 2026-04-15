@@ -2,6 +2,9 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
+// pub API: validators expose `ValidationResult` to downstream consumers
+// (SCE_FORGE.md §7 validator). Fixtures that don't exercise the `reason`
+// field would otherwise emit dead_code.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct ValidationResult {

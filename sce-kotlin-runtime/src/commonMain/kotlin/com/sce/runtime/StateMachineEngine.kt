@@ -707,6 +707,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (entry.isParentSend) {
                 onSendToParent?.invoke(entry.parentEventName, entry.parentEventData)
             } else {
+                // Justification (UNCHECKED_CAST): scheduledSends erases the
+                // event type to Any to share the queue across parent-send and
+                // self-send entries; the producer-side scheduleSend() only
+                // accepts E, so the cast back to E is type-safe by
+                // construction.
                 @Suppress("UNCHECKED_CAST")
                 externalEventQueue.addLast(QueuedEvent(entry.event as E, entry.metadata))
             }

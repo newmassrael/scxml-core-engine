@@ -2,6 +2,10 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
+// pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
+// §6 codec). The kind-agnostic conformance harness only references a
+// subset of fixtures, so unused-but-pub fields/methods would otherwise
+// trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
 pub struct CodecSimpleFrame {

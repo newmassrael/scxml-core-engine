@@ -118,6 +118,10 @@ impl<E> EventWithMetadata<E> {
     ///
     /// Parameter order matches C++ constructor at `StaticExecutionEngine.h:129`:
     /// `(event, data, origin, sendId, type, originType, invokeId, target)`.
+    // Justification (clippy::too_many_arguments): 8 fields ports the C++
+    // constructor verbatim; collapsing into an `EventBuilder` would diverge
+    // from the cross-language API contract documented in
+    // `sce/include/StaticExecutionEngine.h`.
     #[allow(clippy::too_many_arguments)]
     pub fn with_fields(
         event: E,

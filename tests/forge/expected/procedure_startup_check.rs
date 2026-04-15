@@ -15,6 +15,11 @@ use sce_forge_runtime::procedure::{
 // ── State and Event enums ───────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub API: procedures expose State/Event enums and the policy struct as
+// downstream library types (SCE_FORGE.md §8 procedure). Generated code
+// keeps them pub so embedders can inspect transitions; the conformance
+// harness only ever observes the run_procedure() entrypoint, leaving the
+// other items dead from the test binary's perspective.
 #[allow(dead_code)]
 pub enum State {
     CheckVoltage = 0,
@@ -25,6 +30,11 @@ pub enum State {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub API: procedures expose State/Event enums and the policy struct as
+// downstream library types (SCE_FORGE.md §8 procedure). Generated code
+// keeps them pub so embedders can inspect transitions; the conformance
+// harness only ever observes the run_procedure() entrypoint, leaving the
+// other items dead from the test binary's perspective.
 #[allow(dead_code)]
 pub enum Event {
     None = 0,
@@ -34,6 +44,11 @@ pub enum Event {
 
 // ── Generated procedure policy ──────────────────────────────────
 
+// pub API: procedures expose State/Event enums and the policy struct as
+// downstream library types (SCE_FORGE.md §8 procedure). Generated code
+// keeps them pub so embedders can inspect transitions; the conformance
+// harness only ever observes the run_procedure() entrypoint, leaving the
+// other items dead from the test binary's perspective.
 #[allow(dead_code)]
 pub struct ProcedureStartupCheck {
     voltage: f32,
@@ -43,6 +58,11 @@ pub struct ProcedureStartupCheck {
     pending_event_data: String,
 }
 
+// pub API: procedures expose State/Event enums and the policy struct as
+// downstream library types (SCE_FORGE.md §8 procedure). Generated code
+// keeps them pub so embedders can inspect transitions; the conformance
+// harness only ever observes the run_procedure() entrypoint, leaving the
+// other items dead from the test binary's perspective.
 #[allow(dead_code)]
 impl ProcedureStartupCheck {
     pub fn new() -> Self {
@@ -141,6 +161,11 @@ impl ProcedurePolicy for ProcedureStartupCheck {
 
 // ── Convenience wrapper function ────────────────────────────────
 
+// pub API: procedures expose State/Event enums and the policy struct as
+// downstream library types (SCE_FORGE.md §8 procedure). Generated code
+// keeps them pub so embedders can inspect transitions; the conformance
+// harness only ever observes the run_procedure() entrypoint, leaving the
+// other items dead from the test binary's perspective.
 #[allow(dead_code)]
 pub fn execute(
     handler: impl Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse + 'static,

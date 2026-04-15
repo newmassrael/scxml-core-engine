@@ -236,6 +236,10 @@ pub trait IScriptEngine: Send + Sync {
     ///
     /// Called before guard evaluation and action execution for each event. The
     /// individual-fields overload matches C++ `setCurrentEvent(sessionId, eventName, ...)`.
+    // Justification (clippy::too_many_arguments): 8 fields mirror the C++
+    // `IScriptEngine::setCurrentEvent` signature; bundling into a struct would
+    // break the documented 1:1 port and require every script engine
+    // implementation to redo the field plumbing.
     #[allow(clippy::too_many_arguments)]
     fn set_current_event(
         &self,

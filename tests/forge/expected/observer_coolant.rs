@@ -10,6 +10,9 @@ use sce_forge_runtime::observer::{EventDomain, EventQueue, ThresholdState};
 // sce:event-domain="..." to the source SCXML. See SCE_FORGE.md Section 4.11.
 pub struct ForgeDomain;
 
+// SCXML event names flow into enum variants verbatim (W3C SCXML 3.12).
+// `EMIT_WARNING`, `coolant.high`, etc. cannot be normalised to UpperCamel
+// without breaking SCE_FORGE.md §4.11 cross-file event composition.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForgeDomainTag {
