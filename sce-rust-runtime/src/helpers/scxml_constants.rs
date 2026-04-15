@@ -6,7 +6,7 @@
 //! Ports C++ `sce/include/common/SCXMLConstants.h`. Values are compile-time
 //! constants so the generated code can reference them without allocations.
 
-/// W3C SCXML I/O Processor URIs — `_event.origintype` values for outbound sends.
+// ── W3C SCXML I/O Processor URIs (`_event.origintype` for outbound sends) ──
 
 /// SCXML Event I/O Processor (W3C SCXML 5.10.2). Default `origintype` for
 /// events sent through the internal engine or between AOT parent/child SMs.

@@ -22,13 +22,13 @@
 //! matches the C++ `ISessionLifecycle` contract.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use mlua::prelude::*;
 
 use sce_rust_runtime::scripting::{
-    set_script_engine, IScriptEngine, NativeMethod, ScriptError, ScriptResult, ScriptValue,
+    set_script_engine, IScriptEngine, NativeMethod, ScriptEngineAlreadyRegistered, ScriptError,
+    ScriptResult, ScriptValue,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -78,6 +78,18 @@ fn is_undeclared_simple_variable(expr: &str, declared_vars: &HashSet<String>, lu
     is_undeclared_identifier(base_name, declared_vars, lua)
 }
 
+/// Refcounted SCXML `In(stateId)` predicate (W3C SCXML 5.9.2).
+///
+/// Internally `Arc` rather than `Box` — the same callback may be cloned into
+/// multiple Lua closures registered against a single session.
+type SharedStateQuery = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
+/// Refcounted Rust function exposed to Lua via `register_global_function`.
+///
+/// `Arc`-wrapped so a single registration can be cloned into every session
+/// without re-boxing on each `createSession`.
+type SharedNativeMethod = Arc<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Session — one per state machine instance
 // ═══════════════════════════════════════════════════════════════════════════
@@ -85,7 +97,7 @@ fn is_undeclared_simple_variable(expr: &str, declared_vars: &HashSet<String>, lu
 struct Session {
     lua: Lua,
     declared_vars: HashSet<String>,
-    state_query_callback: Option<Arc<dyn Fn(&str) -> bool + Send + Sync>>,
+    state_query_callback: Option<SharedStateQuery>,
 }
 
 // SAFETY: Session is only ever accessed through `LuaEngine::sessions: Mutex<HashMap<_, Session>>`,
@@ -107,7 +119,7 @@ pub struct LuaEngine {
     initialized: Mutex<bool>,
     /// Global functions registered via `register_global_function()`.
     /// Stored here so they can be registered into newly created sessions.
-    global_functions: Mutex<HashMap<String, Arc<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>>>,
+    global_functions: Mutex<HashMap<String, SharedNativeMethod>>,
 }
 
 impl LuaEngine {
@@ -190,7 +202,7 @@ impl LuaEngine {
                         _ => 0,
                     };
                     let len = t.raw_len();
-                    for i in (from + 1)..=(len as usize) {
+                    for i in (from + 1)..=len {
                         if let Ok(val) = t.raw_get::<LuaValue>(i) {
                             if lua_values_equal(&val, &search) {
                                 return Ok(LuaValue::Integer((i as i64) - 1)); // 0-based
@@ -222,7 +234,7 @@ impl LuaEngine {
             let result = lua.create_table()?;
             let mut idx = 1;
             // Copy arr1 elements
-            for i in 1..=(arr1.raw_len() as usize) {
+            for i in 1..=arr1.raw_len() {
                 if let Ok(v) = arr1.raw_get::<LuaValue>(i) {
                     result.raw_set(idx, v)?;
                     idx += 1;
@@ -231,7 +243,7 @@ impl LuaEngine {
             // Append arr2 (table or single value)
             match arr2 {
                 LuaValue::Table(t2) => {
-                    for i in 1..=(t2.raw_len() as usize) {
+                    for i in 1..=t2.raw_len() {
                         if let Ok(v) = t2.raw_get::<LuaValue>(i) {
                             result.raw_set(idx, v)?;
                             idx += 1;
@@ -342,16 +354,14 @@ impl LuaEngine {
             let result = lua.create_table()?;
             if let LuaValue::Table(t) = tbl {
                 let mut idx = 1;
-                for pair in t.pairs::<LuaValue, LuaValue>() {
-                    if let Ok((k, _)) = pair {
-                        let key_str = match k {
-                            LuaValue::String(s) => s.to_string_lossy().to_string(),
-                            LuaValue::Integer(n) => n.to_string(),
-                            _ => continue,
-                        };
-                        result.raw_set(idx, key_str)?;
-                        idx += 1;
-                    }
+                for (k, _) in t.pairs::<LuaValue, LuaValue>().flatten() {
+                    let key_str = match k {
+                        LuaValue::String(s) => s.to_string_lossy().to_string(),
+                        LuaValue::Integer(n) => n.to_string(),
+                        _ => continue,
+                    };
+                    result.raw_set(idx, key_str)?;
+                    idx += 1;
                 }
             }
             Ok(result)
@@ -376,7 +386,7 @@ pub fn lua_engine_singleton() -> &'static LuaEngine {
 }
 
 /// Register the LuaEngine singleton with the runtime's ScriptEngineProvider.
-pub fn register() -> Result<(), ()> {
+pub fn register() -> Result<(), ScriptEngineAlreadyRegistered> {
     set_script_engine(lua_engine_singleton())
 }
 
@@ -434,7 +444,7 @@ fn lua_value_to_script(val: &LuaValue) -> ScriptValue {
         }
         LuaValue::Table(t) => {
             // Heuristic: sequence table (1..n keys) = Array, else Object
-            let len = t.raw_len() as usize;
+            let len = t.raw_len();
             if len > 0 {
                 let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
@@ -778,14 +788,14 @@ impl IScriptEngine for LuaEngine {
                 event_table.set("data", dom_table).map_err(map_lua_err)?;
             } else {
                 // Try to evaluate as Lua expression first
-                let data_result = session.lua.load(&format!("return {}", event_data))
+                let data_result = session.lua.load(format!("return {}", event_data))
                     .eval::<LuaValue>();
                 match data_result {
                     Ok(val) => { event_table.set("data", val).map_err(map_lua_err)?; }
                     Err(_) => {
                         // W3C SCXML B.2 test 578: Try JSON-to-Lua conversion ("key": val → ["key"] = val)
                         let lua_syntax = json_to_lua_table(event_data);
-                        let json_result = session.lua.load(&format!("return {}", lua_syntax))
+                        let json_result = session.lua.load(format!("return {}", lua_syntax))
                             .eval::<LuaValue>();
                         match json_result {
                             Ok(val) => { event_table.set("data", val).map_err(map_lua_err)?; }
@@ -821,7 +831,7 @@ impl IScriptEngine for LuaEngine {
     fn register_global_function(&self, function_name: &str, callback: NativeMethod) -> bool {
         // 1:1 with C++ LuaEngine::registerGlobalFunction:
         // Store callback, then register in all existing sessions.
-        let cb_arc: Arc<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync> = Arc::from(callback);
+        let cb_arc: SharedNativeMethod = Arc::from(callback);
         {
             let mut gf = self.global_functions.lock().unwrap();
             gf.insert(function_name.to_string(), cb_arc.clone());
@@ -861,7 +871,7 @@ impl IScriptEngine for LuaEngine {
             Err(_) => return false,
         };
         for (name, callback) in methods {
-            let cb_arc: Arc<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync> = Arc::from(callback);
+            let cb_arc: SharedNativeMethod = Arc::from(callback);
             let method_fn = match session.lua.create_function(move |_, args: LuaMultiValue| {
                 let script_args: Vec<ScriptValue> = args.into_vec().iter()
                     .map(lua_value_to_script)

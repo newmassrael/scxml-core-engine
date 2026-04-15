@@ -15,5 +15,9 @@
 pub mod i_script_engine;
 pub mod provider;
 
-pub use i_script_engine::{IScriptEngine, NativeMethod, ScriptError, ScriptResult, ScriptValue};
-pub use provider::{has_script_engine, set_script_engine, ScriptEngineProvider};
+pub use i_script_engine::{
+    IScriptEngine, NativeMethod, ScriptError, ScriptResult, ScriptValue, StateQueryCallback,
+};
+pub use provider::{
+    has_script_engine, set_script_engine, ScriptEngineAlreadyRegistered, ScriptEngineProvider,
+};

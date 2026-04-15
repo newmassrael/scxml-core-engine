@@ -216,10 +216,10 @@ impl<P: StatePolicy> Engine<P> {
     /// not alias the engine's policy field through `engine.policy` — but this
     /// is a non-issue because the Engine does not expose `policy` publicly.
     pub(crate) fn execute_on_entry(&mut self, state: P::State) {
+        let policy_ptr: *mut P = &mut self.policy as *mut P;
         // SAFETY: see doc comment above. The policy field and the rest of
         // Engine's fields are disjoint; the split borrow lasts only for the
         // duration of the method call.
-        let policy_ptr: *mut P = &mut self.policy as *mut P;
         unsafe {
             (*policy_ptr).execute_entry_actions(state, self);
         }
@@ -237,8 +237,8 @@ impl<P: StatePolicy> Engine<P> {
         state: P::State,
         pre_transition_active: &[P::State],
     ) {
-        // SAFETY: same as execute_on_entry.
         let policy_ptr: *mut P = &mut self.policy as *mut P;
+        // SAFETY: same as execute_on_entry.
         unsafe {
             (*policy_ptr).execute_exit_actions(state, self, pre_transition_active);
         }
@@ -257,8 +257,8 @@ impl<P: StatePolicy> Engine<P> {
         current_state: &mut P::State,
         event: P::Event,
     ) -> bool {
-        // SAFETY: same as execute_on_entry.
         let policy_ptr: *mut P = &mut self.policy as *mut P;
+        // SAFETY: same as execute_on_entry.
         unsafe { (*policy_ptr).process_transition(current_state, event, self) }
     }
 
@@ -268,15 +268,15 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Same as [`Self::execute_on_entry`].
     pub(crate) fn execute_transition_actions_dispatch(&mut self) {
-        // SAFETY: same as execute_on_entry.
         let policy_ptr: *mut P = &mut self.policy as *mut P;
+        // SAFETY: same as execute_on_entry.
         unsafe { (*policy_ptr).execute_transition_actions(self) }
     }
 
     /// Execute the policy's `initialize_data_model` with split-borrowed `self`.
     pub(crate) fn initialize_data_model_dispatch(&mut self) {
-        // SAFETY: same as execute_on_entry.
         let policy_ptr: *mut P = &mut self.policy as *mut P;
+        // SAFETY: same as execute_on_entry.
         unsafe { (*policy_ptr).initialize_data_model(self) }
     }
 
@@ -318,8 +318,8 @@ impl<P: StatePolicy> Engine<P> {
 
         // W3C SCXML 6.4: Execute pending invokes once stable
         if concepts::has_invoke_support::<P>() {
-            // SAFETY: see execute_on_entry.
             let policy_ptr: *mut P = &mut self.policy as *mut P;
+            // SAFETY: see execute_on_entry.
             unsafe {
                 (*policy_ptr).execute_pending_invokes(self);
             }
@@ -380,8 +380,8 @@ impl<P: StatePolicy> Engine<P> {
 
         // W3C SCXML 6.4: Tick child state machines
         if concepts::has_child_tick::<P>() {
-            // SAFETY: see execute_on_entry.
             let policy_ptr: *mut P = &mut self.policy as *mut P;
+            // SAFETY: see execute_on_entry.
             unsafe {
                 (*policy_ptr).tick_children(self);
             }
@@ -392,8 +392,8 @@ impl<P: StatePolicy> Engine<P> {
 
         // W3C SCXML 6.4: Execute pending invokes after macrostep
         if concepts::has_invoke_support::<P>() {
-            // SAFETY: see execute_on_entry.
             let policy_ptr: *mut P = &mut self.policy as *mut P;
+            // SAFETY: see execute_on_entry.
             unsafe {
                 (*policy_ptr).execute_pending_invokes(self);
             }
@@ -516,8 +516,8 @@ impl<P: StatePolicy> Engine<P> {
         // W3C SCXML 6.4.6: Autoforward
         if concepts::has_autoforward::<P>() {
             let name = P::get_event_name(event.event).to_string();
-            // SAFETY: see execute_on_entry.
             let policy_ptr: *mut P = &mut self.policy as *mut P;
+            // SAFETY: see execute_on_entry.
             unsafe {
                 (*policy_ptr).forward_to_autoforward_children(&name, self);
             }
@@ -684,8 +684,8 @@ impl<P: StatePolicy> Engine<P> {
         while let Some(event_with_meta) = self.external_queue.pop() {
             // W3C SCXML 6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
-                // SAFETY: see execute_on_entry.
                 let policy_ptr: *mut P = &mut self.policy as *mut P;
+                // SAFETY: see execute_on_entry.
                 unsafe {
                     (*policy_ptr).execute_finalize_for_child_event(&event_with_meta, self);
                 }

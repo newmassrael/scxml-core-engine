@@ -63,8 +63,6 @@
 #![deny(clippy::undocumented_unsafe_blocks)]
 #![warn(missing_docs)]
 #![warn(clippy::all)]
-// Allow long match arms in generated-code-style helpers
-#![allow(clippy::too_many_arguments)]
 
 pub mod engine;
 pub mod event;

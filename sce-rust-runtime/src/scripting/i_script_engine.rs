@@ -146,6 +146,13 @@ pub type ScriptResult<T> = Result<T, ScriptError>;
 /// Matches C++ `NativeMethod = std::function<ScriptValue(const std::vector<ScriptValue>&)>`.
 pub type NativeMethod = Box<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>;
 
+/// Callback for resolving the SCXML `In(stateId)` predicate (W3C SCXML 5.9.2).
+///
+/// Receives a state ID string and returns `true` if that state is in the engine's
+/// current active configuration. Matches the C++ `std::function<bool(const std::string &)>`
+/// signature passed to `setStateQueryCallback`.
+pub type StateQueryCallback = Box<dyn Fn(&str) -> bool + Send + Sync>;
+
 /// The script engine trait — 1:1 port of C++ `SCE::IScriptEngine`.
 ///
 /// Implementations (`sce-rust-lua`, future `sce-rust-quickjs`) provide ECMAScript
@@ -292,13 +299,15 @@ pub trait IScriptEngine: Send + Sync {
 
     /// Register a callback that resolves the SCXML `In()` predicate.
     ///
+    /// See [`StateQueryCallback`] for the callback signature.
+    ///
     /// Matches C++ `setStateQueryCallback`. The callback takes a state ID string
     /// and returns `true` if the state is in the current active configuration.
     /// Passing `None` unregisters the callback.
     fn set_state_query_callback(
         &self,
         session_id: &str,
-        callback: Option<Box<dyn Fn(&str) -> bool + Send + Sync>>,
+        callback: Option<StateQueryCallback>,
     );
 
     // ════════════════════════════════════════

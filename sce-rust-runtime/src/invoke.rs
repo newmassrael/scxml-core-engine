@@ -103,8 +103,8 @@ pub fn execute_pending_invokes<S: Copy + PartialEq + Debug, F>(
         pending.len()
     );
 
-    // W3C SCXML 6.4: Copy pending list to prevent iterator invalidation
-    let invokes_to_execute: Vec<_> = pending.drain(..).collect();
+    // W3C SCXML 6.4: Take pending list to prevent iterator invalidation
+    let invokes_to_execute = std::mem::take(pending);
 
     for invoke_info in &invokes_to_execute {
         log::debug!("InvokeHelper: Starting invoke {}", invoke_info.invoke_id);

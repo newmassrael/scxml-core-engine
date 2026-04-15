@@ -31,7 +31,21 @@
 
 use std::sync::OnceLock;
 
+use thiserror::Error;
+
 use crate::scripting::i_script_engine::IScriptEngine;
+
+/// Error returned when [`set_script_engine`] is called more than once.
+///
+/// Registration is a one-shot operation — the global script engine singleton
+/// is intentionally immutable for the program's lifetime so generated state
+/// machines never observe a mid-flight engine swap.
+#[derive(Debug, Error)]
+#[error(
+    "script engine already registered; set_script_engine() must be called at most \
+     once per process (typically from the engine crate's #[ctor] static initializer)"
+)]
+pub struct ScriptEngineAlreadyRegistered;
 
 /// The compile-time-configured script engine provider.
 ///
@@ -101,10 +115,12 @@ impl ScriptEngineProvider {
 /// called from the script engine crate's `pub fn register()` entrypoint or a
 /// `#[ctor]` static initializer.
 ///
-/// Returns `Err(())` if an engine was already registered — this is a programming
-/// error and callers should panic.
-pub fn set_script_engine(engine: &'static dyn IScriptEngine) -> Result<(), ()> {
-    SCRIPT_ENGINE.set(engine).map_err(|_| ())
+/// Returns [`ScriptEngineAlreadyRegistered`] on a second call — this is a
+/// programming error and callers should panic.
+pub fn set_script_engine(
+    engine: &'static dyn IScriptEngine,
+) -> Result<(), ScriptEngineAlreadyRegistered> {
+    SCRIPT_ENGINE.set(engine).map_err(|_| ScriptEngineAlreadyRegistered)
 }
 
 /// Whether a script engine has been registered via [`set_script_engine`].

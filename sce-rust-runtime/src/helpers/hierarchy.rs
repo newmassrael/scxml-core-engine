@@ -86,7 +86,7 @@ pub fn find_lca<P: StatePolicy>(state1: P::State, state2: P::State) -> Option<P:
                 state2
             );
         }
-        if ancestors1.iter().any(|&a| a == current) {
+        if ancestors1.contains(&current) {
             return Some(current);
         }
         match P::get_parent(current) {
