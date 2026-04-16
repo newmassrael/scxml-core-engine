@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
 # Regenerate the Go cross-language conformance artifacts from the shared

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 """
@@ -121,7 +121,7 @@ def generate_test_list_js(tests):
     """
     js_array = format_js_array(tests)
 
-    return f"""// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+    return f"""// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 /**

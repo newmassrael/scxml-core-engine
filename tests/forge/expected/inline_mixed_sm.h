@@ -6,7 +6,7 @@
 // From: tests/forge/resources/inline_mixed.scxml
 //
 // This generated code is MIT licensed and may be freely used in any project.
-// Runtime engine dependency: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// Runtime engine dependency: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // Full license: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 #pragma once
 #include "common/AssignHelper.h"

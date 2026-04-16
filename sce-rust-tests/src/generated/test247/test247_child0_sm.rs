@@ -7,7 +7,7 @@
 // From: resources/247/test247_child0.scxml
 //
 // This generated code is MIT licensed and may be freely used in any project.
-// Runtime engine dependency (sce-rust-runtime): LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// Runtime engine dependency (sce-rust-runtime): LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // Full license: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 //! Generated Rust state machine for `test247_child0`.

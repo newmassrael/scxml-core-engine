@@ -4,22 +4,23 @@ Copyright (c) 2025 newmassrael
 This project is dual licensed - choose either license:
 
 ================================================================================
-OPTION 1: GNU Lesser General Public License v2.1 (LGPL-2.1)
+OPTION 1: LGPL-2.1 WITH SCE Static Linking Exception
 ================================================================================
 
 Use this for:
 - Open source projects (any OSI-approved license)
 - Commercial products using UNMODIFIED engine
-- Dynamic linking without GPL contamination
-- Static linking if engine remains unmodified
+- Static OR dynamic linking (Exception removes the LGPL relinking
+  obligation — no need to ship object files or your source)
 
 If you MODIFY the engine source code:
 - Modified files must be distributed under LGPL-2.1
-- Users must be able to relink with modified engine
+- The Static Linking Exception does NOT apply to modified versions
 - OR choose Commercial License to keep modifications private
 
-Full LGPL-2.1 text: LICENSE-LGPL-2.1.md
-Official LGPL-2.1: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+Full LGPL-2.1 text:         LICENSE-LGPL-2.1.md
+Static Linking Exception:   LICENSE-EXCEPTION.md
+Official LGPL-2.1:          https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 
 ================================================================================
 OPTION 2: Commercial License
@@ -31,8 +32,8 @@ Use this for:
 - Avoiding LGPL compliance requirements
 
 Pricing (via GitHub Sponsors):
-- Individual: $100 USD cumulative
-- Enterprise (5+ developers): $500 USD cumulative
+- Individual: $5000 USD cumulative
+- Enterprise (5+ developers): Contact for quote
 
 Sponsor: https://github.com/newmassrael
 Contact: newmassrael@gmail.com
@@ -54,9 +55,9 @@ Quick Decision Guide
 
 | Your Situation | License Choice | Cost |
 |---------------|---------------|------|
-| Use unmodified engine (any project) | LGPL-2.1 | FREE |
+| Use unmodified engine (any project) | LGPL-2.1 + Exception | FREE |
 | Modify engine + share modifications | LGPL-2.1 | FREE |
-| Modify engine + keep private | Commercial | $100/$500 |
+| Modify engine + keep private | Commercial | $5000 / Contact |
 | Your generated code (always) | MIT | FREE |
 
 ================================================================================

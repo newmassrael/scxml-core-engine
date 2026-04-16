@@ -1311,11 +1311,12 @@ See [LICENSE-GENERATED.md](LICENSE-GENERATED.md) for details.
 
 ### Runtime Engine: LGPL-2.1 or Commercial
 
-**Option 1: LGPL-2.1 (FREE)**
+**Option 1: LGPL-2.1 + Static Linking Exception (FREE)**
 - Use unmodified engine in any project (open source or proprietary)
+- Static or dynamic linking — no obligation to disclose your code
 - Modify engine and share modifications under LGPL-2.1
 
-**Option 2: Commercial ($100 Individual / $500 Enterprise)**
+**Option 2: Commercial ($5000 Individual / Enterprise: contact for pricing)**
 - Modify engine and keep changes proprietary
 - Create derivative products/SDKs
 - Avoid LGPL compliance requirements
@@ -1326,9 +1327,9 @@ See [LICENSE](LICENSE) and [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for de
 
 | Your Situation | License | Cost |
 |---------------|---------|------|
-| Use unmodified engine | LGPL-2.1 | FREE |
+| Use unmodified engine | LGPL-2.1 + Exception | FREE |
 | Modify engine + share changes | LGPL-2.1 | FREE |
-| Modify engine + keep private | Commercial | $100/$500 |
+| Modify engine + keep private | Commercial | $5000 / Contact |
 | Your generated code (always) | MIT | FREE |
 
 **Contact:** newmassrael@gmail.com

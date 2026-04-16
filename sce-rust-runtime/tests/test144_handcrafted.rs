@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // Phase 1 Acceptance Gate #2: hand-translation of W3C SCXML test144.

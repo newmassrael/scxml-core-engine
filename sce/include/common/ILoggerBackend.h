@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // This file is part of SCE (SCXML Core Engine).
@@ -8,8 +8,8 @@
 // 2. Commercial: For modifications (contact newmassrael@gmail.com)
 //
 // Commercial License:
-//   Individual: $100 cumulative
-//   Enterprise: $500 cumulative
+//   Individual: $5000 cumulative
+//   Enterprise: Contact for pricing
 //   Contact: https://github.com/newmassrael
 //
 // Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE

@@ -51,8 +51,8 @@ SOFTWARE.
 
 **Important:** While the generated code itself is MIT licensed, it depends on the SCE Execution Engine for runtime functionality. The execution engine is licensed separately under a **Dual License** model:
 
-1. **LGPL-2.1** - For unmodified engine use (FREE, open source or proprietary OK)
-2. **Commercial License** - For proprietary engine modifications
+1. **LGPL-2.1 + Static Linking Exception** - For unmodified engine use (FREE, static or dynamic linking, open source or proprietary OK)
+2. **Commercial License** - For proprietary engine modifications or SDK redistribution
 
 See [LICENSE](LICENSE) and [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for licensing details.
 
@@ -86,8 +86,8 @@ This licensing model follows well-established patterns from:
 ### Do I need a commercial license for the runtime engine?
 
 **It depends:**
-- **Using unmodified engine**: Use LGPL-2.1 (FREE, open source or proprietary OK)
-- **Modifying engine for proprietary use**: Purchase Commercial License via GitHub Sponsors ($100 Individual / $500 Enterprise)
+- **Using unmodified engine**: Use LGPL-2.1 + Static Linking Exception (FREE, static or dynamic linking, open source or proprietary OK)
+- **Modifying engine for proprietary use**: Purchase Commercial License via GitHub Sponsors ($5000 Individual / Enterprise: contact for pricing)
 
 See [LICENSE](LICENSE) and [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for details.
 
@@ -137,7 +137,7 @@ make
 
 # Distribute
 # - device_controller_sm.h (generated, MIT - you own it)
-# - SCE engine (Commercial License via GitHub Sponsors - $100 Individual / $500 Enterprise)
+# - SCE engine (Commercial License via GitHub Sponsors - $5000 Individual / Enterprise: contact for pricing)
 # - Your proprietary code (closed source allowed)
 ```
 

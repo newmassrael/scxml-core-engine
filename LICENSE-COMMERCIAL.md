@@ -1,12 +1,15 @@
-# SCE Commercial License (LGPL 2.1 Alternative)
+# SCE Commercial License (LGPL-2.1 Alternative)
 
 ## Overview
 
-This Commercial License provides an alternative to the LGPL-2.1 license for the SCE (SCXML Core Engine) Execution Engine, allowing you to use and modify the engine in proprietary software without LGPL requirements.
+This Commercial License provides an alternative to LGPL-2.1 (with the
+Static Linking Exception) for the SCE (SCXML Core Engine) Execution
+Engine. It is required when you need to **modify the engine privately**
+or **redistribute it as part of a derivative product / SDK**.
 
 **Licensor:** newmassrael  
 **License Model:** GitHub Sponsors (Cumulative Sponsorship)  
-**License Version:** 3.0 (LGPL-2.1 Alternative)
+**License Version:** 4.0 (with Static Linking Exception baseline)
 
 ---
 
@@ -14,15 +17,17 @@ This Commercial License provides an alternative to the LGPL-2.1 license for the 
 
 ### ✅ You DON'T Need Commercial License If:
 
-**Using engine unmodified:**
+**Using engine unmodified (any linking mode):**
 - Link with SCE Engine without modifications
+- Static OR dynamic linking — no obligation to disclose object code
+  (Static Linking Exception covers this — see [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md))
 - Use in commercial products (closed source OK)
-- **License: LGPL-2.1 (FREE)**
+- **License: LGPL-2.1 + Static Linking Exception (FREE)**
 
 **Modifying engine + publishing modifications:**
 - Modify Helper files or StaticExecutionEngine
 - Distribute modified engine source under LGPL-2.1
-- Allow users to relink with modified engine
+- Note: The Static Linking Exception does NOT apply to modified versions
 - **License: LGPL-2.1 (FREE)**
 
 ### 💰 You NEED Commercial License If:
@@ -32,39 +37,36 @@ This Commercial License provides an alternative to the LGPL-2.1 license for the 
 - Want to keep modifications proprietary (no source disclosure)
 - Want to prevent users from relinking with modified versions
 
-**Creating derivative products/SDKs:**
-- Build commercial SDK based on SCE Engine
-- Distribute SCE Engine as part of your product
-- Create competing state machine libraries
-
-**Avoiding LGPL compliance:**
-- Don't want to deal with LGPL requirements
-- Want maximum flexibility for proprietary use
+**Creating derivative products / SDKs:**
+- Build a commercial SDK based on SCE Engine
+- Redistribute SCE Engine as a standalone component or library
+  wrapper (rebranded or competing state machine product)
 
 ---
 
 ## Pricing (GitHub Sponsors Cumulative Model)
 
 ### Individual Developer License
-- **Cumulative Sponsorship:** $100 USD via GitHub Sponsors
+- **Cumulative Sponsorship:** $5000 USD via GitHub Sponsors
 - **For:** Individual developers and freelancers
 
 ### Enterprise License (5+ developers)
-- **Cumulative Sponsorship:** $500 USD via GitHub Sponsors
+- **Pricing:** Contact for quote (GitHub Sponsors available)
 - **For:** Companies and organizations
 
-**Sponsor at:** https://github.com/newmassrael
+**Sponsor at:** https://github.com/newmassrael  
+**Contact:** newmassrael@gmail.com
 
 ---
 
-## Key Benefits vs LGPL-2.1
+## Key Benefits vs LGPL-2.1 + Exception
 
-| Aspect | LGPL-2.1 (Free) | Commercial ($100/$500) |
-|--------|-----------------|------------------------|
+| Aspect | LGPL-2.1 + Exception (Free) | Commercial ($5000 / Contact) |
+|--------|------------------------------|------------------------------|
 | Use unmodified engine | ✅ Free | ✅ Included |
-| Modify engine source | ✅ Free | ✅ Included |
+| **Static linking (proprietary app)** | ✅ **Free via Exception** | ✅ Included |
+| **Dynamic linking (proprietary app)** | ✅ **Free** | ✅ Included |
+| Modify engine source | ✅ Free (share under LGPL) | ✅ Included |
 | **Keep modifications private** | ❌ Must disclose | ✅ **Allowed** |
-| **Static linking** | ⚠️ Must allow relinking | ✅ **No restrictions** |
-| Dynamic linking | ✅ Allowed | ✅ Allowed |
-| **Distribute as SDK/product** | ❌ LGPL contamination | ✅ **Allowed** |
+| **Redistribute as SDK / rebranded product** | ❌ Not permitted | ✅ **Allowed** |
 | Support | Community | **Priority email** |
