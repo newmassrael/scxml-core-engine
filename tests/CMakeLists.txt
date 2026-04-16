@@ -1865,6 +1865,41 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         apply_sce_test_policies(mesh_someip_multipattern_compile_test)
         add_test(NAME mesh_someip_multipattern_compile_verification
                  COMMAND mesh_someip_multipattern_compile_test)
+
+        # ── Session F: SOME/IP runtime E2E ────────────────────────────
+        # Exercises both client and server TransportRouters end-to-end
+        # via vsomeip internal routing (single process, no daemon).
+        # Proves: (a) offer_service + register_message_handler receives
+        # requests; (b) handleServerResponse creates vsomeip response;
+        # (c) RPC correlation round-trips through CBOR + vsomeip wire.
+        add_executable(mesh_someip_runtime_test
+            mesh/test_mesh_someip_runtime.cpp
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
+        )
+
+        target_include_directories(mesh_someip_runtime_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_MULTI_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_someip_runtime_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_runtime_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_runtime_test)
+        add_test(NAME mesh_someip_runtime
+                 COMMAND mesh_someip_runtime_test)
+        set_tests_properties(mesh_someip_runtime PROPERTIES
+            TIMEOUT 30
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
     endif()

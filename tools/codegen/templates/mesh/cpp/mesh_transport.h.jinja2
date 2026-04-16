@@ -424,6 +424,15 @@ struct TransportRouter {
     std::unordered_map<std::string, zenoh::Subscriber<void>> zenoh_subscribers_;
 {% endif %}
 
+{# ── (D2b-pre) Server SOME/IP application — declared BEFORE sender_
+   so the initializer-list order (server_app_ then sender_) matches
+   C++ member declaration order. ── #}
+{% if has_server_someip %}
+    // Server SOME/IP application. Created in ctor initializer, started
+    // in init(). Must be declared before sender_ for -Wreorder safety.
+    std::shared_ptr<vsomeip::application> server_app_;
+{% endif %}
+
 {# ── (D2b) Sender engine — bound by ctor, dispatched to by transport
    callback threads (vsomeip, zenoh runtime) and by cross-router
    linkTo (local). Storing the reference (instead of a std::function
@@ -555,11 +564,8 @@ struct TransportRouter {
 
 {# ── (D2f) Server-side fields (SCE_MESH.md §13 Session E) ── #}
 {% if has_server_someip %}
-    // Server SOME/IP application + pending request storage.
-    // Inbound requests are stashed here keyed by correlation_id; when the
-    // engine sends service.response.X the handleServerResponse method
-    // retrieves the original request and calls create_response + send.
-    std::shared_ptr<vsomeip::application> server_app_;
+    // Server SOME/IP pending request storage (server_app_ declared above
+    // for initializer-list ordering).
     std::thread server_thread_;
     std::mutex server_pending_mutex_;
     std::unordered_map<CorrelationKey, std::shared_ptr<vsomeip::message>,
