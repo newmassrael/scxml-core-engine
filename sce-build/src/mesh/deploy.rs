@@ -94,6 +94,11 @@ pub struct TransportConfigs {
     /// vsomeip.json (single source of truth for service/method IDs) and
     /// binds the generated runtime to a vsomeip application identity.
     pub someip: Option<SomeipTransportConfig>,
+    /// custom_tcp device-shared listen endpoint (SCE_MESH.md §16.8.3).
+    /// One TCP server per device on `127.0.0.1:<port>`; each binding's
+    /// per-target `connect:` reaches another device's server. Omit for
+    /// devices that only initiate connections.
+    pub custom_tcp: Option<CustomTcpTransportConfig>,
 }
 
 /// Zenoh device-shared session configuration.
@@ -115,6 +120,37 @@ pub struct ZenohTransportConfig {
     /// config. `mode`/`connect`/`listen` above, when present, merge over
     /// this file at runtime. SCE_MESH.md §13 / §14.
     pub config: Option<PathBuf>,
+}
+
+/// custom_tcp device-shared listen endpoint (SCE_MESH.md §16.8.3).
+///
+/// IPv4 loopback only; the harness reference transport is local-only
+/// by design. `listen:` is omitted when the device only acts as a TCP
+/// client. `deny_unknown_fields` rejects typos like `lsten:` at parse
+/// time so a missing server is surfaced as a deploy.yaml error rather
+/// than as silent connection refusal at runtime.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CustomTcpTransportConfig {
+    /// Server bind address in `host:port` form (e.g. `"127.0.0.1:9000"`).
+    /// Codegen passes this verbatim to the generated server's
+    /// `bind()` call. Hostnames other than `127.0.0.1` are accepted by
+    /// the schema but the reference transport is documented as
+    /// loopback-only; non-loopback hosts are an authoring concern, not
+    /// a build-time validation.
+    pub listen: Option<String>,
+}
+
+impl CustomTcpTransportConfig {
+    /// True iff this device hosts a TCP listen socket. Single source
+    /// for two converging gates: lib.rs's "pure-receiver still needs
+    /// transport.h" early-return override and codegen.rs's "emit
+    /// server field even with no client targets" template-context
+    /// adjustment. Both call sites must agree, so the predicate lives
+    /// here rather than being duplicated at each gate.
+    pub fn hosts_server(&self) -> bool {
+        self.listen.is_some()
+    }
 }
 
 /// SOME/IP device-shared configuration (SCE_MESH.md §13).
@@ -848,6 +884,76 @@ topology:
         assert_eq!(brake.subscriptions[0].source, "#chassis");
         assert_eq!(brake.subscriptions[1].event, "event.notification.brake_pressure");
         assert_eq!(brake.subscriptions[1].source, "#sensor");
+    }
+
+    // ── custom_tcp transport config ──────────────────────────
+
+    #[test]
+    fn custom_tcp_listen_parsed() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:9000"
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: custom_tcp
+            connect: "127.0.0.1:9001"
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let tcp = cfg.topology["ecu1"]
+            .transports
+            .custom_tcp
+            .as_ref()
+            .expect("custom_tcp block");
+        assert_eq!(tcp.listen.as_deref(), Some("127.0.0.1:9000"));
+        // Per-binding `connect:` lands in BindingConfig.extra (serde flatten).
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        let motor_binding = &brake.bindings[&TargetId::new("#motor").unwrap()];
+        assert_eq!(
+            motor_binding.extra.get("connect").and_then(|v| v.as_str()),
+            Some("127.0.0.1:9001")
+        );
+    }
+
+    #[test]
+    fn custom_tcp_listen_optional() {
+        // Pure-client device omits listen.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: custom_tcp
+            connect: "127.0.0.1:9001"
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        assert!(cfg.topology["ecu1"].transports.custom_tcp.is_none());
+    }
+
+    #[test]
+    fn custom_tcp_unknown_session_field_rejected() {
+        // Typo: `lsten` instead of `listen`.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      custom_tcp:
+        lsten: "127.0.0.1:9000"
+    machines:
+      brake: { source: brake.scxml }
+"##;
+        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
     }
 
     #[test]

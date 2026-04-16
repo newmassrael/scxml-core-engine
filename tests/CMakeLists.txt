@@ -1660,6 +1660,104 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         # names per binding; for testing we serialize with RESOURCE_LOCK.
         RESOURCE_LOCK sce_mesh_shm_brake_motor)
 
+    # ── Session E2-1: custom_tcp reference transport (SCE_MESH.md §16.8.3)
+    # Proves end-to-end FireForget across a real TCP loopback connection
+    # plus per-sender FIFO conformance over 100 sequential sends. Uses
+    # the same brake/motor SCXML as the local/shm tests but with two
+    # routers and a CBOR-framed TCP wire.
+    set(MESH_TCP_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_custom_tcp_generated")
+
+    # Loopback port the harness binds. Cache variable so a developer
+    # whose workstation already owns the default can override at
+    # configure time (`-DSCE_TEST_CUSTOM_TCP_PORT=55822`). The same
+    # value is substituted into deploy_custom_tcp.yaml.in via
+    # configure_file AND propagated to the test binary as a compile
+    # macro, so the codegen-baked port and the in-test recording
+    # server's port stay in lockstep — diverging them would fail at
+    # the test's parse_endpoint regression check.
+    set(SCE_TEST_CUSTOM_TCP_PORT "55821" CACHE STRING
+        "TCP loopback port for the custom_tcp harness test (IANA dynamic range)")
+    # The configured deploy.yaml lives in the build dir, so its `source:`
+    # paths must be relative-from-there to the SCXML files in the source
+    # tree. (deploy.rs rejects absolute `source:` per the portability
+    # contract — TopologyError::AbsoluteSourcePath.) Compute the relative
+    # prefix at configure time so out-of-source builds work without
+    # hard-coding the layout.
+    file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
+        "${MESH_TCP_OUTPUT_DIR}" "${MESH_TEST_DIR}")
+    configure_file(
+        "${MESH_TEST_DIR}/deploy_custom_tcp.yaml.in"
+        "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
+        @ONLY)
+
+    add_custom_command(
+        OUTPUT "${MESH_TCP_OUTPUT_DIR}/brake_sm.h"
+                "${MESH_TCP_OUTPUT_DIR}/brake_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml"
+                -l cpp -o "${MESH_TCP_OUTPUT_DIR}"
+                --deploy "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
+        DEPENDS "${MESH_TEST_DIR}/brake.scxml"
+                "${MESH_TEST_DIR}/motor.scxml"
+                "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
+                "${SCE_CODEGEN}"
+        COMMENT "Mesh custom_tcp: Generating brake_sm.h + brake_transport.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_TCP_OUTPUT_DIR}/motor_sm.h"
+                "${MESH_TCP_OUTPUT_DIR}/motor_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml"
+                -l cpp -o "${MESH_TCP_OUTPUT_DIR}"
+                --deploy "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
+        DEPENDS "${MESH_TEST_DIR}/brake.scxml"
+                "${MESH_TEST_DIR}/motor.scxml"
+                "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
+                "${SCE_CODEGEN}"
+        COMMENT "Mesh custom_tcp: Generating motor_sm.h + motor_transport.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_custom_tcp_runtime_test
+        mesh/test_mesh_custom_tcp_runtime.cpp
+        "${MESH_TCP_OUTPUT_DIR}/brake_sm.h"
+        "${MESH_TCP_OUTPUT_DIR}/brake_transport.h"
+        "${MESH_TCP_OUTPUT_DIR}/motor_sm.h"
+        "${MESH_TCP_OUTPUT_DIR}/motor_transport.h"
+    )
+
+    target_include_directories(mesh_custom_tcp_runtime_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_TCP_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_custom_tcp_runtime_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+            pthread
+    )
+
+    target_compile_features(mesh_custom_tcp_runtime_test PRIVATE cxx_std_17)
+    target_compile_definitions(mesh_custom_tcp_runtime_test PRIVATE
+        SCE_TEST_CUSTOM_TCP_PORT=${SCE_TEST_CUSTOM_TCP_PORT})
+
+    apply_sce_test_policies(mesh_custom_tcp_runtime_test)
+
+    add_test(NAME mesh_custom_tcp_runtime_verification
+             COMMAND mesh_custom_tcp_runtime_test)
+    set_tests_properties(mesh_custom_tcp_runtime_verification PROPERTIES
+        TIMEOUT 30
+        # Loopback port from SCE_TEST_CUSTOM_TCP_PORT — serialise to
+        # avoid bind() collisions when ctest runs in parallel. The lock
+        # key includes the port so an override picks a different lock
+        # bucket from the default 55821 (matters when a developer runs
+        # parallel ctest invocations against different ports).
+        RESOURCE_LOCK sce_mesh_custom_tcp_${SCE_TEST_CUSTOM_TCP_PORT})
+
     # ── Phase 3 entry #4d: end-to-end payload verification ─────────
     # Proves <param> data survives: sender → JSON → wire → drain
     # → raiseExternal → _event.data → receiver cond matches.

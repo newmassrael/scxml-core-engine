@@ -146,6 +146,19 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         implemented: true,
         required_binding_fields: &["key"],
     };
+    // SCE Mesh §16.8.3 reference transport: TCP loopback, length-prefixed
+    // CBOR envelope framing, zero external dependencies. Each binding has a
+    // per-target client (its `connect:` endpoint) and the device exposes a
+    // single `listen:` server (declared in `transports.custom_tcp.listen`),
+    // so both shape flags apply: per-target client field + device-shared
+    // server. FireForget only in this session — RPC/PubSub/FieldAccess
+    // arrive with the dedup layer + duplex correlation in the next session.
+    static CUSTOM_TCP: TransportDescriptor = TransportDescriptor {
+        shape: TransportShape { has_per_target_field: true, has_shared_session: true },
+        capabilities: &[FireForget],
+        implemented: true,
+        required_binding_fields: &["connect"],
+    };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[FireForget, PubSub, FieldAccess],
@@ -164,6 +177,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         "shm" => Some(&SHM),
         "someip" => Some(&SOMEIP),
         "zenoh" => Some(&ZENOH),
+        "custom_tcp" => Some(&CUSTOM_TCP),
         "dds" => Some(&DDS),
         "can" => Some(&CAN),
         _ => None,
@@ -186,7 +200,7 @@ pub fn supports(transport: &str, capability: TransportCapability) -> bool {
 /// parse the error prose. Order matches the `lookup()` dispatch so
 /// drift between the two is obvious in code review.
 pub fn implemented_names() -> &'static [&'static str] {
-    &["local", "shm", "someip", "zenoh"]
+    &["local", "shm", "someip", "zenoh", "custom_tcp"]
 }
 
 // ── Tests ───────────────────────────────────────────────────
@@ -242,12 +256,40 @@ mod tests {
 
     #[test]
     fn implemented_transports_have_template() {
-        for name in &["local", "shm", "someip", "zenoh"] {
+        for name in &["local", "shm", "someip", "zenoh", "custom_tcp"] {
             assert!(
                 lookup(name).unwrap().implemented,
                 "transport '{name}' should be marked implemented"
             );
         }
+    }
+
+    #[test]
+    fn custom_tcp_per_target_with_shared_server() {
+        // §16.8.3 reference transport: per-binding `connect:` (client field)
+        // + device-level `transports.custom_tcp.listen:` (shared server).
+        let d = lookup("custom_tcp").expect("known");
+        assert!(d.shape.has_per_target_field);
+        assert!(d.shape.has_shared_session);
+    }
+
+    #[test]
+    fn custom_tcp_fire_forget_only_in_session_e2_step1() {
+        // Other patterns require dedup + duplex correlation, landing in
+        // subsequent E2 sessions. The capability list documents the
+        // current contract; widening must update the template + tests.
+        let d = lookup("custom_tcp").expect("known");
+        assert!(d.capabilities.contains(&FireForget));
+        assert!(!d.capabilities.contains(&RequestReply));
+        assert!(!d.capabilities.contains(&PubSub));
+        assert!(!d.capabilities.contains(&FieldAccess));
+    }
+
+    #[test]
+    fn custom_tcp_requires_connect_field() {
+        // Topology validation rejects a custom_tcp binding lacking `connect:`.
+        let d = lookup("custom_tcp").expect("known");
+        assert!(d.required_binding_fields.contains(&"connect"));
     }
 
     #[test]

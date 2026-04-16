@@ -1,0 +1,28 @@
+# SCE Mesh §16.8.3 reference transport (custom_tcp): TCP loopback FireForget.
+# brake (ecu1) acts as pure client; motor (ecu2) hosts the listen socket.
+# Ports stay above the well-known/registered ranges to avoid collisions
+# with real services on developer workstations.
+#
+# Port is templated (@SCE_TEST_CUSTOM_TCP_PORT@) — CMake's configure_file
+# substitutes the value of the SCE_TEST_CUSTOM_TCP_PORT cache variable
+# at build time so a developer whose workstation already owns the
+# default 55821 can override with `cmake -DSCE_TEST_CUSTOM_TCP_PORT=…`.
+# The test binary receives the same value as a compile-time macro so
+# the codegen-baked port and the in-test recording server agree.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: "@SCE_MESH_TEST_DIR_REL@/brake.scxml"
+        bindings:
+          "#motor":
+            transport: custom_tcp
+            connect: "127.0.0.1:@SCE_TEST_CUSTOM_TCP_PORT@"
+  ecu2:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:@SCE_TEST_CUSTOM_TCP_PORT@"
+    machines:
+      motor:
+        source: "@SCE_MESH_TEST_DIR_REL@/motor.scxml"

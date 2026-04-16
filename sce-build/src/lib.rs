@@ -1038,7 +1038,19 @@ pub fn compile_mesh_transport(
     let resolved = resolution.targets;
     let deadline_override_notices = resolution.deadline_overrides;
 
-    if resolved.is_empty() && server_binding.is_none() {
+    // A device-level `transports.custom_tcp.listen:` requires this machine
+    // to host a TCP server even when it has no client targets, no server
+    // binding, and no machine-lifetime subscriptions — pure-receiver
+    // machines on a device that listens still need a transport.h to bind
+    // the listen socket and dispatch inbound envelopes (SCE_MESH.md §16.8.3).
+    // The same predicate gates `transport_types.insert("custom_tcp")` in
+    // codegen.rs; `CustomTcpTransportConfig::hosts_server` is the SSoT.
+    let has_custom_tcp_listen = deploy_cfg
+        .device_for_machine(&effective_machine_name)
+        .and_then(|d| d.transports.custom_tcp.as_ref())
+        .is_some_and(mesh::deploy::CustomTcpTransportConfig::hosts_server);
+
+    if resolved.is_empty() && server_binding.is_none() && !has_custom_tcp_listen {
         let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
@@ -1087,6 +1099,7 @@ pub fn compile_mesh_transport(
     let device = deploy_cfg.device_for_machine(&effective_machine_name);
     let zenoh_session = device.and_then(|d| d.transports.zenoh.as_ref());
     let someip_config = device.and_then(|d| d.transports.someip.as_ref());
+    let custom_tcp_config = device.and_then(|d| d.transports.custom_tcp.as_ref());
     // Machine-lifetime subscriptions from deploy.yaml (SCE_MESH.md §13).
     let machine_subscriptions = device
         .and_then(|d| d.machines.get(&effective_machine_name))
@@ -1099,6 +1112,7 @@ pub fn compile_mesh_transport(
         server_binding.as_ref(),
         zenoh_session,
         someip_config,
+        custom_tcp_config,
         machine_subscriptions,
         language,
         &template_base,

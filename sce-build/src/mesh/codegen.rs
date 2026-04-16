@@ -17,7 +17,7 @@
 
 use crate::filters;
 use crate::generator::{GeneratedOutput, Language};
-use crate::mesh::deploy::{SomeipTransportConfig, ZenohTransportConfig};
+use crate::mesh::deploy::{CustomTcpTransportConfig, SomeipTransportConfig, ZenohTransportConfig};
 use crate::mesh::error::CodegenError;
 use crate::mesh::topology::ResolvedTarget;
 use crate::mesh::transport;
@@ -152,6 +152,31 @@ impl SomeipTransportContext {
     }
 }
 
+/// Template context for custom_tcp device-shared configuration.
+///
+/// Carries the optional `listen:` endpoint pre-escaped as a complete C++
+/// string literal so the template can pass it directly to the server's
+/// `bind()` call. `None` when the device is a pure client and runs no
+/// server (the template skips server emission in that case).
+#[derive(Debug, Clone, Default, serde::Serialize)]
+struct CustomTcpTransportContext {
+    /// Complete C++ string literal of the listen endpoint, e.g.
+    /// `"\"127.0.0.1:9000\""`. `None` if deploy.yaml omitted `listen:`.
+    listen: Option<String>,
+}
+
+impl CustomTcpTransportContext {
+    fn from_config(cfg: &CustomTcpTransportConfig) -> Self {
+        Self {
+            listen: cfg.listen.as_deref().map(cpp_string_literal),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.listen.is_none()
+    }
+}
+
 // ── Template context ─────────────────────────────────────────
 
 /// SOME/IP service identity, pre-rendered as `0xNNNN` hex strings so the
@@ -198,6 +223,13 @@ enum TargetStateView {
         key: String,
         extra: HashMap<String, serde_yaml_ng::Value>,
     },
+    CustomTcp {
+        /// Server endpoint to dial (`host:port`), pre-escaped as a complete
+        /// C++ string literal (including outer quotes) so the template emits
+        /// it verbatim into the generated client constructor.
+        connect: String,
+        extra: HashMap<String, serde_yaml_ng::Value>,
+    },
 }
 
 impl TargetStateView {
@@ -222,6 +254,10 @@ impl TargetStateView {
             },
             TransportState::Zenoh { key, extra } => Self::Zenoh {
                 key: key.clone(),
+                extra: extra.clone(),
+            },
+            TransportState::CustomTcp { connect, extra } => Self::CustomTcp {
+                connect: cpp_string_literal(connect),
                 extra: extra.clone(),
             },
             TransportState::Unimplemented { transport_name } => unreachable!(
@@ -700,11 +736,24 @@ pub fn generate_mesh(
     server: Option<&super::topology::ServerBinding>,
     zenoh_session: Option<&ZenohTransportConfig>,
     someip_config: Option<&SomeipTransportConfig>,
+    custom_tcp_config: Option<&CustomTcpTransportConfig>,
     subscriptions: &[super::deploy::SubscriptionConfig],
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
-    if targets.is_empty() && subscriptions.is_empty() && server.is_none() {
+    // A custom_tcp `listen:` on the device requires the machine to host a
+    // server even when it has no `bindings:`/`server:`/`subscriptions:` of
+    // its own — the server field, init() bind, and shutdown() teardown all
+    // live on the per-machine TransportRouter. Skipping here would leave a
+    // pure-receiver machine with no transport.h and no listening socket.
+    // SSoT: `CustomTcpTransportConfig::hosts_server` (see deploy.rs).
+    let needs_custom_tcp_server =
+        custom_tcp_config.is_some_and(CustomTcpTransportConfig::hosts_server);
+    if targets.is_empty()
+        && subscriptions.is_empty()
+        && server.is_none()
+        && !needs_custom_tcp_server
+    {
         return Ok(GeneratedOutput { files: vec![] });
     }
 
@@ -715,6 +764,7 @@ pub fn generate_mesh(
             server,
             zenoh_session,
             someip_config,
+            custom_tcp_config,
             subscriptions,
             template_base,
         ),
@@ -728,6 +778,7 @@ fn generate_cpp_mesh(
     server: Option<&super::topology::ServerBinding>,
     zenoh_session: Option<&ZenohTransportConfig>,
     someip_config: Option<&SomeipTransportConfig>,
+    custom_tcp_config: Option<&CustomTcpTransportConfig>,
     subscriptions: &[super::deploy::SubscriptionConfig],
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -905,6 +956,15 @@ fn generate_cpp_mesh(
         });
     }
 
+    // A device-level custom_tcp listen endpoint emits a server even when no
+    // client binding on this machine selected `transport: custom_tcp`. Add
+    // the variant to `transport_types` so the template's `{% if "custom_tcp"
+    // in transport_types %}` gates fire for the include and server field.
+    // SSoT: `CustomTcpTransportConfig::hosts_server` (see deploy.rs).
+    if custom_tcp_config.is_some_and(CustomTcpTransportConfig::hosts_server) {
+        transport_types.insert("custom_tcp");
+    }
+
     // Pre-escape Zenoh session config into C++ string literals so the template
     // never constructs literals by string concatenation.
     let zenoh_session_json5 = zenoh_session.map(ZenohSessionJson5::from_config);
@@ -919,6 +979,11 @@ fn generate_cpp_mesh(
     // synthetic `<machine>_<target>` name.
     let someip_transport =
         someip_config.map(SomeipTransportContext::from_config).filter(|s| !s.is_empty());
+
+    // custom_tcp device-shared listen endpoint. Pure-client devices have
+    // no `listen:` key and the template renders only client-side code.
+    let custom_tcp_transport =
+        custom_tcp_config.map(CustomTcpTransportContext::from_config).filter(|s| !s.is_empty());
 
     let machine_pascal = filters::to_pascal_case(machine_name.to_string());
 
@@ -946,6 +1011,7 @@ fn generate_cpp_mesh(
         zenoh_session_json5 => zenoh_session_json5,
         zenoh_session_json5_present => zenoh_session_json5_present,
         someip_transport => someip_transport,
+        custom_tcp_transport => custom_tcp_transport,
         machine_subscriptions => subscriptions,
         server => server_context,
     };

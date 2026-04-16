@@ -243,6 +243,18 @@ pub enum TransportState {
         /// Non-typed passthrough. Always serialised (see Someip::extra).
         extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     },
+    /// custom_tcp reference transport (SCE_MESH.md §16.8.3). One TCP
+    /// client per binding connecting to `connect`. The device's optional
+    /// listen endpoint is device-shared state and lives on
+    /// [`crate::mesh::deploy::CustomTcpTransportConfig`], not here.
+    CustomTcp {
+        /// Server endpoint to dial (`host:port`). Validated as present
+        /// upstream by `required_binding_fields = ["connect"]`.
+        connect: String,
+        /// Non-typed passthrough; always serialised so consumers can probe
+        /// `extra.<key>` with `is defined` even on empty bindings.
+        extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    },
     /// Recognised in the registry but not yet implemented (dds, can, …).
     /// Codegen rejects with `UnsupportedTransport` before this variant
     /// reaches the template — the variant exists so the sum type
@@ -264,6 +276,7 @@ impl TransportState {
             Self::Shm { .. } => "shm",
             Self::Someip { .. } => "someip",
             Self::Zenoh { .. } => "zenoh",
+            Self::CustomTcp { .. } => "custom_tcp",
             Self::Unimplemented { transport_name } => transport_name,
         }
     }
@@ -1719,6 +1732,25 @@ fn build_transport_state(
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             TransportState::Zenoh { key, extra }
+        }
+        "custom_tcp" => {
+            // `connect` presence is enforced by `required_binding_fields`
+            // (`["connect"]`) before we reach this point — empty string here
+            // would signal that the registry's required-fields list and this
+            // arm have drifted apart.
+            let connect = pt
+                .extra
+                .get("connect")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let extra = pt
+                .extra
+                .iter()
+                .filter(|(k, _)| k.as_str() != "connect")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            TransportState::CustomTcp { connect, extra }
         }
         other => TransportState::Unimplemented {
             transport_name: other.to_string(),

@@ -183,6 +183,10 @@
 #include <utility>
 #include <zenoh.hxx>
 {% endif %}
+{% if "custom_tcp" in transport_types %}
+#include <memory>
+#include "mesh/transports/CustomTcpTransport.h"
+{% endif %}
 
 namespace SCE::Generated::{{ machine_name }} {
 
@@ -366,6 +370,20 @@ inline void send_to_{{ target.target_snake }}(
    access to router state (session, subscriber handle map, receive_callback_)
    that cannot be passed cleanly as free-function parameters. No emission here. #}
 
+{% elif target.state.kind == "custom_tcp" %}
+/// Send envelope to {{ target.target }} via custom_tcp (length-prefixed CBOR).
+/// Events: {{ target.events | join(", ") }}
+/// FireForget only this session; other patterns rely on the §10.5 dedup
+/// layer + duplex correlation that arrive in subsequent E2 sessions.
+/// @return true on successful framed send; false if the client could not
+///         dial or the socket write failed.
+[[nodiscard]] inline bool send_to_{{ target.target_snake }}(
+    SCE::Mesh::CustomTcp::Client& client,
+    const SCE::Mesh::MeshEnvelope& env
+) {
+    return client.send(env);
+}
+
 {% else %}
 #error "SCE Mesh: unsupported transport '{{ target.state.kind }}' for target '{{ target.target }}'. Update codegen::transport_shape() and mesh_transport.h.jinja2."
 {% endif %}
@@ -398,6 +416,8 @@ struct TransportRouter {
 {% elif target.state.kind == "someip" %}
     std::shared_ptr<vsomeip::application> {{ target.target_snake }}_app_;
     std::thread {{ target.target_snake }}_thread_;
+{% elif target.state.kind == "custom_tcp" %}
+    SCE::Mesh::CustomTcp::Client {{ target.target_snake }}_;
 {% endif %}
 {% endfor %}
 
@@ -422,6 +442,15 @@ struct TransportRouter {
 {% endif %}
 
 {# ── (D2) Shared transport resources (device-wide, not per-target) ── #}
+{% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
+    // custom_tcp device-shared server (SCE_MESH.md §16.8.3). One TCP
+    // listen socket per device; accept thread + per-connection read
+    // thread spawned in init(). Held as `unique_ptr` so a client-only
+    // device (no `listen:` declared) emits the field but never
+    // constructs a server, mirroring how Zenoh's optional<Session>
+    // collapses to a no-op when the device runs no zenoh sessions.
+    std::unique_ptr<SCE::Mesh::CustomTcp::Server> custom_tcp_server_;
+{% endif %}
 {% if "zenoh" in transport_types %}
     // Zenoh: one session per device, shared by all zenoh targets.
     std::optional<zenoh::Session> zenoh_session_;
@@ -456,7 +485,7 @@ struct TransportRouter {
    The `local` disjunct was added so a router whose only transport is
    local can still host dispatchToSender and be the inbound target of
    another router's linkTo closure (SCE_MESH.md §9.5 mesh-rpc pairs). ── #}
-{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
     // Sender engine reference. Bound in the ctor and never rebound.
     //
     // Thread-safety: the ctor completes-then-publishes the router before
@@ -631,7 +660,7 @@ struct TransportRouter {
    whenever the ctor is actually synthesized for a concrete engine type.
    Declarations run per-target-fields first, then `sender_`, so the
    initializers do the same. #}
-{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v or has_server -%}
+{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server -%}
 {%- set ns = namespace(parts=[]) %}
 {%- for target in targets if target.has_per_target_field %}
 {%-   if target.state.kind == "local" %}
@@ -651,6 +680,13 @@ struct TransportRouter {
 {%-     else %}
 {%-       set ns.parts = ns.parts + [target.target_snake ~ "_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_" ~ target.target_snake ~ "\"))"] %}
 {%-     endif %}
+{%-   elif target.state.kind == "custom_tcp" %}
+{#-     custom_tcp client constructor: connect endpoint is pre-escaped as a
+        complete C++ string literal in Rust (TargetStateView::CustomTcp);
+        the on_receive callback dispatches inbound envelopes through
+        `dispatchToSender` so a single client field handles the duplex
+        path the same way SOME/IP and Zenoh do. #}
+{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.state.connect ~ ", [this](const SCE::Mesh::MeshEnvelope& env){ (void)this->dispatchToSender(env); })"] %}
 {%-   endif %}
 {%- endfor %}
 {#- Server SOME/IP app init: must appear in declaration order (before sender_).
@@ -814,7 +850,7 @@ struct TransportRouter {
             });
 {% endif %}
     }
-{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
 
 {# ── (D4) init() / shutdown() — lifecycle for shared transport resources ── #}
     /// Initialize transport connections and open shared sessions.
@@ -879,6 +915,21 @@ struct TransportRouter {
 {% endfor %}
         {{ target.target_snake }}_thread_ = std::thread([this]{ {{ target.target_snake }}_app_->start(); });
 {% endfor %}
+{% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
+        // custom_tcp device-shared server: bind+listen happens in the
+        // ctor; failure surfaces as `valid() == false`. Inbound envelopes
+        // dispatch through `dispatchToSender` on the per-connection read
+        // thread the Server class spawns. SCE_MESH.md §16.8.3.
+        custom_tcp_server_ = std::make_unique<SCE::Mesh::CustomTcp::Server>(
+            {{ custom_tcp_transport.listen }},
+            [this](const SCE::Mesh::MeshEnvelope& env) {
+                (void)this->dispatchToSender(env);
+            });
+        if (!custom_tcp_server_->valid()) {
+            shutdown();
+            return false;
+        }
+{% endif %}
 {% if "zenoh" in transport_types %}
         try {
 {# Base config comes from an external zenoh.json5 (SCE_MESH.md §13) when
@@ -1118,6 +1169,14 @@ struct TransportRouter {
         zenoh_subscribers_.clear();
         zenoh_session_.reset();
 {% endif %}
+{% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
+        // Server first: shutting it down unblocks the accept thread and
+        // joins per-connection readers. The per-target Client members
+        // (D1) are RAII-destroyed by the TransportRouter dtor, after this
+        // shutdown() returns and before any client field destructors run.
+        if (custom_tcp_server_) custom_tcp_server_->shutdown();
+        custom_tcp_server_.reset();
+{% endif %}
     }
 
     ~TransportRouter() { shutdown(); }
@@ -1191,6 +1250,8 @@ struct TransportRouter {
                                   "{{ target.target }}");
             }
             return false;
+{% elif target.state.kind == "custom_tcp" %}
+            return send_to_{{ target.target_snake }}({{ target.target_snake }}_, env);
 {% endif %}
         }
 {% endfor %}
@@ -1231,7 +1292,7 @@ struct TransportRouter {
         return PK::FireForget;
     }
 
-{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
     /// Look up the paired reply event for an RPC request (build-time table).
     /// SCE_MESH.md §13 path B: the pair is inferred by convention —
     /// `service.request.X` ↔ `service.response.X`. Returns empty string
@@ -1247,7 +1308,7 @@ struct TransportRouter {
     }
 {% endif %}
 
-{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
     /// Dispatch an incoming envelope to the sender engine via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
