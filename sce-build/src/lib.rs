@@ -1040,12 +1040,16 @@ pub fn compile_mesh_transport(
     // directly from the device's `transports:` block; no merging/validation
     // pass is needed because the schema makes shared config structurally
     // singular (one entry per transport type per device).
-    let device = deploy_cfg.device_for_machine(&model.name);
+    //
+    // Use effective_machine_name for device lookup — model.name is the file
+    // stem (e.g. "motor_zenoh_multi") which may differ from the deploy.yaml
+    // key (e.g. "motor") when the SCXML name attribute is used.
+    let device = deploy_cfg.device_for_machine(&effective_machine_name);
     let zenoh_session = device.and_then(|d| d.transports.zenoh.as_ref());
     let someip_config = device.and_then(|d| d.transports.someip.as_ref());
     // Machine-lifetime subscriptions from deploy.yaml (SCE_MESH.md §13).
     let machine_subscriptions = device
-        .and_then(|d| d.machines.get(&model.name))
+        .and_then(|d| d.machines.get(&effective_machine_name))
         .map(|m| m.subscriptions.as_slice())
         .unwrap_or(&[]);
     let template_base = find_template_base();

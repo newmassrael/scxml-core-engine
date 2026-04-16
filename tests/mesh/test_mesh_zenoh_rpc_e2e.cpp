@@ -7,7 +7,10 @@
 //   brake (client) send_zenoh RpcRequest
 //     → Zenoh session.get → motor queryable callback
 //     → motor engine receives request
-//     → motor handleServerResponse → Query::reply
+//     → motor mesh_send_cb_ (simulates injected <send>)
+//       → resolvePattern → RpcReply
+//       → correlation bridge (invoke_id → correlation_id)
+//       → handleServerResponse → Query::reply
 //     → brake on_reply closure → type rewrite → brake dispatchToSender
 //     → brake engine receives reply event
 //
@@ -18,10 +21,12 @@
 //
 // Coverage:
 //   - Client send_zenoh RpcRequest → session.get with CBOR payload
-//   - Server queryable → pending query storage → dispatchToSender
+//   - Server queryable → pending query storage (keyed by invoke_id)
+//   - resolvePattern for server response events → RpcReply
+//   - Correlation bridge: invoke_id → correlation_id in mesh send callback
 //   - handleServerResponse → Query::reply → CBOR encode
 //   - Client on_reply → reply-event type rewrite → dispatchToSender
-//   - correlation_id round-trip across transport boundary
+//   - invoke_id round-trip across transport boundary
 
 #include "brake_zenoh_multi_sm.h"
 #include "brake_zenoh_multi_transport.h"
@@ -29,6 +34,7 @@
 #include "motor_zenoh_multi_transport.h"
 
 #include "ZenohTestUtils.h"
+#include "common/Uuid.h"
 #include "mesh/MeshDispatch.h"
 
 #include <cstdio>
@@ -71,7 +77,8 @@ int run_test() {
             if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
                 return;
             }
-            auto cid = env.correlation_id.value_or(SCE::uuid::v7());
+            auto cid = env.invoke_id.value_or(
+                env.correlation_id.value_or(SCE::uuid::v7()));
             {
                 std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
                 motor_router.pending_server_queries_.insert_or_assign(
@@ -99,19 +106,22 @@ int run_test() {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // ── 1. RPC round-trip: brake send_zenoh → motor queryable →
-    //       handleServerResponse → brake on_reply → brake engine ──────
+    //       motor mesh_send_cb_ → resolvePattern → handleServerResponse
+    //       → brake on_reply → brake engine ──────────────────────────
     //
     // brake_router.send_zenoh with RpcRequest pattern triggers
     // session.get(). The motor's queryable fires on a zenoh runtime
-    // thread, decodes the envelope, stores the Query, and dispatches
-    // the request to motor_engine.received_. After motor_engine
-    // observes the request, we call handleServerResponse to simulate
-    // the server processing. The brake's on_reply closure rewrites
-    // env.type to the topology-inferred reply event and dispatches
-    // through dispatchToSender to brake_engine.received_.
+    // thread, decodes the envelope, stores the Query (keyed by
+    // invoke_id), and dispatches the request to motor_engine.received_.
+    // After motor_engine observes the request, we call motor_engine's
+    // mesh_send_cb_ to simulate the engine's injected <send> for the
+    // response. This exercises the full resolvePattern → RpcReply
+    // → correlation bridge → handleServerResponse path.
     {
+        auto invoke_id = SCE::uuid::v7();
         auto req = make_envelope("service.request.compute_force", PK::RpcRequest,
                                  R"({"input":"brake_force"})");
+        req.invoke_id = invoke_id;
         const bool sent = brake_router.send_zenoh(req, brake_gen::ZENOH_KEY_MOTOR, "#motor");
         MESH_TEST_REQUIRE(sent, "brake send_zenoh RpcRequest returned false");
 
@@ -121,21 +131,25 @@ int run_test() {
                 }),
                 "motor engine did not receive RPC request through Zenoh queryable");
 
-        // Retrieve correlation_id from stored pending query.
-        std::array<uint8_t, 16> cid{};
+        // Verify the pending query is stored (keyed by invoke_id).
         {
             std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
             MESH_TEST_REQUIRE(!motor_router.pending_server_queries_.empty(),
                     "motor queryable did not store pending Query");
-            cid = motor_router.pending_server_queries_.begin()->first.id;
         }
 
-        // Motor responds via handleServerResponse.
-        auto resp = make_envelope("service.response.compute_force", PK::RpcReply,
-                                  R"({"result":42})");
-        resp.correlation_id = cid;
-        MESH_TEST_REQUIRE(motor_router.handleServerResponse(resp),
-                "handleServerResponse returned false");
+        // Motor responds through the mesh send callback — the same path
+        // the real engine takes when the injected <send target="#motor"
+        // event="service.response.compute_force"/> fires. The invokeId
+        // parameter carries the inbound request's invoke_id (which the
+        // engine propagates via currentEventInvokeId_).
+        auto invoke_id_str = SCE::uuid::to_string(invoke_id);
+        MESH_TEST_REQUIRE(
+                motor_engine.mesh_send_cb_(
+                    "#motor", "service.response.compute_force",
+                    R"({"result":42})", "", invoke_id_str),
+                "motor mesh_send_cb_ returned false for server response "
+                "(resolvePattern or correlation bridge failure)");
 
         // Brake must receive the reply. The brake router's send_zenoh
         // RpcRequest path installs an on_reply closure that:

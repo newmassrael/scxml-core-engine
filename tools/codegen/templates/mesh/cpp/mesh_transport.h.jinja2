@@ -739,7 +739,16 @@ struct TransportRouter {
                 // RpcReply, route through the server response handler instead
                 // of target dispatch. The response is correlated by UUID to
                 // the inbound request stored at receive time.
+                //
+                // Correlation bridge: the inbound queryable/message handler
+                // keyed the pending request by invoke_id (mesh-rpc path).
+                // The engine's currentEventInvokeId propagates as invokeId
+                // → env.invoke_id (parsed above). Stamp correlation_id so
+                // handleServerResponse finds the stored request.
                 if (env.pattern == SCE::Mesh::PatternKind::RpcReply) {
+                    if (!env.correlation_id && env.invoke_id) {
+                        env.correlation_id = env.invoke_id;
+                    }
                     return handleServerResponse(env);
                 }
 {% endif %}
@@ -881,8 +890,11 @@ struct TransportRouter {
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
                 // Stash original request for create_response() when the
-                // engine sends service.response.X
-                auto cid = env.correlation_id.value_or(SCE::uuid::v7());
+                // engine sends service.response.X. Key by invoke_id when
+                // available (mesh-rpc path) for correlation bridge symmetry
+                // with the Zenoh queryable handler.
+                auto cid = env.invoke_id.value_or(
+                    env.correlation_id.value_or(SCE::uuid::v7()));
                 {
                     std::lock_guard<std::mutex> lock(server_pending_mutex_);
                     pending_server_requests_[CorrelationKey{cid}] = msg;
@@ -906,7 +918,13 @@ struct TransportRouter {
                 auto bytes = payload_opt->get().as_vector();
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) return;
-                auto cid = env.correlation_id.value_or(SCE::uuid::v7());
+                // Key by invoke_id when available (mesh-rpc invoke path) so the
+                // outbound response can be correlated through the engine's
+                // currentEventInvokeId without an extra mapping table. Falls
+                // back to correlation_id (SOME/IP client sets it) or a fresh
+                // UUID (plain <send> path — single outstanding request).
+                auto cid = env.invoke_id.value_or(
+                    env.correlation_id.value_or(SCE::uuid::v7()));
                 {
                     std::lock_guard<std::mutex> lock(server_pending_mutex_);
                     pending_server_queries_.insert_or_assign(CorrelationKey{cid}, query.clone());
@@ -1061,6 +1079,16 @@ struct TransportRouter {
         if (eventName == "{{ ep.event }}") return static_cast<PK>({{ ep.pattern_kind }});
 {% endfor %}
 {% endfor %}
+{# Server response events: the mesh send callback must resolve outbound
+   response events as RpcReply so the server interceptor routes them to
+   handleServerResponse instead of falling through to route_send (which
+   has no binding for the self-target). SCE_MESH.md §13 Session E. #}
+{% if has_server %}
+{% for pair in server.rpc_pairs %}
+{% set ns.has_patterns = true %}
+        if (eventName == "{{ pair.response_event }}") return PK::RpcReply;
+{% endfor %}
+{% endif %}
 {% if not ns.has_patterns %}
         (void)eventName;
 {% endif %}
