@@ -29,97 +29,16 @@
 #include "motor_someip_multi_sm.h"
 #include "motor_someip_multi_transport.h"
 
+#include "MeshTestUtils.h"
 #include "mesh/MeshDispatch.h"
-#include "mesh/MeshEnvelope.h"
-#include "mesh/MeshEnvelopeCodec.h"
-#include "mesh/PatternKind.h"
 
-#include <chrono>
-#include <condition_variable>
 #include <cstdio>
-#include <cstdlib>
-#include <functional>
-#include <mutex>
-#include <optional>
 #include <string>
 #include <thread>
-#include <utility>
-#include <vector>
 
 namespace {
 
-constexpr auto kTimeout = std::chrono::seconds(5);
-
-struct ReceivedEvent {
-    std::string type;
-    std::string data;
-};
-
-struct ReceivedEvents {
-    std::mutex m;
-    std::condition_variable cv;
-    std::vector<ReceivedEvent> events;
-
-    void push(ReceivedEvent ev) {
-        {
-            std::lock_guard<std::mutex> lock(m);
-            events.push_back(std::move(ev));
-        }
-        cv.notify_all();
-    }
-    template <typename Pred>
-    bool wait_for(Pred&& pred) {
-        std::unique_lock<std::mutex> lock(m);
-        return cv.wait_for(lock, kTimeout, [&] { return pred(events); });
-    }
-    void clear() {
-        std::lock_guard<std::mutex> lock(m);
-        events.clear();
-    }
-};
-
-struct TestSenderEngine {
-    using Event = std::string;
-
-    struct Policy {
-        static std::optional<Event> getEventFromName(const char* name) {
-            return Event{name};
-        }
-    };
-    struct EventWithMetadata {
-        Event event;
-        std::string data;
-        std::string invokeId;
-    };
-    Policy policy_;
-    Policy& getPolicy() { return policy_; }
-    std::string currentEventInvokeId() const { return {}; }
-
-    ReceivedEvents received_;
-    void raiseExternal(const Event& event_name) {
-        received_.push({event_name, ""});
-    }
-    void raiseExternal(const Event& event_name, const std::string& data) {
-        received_.push({event_name, data});
-    }
-    void raiseExternal(const EventWithMetadata& meta) {
-        received_.push({meta.event, meta.data});
-    }
-
-    using MeshSendCb = std::function<bool(const std::string&, const std::string&,
-                                          const std::string&, const std::string&,
-                                          const std::string&)>;
-    MeshSendCb mesh_send_cb_;
-    void setMeshSendCallback(MeshSendCb cb) { mesh_send_cb_ = std::move(cb); }
-};
-
-#define REQUIRE(cond, msg)                                                     \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); \
-            return 1;                                                          \
-        }                                                                      \
-    } while (0)
+using namespace SCE::Test::Mesh;
 
 int run_test() {
     namespace brake_gen = SCE::Generated::brake_someip_multi;
@@ -131,12 +50,12 @@ int run_test() {
     // ── Motor (server) must init first — it is the routing manager. ──
     TestSenderEngine motor_engine;
     MotorRouterT motor_router(motor_engine);
-    REQUIRE(motor_router.init(), "motor router init failed");
+    MESH_TEST_REQUIRE(motor_router.init(), "motor router init failed");
 
     // ── Brake (client) connects to motor. ──
     TestSenderEngine brake_engine;
     BrakeRouterT brake_router(brake_engine);
-    REQUIRE(brake_router.init(), "brake router init failed");
+    MESH_TEST_REQUIRE(brake_router.init(), "brake router init failed");
 
     // vsomeip internal routing needs time for service offer/request
     // handshake within the process. 2s is generous for local dispatch.
@@ -168,10 +87,10 @@ int run_test() {
         }
 
         const bool sent = brake_router.route_send("#motor", env);
-        REQUIRE(sent, "brake route_send RpcRequest returned false");
+        MESH_TEST_REQUIRE(sent, "brake route_send RpcRequest returned false");
 
         // Motor receives the request via register_message_handler.
-        REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
                     return !v.empty() &&
                            v.back().type == "service.request.compute_force";
                 }),
@@ -181,7 +100,7 @@ int run_test() {
         std::array<uint8_t, 16> server_cid{};
         {
             std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
-            REQUIRE(!motor_router.pending_server_requests_.empty(),
+            MESH_TEST_REQUIRE(!motor_router.pending_server_requests_.empty(),
                     "motor did not store pending request");
             server_cid = motor_router.pending_server_requests_.begin()->first.id;
         }
@@ -196,11 +115,11 @@ int run_test() {
         resp.data.assign(resp_payload.begin(), resp_payload.end());
         resp.correlation_id = server_cid;
 
-        REQUIRE(motor_router.handleServerResponse(resp),
+        MESH_TEST_REQUIRE(motor_router.handleServerResponse(resp),
                 "handleServerResponse returned false");
 
         // Brake receives the correlated reply.
-        REQUIRE(brake_engine.received_.wait_for([](const auto& v) {
+        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto& v) {
                     return !v.empty() &&
                            v.back().type == "service.response.compute_force";
                 }),
@@ -209,7 +128,7 @@ int run_test() {
         // Verify payload survived CBOR round-trip.
         {
             std::lock_guard<std::mutex> lock(brake_engine.received_.m);
-            REQUIRE(brake_engine.received_.events.back().data.find("42") != std::string::npos,
+            MESH_TEST_REQUIRE(brake_engine.received_.events.back().data.find("42") != std::string::npos,
                     "reply payload did not survive SOME/IP CBOR round-trip");
         }
     }

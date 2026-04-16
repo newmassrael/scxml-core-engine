@@ -1884,6 +1884,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             PRIVATE
                 ${CMAKE_SOURCE_DIR}/sce/include
                 ${MESH_SOMEIP_MULTI_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
         )
 
         target_link_libraries(mesh_someip_runtime_test
