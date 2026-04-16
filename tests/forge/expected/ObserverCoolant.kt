@@ -12,11 +12,6 @@ import com.sce.forge.runtime.ThresholdState
 // to a file-local domain. The resulting EventQueue type cannot be composed
 // with other observers. To enable cross-file composition, add
 // sce:event-domain="..." to the source SCXML. See SCE_FORGE.md Section 4.11.
-// SCXML event names flow into enum entries verbatim (W3C SCXML 3.12);
-// `EMIT_WARNING`, `coolant.high`, etc. don't conform to Kotlin's
-// UpperCamel convention but renaming would break SCE_FORGE.md §4.11
-// cross-file event composition.
-@Suppress("EnumEntryName")
 enum class ForgeDomainTag {
     EMIT_WARNING,
     CLEAR_WARNING,

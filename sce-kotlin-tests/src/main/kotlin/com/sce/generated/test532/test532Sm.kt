@@ -51,7 +51,6 @@ class Test532StateMachine(
         is Test532State.Fail -> "fail"
         is Test532State.Pass -> "pass"
         is Test532State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -65,7 +64,6 @@ class Test532StateMachine(
         is Test532State.Fail -> 2
         is Test532State.Pass -> 1
         is Test532State.S0 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -83,7 +81,6 @@ class Test532StateMachine(
         is Test532Event.Error.Execution -> "error.execution"
         is Test532Event.HTTP.POST -> "HTTP.POST"
         is Test532Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -137,7 +134,6 @@ class Test532StateMachine(
 
             performHttpSend("http://localhost:8080/test", "", "some content", emptyMap(), "__send_1")
             }
-            else -> {}
         }
     }
 
@@ -153,7 +149,6 @@ class Test532StateMachine(
             is Test532State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

@@ -103,7 +103,6 @@ class Test405StateMachine(
         is Test405State.S02 -> "s02"
         is Test405State.S03 -> "s03"
         is Test405State.S04 -> "s04"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -142,7 +141,6 @@ class Test405StateMachine(
         is Test405State.S02 -> 1
         is Test405State.S03 -> 2
         is Test405State.S04 -> 3
-        else -> 0
     }
 
 
@@ -395,7 +393,6 @@ class Test405StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s04")) return
             }
-            else -> {}
         }
     }
 
@@ -473,7 +470,6 @@ class Test405StateMachine(
             is Test405State.S04 -> {
                 activeStateIds.remove("s04")
             }
-            else -> {}
         }
     }
 

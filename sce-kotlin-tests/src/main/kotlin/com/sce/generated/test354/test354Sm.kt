@@ -66,7 +66,6 @@ class Test354StateMachine(
         is Test354State.S1 -> "s1"
         is Test354State.S2 -> "s2"
         is Test354State.S3 -> "s3"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -83,7 +82,6 @@ class Test354StateMachine(
         is Test354State.S1 -> 1
         is Test354State.S2 -> 2
         is Test354State.S3 -> 3
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -101,7 +99,6 @@ class Test354StateMachine(
         is Test354Event.Event1 -> "event1"
         is Test354Event.Event2 -> "event2"
         is Test354Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -339,7 +336,6 @@ class Test354StateMachine(
 
             send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: ""))
             }
-            else -> {}
         }
     }
 
@@ -364,7 +360,6 @@ class Test354StateMachine(
             is Test354State.S3 -> {
                 activeStateIds.remove("s3")
             }
-            else -> {}
         }
     }
 

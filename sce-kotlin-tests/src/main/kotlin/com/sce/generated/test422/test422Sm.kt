@@ -81,7 +81,6 @@ class Test422StateMachine(
         is Test422State.S1 -> "s1"
         is Test422State.S11 -> "s11"
         is Test422State.S12 -> "s12"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -98,7 +97,6 @@ class Test422StateMachine(
         is Test422State.S1 -> 0
         is Test422State.S11 -> 1
         is Test422State.S12 -> 2
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -122,7 +120,6 @@ class Test422StateMachine(
         is Test422Event.InvokeS11 -> "invokeS11"
         is Test422Event.InvokeS12 -> "invokeS12"
         is Test422Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -347,7 +344,6 @@ class Test422StateMachine(
                     }
                 }
             }
-            else -> {}
         }
     }
 
@@ -381,7 +377,6 @@ class Test422StateMachine(
                 cancelInvoke("_invoke_2")
                 activeStateIds.remove("s12")
             }
-            else -> {}
         }
     }
 

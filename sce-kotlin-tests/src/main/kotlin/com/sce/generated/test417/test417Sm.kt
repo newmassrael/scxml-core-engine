@@ -94,7 +94,6 @@ class Test417StateMachine(
         is Test417State.S1p12 -> "s1p12"
         is Test417State.S1p121 -> "s1p121"
         is Test417State.S1p12final -> "s1p12final"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -130,7 +129,6 @@ class Test417StateMachine(
         is Test417State.S1p12 -> 5
         is Test417State.S1p121 -> 6
         is Test417State.S1p12final -> 7
-        else -> 0
     }
 
 
@@ -326,7 +324,6 @@ class Test417StateMachine(
                     raiseInternal(Test417Event.Done.State.S1p1)
                 }
             }
-            else -> {}
         }
     }
 
@@ -391,7 +388,6 @@ class Test417StateMachine(
             is Test417State.S1p12final -> {
                 activeStateIds.remove("s1p12final")
             }
-            else -> {}
         }
     }
 

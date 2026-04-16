@@ -76,7 +76,6 @@ class Test314StateMachine(
         is Test314State.S01 -> "s01"
         is Test314State.S02 -> "s02"
         is Test314State.S03 -> "s03"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -94,7 +93,6 @@ class Test314StateMachine(
         is Test314State.S01 -> 1
         is Test314State.S02 -> 2
         is Test314State.S03 -> 3
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -108,7 +106,6 @@ class Test314StateMachine(
     override fun eventNameOf(event: Test314Event): String? = when (event) {
         is Test314Event.Error.Execution -> "error.execution"
         is Test314Event.Foo -> "foo"
-        else -> null
     }
 
 
@@ -329,7 +326,6 @@ class Test314StateMachine(
 
             raiseInternal(Test314Event.Foo)
             }
-            else -> {}
         }
     }
 
@@ -354,7 +350,6 @@ class Test314StateMachine(
             is Test314State.S03 -> {
                 activeStateIds.remove("s03")
             }
-            else -> {}
         }
     }
 

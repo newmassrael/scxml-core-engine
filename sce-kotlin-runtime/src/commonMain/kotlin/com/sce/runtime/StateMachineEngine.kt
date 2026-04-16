@@ -5,6 +5,9 @@
 
 package com.sce.runtime
 
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +22,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.time.TimeSource
+
+// Process-wide counter for scriptSessionId allocation. Using hashCode() here
+// would collide across instances (32-bit identity hash has no uniqueness
+// guarantee), causing sibling StateMachineEngine instances to share the same
+// script-engine session and clobber each other's datamodel variables.
+@OptIn(ExperimentalAtomicApi::class)
+private val scriptSessionIdCounter = AtomicLong(0)
 
 /**
  * W3C SCXML 5.10: Event metadata for _event system variable.
@@ -88,8 +98,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Allocate a script engine session ID.
      * Called by generated ensureScriptEngine() during lazy initialization.
      */
+    @OptIn(ExperimentalAtomicApi::class)
     protected fun allocateScriptSession(): String {
-        val sid = "session_${hashCode()}"
+        val sid = "session_${scriptSessionIdCounter.incrementAndFetch()}"
         scriptSessionId = sid
         return sid
     }

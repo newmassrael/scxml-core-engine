@@ -53,7 +53,6 @@ class Test241Child2StateMachine(
     override fun stateIdOf(state: Test241Child2State): String = when (state) {
         is Test241Child2State.Sub03 -> "sub03"
         is Test241Child2State.SubFinal3 -> "subFinal3"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -66,7 +65,6 @@ class Test241Child2StateMachine(
     override fun documentOrderOf(state: Test241Child2State): Int = when (state) {
         is Test241Child2State.Sub03 -> 0
         is Test241Child2State.SubFinal3 -> 1
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -82,7 +80,6 @@ class Test241Child2StateMachine(
         is Test241Child2Event.Error.Execution -> "error.execution"
         is Test241Child2Event.Failure -> "failure"
         is Test241Child2Event.Success -> "success"
-        else -> null
     }
 
 
@@ -234,7 +231,6 @@ class Test241Child2StateMachine(
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
-            else -> {}
         }
     }
 
@@ -247,7 +243,6 @@ class Test241Child2StateMachine(
             is Test241Child2State.SubFinal3 -> {
                 activeStateIds.remove("subFinal3")
             }
-            else -> {}
         }
     }
 

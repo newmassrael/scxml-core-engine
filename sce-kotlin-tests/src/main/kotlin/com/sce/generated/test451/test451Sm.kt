@@ -61,7 +61,6 @@ class Test451StateMachine(
         is Test451State.Pass -> "pass"
         is Test451State.S0 -> "s0"
         is Test451State.S1 -> "s1"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -89,7 +88,6 @@ class Test451StateMachine(
         is Test451State.Pass -> 0
         is Test451State.S0 -> 3
         is Test451State.S1 -> 4
-        else -> 0
     }
 
 
@@ -155,7 +153,6 @@ class Test451StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
-            else -> {}
         }
     }
 
@@ -193,7 +190,6 @@ class Test451StateMachine(
             is Test451State.S1 -> {
                 activeStateIds.remove("s1")
             }
-            else -> {}
         }
     }
 

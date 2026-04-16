@@ -49,7 +49,6 @@ class Test577StateMachine(
         is Test577State.Fail -> "fail"
         is Test577State.Pass -> "pass"
         is Test577State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -63,7 +62,6 @@ class Test577StateMachine(
         is Test577State.Fail -> 2
         is Test577State.Pass -> 1
         is Test577State.S0 -> 0
-        else -> 0
     }
 
 
@@ -119,7 +117,6 @@ class Test577StateMachine(
             raiseInternal(Test577Event.Error.Communication, EventMetadata.platform())
             return  // W3C SCXML 5.10: Stop subsequent executable content
             }
-            else -> {}
         }
     }
 
@@ -135,7 +132,6 @@ class Test577StateMachine(
             is Test577State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

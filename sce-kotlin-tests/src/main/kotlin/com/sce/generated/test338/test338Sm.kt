@@ -66,7 +66,6 @@ class Test338StateMachine(
         is Test338State.Pass -> "pass"
         is Test338State.S0 -> "s0"
         is Test338State.S1 -> "s1"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -81,7 +80,6 @@ class Test338StateMachine(
         is Test338State.Pass -> 2
         is Test338State.S0 -> 0
         is Test338State.S1 -> 1
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -103,7 +101,6 @@ class Test338StateMachine(
         is Test338Event.Event0 -> "event0"
         is Test338Event.Event1 -> "event1"
         is Test338Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -299,7 +296,6 @@ class Test338StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
-            else -> {}
         }
     }
 
@@ -322,7 +318,6 @@ class Test338StateMachine(
             is Test338State.S1 -> {
                 activeStateIds.remove("s1")
             }
-            else -> {}
         }
     }
 

@@ -52,7 +52,6 @@ class Test226sub1StateMachine(
     override fun stateIdOf(state: Test226sub1State): String = when (state) {
         is Test226sub1State.Final -> "final"
         is Test226sub1State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -65,7 +64,6 @@ class Test226sub1StateMachine(
     override fun documentOrderOf(state: Test226sub1State): Int = when (state) {
         is Test226sub1State.Final -> 1
         is Test226sub1State.S0 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -79,7 +77,6 @@ class Test226sub1StateMachine(
     override fun eventNameOf(event: Test226sub1Event): String? = when (event) {
         is Test226sub1Event.Error.Execution -> "error.execution"
         is Test226sub1Event.VarBound -> "varBound"
-        else -> null
     }
 
 
@@ -229,7 +226,6 @@ class Test226sub1StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
-            else -> {}
         }
     }
 
@@ -242,7 +238,6 @@ class Test226sub1StateMachine(
             is Test226sub1State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

@@ -65,7 +65,6 @@ class Test457StateMachine(
         is Test457State.S1 -> "s1"
         is Test457State.S2 -> "s2"
         is Test457State.S3 -> "s3"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -82,7 +81,6 @@ class Test457StateMachine(
         is Test457State.S1 -> 1
         is Test457State.S2 -> 2
         is Test457State.S3 -> 3
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -98,7 +96,6 @@ class Test457StateMachine(
         is Test457Event.Bar -> "bar"
         is Test457Event.Error.Execution -> "error.execution"
         is Test457Event.Foo -> "foo"
-        else -> null
     }
 
 
@@ -391,7 +388,6 @@ class Test457StateMachine(
                 }
             }
             }
-            else -> {}
         }
     }
 
@@ -416,7 +412,6 @@ class Test457StateMachine(
             is Test457State.S3 -> {
                 activeStateIds.remove("s3")
             }
-            else -> {}
         }
     }
 

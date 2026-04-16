@@ -77,7 +77,6 @@ class Test488StateMachine(
         is Test488State.S01 -> "s01"
         is Test488State.S02 -> "s02"
         is Test488State.S1 -> "s1"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -95,7 +94,6 @@ class Test488StateMachine(
         is Test488State.S01 -> 1
         is Test488State.S02 -> 2
         is Test488State.S1 -> 3
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -109,7 +107,6 @@ class Test488StateMachine(
     override fun eventNameOf(event: Test488Event): String? = when (event) {
         is Test488Event.Done.State.S0 -> "done.state.s0"
         is Test488Event.Error.Execution -> "error.execution"
-        else -> null
     }
 
 
@@ -329,7 +326,6 @@ class Test488StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
-            else -> {}
         }
     }
 
@@ -354,7 +350,6 @@ class Test488StateMachine(
             is Test488State.S1 -> {
                 activeStateIds.remove("s1")
             }
-            else -> {}
         }
     }
 

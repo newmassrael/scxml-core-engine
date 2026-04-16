@@ -55,7 +55,6 @@ class Test521StateMachine(
         is Test521State.Fail -> "fail"
         is Test521State.Pass -> "pass"
         is Test521State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -69,7 +68,6 @@ class Test521StateMachine(
         is Test521State.Fail -> 2
         is Test521State.Pass -> 1
         is Test521State.S0 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -87,7 +85,6 @@ class Test521StateMachine(
         is Test521Event.Error.Execution -> "error.execution"
         is Test521Event.Event2 -> "event2"
         is Test521Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -271,7 +268,6 @@ class Test521StateMachine(
 
             send(Test521Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
-            else -> {}
         }
     }
 
@@ -287,7 +283,6 @@ class Test521StateMachine(
             is Test521State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

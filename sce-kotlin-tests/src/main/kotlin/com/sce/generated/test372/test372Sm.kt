@@ -73,7 +73,6 @@ class Test372StateMachine(
         is Test372State.Pass -> "pass"
         is Test372State.S0 -> "s0"
         is Test372State.S0final -> "s0final"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -89,7 +88,6 @@ class Test372StateMachine(
         is Test372State.Pass -> 2
         is Test372State.S0 -> 0
         is Test372State.S0final -> 1
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -105,7 +103,6 @@ class Test372StateMachine(
         is Test372Event.Done.State.S0 -> "done.state.s0"
         is Test372Event.Error.Execution -> "error.execution"
         is Test372Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -275,7 +272,6 @@ class Test372StateMachine(
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test372Event.Done.State.S0, EventMetadata.platform())
             }
-            else -> {}
         }
     }
 
@@ -297,7 +293,6 @@ class Test372StateMachine(
 
             executeAssign("Var1", "3")
             }
-            else -> {}
         }
     }
 

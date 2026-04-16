@@ -9,6 +9,9 @@ version = "1.0.0"
 kotlin {
     jvmToolchain(17)
     jvm()
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
 
     sourceSets {
         val commonMain by getting {

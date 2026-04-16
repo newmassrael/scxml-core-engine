@@ -38,7 +38,6 @@ class Test415StateMachine(
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: Test415State): String = when (state) {
         is Test415State.Final -> "final"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -50,7 +49,6 @@ class Test415StateMachine(
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test415State): Int = when (state) {
         is Test415State.Final -> 0
-        else -> 0
     }
 
 
@@ -80,7 +78,6 @@ class Test415StateMachine(
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
-            else -> {}
         }
     }
 
@@ -90,7 +87,6 @@ class Test415StateMachine(
             is Test415State.Final -> {
                 activeStateIds.remove("final")
             }
-            else -> {}
         }
     }
 

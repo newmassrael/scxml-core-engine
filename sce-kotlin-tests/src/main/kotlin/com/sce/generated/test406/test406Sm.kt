@@ -89,7 +89,6 @@ class Test406StateMachine(
         is Test406State.S04 -> "s04"
         is Test406State.S05 -> "s05"
         is Test406State.S0p2 -> "s0p2"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -123,7 +122,6 @@ class Test406StateMachine(
         is Test406State.S04 -> 3
         is Test406State.S05 -> 4
         is Test406State.S0p2 -> 5
-        else -> 0
     }
 
 
@@ -321,7 +319,6 @@ class Test406StateMachine(
                 onEntry(Test406State.S01p21)
                 onEntry(Test406State.S01p22)
             }
-            else -> {}
         }
     }
 
@@ -374,7 +371,6 @@ class Test406StateMachine(
                 }
                 activeStateIds.remove("s0p2")
             }
-            else -> {}
         }
     }
 

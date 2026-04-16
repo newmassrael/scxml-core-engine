@@ -44,7 +44,6 @@ class Test234Child1StateMachine(
     override fun stateIdOf(state: Test234Child1State): String = when (state) {
         is Test234Child1State.Sub0 -> "sub0"
         is Test234Child1State.SubFinal2 -> "subFinal2"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -57,7 +56,6 @@ class Test234Child1StateMachine(
     override fun documentOrderOf(state: Test234Child1State): Int = when (state) {
         is Test234Child1State.Sub0 -> 0
         is Test234Child1State.SubFinal2 -> 1
-        else -> 0
     }
 
 
@@ -101,7 +99,6 @@ class Test234Child1StateMachine(
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
-            else -> {}
         }
     }
 
@@ -114,7 +111,6 @@ class Test234Child1StateMachine(
             is Test234Child1State.SubFinal2 -> {
                 activeStateIds.remove("subFinal2")
             }
-            else -> {}
         }
     }
 

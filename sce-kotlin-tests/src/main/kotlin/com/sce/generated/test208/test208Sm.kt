@@ -48,7 +48,6 @@ class Test208StateMachine(
         is Test208State.Fail -> "fail"
         is Test208State.Pass -> "pass"
         is Test208State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -62,7 +61,6 @@ class Test208StateMachine(
         is Test208State.Fail -> 2
         is Test208State.Pass -> 1
         is Test208State.S0 -> 0
-        else -> 0
     }
 
 
@@ -119,7 +117,6 @@ class Test208StateMachine(
 
             cancelSend("foo")
             }
-            else -> {}
         }
     }
 
@@ -135,7 +132,6 @@ class Test208StateMachine(
             is Test208State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

@@ -86,7 +86,6 @@ class Test399StateMachine(
         is Test399State.S04 -> "s04"
         is Test399State.S05 -> "s05"
         is Test399State.S06 -> "s06"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -107,7 +106,6 @@ class Test399StateMachine(
         is Test399State.S04 -> 4
         is Test399State.S05 -> 5
         is Test399State.S06 -> 6
-        else -> 0
     }
 
 
@@ -306,7 +304,6 @@ class Test399StateMachine(
 
             raiseInternal(Test399Event.Foo.Self)
             }
-            else -> {}
         }
     }
 
@@ -340,7 +337,6 @@ class Test399StateMachine(
             is Test399State.S06 -> {
                 activeStateIds.remove("s06")
             }
-            else -> {}
         }
     }
 

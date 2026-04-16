@@ -74,7 +74,6 @@ class Test416StateMachine(
         is Test416State.S11 -> "s11"
         is Test416State.S111 -> "s111"
         is Test416State.S11final -> "s11final"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -93,7 +92,6 @@ class Test416StateMachine(
         is Test416State.S11 -> 1
         is Test416State.S111 -> 2
         is Test416State.S11final -> 3
-        else -> 0
     }
 
 
@@ -210,7 +208,6 @@ class Test416StateMachine(
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test416Event.Done.State.S11, EventMetadata.platform())
             }
-            else -> {}
         }
     }
 
@@ -235,7 +232,6 @@ class Test416StateMachine(
             is Test416State.S11final -> {
                 activeStateIds.remove("s11final")
             }
-            else -> {}
         }
     }
 

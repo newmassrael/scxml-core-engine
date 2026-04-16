@@ -47,7 +47,6 @@ class Test348StateMachine(
         is Test348State.Fail -> "fail"
         is Test348State.Pass -> "pass"
         is Test348State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -61,7 +60,6 @@ class Test348StateMachine(
         is Test348State.Fail -> 2
         is Test348State.Pass -> 1
         is Test348State.S0 -> 0
-        else -> 0
     }
 
 
@@ -112,7 +110,6 @@ class Test348StateMachine(
 
             send(Test348Event.S0Event, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
-            else -> {}
         }
     }
 
@@ -128,7 +125,6 @@ class Test348StateMachine(
             is Test348State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

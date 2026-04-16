@@ -54,7 +54,6 @@ class Test156StateMachine(
         is Test156State.Fail -> "fail"
         is Test156State.Pass -> "pass"
         is Test156State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -68,7 +67,6 @@ class Test156StateMachine(
         is Test156State.Fail -> 2
         is Test156State.Pass -> 1
         is Test156State.S0 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -80,7 +78,6 @@ class Test156StateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test156Event): String? = when (event) {
         is Test156Event.Error.Execution -> "error.execution"
-        else -> null
     }
 
 
@@ -269,7 +266,6 @@ class Test156StateMachine(
                 }
             }
             }
-            else -> {}
         }
     }
 
@@ -285,7 +281,6 @@ class Test156StateMachine(
             is Test156State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

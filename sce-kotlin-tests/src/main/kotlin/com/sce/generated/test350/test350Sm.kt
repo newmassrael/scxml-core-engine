@@ -56,7 +56,6 @@ class Test350StateMachine(
         is Test350State.Fail -> "fail"
         is Test350State.Pass -> "pass"
         is Test350State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -70,7 +69,6 @@ class Test350StateMachine(
         is Test350State.Fail -> 2
         is Test350State.Pass -> 1
         is Test350State.S0 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -86,7 +84,6 @@ class Test350StateMachine(
         is Test350Event.Error.Execution -> "error.execution"
         is Test350Event.S0Event -> "s0Event"
         is Test350Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -251,7 +248,6 @@ class Test350StateMachine(
 
             send(Test350Event.S0Event, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
-            else -> {}
         }
     }
 
@@ -267,7 +263,6 @@ class Test350StateMachine(
             is Test350State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

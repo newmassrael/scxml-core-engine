@@ -66,7 +66,6 @@ class Test403aStateMachine(
         is Test403aState.S0 -> "s0"
         is Test403aState.S01 -> "s01"
         is Test403aState.S02 -> "s02"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -83,7 +82,6 @@ class Test403aStateMachine(
         is Test403aState.S0 -> 0
         is Test403aState.S01 -> 1
         is Test403aState.S02 -> 2
-        else -> 0
     }
 
 
@@ -188,7 +186,6 @@ class Test403aStateMachine(
 
             raiseInternal(Test403aEvent.Event2)
             }
-            else -> {}
         }
     }
 
@@ -210,7 +207,6 @@ class Test403aStateMachine(
             is Test403aState.S02 -> {
                 activeStateIds.remove("s02")
             }
-            else -> {}
         }
     }
 

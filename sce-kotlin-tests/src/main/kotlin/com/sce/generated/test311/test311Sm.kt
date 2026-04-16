@@ -53,7 +53,6 @@ class Test311StateMachine(
         is Test311State.Fail -> "fail"
         is Test311State.Pass -> "pass"
         is Test311State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -67,7 +66,6 @@ class Test311StateMachine(
         is Test311State.Fail -> 2
         is Test311State.Pass -> 1
         is Test311State.S0 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -81,7 +79,6 @@ class Test311StateMachine(
     override fun eventNameOf(event: Test311Event): String? = when (event) {
         is Test311Event.Error.Execution -> "error.execution"
         is Test311Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -233,7 +230,6 @@ class Test311StateMachine(
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test311Event.Error.Execution, EventMetadata.platform())
             }
-            else -> {}
         }
     }
 
@@ -249,7 +245,6 @@ class Test311StateMachine(
             is Test311State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

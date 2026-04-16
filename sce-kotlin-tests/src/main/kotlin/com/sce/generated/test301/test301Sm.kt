@@ -44,7 +44,6 @@ class Test301StateMachine(
         is Test301State.Fail -> "fail"
         is Test301State.Pass -> "pass"
         is Test301State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -58,7 +57,6 @@ class Test301StateMachine(
         is Test301State.Fail -> 2
         is Test301State.Pass -> 1
         is Test301State.S0 -> 0
-        else -> 0
     }
 
 
@@ -111,7 +109,6 @@ class Test301StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
-            else -> {}
         }
     }
 
@@ -127,7 +124,6 @@ class Test301StateMachine(
             is Test301State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

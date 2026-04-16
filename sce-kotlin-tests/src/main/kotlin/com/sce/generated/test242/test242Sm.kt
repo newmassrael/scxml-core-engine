@@ -62,7 +62,6 @@ class Test242StateMachine(
         is Test242State.S0 -> "s0"
         is Test242State.S02 -> "s02"
         is Test242State.S03 -> "s03"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -78,7 +77,6 @@ class Test242StateMachine(
         is Test242State.S0 -> 0
         is Test242State.S02 -> 1
         is Test242State.S03 -> 2
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -102,7 +100,6 @@ class Test242StateMachine(
         is Test242Event.Timeout1 -> "timeout1"
         is Test242Event.Timeout2 -> "timeout2"
         is Test242Event.Timeout3 -> "timeout3"
-        else -> null
     }
 
 
@@ -221,7 +218,6 @@ class Test242StateMachine(
                     }
                 }
             }
-            else -> {}
         }
     }
 
@@ -255,7 +251,6 @@ class Test242StateMachine(
                 cancelInvoke("_invoke_2")
                 activeStateIds.remove("s03")
             }
-            else -> {}
         }
     }
 

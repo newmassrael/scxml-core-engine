@@ -182,6 +182,9 @@ val generateForgeFixtures by tasks.registering(GenerateForgeFixtures::class) {
 kotlin {
     jvmToolchain(17)
     jvm()
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
 
     sourceSets {
         val commonMain by getting

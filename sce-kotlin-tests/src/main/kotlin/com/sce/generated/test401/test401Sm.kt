@@ -54,7 +54,6 @@ class Test401StateMachine(
         is Test401State.Fail -> "fail"
         is Test401State.Pass -> "pass"
         is Test401State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -68,7 +67,6 @@ class Test401StateMachine(
         is Test401State.Fail -> 2
         is Test401State.Pass -> 1
         is Test401State.S0 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -84,7 +82,6 @@ class Test401StateMachine(
         is Test401Event.Error.Self -> "error"
         is Test401Event.Error.Execution -> "error.execution"
         is Test401Event.Foo -> "foo"
-        else -> null
     }
 
 
@@ -238,7 +235,6 @@ class Test401StateMachine(
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test401Event.Error.Execution, EventMetadata.platform())
             }
-            else -> {}
         }
     }
 
@@ -254,7 +250,6 @@ class Test401StateMachine(
             is Test401State.S0 -> {
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 

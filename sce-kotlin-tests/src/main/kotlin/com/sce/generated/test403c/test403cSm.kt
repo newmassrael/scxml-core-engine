@@ -90,7 +90,6 @@ class Test403cStateMachine(
         is Test403cState.Pass -> "pass"
         is Test403cState.S0 -> "s0"
         is Test403cState.S1 -> "s1"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -123,7 +122,6 @@ class Test403cStateMachine(
         is Test403cState.Pass -> 7
         is Test403cState.S0 -> 0
         is Test403cState.S1 -> 6
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -141,7 +139,6 @@ class Test403cStateMachine(
         is Test403cEvent.Event1 -> "event1"
         is Test403cEvent.Event2 -> "event2"
         is Test403cEvent.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -426,7 +423,6 @@ class Test403cStateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
-            else -> {}
         }
     }
 
@@ -482,7 +478,6 @@ class Test403cStateMachine(
             is Test403cState.S1 -> {
                 activeStateIds.remove("s1")
             }
-            else -> {}
         }
     }
 

@@ -87,7 +87,6 @@ class Test413StateMachine(
         is Test413State.S2p12 -> "s2p12"
         is Test413State.S2p121 -> "s2p121"
         is Test413State.S2p122 -> "s2p122"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -124,7 +123,6 @@ class Test413StateMachine(
         is Test413State.S2p12 -> 6
         is Test413State.S2p121 -> 7
         is Test413State.S2p122 -> 8
-        else -> 0
     }
 
 
@@ -293,7 +291,6 @@ class Test413StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2p122")) return
             }
-            else -> {}
         }
     }
 
@@ -361,7 +358,6 @@ class Test413StateMachine(
             is Test413State.S2p122 -> {
                 activeStateIds.remove("s2p122")
             }
-            else -> {}
         }
     }
 

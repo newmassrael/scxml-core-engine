@@ -62,7 +62,6 @@ class Test411StateMachine(
         is Test411State.Pass -> "pass"
         is Test411State.S0 -> "s0"
         is Test411State.S01 -> "s01"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -78,7 +77,6 @@ class Test411StateMachine(
         is Test411State.Pass -> 2
         is Test411State.S0 -> 0
         is Test411State.S01 -> 1
-        else -> 0
     }
 
 
@@ -154,7 +152,6 @@ class Test411StateMachine(
             raiseInternal(Test411Event.Event2)
             }
             }
-            else -> {}
         }
     }
 
@@ -173,7 +170,6 @@ class Test411StateMachine(
             is Test411State.S01 -> {
                 activeStateIds.remove("s01")
             }
-            else -> {}
         }
     }
 

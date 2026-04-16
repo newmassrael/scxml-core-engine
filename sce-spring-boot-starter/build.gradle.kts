@@ -17,6 +17,9 @@ dependencies {
 
 kotlin {
     jvmToolchain(17)
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
 }
 
 java {

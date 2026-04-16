@@ -59,7 +59,6 @@ class Test349StateMachine(
         is Test349State.Pass -> "pass"
         is Test349State.S0 -> "s0"
         is Test349State.S2 -> "s2"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -74,7 +73,6 @@ class Test349StateMachine(
         is Test349State.Pass -> 2
         is Test349State.S0 -> 0
         is Test349State.S2 -> 1
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -90,7 +88,6 @@ class Test349StateMachine(
         is Test349Event.Error.Execution -> "error.execution"
         is Test349Event.S0Event -> "s0Event"
         is Test349Event.S0Event2 -> "s0Event2"
-        else -> null
     }
 
 
@@ -260,7 +257,6 @@ class Test349StateMachine(
 
             send(Test349Event.S0Event2, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
-            else -> {}
         }
     }
 
@@ -279,7 +275,6 @@ class Test349StateMachine(
             is Test349State.S2 -> {
                 activeStateIds.remove("s2")
             }
-            else -> {}
         }
     }
 

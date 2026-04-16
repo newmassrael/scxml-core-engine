@@ -99,7 +99,6 @@ class {{ machine_name }}StateMachine(
 {% for state_id in model.states | sort %}
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> "{{ state_id }}"
 {% endfor %}
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -139,7 +138,6 @@ class {{ machine_name }}StateMachine(
 {% for state_id in model.states | sort %}
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {{ model.states[state_id].document_order }}
 {% endfor %}
-        else -> 0
     }
 
 {% if model.invokes or model.has_parent_communication or model.needs_script_engine or model.needs_http_send %}
@@ -156,7 +154,6 @@ class {{ machine_name }}StateMachine(
 {% for event_name in leaf_events | sort %}
         is {{ machine_name }}Event.{{ event_name | to_event_ref }} -> "{{ event_name }}"
 {% endfor %}
-        else -> null
     }
 {% endif %}
 

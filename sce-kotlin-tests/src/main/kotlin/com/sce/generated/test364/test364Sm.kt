@@ -170,7 +170,6 @@ class Test364StateMachine(
         is Test364State.S3112 -> "s3112"
         is Test364State.S312 -> "s312"
         is Test364State.S32 -> "s32"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -236,7 +235,6 @@ class Test364StateMachine(
         is Test364State.S3112 -> 24
         is Test364State.S312 -> 25
         is Test364State.S32 -> 26
-        else -> 0
     }
 
 
@@ -620,7 +618,6 @@ class Test364StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s32")) return
             }
-            else -> {}
         }
     }
 
@@ -770,7 +767,6 @@ class Test364StateMachine(
             is Test364State.S32 -> {
                 activeStateIds.remove("s32")
             }
-            else -> {}
         }
     }
 

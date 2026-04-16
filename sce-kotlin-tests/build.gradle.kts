@@ -29,31 +29,34 @@ dependencies {
 // Generated files are kept in git so builds work without sce-codegen.
 // ---------------------------------------------------------------------------
 
-val sceCodegen: String? by lazy {
-    // Search order: target/release, target/debug, system PATH
-    listOf("target/release/sce-codegen", "target/debug/sce-codegen").firstOrNull {
-        rootProject.file(it).exists()
-    }?.let { rootProject.file(it).absolutePath }
-        ?: System.getenv("PATH")?.split(File.pathSeparator)
-            ?.map { File(it, "sce-codegen") }
-            ?.firstOrNull { it.exists() }?.absolutePath
-}
+// Configuration-cache-safe codegen binary resolution.  All values are plain
+// strings evaluated eagerly so no Gradle script objects leak into task state.
+val rootDir: String = rootProject.projectDir.absolutePath
+val sceCodegenBinary: String? = listOf(
+    "target/release/sce-codegen", "target/debug/sce-codegen"
+).firstOrNull {
+    File(rootDir, it).exists()
+}?.let { File(rootDir, it).absolutePath }
+    ?: System.getenv("PATH")?.split(File.pathSeparator)
+        ?.map { File(it, "sce-codegen") }
+        ?.firstOrNull { it.exists() }?.absolutePath
+val hasCodegen: Boolean = sceCodegenBinary != null
 
 val generateScxml by tasks.registering(Exec::class) {
     group = "code generation"
     description = "Generate Kotlin state machines and test classes from W3C SCXML tests"
 
-    workingDir = rootProject.projectDir
-    commandLine(sceCodegen ?: "sce-codegen", "generate-w3c", "-l", "kotlin")
+    workingDir = File(rootDir)
+    commandLine(sceCodegenBinary ?: "sce-codegen", "generate-w3c", "-l", "kotlin")
 
     // Inputs: SCXML sources + codegen infrastructure + test registry
-    inputs.dir(rootProject.file("resources"))
+    inputs.dir(File(rootDir, "resources"))
         .withPropertyName("scxmlResources")
         .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.dir(rootProject.file("tools/codegen/templates"))
+    inputs.dir(File(rootDir, "tools/codegen/templates"))
         .withPropertyName("codegenTemplates")
         .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.file(rootProject.file("tests/CMakeLists.txt"))
+    inputs.file(File(rootDir, "tests/CMakeLists.txt"))
         .withPropertyName("testRegistry")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
@@ -65,11 +68,7 @@ val generateScxml by tasks.registering(Exec::class) {
 
     // Skip if sce-codegen is not available (use existing generated files)
     isIgnoreExitValue = false
-    onlyIf {
-        val found = sceCodegen != null
-        if (!found) logger.warn("SCE: sce-codegen not found, using existing generated files")
-        found
-    }
+    enabled = hasCodegen
 }
 
 tasks.named("compileKotlin") {
@@ -80,7 +79,7 @@ tasks.test {
     useJUnitPlatform()
 
     // C++ DataModelInitHelper pattern: resolve data src paths relative to project root
-    workingDir = rootProject.projectDir
+    workingDir = File(rootDir)
 
     // Native library paths (Lua + QuickJS JNI)
     val luaLibDir = project(":sce-kotlin-lua").layout.buildDirectory.dir("native/lib")
@@ -116,4 +115,7 @@ tasks.test {
 
 kotlin {
     jvmToolchain(17)
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
 }

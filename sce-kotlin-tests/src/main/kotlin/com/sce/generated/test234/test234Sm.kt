@@ -82,7 +82,6 @@ class Test234StateMachine(
         is Test234State.P02 -> "p02"
         is Test234State.Pass -> "pass"
         is Test234State.S1 -> "s1"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -111,7 +110,6 @@ class Test234StateMachine(
         is Test234State.P02 -> 5
         is Test234State.Pass -> 1
         is Test234State.S1 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -131,7 +129,6 @@ class Test234StateMachine(
         is Test234Event.Done.Invoke -> "done.invoke"
         is Test234Event.Error.Execution -> "error.execution"
         is Test234Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -371,7 +368,6 @@ class Test234StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
-            else -> {}
         }
     }
 
@@ -420,7 +416,6 @@ class Test234StateMachine(
             is Test234State.S1 -> {
                 activeStateIds.remove("s1")
             }
-            else -> {}
         }
     }
 

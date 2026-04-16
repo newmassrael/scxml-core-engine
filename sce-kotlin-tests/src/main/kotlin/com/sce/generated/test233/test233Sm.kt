@@ -62,7 +62,6 @@ class Test233StateMachine(
         is Test233State.Fail -> "fail"
         is Test233State.Pass -> "pass"
         is Test233State.S0 -> "s0"
-        else -> ""
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -76,7 +75,6 @@ class Test233StateMachine(
         is Test233State.Fail -> 2
         is Test233State.Pass -> 1
         is Test233State.S0 -> 0
-        else -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -96,7 +94,6 @@ class Test233StateMachine(
         is Test233Event.Done.Invoke -> "done.invoke"
         is Test233Event.Error.Execution -> "error.execution"
         is Test233Event.Timeout -> "timeout"
-        else -> null
     }
 
 
@@ -261,7 +258,6 @@ class Test233StateMachine(
                     }
                 }
             }
-            else -> {}
         }
     }
 
@@ -281,7 +277,6 @@ class Test233StateMachine(
                 cancelInvoke("_invoke_0")
                 activeStateIds.remove("s0")
             }
-            else -> {}
         }
     }
 
