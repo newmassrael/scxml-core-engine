@@ -1869,24 +1869,22 @@ The same SCXML generates different transport code depending on deploy.yaml:
 
 `shm_transport` template (POSIX `shm_open`/`mmap`), `ShmChannel` with placement-new EventQueueBridge in shared memory, ready-flag handshake for any-order startup. Build-time event coverage enforcement (`UncoveredEvents` error — eliminates silently-broken-hooks pattern). Verification: two processes on same machine communicating via SCXML through generated SHM code, SCXML documents unchanged. QoS consistency check deferred to Phase 3.
 
-### Phase 3: Vehicle Network Transport Templates + Communication Patterns — PARTIAL
+### Phase 3: Vehicle Network Transport Templates + Communication Patterns — COMPLETE
 
 Transport templates for real-world middleware. Each template generates code that calls the protocol's native API directly, preserving all protocol-specific features.
 
-#### Status: Pattern Realization Gap (2026-04-13)
+#### Status: All Patterns Realized (2026-04-16)
 
-Section 8.1 defines 7 `CommunicationPattern` values and Section 8.2 defines a per-transport capability matrix. Build-time validation works. **However, only the FireForget pattern is realized in the wire format and runtime.** All other patterns pass build-time validation but degrade silently to FireForget at runtime.
+Section 8.1 defines 7 `CommunicationPattern` values and Section 8.2 defines a per-transport capability matrix. Build-time validation works. All patterns are realized in the wire format and transport templates for both SOME/IP and Zenoh.
 
-| Pattern | Build-time validation | Wire/runtime realization |
-|---|---|---|
-| `service.fire_forget` | OK | OK |
-| `service.request` / `service.response` | OK | **NOT REALIZED** — no correlation, no reply routing |
-| `event.subscribe` / `event.notification` | OK | **NOT REALIZED** — subscribe API unused |
-| `field.get` / `field.set` | OK | **NOT REALIZED** — forced into FireForget shape |
+| Pattern | Build-time validation | SOME/IP realization | Zenoh realization |
+|---|---|---|---|
+| `service.fire_forget` | OK | `app.send(request)` — method, no response | `session.put(key, envelope)` |
+| `service.request` / `service.response` | OK | `app.send(request)` + `register_message_handler` + correlation table | `session.get` with on_reply closure |
+| `event.subscribe` / `event.notification` | OK | `app.request_event` + `app.subscribe` / `app.unsubscribe` + refcount | `declare_subscriber` + RAII handle map |
+| `field.get` / `field.set` | OK | `app.send(request)` to getter/setter method + response handler | `session.get` (read) / `session.put` (write) |
 
-Concrete consequence: the `someip` transport currently uses only one of SOME/IP's four native interaction types (method/event/field/SD). Holding a SOME/IP method ID without sending a response violates the SOME/IP standard. The `zenoh` transport uses only `session.put()` of zenoh's four primitives (put/get/pub-sub/queryable).
-
-This gap is closed by **Phase 3.5: Pattern Realization** (below). Until then, transport entries marked COMPLETE below are accurate only for FireForget workloads.
+Compile-verified: `mesh_someip_multipattern_compile_verification` (Session C) and `mesh_zenoh_multipattern_compile_verification` / `mesh_zenoh_multipattern_runtime` (Session D) exercise all branches against real transport headers.
 
 #### Architecture additions in Phase 3
 
@@ -1898,7 +1896,7 @@ This gap is closed by **Phase 3.5: Pattern Realization** (below). Until then, tr
 
 All transports share the unified `mesh_transport.h.jinja2` template via `{% elif %}` dispatch (Section 3.2):
 
-- `someip` transport: SOME/IP via real vsomeip 3.7.x — service/instance/method IDs from deploy.yaml `extra`, TCP/UDP protocol selection, build-time pattern capability validation — **COMPLETE for FireForget only** (method req/resp, event, field unrealized)
+- `someip` transport: SOME/IP via real vsomeip 3.7.x — service/instance/method IDs from deploy.yaml, TCP/UDP protocol selection, build-time pattern capability validation — **COMPLETE** (Session C: all 4 capabilities — FireForget via `app.send(request)`, RPC via method + `register_message_handler` + CBOR correlation table, PubSub via `app.request_event`/`app.subscribe`/`app.unsubscribe` + refcount, FieldAccess via getter/setter methods + response handlers)
 - `zenoh` transport: Zenoh pub/sub via zenoh-cpp — device-shared session with `Config::insert_json5`, key expressions from deploy.yaml `extra` — **COMPLETE** (Session D: client-side realization of all four capabilities — `session.put` (FireForget/FieldWrite), `session.get` with on_reply closure (RpcRequest/FieldRead), `declare_subscriber` + RAII handle map (EventSubscribe/EventUnsubscribe). Server-side `declare_queryable` emission deferred to Session E alongside `<invoke type="sce:mesh-rpc">` lifecycle.)
 - Additional transports as demand arises — each adds a `{% elif %}` block in the template following the established pattern (Section 6.4)
 

@@ -318,6 +318,14 @@ struct EventPatternContext {
     getter_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     setter_id: Option<String>,
+    /// True when this event should NOT register a receive handler in
+    /// SOME/IP `init()`. Currently true only for EventUnsubscribe: it is
+    /// outbound-only (sends a control message to the bus) and shares the
+    /// same event_id as its paired EventSubscribe — registering a second
+    /// handler on the same (service, instance, event_id) triple would
+    /// silently replace the subscribe handler in vsomeip. The codegen
+    /// sets this flag so the template avoids hard-coding wire values.
+    skip_receive_handler: bool,
 }
 
 /// Convert an SCXML event name (`service.request.compute_force`) into a
@@ -525,6 +533,11 @@ fn generate_cpp_mesh(
                         .map(event_ids_to_template);
                     let (field_kind, method_id, event_group_id, event_id, getter_id, setter_id) =
                         ctx_ids.unwrap_or_default();
+                    // EventUnsubscribe shares the same event_id as its
+                    // paired EventSubscribe. A second register_message_handler
+                    // on the same triple silently replaces the first in vsomeip.
+                    let skip_receive_handler = CommunicationPattern::from_wire(ep.pattern_kind_value)
+                        == Some(CommunicationPattern::Unsubscribe);
                     EventPatternContext {
                         event: ep.event.clone(),
                         event_const: event_to_const_suffix(&ep.event),
@@ -536,6 +549,7 @@ fn generate_cpp_mesh(
                         event_id,
                         getter_id,
                         setter_id,
+                        skip_receive_handler,
                     }
                 })
                 .collect();

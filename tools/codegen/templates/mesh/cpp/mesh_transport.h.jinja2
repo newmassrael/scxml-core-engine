@@ -737,8 +737,15 @@ struct TransportRouter {
 {# Per-event receive handlers (SCE_MESH.md §14): one register_message_handler
    per (target, event) so different events on the same target can use
    different methods/event-groups/getters/setters. Dispatch keys on the
-   SomeipEventIds discriminator (field_kind). #}
-{% for ep in target.event_patterns %}
+   SomeipEventIds discriminator (field_kind).
+
+   Events flagged `skip_receive_handler` (currently: EventUnsubscribe) are
+   excluded. EventUnsubscribe is outbound-only and shares the same event_id
+   as its paired EventSubscribe — registering a second handler on the same
+   (service, instance, event_id) triple would replace the subscribe handler
+   in vsomeip. The flag is set by the Rust codegen (codegen.rs) so the
+   template never hard-codes wire values. #}
+{% for ep in target.event_patterns if not ep.skip_receive_handler %}
 {% if ep.field_kind == "method" %}
         // {{ ep.event }} → SOMEIP_METHOD_{{ target.target_snake | upper }}_{{ ep.event_const }}
 {{ someip_receive_handler(target, "SOMEIP_METHOD_" + (target.target_snake | upper) + "_" + ep.event_const, "", "rpc") }}

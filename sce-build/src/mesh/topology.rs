@@ -1064,6 +1064,39 @@ fn resolve_someip_ids(
         }
     }
 
+    // Auto-symmetry binding derivation: an EventUnsubscribe event generated
+    // by inject_auto_subscriptions always shares the same event_group as its
+    // paired EventSubscribe (event.subscribe.X ↔ event.unsubscribe.X). When
+    // the unsubscribe event has no explicit per-event entry and no matching
+    // default, clone the subscribe event's resolved binding. This fulfils the
+    // auto-symmetry contract ("lifecycle symmetry comes from codegen") at the
+    // deploy.yaml level — the author declares the subscribe binding once,
+    // the unsubscribe binding is derived.
+    for ep in &pt.event_patterns {
+        if event_bindings.contains_key(&ep.event) {
+            continue; // already resolved
+        }
+        let Some(pattern) = super::pattern::CommunicationPattern::from_wire(ep.pattern_kind_value)
+        else {
+            continue;
+        };
+        if pattern != super::pattern::CommunicationPattern::Unsubscribe {
+            continue;
+        }
+        // Derive the paired subscribe event name:
+        // "event.unsubscribe.X" → "event.subscribe.X"
+        let sub_prefix = super::pattern::CommunicationPattern::Subscribe.prefix_str();
+        let unsub_prefix = super::pattern::CommunicationPattern::Unsubscribe.prefix_str();
+        let suffix = match ep.event.strip_prefix(unsub_prefix) {
+            Some(s) => s,
+            None => continue,
+        };
+        let subscribe_event = format!("{sub_prefix}{suffix}");
+        if let Some(ids) = event_bindings.get(&subscribe_event) {
+            event_bindings.insert(ep.event.clone(), ids.clone());
+        }
+    }
+
     // Detect unused per-event entries (likely typos).
     let actual_events: BTreeSet<&str> =
         pt.event_patterns.iter().map(|ep| ep.event.as_str()).collect();

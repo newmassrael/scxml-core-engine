@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Motor receiver for SOME/IP multi-pattern topology validation.
+     Every <send event="X"> in brake_someip_multi.scxml requires a
+     matching <transition event="X"> here for the build-time
+     UncoveredEvents check. Runtime verification requires a vsomeip
+     routing manager and is deferred. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="motor" initial="ready">
+    <state id="ready">
+        <transition event="service.fire_forget.activate" target="ready"/>
+        <transition event="service.request.compute_force" target="ready"/>
+        <!-- event.subscribe.status / event.unsubscribe.status: transport-layer
+             control messages consumed by the sender's router (app.subscribe /
+             app.unsubscribe). Never dispatched to receiver engine
+             (MeshDispatch returns false for EventSubscribe/EventUnsubscribe).
+             Coverage-exempt per topology.rs (SCE_MESH.md Section 13). -->
+        <transition event="field.set.target_speed" target="ready"/>
+        <transition event="field.get.vehicle_speed" target="ready"/>
+    </state>
+</scxml>

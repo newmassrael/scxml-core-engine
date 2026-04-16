@@ -1792,6 +1792,66 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         apply_sce_test_policies(mesh_someip_compile_test)
 
         add_test(NAME mesh_someip_compile_verification COMMAND mesh_someip_compile_test)
+
+        # ── Session C: SOME/IP multi-pattern compile verification ─────
+        # Exercises all 4 SOME/IP capability categories (FireForget,
+        # RequestReply, PubSub, FieldAccess) on a single target. Validates
+        # that per-field_kind template branches compile against vsomeip 3.7.x.
+        set(MESH_SOMEIP_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_multi_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh someip multi: Generating brake_someip_multi_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh someip multi: Generating motor_someip_multi_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
+                    "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
+                    "${SCE_CODEGEN}" "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            COMMENT "Mesh someip multi: Generating brake_someip_multi_transport.h (multi-pattern)"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_multipattern_compile_test
+            mesh/test_mesh_someip_multipattern.cpp
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
+        )
+
+        target_include_directories(mesh_someip_multipattern_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_MULTI_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_someip_multipattern_compile_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_multipattern_compile_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_multipattern_compile_test)
+        add_test(NAME mesh_someip_multipattern_compile_verification
+                 COMMAND mesh_someip_multipattern_compile_test)
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
     endif()

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh Session C: brake controller exercising all 4 SOME/IP
+     capability categories. Event-name prefixes drive pattern detection
+     (sce-build/src/mesh/pattern.rs). SCE_MESH.md Section 13 path B:
+     RPC request events (service.request.X) are paired with their
+     reply (service.response.X) by topology-inferred convention.
+
+     Pattern → SOME/IP native API mapping:
+       service.fire_forget.* → app.send(request) [method, no response]
+       service.request.*     → app.send(request) + register_message_handler [method, RPC]
+       event.subscribe.*     → app.request_event + app.subscribe [event group]
+       field.get.*           → app.send(request) [getter method]
+       field.set.*           → app.send(request) [setter method] -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="brake_someip_multi" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="active"/>
+    </state>
+    <state id="active">
+        <onentry>
+            <!-- FireForget: app.send(request) to method, no response expected -->
+            <send target="#motor" event="service.fire_forget.activate"/>
+            <!-- RpcRequest: app.send(request) + register_message_handler for response.
+                 Paired reply event "service.response.compute_force" is
+                 inferred by convention (topology analyzer). -->
+            <send target="#motor" event="service.request.compute_force"/>
+            <!-- EventSubscribe: app.request_event + app.subscribe on event group -->
+            <send target="#motor" event="event.subscribe.status"/>
+            <!-- FieldWrite: app.send(request) to setter method -->
+            <send target="#motor" event="field.set.target_speed"/>
+            <!-- FieldRead: app.send(request) to getter method -->
+            <send target="#motor" event="field.get.vehicle_speed"/>
+        </onentry>
+        <!-- Reply paths (RPC response + field notification + subscription notify) -->
+        <transition event="service.response.compute_force" target="idle"/>
+        <transition event="event.notification.status"      target="idle"/>
+        <transition event="field.notify.vehicle_speed"     target="idle"/>
+        <transition event="brake.release"                  target="idle"/>
+    </state>
+</scxml>

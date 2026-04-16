@@ -1,0 +1,37 @@
+# SCE Mesh Session C: SOME/IP multi-pattern compile verification.
+# Exercises all 4 SOME/IP capabilities (FireForget, RequestReply,
+# PubSub, FieldAccess) on a single target with per-event ID mappings
+# resolved against vsomeip_motor_multi.json at build time.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_motor_multi.json
+        application_name: brake_someip_multi_app
+    machines:
+      brake_someip_multi:
+        source: brake_someip_multi.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              # FireForget → method (one-way, no response expected)
+              "service.fire_forget.activate":
+                method: activate
+              # RPC request → method (response via register_message_handler)
+              "service.request.compute_force":
+                method: compute_force
+              # PubSub subscribe → event group (auto-symmetry derives
+              # the paired event.unsubscribe.status binding automatically)
+              "event.subscribe.status":
+                event_group: status_group
+              # Field read → getter method
+              "field.get.vehicle_speed":
+                getter: get_vehicle_speed
+              # Field write → setter method
+              "field.set.target_speed":
+                setter: set_target_speed
+      motor:
+        source: motor_someip_multi.scxml

@@ -1,0 +1,25 @@
+{
+  "applications": [
+    { "name": "brake_someip_multi_app" }
+  ],
+  "services": [
+    {
+      "name": "motor_control",
+      "service": "0x2000",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "activate",          "method": "0x0100" },
+        { "name": "compute_force",     "method": "0x0101" },
+        { "name": "get_vehicle_speed", "method": "0x0200" },
+        { "name": "set_target_speed",  "method": "0x0201" }
+      ],
+      "eventgroups": [
+        {
+          "name": "status_group",
+          "eventgroup": "0x0001",
+          "events": ["0x8001"]
+        }
+      ]
+    }
+  ]
+}
