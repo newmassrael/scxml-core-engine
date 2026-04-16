@@ -1,19 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Motor receiver used for mesh topology validation only — the build-
-     time UncoveredEvents check requires every <send event="X"> in the
-     sender to have a matching <transition event="X"> here. The runtime
-     E2E test (test_mesh_zenoh_multipattern_runtime.cpp) does NOT load
-     this state machine; it stands up raw zenoh queryable/subscriber/
-     publisher endpoints on the motor side to exercise each pattern.
-     This file's only job is to satisfy codegen-time validation. -->
+<!-- Motor receiver used for mesh topology validation and Session E
+     server-side codegen verification. The build-time UncoveredEvents
+     check requires every <send event="X"> in the sender to have a
+     matching <transition event="X"> here.
+
+     Session E: motor is an RPC server for compute_force. The topology
+     analyzer detects the (service.request.compute_force,
+     service.response.compute_force) pair and generates server-side
+     Zenoh registration (declare_queryable + Query::reply). -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0"
        datamodel="null" name="motor" initial="ready">
     <state id="ready">
         <transition event="service.fire_forget.activate" target="ready"/>
-        <transition event="service.request.compute_force" target="ready"/>
+        <transition event="service.request.compute_force" target="computing"/>
         <transition event="event.subscribe.status" target="ready"/>
         <transition event="field.set.position" target="ready"/>
         <transition event="field.get.position" target="ready"/>
+        <transition event="service.response.compute_force" target="ready"/>
+    </state>
+    <state id="computing">
+        <onentry>
+            <send target="#motor" event="service.response.compute_force"/>
+        </onentry>
+        <transition target="ready"/>
     </state>
 </scxml>

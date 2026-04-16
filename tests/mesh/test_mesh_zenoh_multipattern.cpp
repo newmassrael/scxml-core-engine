@@ -15,6 +15,7 @@
 #include "brake_zenoh_multi_sm.h"
 #include "motor_zenoh_multi_sm.h"
 #include "brake_zenoh_multi_transport.h"
+#include "motor_zenoh_multi_transport.h"
 
 #include "mesh/PatternKind.h"
 
@@ -80,6 +81,17 @@ int main() {
     // Unmapped events return an empty string so callers can branch safely.
     CHECK(RouterT::resolveReplyEvent("service.fire_forget.activate")[0] == '\0',
           "non-RPC events must resolve to empty reply-event");
+
+    // ── Session E: server-side compile verification ──────────────
+    // Motor transport header must be includable and the server-side
+    // TransportRouter must be instantiable.
+    namespace motor_gen = SCE::Generated::motor_zenoh_multi;
+    using MotorEngine = motor_gen::motor_zenoh_multi;
+    using MotorRouterT = motor_gen::TransportRouter<MotorEngine>;
+    static_assert(sizeof(MotorRouterT) > 0,
+                  "Server TransportRouter must be instantiable for Zenoh");
+    static_assert(std::string_view(motor_gen::ZENOH_SERVER_KEY) == "sce/brake/motor",
+                  "Server Zenoh key expression must match deploy.yaml");
 
     std::printf("SCE Mesh zenoh multi-pattern compile verification: PASS\n");
     return 0;

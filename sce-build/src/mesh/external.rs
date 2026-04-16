@@ -77,6 +77,10 @@ pub struct ExternalResolution {
     /// Consumed by `topology::finalize_targets` to produce per-event
     /// codegen context.
     pub bindings: HashMap<(String, TargetId), PerBindingResolution>,
+    /// Server-side resolved IDs, keyed by machine name.
+    /// Consumed by `topology::resolve_server_binding` to produce
+    /// server-side transport state for codegen.
+    pub server_bindings: HashMap<String, PerBindingResolution>,
 }
 
 /// Resolve all name-based external references in `deploy_cfg`.
@@ -177,6 +181,33 @@ pub fn resolve_external_bindings(
                     result
                         .bindings
                         .insert((machine_name.clone(), target.clone()), per_binding);
+                }
+            }
+
+            // Server-side SOME/IP resolution (SCE_MESH.md §13 Session E).
+            // Same resolution pipeline as client bindings — service name +
+            // per-event method names resolve against vsomeip.json.
+            if let Some(ref server_cfg) = machine.server {
+                if server_cfg.transport == "someip" {
+                    if let Some((config_path, someip)) = someip_cache.get(device_name) {
+                        if let Some(per_binding) = resolve_server_config(
+                            machine_name,
+                            server_cfg,
+                            someip,
+                            config_path.as_path(),
+                            &mut missing,
+                        )? {
+                            result
+                                .server_bindings
+                                .insert(machine_name.clone(), per_binding);
+                        }
+                    } else if server_cfg.service.is_some() {
+                        return Err(ExternalConfigError::NamedReferenceWithoutConfig {
+                            machine: machine_name.clone(),
+                            device: device_name.clone(),
+                            target: "#_server".to_string(),
+                        });
+                    }
                 }
             }
 
@@ -594,6 +625,108 @@ fn resolve_relative(base: &Path, rel: &Path) -> PathBuf {
         rel.to_path_buf()
     } else {
         base.join(rel)
+    }
+}
+
+// ── Server-side resolution (SCE_MESH.md §13 Session E) ──────
+
+/// Resolve a deploy.yaml `server:` section for a machine.
+///
+/// Same pipeline as client binding resolution: `service:` resolves to
+/// `service_id` + `instance_id`, per-event method names resolve to IDs.
+fn resolve_server_config(
+    machine: &str,
+    server_cfg: &crate::mesh::deploy::ServerConfig,
+    someip: &VsomeipConfig,
+    config_path: &Path,
+    missing: &mut Vec<UnresolvedName>,
+) -> Result<Option<PerBindingResolution>, ExternalConfigError> {
+    // Resolve service name → service_id + instance_id
+    let service_name = match server_cfg.service.as_deref() {
+        Some(name) => name,
+        None => return Ok(None),
+    };
+    let service_ref = someip.resolve_service(service_name);
+    if service_ref.is_none() {
+        missing.push(UnresolvedName {
+            kind: "service",
+            name: service_name.to_string(),
+            context: Some(format!("server section of machine \"{machine}\"")),
+        });
+    }
+
+    // Resolve per-event method names
+    let server_target = TargetId::new("#_server").expect("static target ID");
+    let mut by_event: BTreeMap<String, SomeipEventIds> = BTreeMap::new();
+    for (event_name, event_binding) in &server_cfg.events {
+        if let Some(ids) = resolve_event_binding_to_tag(
+            machine,
+            &server_target,
+            config_path,
+            event_name,
+            event_binding,
+            service_ref,
+            missing,
+        )? {
+            by_event.insert(event_name.clone(), ids);
+        }
+    }
+
+    Ok(service_ref.map(|svc| PerBindingResolution {
+        service_ids: SomeipServiceIds {
+            service_id: svc.service,
+            instance_id: svc.instance,
+        },
+        by_event,
+        default: BindingDefaultIds::default(),
+    }))
+}
+
+impl ExternalResolution {
+    /// Look up server-side service IDs for a SOME/IP server machine.
+    pub fn resolve_server_service(
+        &self,
+        machine_name: &str,
+        _service_name: &str,
+    ) -> Result<SomeipServiceIds, ExternalConfigError> {
+        self.server_bindings
+            .get(machine_name)
+            .map(|r| r.service_ids)
+            .ok_or_else(|| ExternalConfigError::NamedReferenceWithoutConfig {
+                machine: machine_name.to_string(),
+                device: String::new(),
+                target: "#_server".to_string(),
+            })
+    }
+
+    /// Look up a server-side method ID for a specific event.
+    pub fn resolve_server_method(
+        &self,
+        machine_name: &str,
+        _service_name: &str,
+        _method_name: &str,
+    ) -> Result<u16, ExternalConfigError> {
+        let resolution = self
+            .server_bindings
+            .get(machine_name)
+            .ok_or_else(|| ExternalConfigError::NamedReferenceWithoutConfig {
+                machine: machine_name.to_string(),
+                device: String::new(),
+                target: "#_server".to_string(),
+            })?;
+        // Find the method_id from the per-event resolution (any event
+        // that resolved to a Method variant). The caller's method_name
+        // is the same one that was resolved during resolve_server_config.
+        for ids in resolution.by_event.values() {
+            if let SomeipEventIds::Method { method_id } = ids {
+                return Ok(*method_id);
+            }
+        }
+        Err(ExternalConfigError::NamedReferenceWithoutConfig {
+            machine: machine_name.to_string(),
+            device: String::new(),
+            target: "#_server".to_string(),
+        })
     }
 }
 

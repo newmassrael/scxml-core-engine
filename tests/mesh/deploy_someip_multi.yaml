@@ -1,7 +1,9 @@
-# SCE Mesh Session C: SOME/IP multi-pattern compile verification.
+# SCE Mesh Session C+E: SOME/IP multi-pattern compile verification.
 # Exercises all 4 SOME/IP capabilities (FireForget, RequestReply,
 # PubSub, FieldAccess) on a single target with per-event ID mappings
 # resolved against vsomeip_motor_multi.json at build time.
+# Session E adds server-side registration for motor (offer_service +
+# register_message_handler for compute_force RPC).
 version: "1.0"
 topology:
   ecu1:
@@ -17,21 +19,46 @@ topology:
             transport: someip
             service: motor_control
             events:
-              # FireForget → method (one-way, no response expected)
+              # FireForget -> method (one-way, no response expected)
               "service.fire_forget.activate":
                 method: activate
-              # RPC request → method (response via register_message_handler)
+              # RPC request -> method (response via register_message_handler)
               "service.request.compute_force":
                 method: compute_force
-              # PubSub subscribe → event group (auto-symmetry derives
+              # PubSub subscribe -> event group (auto-symmetry derives
               # the paired event.unsubscribe.status binding automatically)
               "event.subscribe.status":
                 event_group: status_group
-              # Field read → getter method
+              # Field read -> getter method
               "field.get.vehicle_speed":
                 getter: get_vehicle_speed
-              # Field write → setter method
+              # Field write -> setter method
               "field.set.target_speed":
                 setter: set_target_speed
+      # Receiver entry: brake sends to #motor, event coverage looks up
+      # machine "motor" (matching the SCXML name attribute).
       motor:
         source: motor_someip_multi.scxml
+      # Server entry: codegen runs on motor_someip_multi.scxml and looks
+      # up machine "motor_someip_multi" (matching the file stem).
+      motor_someip_multi:
+        source: motor_someip_multi.scxml
+        # Self-binding: the server SCXML sends service.response.X to
+        # #motor (self-target) to trigger the mesh send callback. The
+        # callback intercepts RpcReply before target dispatch, so this
+        # binding is never used at runtime — it exists only to satisfy
+        # the topology unresolved-target check.
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              "service.response.compute_force":
+                method: compute_force
+        # Session E: server-side SOME/IP registration.
+        server:
+          transport: someip
+          service: motor_control
+          events:
+            "service.request.compute_force":
+              method: compute_force

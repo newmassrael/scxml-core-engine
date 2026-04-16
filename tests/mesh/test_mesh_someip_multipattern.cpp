@@ -15,6 +15,7 @@
 #include "brake_someip_multi_sm.h"
 #include "motor_someip_multi_sm.h"
 #include "brake_someip_multi_transport.h"
+#include "motor_someip_multi_transport.h"
 
 #include "mesh/PatternKind.h"
 
@@ -106,6 +107,23 @@ int main() {
           "EventSubscribe must resolve to empty reply-event");
     CHECK(RouterT::resolveReplyEvent("field.get.vehicle_speed")[0] == '\0',
           "FieldRead must resolve to empty reply-event");
+
+    // ── Session E: server-side compile verification ──────────────
+    // Motor transport header must be includable and the server-side
+    // TransportRouter must be instantiable.
+    namespace motor_gen = SCE::Generated::motor_someip_multi;
+    using MotorEngine = motor_gen::motor_someip_multi;
+    using MotorRouterT = motor_gen::TransportRouter<MotorEngine>;
+    static_assert(sizeof(MotorRouterT) > 0,
+                  "Server TransportRouter must be instantiable for SOME/IP");
+
+    // Server-side SOME/IP constants
+    static_assert(motor_gen::SOMEIP_SERVER_SERVICE == 0x2000,
+                  "Server service ID must match vsomeip_motor_multi.json");
+    static_assert(motor_gen::SOMEIP_SERVER_INSTANCE == 0x0001,
+                  "Server instance ID must match vsomeip_motor_multi.json");
+    static_assert(motor_gen::SOMEIP_SERVER_METHOD_SERVICE_REQUEST_COMPUTE_FORCE == 0x0101,
+                  "Server method ID must match vsomeip.json compute_force");
 
     std::printf("SCE Mesh SOME/IP multi-pattern compile verification: PASS\n");
     return 0;

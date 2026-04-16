@@ -403,6 +403,201 @@ where
 // `TargetId::is_internal()` — the previous free helper `is_internal_target`
 // was removed when the newtype migration centralised target semantics.
 
+// ── Server role detection (SCE_MESH.md §13 Session E) ───────
+
+/// A confirmed server RPC pair: the machine transitions on a
+/// `service.request.X` event AND produces a matching `service.response.X`
+/// somewhere in its actions (send or raise). This pairing is the build-time
+/// evidence that the machine is an RPC server for `X`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServerRpcPair {
+    /// Inbound request event (e.g. `"service.request.compute_force"`).
+    pub request_event: String,
+    /// Outbound response event (e.g. `"service.response.compute_force"`).
+    pub response_event: String,
+}
+
+/// Resolved server-side binding — the transport-specific state needed to
+/// register the machine as a transport-native server. Produced by
+/// [`resolve_server_binding`] and consumed by codegen to emit
+/// `offer_service` / `declare_queryable` + response handlers.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServerBinding {
+    /// Confirmed RPC pairs detected from the SCXML model.
+    pub rpc_pairs: Vec<ServerRpcPair>,
+    /// Transport-specific state (Someip or Zenoh variant) carrying the
+    /// server's identity (service IDs / key expression).
+    pub state: TransportState,
+    /// Per-event pattern metadata for the inbound request events.
+    pub event_patterns: Vec<EventPatternInfo>,
+}
+
+/// Detect server RPC pairs from an SCXML model.
+///
+/// SCE_MESH.md §13 Session E: a machine is a confirmed RPC server for
+/// suffix `X` iff:
+///   1. It has a `<transition event="service.request.X">` in any state.
+///   2. Somewhere in its actions (send or raise across all states), it
+///      produces `service.response.X`.
+///
+/// The detection is static and model-wide — no control-flow reachability
+/// analysis is performed. This is conservative: if the response event
+/// exists ANYWHERE in the model, the pair is confirmed. A future session
+/// may tighten this to reachability from the request-handling state.
+pub fn detect_server_pairs(model: &SCXMLModel) -> Vec<ServerRpcPair> {
+    use super::pattern::CommunicationPattern;
+
+    // Step 1: collect all service.request.* events from transitions
+    let mut request_suffixes: Vec<(String, String)> = Vec::new(); // (suffix, full_event)
+    for state in model.states.values() {
+        for transition in &state.transitions {
+            if let Some(suffix) = CommunicationPattern::ServiceRequest.match_suffix(&transition.event) {
+                if !suffix.is_empty() {
+                    request_suffixes.push((suffix.to_string(), transition.event.clone()));
+                }
+            }
+        }
+    }
+    if request_suffixes.is_empty() {
+        return Vec::new();
+    }
+
+    // Step 2: collect all service.response.* events from sends and raises
+    let mut response_suffixes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for state in model.states.values() {
+        let mut scan_actions = |actions: &[crate::model::Action]| {
+            for action in actions {
+                if action.action_type == "send" || action.action_type == "raise" {
+                    if let Some(suffix) = CommunicationPattern::ServiceResponse.match_suffix(&action.event) {
+                        if !suffix.is_empty() {
+                            response_suffixes.insert(suffix.to_string());
+                        }
+                    }
+                }
+            }
+        };
+        for block in &state.on_entry_blocks {
+            scan_actions(block);
+        }
+        for block in &state.on_exit_blocks {
+            scan_actions(block);
+        }
+        for transition in &state.transitions {
+            scan_actions(&transition.actions);
+        }
+        scan_actions(&state.initial_transition_actions);
+    }
+
+    // Step 3: pair request suffixes with confirmed response suffixes
+    let mut pairs = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (suffix, request_event) in &request_suffixes {
+        if response_suffixes.contains(suffix) && seen.insert(suffix.clone()) {
+            let response_event = format!(
+                "{}.{}",
+                CommunicationPattern::ServiceResponse.prefix_str(),
+                suffix
+            );
+            pairs.push(ServerRpcPair {
+                request_event: request_event.clone(),
+                response_event,
+            });
+        }
+    }
+    pairs
+}
+
+/// Resolve a deploy.yaml `server:` section into a [`ServerBinding`].
+///
+/// Applies the same external-config resolution pipeline as client bindings:
+/// SOME/IP service names resolve against vsomeip.json, per-event method
+/// names resolve to numeric IDs. The result is a fully typed transport
+/// state ready for codegen.
+pub fn resolve_server_binding(
+    server_cfg: &super::deploy::ServerConfig,
+    pairs: &[ServerRpcPair],
+    machine_name: &str,
+    external: &super::external::ExternalResolution,
+) -> Result<ServerBinding, TopologyError> {
+    use super::pattern::CommunicationPattern;
+
+    // Build event patterns from RPC pairs (inbound request events)
+    let event_patterns: Vec<EventPatternInfo> = pairs
+        .iter()
+        .map(|pair| {
+            let pattern = CommunicationPattern::ServiceRequest;
+            EventPatternInfo {
+                event: pair.request_event.clone(),
+                pattern_kind_value: pattern.wire_value(),
+                reply_event: Some(pair.response_event.clone()),
+            }
+        })
+        .collect();
+
+    // Build transport state from server config
+    let state = build_server_transport_state(server_cfg, machine_name, external)?;
+
+    Ok(ServerBinding {
+        rpc_pairs: pairs.to_vec(),
+        state,
+        event_patterns,
+    })
+}
+
+/// Build the server-side [`TransportState`] from a `ServerConfig`.
+///
+/// SOME/IP: service IDs and per-event method IDs come from
+/// `ExternalResolution.server_bindings` (already resolved in external.rs).
+/// Zenoh: key expression is taken directly from deploy.yaml.
+fn build_server_transport_state(
+    server_cfg: &super::deploy::ServerConfig,
+    machine_name: &str,
+    external: &super::external::ExternalResolution,
+) -> Result<TransportState, TopologyError> {
+    let server_target = TargetId::new("#_server").expect("static target ID");
+
+    match server_cfg.transport.as_str() {
+        "someip" => {
+            // Service identity + per-event IDs already resolved by
+            // external.rs into `server_bindings[machine_name]`.
+            let resolution = external.server_bindings.get(machine_name).ok_or_else(|| {
+                TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: server_target.clone(),
+                    transport: "someip".to_string(),
+                    field: "service (required for server-side SOME/IP)".to_string(),
+                }
+            })?;
+
+            Ok(TransportState::Someip {
+                service: resolution.service_ids,
+                event_bindings: resolution.by_event.clone(),
+                extra: server_cfg.extra.clone(),
+            })
+        }
+        "zenoh" => {
+            let key = server_cfg.key.clone().ok_or_else(|| {
+                TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: server_target,
+                    transport: "zenoh".to_string(),
+                    field: "key (required for server-side Zenoh queryable)".to_string(),
+                }
+            })?;
+            Ok(TransportState::Zenoh {
+                key,
+                extra: server_cfg.extra.clone(),
+            })
+        }
+        other => Err(TopologyError::MissingBindingField {
+            machine: machine_name.to_string(),
+            target: server_target,
+            transport: other.to_string(),
+            field: "server transport must be 'someip' or 'zenoh'".to_string(),
+        }),
+    }
+}
+
 // ── Single-pass send action collection ──────────────────────
 
 /// Details of a single `<send>` action, collected for downstream validators.

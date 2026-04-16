@@ -2,14 +2,21 @@
 <!-- Motor receiver for SOME/IP multi-pattern topology validation.
      Every <send event="X"> in brake_someip_multi.scxml requires a
      matching <transition event="X"> here for the build-time
-     UncoveredEvents check. Runtime verification requires a vsomeip
-     routing manager and is deferred. -->
+     UncoveredEvents check.
+
+     Session E: motor is also an RPC server for compute_force. The
+     topology analyzer detects the (service.request.compute_force,
+     service.response.compute_force) pair and generates server-side
+     SOME/IP registration (offer_service + register_message_handler).
+     The <send target="#motor" event="service.response.compute_force"/>
+     triggers the mesh send callback which routes through
+     handleServerResponse (correlation-based transport reply). -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0"
        datamodel="null" name="motor" initial="ready">
     <state id="ready">
         <transition event="service.fire_forget.activate" target="ready"/>
-        <transition event="service.request.compute_force" target="ready"/>
+        <transition event="service.request.compute_force" target="computing"/>
         <!-- event.subscribe.status / event.unsubscribe.status: transport-layer
              control messages consumed by the sender's router (app.subscribe /
              app.unsubscribe). Never dispatched to receiver engine
@@ -17,5 +24,19 @@
              Coverage-exempt per topology.rs (SCE_MESH.md Section 13). -->
         <transition event="field.set.target_speed" target="ready"/>
         <transition event="field.get.vehicle_speed" target="ready"/>
+        <!-- Self-targeting server response: coverage check requires a
+             matching transition even though the response is intercepted
+             by handleServerResponse before MeshDispatch. -->
+        <transition event="service.response.compute_force" target="ready"/>
+    </state>
+    <state id="computing">
+        <onentry>
+            <!-- Server RPC response: routed by handleServerResponse via
+                 correlation_id lookup against the stored inbound request.
+                 Target "#motor" is self-referential — the mesh send callback
+                 intercepts RpcReply pattern before target dispatch. -->
+            <send target="#motor" event="service.response.compute_force"/>
+        </onentry>
+        <transition target="ready"/>
     </state>
 </scxml>

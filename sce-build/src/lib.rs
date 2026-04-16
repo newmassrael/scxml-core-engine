@@ -858,6 +858,30 @@ pub fn compile_mesh_transport(
     let (auto_subscriptions, subscription_lint_notices) =
         mesh::topology::inject_auto_subscriptions(model);
 
+    // Stage 1d: Server role detection (SCE_MESH.md §13 Session E).
+    // Detect RPC pairs from the SCXML model and resolve the server
+    // binding from deploy.yaml. Must run after external resolution
+    // (stage 1b) because SOME/IP server bindings need vsomeip.json IDs.
+    let machine_cfg = deploy_cfg
+        .device_for_machine(&model.name)
+        .and_then(|d| d.machines.get(&model.name));
+    let server_config = machine_cfg.and_then(|m| m.server.as_ref());
+    let server_binding = if let Some(srv_cfg) = server_config {
+        let pairs = mesh::topology::detect_server_pairs(model);
+        if !pairs.is_empty() {
+            Some(mesh::topology::resolve_server_binding(
+                srv_cfg,
+                &pairs,
+                &model.name,
+                &external_resolution,
+            )?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Stage 2: single-pass send action collection
     let summary = mesh::topology::collect_send_summary(model);
 
@@ -877,7 +901,7 @@ pub fn compile_mesh_transport(
     let resolved = resolution.targets;
     let deadline_override_notices = resolution.deadline_overrides;
 
-    if resolved.is_empty() {
+    if resolved.is_empty() && server_binding.is_none() {
         let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
@@ -890,27 +914,29 @@ pub fn compile_mesh_transport(
 
     // Stage 2c: pattern capability validation — architectural check.
     // A transport that lacks a required capability is a design error.
-    let pattern_violations =
-        mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name);
-    if !pattern_violations.is_empty() {
-        return Err(mesh::error::TopologyError::PatternCapabilityViolation {
-            sender: model.name.clone(),
-            violations: pattern_violations,
+    if !resolved.is_empty() {
+        let pattern_violations =
+            mesh::topology::validate_pattern_capability(&summary, &deploy_cfg, &model.name);
+        if !pattern_violations.is_empty() {
+            return Err(mesh::error::TopologyError::PatternCapabilityViolation {
+                sender: model.name.clone(),
+                violations: pattern_violations,
+            }
+            .into());
         }
-        .into());
-    }
 
-    // Stage 2d: event coverage — implementation check.
-    let receiver_models =
-        mesh::topology::load_receiver_models(&resolved, &deploy_cfg, deploy_dir, &model.name)?;
-    let uncovered =
-        mesh::topology::check_sender_event_coverage(&model.name, &summary, &receiver_models, &deploy_cfg);
-    if !uncovered.is_empty() {
-        return Err(mesh::error::TopologyError::UncoveredEvents {
-            sender: model.name.clone(),
-            findings: uncovered,
+        // Stage 2d: event coverage — implementation check.
+        let receiver_models =
+            mesh::topology::load_receiver_models(&resolved, &deploy_cfg, deploy_dir, &model.name)?;
+        let uncovered =
+            mesh::topology::check_sender_event_coverage(&model.name, &summary, &receiver_models, &deploy_cfg);
+        if !uncovered.is_empty() {
+            return Err(mesh::error::TopologyError::UncoveredEvents {
+                sender: model.name.clone(),
+                findings: uncovered,
+            }
+            .into());
         }
-        .into());
     }
 
     // Stage 3: transport codegen. Device-shared transport configs are read
@@ -929,6 +955,7 @@ pub fn compile_mesh_transport(
     let output = mesh::codegen::generate_mesh(
         &model.name,
         &resolved,
+        server_binding.as_ref(),
         zenoh_session,
         someip_config,
         machine_subscriptions,

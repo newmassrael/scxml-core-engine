@@ -1828,11 +1828,24 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             VERBATIM
         )
 
+        # Session E: generate motor (server) transport header
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
+            DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
+                    "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
+                    "${SCE_CODEGEN}" "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            COMMENT "Mesh someip multi: Generating motor_someip_multi_transport.h (server-side Session E)"
+            VERBATIM
+        )
+
         add_executable(mesh_someip_multipattern_compile_test
             mesh/test_mesh_someip_multipattern.cpp
             "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
             "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
             "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
         )
 
         target_include_directories(mesh_someip_multipattern_compile_test
@@ -1958,11 +1971,23 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             VERBATIM
         )
 
+        # Session E: generate motor (server) transport header
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
+            DEPENDS "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
+                    "${SCE_CODEGEN}" "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            COMMENT "Mesh zenoh multi: Generating motor_zenoh_multi_transport.h (server-side Session E)"
+            VERBATIM
+        )
+
         add_executable(mesh_zenoh_multipattern_compile_test
             mesh/test_mesh_zenoh_multipattern.cpp
             "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
             "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
             "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
         )
 
         target_include_directories(mesh_zenoh_multipattern_compile_test

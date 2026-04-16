@@ -190,6 +190,58 @@ pub struct MachineConfig {
     /// ```
     #[serde(default)]
     pub subscriptions: Vec<SubscriptionConfig>,
+    /// Server-side transport registration (SCE_MESH.md §13 Session E).
+    ///
+    /// Declares that this machine acts as a transport-native server: it
+    /// receives inbound RPC requests through the transport layer and
+    /// sends responses back via the transport's reply mechanism (SOME/IP
+    /// `create_response` + `app.send`, Zenoh `Query::reply`).
+    ///
+    /// Server detection is dual-source:
+    ///   - SCXML model inference tells WHAT the machine serves (transitions
+    ///     on `service.request.X` paired with sends of `service.response.X`)
+    ///   - This section tells HOW: transport type, service identity, per-event
+    ///     method IDs (SOME/IP) or key expression (Zenoh)
+    ///
+    /// ```yaml
+    /// server:
+    ///   transport: someip
+    ///   service: motor_control
+    ///   events:
+    ///     "service.request.compute_force":
+    ///       method: compute_force
+    /// ```
+    #[serde(default)]
+    pub server: Option<ServerConfig>,
+}
+
+/// Server-side transport binding (SCE_MESH.md §13 Session E).
+///
+/// Mirrors [`BindingConfig`] shape but scoped to the server role: the
+/// machine IS the target, not a client sending to one. Transport-specific
+/// fields follow the same resolution pipeline as client bindings (SOME/IP
+/// service names resolve against vsomeip.json, etc.).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServerConfig {
+    /// Transport type: "someip", "zenoh".
+    pub transport: String,
+    /// SOME/IP service name — resolved against vsomeip.json
+    /// `services[*].name`, producing `service_id` + `instance_id`.
+    #[serde(default)]
+    pub service: Option<String>,
+    /// Per-event binding table, keyed by SCXML event name. Same schema as
+    /// [`BindingConfig::events`] — reuses [`EventBinding`] so the
+    /// existing name-based resolution pipeline handles server events
+    /// identically to client events.
+    #[serde(default)]
+    pub events: BTreeMap<String, EventBinding>,
+    /// Zenoh key expression for queryable registration.
+    #[serde(default)]
+    pub key: Option<String>,
+    /// Transport-native passthrough (e.g. `protocol: tcp`).
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_yaml_ng::Value>,
 }
 
 /// A single machine-lifetime subscription declaration (SCE_MESH.md §13).

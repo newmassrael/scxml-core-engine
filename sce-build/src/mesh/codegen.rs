@@ -403,6 +403,81 @@ fn event_ids_to_template(
     }
 }
 
+// ── Server-side template context (SCE_MESH.md §13 Session E) ──
+
+/// Template context for server-side transport registration.
+///
+/// Gated by `{% if server %}` in the template. Contains the transport
+/// kind, service identity (SOME/IP) or key expression (Zenoh), and
+/// per-RPC-pair metadata for handler registration.
+#[derive(Debug, Clone, serde::Serialize)]
+struct ServerContext {
+    /// Transport variant: `"someip"` or `"zenoh"`.
+    transport_kind: String,
+    /// Tagged transport state (same as TargetStateView) for service IDs
+    /// or key expression.
+    state: TargetStateView,
+    /// Per-RPC-pair context for server handler registration.
+    rpc_pairs: Vec<ServerRpcPairContext>,
+}
+
+/// Per-RPC-pair context for server-side codegen.
+#[derive(Debug, Clone, serde::Serialize)]
+struct ServerRpcPairContext {
+    /// Inbound request event (e.g. `"service.request.compute_force"`).
+    request_event: String,
+    /// Outbound response event (e.g. `"service.response.compute_force"`).
+    response_event: String,
+    /// C++-safe upper-snake constant suffix for per-event naming.
+    event_const: String,
+    /// SOME/IP method ID for `register_message_handler` (`0xNNNN`).
+    /// `None` for non-SOME/IP transports.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    method_id: Option<String>,
+}
+
+/// Build a [`ServerContext`] from a resolved [`super::topology::ServerBinding`].
+fn build_server_context(
+    binding: &super::topology::ServerBinding,
+) -> ServerContext {
+    use crate::mesh::topology::TransportState;
+
+    let transport_kind = binding.state.transport_name().to_string();
+    let state = TargetStateView::from_topology(&binding.state);
+
+    let rpc_pairs: Vec<ServerRpcPairContext> = binding
+        .rpc_pairs
+        .iter()
+        .map(|pair| {
+            // Look up SOME/IP method ID from the server's event_bindings
+            let method_id = match &binding.state {
+                TransportState::Someip { event_bindings, .. } => {
+                    event_bindings.get(&pair.request_event).and_then(|ids| {
+                        if let super::topology::SomeipEventIds::Method { method_id } = ids {
+                            Some(fmt_someip_id(*method_id))
+                        } else {
+                            None
+                        }
+                    })
+                }
+                _ => None,
+            };
+            ServerRpcPairContext {
+                request_event: pair.request_event.clone(),
+                response_event: pair.response_event.clone(),
+                event_const: event_to_const_suffix(&pair.request_event),
+                method_id,
+            }
+        })
+        .collect();
+
+    ServerContext {
+        transport_kind,
+        state,
+        rpc_pairs,
+    }
+}
+
 // ── Public entry point ───────────────────────────────────────
 
 /// Generate mesh transport code for a machine's resolved targets.
@@ -411,16 +486,21 @@ fn event_ids_to_template(
 /// `transports:` block (`DeployConfig::topology[device].transports.*`).
 /// Each is `None` when the device has no binding of that transport, or
 /// when the corresponding `transports:` block is absent.
+///
+/// `server` is the resolved server-side binding for machines that act
+/// as RPC servers (SCE_MESH.md §13 Session E). `None` for pure-client
+/// machines.
 pub fn generate_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
+    server: Option<&super::topology::ServerBinding>,
     zenoh_session: Option<&ZenohTransportConfig>,
     someip_config: Option<&SomeipTransportConfig>,
     subscriptions: &[super::deploy::SubscriptionConfig],
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
-    if targets.is_empty() && subscriptions.is_empty() {
+    if targets.is_empty() && subscriptions.is_empty() && server.is_none() {
         return Ok(GeneratedOutput { files: vec![] });
     }
 
@@ -428,6 +508,7 @@ pub fn generate_mesh(
         Language::Cpp => generate_cpp_mesh(
             machine_name,
             targets,
+            server,
             zenoh_session,
             someip_config,
             subscriptions,
@@ -440,6 +521,7 @@ pub fn generate_mesh(
 fn generate_cpp_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
+    server: Option<&super::topology::ServerBinding>,
     zenoh_session: Option<&ZenohTransportConfig>,
     someip_config: Option<&SomeipTransportConfig>,
     subscriptions: &[super::deploy::SubscriptionConfig],
@@ -602,8 +684,22 @@ fn generate_cpp_mesh(
     // `ResolvedTarget::transport: String`) guarantees the per-transport
     // include / shared-resource blocks in the template see exactly the
     // set of variants the per-target dispatch will emit code for.
-    let transport_types: BTreeSet<&str> =
+    let mut transport_types: BTreeSet<&str> =
         targets.iter().map(|t| t.state.transport_name()).collect();
+
+    // Server-side transport context (SCE_MESH.md §13 Session E).
+    let server_context = server.map(build_server_context);
+
+    // Include server transport in transport_types so the correct
+    // #include directives and shared-resource fields are emitted
+    // even for pure-server machines with no client targets.
+    if let Some(ref sc) = server_context {
+        transport_types.insert(match sc.transport_kind.as_str() {
+            "someip" => "someip",
+            "zenoh" => "zenoh",
+            other => other,
+        });
+    }
 
     // Pre-escape Zenoh session config into C++ string literals so the template
     // never constructs literals by string concatenation.
@@ -647,6 +743,7 @@ fn generate_cpp_mesh(
         zenoh_session_json5_present => zenoh_session_json5_present,
         someip_transport => someip_transport,
         machine_subscriptions => subscriptions,
+        server => server_context,
     };
 
     let code = tmpl

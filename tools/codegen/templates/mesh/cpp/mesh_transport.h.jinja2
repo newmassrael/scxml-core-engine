@@ -127,11 +127,28 @@
 {% set has_pubsub.v = true %}
 {% endfor %}
 
-{% if has_mesh_rpc.v %}
+{# Server-side detection (SCE_MESH.md §13 Session E). Drives emission of
+   server fields, init registration, handleServerResponse, and response
+   interception in the mesh send callback. #}
+{% set has_server = server is defined and server %}
+{% set has_server_someip = has_server and server.transport_kind == "someip" %}
+{% set has_server_zenoh = has_server and server.transport_kind == "zenoh" %}
+
+{# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
+   server pending-request storage. Emit once if either usage is present. #}
+{% set needs_correlation_key = ("someip" in transport_types) or has_server_someip or has_server_zenoh %}
+
+{% if has_mesh_rpc.v or has_server %}
 #include <array>
+{% endif %}
+{% if has_mesh_rpc.v %}
 #include <chrono>
+{% endif %}
+{% if has_mesh_rpc.v or has_server %}
 #include <mutex>
 #include <unordered_map>
+{% endif %}
+{% if has_mesh_rpc.v %}
 #include "mesh/InvokeCorrelation.h"
 #include "mesh/MeshDeadlineScheduler.h"
 #include "mesh/RpcStatus.h"
@@ -215,6 +232,21 @@ static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper 
 {% for target in targets if target.state.kind == "zenoh" %}
 static constexpr const char* ZENOH_KEY_{{ target.target_snake | upper }} = "{{ target.state.key }}";
 {% endfor %}
+
+{% endif %}
+{# ── (B2) Server-side constants (SCE_MESH.md §13 Session E) ── #}
+{% if server %}
+{% if server.transport_kind == "someip" %}
+// Server-side SOME/IP identity (offer_service + register_message_handler)
+static constexpr vsomeip::service_t SOMEIP_SERVER_SERVICE = {{ server.state.service.service_id }};
+static constexpr vsomeip::instance_t SOMEIP_SERVER_INSTANCE = {{ server.state.service.instance_id }};
+{% for pair in server.rpc_pairs if pair.method_id %}
+static constexpr vsomeip::method_t SOMEIP_SERVER_METHOD_{{ pair.event_const }} = {{ pair.method_id }};
+{% endfor %}
+{% elif server.transport_kind == "zenoh" %}
+// Server-side Zenoh key expression (declare_queryable)
+static constexpr const char* ZENOH_SERVER_KEY = "{{ server.state.key }}";
+{% endif %}
 
 {% endif %}
 {# ── (C) Per-target send functions (NEW TRANSPORT: add {% elif %} block) ── #}
@@ -401,7 +433,7 @@ struct TransportRouter {
    The `local` disjunct was added so a router whose only transport is
    local can still host dispatchToSender and be the inbound target of
    another router's linkTo closure (SCE_MESH.md §9.5 mesh-rpc pairs). ── #}
-{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v %}
+{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v or has_server %}
     // Sender engine reference. Bound in the ctor and never rebound.
     //
     // Thread-safety: the ctor completes-then-publishes the router before
@@ -426,29 +458,15 @@ struct TransportRouter {
     SenderEngine& sender_;
 {% endif %}
 
-{# ── (D2c) SOME/IP RPC correlation table ── #}
-{% if "someip" in transport_types %}
-    // RPC correlation table: maps correlation_id → reply event name.
-    // Written on send (RpcRequest), consumed on receive (RpcReply).
-    // vsomeip callbacks run on vsomeip's internal thread, so access is guarded.
-    //
-    // TTL / timeout eviction: entries for which no response arrives (network
-    // failure, peer crash, deadline exceeded) remain in this map until the
-    // router is destroyed — effectively a bounded leak proportional to the
-    // number of orphaned RPC calls. Timeout-based eviction keyed on
-    // `env.deadline_unix_ms` is deferred to Session E, where the full
-    // `<invoke type="sce:mesh-rpc">` lifecycle (start/done/error/cancel)
-    // provides a natural expiration point per invocation.
+{# ── (D2c) Correlation types + SOME/IP RPC correlation table ── #}
+{# CorrelationKey/Hash: needed by client SOME/IP correlation AND/OR
+   server pending-request storage. Emitted once under a shared guard. #}
+{% if needs_correlation_key %}
     struct CorrelationKey {
         std::array<uint8_t, 16> id;
         bool operator==(const CorrelationKey& o) const { return id == o.id; }
     };
     struct CorrelationKeyHash {
-        // FNV-1a 64-bit hash. Deterministic, well-mixed across all byte
-        // positions — important because UUID v7 packs a ms-resolution
-        // timestamp in the leading bytes, so IDs generated in close
-        // succession share a common prefix. FNV-1a's per-byte multiply
-        // diffuses those shared prefixes across the output word.
         std::size_t operator()(const CorrelationKey& k) const noexcept {
             constexpr std::size_t FNV_OFFSET = 0xcbf29ce484222325ULL;
             constexpr std::size_t FNV_PRIME  = 0x00000100000001B3ULL;
@@ -460,6 +478,9 @@ struct TransportRouter {
             return h;
         }
     };
+{% endif %}
+{% if "someip" in transport_types %}
+    // Client SOME/IP RPC correlation: maps correlation_id → reply event name.
     std::mutex correlation_mutex_;
     std::unordered_map<CorrelationKey, std::string, CorrelationKeyHash> pending_rpcs_;
 {% endif %}
@@ -532,6 +553,29 @@ struct TransportRouter {
     std::unordered_map<std::string, int> subscription_refcount_;
 {% endif %}
 
+{# ── (D2f) Server-side fields (SCE_MESH.md §13 Session E) ── #}
+{% if has_server_someip %}
+    // Server SOME/IP application + pending request storage.
+    // Inbound requests are stashed here keyed by correlation_id; when the
+    // engine sends service.response.X the handleServerResponse method
+    // retrieves the original request and calls create_response + send.
+    std::shared_ptr<vsomeip::application> server_app_;
+    std::thread server_thread_;
+    std::mutex server_pending_mutex_;
+    std::unordered_map<CorrelationKey, std::shared_ptr<vsomeip::message>,
+                       CorrelationKeyHash> pending_server_requests_;
+{% endif %}
+{% if has_server_zenoh %}
+    // Server Zenoh queryable + pending query storage.
+    // Inbound queries are stashed here keyed by correlation_id; when the
+    // engine sends service.response.X the handleServerResponse method
+    // retrieves the stored Query and calls reply().
+    std::optional<zenoh::Queryable<void>> zenoh_queryable_;
+    std::mutex server_pending_mutex_;
+    std::unordered_map<CorrelationKey, zenoh::Query,
+                       CorrelationKeyHash> pending_server_queries_;
+{% endif %}
+
 {# ── (D3) Constructor ──
    Sender-first binding: the ctor takes the sender engine and any local
    target engines, wires the mesh-send callback onto the sender in the
@@ -557,7 +601,7 @@ struct TransportRouter {
    whenever the ctor is actually synthesized for a concrete engine type.
    Declarations run per-target-fields first, then `sender_`, so the
    initializers do the same. #}
-{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v -%}
+{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v or has_server -%}
 {%- set ns = namespace(parts=[]) %}
 {%- for target in targets if target.has_per_target_field %}
 {%-   if target.state.kind == "local" %}
@@ -579,6 +623,14 @@ struct TransportRouter {
 {%-     endif %}
 {%-   endif %}
 {%- endfor %}
+{#- Server SOME/IP app init: must appear in declaration order (before sender_) #}
+{%- if has_server_someip %}
+{%-   if someip_transport and someip_transport.application_name %}
+{%-     set ns.parts = ns.parts + ["server_app_(vsomeip::runtime::get()->create_application(" ~ someip_transport.application_name ~ "))"] %}
+{%-   else %}
+{%-     set ns.parts = ns.parts + ["server_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_server\"))"] %}
+{%-   endif %}
+{%- endif %}
 {%- if emit_sender %}
 {%-   set ns.parts = ns.parts + ["sender_(sender)"] %}
 {%- endif %}
@@ -675,6 +727,16 @@ struct TransportRouter {
                     // Fall through to transport-native unsubscribe (refcount 1→0)
                 }
 {% endif %}
+{% if has_server %}
+                // Server response interception (SCE_MESH.md §13 Session E):
+                // if this machine is serving RPCs and the outbound pattern is
+                // RpcReply, route through the server response handler instead
+                // of target dispatch. The response is correlated by UUID to
+                // the inbound request stored at receive time.
+                if (env.pattern == SCE::Mesh::PatternKind::RpcReply) {
+                    return handleServerResponse(env);
+                }
+{% endif %}
                 return route_send(target, env);
             });
 {% if has_mesh_rpc.v %}
@@ -697,7 +759,7 @@ struct TransportRouter {
             });
 {% endif %}
     }
-{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v %}
+{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v or has_server %}
 
 {# ── (D4) init() / shutdown() — lifecycle for shared transport resources ── #}
     /// Initialize transport connections and open shared sessions.
@@ -794,6 +856,61 @@ struct TransportRouter {
             return false;
         }
 {% endif %}
+{% if has_server_someip %}
+        // Server SOME/IP: offer service + register request handlers.
+        // offer_service MUST precede start() (vsomeip requirement).
+        if (!server_app_ || !server_app_->init()) {
+            shutdown();
+            return false;
+        }
+        server_app_->offer_service(SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE);
+{% for pair in server.rpc_pairs if pair.method_id %}
+        server_app_->register_message_handler(
+            SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
+            SOMEIP_SERVER_METHOD_{{ pair.event_const }},
+            [this](const std::shared_ptr<vsomeip::message>& msg) {
+                if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                auto pl = msg->get_payload();
+                if (!pl) return;
+                SCE::Mesh::MeshEnvelope env;
+                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                // Stash original request for create_response() when the
+                // engine sends service.response.X
+                auto cid = env.correlation_id.value_or(SCE::uuid::v7());
+                {
+                    std::lock_guard<std::mutex> lock(server_pending_mutex_);
+                    pending_server_requests_[CorrelationKey{cid}] = msg;
+                }
+                env.type = "{{ pair.request_event }}";
+                env.pattern = SCE::Mesh::PatternKind::RpcRequest;
+                env.correlation_id = cid;
+                (void)this->dispatchToSender(env);
+            });
+{% endfor %}
+        server_thread_ = std::thread([this]{ server_app_->start(); });
+{% endif %}
+{% if has_server_zenoh %}
+        // Server Zenoh: declare queryable for RPC serving.
+        // Must happen after zenoh session open.
+        zenoh_queryable_.emplace(zenoh_session_->declare_queryable(
+            zenoh::KeyExpr(ZENOH_SERVER_KEY),
+            [this](const zenoh::Query& query) {
+                auto payload_opt = query.get_payload();
+                if (!payload_opt.has_value()) return;
+                auto bytes = payload_opt->get().as_vector();
+                SCE::Mesh::MeshEnvelope env;
+                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) return;
+                auto cid = env.correlation_id.value_or(SCE::uuid::v7());
+                {
+                    std::lock_guard<std::mutex> lock(server_pending_mutex_);
+                    pending_server_queries_[CorrelationKey{cid}] = query.clone();
+                }
+                env.correlation_id = cid;
+                env.pattern = SCE::Mesh::PatternKind::RpcRequest;
+                (void)this->dispatchToSender(env);
+            },
+            []{}));
+{% endif %}
 {% if machine_subscriptions %}
         // Machine-lifetime subscriptions (SCE_MESH.md §13 deploy.yaml path).
         // Subscribe on init, unsubscribe on shutdown. Each entry came from
@@ -833,6 +950,13 @@ struct TransportRouter {
         if ({{ target.target_snake }}_app_) {{ target.target_snake }}_app_->stop();
         if ({{ target.target_snake }}_thread_.joinable()) {{ target.target_snake }}_thread_.join();
 {% endfor %}
+{% if has_server_someip %}
+        if (server_app_) server_app_->stop();
+        if (server_thread_.joinable()) server_thread_.join();
+{% endif %}
+{% if has_server_zenoh %}
+        zenoh_queryable_.reset();
+{% endif %}
 {% if "zenoh" in transport_types %}
         // Drop subscriber handles before closing session (RAII order matters:
         // each ~Subscriber calls into zenoh_session_).
@@ -937,7 +1061,7 @@ struct TransportRouter {
         return PK::FireForget;
     }
 
-{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v %}
+{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v or has_server %}
     /// Look up the paired reply event for an RPC request (build-time table).
     /// SCE_MESH.md §13 path B: the pair is inferred by convention —
     /// `service.request.X` ↔ `service.response.X`. Returns empty string
@@ -953,7 +1077,7 @@ struct TransportRouter {
     }
 {% endif %}
 
-{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v %}
+{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v or has_server %}
     /// Dispatch an incoming envelope to the sender engine via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
@@ -987,6 +1111,54 @@ struct TransportRouter {
         using SenderPolicy = std::decay_t<decltype(sender_.getPolicy())>;
         return SCE::Mesh::dispatchEnvelope<SenderPolicy>(env, sender_);
     }
+
+{% if has_server %}
+    /// Route an outbound server response back through the transport layer.
+    ///
+    /// SCE_MESH.md §13 Session E: when the engine sends service.response.X
+    /// (pattern == RpcReply), this method is called from the mesh send
+    /// callback. It looks up the pending inbound request by correlation_id
+    /// and routes the response through the transport-native reply mechanism
+    /// (SOME/IP create_response + send, Zenoh Query::reply).
+    ///
+    /// @return true if the response was correlated and sent; false if no
+    ///         pending request matched the correlation_id.
+    [[nodiscard]] bool handleServerResponse(const SCE::Mesh::MeshEnvelope& env) {
+        if (!env.correlation_id) return false;
+        CorrelationKey ckey{*env.correlation_id};
+{% if has_server_someip %}
+        std::shared_ptr<vsomeip::message> original;
+        {
+            std::lock_guard<std::mutex> lock(server_pending_mutex_);
+            auto it = pending_server_requests_.find(ckey);
+            if (it == pending_server_requests_.end()) return false;
+            original = it->second;
+            pending_server_requests_.erase(it);
+        }
+        auto response = vsomeip::runtime::get()->create_response(original);
+        auto buf = SCE::Mesh::encodeEnvelope(env);
+        auto payload = vsomeip::runtime::get()->create_payload(
+            reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
+            static_cast<uint32_t>(buf.size()));
+        response->set_payload(payload);
+        server_app_->send(response);
+        return true;
+{% elif has_server_zenoh %}
+        zenoh::Query stored_query(nullptr);
+        {
+            std::lock_guard<std::mutex> lock(server_pending_mutex_);
+            auto it = pending_server_queries_.find(ckey);
+            if (it == pending_server_queries_.end()) return false;
+            stored_query = std::move(it->second);
+            pending_server_queries_.erase(it);
+        }
+        auto buf = SCE::Mesh::encodeEnvelope(env);
+        stored_query.reply(zenoh::KeyExpr(ZENOH_SERVER_KEY),
+                           zenoh::Bytes(std::move(buf)));
+        return true;
+{% endif %}
+    }
+{% endif %}
 
 {% if has_mesh_rpc.v %}
     /// Dispatch a `<invoke type="sce:mesh-rpc">` request (SCE_MESH.md §9.5).
