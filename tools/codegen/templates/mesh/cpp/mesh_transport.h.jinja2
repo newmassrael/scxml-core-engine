@@ -385,11 +385,15 @@ struct TransportRouter {
 {% endif %}
 
 {# ── (D2b) Sender engine — bound by ctor, dispatched to by transport
-   callback threads (vsomeip, zenoh runtime). Storing the reference
-   (instead of a std::function like pre-Session D) keeps the dispatch
-   call direct (no type erasure) and makes "bound exactly once" a
-   compile-time guarantee via `const` — there is no setter to misuse. ── #}
-{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v %}
+   callback threads (vsomeip, zenoh runtime) and by cross-router
+   linkTo (local). Storing the reference (instead of a std::function
+   like pre-Session D) keeps the dispatch call direct (no type erasure)
+   and makes "bound exactly once" a compile-time guarantee via `const`
+   — there is no setter to misuse.
+   The `local` disjunct was added so a router whose only transport is
+   local can still host dispatchToSender and be the inbound target of
+   another router's linkTo closure (SCE_MESH.md §9.5 mesh-rpc pairs). ── #}
+{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v %}
     // Sender engine reference. Bound in the ctor and never rebound.
     //
     // Thread-safety: the ctor completes-then-publishes the router before
@@ -534,7 +538,7 @@ struct TransportRouter {
    whenever the ctor is actually synthesized for a concrete engine type.
    Declarations run per-target-fields first, then `sender_`, so the
    initializers do the same. #}
-{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v -%}
+{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v -%}
 {%- set ns = namespace(parts=[]) %}
 {%- for target in targets if target.has_per_target_field %}
 {%-   if target.state.kind == "local" %}
@@ -858,13 +862,14 @@ struct TransportRouter {
     }
 {% endif %}
 
-{% if "someip" in transport_types or "zenoh" in transport_types or has_mesh_rpc.v %}
+{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or has_mesh_rpc.v %}
     /// Dispatch an incoming envelope to the sender engine via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
-    /// zenoh runtime threads). Uses the bound `sender_` reference — no
-    /// type-erased std::function in the hot path. Policy is recovered at
-    /// the call site via `sender_.getPolicy()`, so the header stays
+    /// zenoh runtime threads) and by peer routers through linkTo closures
+    /// for cross-router local dispatch. Uses the bound `sender_` reference
+    /// — no type-erased std::function in the hot path. Policy is recovered
+    /// at the call site via `sender_.getPolicy()`, so the header stays
     /// ignorant of the concrete policy type until instantiation.
     ///
     /// @return true if MeshDispatch delivered the envelope
