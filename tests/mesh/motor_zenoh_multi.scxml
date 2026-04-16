@@ -17,11 +17,10 @@
         <transition event="event.subscribe.status" target="ready"/>
         <transition event="field.set.position" target="ready"/>
         <transition event="field.get.position" target="ready"/>
-        <transition event="service.response.compute_force" target="ready"/>
     </state>
     <state id="computing">
         <onentry>
-            <send target="#motor" event="service.response.compute_force"/>
+            <raise event="service.response.compute_force"/>
         </onentry>
         <transition target="ready"/>
     </state>

@@ -859,20 +859,38 @@ pub fn compile_mesh_transport(
         mesh::topology::inject_auto_subscriptions(model);
 
     // Stage 1d: Server role detection (SCE_MESH.md §13 Session E).
-    // Detect RPC pairs from the SCXML model and resolve the server
-    // binding from deploy.yaml. Must run after external resolution
-    // (stage 1b) because SOME/IP server bindings need vsomeip.json IDs.
-    let machine_cfg = deploy_cfg
+    // Detect RPC pairs, inject synthetic sends for response events, and
+    // resolve the server binding from deploy.yaml. Must run BEFORE
+    // collect_send_summary so injected sends are visible to the pipeline,
+    // and AFTER external resolution (stage 1b) because SOME/IP server
+    // bindings need vsomeip.json IDs.
+    //
+    // Machine lookup uses model.name first (file stem), falling back to
+    // source filename matching when the deploy.yaml key uses the SCXML
+    // name attribute (e.g., deploy.yaml has "motor:" but the file stem
+    // is "motor_someip_multi").
+    let effective_machine_name = deploy_cfg
         .device_for_machine(&model.name)
-        .and_then(|d| d.machines.get(&model.name));
+        .and_then(|d| d.machines.get(&model.name))
+        .map(|_| model.name.clone())
+        .or_else(|| deploy_cfg.find_machine_name_by_source(&model.name))
+        .unwrap_or_else(|| model.name.clone());
+
+    let machine_cfg = deploy_cfg
+        .device_for_machine(&effective_machine_name)
+        .and_then(|d| d.machines.get(&effective_machine_name));
     let server_config = machine_cfg.and_then(|m| m.server.as_ref());
+
+    let server_pairs = mesh::topology::detect_server_pairs(model);
     let server_binding = if let Some(srv_cfg) = server_config {
-        let pairs = mesh::topology::detect_server_pairs(model);
-        if !pairs.is_empty() {
+        if !server_pairs.is_empty() {
+            // Inject synthetic <send> alongside each <raise event="service.response.X">
+            // so the mesh send callback fires for server response routing.
+            mesh::topology::inject_server_response_sends(model, &server_pairs);
             Some(mesh::topology::resolve_server_binding(
                 srv_cfg,
-                &pairs,
-                &model.name,
+                &server_pairs,
+                &effective_machine_name,
                 &external_resolution,
             )?)
         } else {
@@ -883,10 +901,39 @@ pub fn compile_mesh_transport(
     };
 
     // Stage 2: single-pass send action collection
-    let summary = mesh::topology::collect_send_summary(model);
+    let mut summary = mesh::topology::collect_send_summary(model);
 
     // Stage 2a: dynamic target warnings (from summary)
     let dynamic_target_warnings = summary.dynamic_warnings.clone();
+
+    // Stage 2a.1: exempt server response self-sends from topology resolution
+    // and event coverage validation. These are injected synthetic sends that
+    // target the machine's own SCXML name — they are intercepted by
+    // handleServerResponse before route_send and never reach a transport
+    // binding. Without this exemption, the pipeline would fail with
+    // "unresolved target" (no binding for #self) or "uncovered event"
+    // (receiver has no transition for service.response.X).
+    if server_binding.is_some() && !server_pairs.is_empty() {
+        let response_events: std::collections::HashSet<String> = server_pairs
+            .iter()
+            .map(|p| p.response_event.clone())
+            .collect();
+        let scxml_name = if model.scxml_name.is_empty() {
+            &model.name
+        } else {
+            &model.scxml_name
+        };
+        let self_target_str = format!("#{scxml_name}");
+        if let Some(self_tid) = mesh::target::TargetId::new(&self_target_str) {
+            summary.targets.remove(&self_tid);
+            summary.target_events.retain(|(t, e)| {
+                !(t == &self_tid && response_events.contains(e))
+            });
+            summary.actions.retain(|a| {
+                !(a.target == self_tid && response_events.contains(&a.event))
+            });
+        }
+    }
 
     // Stage 2b: resolve static targets against deploy.yaml bindings,
     // attach per-event SOME/IP IDs, and validate per-event field presence

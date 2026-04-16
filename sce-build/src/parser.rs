@@ -129,6 +129,7 @@ impl SCXMLParser {
 
         let mut model = SCXMLModel {
             name: name.to_string(),
+            scxml_name: root.attribute("name").unwrap_or("").to_string(),
             initial,
             binding: root.attribute("binding").unwrap_or("early").to_string(),
             datamodel_type: root.attribute("datamodel").unwrap_or("ecmascript").to_string(),

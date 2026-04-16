@@ -4,13 +4,13 @@
      matching <transition event="X"> here for the build-time
      UncoveredEvents check.
 
-     Session E: motor is also an RPC server for compute_force. The
-     topology analyzer detects the (service.request.compute_force,
-     service.response.compute_force) pair and generates server-side
-     SOME/IP registration (offer_service + register_message_handler).
-     The <send target="#motor" event="service.response.compute_force"/>
-     triggers the mesh send callback which routes through
-     handleServerResponse (correlation-based transport reply). -->
+     Session E: motor is an RPC server for compute_force. The topology
+     analyzer detects the (service.request.compute_force,
+     service.response.compute_force) pair from the transition + raise
+     and generates server-side SOME/IP registration (offer_service +
+     register_message_handler). The <raise> is the spec-canonical form
+     (SCE_MESH.md Section 13); inject_server_response_sends adds a
+     synthetic <send> at build time for transport routing. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0"
        datamodel="null" name="motor" initial="ready">
@@ -24,18 +24,15 @@
              Coverage-exempt per topology.rs (SCE_MESH.md Section 13). -->
         <transition event="field.set.target_speed" target="ready"/>
         <transition event="field.get.vehicle_speed" target="ready"/>
-        <!-- Self-targeting server response: coverage check requires a
-             matching transition even though the response is intercepted
-             by handleServerResponse before MeshDispatch. -->
-        <transition event="service.response.compute_force" target="ready"/>
     </state>
     <state id="computing">
         <onentry>
-            <!-- Server RPC response: routed by handleServerResponse via
-                 correlation_id lookup against the stored inbound request.
-                 Target "#motor" is self-referential — the mesh send callback
-                 intercepts RpcReply pattern before target dispatch. -->
-            <send target="#motor" event="service.response.compute_force"/>
+            <!-- Server RPC response (SCE_MESH.md Section 13): the raise puts
+                 the event in the internal queue for state machine processing.
+                 The build-time model injection (inject_server_response_sends)
+                 adds a synthetic <send> alongside this raise so the transport
+                 layer can route the response back to the caller. -->
+            <raise event="service.response.compute_force"/>
         </onentry>
         <transition target="ready"/>
     </state>

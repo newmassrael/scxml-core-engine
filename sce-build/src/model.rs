@@ -441,6 +441,14 @@ pub struct State {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SCXMLModel {
     pub name: String,
+    /// The `name` attribute from `<scxml name="...">`. Distinct from
+    /// `name` (which is the file stem). Used by server-side codegen to
+    /// derive the self-target for injected response sends (e.g., the
+    /// motor SCXML declares `name="motor"` and `#motor` is the
+    /// conventional self-target for server response routing).
+    /// Empty if the SCXML element has no name attribute.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scxml_name: String,
     pub initial: String,
     pub initial_leaf: String,
     pub binding: String,

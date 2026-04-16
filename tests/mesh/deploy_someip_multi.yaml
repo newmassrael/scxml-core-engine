@@ -35,27 +35,12 @@ topology:
               # Field write -> setter method
               "field.set.target_speed":
                 setter: set_target_speed
-      # Receiver entry: brake sends to #motor, event coverage looks up
-      # machine "motor" (matching the SCXML name attribute).
+      # Motor: receiver for brake's sends + RPC server for compute_force.
+      # deploy.yaml key "motor" matches the SCXML name attribute; the
+      # codegen finds this entry via source-based lookup when the file
+      # stem (motor_someip_multi) does not match the deploy key.
       motor:
         source: motor_someip_multi.scxml
-      # Server entry: codegen runs on motor_someip_multi.scxml and looks
-      # up machine "motor_someip_multi" (matching the file stem).
-      motor_someip_multi:
-        source: motor_someip_multi.scxml
-        # Self-binding: the server SCXML sends service.response.X to
-        # #motor (self-target) to trigger the mesh send callback. The
-        # callback intercepts RpcReply before target dispatch, so this
-        # binding is never used at runtime — it exists only to satisfy
-        # the topology unresolved-target check.
-        bindings:
-          "#motor":
-            transport: someip
-            service: motor_control
-            events:
-              "service.response.compute_force":
-                method: compute_force
-        # Session E: server-side SOME/IP registration.
         server:
           transport: someip
           service: motor_control

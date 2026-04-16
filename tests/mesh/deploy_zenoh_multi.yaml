@@ -18,19 +18,10 @@ topology:
           "#motor":
             transport: zenoh
             key: "sce/brake/motor"
-      # Receiver entry: brake sends to #motor, event coverage looks up
-      # machine "motor" (matching the SCXML name attribute).
+      # Motor: receiver + RPC server. deploy.yaml key "motor" matches
+      # the SCXML name attribute; codegen uses source-based lookup.
       motor:
         source: motor_zenoh_multi.scxml
-      # Server entry: codegen runs on motor_zenoh_multi.scxml and looks
-      # up machine "motor_zenoh_multi" (matching the file stem).
-      motor_zenoh_multi:
-        source: motor_zenoh_multi.scxml
-        bindings:
-          "#motor":
-            transport: zenoh
-            key: "sce/motor/reply"
-        # Session E: server-side Zenoh registration.
         server:
           transport: zenoh
           key: "sce/brake/motor"

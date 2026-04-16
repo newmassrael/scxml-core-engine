@@ -471,6 +471,27 @@ impl DeployConfig {
             .values()
             .find(|d| d.machines.contains_key(machine_name))
     }
+
+    /// Find a machine name in deploy.yaml by matching the source filename.
+    ///
+    /// Fallback for when `model.name` (file stem) does not match the
+    /// deploy.yaml key. This happens when the SCXML `name` attribute
+    /// differs from the filename (e.g., `motor_someip_multi.scxml` has
+    /// `<scxml name="motor">` and deploy.yaml uses `motor:` as the key).
+    ///
+    /// Returns the deploy.yaml machine key that has a `source:` ending
+    /// with the given file stem + ".scxml". Returns `None` if no match.
+    pub fn find_machine_name_by_source(&self, file_stem: &str) -> Option<String> {
+        let source_suffix = format!("{file_stem}.scxml");
+        for device in self.topology.values() {
+            for (name, cfg) in &device.machines {
+                if cfg.source == source_suffix || cfg.source.ends_with(&format!("/{source_suffix}")) {
+                    return Some(name.clone());
+                }
+            }
+        }
+        None
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────

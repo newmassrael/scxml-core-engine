@@ -507,6 +507,139 @@ pub fn detect_server_pairs(model: &SCXMLModel) -> Vec<ServerRpcPair> {
     pairs
 }
 
+/// Inject synthetic `<send>` actions for server response events.
+///
+/// SCE_MESH.md §13 Session E: the SCXML spec says server machines use
+/// `<raise event="service.response.X">` for responses. `<raise>` puts
+/// events in the internal queue only — the mesh send callback does not
+/// fire. This function injects a synthetic `<send>` action alongside
+/// each qualifying raise, so the transport layer receives the response
+/// event through the mesh send callback.
+///
+/// The injected send targets `#{scxml_name}` (self-target). The topology
+/// pipeline exempts this target from binding resolution and coverage
+/// validation (it is a server-internal route, not a cross-machine send).
+///
+/// Follows the same two-pass pattern as [`inject_auto_subscriptions`]:
+/// collect candidates (immutable), then inject (mutable).
+///
+/// Must be called BEFORE `collect_send_summary` so the synthetic sends
+/// are visible to pattern detection.
+pub fn inject_server_response_sends(
+    model: &mut crate::model::SCXMLModel,
+    server_pairs: &[ServerRpcPair],
+) -> Vec<String> {
+    if server_pairs.is_empty() {
+        return Vec::new();
+    }
+
+    // The self-target for injected sends. Uses the SCXML name attribute
+    // (e.g., "motor") so the target is `#motor`. Falls back to model.name
+    // (file stem) if no SCXML name is declared.
+    let scxml_name = if model.scxml_name.is_empty() {
+        &model.name
+    } else {
+        &model.scxml_name
+    };
+    let self_target = format!("#{scxml_name}");
+
+    // Build response event lookup set for fast matching.
+    let response_events: std::collections::HashSet<&str> = server_pairs
+        .iter()
+        .map(|p| p.response_event.as_str())
+        .collect();
+
+    // Pass 1: collect (state_id, block_index, action_index) for qualifying raises.
+    struct Candidate {
+        state_id: String,
+        block_kind: BlockKind,
+        block_idx: usize,
+        action_idx: usize,
+        event: String,
+    }
+    #[derive(Clone, Copy)]
+    enum BlockKind { OnEntry, OnExit, Transition(usize) }
+
+    let mut candidates: Vec<Candidate> = Vec::new();
+
+    for (state_id, state) in &model.states {
+        for (bi, block) in state.on_entry_blocks.iter().enumerate() {
+            for (ai, action) in block.iter().enumerate() {
+                if action.action_type == "raise" && response_events.contains(action.event.as_str()) {
+                    candidates.push(Candidate {
+                        state_id: state_id.clone(),
+                        block_kind: BlockKind::OnEntry,
+                        block_idx: bi,
+                        action_idx: ai,
+                        event: action.event.clone(),
+                    });
+                }
+            }
+        }
+        for (bi, block) in state.on_exit_blocks.iter().enumerate() {
+            for (ai, action) in block.iter().enumerate() {
+                if action.action_type == "raise" && response_events.contains(action.event.as_str()) {
+                    candidates.push(Candidate {
+                        state_id: state_id.clone(),
+                        block_kind: BlockKind::OnExit,
+                        block_idx: bi,
+                        action_idx: ai,
+                        event: action.event.clone(),
+                    });
+                }
+            }
+        }
+        for (ti, transition) in state.transitions.iter().enumerate() {
+            for (ai, action) in transition.actions.iter().enumerate() {
+                if action.action_type == "raise" && response_events.contains(action.event.as_str()) {
+                    candidates.push(Candidate {
+                        state_id: state_id.clone(),
+                        block_kind: BlockKind::Transition(ti),
+                        block_idx: 0,
+                        action_idx: ai,
+                        event: action.event.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    // Pass 2: inject synthetic sends AFTER each qualifying raise.
+    // Process in reverse order so insertion indices remain valid.
+    let mut injected = Vec::new();
+    candidates.sort_by(|a, b| {
+        a.state_id.cmp(&b.state_id)
+            .then(b.action_idx.cmp(&a.action_idx)) // reverse action index
+    });
+
+    for c in &candidates {
+        let state = model.states.get_mut(&c.state_id).expect(
+            "state must exist — collected from the same model",
+        );
+
+        let mut send_action = crate::model::Action::default();
+        send_action.action_type = "send".to_string();
+        send_action.event = c.event.clone();
+        send_action.target = self_target.clone();
+
+        let insert_pos = c.action_idx + 1;
+        match c.block_kind {
+            BlockKind::OnEntry => {
+                state.on_entry_blocks[c.block_idx].insert(insert_pos, send_action);
+            }
+            BlockKind::OnExit => {
+                state.on_exit_blocks[c.block_idx].insert(insert_pos, send_action);
+            }
+            BlockKind::Transition(ti) => {
+                state.transitions[ti].actions.insert(insert_pos, send_action);
+            }
+        }
+        injected.push(c.event.clone());
+    }
+
+    injected
+}
+
 /// Resolve a deploy.yaml `server:` section into a [`ServerBinding`].
 ///
 /// Applies the same external-config resolution pipeline as client bindings:
