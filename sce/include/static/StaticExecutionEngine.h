@@ -492,8 +492,7 @@ public:
         // the target attribute, which meant mesh-declared targets silently
         // hit the external queue instead of the mesh callback.
         EventWithMetadata meta(event, eventData, origin, "", "external",
-                               SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE,
-                               currentEventInvokeId_);
+                               SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
         meta.target = target;
         raiseExternal(meta);
     }
@@ -533,11 +532,23 @@ public:
         // transport leave onMeshSend_ unset and the event falls through to
         // the external queue (legacy behavior, preserves W3C conformance).
         if (::SCE::SendHelper::isMeshTarget(eventWithMetadata.target)) {
+            // SCE_MESH.md §9.5: the metadata's invokeId is authoritative
+            // when set (send.jinja2 full-metadata path calls
+            // engine.currentEventInvokeId() explicitly). The engine-level
+            // field fills the gap for the simple raiseExternal(Event, ...)
+            // overload (datamodel="null" <send>) which constructs
+            // EventWithMetadata without invokeId. Stamping the engine
+            // field into the metadata struct was rejected: it would leak
+            // invokeId through self-sends that should carry empty
+            // _event.invokeid per W3C SCXML 5.10.1.
+            const auto& invokeId = eventWithMetadata.invokeId.empty()
+                ? currentEventInvokeId_
+                : eventWithMetadata.invokeId;
             if (performMeshSend(eventWithMetadata.target,
                                 policy_.getEventName(eventWithMetadata.event),
                                 eventWithMetadata.data,
                                 eventWithMetadata.sendId,
-                                eventWithMetadata.invokeId)) {
+                                invokeId)) {
                 return;  // handled by mesh transport — do not enqueue locally
             }
         }
