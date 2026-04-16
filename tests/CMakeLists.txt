@@ -1476,7 +1476,66 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_invoke_rpc_runtime_verification COMMAND mesh_invoke_rpc_runtime_test)
 
-    # ── Phase 2: shm_transport compile verification ──────────────
+    # §9.5 deadline expiry: motor never replies, 50ms deadline fires
+    # error.invoke on the scheduler thread. SCE_THREAD_SAFE enables the
+    # EventQueueManager mutex so the scheduler thread's raiseExternal push
+    # and the main thread's step() pop have a formal happens-before.
+    add_executable(mesh_invoke_deadline_test
+        mesh/test_mesh_invoke_deadline_expiry.cpp
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
+    )
+
+    target_include_directories(mesh_invoke_deadline_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_INVOKE_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_invoke_deadline_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_invoke_deadline_test PRIVATE cxx_std_17)
+    target_compile_definitions(mesh_invoke_deadline_test PRIVATE SCE_THREAD_SAFE)
+
+    apply_sce_test_policies(mesh_invoke_deadline_test)
+
+    add_test(NAME mesh_invoke_deadline_expiry_verification COMMAND mesh_invoke_deadline_test)
+
+    # §9.5 cancel via abort: brake exits Computing on `abort`, onexit
+    # cancels the correlation. Late reply from motor is silently dropped.
+    add_executable(mesh_invoke_cancel_test
+        mesh/test_mesh_invoke_cancel_abort.cpp
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
+    )
+
+    target_include_directories(mesh_invoke_cancel_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_INVOKE_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_invoke_cancel_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_invoke_cancel_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_invoke_cancel_test)
+
+    add_test(NAME mesh_invoke_cancel_abort_verification COMMAND mesh_invoke_cancel_test)
+
+    # ── shm_transport compile verification ──────────────
     set(MESH_SHM_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_shm_generated")
 
     # Generate brake_sm.h for shm test (reuse motor_sm.h from above)
