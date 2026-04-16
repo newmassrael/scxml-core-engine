@@ -47,3 +47,9 @@ topology:
           events:
             "service.request.compute_force":
               method: compute_force
+            # FireForget inbound handler (SCE_MESH.md §8.3) — motor has
+            # <transition event="service.fire_forget.activate">, so the
+            # server transport must install a receive handler for the
+            # paired method in vsomeip_motor_multi.json.
+            "service.fire_forget.activate":
+              method: activate

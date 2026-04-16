@@ -419,6 +419,15 @@ struct ServerContext {
     state: TargetStateView,
     /// Per-RPC-pair context for server handler registration.
     rpc_pairs: Vec<ServerRpcPairContext>,
+    /// Per-event context for FireForget inbound handler registration
+    /// (SCE_MESH.md §8.3). SOME/IP registers one
+    /// `register_message_handler` per event; Zenoh shares a single
+    /// `declare_subscriber` on the server key across all FireForget
+    /// events and dispatches by `env.type`. The template uses
+    /// `has_fire_forget` to toggle the Zenoh subscriber declaration.
+    fire_forget_events: Vec<ServerFireForgetContext>,
+    /// True when [`Self::fire_forget_events`] is non-empty.
+    has_fire_forget: bool,
 }
 
 /// Per-RPC-pair context for server-side codegen.
@@ -436,6 +445,21 @@ struct ServerRpcPairContext {
     method_id: Option<String>,
 }
 
+/// Per-event context for server-side FireForget inbound handler codegen
+/// (SCE_MESH.md §8.3). SOME/IP resolves `method_id` from the deploy.yaml
+/// `server.events.<event>.method` binding; Zenoh leaves it absent because
+/// all FireForget events land on the shared server key.
+#[derive(Debug, Clone, serde::Serialize)]
+struct ServerFireForgetContext {
+    /// Inbound event name (e.g. `"service.fire_forget.activate"`).
+    event: String,
+    /// C++-safe upper-snake constant suffix for per-event naming.
+    event_const: String,
+    /// SOME/IP method ID (`0xNNNN`). `None` for Zenoh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    method_id: Option<String>,
+}
+
 /// Build a [`ServerContext`] from a resolved [`super::topology::ServerBinding`].
 fn build_server_context(
     binding: &super::topology::ServerBinding,
@@ -445,36 +469,51 @@ fn build_server_context(
     let transport_kind = binding.state.transport_name().to_string();
     let state = TargetStateView::from_topology(&binding.state);
 
+    // Look up SOME/IP method ID by event name from the server's
+    // event_bindings. Non-SOME/IP transports or non-Method variants
+    // collapse to `None`.
+    let someip_method_id = |event: &str| -> Option<String> {
+        match &binding.state {
+            TransportState::Someip { event_bindings, .. } => {
+                event_bindings.get(event).and_then(|ids| match ids {
+                    super::topology::SomeipEventIds::Method { method_id } => {
+                        Some(fmt_someip_id(*method_id))
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        }
+    };
+
     let rpc_pairs: Vec<ServerRpcPairContext> = binding
         .rpc_pairs
         .iter()
-        .map(|pair| {
-            // Look up SOME/IP method ID from the server's event_bindings
-            let method_id = match &binding.state {
-                TransportState::Someip { event_bindings, .. } => {
-                    event_bindings.get(&pair.request_event).and_then(|ids| {
-                        if let super::topology::SomeipEventIds::Method { method_id } = ids {
-                            Some(fmt_someip_id(*method_id))
-                        } else {
-                            None
-                        }
-                    })
-                }
-                _ => None,
-            };
-            ServerRpcPairContext {
-                request_event: pair.request_event.clone(),
-                response_event: pair.response_event.clone(),
-                event_const: event_to_const_suffix(&pair.request_event),
-                method_id,
-            }
+        .map(|pair| ServerRpcPairContext {
+            request_event: pair.request_event.clone(),
+            response_event: pair.response_event.clone(),
+            event_const: event_to_const_suffix(&pair.request_event),
+            method_id: someip_method_id(&pair.request_event),
         })
         .collect();
+
+    let fire_forget_events: Vec<ServerFireForgetContext> = binding
+        .fire_forget_events
+        .iter()
+        .map(|event| ServerFireForgetContext {
+            event: event.clone(),
+            event_const: event_to_const_suffix(event),
+            method_id: someip_method_id(event),
+        })
+        .collect();
+    let has_fire_forget = !fire_forget_events.is_empty();
 
     ServerContext {
         transport_kind,
         state,
         rpc_pairs,
+        fire_forget_events,
+        has_fire_forget,
     }
 }
 

@@ -139,35 +139,30 @@ int run_test() {
         brake_engine.received_.clear();
     }
 
-    // ── 2. FireForget through generated router → motor subscriber ────
+    // ── 2. FireForget: brake router → motor generated subscriber → motor engine ─
     //
-    // Verify that the brake router's send_zenoh FireForget path (session.put)
-    // also works against the motor's live session.
+    // SCE_MESH.md §8.3 acid check: brake's session.put lands on the motor
+    // server key, the generated `zenoh_server_fire_forget_sub_` picks it
+    // up, and motor_engine observes the event through dispatchToSender.
+    // Before Session G Task 3 the server had only declare_queryable so
+    // session.put was dropped; this test would have required a raw
+    // subscriber workaround to observe the envelope.
     {
-        ReceivedEvents motor_ff_inbox;
-        auto motor_ff_sub = motor_router.zenoh_session_->declare_subscriber(
-            zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY),
-            [&motor_ff_inbox](const zenoh::Sample& sample) {
-                auto bytes = sample.get_payload().as_vector();
-                SCE::Mesh::MeshEnvelope env;
-                if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
-                    motor_ff_inbox.push({env.type,
-                                         std::string(env.data.begin(), env.data.end())});
-                }
-            },
-            [] {});
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-        auto ff = make_envelope("service.fire_forget.activate", PK::FireForget);
+        auto ff = make_envelope("service.fire_forget.activate", PK::FireForget,
+                                R"({"reason":"emergency"})");
         const bool sent = brake_router.send_zenoh(ff, brake_gen::ZENOH_KEY_MOTOR, "#motor");
         MESH_TEST_REQUIRE(sent, "brake send_zenoh FireForget returned false");
-
-        MESH_TEST_REQUIRE(motor_ff_inbox.wait_for([](const auto& v) {
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
                     return !v.empty() &&
                            v.back().type == "service.fire_forget.activate";
                 }),
-                "motor subscriber did not receive FireForget from brake router");
+                "motor engine did not receive FireForget via generated subscriber");
+        {
+            std::lock_guard<std::mutex> lock(motor_engine.received_.m);
+            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("emergency")
+                                  != std::string::npos,
+                    "FireForget payload did not survive Zenoh CBOR round-trip");
+        }
     }
 
     brake_router.shutdown();

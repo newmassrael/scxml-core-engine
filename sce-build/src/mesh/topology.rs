@@ -425,6 +425,14 @@ pub struct ServerRpcPair {
 pub struct ServerBinding {
     /// Confirmed RPC pairs detected from the SCXML model.
     pub rpc_pairs: Vec<ServerRpcPair>,
+    /// `service.fire_forget.X` events the server must accept from
+    /// clients. Detected by [`detect_server_fire_forget_events`] —
+    /// inbound-only, no paired response event. SCE_MESH.md §8.3 claims
+    /// FireForget is realized end-to-end, which requires the server
+    /// transport to install a receive handler
+    /// (SOME/IP `register_message_handler` with MT_REQUEST and no
+    /// response, Zenoh `declare_subscriber` on the server key).
+    pub fire_forget_events: Vec<String>,
     /// Transport-specific state (Someip or Zenoh variant) carrying the
     /// server's identity (service IDs / key expression).
     pub state: TransportState,
@@ -505,6 +513,36 @@ pub fn detect_server_pairs(model: &SCXMLModel) -> Vec<ServerRpcPair> {
         }
     }
     pairs
+}
+
+/// Detect `service.fire_forget.X` events the server-role machine must
+/// accept from clients.
+///
+/// SCE_MESH.md §8.3: `service.fire_forget` is realized end-to-end across
+/// transports. When a machine is declared as a server in deploy.yaml AND
+/// has a `<transition event="service.fire_forget.X">`, the transport
+/// layer must install an inbound handler (SOME/IP
+/// `register_message_handler` with `MT_REQUEST` and no response, Zenoh
+/// `declare_subscriber` on the server key).
+///
+/// Detection mirrors [`detect_server_pairs`] — static, model-wide — but
+/// requires no outbound pairing because FireForget is one-way by
+/// definition.
+pub fn detect_server_fire_forget_events(model: &SCXMLModel) -> Vec<String> {
+    use super::pattern::CommunicationPattern;
+    let mut events = std::collections::BTreeSet::new();
+    for state in model.states.values() {
+        for transition in &state.transitions {
+            if let Some(suffix) =
+                CommunicationPattern::FireForget.match_suffix(&transition.event)
+            {
+                if !suffix.is_empty() {
+                    events.insert(transition.event.clone());
+                }
+            }
+        }
+    }
+    events.into_iter().collect()
 }
 
 /// Inject synthetic `<send>` actions for server response events.
@@ -668,29 +706,65 @@ pub fn inject_server_response_sends(
 pub fn resolve_server_binding(
     server_cfg: &super::deploy::ServerConfig,
     pairs: &[ServerRpcPair],
+    fire_forget_events: &[String],
     machine_name: &str,
     external: &super::external::ExternalResolution,
 ) -> Result<ServerBinding, TopologyError> {
     use super::pattern::CommunicationPattern;
 
-    // Build event patterns from RPC pairs (inbound request events)
-    let event_patterns: Vec<EventPatternInfo> = pairs
+    // Build event patterns from RPC pairs + FireForget events (inbound events)
+    let mut event_patterns: Vec<EventPatternInfo> = pairs
         .iter()
-        .map(|pair| {
-            let pattern = CommunicationPattern::ServiceRequest;
-            EventPatternInfo {
-                event: pair.request_event.clone(),
-                pattern_kind_value: pattern.wire_value(),
-                reply_event: Some(pair.response_event.clone()),
-            }
+        .map(|pair| EventPatternInfo {
+            event: pair.request_event.clone(),
+            pattern_kind_value: CommunicationPattern::ServiceRequest.wire_value(),
+            reply_event: Some(pair.response_event.clone()),
         })
         .collect();
+    for event in fire_forget_events {
+        event_patterns.push(EventPatternInfo {
+            event: event.clone(),
+            pattern_kind_value: CommunicationPattern::FireForget.wire_value(),
+            reply_event: None,
+        });
+    }
 
     // Build transport state from server config
     let state = build_server_transport_state(server_cfg, machine_name, external)?;
 
+    // SOME/IP requires deploy.yaml to declare a method binding for each
+    // FireForget event so the external resolver produces a `method_id`
+    // (methods share numeric identity with RPC methods — `register_message_handler`
+    // keys on method_id). Zenoh shares the single server key across every
+    // FireForget event (subscriber callback dispatches by `env.type`), so
+    // it needs no per-event binding.
+    if server_cfg.transport == "someip" {
+        for event in fire_forget_events {
+            let has_method_binding = match &state {
+                TransportState::Someip { event_bindings, .. } => matches!(
+                    event_bindings.get(event),
+                    Some(SomeipEventIds::Method { .. })
+                ),
+                _ => false,
+            };
+            if !has_method_binding {
+                let server_target =
+                    TargetId::new("#_server").expect("static target ID");
+                return Err(TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: server_target,
+                    transport: "someip".to_string(),
+                    field: format!(
+                        "server.events.\"{event}\".method (required for FireForget server handler)"
+                    ),
+                });
+            }
+        }
+    }
+
     Ok(ServerBinding {
         rpc_pairs: pairs.to_vec(),
+        fire_forget_events: fire_forget_events.to_vec(),
         state,
         event_patterns,
     })

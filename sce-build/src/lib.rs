@@ -932,14 +932,19 @@ pub fn compile_mesh_transport(
         .and_then(|m| m.server.as_ref());
 
     let server_pairs = mesh::topology::detect_server_pairs(model);
+    let server_fire_forget_events =
+        mesh::topology::detect_server_fire_forget_events(model);
     let server_binding = if let Some(srv_cfg) = server_config {
-        if !server_pairs.is_empty() {
+        if !server_pairs.is_empty() || !server_fire_forget_events.is_empty() {
             // Inject synthetic <send> alongside each <raise event="service.response.X">
             // so the mesh send callback fires for server response routing.
+            // FireForget events are one-way (no response raise), so no
+            // injection is needed for that path.
             mesh::topology::inject_server_response_sends(model, &server_pairs);
             Some(mesh::topology::resolve_server_binding(
                 srv_cfg,
                 &server_pairs,
+                &server_fire_forget_events,
                 &effective_machine_name,
                 &external_resolution,
             )?)

@@ -243,8 +243,11 @@ static constexpr vsomeip::instance_t SOMEIP_SERVER_INSTANCE = {{ server.state.se
 {% for pair in server.rpc_pairs if pair.method_id %}
 static constexpr vsomeip::method_t SOMEIP_SERVER_METHOD_{{ pair.event_const }} = {{ pair.method_id }};
 {% endfor %}
+{% for ff in server.fire_forget_events if ff.method_id %}
+static constexpr vsomeip::method_t SOMEIP_SERVER_FIRE_FORGET_{{ ff.event_const }} = {{ ff.method_id }};
+{% endfor %}
 {% elif server.transport_kind == "zenoh" %}
-// Server-side Zenoh key expression (declare_queryable)
+// Server-side Zenoh key expression (declare_queryable + optional FireForget subscriber)
 static constexpr const char* ZENOH_SERVER_KEY = "{{ server.state.key }}";
 {% endif %}
 
@@ -580,6 +583,15 @@ struct TransportRouter {
     std::mutex server_pending_mutex_;
     std::unordered_map<CorrelationKey, zenoh::Query,
                        CorrelationKeyHash> pending_server_queries_;
+{% if server.has_fire_forget %}
+    // Server FireForget subscriber on ZENOH_SERVER_KEY (SCE_MESH.md §8.3).
+    // session.put from clients lands on the same key as session.get
+    // queries, so a parallel subscriber declaration is required — the
+    // queryable does not observe puts. One subscriber fans all FireForget
+    // event names; the callback dispatches by `env.type` through
+    // dispatchToSender.
+    std::optional<zenoh::Subscriber<void>> zenoh_server_fire_forget_sub_;
+{% endif %}
 {% endif %}
 
 {# ── (D3) Constructor ──
@@ -629,13 +641,17 @@ struct TransportRouter {
 {%-     endif %}
 {%-   endif %}
 {%- endfor %}
-{#- Server SOME/IP app init: must appear in declaration order (before sender_) #}
+{#- Server SOME/IP app init: must appear in declaration order (before sender_).
+    The device-level `transports.someip.application_name` identifies the
+    CLIENT app on this device. The server role belongs to a different
+    machine on the same device and needs a distinct vsomeip application
+    identity — reusing the client name collides at `create_application`
+    and makes routing-manager selection non-deterministic. The server app
+    name is always `<machine>_server`; vsomeip.json's
+    `applications[*].name` must declare that convention (e.g.
+    `motor_someip_multi_server`). #}
 {%- if has_server_someip %}
-{%-   if someip_transport and someip_transport.application_name %}
-{%-     set ns.parts = ns.parts + ["server_app_(vsomeip::runtime::get()->create_application(" ~ someip_transport.application_name ~ "))"] %}
-{%-   else %}
-{%-     set ns.parts = ns.parts + ["server_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_server\"))"] %}
-{%-   endif %}
+{%-   set ns.parts = ns.parts + ["server_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_server\"))"] %}
 {%- endif %}
 {%- if emit_sender %}
 {%-   set ns.parts = ns.parts + ["sender_(sender)"] %}
@@ -905,6 +921,25 @@ struct TransportRouter {
                 (void)this->dispatchToSender(env);
             });
 {% endfor %}
+{% for ff in server.fire_forget_events if ff.method_id %}
+        // FireForget inbound handler (SCE_MESH.md §8.3): one-way, no
+        // response. Accepts MT_REQUEST, dispatches the envelope, and
+        // returns — no create_response call and no pending_server_requests
+        // stash because there is nothing to correlate.
+        server_app_->register_message_handler(
+            SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
+            SOMEIP_SERVER_FIRE_FORGET_{{ ff.event_const }},
+            [this](const std::shared_ptr<vsomeip::message>& msg) {
+                if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                auto pl = msg->get_payload();
+                if (!pl) return;
+                SCE::Mesh::MeshEnvelope env;
+                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                env.type = "{{ ff.event }}";
+                env.pattern = SCE::Mesh::PatternKind::FireForget;
+                (void)this->dispatchToSender(env);
+            });
+{% endfor %}
         server_thread_ = std::thread([this]{ server_app_->start(); });
 {% endif %}
 {% if has_server_zenoh %}
@@ -934,6 +969,25 @@ struct TransportRouter {
                 (void)this->dispatchToSender(env);
             },
             []{}));
+{% if server.has_fire_forget %}
+        // Server Zenoh FireForget subscriber (SCE_MESH.md §8.3).
+        // `session.put` from clients does not trigger the queryable, so a
+        // parallel subscriber is declared on the same server key. The
+        // decoded envelope carries the real event name in `env.type`; the
+        // subscriber just forwards whatever FireForget lands on the key
+        // through dispatchToSender, and MeshDispatch resolves the
+        // SCXML-side event by name.
+        zenoh_server_fire_forget_sub_.emplace(zenoh_session_->declare_subscriber(
+            zenoh::KeyExpr(ZENOH_SERVER_KEY),
+            [this](const zenoh::Sample& sample) {
+                auto bytes = sample.get_payload().as_vector();
+                SCE::Mesh::MeshEnvelope env;
+                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) return;
+                env.pattern = SCE::Mesh::PatternKind::FireForget;
+                (void)this->dispatchToSender(env);
+            },
+            []{}));
+{% endif %}
 {% endif %}
 {% if machine_subscriptions %}
         // Machine-lifetime subscriptions (SCE_MESH.md §13 deploy.yaml path).
@@ -979,6 +1033,9 @@ struct TransportRouter {
         if (server_thread_.joinable()) server_thread_.join();
 {% endif %}
 {% if has_server_zenoh %}
+{% if server.has_fire_forget %}
+        zenoh_server_fire_forget_sub_.reset();
+{% endif %}
         zenoh_queryable_.reset();
 {% endif %}
 {% if "zenoh" in transport_types %}

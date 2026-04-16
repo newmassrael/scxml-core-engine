@@ -1898,8 +1898,14 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         apply_sce_test_policies(mesh_someip_runtime_test)
         add_test(NAME mesh_someip_runtime
                  COMMAND mesh_someip_runtime_test)
+        # vsomeip's routing manager binds a well-known unix socket
+        # (/tmp/vsomeip-0 by default). Only one routing manager can own
+        # that path at a time, so serialize any test that spins up an
+        # internal-routing vsomeip process. RESOURCE_LOCK prevents
+        # parallel ctest runs from racing for the socket.
         set_tests_properties(mesh_someip_runtime PROPERTIES
             TIMEOUT 30
+            RESOURCE_LOCK vsomeip_routing_socket
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")

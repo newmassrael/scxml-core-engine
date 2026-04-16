@@ -19,7 +19,8 @@
 //                     handleServerResponse → vsomeip response → brake
 //                     response handler → brake engine receives reply
 //   4. FireForget:    brake send_to_motor → vsomeip routes → motor
-//                     callback → motor engine receives
+//                     FireForget handler (method 0x0100) → motor engine
+//                     receives service.fire_forget.activate
 //
 // VSOMEIP_CONFIGURATION must point to vsomeip_e2e_test.json (internal
 // routing, service discovery disabled, motor as routing manager).
@@ -32,13 +33,36 @@
 #include "MeshTestUtils.h"
 #include "mesh/MeshDispatch.h"
 
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
+#include <filesystem>
+#include <mutex>
 #include <string>
+#include <system_error>
 #include <thread>
 
 namespace {
 
 using namespace SCE::Test::Mesh;
+
+// Wipe any stale vsomeip local endpoints left behind by prior runs that
+// crashed or were killed. vsomeip's routing manager refuses to bind when
+// a previous socket owner is gone but the path survives. Using the
+// filesystem API (not system("rm")) keeps the test hermetic with no
+// shell dependency. Errors from missing/already-unlinked files are
+// ignored — the goal is "no stale socket remains", not "delete a known
+// set of files".
+void wipe_stale_vsomeip_sockets() {
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator("/tmp", ec)) {
+        if (ec) return;
+        const auto name = entry.path().filename().string();
+        if (name.rfind("vsomeip-", 0) == 0) {
+            std::filesystem::remove(entry.path(), ec);
+        }
+    }
+}
 
 int run_test() {
     namespace brake_gen = SCE::Generated::brake_someip_multi;
@@ -46,6 +70,8 @@ int run_test() {
     using PK = SCE::Mesh::PatternKind;
     using BrakeRouterT = brake_gen::TransportRouter<TestSenderEngine>;
     using MotorRouterT = motor_gen::TransportRouter<TestSenderEngine>;
+
+    wipe_stale_vsomeip_sockets();
 
     // ── Motor (server) must init first — it is the routing manager. ──
     TestSenderEngine motor_engine;
@@ -57,17 +83,34 @@ int run_test() {
     BrakeRouterT brake_router(brake_engine);
     MESH_TEST_REQUIRE(brake_router.init(), "brake router init failed");
 
-    // vsomeip internal routing needs time for service offer/request
-    // handshake within the process. 2s is generous for local dispatch.
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Instead of sleeping, wait for vsomeip to announce motor's service
+    // as available on brake's app. `register_availability_handler` fires
+    // synchronously with the current status when it is called on an
+    // already-available service, and asynchronously when the state later
+    // changes — so registering after init() is safe regardless of
+    // handshake ordering.
+    {
+        std::mutex availability_m;
+        std::condition_variable availability_cv;
+        bool service_available = false;
+        brake_router.motor_app_->register_availability_handler(
+            brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
+            [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
+                if (!is_available) return;
+                std::lock_guard<std::mutex> lock(availability_m);
+                service_available = true;
+                availability_cv.notify_all();
+            });
+
+        std::unique_lock<std::mutex> lock(availability_m);
+        MESH_TEST_REQUIRE(availability_cv.wait_for(
+                              lock, std::chrono::seconds(10),
+                              [&] { return service_available; }),
+                          "vsomeip service motor_control did not become "
+                          "available within 10s (routing manager handshake stuck)");
+    }
 
     // ── 1. RPC round-trip: brake → motor → brake ──────────────────────
-    //
-    // FireForget is not tested here because the motor server only
-    // registers a handler for compute_force (0x0101). FireForget
-    // (0x0100) would need a separate handler registration on the motor
-    // side, which is a client-side feature tested by the brake
-    // transport — out of scope for server E2E.
     {
         SCE::Mesh::MeshEnvelope env;
         env.id = {};
@@ -130,6 +173,38 @@ int run_test() {
             std::lock_guard<std::mutex> lock(brake_engine.received_.m);
             MESH_TEST_REQUIRE(brake_engine.received_.events.back().data.find("42") != std::string::npos,
                     "reply payload did not survive SOME/IP CBOR round-trip");
+        }
+    }
+
+    // ── 2. FireForget: brake → motor FireForget handler → motor engine ─
+    //
+    // SCE_MESH.md §8.3 acid check: motor's <transition event="service.fire_forget.activate">
+    // must fire when brake sends the event. Before Session G Task 3 the
+    // server only registered compute_force (0x0101), so FireForget 0x0100
+    // was dropped by vsomeip and the motor engine never observed it.
+    motor_engine.received_.clear();
+    {
+        SCE::Mesh::MeshEnvelope env;
+        env.id = {};
+        env.source = "test";
+        env.type = "service.fire_forget.activate";
+        env.pattern = PK::FireForget;
+        env.datacontenttype = SCE::Mesh::PayloadCodec::Json;
+        std::string payload = R"({"reason":"emergency"})";
+        env.data.assign(payload.begin(), payload.end());
+
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env),
+                          "brake route_send FireForget returned false");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
+                    return !v.empty() &&
+                           v.back().type == "service.fire_forget.activate";
+                }),
+                "motor engine did not receive FireForget via SOME/IP server handler");
+        {
+            std::lock_guard<std::mutex> lock(motor_engine.received_.m);
+            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("emergency")
+                                  != std::string::npos,
+                    "FireForget payload did not survive SOME/IP CBOR round-trip");
         }
     }
 
