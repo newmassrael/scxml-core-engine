@@ -5,9 +5,11 @@
 //
 // Pure unit tests on dispatchEnvelope<Policy, Engine>() covering:
 //   1. Inbound patterns (FireForget/RpcRequest/RpcReply/EventNotify/
-//      FieldNotify) enqueue via raiseExternal; empty and non-empty data.
-//   2. Outbound-only patterns (EventSubscribe/EventUnsubscribe/FieldRead/
-//      FieldWrite) reject (return false) — echo-back guard.
+//      FieldNotify/FieldRead/FieldWrite) enqueue via raiseExternal;
+//      empty and non-empty data. FieldRead/FieldWrite are server-role
+//      inbound (SCE_MESH.md §8.3).
+//   2. Transport-control patterns (EventSubscribe/EventUnsubscribe)
+//      reject (return false) — echo-back guard.
 //   3. Unknown event names return false without calling the engine.
 //
 // A prior revision rejected RpcRequest at the receiver (SCE_MESH.md §9.5
@@ -151,10 +153,19 @@ TEST(MeshDispatchTest, RpcRequestWithoutInvokeIdYieldsEmptyMetadata) {
 }
 
 TEST(MeshDispatchTest, OutboundOnlyPatternsAreRejected) {
+    // Event subscribe/unsubscribe are transport control messages handled by
+    // the sender router's subscription bookkeeping — they never reach an
+    // engine. Echo-back of these patterns indicates a misconfigured transport
+    // and MeshDispatch must reject them so the misconfiguration surfaces.
+    //
+    // FieldRead/FieldWrite were previously in this set but were promoted to
+    // inbound-valid when server-side FieldAccess landed (SCE_MESH.md §8.3):
+    // the server's queryable / `register_message_handler` receives the
+    // getter/setter request and dispatches it to the engine so the matching
+    // `<transition event="field.get.X">` / `<transition event="field.set.X">`
+    // fires. Covered by `DispatchesFieldAccessInboundOnServerRole` below.
     for (auto pattern : {PatternKind::EventSubscribe,
-                         PatternKind::EventUnsubscribe,
-                         PatternKind::FieldRead,
-                         PatternKind::FieldWrite}) {
+                         PatternKind::EventUnsubscribe}) {
         RecordingEngine engine;
         MeshEnvelope env;
         env.pattern = pattern;
@@ -163,5 +174,22 @@ TEST(MeshDispatchTest, OutboundOnlyPatternsAreRejected) {
         EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)))
             << "Pattern " << static_cast<int>(pattern) << " should reject inbound";
         EXPECT_TRUE(engine.events.empty());
+    }
+}
+
+TEST(MeshDispatchTest, DispatchesFieldAccessInboundOnServerRole) {
+    // Server-role FieldRead/FieldWrite are inbound requests produced by the
+    // transport layer after decoding a SOME/IP `register_message_handler`
+    // message or a Zenoh queryable query. They must reach the engine so the
+    // matching `<transition event="field.get.X">` / `<transition
+    // event="field.set.X">` fires (SCE_MESH.md §8.3).
+    for (auto pattern : {PatternKind::FieldRead, PatternKind::FieldWrite}) {
+        RecordingEngine engine;
+        auto env = makeRequest("service.request.compute_force");
+        env.pattern = pattern;
+
+        EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)))
+            << "Pattern " << static_cast<int>(pattern) << " must dispatch inbound";
+        ASSERT_EQ(engine.events.size(), 1u);
     }
 }

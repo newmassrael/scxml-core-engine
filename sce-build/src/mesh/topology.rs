@@ -134,7 +134,11 @@ impl BindingDefaultIds {
     /// "no defaults to attach for this event".
     pub fn project_to(&self, pattern: super::pattern::CommunicationPattern) -> Option<SomeipEventIds> {
         use super::pattern::SomeipFieldKind;
-        match pattern.someip_field() {
+        // A pattern with no dedicated SOME/IP slot (currently only
+        // FieldNotify, which piggybacks on the getter/setter reply path)
+        // never consumes a per-binding default. Binding-level flat sugar
+        // is only meaningful for request/subscribe/field-access patterns.
+        match pattern.someip_field()? {
             SomeipFieldKind::Method => self.method_id.map(|id| SomeipEventIds::Method { method_id: id }),
             SomeipFieldKind::EventGroup => match (self.event_group_id, self.event_id) {
                 (Some(group), Some(event)) => {
@@ -417,6 +421,33 @@ pub struct ServerRpcPair {
     pub response_event: String,
 }
 
+/// Which field access operation a confirmed server pair handles. SOME/IP
+/// codegen dispatches on this to pick between `SOMEIP_SERVER_GETTER_*` and
+/// `SOMEIP_SERVER_SETTER_*` method constants; the transport reply path
+/// (Zenoh `Query::reply`, SOME/IP `create_response`) is identical across
+/// both kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldAccessKind {
+    Getter,
+    Setter,
+}
+
+/// A confirmed server field access pair: the machine transitions on a
+/// `field.get.X` (or `field.set.X`) event AND produces a matching
+/// `field.notify.X` somewhere in its actions (send or raise). Structurally
+/// parallel to [`ServerRpcPair`] — both patterns share the
+/// request/response injection + transport reply path (SCE_MESH.md §8.3).
+#[derive(Debug, Clone, Serialize)]
+pub struct ServerFieldAccessPair {
+    /// Inbound request event (e.g. `"field.get.vehicle_speed"`).
+    pub request_event: String,
+    /// Outbound response event (e.g. `"field.notify.vehicle_speed"`).
+    pub response_event: String,
+    /// Whether this pair handles a field read (Getter) or write (Setter).
+    pub kind: FieldAccessKind,
+}
+
 /// Resolved server-side binding — the transport-specific state needed to
 /// register the machine as a transport-native server. Produced by
 /// [`resolve_server_binding`] and consumed by codegen to emit
@@ -433,6 +464,14 @@ pub struct ServerBinding {
     /// (SOME/IP `register_message_handler` with MT_REQUEST and no
     /// response, Zenoh `declare_subscriber` on the server key).
     pub fire_forget_events: Vec<String>,
+    /// Confirmed field access pairs detected from the SCXML model.
+    /// SCE_MESH.md §8.3: `field.get.X`/`field.set.X` requests are paired
+    /// with `field.notify.X` replies by convention. Codegen emits a
+    /// server handler that forwards the request to the engine and stashes
+    /// the transport-native request handle; the paired
+    /// `<raise event="field.notify.X">` flows through
+    /// `inject_server_response_sends` + `handleServerResponse` to reply.
+    pub field_access_pairs: Vec<ServerFieldAccessPair>,
     /// Transport-specific state (Someip or Zenoh variant) carrying the
     /// server's identity (service IDs / key expression).
     pub state: TransportState,
@@ -452,6 +491,45 @@ pub struct ServerBinding {
 /// analysis is performed. This is conservative: if the response event
 /// exists ANYWHERE in the model, the pair is confirmed. A future session
 /// may tighten this to reachability from the request-handling state.
+/// Collect every send/raise action's `<pattern>.X` suffix across the model.
+///
+/// Shared scanner for server-role response detection: the server raises a
+/// response event (`service.response.X`, `field.notify.X`) from any state,
+/// and the detector needs a model-wide suffix set to pair against inbound
+/// request transitions. Only non-empty suffixes are returned (the bare
+/// pattern prefix carries no suffix identity to match).
+fn collect_response_suffixes(
+    model: &SCXMLModel,
+    pattern: super::pattern::CommunicationPattern,
+) -> std::collections::HashSet<String> {
+    let mut suffixes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut scan = |actions: &[crate::model::Action]| {
+        for action in actions {
+            if action.action_type != "send" && action.action_type != "raise" {
+                continue;
+            }
+            if let Some(suffix) = pattern.match_suffix(&action.event) {
+                if !suffix.is_empty() {
+                    suffixes.insert(suffix.to_string());
+                }
+            }
+        }
+    };
+    for state in model.states.values() {
+        for block in &state.on_entry_blocks {
+            scan(block);
+        }
+        for block in &state.on_exit_blocks {
+            scan(block);
+        }
+        for transition in &state.transitions {
+            scan(&transition.actions);
+        }
+        scan(&state.initial_transition_actions);
+    }
+    suffixes
+}
+
 pub fn detect_server_pairs(model: &SCXMLModel) -> Vec<ServerRpcPair> {
     use super::pattern::CommunicationPattern;
 
@@ -471,30 +549,8 @@ pub fn detect_server_pairs(model: &SCXMLModel) -> Vec<ServerRpcPair> {
     }
 
     // Step 2: collect all service.response.* events from sends and raises
-    let mut response_suffixes: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for state in model.states.values() {
-        let mut scan_actions = |actions: &[crate::model::Action]| {
-            for action in actions {
-                if action.action_type == "send" || action.action_type == "raise" {
-                    if let Some(suffix) = CommunicationPattern::ServiceResponse.match_suffix(&action.event) {
-                        if !suffix.is_empty() {
-                            response_suffixes.insert(suffix.to_string());
-                        }
-                    }
-                }
-            }
-        };
-        for block in &state.on_entry_blocks {
-            scan_actions(block);
-        }
-        for block in &state.on_exit_blocks {
-            scan_actions(block);
-        }
-        for transition in &state.transitions {
-            scan_actions(&transition.actions);
-        }
-        scan_actions(&state.initial_transition_actions);
-    }
+    let response_suffixes =
+        collect_response_suffixes(model, CommunicationPattern::ServiceResponse);
 
     // Step 3: pair request suffixes with confirmed response suffixes
     let mut pairs = Vec::new();
@@ -545,18 +601,111 @@ pub fn detect_server_fire_forget_events(model: &SCXMLModel) -> Vec<String> {
     events.into_iter().collect()
 }
 
+/// Detect server FieldAccess pairs from an SCXML model.
+///
+/// SCE_MESH.md §8.3: a machine is a confirmed FieldAccess server for
+/// suffix `X` iff:
+///   1. It has a `<transition event="field.get.X">` or
+///      `<transition event="field.set.X">` in any state.
+///   2. Somewhere in its actions (send or raise across all states), it
+///      produces `field.notify.X`.
+///
+/// Detection mirrors [`detect_server_pairs`] — static, model-wide. The
+/// conservative pairing rule (the response event must exist ANYWHERE in
+/// the model, not only reachable from the handling state) matches the
+/// RPC case; tightening to reachability is a future refinement.
+///
+/// Getter and setter roles are disambiguated by the request event prefix
+/// so codegen can pick the `SOMEIP_SERVER_GETTER_*` vs
+/// `SOMEIP_SERVER_SETTER_*` method constants. A suffix that happens to
+/// appear in both FieldGet and FieldSet transitions yields two distinct
+/// pairs (one Getter, one Setter) — that is the authored contract.
+pub fn detect_server_field_access_pairs(
+    model: &SCXMLModel,
+) -> Vec<ServerFieldAccessPair> {
+    use super::pattern::CommunicationPattern;
+
+    // Step 1: collect (kind, suffix, full_event) for every field.get/field.set
+    // transition in the model.
+    let mut requests: Vec<(FieldAccessKind, String, String)> = Vec::new();
+    for state in model.states.values() {
+        for transition in &state.transitions {
+            if let Some(suffix) = CommunicationPattern::FieldGet.match_suffix(&transition.event) {
+                if !suffix.is_empty() {
+                    requests.push((
+                        FieldAccessKind::Getter,
+                        suffix.to_string(),
+                        transition.event.clone(),
+                    ));
+                }
+            } else if let Some(suffix) =
+                CommunicationPattern::FieldSet.match_suffix(&transition.event)
+            {
+                if !suffix.is_empty() {
+                    requests.push((
+                        FieldAccessKind::Setter,
+                        suffix.to_string(),
+                        transition.event.clone(),
+                    ));
+                }
+            }
+        }
+    }
+    if requests.is_empty() {
+        return Vec::new();
+    }
+
+    // Step 2: collect all field.notify.* suffixes emitted as send or raise
+    // action events anywhere in the model.
+    let response_suffixes =
+        collect_response_suffixes(model, CommunicationPattern::FieldNotify);
+
+    // Step 3: pair each (kind, suffix) with a confirmed field.notify suffix.
+    // The dedup key is (kind, suffix) so a suffix that appears as both a
+    // getter and a setter produces two distinct pairs without dropping one.
+    let mut pairs = Vec::new();
+    let mut seen: std::collections::HashSet<(FieldAccessKind, String)> =
+        std::collections::HashSet::new();
+    for (kind, suffix, request_event) in &requests {
+        if !response_suffixes.contains(suffix) {
+            continue;
+        }
+        let key = (*kind, suffix.clone());
+        if !seen.insert(key) {
+            continue;
+        }
+        let response_event = format!(
+            "{}.{}",
+            CommunicationPattern::FieldNotify.prefix_str(),
+            suffix
+        );
+        pairs.push(ServerFieldAccessPair {
+            request_event: request_event.clone(),
+            response_event,
+            kind: *kind,
+        });
+    }
+    pairs
+}
+
 /// Inject synthetic `<send>` actions for server response events.
 ///
-/// SCE_MESH.md §13 Session E: the SCXML spec says server machines use
-/// `<raise event="service.response.X">` for responses. `<raise>` puts
-/// events in the internal queue only — the mesh send callback does not
-/// fire. This function injects a synthetic `<send>` action alongside
-/// each qualifying raise, so the transport layer receives the response
-/// event through the mesh send callback.
+/// SCE_MESH.md §13 Session E / §8.3: the SCXML spec says server machines
+/// use `<raise event="service.response.X">` or `<raise event="field.notify.X">`
+/// for responses. `<raise>` puts events in the internal queue only — the
+/// mesh send callback does not fire. This function injects a synthetic
+/// `<send>` action alongside each qualifying raise, so the transport
+/// layer receives the response event through the mesh send callback.
 ///
 /// The injected send targets `#{scxml_name}` (self-target). The topology
 /// pipeline exempts this target from binding resolution and coverage
 /// validation (it is a server-internal route, not a cross-machine send).
+///
+/// `response_events` is the full set of event names that should be
+/// intercepted — the caller merges RPC response events and FieldAccess
+/// notify events (and any future server-response kind) into a single set
+/// so this function owns one responsibility: "after any raise of a known
+/// response event, append a synthetic self-send".
 ///
 /// Follows the same two-pass pattern as [`inject_auto_subscriptions`]:
 /// collect candidates (immutable), then inject (mutable).
@@ -565,9 +714,9 @@ pub fn detect_server_fire_forget_events(model: &SCXMLModel) -> Vec<String> {
 /// are visible to pattern detection.
 pub fn inject_server_response_sends(
     model: &mut crate::model::SCXMLModel,
-    server_pairs: &[ServerRpcPair],
+    response_events: &std::collections::HashSet<String>,
 ) -> Vec<String> {
-    if server_pairs.is_empty() {
+    if response_events.is_empty() {
         return Vec::new();
     }
 
@@ -581,11 +730,9 @@ pub fn inject_server_response_sends(
     };
     let self_target = format!("#{scxml_name}");
 
-    // Build response event lookup set for fast matching.
-    let response_events: std::collections::HashSet<&str> = server_pairs
-        .iter()
-        .map(|p| p.response_event.as_str())
-        .collect();
+    // Adapt the caller's `HashSet<String>` to the `&str` probe used below.
+    let response_events: std::collections::HashSet<&str> =
+        response_events.iter().map(String::as_str).collect();
 
     // Pass 1: collect (state_id, block_index, action_index) for qualifying raises.
     struct Candidate {
@@ -707,12 +854,16 @@ pub fn resolve_server_binding(
     server_cfg: &super::deploy::ServerConfig,
     pairs: &[ServerRpcPair],
     fire_forget_events: &[String],
+    field_access_pairs: &[ServerFieldAccessPair],
     machine_name: &str,
     external: &super::external::ExternalResolution,
 ) -> Result<ServerBinding, TopologyError> {
     use super::pattern::CommunicationPattern;
 
-    // Build event patterns from RPC pairs + FireForget events (inbound events)
+    // Build event patterns from RPC pairs + FireForget events + FieldAccess
+    // pairs (all inbound request events). The response/notify events
+    // themselves do not appear in `event_patterns` — they flow through
+    // `handleServerResponse`, not the inbound receive path.
     let mut event_patterns: Vec<EventPatternInfo> = pairs
         .iter()
         .map(|pair| EventPatternInfo {
@@ -728,16 +879,26 @@ pub fn resolve_server_binding(
             reply_event: None,
         });
     }
+    for pair in field_access_pairs {
+        let pattern = match pair.kind {
+            FieldAccessKind::Getter => CommunicationPattern::FieldGet,
+            FieldAccessKind::Setter => CommunicationPattern::FieldSet,
+        };
+        event_patterns.push(EventPatternInfo {
+            event: pair.request_event.clone(),
+            pattern_kind_value: pattern.wire_value(),
+            reply_event: Some(pair.response_event.clone()),
+        });
+    }
 
     // Build transport state from server config
     let state = build_server_transport_state(server_cfg, machine_name, external)?;
 
-    // SOME/IP requires deploy.yaml to declare a method binding for each
-    // FireForget event so the external resolver produces a `method_id`
-    // (methods share numeric identity with RPC methods — `register_message_handler`
-    // keys on method_id). Zenoh shares the single server key across every
-    // FireForget event (subscriber callback dispatches by `env.type`), so
-    // it needs no per-event binding.
+    // SOME/IP requires deploy.yaml to declare a method/getter/setter
+    // binding for every inbound event so the external resolver produces
+    // a numeric ID. Zenoh shares the single server key across every event
+    // (subscriber/queryable callback dispatches by `env.type`), so it
+    // needs no per-event binding.
     if server_cfg.transport == "someip" {
         for event in fire_forget_events {
             let has_method_binding = match &state {
@@ -760,11 +921,41 @@ pub fn resolve_server_binding(
                 });
             }
         }
+        for pair in field_access_pairs {
+            let (expected, field_label) = match pair.kind {
+                FieldAccessKind::Getter => ("getter", "getter"),
+                FieldAccessKind::Setter => ("setter", "setter"),
+            };
+            let has_binding = match &state {
+                TransportState::Someip { event_bindings, .. } => match event_bindings
+                    .get(&pair.request_event)
+                {
+                    Some(SomeipEventIds::Getter { .. }) if expected == "getter" => true,
+                    Some(SomeipEventIds::Setter { .. }) if expected == "setter" => true,
+                    _ => false,
+                },
+                _ => false,
+            };
+            if !has_binding {
+                let server_target =
+                    TargetId::new("#_server").expect("static target ID");
+                return Err(TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: server_target,
+                    transport: "someip".to_string(),
+                    field: format!(
+                        "server.events.\"{}\".{field_label} (required for FieldAccess server handler)",
+                        pair.request_event
+                    ),
+                });
+            }
+        }
     }
 
     Ok(ServerBinding {
         rpc_pairs: pairs.to_vec(),
         fire_forget_events: fire_forget_events.to_vec(),
+        field_access_pairs: field_access_pairs.to_vec(),
         state,
         event_patterns,
     })
@@ -1298,7 +1489,12 @@ fn validate_someip_pattern_fields(
             // and a missing arm is a pattern-layer bug, not an event bug.
             continue;
         };
-        let expected = pattern.someip_field();
+        let Some(expected) = pattern.someip_field() else {
+            // Pattern has no dedicated SOME/IP slot (FieldNotify rides the
+            // getter/setter reply path) — nothing to validate on the
+            // per-event binding map.
+            continue;
+        };
         let actual_kind = event_bindings.get(&ep.event).map(|ids| ids.field_kind());
         if actual_kind != Some(expected) {
             return Err(TopologyError::MissingBindingField {

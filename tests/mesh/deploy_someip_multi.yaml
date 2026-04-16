@@ -53,3 +53,12 @@ topology:
             # paired method in vsomeip_motor_multi.json.
             "service.fire_forget.activate":
               method: activate
+            # FieldAccess inbound handlers (SCE_MESH.md §8.3) — motor has
+            # <transition event="field.get.vehicle_speed"> and
+            # <transition event="field.set.target_speed"> with paired
+            # <raise event="field.notify.X"> responses, so the server
+            # transport must install getter/setter handlers.
+            "field.get.vehicle_speed":
+              getter: get_vehicle_speed
+            "field.set.target_speed":
+              setter: set_target_speed

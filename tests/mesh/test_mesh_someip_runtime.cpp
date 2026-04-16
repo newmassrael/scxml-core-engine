@@ -11,7 +11,8 @@
 //
 // Coverage:
 //   1. Server init:   offer_service + register_message_handler for
-//                     compute_force RPC method (0x0101)
+//                     compute_force RPC method (0x0101), activate
+//                     FireForget (0x0100), getter (0x0200), setter (0x0201)
 //   2. Client init:   request_service + register_message_handler for
 //                     response correlation
 //   3. RPC round-trip: brake send_to_motor (RpcRequest) → vsomeip routes
@@ -21,6 +22,12 @@
 //   4. FireForget:    brake send_to_motor → vsomeip routes → motor
 //                     FireForget handler (method 0x0100) → motor engine
 //                     receives service.fire_forget.activate
+//   5. FieldRead:     brake send_to_motor (FieldRead) → vsomeip routes to
+//                     getter handler (0x0200) → motor engine receives
+//                     field.get.vehicle_speed; pending request stashed
+//                     for field.notify reply correlation
+//   6. FieldWrite:    brake send_to_motor (FieldWrite) → setter handler
+//                     (0x0201) → motor engine receives field.set.target_speed
 //
 // VSOMEIP_CONFIGURATION must point to vsomeip_e2e_test.json (internal
 // routing, service discovery disabled, motor as routing manager).
@@ -205,6 +212,63 @@ int run_test() {
             MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("emergency")
                                   != std::string::npos,
                     "FireForget payload did not survive SOME/IP CBOR round-trip");
+        }
+    }
+
+    // ── 3. FieldRead (getter): brake → motor getter handler → motor engine ─
+    //
+    // SCE_MESH.md §8.3 acid check: motor's
+    // `<transition event="field.get.vehicle_speed">` must fire when brake
+    // sends on the vsomeip getter method (0x0200). Session H closed the
+    // gap where the server only registered RPC + FireForget methods, so
+    // getter/setter messages were dropped by vsomeip.
+    motor_engine.received_.clear();
+    {
+        SCE::Mesh::MeshEnvelope env;
+        env.id = {};
+        env.source = "test";
+        env.type = "field.get.vehicle_speed";
+        env.pattern = PK::FieldRead;
+        env.datacontenttype = SCE::Mesh::PayloadCodec::None;
+
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env),
+                          "brake route_send FieldRead returned false");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
+                    return !v.empty() &&
+                           v.back().type == "field.get.vehicle_speed";
+                }),
+                "motor engine did not receive FieldRead via SOME/IP server getter handler");
+        {
+            std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
+            MESH_TEST_REQUIRE(!motor_router.pending_server_requests_.empty(),
+                    "motor did not stash pending getter request for reply correlation");
+        }
+    }
+
+    // ── 4. FieldWrite (setter): brake → motor setter handler → motor engine ─
+    motor_engine.received_.clear();
+    {
+        SCE::Mesh::MeshEnvelope env;
+        env.id = {};
+        env.source = "test";
+        env.type = "field.set.target_speed";
+        env.pattern = PK::FieldWrite;
+        env.datacontenttype = SCE::Mesh::PayloadCodec::Json;
+        std::string payload = R"({"value":55})";
+        env.data.assign(payload.begin(), payload.end());
+
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env),
+                          "brake route_send FieldWrite returned false");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
+                    return !v.empty() &&
+                           v.back().type == "field.set.target_speed";
+                }),
+                "motor engine did not receive FieldWrite via SOME/IP server setter handler");
+        {
+            std::lock_guard<std::mutex> lock(motor_engine.received_.m);
+            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("55")
+                                  != std::string::npos,
+                    "FieldWrite payload did not survive SOME/IP CBOR round-trip");
         }
     }
 

@@ -22,8 +22,17 @@
              app.unsubscribe). Never dispatched to receiver engine
              (MeshDispatch returns false for EventSubscribe/EventUnsubscribe).
              Coverage-exempt per topology.rs (SCE_MESH.md Section 13). -->
-        <transition event="field.set.target_speed" target="ready"/>
-        <transition event="field.get.vehicle_speed" target="ready"/>
+        <!-- FieldAccess responses (SCE_MESH.md §8.3): raise field.notify.X
+             as the spec-canonical reply form. inject_server_response_sends
+             appends a synthetic <send> alongside each raise so the transport
+             layer routes the response (SOME/IP create_response, Zenoh
+             Query::reply) — identical mechanics to service.response. -->
+        <transition event="field.set.target_speed" target="ready">
+            <raise event="field.notify.target_speed"/>
+        </transition>
+        <transition event="field.get.vehicle_speed" target="ready">
+            <raise event="field.notify.vehicle_speed"/>
+        </transition>
     </state>
     <state id="computing">
         <onentry>

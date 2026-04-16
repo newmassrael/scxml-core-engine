@@ -874,11 +874,17 @@ pub fn inject_server_model_mutations(
     }
 
     let server_pairs = mesh::topology::detect_server_pairs(model);
-    if server_pairs.is_empty() {
+    let field_access_pairs = mesh::topology::detect_server_field_access_pairs(model);
+    if server_pairs.is_empty() && field_access_pairs.is_empty() {
         return Ok(vec![]);
     }
 
-    Ok(mesh::topology::inject_server_response_sends(model, &server_pairs))
+    let response_events: std::collections::HashSet<String> = server_pairs
+        .iter()
+        .map(|p| p.response_event.clone())
+        .chain(field_access_pairs.iter().map(|p| p.response_event.clone()))
+        .collect();
+    Ok(mesh::topology::inject_server_response_sends(model, &response_events))
 }
 
 /// Returns `Ok(MeshResult)` with generated files and all warnings,
@@ -934,17 +940,32 @@ pub fn compile_mesh_transport(
     let server_pairs = mesh::topology::detect_server_pairs(model);
     let server_fire_forget_events =
         mesh::topology::detect_server_fire_forget_events(model);
+    let server_field_access_pairs =
+        mesh::topology::detect_server_field_access_pairs(model);
     let server_binding = if let Some(srv_cfg) = server_config {
-        if !server_pairs.is_empty() || !server_fire_forget_events.is_empty() {
-            // Inject synthetic <send> alongside each <raise event="service.response.X">
-            // so the mesh send callback fires for server response routing.
-            // FireForget events are one-way (no response raise), so no
-            // injection is needed for that path.
-            mesh::topology::inject_server_response_sends(model, &server_pairs);
+        if !server_pairs.is_empty()
+            || !server_fire_forget_events.is_empty()
+            || !server_field_access_pairs.is_empty()
+        {
+            // Inject synthetic <send> alongside each <raise> of an RPC
+            // response or FieldAccess notify so the mesh send callback
+            // fires for server response routing. FireForget is one-way
+            // (no raise), so its events are not in the response set.
+            let response_events: std::collections::HashSet<String> = server_pairs
+                .iter()
+                .map(|p| p.response_event.clone())
+                .chain(
+                    server_field_access_pairs
+                        .iter()
+                        .map(|p| p.response_event.clone()),
+                )
+                .collect();
+            mesh::topology::inject_server_response_sends(model, &response_events);
             Some(mesh::topology::resolve_server_binding(
                 srv_cfg,
                 &server_pairs,
                 &server_fire_forget_events,
+                &server_field_access_pairs,
                 &effective_machine_name,
                 &external_resolution,
             )?)
@@ -967,11 +988,22 @@ pub fn compile_mesh_transport(
     // handleServerResponse before route_send and never reach a transport
     // binding. Without this exemption, the pipeline would fail with
     // "unresolved target" (no binding for #self) or "uncovered event"
-    // (receiver has no transition for service.response.X).
-    if server_binding.is_some() && !server_pairs.is_empty() {
+    // (receiver has no transition for the response event).
+    //
+    // Covers both RPC responses (`service.response.X`) and FieldAccess
+    // notifies (`field.notify.X`) — both kinds flow through
+    // `inject_server_response_sends` and `handleServerResponse`.
+    if server_binding.is_some()
+        && (!server_pairs.is_empty() || !server_field_access_pairs.is_empty())
+    {
         let response_events: std::collections::HashSet<String> = server_pairs
             .iter()
             .map(|p| p.response_event.clone())
+            .chain(
+                server_field_access_pairs
+                    .iter()
+                    .map(|p| p.response_event.clone()),
+            )
             .collect();
         let scxml_name = if model.scxml_name.is_empty() {
             &model.name

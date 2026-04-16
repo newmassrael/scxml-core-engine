@@ -15,8 +15,17 @@
         <transition event="service.fire_forget.activate" target="ready"/>
         <transition event="service.request.compute_force" target="computing"/>
         <transition event="event.subscribe.status" target="ready"/>
-        <transition event="field.set.position" target="ready"/>
-        <transition event="field.get.position" target="ready"/>
+        <!-- FieldAccess responses (SCE_MESH.md §8.3): raise field.notify.X
+             as the spec-canonical reply form. inject_server_response_sends
+             appends a synthetic <send> alongside each raise so the transport
+             layer routes the response (Zenoh Query::reply) — identical
+             mechanics to service.response. -->
+        <transition event="field.set.position" target="ready">
+            <raise event="field.notify.position"/>
+        </transition>
+        <transition event="field.get.position" target="ready">
+            <raise event="field.notify.position"/>
+        </transition>
     </state>
     <state id="computing">
         <onentry>

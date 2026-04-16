@@ -246,8 +246,15 @@ static constexpr vsomeip::method_t SOMEIP_SERVER_METHOD_{{ pair.event_const }} =
 {% for ff in server.fire_forget_events if ff.method_id %}
 static constexpr vsomeip::method_t SOMEIP_SERVER_FIRE_FORGET_{{ ff.event_const }} = {{ ff.method_id }};
 {% endfor %}
+{% for fa in server.field_access_pairs if fa.method_id %}
+{% if fa.kind == "getter" %}
+static constexpr vsomeip::method_t SOMEIP_SERVER_GETTER_{{ fa.event_const }} = {{ fa.method_id }};
+{% else %}
+static constexpr vsomeip::method_t SOMEIP_SERVER_SETTER_{{ fa.event_const }} = {{ fa.method_id }};
+{% endif %}
+{% endfor %}
 {% elif server.transport_kind == "zenoh" %}
-// Server-side Zenoh key expression (declare_queryable + optional FireForget subscriber)
+// Server-side Zenoh key expression (declare_queryable + optional put subscriber)
 static constexpr const char* ZENOH_SERVER_KEY = "{{ server.state.key }}";
 {% endif %}
 
@@ -583,14 +590,15 @@ struct TransportRouter {
     std::mutex server_pending_mutex_;
     std::unordered_map<CorrelationKey, zenoh::Query,
                        CorrelationKeyHash> pending_server_queries_;
-{% if server.has_fire_forget %}
-    // Server FireForget subscriber on ZENOH_SERVER_KEY (SCE_MESH.md §8.3).
-    // session.put from clients lands on the same key as session.get
+{% if server.has_server_put %}
+    // Server inbound-put subscriber on ZENOH_SERVER_KEY (SCE_MESH.md §8.3).
+    // `session.put` from clients lands on the same key as `session.get`
     // queries, so a parallel subscriber declaration is required — the
-    // queryable does not observe puts. One subscriber fans all FireForget
-    // event names; the callback dispatches by `env.type` through
+    // queryable does not observe puts. One subscriber fans every
+    // put-based pattern (FireForget, FieldWrite) by inspecting
+    // `env.type` in the decoded envelope and routing through
     // dispatchToSender.
-    std::optional<zenoh::Subscriber<void>> zenoh_server_fire_forget_sub_;
+    std::optional<zenoh::Subscriber<void>> zenoh_server_put_sub_;
 {% endif %}
 {% endif %}
 
@@ -679,21 +687,23 @@ struct TransportRouter {
                     : SCE::Mesh::PayloadCodec::Json;
                 env.data.assign(data.begin(), data.end());
                 // W3C SCXML 6.4.1 auto-propagation extended to mesh-rpc:
-                // stamp env.invoke_id when the outbound pattern is RpcReply
-                // so the original invoker's correlation table resolves the
-                // reply. Non-reply patterns leave env.invoke_id unset —
-                // invokeId is ignored rather than leaked cross-pattern.
-                // A non-parseable invokeId on an RpcReply usually means the
-                // triggering event was a non-mesh invoke (e.g. W3C child
-                // session "_invoke_0"); log at warn so the mismatch is
-                // diagnosable rather than surfacing as a silent deadline
-                // timeout on the invoker side.
-                if (env.pattern == SCE::Mesh::PatternKind::RpcReply && !invokeId.empty()) {
+                // stamp env.invoke_id when the outbound pattern is a paired
+                // reply (RpcReply / FieldNotify) so the server response
+                // handler can correlate back to the stored request. Non-reply
+                // patterns leave env.invoke_id unset — invokeId is ignored
+                // rather than leaked cross-pattern. A non-parseable invokeId
+                // on a reply usually means the triggering event was a
+                // non-mesh invoke (e.g. W3C child session "_invoke_0"); log
+                // at warn so the mismatch is diagnosable rather than
+                // surfacing as a silent deadline timeout on the invoker side.
+                if ((env.pattern == SCE::Mesh::PatternKind::RpcReply
+                     || env.pattern == SCE::Mesh::PatternKind::FieldNotify)
+                    && !invokeId.empty()) {
                     if (auto parsed = SCE::uuid::from_string(invokeId)) {
                         env.invoke_id = *parsed;
                     } else {
                         SCE_LOG_WARN(
-                            "Mesh RpcReply to '{}' for event '{}': invokeId '{}' is not "
+                            "Mesh reply to '{}' for event '{}': invokeId '{}' is not "
                             "an RFC 4122 canonical UUID; env.invoke_id left unset and "
                             "receiver correlation will not match",
                             target, eventName, invokeId);
@@ -750,18 +760,20 @@ struct TransportRouter {
                 }
 {% endif %}
 {% if has_server %}
-                // Server response interception (SCE_MESH.md §13 Session E):
-                // if this machine is serving RPCs and the outbound pattern is
-                // RpcReply, route through the server response handler instead
-                // of target dispatch. The response is correlated by UUID to
-                // the inbound request stored at receive time.
+                // Server response interception (SCE_MESH.md §13 Session E
+                // / §8.3): when this machine is serving RPCs or FieldAccess
+                // and the outbound pattern is a paired reply (RpcReply /
+                // FieldNotify), route through the server response handler
+                // instead of target dispatch. The response is correlated
+                // by UUID to the inbound request stored at receive time.
                 //
                 // Correlation bridge: the inbound queryable/message handler
                 // keyed the pending request by invoke_id (mesh-rpc path).
                 // The engine's currentEventInvokeId propagates as invokeId
                 // → env.invoke_id (parsed above). Stamp correlation_id so
                 // handleServerResponse finds the stored request.
-                if (env.pattern == SCE::Mesh::PatternKind::RpcReply) {
+                if (env.pattern == SCE::Mesh::PatternKind::RpcReply
+                    || env.pattern == SCE::Mesh::PatternKind::FieldNotify) {
                     if (!env.correlation_id && env.invoke_id) {
                         env.correlation_id = env.invoke_id;
                     }
@@ -908,15 +920,15 @@ struct TransportRouter {
                 // Stash original request for create_response() when the
                 // engine sends service.response.X. Key by invoke_id when
                 // available (mesh-rpc path) for correlation bridge symmetry
-                // with the Zenoh queryable handler.
+                // with the Zenoh queryable handler. env.type / env.pattern
+                // are trusted from the decoded envelope — the client
+                // encoded them via resolvePattern before send.
                 auto cid = env.invoke_id.value_or(
                     env.correlation_id.value_or(SCE::uuid::v7()));
                 {
                     std::lock_guard<std::mutex> lock(server_pending_mutex_);
                     pending_server_requests_[CorrelationKey{cid}] = msg;
                 }
-                env.type = "{{ pair.request_event }}";
-                env.pattern = SCE::Mesh::PatternKind::RpcRequest;
                 env.correlation_id = cid;
                 (void)this->dispatchToSender(env);
             });
@@ -925,7 +937,8 @@ struct TransportRouter {
         // FireForget inbound handler (SCE_MESH.md §8.3): one-way, no
         // response. Accepts MT_REQUEST, dispatches the envelope, and
         // returns — no create_response call and no pending_server_requests
-        // stash because there is nothing to correlate.
+        // stash because there is nothing to correlate. env.type /
+        // env.pattern are trusted from the decoded envelope.
         server_app_->register_message_handler(
             SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
             SOMEIP_SERVER_FIRE_FORGET_{{ ff.event_const }},
@@ -935,16 +948,46 @@ struct TransportRouter {
                 if (!pl) return;
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
-                env.type = "{{ ff.event }}";
-                env.pattern = SCE::Mesh::PatternKind::FireForget;
+                (void)this->dispatchToSender(env);
+            });
+{% endfor %}
+{% for fa in server.field_access_pairs if fa.method_id %}
+        // FieldAccess inbound handler (SCE_MESH.md §8.3): getter/setter
+        // requests share the RPC response path — the engine raises
+        // `field.notify.X`, inject_server_response_sends appends a
+        // synthetic <send>, and handleServerResponse routes it via
+        // `create_response` on the original request. env.type /
+        // env.pattern are trusted from the decoded envelope.
+        server_app_->register_message_handler(
+            SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
+            SOMEIP_SERVER_{{ fa.kind | upper }}_{{ fa.event_const }},
+            [this](const std::shared_ptr<vsomeip::message>& msg) {
+                if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                auto pl = msg->get_payload();
+                if (!pl) return;
+                SCE::Mesh::MeshEnvelope env;
+                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                // Stash original request (key symmetry with the RPC
+                // handler: invoke_id first, correlation_id fallback,
+                // fresh UUID last). handleServerResponse looks the
+                // message back up and calls create_response on it.
+                auto cid = env.invoke_id.value_or(
+                    env.correlation_id.value_or(SCE::uuid::v7()));
+                {
+                    std::lock_guard<std::mutex> lock(server_pending_mutex_);
+                    pending_server_requests_[CorrelationKey{cid}] = msg;
+                }
+                env.correlation_id = cid;
                 (void)this->dispatchToSender(env);
             });
 {% endfor %}
         server_thread_ = std::thread([this]{ server_app_->start(); });
 {% endif %}
 {% if has_server_zenoh %}
-        // Server Zenoh: declare queryable for RPC serving.
-        // Must happen after zenoh session open.
+        // Server Zenoh: declare queryable for session.get-based patterns
+        // (RpcRequest, FieldRead). Must happen after zenoh session open.
+        // env.type / env.pattern are trusted from the decoded envelope —
+        // the client encoded them via resolvePattern before session.get.
         zenoh_queryable_.emplace(zenoh_session_->declare_queryable(
             zenoh::KeyExpr(ZENOH_SERVER_KEY),
             [this](const zenoh::Query& query) {
@@ -965,25 +1008,22 @@ struct TransportRouter {
                     pending_server_queries_.insert_or_assign(CorrelationKey{cid}, query.clone());
                 }
                 env.correlation_id = cid;
-                env.pattern = SCE::Mesh::PatternKind::RpcRequest;
                 (void)this->dispatchToSender(env);
             },
             []{}));
-{% if server.has_fire_forget %}
-        // Server Zenoh FireForget subscriber (SCE_MESH.md §8.3).
+{% if server.has_server_put %}
+        // Server Zenoh inbound-put subscriber (SCE_MESH.md §8.3).
         // `session.put` from clients does not trigger the queryable, so a
         // parallel subscriber is declared on the same server key. The
-        // decoded envelope carries the real event name in `env.type`; the
-        // subscriber just forwards whatever FireForget lands on the key
-        // through dispatchToSender, and MeshDispatch resolves the
-        // SCXML-side event by name.
-        zenoh_server_fire_forget_sub_.emplace(zenoh_session_->declare_subscriber(
+        // decoded envelope carries the real event name and pattern (the
+        // client stamped env.pattern via resolvePattern); the subscriber
+        // forwards it to dispatchToSender unchanged.
+        zenoh_server_put_sub_.emplace(zenoh_session_->declare_subscriber(
             zenoh::KeyExpr(ZENOH_SERVER_KEY),
             [this](const zenoh::Sample& sample) {
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) return;
-                env.pattern = SCE::Mesh::PatternKind::FireForget;
                 (void)this->dispatchToSender(env);
             },
             []{}));
@@ -1033,8 +1073,8 @@ struct TransportRouter {
         if (server_thread_.joinable()) server_thread_.join();
 {% endif %}
 {% if has_server_zenoh %}
-{% if server.has_fire_forget %}
-        zenoh_server_fire_forget_sub_.reset();
+{% if server.has_server_put %}
+        zenoh_server_put_sub_.reset();
 {% endif %}
         zenoh_queryable_.reset();
 {% endif %}
@@ -1137,13 +1177,18 @@ struct TransportRouter {
 {% endfor %}
 {% endfor %}
 {# Server response events: the mesh send callback must resolve outbound
-   response events as RpcReply so the server interceptor routes them to
-   handleServerResponse instead of falling through to route_send (which
-   has no binding for the self-target). SCE_MESH.md §13 Session E. #}
+   response events as RpcReply / FieldNotify so the server interceptor
+   routes them to handleServerResponse instead of falling through to
+   route_send (which has no binding for the self-target). SCE_MESH.md
+   §13 Session E / §8.3. #}
 {% if has_server %}
 {% for pair in server.rpc_pairs %}
 {% set ns.has_patterns = true %}
         if (eventName == "{{ pair.response_event }}") return PK::RpcReply;
+{% endfor %}
+{% for resp in server.field_notify_events %}
+{% set ns.has_patterns = true %}
+        if (eventName == "{{ resp }}") return PK::FieldNotify;
 {% endfor %}
 {% endif %}
 {% if not ns.has_patterns %}

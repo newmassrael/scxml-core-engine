@@ -15,6 +15,16 @@
 //                          correlation_id → Query::reply → client receives
 //   3. CBOR round-trip:    encode on client send → decode on server receive
 //                          → re-encode on server reply → decode on client receive
+//   4. FieldRead (Session H): client session.get with env.pattern=FieldRead
+//                          encoded by client resolvePattern → queryable decodes
+//                          and trusts env.pattern → engine fires
+//                          <transition event="field.get.position"> → engine
+//                          <raise event="field.notify.position"> + injected <send>
+//                          → handleServerResponse → Query::reply → client
+//   5. FieldWrite (Session H): client session.put with env.pattern=FieldWrite
+//                          encoded by client resolvePattern → put subscriber
+//                          decodes and trusts env.pattern → engine fires
+//                          <transition event="field.set.position">
 //
 // The test proves that the compile-only server-side infrastructure from
 // Session E (declare_queryable, pending_server_queries_, handleServerResponse)
@@ -153,6 +163,88 @@ int run_test() {
         auto no_cid_resp = make_envelope("service.response.compute_force", PK::RpcReply);
         MESH_TEST_REQUIRE(!motor_router.handleServerResponse(no_cid_resp),
                 "handleServerResponse should return false when correlation_id is nullopt");
+    }
+
+    // ── 5. FieldRead inbound on server queryable (SCE_MESH.md §8.3) ──
+    //
+    // Session H: field.get.position is a FieldRead — the client dispatches
+    // via session.get with env.pattern=FieldRead pre-encoded on the wire
+    // (client-side resolvePattern). The server's queryable decodes the
+    // envelope, trusts env.pattern unchanged, and forwards it to the
+    // motor engine which fires <transition event="field.get.position">.
+    motor_engine.received_.clear();
+    ReceivedEvents field_read_replies;
+    {
+        auto req = make_envelope("field.get.position", PK::FieldRead, R"({"which":"x"})");
+        auto req_bytes = SCE::Mesh::encodeEnvelope(req);
+
+        zenoh::Session::GetOptions opts;
+        opts.payload = zenoh::Bytes(std::move(req_bytes));
+        client_session.get(
+            zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
+            [&field_read_replies](const zenoh::Reply& reply_msg) {
+                if (!reply_msg.is_ok()) return;
+                const auto& sample = reply_msg.get_ok();
+                auto bytes = sample.get_payload().as_vector();
+                SCE::Mesh::MeshEnvelope resp;
+                if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {
+                    field_read_replies.push({resp.type,
+                                             std::string(resp.data.begin(), resp.data.end())});
+                }
+            },
+            [] {}, std::move(opts));
+
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
+                    return !v.empty() && v.back().type == "field.get.position";
+                }),
+                "motor engine did not receive field.get.position from client session.get");
+
+        std::array<uint8_t, 16> cid{};
+        {
+            std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
+            MESH_TEST_REQUIRE(!motor_router.pending_server_queries_.empty(),
+                    "queryable did not stash pending FieldRead Query");
+            cid = motor_router.pending_server_queries_.begin()->first.id;
+        }
+
+        // Simulate the engine's paired `<raise event="field.notify.position">`
+        // → injected <send> → handleServerResponse route.
+        auto notify = make_envelope("field.notify.position", PK::FieldNotify,
+                                    R"({"x":42})");
+        notify.correlation_id = cid;
+        MESH_TEST_REQUIRE(motor_router.handleServerResponse(notify),
+                "handleServerResponse rejected FieldNotify reply");
+
+        MESH_TEST_REQUIRE(field_read_replies.wait_for([](const auto& v) {
+                    return !v.empty() && v.back().type == "field.notify.position";
+                }),
+                "client did not receive field.notify reply via Query::reply");
+    }
+
+    // ── 6. FieldWrite inbound on server put subscriber (SCE_MESH.md §8.3) ──
+    //
+    // session.put lands on the subscriber (not the queryable) because
+    // Zenoh's queryable only fires for session.get. The subscriber
+    // decodes env.pattern=FieldWrite (pre-encoded on the wire by the
+    // client's resolvePattern) and forwards unchanged to the engine.
+    motor_engine.received_.clear();
+    {
+        auto req = make_envelope("field.set.position", PK::FieldWrite,
+                                 R"({"x":99})");
+        auto req_bytes = SCE::Mesh::encodeEnvelope(req);
+        client_session.put(zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY),
+                           zenoh::Bytes(std::move(req_bytes)));
+
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
+                    return !v.empty() && v.back().type == "field.set.position";
+                }),
+                "motor engine did not receive field.set.position from client session.put");
+        {
+            std::lock_guard<std::mutex> lock(motor_engine.received_.m);
+            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("99")
+                                  != std::string::npos,
+                    "FieldWrite payload did not survive Zenoh CBOR round-trip");
+        }
     }
 
     motor_router.shutdown();

@@ -9,8 +9,14 @@
 //   - TransportRouter::route_send() local     (same-process shortcut)
 //
 // Pattern dispatch:
-//   Inbound (enqueue to engine): FireForget, RpcRequest, RpcReply, EventNotify, FieldNotify
-//   Outbound-only (reject):      EventSubscribe/Unsubscribe, FieldRead/Write
+//   Inbound (enqueue to engine): FireForget, RpcRequest, RpcReply, EventNotify,
+//                                FieldNotify, FieldRead, FieldWrite
+//   Outbound-only (reject):      EventSubscribe, EventUnsubscribe
+//
+// FieldRead/FieldWrite are inbound on the server role (SCE_MESH.md §8.3):
+// the server's queryable / `register_message_handler` receives the
+// getter/setter request and dispatches it to the engine, which fires the
+// matching `<transition event="field.get.X">` / `<transition event="field.set.X">`.
 //
 // RpcRequest is inbound on the receiver side: the sender's
 // `<invoke type="sce:mesh-rpc">` (SCE_MESH.md §9.5) emits an envelope whose
@@ -64,7 +70,12 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     // RPC reply: correlation matching is done by TransportRouter before calling
     // dispatchEnvelope. By the time we get here, env.type is already set to the
     // reply-event name from the correlation table. Delivery is same as FireForget.
-    case PatternKind::RpcReply: {
+    case PatternKind::RpcReply:
+    // FieldRead/FieldWrite on the server role: inbound request that fires the
+    // matching `<transition event="field.get.X">` / `<transition event="field.set.X">`
+    // on the server-side engine (SCE_MESH.md §8.3).
+    case PatternKind::FieldRead:
+    case PatternKind::FieldWrite: {
         auto ev = Policy::getEventFromName(env.type.c_str());
         if (!ev) return false;
         typename Engine::EventWithMetadata meta;
@@ -81,8 +92,6 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     // back our own sends — return false so caller can log or drop.
     case PatternKind::EventSubscribe:
     case PatternKind::EventUnsubscribe:
-    case PatternKind::FieldRead:
-    case PatternKind::FieldWrite:
         return false;
     }
     return false;  // unknown pattern kind — forward compatibility

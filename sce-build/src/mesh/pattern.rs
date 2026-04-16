@@ -67,6 +67,15 @@ pub enum CommunicationPattern {
     FieldGet,
     /// `field.set` — Write a named data field (property access).
     FieldSet,
+    /// `field.notify` — Reply to a prior `field.get`/`field.set` (paired response).
+    /// SCE_MESH.md §8.3: server-role machines emit `<raise event="field.notify.X">`
+    /// after handling a field access request. The build-time
+    /// `inject_server_response_sends` appends a synthetic `<send>` alongside
+    /// the raise so the transport layer routes the response through
+    /// `handleServerResponse` (SOME/IP `create_response`, Zenoh `Query::reply`).
+    /// From the client's perspective the event arrives inbound-only — it is
+    /// never authored as a `<send>` in client SCXML.
+    FieldNotify,
 }
 
 impl CommunicationPattern {
@@ -84,6 +93,7 @@ impl CommunicationPattern {
         Self::Notification,
         Self::FieldGet,
         Self::FieldSet,
+        Self::FieldNotify,
     ];
 
     /// The reserved event-name prefix that identifies this pattern.
@@ -101,6 +111,7 @@ impl CommunicationPattern {
             Self::Notification    => "event.notification",
             Self::FieldGet        => "field.get",
             Self::FieldSet        => "field.set",
+            Self::FieldNotify     => "field.notify",
         }
     }
 
@@ -110,11 +121,12 @@ impl CommunicationPattern {
             Self::ServiceRequest | Self::ServiceResponse => TransportCapability::RequestReply,
             Self::FireForget => TransportCapability::FireForget,
             Self::Subscribe | Self::Unsubscribe | Self::Notification => TransportCapability::PubSub,
-            Self::FieldGet | Self::FieldSet => TransportCapability::FieldAccess,
+            Self::FieldGet | Self::FieldSet | Self::FieldNotify => TransportCapability::FieldAccess,
         }
     }
 
-    /// Which SOME/IP numeric-ID slot this pattern requires at runtime.
+    /// Which SOME/IP numeric-ID slot this pattern requires at runtime, or
+    /// `None` if the pattern addresses no dedicated slot.
     ///
     /// Single source of truth for "pattern → required SOME/IP field" —
     /// resolution fan-out, validation, and codegen dispatch all read this
@@ -122,19 +134,24 @@ impl CommunicationPattern {
     /// worse, over `PatternKind` wire values). Adding a new pattern variant
     /// is a single edit here.
     ///
-    /// Every recognized pattern addresses **exactly one** slot family —
-    /// `Method`, `EventGroup`, `Getter`, or `Setter`. If a future pattern
-    /// needs zero slots or multiple slots, this returns type must change
-    /// (e.g. `&'static [SomeipFieldKind]`) and the callers that currently
-    /// rely on infallibility need to adapt.
-    pub fn someip_field(self) -> SomeipFieldKind {
+    /// Returns `None` for patterns whose transport realisation piggybacks on
+    /// another pattern's slot rather than reserving one of its own. Currently
+    /// only `FieldNotify`: it is emitted as the reply to a FieldGet/FieldSet
+    /// request and rides the transport's reply channel (SOME/IP
+    /// `create_response`, Zenoh `Query::reply`) — no getter/setter/method
+    /// slot is required or consulted. Callers that previously relied on the
+    /// infallible return consult `Option::expect` with a context-specific
+    /// message when the pattern is provably slot-bearing at the call site
+    /// (e.g. after a `detect_pattern` match that excludes `FieldNotify`).
+    pub fn someip_field(self) -> Option<SomeipFieldKind> {
         use SomeipFieldKind::*;
-        match self {
+        Some(match self {
             Self::FireForget | Self::ServiceRequest | Self::ServiceResponse => Method,
             Self::Subscribe | Self::Unsubscribe | Self::Notification => EventGroup,
             Self::FieldGet => Getter,
             Self::FieldSet => Setter,
-        }
+            Self::FieldNotify => return None,
+        })
     }
 
     /// If `event` belongs to this pattern — either the bare prefix or
@@ -155,10 +172,11 @@ impl CommunicationPattern {
     /// Values MUST match `sce/include/mesh/PatternKind.h`; any drift is caught
     /// by the C++ static_asserts in that header.
     ///
-    /// Note: `CommunicationPattern` covers 8 of the 9 C++ `PatternKind`
-    /// variants. `FieldNotify` (9) is inbound-only (arrives via
-    /// `register_message_handler`, never sent from SCXML) and has no
-    /// Rust counterpart.
+    /// `CommunicationPattern` covers every C++ `PatternKind` variant 1:1.
+    /// `FieldNotify` is paired with `FieldGet`/`FieldSet` on the server side —
+    /// the server-role machine raises `field.notify.X` after handling a
+    /// field access request, mirroring the `ServiceRequest` →
+    /// `ServiceResponse` relationship.
     pub fn wire_value(self) -> u16 {
         match self {
             Self::FireForget       => 1,
@@ -169,12 +187,12 @@ impl CommunicationPattern {
             Self::Notification     => 6,
             Self::FieldGet         => 7,
             Self::FieldSet         => 8,
+            Self::FieldNotify      => 9,
         }
     }
 
-    /// Inverse of [`wire_value`]. Returns `None` for wire values that
-    /// exist in the C++ `PatternKind` enum but have no Rust counterpart
-    /// (currently only `FieldNotify` = 9, which is inbound-only).
+    /// Inverse of [`wire_value`]. Returns `None` for wire values that are
+    /// not recognized.
     ///
     /// Consumers that need to recover the symbolic pattern from a cached
     /// `pattern_kind_value` (e.g. validators) go through this — no open-coded
@@ -473,6 +491,7 @@ mod tests {
             CommunicationPattern::Notification,
             CommunicationPattern::FieldGet,
             CommunicationPattern::FieldSet,
+            CommunicationPattern::FieldNotify,
         ] {
             assert_eq!(p.infer_reply_event("service.request.x"), None,
                        "pattern {p:?} must not produce a reply");
@@ -542,6 +561,10 @@ mod tests {
             CommunicationPattern::FieldSet.required_capability(),
             TransportCapability::FieldAccess
         );
+        assert_eq!(
+            CommunicationPattern::FieldNotify.required_capability(),
+            TransportCapability::FieldAccess
+        );
     }
 
     // ── someip_field ────────────────────────────────────────
@@ -549,33 +572,42 @@ mod tests {
     #[test]
     fn someip_field_method_family() {
         use SomeipFieldKind::Method;
-        assert_eq!(CommunicationPattern::FireForget.someip_field(), Method);
-        assert_eq!(CommunicationPattern::ServiceRequest.someip_field(), Method);
-        assert_eq!(CommunicationPattern::ServiceResponse.someip_field(), Method);
+        assert_eq!(CommunicationPattern::FireForget.someip_field(), Some(Method));
+        assert_eq!(CommunicationPattern::ServiceRequest.someip_field(), Some(Method));
+        assert_eq!(CommunicationPattern::ServiceResponse.someip_field(), Some(Method));
     }
 
     #[test]
     fn someip_field_event_group_family() {
         use SomeipFieldKind::EventGroup;
-        assert_eq!(CommunicationPattern::Subscribe.someip_field(), EventGroup);
-        assert_eq!(CommunicationPattern::Unsubscribe.someip_field(), EventGroup);
-        assert_eq!(CommunicationPattern::Notification.someip_field(), EventGroup);
+        assert_eq!(CommunicationPattern::Subscribe.someip_field(), Some(EventGroup));
+        assert_eq!(CommunicationPattern::Unsubscribe.someip_field(), Some(EventGroup));
+        assert_eq!(CommunicationPattern::Notification.someip_field(), Some(EventGroup));
     }
 
     #[test]
     fn someip_field_getter_setter_family() {
         use SomeipFieldKind::{Getter, Setter};
-        assert_eq!(CommunicationPattern::FieldGet.someip_field(), Getter);
-        assert_eq!(CommunicationPattern::FieldSet.someip_field(), Setter);
+        assert_eq!(CommunicationPattern::FieldGet.someip_field(), Some(Getter));
+        assert_eq!(CommunicationPattern::FieldSet.someip_field(), Some(Setter));
+    }
+
+    #[test]
+    fn someip_field_none_for_field_notify() {
+        // FieldNotify rides the getter/setter reply path
+        // (`create_response` / `Query::reply`) and does not reserve a
+        // dedicated SOME/IP slot. The `None` return lets callers short-
+        // circuit binding/validation logic instead of probing placeholder
+        // slot kinds that would mislead future readers.
+        assert_eq!(CommunicationPattern::FieldNotify.someip_field(), None);
     }
 
     #[test]
     fn someip_field_exhaustive_across_all_variants() {
-        // Every recognized pattern must return some SomeipFieldKind. The
-        // infallible return type already guarantees this at compile time;
-        // this test also exercises the call on every variant in the ALL
-        // catalogue so a future variant added to `ALL` without a match arm
-        // in `someip_field` fails the test instead of panicking in prod.
+        // Exercise the call on every variant in the ALL catalogue so a
+        // future variant added to `ALL` without a match arm in
+        // `someip_field` fails compilation (and thus this test) instead of
+        // panicking in prod.
         for p in CommunicationPattern::ALL.iter().copied() {
             let _ = p.someip_field();
         }

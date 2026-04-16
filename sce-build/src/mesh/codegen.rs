@@ -428,14 +428,41 @@ struct ServerContext {
     fire_forget_events: Vec<ServerFireForgetContext>,
     /// True when [`Self::fire_forget_events`] is non-empty.
     has_fire_forget: bool,
+    /// Per-pair context for FieldAccess inbound handler registration
+    /// (SCE_MESH.md §8.3). SOME/IP registers one
+    /// `register_message_handler` per (getter or setter) method; Zenoh
+    /// shares the single queryable (FieldRead) and the single server
+    /// subscriber (FieldWrite) declared for RPC + FireForget and
+    /// dispatches by `env.type`. The paired `field.notify.X` reply is
+    /// routed through `handleServerResponse` identically to RPC.
+    field_access_pairs: Vec<ServerFieldAccessContext>,
+    /// True when the server must accept inbound `session.put` — either
+    /// for FireForget (§8.3) or FieldWrite, which also uses
+    /// `session.put` on the Zenoh key. Controls emission of the Zenoh
+    /// `zenoh_server_put_sub_` subscriber.
+    has_server_put: bool,
+    /// Unique `field.notify.X` event names the server may emit — one
+    /// entry per distinct response event across `field_access_pairs`.
+    /// A single suffix can appear as both getter and setter (e.g.
+    /// `field.get.position` + `field.set.position`) and raises the same
+    /// `field.notify.position`; the template uses this dedup list for
+    /// `resolvePattern` so the generated `if` chain has no duplicates.
+    field_notify_events: Vec<String>,
 }
 
 /// Per-RPC-pair context for server-side codegen.
+///
+/// The inbound request event no longer appears here because the server
+/// handler trusts the decoded envelope's `env.type` verbatim (SCE_MESH.md
+/// §13 Session H: wire format is SSOT). Only fields the template actually
+/// reads are kept; adding fields back requires a matching template
+/// consumer.
 #[derive(Debug, Clone, serde::Serialize)]
 struct ServerRpcPairContext {
-    /// Inbound request event (e.g. `"service.request.compute_force"`).
-    request_event: String,
     /// Outbound response event (e.g. `"service.response.compute_force"`).
+    /// Used by `resolvePattern` to classify `<send>` of the response as
+    /// `RpcReply` so the server interceptor routes it through
+    /// `handleServerResponse`.
     response_event: String,
     /// C++-safe upper-snake constant suffix for per-event naming.
     event_const: String,
@@ -451,11 +478,32 @@ struct ServerRpcPairContext {
 /// all FireForget events land on the shared server key.
 #[derive(Debug, Clone, serde::Serialize)]
 struct ServerFireForgetContext {
-    /// Inbound event name (e.g. `"service.fire_forget.activate"`).
-    event: String,
     /// C++-safe upper-snake constant suffix for per-event naming.
     event_const: String,
     /// SOME/IP method ID (`0xNNNN`). `None` for Zenoh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    method_id: Option<String>,
+}
+
+/// Per-pair context for server-side FieldAccess handler codegen
+/// (SCE_MESH.md §8.3). Mirrors [`ServerRpcPairContext`] — both patterns
+/// ride the same transport-level reply path (`create_response` /
+/// `Query::reply`).
+///
+/// Request/response event strings are not stored here: the decoded
+/// envelope owns `env.type`, and `resolvePattern` classifies the notify
+/// event through the deduped [`ServerContext::field_notify_events`] list
+/// (getter + setter on the same suffix share one notify event).
+#[derive(Debug, Clone, serde::Serialize)]
+struct ServerFieldAccessContext {
+    /// C++-safe upper-snake constant suffix, derived from the request
+    /// event (same basis as [`ServerRpcPairContext::event_const`]).
+    event_const: String,
+    /// `"getter"` or `"setter"` — discriminator used by the template to
+    /// pick the SOME/IP method constant. Single source of truth for the
+    /// getter/setter split so the template does not probe multiple fields.
+    kind: &'static str,
+    /// SOME/IP getter/setter method ID (`0xNNNN`). `None` for Zenoh.
     #[serde(skip_serializing_if = "Option::is_none")]
     method_id: Option<String>,
 }
@@ -464,23 +512,33 @@ struct ServerFireForgetContext {
 fn build_server_context(
     binding: &super::topology::ServerBinding,
 ) -> ServerContext {
-    use crate::mesh::topology::TransportState;
+    use crate::mesh::pattern::SomeipFieldKind;
+    use crate::mesh::topology::{FieldAccessKind, SomeipEventIds, TransportState};
 
     let transport_kind = binding.state.transport_name().to_string();
     let state = TargetStateView::from_topology(&binding.state);
 
-    // Look up SOME/IP method ID by event name from the server's
-    // event_bindings. Non-SOME/IP transports or non-Method variants
-    // collapse to `None`.
-    let someip_method_id = |event: &str| -> Option<String> {
-        match &binding.state {
-            TransportState::Someip { event_bindings, .. } => {
-                event_bindings.get(event).and_then(|ids| match ids {
-                    super::topology::SomeipEventIds::Method { method_id } => {
-                        Some(fmt_someip_id(*method_id))
-                    }
-                    _ => None,
-                })
+    // Look up the numeric SOME/IP ID for an event, expecting a specific
+    // slot family. The caller names the family via `SomeipFieldKind` so
+    // typos are compile errors rather than silent `None` returns that
+    // would drop a handler. The resolver guarantees the per-event variant
+    // aligns with the pattern family (`Method` for RPC/FireForget,
+    // `Getter`/`Setter` for FieldAccess), so a mismatch means upstream
+    // drift.
+    let someip_id_for = |event: &str, want: SomeipFieldKind| -> Option<String> {
+        let TransportState::Someip { event_bindings, .. } = &binding.state else {
+            return None;
+        };
+        let ids = event_bindings.get(event)?;
+        match (ids, want) {
+            (SomeipEventIds::Method { method_id }, SomeipFieldKind::Method) => {
+                Some(fmt_someip_id(*method_id))
+            }
+            (SomeipEventIds::Getter { getter_id }, SomeipFieldKind::Getter) => {
+                Some(fmt_someip_id(*getter_id))
+            }
+            (SomeipEventIds::Setter { setter_id }, SomeipFieldKind::Setter) => {
+                Some(fmt_someip_id(*setter_id))
             }
             _ => None,
         }
@@ -490,10 +548,9 @@ fn build_server_context(
         .rpc_pairs
         .iter()
         .map(|pair| ServerRpcPairContext {
-            request_event: pair.request_event.clone(),
             response_event: pair.response_event.clone(),
             event_const: event_to_const_suffix(&pair.request_event),
-            method_id: someip_method_id(&pair.request_event),
+            method_id: someip_id_for(&pair.request_event, SomeipFieldKind::Method),
         })
         .collect();
 
@@ -501,12 +558,46 @@ fn build_server_context(
         .fire_forget_events
         .iter()
         .map(|event| ServerFireForgetContext {
-            event: event.clone(),
             event_const: event_to_const_suffix(event),
-            method_id: someip_method_id(event),
+            method_id: someip_id_for(event, SomeipFieldKind::Method),
         })
         .collect();
     let has_fire_forget = !fire_forget_events.is_empty();
+
+    let field_access_pairs: Vec<ServerFieldAccessContext> = binding
+        .field_access_pairs
+        .iter()
+        .map(|pair| {
+            let (kind_str, slot) = match pair.kind {
+                FieldAccessKind::Getter => ("getter", SomeipFieldKind::Getter),
+                FieldAccessKind::Setter => ("setter", SomeipFieldKind::Setter),
+            };
+            ServerFieldAccessContext {
+                event_const: event_to_const_suffix(&pair.request_event),
+                kind: kind_str,
+                method_id: someip_id_for(&pair.request_event, slot),
+            }
+        })
+        .collect();
+    // Zenoh server needs a `session.put` subscriber for every inbound
+    // pattern that uses `put` on the wire — FireForget (SCE_MESH.md §8.3)
+    // and FieldWrite. The subscriber is a single declaration shared
+    // across those patterns; the template toggles it on `has_server_put`.
+    let has_setter = binding
+        .field_access_pairs
+        .iter()
+        .any(|p| p.kind == FieldAccessKind::Setter);
+    let has_server_put = has_fire_forget || has_setter;
+
+    // Deduplicate response events (getter and setter on the same suffix
+    // share one `field.notify.X` name). BTreeSet gives stable ordering.
+    let field_notify_events: Vec<String> = binding
+        .field_access_pairs
+        .iter()
+        .map(|p| p.response_event.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
 
     ServerContext {
         transport_kind,
@@ -514,6 +605,9 @@ fn build_server_context(
         rpc_pairs,
         fire_forget_events,
         has_fire_forget,
+        field_access_pairs,
+        has_server_put,
+        field_notify_events,
     }
 }
 
