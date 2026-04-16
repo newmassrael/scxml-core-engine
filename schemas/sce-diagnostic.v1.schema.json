@@ -43,6 +43,7 @@
         "validation/wrong-pipeline",
         "validation/dynamic-features",
         "validation/mesh-rpc-reserved-param",
+        "validation/removed-attribute",
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",

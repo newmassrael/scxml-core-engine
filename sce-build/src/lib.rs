@@ -16,7 +16,6 @@
 //   // main.rs
 //   include!(concat!(env!("OUT_DIR"), "/traffic_light_sm.rs"));
 
-pub mod diagnostics;
 pub mod model;
 pub mod parser;
 pub mod analyzer;

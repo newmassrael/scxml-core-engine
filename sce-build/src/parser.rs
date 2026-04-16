@@ -15,10 +15,6 @@ pub struct SCXMLParser {
     hybrid_invoke_counter: u32,
     inline_child_counter: u32,
     send_counter: u32,
-    /// Build-time deprecation notices collected during the current parse.
-    /// Accessed via `deprecation_warnings()`; reset by `clear_diagnostics()`
-    /// when a parser instance is reused across documents.
-    deprecation_warnings: Vec<crate::diagnostics::DeprecationWarning>,
 }
 
 impl SCXMLParser {
@@ -29,23 +25,7 @@ impl SCXMLParser {
             hybrid_invoke_counter: 0,
             inline_child_counter: 0,
             send_counter: 0,
-            deprecation_warnings: Vec::new(),
         }
-    }
-
-    /// Deprecation notices recorded during the most recent parse. The parser
-    /// stores them on itself rather than on `SCXMLModel` so the domain model
-    /// stays focused on generator input — diagnostics are a parse-pass
-    /// artifact with a different lifecycle.
-    pub fn deprecation_warnings(&self) -> &[crate::diagnostics::DeprecationWarning] {
-        &self.deprecation_warnings
-    }
-
-    /// Take ownership of the collected deprecation notices, clearing the
-    /// internal buffer. Useful when the caller wants to surface notices
-    /// through its own aggregated result type without re-allocating.
-    pub fn take_deprecation_warnings(&mut self) -> Vec<crate::diagnostics::DeprecationWarning> {
-        std::mem::take(&mut self.deprecation_warnings)
     }
 
     /// Parse an SCXML file from disk.
@@ -594,7 +574,7 @@ impl SCXMLParser {
 
             // Parse transitions
             for trans_elem in scxml_children(&child, "transition") {
-                let transition = self.parse_transition(&trans_elem, model);
+                let transition = self.parse_transition(&trans_elem, model)?;
                 // Collect event names
                 if !transition.event.is_empty() {
                     let ev = &transition.event;
@@ -611,7 +591,7 @@ impl SCXMLParser {
 
             // Parse onentry blocks
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model);
+                let block = self.parse_executable_content(&entry_elem, model)?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
@@ -619,7 +599,7 @@ impl SCXMLParser {
 
             // Parse onexit blocks
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model);
+                let block = self.parse_executable_content(&exit_elem, model)?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -629,7 +609,7 @@ impl SCXMLParser {
             if let Some(initial_elem) = scxml_child(&child, "initial") {
                 if let Some(initial_trans) = scxml_child(&initial_elem, "transition") {
                     state.initial_transition_actions =
-                        self.parse_executable_content(&initial_trans, model);
+                        self.parse_executable_content(&initial_trans, model)?;
                     if state.initial.is_empty() {
                         if let Some(target) = initial_trans.attribute("target") {
                             state.initial = target.to_string();
@@ -702,13 +682,13 @@ impl SCXMLParser {
             self.document_order_counter += 1;
 
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model);
+                let block = self.parse_executable_content(&entry_elem, model)?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
             }
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model);
+                let block = self.parse_executable_content(&exit_elem, model)?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -739,7 +719,7 @@ impl SCXMLParser {
             self.document_order_counter += 1;
 
             for trans_elem in scxml_children(&child, "transition") {
-                let transition = self.parse_transition(&trans_elem, model);
+                let transition = self.parse_transition(&trans_elem, model)?;
                 if !transition.event.is_empty() {
                     let ev = &transition.event;
                     if ev != "*" && ev != ".*" && ev != "_*" {
@@ -754,13 +734,13 @@ impl SCXMLParser {
             }
 
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model);
+                let block = self.parse_executable_content(&entry_elem, model)?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
             }
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model);
+                let block = self.parse_executable_content(&exit_elem, model)?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -784,7 +764,7 @@ impl SCXMLParser {
             for trans_elem in scxml_children(&child, "transition") {
                 if let Some(target) = trans_elem.attribute("target") {
                     default_target = target.to_string();
-                    default_actions = self.parse_executable_content(&trans_elem, model);
+                    default_actions = self.parse_executable_content(&trans_elem, model)?;
                     break;
                 }
             }
@@ -813,7 +793,8 @@ impl SCXMLParser {
         &mut self,
         elem: &roxmltree::Node,
         model: &mut SCXMLModel,
-    ) -> Transition {
+    ) -> Result<Transition, crate::forge::error::Located<crate::forge::error::ForgeError>>
+    {
         let cond = elem
             .attribute("cond")
             .or_else(|| elem.attribute("expr"))
@@ -862,7 +843,7 @@ impl SCXMLParser {
             ..Default::default()
         };
 
-        transition.actions = self.parse_executable_content(elem, model);
+        transition.actions = self.parse_executable_content(elem, model)?;
 
         // Detect guard conditions requiring script engine and In() predicate
         if !transition.cond.is_empty() && !transition.is_cpp_condition && !transition.is_kt_condition {
@@ -875,21 +856,22 @@ impl SCXMLParser {
             }
         }
 
-        transition
+        Ok(transition)
     }
 
     fn parse_executable_content(
         &mut self,
         parent: &roxmltree::Node,
         model: &mut SCXMLModel,
-    ) -> Vec<Action> {
+    ) -> Result<Vec<Action>, crate::forge::error::Located<crate::forge::error::ForgeError>>
+    {
         let mut actions = Vec::new();
         for child in parent.children() {
-            if let Some(action) = self.parse_executable_content_single(&child, model) {
+            if let Some(action) = self.parse_executable_content_single(&child, model)? {
                 actions.push(action);
             }
         }
-        actions
+        Ok(actions)
     }
 
     fn parse_send_action(
@@ -897,7 +879,7 @@ impl SCXMLParser {
         elem: &roxmltree::Node,
         action: &mut Action,
         model: &mut SCXMLModel,
-    ) {
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         action.event = elem.attribute("event").unwrap_or("").to_string();
         action.eventexpr = elem.attribute("eventexpr").unwrap_or("").to_string();
         action.target = elem.attribute("target").unwrap_or("").to_string();
@@ -992,30 +974,41 @@ impl SCXMLParser {
         }
 
         // SCE_MESH.md §13 path B — SCXML purity: sce:qos / sce:pattern /
-        // sce:reply-event attributes on <send> are not part of the mesh
-        // model. Pattern is inferred from event-name conventions
-        // (pattern.rs) and RPC reply pairing from topology structure. The
-        // attributes are tolerated here with a structured deprecation
-        // warning so third-party documents that still carry them can be
-        // migrated gradually; the values are dropped.
+        // sce:reply-event / sce:reply-timeout / sce:deadline / sce:priority
+        // attributes on <send> were removed. Stage 2 enforcement: presence
+        // of any removed attribute is a hard build error
+        // (`ValidationError::RemovedAttribute`). No migration tolerance
+        // remains — third-party documents must migrate before building
+        // against Session E1 or later.
+        use crate::forge::error::{Located, ValidationError};
         use crate::forge::model::SCE_NAMESPACE;
-        let _ = model; // deprecation notices live on the parser, not the model
-        for deprecated_attr in ["qos", "pattern", "reply-event"] {
-            if elem.attribute((SCE_NAMESPACE, deprecated_attr)).is_some() {
-                self.deprecation_warnings.push(crate::diagnostics::DeprecationWarning {
-                    attribute: format!("sce:{deprecated_attr}"),
-                    event: if action.event.is_empty() {
-                        None
-                    } else {
-                        Some(action.event.clone())
-                    },
-                    reason: "removed by SCE_MESH.md §13 path B — pattern detection now \
-                             uses event-name conventions and RPC reply pairing is \
-                             topology-inferred"
-                        .to_string(),
-                });
+        for removed_attr in [
+            "qos",
+            "pattern",
+            "reply-event",
+            "reply-timeout",
+            "deadline",
+            "priority",
+        ] {
+            if elem.attribute((SCE_NAMESPACE, removed_attr)).is_some() {
+                let pos = elem.document().text_pos_at(elem.range().start);
+                return Err(Located::new(
+                    ValidationError::RemovedAttribute {
+                        attribute: format!("sce:{removed_attr}"),
+                        event: if action.event.is_empty() {
+                            None
+                        } else {
+                            Some(action.event.clone())
+                        },
+                    }
+                    .into(),
+                    &model.name,
+                    Some(pos.row),
+                    Some(pos.col),
+                ));
             }
         }
+        Ok(())
     }
 
     fn parse_if_action(
@@ -1023,7 +1016,7 @@ impl SCXMLParser {
         elem: &roxmltree::Node,
         action: &mut Action,
         model: &mut SCXMLModel,
-    ) {
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         let cond = elem.attribute("cond").unwrap_or("").to_string();
         let mut is_pure_in = false;
         let mut cond_cpp = String::new();
@@ -1079,7 +1072,7 @@ impl SCXMLParser {
                 }
                 _ => {
                     // Parse the nested action
-                    let nested_actions = self.parse_executable_content_single(&child, model);
+                    let nested_actions = self.parse_executable_content_single(&child, model)?;
                     if let Some(nested) = nested_actions {
                         match current_branch {
                             0 => action.then_actions.push(nested),
@@ -1094,15 +1087,19 @@ impl SCXMLParser {
                 }
             }
         }
+        Ok(())
     }
 
     fn parse_executable_content_single(
         &mut self,
         child: &roxmltree::Node,
         model: &mut SCXMLModel,
-    ) -> Option<Action> {
+    ) -> Result<
+        Option<Action>,
+        crate::forge::error::Located<crate::forge::error::ForgeError>,
+    > {
         if !child.is_element() {
-            return None;
+            return Ok(None);
         }
         let tag = local_name(child);
         let mut action = Action {
@@ -1116,7 +1113,7 @@ impl SCXMLParser {
                     model.events.insert(action.event.clone());
                 }
             }
-            "send" => self.parse_send_action(child, &mut action, model),
+            "send" => self.parse_send_action(child, &mut action, model)?,
             "assign" => {
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
@@ -1185,12 +1182,12 @@ impl SCXMLParser {
                 action.array = child.attribute("array").unwrap_or("").to_string();
                 action.item = child.attribute("item").unwrap_or("").to_string();
                 action.index = child.attribute("index").unwrap_or("").to_string();
-                action.actions = self.parse_executable_content(child, model);
+                action.actions = self.parse_executable_content(child, model)?;
             }
-            "if" => self.parse_if_action(child, &mut action, model),
-            _ => return None,
+            "if" => self.parse_if_action(child, &mut action, model)?,
+            _ => return Ok(None),
         }
-        Some(action)
+        Ok(Some(action))
     }
 
     /// W3C SCXML 6.4: Parse `<invoke>` into the typed [`Invoke`] sum.
@@ -1299,7 +1296,7 @@ impl SCXMLParser {
         // Parse <finalize>
         let mut finalize_content = String::new();
         if let Some(finalize_elem) = scxml_child(elem, "finalize") {
-            let finalize_actions = self.parse_executable_content(&finalize_elem, model);
+            let finalize_actions = self.parse_executable_content(&finalize_elem, model)?;
             finalize_content = actions_to_javascript(&finalize_actions);
         }
 
@@ -3889,5 +3886,78 @@ mod tests {
         </scxml>"##;
         let info = first_mesh_rpc_invoke(scxml);
         assert_eq!(info.deadline_ms, Some(50));
+    }
+
+    // ── Session C/D attribute deprecation → Stage 2 hard error ─────
+
+    /// Helper: parse a document and return the first RemovedAttribute
+    /// diagnostic payload. Panics with an explanatory message if the
+    /// parser succeeded (meaning Stage 2 enforcement is broken).
+    fn first_removed_attribute(scxml: &str) -> (String, Option<String>) {
+        use crate::forge::error::{ForgeError, ValidationError};
+        let mut p = SCXMLParser::new();
+        let res = p.parse_string(scxml, "test");
+        let err = match res {
+            Ok(_) => panic!(
+                "parser should reject deprecated sce:* attributes \
+                 as hard errors (got Ok)"
+            ),
+            Err(e) => e,
+        };
+        match err.error {
+            ForgeError::Validation(ValidationError::RemovedAttribute {
+                attribute,
+                event,
+            }) => (attribute, event),
+            other => panic!("expected RemovedAttribute, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn send_with_sce_qos_is_hard_error() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="s">
+            <state id="s">
+                <onentry>
+                    <send event="brake.activate" target="#motor" sce:qos="reliable"/>
+                </onentry>
+            </state>
+        </scxml>"##;
+        let (attr, event) = first_removed_attribute(scxml);
+        assert_eq!(attr, "sce:qos");
+        assert_eq!(event.as_deref(), Some("brake.activate"));
+    }
+
+    #[test]
+    fn send_with_sce_pattern_is_hard_error() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="s">
+            <state id="s">
+                <onentry>
+                    <send event="svc.call" target="#motor" sce:pattern="request"/>
+                </onentry>
+            </state>
+        </scxml>"##;
+        let (attr, _) = first_removed_attribute(scxml);
+        assert_eq!(attr, "sce:pattern");
+    }
+
+    #[test]
+    fn send_with_sce_reply_timeout_is_hard_error() {
+        // reply-timeout was missing from the Stage 1 watch list — Stage 2
+        // picks it up alongside qos/pattern/reply-event/deadline/priority.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="s">
+            <state id="s">
+                <onentry>
+                    <send event="svc.call" target="#motor" sce:reply-timeout="500"/>
+                </onentry>
+            </state>
+        </scxml>"##;
+        let (attr, _) = first_removed_attribute(scxml);
+        assert_eq!(attr, "sce:reply-timeout");
     }
 }

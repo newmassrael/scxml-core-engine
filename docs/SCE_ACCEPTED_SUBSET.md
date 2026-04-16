@@ -296,6 +296,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/wrong-pipeline` | Validation |
 | `validation/dynamic-features` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
+| `validation/removed-attribute` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
 | `expression/unsupported-construct` | Expression |

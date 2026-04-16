@@ -577,7 +577,7 @@ QoS is a **deployment concern**, not a state machine concern. A single SCXML doc
 
 ### Deprecated: SCXML QoS Attributes
 
-`sce:qos`, `sce:deadline`, `sce:priority` (and related `sce:*` send-time attributes) are **removed in Session E1**. Removal is staged (warning first, hard error after all in-tree fixtures migrate); the canonical two-stage policy and full migration map live in §13 "Session C/D attribute deprecation". See there for authoritative wording.
+`sce:qos`, `sce:deadline`, `sce:priority` (and related `sce:*` send-time attributes) are **removed in Session E1**. The parser rejects them as hard errors (`validation/removed-attribute`); the full migration map and the authoritative migration timeline (Stage 1 warning retired, Stage 2 hard error is the current state) live in §13 "Session C/D attribute deprecation". See there for authoritative wording.
 
 ### deploy.yaml QoS (Realization Layer)
 
@@ -1590,6 +1590,60 @@ topology:
 - `custom_tcp` (Session E2 CI reference): conformance-complete, zero external deps.
 - `udp` (planned): conformance-degraded by default; opt-in sequence-id wrapper can lift to complete.
 
+#### 10.4.1 Transport Lifecycle Invariants
+
+Every transport implementation must honour the following lifecycle phases. The generated `TransportRouter` orchestrates these phases — transport authors provide the per-phase implementations.
+
+```
+ ┌──────────┐    init()    ┌───────────┐   connect()  ┌──────────┐
+ │ Created  │ ──────────▶  │ Ready     │ ──────────▶  │ Active   │
+ └──────────┘              └───────────┘              └──────────┘
+                                │                        │    ▲
+                                │ shutdown()             │    │ reconnect()
+                                ▼                        │    │
+                           ┌───────────┐   disconnect() │    │
+                           │ Shutdown  │ ◀──────────────┘    │
+                           └───────────┘                     │
+                                                     ┌──────────────┐
+                                                     │ Disconnected │
+                                                     └──────────────┘
+```
+
+| Phase | Invariant |
+|---|---|
+| **Created → Ready** (`init()`) | Transport allocates resources (session handle, file descriptor, SHM segment). No I/O occurs. Errors are configuration errors, not network errors. |
+| **Ready → Active** (`connect()`) | Transport establishes network presence (TCP connect, SOME/IP offer, Zenoh open). Blocking is permitted for session-shared transports; per-target transports may defer connection to first `send()`. |
+| **Active → Active** (`send(envelope)` / `receive()`) | The four conformance properties (§10.4) apply. `send` returns success or an error that triggers `error.communication`. `receive` delivers envelopes to the engine's external queue via callback. |
+| **Active → Disconnected** (transport fault) | Transport detects loss (TCP RST, SOME/IP availability change, Zenoh disconnect). Must emit `error.communication` with `reason: TRANSPORT_UNAVAILABLE` (§16.7). Enqueued-but-unsent envelopes are failed individually with `reason: SEND_FAILED`. |
+| **Disconnected → Active** (`reconnect()`) | Transparent to SCXML author. Pending RPC correlation entries survive reconnection; the deadline timer (§10.7) is unaffected by transport-layer reconnect. A successful reconnect does NOT raise an event. |
+| **Active/Disconnected → Shutdown** (`shutdown()`) | Transport releases resources. Outstanding RPC entries are cancelled with `reason: INVOKE_CHILD_LOST`. The mesh runtime calls `shutdown()` exactly once per engine lifetime; double-shutdown is a programming error. |
+
+**Best-effort transports** (`conformance: degraded`) relax the `send → error.communication` guarantee: `send` may return success for a payload that is silently dropped. The `Disconnected` state may never be entered if the transport has no connection concept (UDP). These relaxations must be declared in `TransportDescriptor::degraded_aspects`.
+
+#### 10.4.2 Transport Descriptor Interface
+
+`sce-build` reads transport metadata from the single registry (`mesh/transport.rs`). Each transport entry declares:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `shape` | `TransportShape` | Codegen layout: per-target field vs device-shared session. |
+| `capabilities` | `[TransportCapability]` | Supported communication patterns. Build-time validation rejects pattern/transport mismatches (§8.2). |
+| `implemented` | `bool` | Template exists. `false` → build error at codegen stage (not deferred to C++ `#error`). |
+| `required_binding_fields` | `[&str]` | deploy.yaml fields that must be present. `[]` for transports with no binding-level config (local, shm). |
+
+Adding a transport requires exactly **two changes** (Rust registry entry + Jinja2 template block); the template's `#error` fallback catches drift at C++ compile time.
+
+**Future extensions** (E2): `supplies_dedup: bool` (skip dedup layer for inherently-duplicate-free transports), `conformance_level: Complete | Degraded` (validated against deploy.yaml declarations), `max_payload_bytes: Option<usize>` (envelope size validation at build time).
+
+#### 10.4.3 Conformance Verification
+
+A transport is verified against the §10.4 contract by:
+
+1. **Build-time (sce-build)**: Pattern capability check — `TransportDescriptor::capabilities` must include the pattern's required category. Violation is a hard build error.
+2. **Build-time (sce-build)**: Required binding fields — `TransportDescriptor::required_binding_fields` must all be present in deploy.yaml. Violation is `TopologyError::MissingBindingField`.
+3. **Runtime (mesh conformance suite, Session E2)**: The IRP distributed harness (§16.8) runs identical tests over single-process and distributed modes. A transport that drops, reorders, or duplicates events (without dedup suppression) will produce verdict mismatches, surfacing the conformance violation.
+4. **Runtime (seeded fault injection, Session E2)**: Disconnect the transport mid-test. The engine must receive `error.communication` within one macrostep. The test verifies event delivery, `reason` payload, and macrostep boundary compliance.
+
 ### 10.5 Duplicate Suppression
 
 Per-envelope duplicate suppression is a **mesh runtime responsibility**, not a transport-layer one. Runtime maintains a **per-sender recent-id window**:
@@ -2245,13 +2299,13 @@ Degradation is natural and does not require porting work. A user-facing compatib
 
 #### Session C/D attribute deprecation (Session E1 cleanup)
 
-Sessions C and D shipped these `sce:*` attributes on `<send>`. They are **removed in Session E1**. The removal is staged deterministically so migration of in-tree fixtures is tractable:
+Sessions C and D shipped these `sce:*` attributes on `<send>`. They are **removed in Session E1**. The removal went through a staged deterministic migration so in-tree fixtures could be migrated one by one:
 
-**Stage 1 (Session E1 start, transitional)**: parser accepts the attribute, emits **one warning per occurrence** (with file + line), and ignores the attribute value. Build succeeds. This lets Session C/D test fixtures continue to compile while they are migrated one by one.
+**Stage 1 (Session E1 start, transitional)**: parser accepted the attribute, emitted one warning per occurrence (with file + line), and ignored the attribute value. Build succeeded. This let Session C/D test fixtures continue to compile during migration.
 
-**Stage 2 (Session E1 end, after all in-tree fixtures migrated)**: parser **rejects** the attribute as an error. Build fails with a diagnostic pointing to this deprecation table. Third-party documents carrying the attributes must migrate before upgrading.
+**Stage 2 (Session E1 end, current state — `sce-build` HEAD)**: parser **rejects** the attribute as a hard error (`DiagnosticCode::ValidationRemovedAttribute`, `validation/removed-attribute`). Build fails with a diagnostic pointing to this deprecation table. Third-party documents carrying the attributes must migrate before building against Session E1 or later.
 
-§5 QoS summary, §14 deploy.yaml schema, and this table all reference the same two-stage policy. Authors targeting Session E1 or later should read this table as authoritative.
+§5 QoS summary, §14 deploy.yaml schema, and this table all reference the same migration. The Stage 1 warning infrastructure has been removed from `sce-build`; only Stage 2 hard-error enforcement remains. Authors targeting Session E1 or later should read this table as authoritative.
 
 | Shipped attribute | Removed in | Replacement |
 |---|---|---|
@@ -2371,6 +2425,9 @@ topology:
             # external config. Never inline numeric IDs.
             service: <name>              # someip: resolves to service_id + instance_id
             key: <zenoh key expr>        # zenoh: literal key (no external resolution needed)
+            codec: json | cbor | typed | raw  # optional; default 'json'. See "Codec schema
+                                              # gate" below — `typed` requires per-event
+                                              # schema in events.yaml.
             events:
               "<scxml event name>":
                 method: <name>           # someip: resolves to method_id
@@ -2467,6 +2524,67 @@ When `partitions:` is present:
 3. **Distributability check**: each partition boundary is validated against the Parallel Region Distributability rule (§16.3) and Cross-Region Transition rule (§16.4). Violations fail the build in strict mode or auto-merge in permissive mode.
 4. **Transport binding**: inter-partition events (between pieces of the same machine) travel over `transport_binding`. Default is `shm` if all partitions run on the same device; otherwise `custom_tcp` (Session E reference).
 5. **Synthesized machines**: `<invoke type="scxml">` inline `<content>` produces machine `<parent>__sce_synth_invoke__<id>` (§9.6.6). It follows the same partition rules as named peers and may be placed in any partition. The reserved `__sce_synth_invoke__` infix is checked at build time against author-declared machine ids; a collision is a hard error. A synthesized machine's parent's partition assignment **does not** auto-propagate — the synthesized machine must be either explicitly assigned or placed in a default partition per rule 2.
+
+6. **Uniqueness of partition names**: Partition names are globally unique across the deployment. A duplicate `partitions.<name>:` is a deploy.yaml parse error (`deny_unknown_fields` catches it on re-insert). Partition names double as process identities at runtime; uniqueness is required for log correlation and the IRP harness (§16.8) to map partitions to OS processes.
+
+7. **Single-device per partition**: A partition occupies exactly one device (its `device:` field). A single partition cannot span multiple devices — that would require cross-device transport for the partition's internal membership, which contradicts the partition abstraction (a partition is the unit of single-process execution). Cross-device splits are expressed as multiple partitions, one per device.
+
+8. **Unit-to-partition uniqueness**: Every orthogonal unit (parallel region, invoke) appears in **at most one** partition's `contains:` block. A unit listed in two partitions is a hard build error, citing both partition names. The analyzer emits the unit's canonical path (`<machine>/<region>` or `<machine>/<invoke_id>`) so authors can locate the collision precisely.
+
+9. **Machine-membership consistency**: A partition's `contains:` entries must reference only machines listed in its `machines:` field. Listing `contains.parallel_regions[*].machine: X` while `machines: [Y]` is a hard build error. This prevents one partition from reaching into another's address space.
+
+10. **Empty partitions**: A partition with `contains:` omitted or fully empty is a hard build error. Empty partitions have no runtime purpose and usually indicate a copy-paste error. Authors who want a reserved partition with no initial units must add a placeholder comment and a dummy unit (which itself must exist).
+
+11. **Nested parallel partitioning**: Inner-region units of a nested `<parallel>` (§16.3) follow the same partition rules independently. An outer region assigned to partition `P_outer` may contain an inner region assigned to `P_inner`; the inner region then runs in `P_inner`'s process, while `P_outer` retains the outer region's non-inner-parallel states. The two partitions communicate via `transport_binding`.
+
+### Pattern override grammar
+
+The `patterns:` block under each machine declares explicit pattern classification for events whose names fall outside the inference conventions (§8.1). Formally:
+
+```
+patterns ::= { event_name → pattern_override }*
+pattern_override ::=
+  { kind: PatternKind, paired_with?: event_name }
+
+PatternKind ::= RpcRequest | RpcReply | FireForget
+              | EventSubscribe | EventUnsubscribe | EventNotify
+              | FieldRead | FieldWrite | FieldNotify
+```
+
+**Resolution**: An event's pattern is resolved in this precedence order:
+
+1. **Inference (highest authority)**: If the event name matches a convention prefix (`service.request.*`, `service.response.*`, `event.notification.*`, `field.get.*`, `field.set.*`, `field.notify.*`, `event.subscribe.*`, `event.unsubscribe.*`), the pattern is fixed by inference. A `patterns:` entry that declares a **different** `kind:` for the same event is a hard build error (`kind override of inferred pattern`).
+2. **Explicit override**: If the event name does not match any convention prefix, the `patterns:` entry's `kind:` applies. Absence of a `patterns:` entry for such an event means `kind: FireForget`.
+
+**`paired_with` semantics**:
+- **Required**: when `kind: RpcRequest` AND the event name is not `service.request.X` (i.e., the default mirror pairing cannot apply). Absence is a hard build error (`RpcRequest without paired_with outside convention`).
+- **Rejected**: on any `kind:` other than `RpcRequest`. Presence is a hard build error.
+- **Referent**: `paired_with` must name an event that either (a) appears in the same machine's SCXML as a `<transition event="...">` or (b) has a `patterns:` entry with `kind: RpcReply`. Unresolved referents are a hard build error (`paired_with target not found`).
+- **Same-target constraint**: the RpcReply event must be received from the SAME transport target as the RpcRequest's `<send target>`. Cross-target pairing (request to `#A`, reply from `#B`) is not supported in E1 — it would require an RPC routing table the engine does not maintain. Cross-target RPC is a deferred capability (Phase 4).
+
+**Overlap with inference**: if `paired_with` names an event whose own pattern is inferred as something other than `RpcReply` (e.g., `field.notify.X` which infers as `FieldNotify`), the build fails with `paired_with target has incompatible inferred kind`. The author must either rename the reply event to match the `service.response.*` mirror or declare both via `patterns:` entries that are consistent.
+
+**Worked example**: an author models a request/response where the reply event carries a value-oriented name:
+
+```yaml
+patterns:
+  "service.request.compute_force":
+    # inferred: RpcRequest. paired_with required because mirror name doesn't match.
+    paired_with: "force.computed"
+  "force.computed":
+    kind: RpcReply         # explicit: not inferrable from the name
+```
+
+### Codec schema gate
+
+`codec:` selects the payload serialization (envelope framing is always CBOR per §13). Allowed values: `json` (default), `cbor`, `typed`, `raw`.
+
+- `json`, `cbor`, `raw`: payload is opaque bytes to sce-build; no schema required.
+- `typed`: payload is a compact binary encoding generated by sce-build from an event schema. **Schema declaration is REQUIRED.**
+
+**Rule**: When a binding declares `codec: typed`, every event sent or received on that binding MUST have a schema declared under `events.yaml:<event_name>.schema`. Absence is a hard build error (`TopologyError::TypedCodecMissingSchema`). This prevents silent codec fallback — a missing schema would otherwise force sce-build to degrade to JSON, producing a codec tag mismatch between the two endpoints.
+
+The rule is applied per-event, not per-binding: a binding may carry a mix of events where only some use the typed codec (via per-event override — future capability); the typed events must all have schemas, the others may omit them.
 
 ### Example: IRP distributed conformance harness
 
@@ -3037,6 +3155,12 @@ Emitted constraints are matched against `deploy.yaml partitions:`. If a constrai
 - **Strict mode** (`distributability: strict` in deploy.yaml): build fails with a diagnostic naming the regions and the offending data/target.
 - **Permissive mode** (default): the named regions are silently merged into a single partition (the one with the lowest sort-ordered name). A build-log notice is emitted.
 
+**Nested `<parallel>`**: R1-R4 apply at every `<parallel>` element independently. An inner parallel's regions are analysed against inner `<data>` scope AND all ancestor scopes including the outer parallel's regions. The analyzer walks `<parallel>` elements depth-first; inner violations can force outer-region merges (e.g., an inner region writes ancestor data → its enclosing outer region must share a partition with any sibling outer region that writes the same data).
+
+**`<invoke>` as a distribution axis**: Each `<invoke>` in a machine is a distinct orthogonal unit under §14 — it may be assigned to its own partition. `<invoke>` inside a `<parallel>` region is analysed twice: (1) as an invoke unit in §14 partition coverage, (2) under R1/R2 only for the writes the invoke performs on the parent's datamodel via `<finalize>` (§9.6.4). An invoke whose `<finalize>` writes an ancestor-scope data location counts as a writer for R1 purposes, contributed to the partition hosting the invoking state.
+
+**`<data>` initialization ordering**: R1 applies to the **lifetime** of the parallel activation — initializer writes at parallel entry count as writes for R1 purposes. A `<data>` initialized from an ancestor-scope expression inside one region (e.g., `<data id="local" expr="shared + 1"/>`) is treated as a **read** of `shared`, subject to R3 snapshot semantics.
+
 ### 16.4 Cross-region transition auto-merge
 
 When (R2) is violated under permissive mode (the default), the two or more regions transitively connected by cross-region transitions are merged into one partition:
@@ -3069,21 +3193,29 @@ Each region partition maintains its own `<history>` states locally. On parallel 
 
 ### 16.7 `error.communication` raise policy
 
-Runtime conditions that raise `error.communication` with specific `reason` payload:
+Runtime conditions that raise `error.communication`. Each condition pins a machine-readable `reason` code and the `_event.data` shape that carries it (extends §10.6.1 base schema).
 
-| Condition | `reason` |
-|---|---|
-| Transport connect/reconnect failure | `TRANSPORT_UNAVAILABLE` |
-| Envelope send returns error from transport API | `SEND_FAILED` |
-| Reliable transport unable to deliver after configured retries | `DELIVERY_EXHAUSTED` |
-| Inbound envelope deserialization fails | `ENVELOPE_CORRUPT` |
-| Invoke child device unreachable | `INVOKE_CHILD_LOST` |
-| Parallel barrier timeout (§16.5) | `PARALLEL_BARRIER_TIMEOUT` |
-| Envelope dedup window overflow (extremely high rate, window exhausted) | `DEDUP_WINDOW_OVERFLOW` |
+| # | Condition | `reason` | Extra `_event.data` fields |
+|---|---|---|---|
+| 1 | Transport connect or reconnect failure | `TRANSPORT_UNAVAILABLE` | `transport: string`, `target: string` |
+| 2 | Envelope `send()` returns error from transport API | `SEND_FAILED` | `transport: string`, `target: string`, `transport_error: string` |
+| 3 | Reliable transport unable to deliver after configured retries | `DELIVERY_EXHAUSTED` | `transport: string`, `target: string`, `attempts: int` |
+| 4 | Inbound envelope deserialization / schema validation fails | `ENVELOPE_CORRUPT` | `transport: string`, `codec: "cbor" \| "json" \| "typed" \| "raw"`, `position?: int` |
+| 5 | Invoke child device unreachable (transport-level) | `INVOKE_CHILD_LOST` | `invoke_id: string`, `target: string` |
+| 6 | Remote invoke did not reply within `_mesh_deadline_ms` | `INVOKE_DEADLINE_EXCEEDED` | `invoke_id: string`, `target: string`, `deadline_ms: int` |
+| 7 | Parallel barrier timeout (§16.5) | `PARALLEL_BARRIER_TIMEOUT` | `parallel_id: string`, `missing_regions: [string]`, `timeout_ms: int` |
+| 8 | Envelope dedup window overflow (sustained rate exceeds window capacity) | `DEDUP_WINDOW_OVERFLOW` | `source: string`, `window_size: int` |
+| 9 | Network partition detected (peer heartbeat or liveness probe fail) | `PEER_PARTITIONED` | `target: string`, `last_seen_ms_ago: int` |
+| 10 | Transport backpressure queue full, outbound envelope dropped | `BACKPRESSURE_DROP` | `transport: string`, `target: string`, `queue_depth: int` |
+| 11 | Peer rejected envelope due to authorization failure | `UNAUTHORIZED` | `target: string`, `transport_status?: string` |
 
-`error.communication` is always raised into the affected machine's external queue, delivered at the next macrostep. The `_event.data` field carries `{ reason, envelope_id?, source?, sendid? }` for author-level diagnosis.
+**Common fields (§10.6.1 baseline)**: `errorName: "communication"`, `reason: <one of above>`, `detail?: string`, `source?: string` (envelope `source` field for inbound conditions), `sendid?: string`, `envelope_id?: string`, `invoke_id?: string`. These are always available when relevant; the table above lists condition-specific additional fields.
 
-`error.execution` events arising from invoke setup (§9.3) or document-level faults retain their standard semantics; distribution does not synthesize new `error.execution` occurrences beyond what a single-process engine would raise.
+**Delivery semantics**: `error.communication` is raised into the affected machine's external queue (W3C §5.10) and delivered at the next macrostep boundary. Multiple conditions observed within a single microstep produce multiple events (one per condition); coalescing is not permitted because authors rely on one-to-one condition-to-event mapping.
+
+**Scope of synthesis**: `error.execution` events arising from invoke setup (§9.3) or document-level faults retain their W3C-standard semantics. Distribution does NOT synthesize new `error.execution` occurrences beyond what a single-process engine would raise — the only new event class distribution introduces is `error.communication` from the catalogue above.
+
+**Unknown transport errors**: A transport impl MUST map native errors to one of the catalogue reasons. Unclassifiable errors map to `SEND_FAILED` with `transport_error` carrying the raw transport-native string; `detail` carries a human-readable description. The catalogue is closed at this section — new reasons require a spec revision.
 
 ### 16.8 Conformance test harness
 

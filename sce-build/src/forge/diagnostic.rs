@@ -307,6 +307,8 @@ pub enum DiagnosticCode {
     ValidationDynamicFeatures,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
+    #[serde(rename = "validation/removed-attribute")]
+    ValidationRemovedAttribute,
 
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
@@ -503,6 +505,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationWrongPipeline,
         ValidationDynamicFeatures,
         ValidationMeshRpcReservedParam,
+        ValidationRemovedAttribute,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -667,6 +670,9 @@ impl DiagnosticCode {
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam => Some("SCE Mesh §9.5"),
 
+            // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
+            ValidationRemovedAttribute => Some("SCE Mesh §13"),
+
             // ── Mesh build pipeline (SCE_MESH.md §7) ─────────────
             MeshCodegenUnsupportedLanguage => Some("SCE Mesh §7"),
 
@@ -769,6 +775,7 @@ impl DiagnosticCode {
             ValidationWrongPipeline => "validation/wrong-pipeline",
             ValidationDynamicFeatures => "validation/dynamic-features",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
+            ValidationRemovedAttribute => "validation/removed-attribute",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
@@ -1252,6 +1259,33 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(param.clone()),
             fix: None,
             key_fragments: vec![param.clone(), detail.clone()],
+        },
+        ValidationError::RemovedAttribute { attribute, event } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationRemovedAttribute,
+            stage: Stage::Validation,
+            // `actual` carries the removed attribute name (including
+            // its `sce:` prefix) so agents can target the exact
+            // syntax node. The repair is "remove the attribute" —
+            // deterministic enough to emit as a `RemoveFields`
+            // structured fix. `location` uses `<send>` with the
+            // event hint when available so consumers can disambiguate
+            // which `<send>` to repair.
+            expected: None,
+            actual: Some(attribute.clone()),
+            fix: Some(Fix::RemoveFields {
+                location: match event {
+                    Some(ev) => format!("<send event=\"{ev}\">"),
+                    None => "<send>".to_string(),
+                },
+                fields: vec![attribute.clone()],
+            }),
+            key_fragments: {
+                let mut k = vec![attribute.clone()];
+                if let Some(ev) = event {
+                    k.push(ev.clone());
+                }
+                k
+            },
         },
     }
 }
@@ -1927,6 +1961,15 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:ea4f2baf300b7c54","code":"validation/mesh-rpc-reserved-param","stage":"validation","spec":"SCE Mesh §9.5","message":"<invoke type=\"sce:mesh-rpc\">: required <param name=\"_mesh_event\"> is missing (param '_mesh_event')","actual":"_mesh_event"}"#,
+            ),
+            (
+                "forge/removed-attribute",
+                ValidationError::RemovedAttribute {
+                    attribute: "sce:qos".into(),
+                    event: Some("brake.activate".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:79f17de8d89256c7","code":"validation/removed-attribute","stage":"validation","spec":"SCE Mesh §13","message":"deprecated attribute sce:qos on <send event=\"brake.activate\"> was removed in SCE Mesh §13 path B; pattern is now inferred from event-name conventions and RPC reply pairing from topology structure. Remove the attribute.","actual":"sce:qos","fix":{"kind":"remove_fields","location":"<send event=\"brake.activate\">","fields":["sce:qos"]}}"#,
             ),
             (
                 "forge/expression-empty",
@@ -2722,6 +2765,7 @@ mod tests {
             | ValidationWrongPipeline
             | ValidationDynamicFeatures
             | ValidationMeshRpcReservedParam
+            | ValidationRemovedAttribute
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -2990,6 +3034,7 @@ mod tests {
                 | ValidationEmptyValue | ValidationSingletonViolation
                 | ValidationRequireEither | ValidationWrongPipeline
                 | ValidationDynamicFeatures | ValidationMeshRpcReservedParam
+                | ValidationRemovedAttribute
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
@@ -3034,9 +3079,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            86,
+            87,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 86 distinct variants to match the DiagnosticCode \
+             expected 87 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

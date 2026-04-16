@@ -294,6 +294,21 @@ pub enum ValidationError {
     /// follows the existing precedent of `IncompatibleAttributes`.
     #[error("<invoke type=\"sce:mesh-rpc\">: {detail} (param '{param}')")]
     MeshRpcReservedParam { param: String, detail: String },
+
+    /// An SCXML attribute removed by SCE Mesh §13 path B still appears
+    /// on a `<send>`. The Stage 1 migration window (parse-tolerant
+    /// warning) is closed in Session E1; presence of the attribute is
+    /// now a hard build error.
+    ///
+    /// `attribute` names the offending attribute including its
+    /// `sce:` prefix (e.g. `sce:qos`); `event` carries the `<send
+    /// event="...">` value when present for locator context.
+    #[error("deprecated attribute {attribute} on <send{}> was removed in SCE Mesh §13 path B; pattern is now inferred from event-name conventions and RPC reply pairing from topology structure. Remove the attribute.",
+             match event { Some(ev) => format!(" event=\"{ev}\""), None => String::new() })]
+    RemovedAttribute {
+        attribute: String,
+        event: Option<String>,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────
