@@ -447,6 +447,7 @@ private:
     MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §9.5: mesh-rpc exit / cancel hook
+    std::string currentEventInvokeId_;  // SCE Mesh §9.5: invokeId of event being processed
     SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
 protected:
@@ -491,7 +492,8 @@ public:
         // the target attribute, which meant mesh-declared targets silently
         // hit the external queue instead of the mesh callback.
         EventWithMetadata meta(event, eventData, origin, "", "external",
-                               SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+                               SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE,
+                               currentEventInvokeId_);
         meta.target = target;
         raiseExternal(meta);
     }
@@ -712,6 +714,7 @@ protected:
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             internalAdapter, [this](const EventWithMetadata &eventWithMeta) {
                 Event event = eventWithMeta.event;
+                currentEventInvokeId_ = eventWithMeta.invokeId;
                 SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
 
@@ -740,6 +743,7 @@ protected:
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             externalAdapter, [this](const EventWithMetadata &eventWithMeta) {
                 Event event = eventWithMeta.event;
+                currentEventInvokeId_ = eventWithMeta.invokeId;
                 SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
 
@@ -955,12 +959,8 @@ public:
      * `pendingEventInvokeId_` field (`datamodel="null"` machines that never
      * touch `_event.invokeid`), keeping non-metadata policies lean.
      */
-    [[nodiscard]] std::string currentEventInvokeId() const {
-        if constexpr (SCE::Common::detail::has_pendingEventInvokeId<StatePolicy>::value) {
-            return policy_.pendingEventInvokeId_;
-        } else {
-            return {};
-        }
+    [[nodiscard]] const std::string& currentEventInvokeId() const {
+        return currentEventInvokeId_;
     }
 
     /**
