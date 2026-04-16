@@ -869,17 +869,21 @@ pub fn compile_mesh_transport(
     // source filename matching when the deploy.yaml key uses the SCXML
     // name attribute (e.g., deploy.yaml has "motor:" but the file stem
     // is "motor_someip_multi").
-    let effective_machine_name = deploy_cfg
-        .device_for_machine(&model.name)
-        .and_then(|d| d.machines.get(&model.name))
-        .map(|_| model.name.clone())
-        .or_else(|| deploy_cfg.find_machine_name_by_source(&model.name))
-        .unwrap_or_else(|| model.name.clone());
+    // Machine lookup: try model.name (file stem) first, fall back to
+    // source filename when the deploy.yaml key uses the SCXML name
+    // attribute (e.g., deploy.yaml "motor:" but file stem "motor_someip_multi").
+    let effective_machine_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
+        model.name.clone()
+    } else {
+        deploy_cfg
+            .find_machine_name_by_source(&model.name)
+            .unwrap_or_else(|| model.name.clone())
+    };
 
-    let machine_cfg = deploy_cfg
+    let server_config = deploy_cfg
         .device_for_machine(&effective_machine_name)
-        .and_then(|d| d.machines.get(&effective_machine_name));
-    let server_config = machine_cfg.and_then(|m| m.server.as_ref());
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .and_then(|m| m.server.as_ref());
 
     let server_pairs = mesh::topology::detect_server_pairs(model);
     let server_binding = if let Some(srv_cfg) = server_config {

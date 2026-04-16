@@ -682,53 +682,10 @@ fn resolve_server_config(
     }))
 }
 
-impl ExternalResolution {
-    /// Look up server-side service IDs for a SOME/IP server machine.
-    pub fn resolve_server_service(
-        &self,
-        machine_name: &str,
-        _service_name: &str,
-    ) -> Result<SomeipServiceIds, ExternalConfigError> {
-        self.server_bindings
-            .get(machine_name)
-            .map(|r| r.service_ids)
-            .ok_or_else(|| ExternalConfigError::NamedReferenceWithoutConfig {
-                machine: machine_name.to_string(),
-                device: String::new(),
-                target: "#_server".to_string(),
-            })
-    }
-
-    /// Look up a server-side method ID for a specific event.
-    pub fn resolve_server_method(
-        &self,
-        machine_name: &str,
-        _service_name: &str,
-        _method_name: &str,
-    ) -> Result<u16, ExternalConfigError> {
-        let resolution = self
-            .server_bindings
-            .get(machine_name)
-            .ok_or_else(|| ExternalConfigError::NamedReferenceWithoutConfig {
-                machine: machine_name.to_string(),
-                device: String::new(),
-                target: "#_server".to_string(),
-            })?;
-        // Find the method_id from the per-event resolution (any event
-        // that resolved to a Method variant). The caller's method_name
-        // is the same one that was resolved during resolve_server_config.
-        for ids in resolution.by_event.values() {
-            if let SomeipEventIds::Method { method_id } = ids {
-                return Ok(*method_id);
-            }
-        }
-        Err(ExternalConfigError::NamedReferenceWithoutConfig {
-            machine: machine_name.to_string(),
-            device: String::new(),
-            target: "#_server".to_string(),
-        })
-    }
-}
+// ExternalResolution convenience methods removed: resolve_server_service
+// and resolve_server_method had no callers. topology::resolve_server_binding
+// reads server_bindings directly — adding a method layer on top would be
+// an unused abstraction (feedback: built-but-unconsumed).
 
 // ── Tests ────────────────────────────────────────────────────
 

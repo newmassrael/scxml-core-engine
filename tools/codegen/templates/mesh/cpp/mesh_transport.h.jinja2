@@ -1144,14 +1144,13 @@ struct TransportRouter {
         server_app_->send(response);
         return true;
 {% elif has_server_zenoh %}
-        zenoh::Query stored_query(nullptr);
-        {
-            std::lock_guard<std::mutex> lock(server_pending_mutex_);
-            auto it = pending_server_queries_.find(ckey);
-            if (it == pending_server_queries_.end()) return false;
-            stored_query = std::move(it->second);
-            pending_server_queries_.erase(it);
-        }
+        std::lock_guard<std::mutex> lock(server_pending_mutex_);
+        auto it = pending_server_queries_.find(ckey);
+        if (it == pending_server_queries_.end()) return false;
+        // Move the Query out and erase before reply — the query
+        // handle is valid until reply() consumes it.
+        auto stored_query = std::move(it->second);
+        pending_server_queries_.erase(it);
         auto buf = SCE::Mesh::encodeEnvelope(env);
         stored_query.reply(zenoh::KeyExpr(ZENOH_SERVER_KEY),
                            zenoh::Bytes(std::move(buf)));
