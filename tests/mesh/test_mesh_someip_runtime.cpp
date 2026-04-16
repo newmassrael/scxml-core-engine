@@ -38,38 +38,19 @@
 #include "motor_someip_multi_transport.h"
 
 #include "MeshTestUtils.h"
+#include "SomeipTestUtils.h"
 #include "mesh/MeshDispatch.h"
 
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
-#include <filesystem>
 #include <mutex>
 #include <string>
-#include <system_error>
 #include <thread>
 
 namespace {
 
 using namespace SCE::Test::Mesh;
-
-// Wipe any stale vsomeip local endpoints left behind by prior runs that
-// crashed or were killed. vsomeip's routing manager refuses to bind when
-// a previous socket owner is gone but the path survives. Using the
-// filesystem API (not system("rm")) keeps the test hermetic with no
-// shell dependency. Errors from missing/already-unlinked files are
-// ignored — the goal is "no stale socket remains", not "delete a known
-// set of files".
-void wipe_stale_vsomeip_sockets() {
-    std::error_code ec;
-    for (const auto& entry : std::filesystem::directory_iterator("/tmp", ec)) {
-        if (ec) return;
-        const auto name = entry.path().filename().string();
-        if (name.rfind("vsomeip-", 0) == 0) {
-            std::filesystem::remove(entry.path(), ec);
-        }
-    }
-}
 
 int run_test() {
     namespace brake_gen = SCE::Generated::brake_someip_multi;

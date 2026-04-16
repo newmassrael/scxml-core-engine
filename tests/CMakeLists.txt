@@ -1907,6 +1907,43 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             TIMEOUT 30
             RESOURCE_LOCK vsomeip_routing_socket
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
+        # ── Session I: engine-driven RPC/FieldRead over SOME/IP ──────
+        # Sibling to mesh_someip_runtime — binds the real motor_someip_multi
+        # SM to TransportRouter and drives it with a step() pump so the
+        # reply is produced by the engine's onentry <raise> and codegen-
+        # injected <send>. Brake stays on TestSenderEngine (test harness
+        # observing the reply, not system under test).
+        add_executable(mesh_someip_rpc_engine_driven_test
+            mesh/test_mesh_someip_rpc_engine_driven.cpp
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
+        )
+
+        target_include_directories(mesh_someip_rpc_engine_driven_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_MULTI_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_rpc_engine_driven_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_rpc_engine_driven_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_rpc_engine_driven_test)
+        add_test(NAME mesh_someip_rpc_engine_driven
+                 COMMAND mesh_someip_rpc_engine_driven_test)
+        set_tests_properties(mesh_someip_rpc_engine_driven PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK vsomeip_routing_socket
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
     endif()
@@ -2191,6 +2228,44 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         add_test(NAME mesh_zenoh_rpc_e2e
                  COMMAND mesh_zenoh_rpc_e2e_test)
         set_tests_properties(mesh_zenoh_rpc_e2e PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_multi_port_17447
+        )
+
+        # ── Session I: engine-driven RPC/FieldRead over Zenoh ─────────
+        # Unlike mesh_zenoh_server_runtime (TestSenderEngine recorder +
+        # manual handleServerResponse), this test binds the real
+        # motor_zenoh_multi SM to TransportRouter and drives it with a
+        # step() pump thread. The engine's onentry <raise> and codegen-
+        # injected <send> are what produce the reply — any regression in
+        # that chain (raise suppression, invoke_id propagation,
+        # resolvePattern → RpcReply mis-routing, handleServerResponse
+        # correlation key mismatch) surfaces here.
+        add_executable(mesh_zenoh_rpc_engine_driven_test
+            mesh/test_mesh_zenoh_rpc_engine_driven.cpp
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_rpc_engine_driven_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_MULTI_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_rpc_engine_driven_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_rpc_engine_driven_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_rpc_engine_driven_test)
+        add_test(NAME mesh_zenoh_rpc_engine_driven
+                 COMMAND mesh_zenoh_rpc_engine_driven_test)
+        set_tests_properties(mesh_zenoh_rpc_engine_driven PROPERTIES
             TIMEOUT 30
             RESOURCE_LOCK zenoh_multi_port_17447
         )
