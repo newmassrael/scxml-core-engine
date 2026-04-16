@@ -14,8 +14,8 @@
             <param name="_mesh_event" expr="'service.request.compute_force'"/>
             <param name="_mesh_deadline_ms" expr="50"/>
         </invoke>
-        <transition event="done.invoke.*" target="ok"/>
-        <transition event="error.invoke.*" target="failed"/>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
     </state>
     <final id="ok"/>
     <final id="failed"/>

@@ -1403,6 +1403,22 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         VERBATIM
     )
 
+    # motor_invoke_transport.h: generated from the same deploy file so
+    # the §9.5 round-trip test can host two linked routers in-process.
+    # The deploy YAML declares a motor_invoke → #brake_invoke local
+    # binding; without this rule, the receiver side of the round-trip
+    # has no TransportRouter class to instantiate.
+    add_custom_command(
+        OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
+        DEPENDS "${MESH_TEST_DIR}/motor_invoke.scxml" "${MESH_TEST_DIR}/deploy_invoke.yaml"
+                "${MESH_TEST_DIR}/brake_invoke.scxml"
+                "${SCE_CODEGEN}" "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+        COMMENT "Mesh: Generating motor_invoke_transport.h (§9.5 invoke reply path)"
+        VERBATIM
+    )
+
     add_executable(mesh_invoke_compile_test
         mesh/test_mesh_invoke_compile.cpp
         "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
@@ -1427,6 +1443,38 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     apply_sce_test_policies(mesh_invoke_compile_test)
 
     add_test(NAME mesh_invoke_compile_verification COMMAND mesh_invoke_compile_test)
+
+    # Round-trip runtime verification: exercises mesh-rpc end-to-end with
+    # two linked routers in-process so an integration-level regression
+    # (silent drop of auto-propagated _event.invokeid, dispatchToSender
+    # not reached via linkTo, InvokeCorrelation not firing done.invoke)
+    # surfaces here as brake stuck outside State::Ok. Separate TU from
+    # the compile-only fixture so the two failure modes stay distinguishable.
+    add_executable(mesh_invoke_rpc_runtime_test
+        mesh/test_mesh_invoke_rpc_runtime.cpp
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
+    )
+
+    target_include_directories(mesh_invoke_rpc_runtime_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_INVOKE_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_invoke_rpc_runtime_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_invoke_rpc_runtime_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_invoke_rpc_runtime_test)
+
+    add_test(NAME mesh_invoke_rpc_runtime_verification COMMAND mesh_invoke_rpc_runtime_test)
 
     # ── Phase 2: shm_transport compile verification ──────────────
     set(MESH_SHM_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_shm_generated")

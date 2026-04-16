@@ -1,7 +1,7 @@
-# SCE Mesh §9.5 — local-transport binding for brake_invoke's mesh-rpc invoke.
-# Motor has no bindings (receiver-only); this fixture verifies sender-side
-# transport emission — the generated brake_invoke_transport.h must expose
-# invokeMeshRpc / cancelMeshRpc / InvokeCorrelation / MeshDeadlineScheduler.
+# SCE Mesh §9.5 — local-transport bindings for the mesh-rpc round-trip
+# fixture. Both machines declare each other as local targets so codegen
+# emits TransportRouter classes for each, and the runtime test linkTo-s
+# the two so reply envelopes route through the caller's InvokeCorrelation.
 version: "1.0"
 topology:
   ecu1:
@@ -13,3 +13,6 @@ topology:
             transport: local
       motor_invoke:
         source: motor_invoke.scxml
+        bindings:
+          "#brake_invoke":
+            transport: local

@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Receiver counterpart for brake_invoke's mesh-rpc invoke. Exposes a
-     transition for the request event name so the sender's event-coverage
-     validator accepts the <send>. No bindings on this machine — the
-     fixture verifies sender-side transport emission only. -->
+<!-- Receiver counterpart for brake_invoke's mesh-rpc invoke. The request
+     event drives a transition into `replying`, whose onentry emits the
+     paired response event back to the caller. Used by the §9.5 round-trip
+     runtime test plus the sender-side compile fixture. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="null" name="motor_invoke" initial="ready">
     <state id="ready">
-        <transition event="service.request.compute_force" target="ready"/>
+        <transition event="service.request.compute_force" target="replying"/>
+    </state>
+    <state id="replying">
+        <onentry>
+            <send target="#brake_invoke" event="service.response.compute_force"/>
+        </onentry>
     </state>
 </scxml>
