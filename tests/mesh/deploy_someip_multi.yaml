@@ -29,6 +29,10 @@ topology:
               # the paired event.unsubscribe.status binding automatically)
               "event.subscribe.status":
                 event_group: status_group
+              # Eventgroup subscribe for server-initiated field.notify
+              # (Session J). Client receives spontaneous notifications.
+              "event.subscribe.speed":
+                event_group: speed_group
               # Field read -> getter method
               "field.get.vehicle_speed":
                 getter: get_vehicle_speed
@@ -62,3 +66,10 @@ topology:
               getter: get_vehicle_speed
             "field.set.target_speed":
               setter: set_target_speed
+            # Eventgroup notification (SCE_MESH.md §8.1): server-initiated
+            # field.notify push to all subscribed clients. Coexists with
+            # the FieldNotify piggyback reply path (Session H) — the mesh
+            # send callback discriminates by correlation_id presence at
+            # runtime. SOME/IP: offer_event + notify. event_id >= 0x8000.
+            "field.notify.vehicle_speed":
+              event_group: speed_group

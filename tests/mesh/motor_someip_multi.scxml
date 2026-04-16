@@ -33,6 +33,15 @@
         <transition event="field.get.vehicle_speed" target="ready">
             <raise event="field.notify.vehicle_speed"/>
         </transition>
+        <!-- Session J: spontaneous eventgroup notification. A sensor
+             update triggers a field.notify without any preceding
+             getter/setter request. inject_server_response_sends appends
+             a synthetic <send>; the mesh send callback routes it through
+             publishEventgroupNotify (SOME/IP offer_event + notify)
+             because handleServerResponse finds no pending request. -->
+        <transition event="sensor.update" target="ready">
+            <raise event="field.notify.vehicle_speed"/>
+        </transition>
     </state>
     <state id="computing">
         <onentry>

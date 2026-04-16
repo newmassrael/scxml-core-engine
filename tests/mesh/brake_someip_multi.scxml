@@ -27,6 +27,10 @@
             <send target="#motor" event="service.request.compute_force"/>
             <!-- EventSubscribe: app.request_event + app.subscribe on event group -->
             <send target="#motor" event="event.subscribe.status"/>
+            <!-- EventSubscribe for server-initiated field notification
+                 (Session J eventgroup). Subscribes to speed_group so the
+                 client receives spontaneous field.notify.vehicle_speed. -->
+            <send target="#motor" event="event.subscribe.speed"/>
             <!-- FieldWrite: app.send(request) to setter method -->
             <send target="#motor" event="field.set.target_speed"/>
             <!-- FieldRead: app.send(request) to getter method -->

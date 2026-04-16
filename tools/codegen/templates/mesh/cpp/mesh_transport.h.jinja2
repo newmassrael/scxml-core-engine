@@ -253,6 +253,10 @@ static constexpr vsomeip::method_t SOMEIP_SERVER_GETTER_{{ fa.event_const }} = {
 static constexpr vsomeip::method_t SOMEIP_SERVER_SETTER_{{ fa.event_const }} = {{ fa.method_id }};
 {% endif %}
 {% endfor %}
+{% for eg in server.eventgroup_events if eg.event_group_id %}
+static constexpr vsomeip::eventgroup_t SOMEIP_SERVER_EVENTGROUP_{{ eg.event_const }} = {{ eg.event_group_id }};
+static constexpr vsomeip::event_t SOMEIP_SERVER_EVENT_{{ eg.event_const }} = {{ eg.event_id }};
+{% endfor %}
 {% elif server.transport_kind == "zenoh" %}
 // Server-side Zenoh key expression (declare_queryable + optional put subscriber)
 static constexpr const char* ZENOH_SERVER_KEY = "{{ server.state.key }}";
@@ -777,7 +781,15 @@ struct TransportRouter {
                     if (!env.correlation_id && env.invoke_id) {
                         env.correlation_id = env.invoke_id;
                     }
+{% if server.has_eventgroup %}
+                    // Reply path first (correlated to pending request).
+                    // Fallback to eventgroup publish (spontaneous
+                    // notification with no pending request to correlate).
+                    if (handleServerResponse(env)) return true;
+                    return publishEventgroupNotify(env);
+{% else %}
                     return handleServerResponse(env);
+{% endif %}
                 }
 {% endif %}
                 return route_send(target, env);
@@ -981,6 +993,15 @@ struct TransportRouter {
                 (void)this->dispatchToSender(env);
             });
 {% endfor %}
+{% for eg in server.eventgroup_events if eg.event_group_id %}
+        // Eventgroup notification (SCE_MESH.md §8.1): offer the event so
+        // clients that subscribe to this eventgroup receive notify messages
+        // via vsomeip multicast. offer_event MUST precede start().
+        server_app_->offer_event(
+            SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
+            SOMEIP_SERVER_EVENT_{{ eg.event_const }},
+            {SOMEIP_SERVER_EVENTGROUP_{{ eg.event_const }}});
+{% endfor %}
         server_thread_ = std::thread([this]{ server_app_->start(); });
 {% endif %}
 {% if has_server_zenoh %}
@@ -1024,6 +1045,19 @@ struct TransportRouter {
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) return;
+                // Skip self-published eventgroup notifications. When the
+                // server publishes via session.put on ZENOH_SERVER_KEY, this
+                // subscriber also receives the event. Filtering by source
+                // avoids a self-loop that would dispatch the server's own
+                // notification back to its engine.
+                //
+                // Limitation: in multi-instance deployments where two
+                // instances share the same machine_name AND the same Zenoh
+                // key, instance A's inbound FireForget/FieldWrite from
+                // instance B would be dropped. Current scope (single-
+                // instance per machine name) is safe. Multi-instance
+                // would need a session-unique origin ID instead.
+                if (env.source == "{{ machine_name }}") return;
                 (void)this->dispatchToSender(env);
             },
             []{}));
@@ -1293,6 +1327,49 @@ struct TransportRouter {
         return true;
 {% endif %}
     }
+{% if server.has_eventgroup %}
+
+    /// Publish an eventgroup notification to all subscribed clients.
+    ///
+    /// SCE_MESH.md §8.1: when the engine raises a field.notify.X event
+    /// spontaneously (without a preceding getter/setter request), the mesh
+    /// send callback falls through handleServerResponse (no pending request
+    /// to correlate) and reaches this method. The event is published via
+    /// the transport's native pub/sub mechanism: SOME/IP `notify` to the
+    /// offered eventgroup, or Zenoh `session.put` on the server key.
+    ///
+    /// @return true if the event matched an eventgroup binding and was
+    ///         published; false if no binding matched (event dropped).
+    [[nodiscard]] bool publishEventgroupNotify(const SCE::Mesh::MeshEnvelope& env) {
+{% if has_server_someip %}
+{% for eg in server.eventgroup_events if eg.event_id %}
+        if (env.type == "{{ eg.event }}") {
+            auto buf = SCE::Mesh::encodeEnvelope(env);
+            auto payload = vsomeip::runtime::get()->create_payload(
+                reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
+                static_cast<uint32_t>(buf.size()));
+            server_app_->notify(SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
+                                SOMEIP_SERVER_EVENT_{{ eg.event_const }}, payload);
+            return true;
+        }
+{% endfor %}
+        return false;
+{% elif has_server_zenoh %}
+        // Zenoh pub/sub: session.put on the server key. Clients that called
+        // declare_subscriber on this key receive the event. The server's own
+        // put_sub filters self-published events by source name.
+{% for eg in server.eventgroup_events %}
+        if (env.type == "{{ eg.event }}") {
+            auto buf = SCE::Mesh::encodeEnvelope(env);
+            zenoh_session_->put(zenoh::KeyExpr(ZENOH_SERVER_KEY),
+                                zenoh::Bytes(std::move(buf)));
+            return true;
+        }
+{% endfor %}
+        return false;
+{% endif %}
+    }
+{% endif %}
 {% endif %}
 
 {% if has_mesh_rpc.v %}

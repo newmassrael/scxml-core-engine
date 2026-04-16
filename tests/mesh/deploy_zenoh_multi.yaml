@@ -39,3 +39,9 @@ topology:
         server:
           transport: zenoh
           key: "sce/brake/motor"
+          events:
+            # Eventgroup notification (SCE_MESH.md §8.1): server-initiated
+            # field.notify push. Zenoh: session.put on the server key.
+            # Zenoh has no eventgroup concept — the field.notify.* prefix
+            # in the event name is the declaration (no event_group field).
+            "field.notify.position": {}

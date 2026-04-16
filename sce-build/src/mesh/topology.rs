@@ -448,6 +448,22 @@ pub struct ServerFieldAccessPair {
     pub kind: FieldAccessKind,
 }
 
+/// A server-side eventgroup notification event: the machine publishes
+/// this event spontaneously (without a preceding getter/setter request)
+/// via the transport's native pub/sub mechanism — SOME/IP
+/// `offer_event` + `notify`, Zenoh `session.put`.
+///
+/// SCE_MESH.md §8.1: eventgroup notifications are declared in the
+/// `server.events` block of deploy.yaml with an `event_group:` binding.
+/// The SCXML model raises the event from any transition; the build-time
+/// `inject_server_response_sends` appends a synthetic `<send>` so the
+/// transport's publish path fires.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServerEventgroupEvent {
+    /// Event name to publish (e.g. `"field.notify.vehicle_speed"`).
+    pub event: String,
+}
+
 /// Resolved server-side binding — the transport-specific state needed to
 /// register the machine as a transport-native server. Produced by
 /// [`resolve_server_binding`] and consumed by codegen to emit
@@ -472,6 +488,14 @@ pub struct ServerBinding {
     /// `<raise event="field.notify.X">` flows through
     /// `inject_server_response_sends` + `handleServerResponse` to reply.
     pub field_access_pairs: Vec<ServerFieldAccessPair>,
+    /// Server-initiated eventgroup notification events (SCE_MESH.md §8.1).
+    /// These events are published spontaneously (not in response to a
+    /// request) via SOME/IP `offer_event` + `notify` or Zenoh
+    /// `session.put`. Declared in deploy.yaml `server.events` with
+    /// `event_group:` binding. Coexists with the FieldNotify piggyback
+    /// reply path — the mesh send callback discriminates at runtime by
+    /// `correlation_id` presence.
+    pub eventgroup_events: Vec<ServerEventgroupEvent>,
     /// Transport-specific state (Someip or Zenoh variant) carrying the
     /// server's identity (service IDs / key expression).
     pub state: TransportState,
@@ -688,6 +712,56 @@ pub fn detect_server_field_access_pairs(
     pairs
 }
 
+/// Detect server-side eventgroup notification events from deploy.yaml.
+///
+/// SCE_MESH.md §8.1: the `server.events` block in deploy.yaml declares
+/// events the machine can publish spontaneously (without a preceding
+/// request) via the transport's native pub/sub mechanism. Detection is
+/// transport-aware:
+///
+///   - **SOME/IP**: requires `event_group:` binding (name-resolved to
+///     `event_group_id` + `event_id` via vsomeip.json). The `event_group`
+///     field is the declaration — without it, the event is not offered.
+///   - **Zenoh**: has no eventgroup concept. Instead, any `field.notify.*`
+///     or `event.notification.*` event declared in `server.events` is
+///     recognized as an eventgroup publish event. The event name prefix
+///     is the declaration; no `event_group:` field required.
+///
+/// Events that also appear in field_access_pairs (e.g.
+/// `field.notify.vehicle_speed` with both a getter and an eventgroup
+/// binding) are included — both paths coexist at runtime, discriminated
+/// by `correlation_id` presence.
+pub fn detect_server_eventgroup_events(
+    server_cfg: &super::deploy::ServerConfig,
+) -> Vec<ServerEventgroupEvent> {
+    use super::pattern::CommunicationPattern;
+    let is_publish_event = |event_name: &str| -> bool {
+        CommunicationPattern::FieldNotify
+            .match_suffix(event_name)
+            .is_some()
+            || CommunicationPattern::Notification
+                .match_suffix(event_name)
+                .is_some()
+    };
+
+    server_cfg
+        .events
+        .iter()
+        .filter(|(event_name, binding)| {
+            if server_cfg.transport == "someip" {
+                // SOME/IP: event_group binding required (resolves to IDs).
+                binding.event_group.is_some()
+            } else {
+                // Zenoh and others: event name prefix is the declaration.
+                is_publish_event(event_name)
+            }
+        })
+        .map(|(event_name, _binding)| ServerEventgroupEvent {
+            event: event_name.clone(),
+        })
+        .collect()
+}
+
 /// Inject synthetic `<send>` actions for server response events.
 ///
 /// SCE_MESH.md §13 Session E / §8.3: the SCXML spec says server machines
@@ -855,6 +929,7 @@ pub fn resolve_server_binding(
     pairs: &[ServerRpcPair],
     fire_forget_events: &[String],
     field_access_pairs: &[ServerFieldAccessPair],
+    eventgroup_events: &[ServerEventgroupEvent],
     machine_name: &str,
     external: &super::external::ExternalResolution,
 ) -> Result<ServerBinding, TopologyError> {
@@ -950,12 +1025,37 @@ pub fn resolve_server_binding(
                 });
             }
         }
+        // Eventgroup events require an event_group binding so the external
+        // resolver produces event_group_id + event_id.
+        for eg in eventgroup_events {
+            let has_eventgroup_binding = match &state {
+                TransportState::Someip { event_bindings, .. } => matches!(
+                    event_bindings.get(&eg.event),
+                    Some(SomeipEventIds::EventGroup { .. })
+                ),
+                _ => false,
+            };
+            if !has_eventgroup_binding {
+                let server_target =
+                    TargetId::new("#_server").expect("static target ID");
+                return Err(TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: server_target,
+                    transport: "someip".to_string(),
+                    field: format!(
+                        "server.events.\"{}\".event_group (required for eventgroup notification)",
+                        eg.event
+                    ),
+                });
+            }
+        }
     }
 
     Ok(ServerBinding {
         rpc_pairs: pairs.to_vec(),
         fire_forget_events: fire_forget_events.to_vec(),
         field_access_pairs: field_access_pairs.to_vec(),
+        eventgroup_events: eventgroup_events.to_vec(),
         state,
         event_patterns,
     })

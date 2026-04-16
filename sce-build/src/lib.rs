@@ -942,30 +942,46 @@ pub fn compile_mesh_transport(
         mesh::topology::detect_server_fire_forget_events(model);
     let server_field_access_pairs =
         mesh::topology::detect_server_field_access_pairs(model);
+    // Eventgroup events are deploy.yaml-driven (server.events with
+    // event_group: binding). Detection requires the server config.
+    let server_eventgroup_events = server_config
+        .map(mesh::topology::detect_server_eventgroup_events)
+        .unwrap_or_default();
+    // Build the server response event set once — used for both injection
+    // and self-send exemption. Covers RPC responses, FieldAccess notifies,
+    // and eventgroup notification events. FireForget is one-way (no raise),
+    // so its events are excluded.
+    let server_response_events: std::collections::HashSet<String> = server_pairs
+        .iter()
+        .map(|p| p.response_event.clone())
+        .chain(
+            server_field_access_pairs
+                .iter()
+                .map(|p| p.response_event.clone()),
+        )
+        .chain(
+            server_eventgroup_events
+                .iter()
+                .map(|eg| eg.event.clone()),
+        )
+        .collect();
+
     let server_binding = if let Some(srv_cfg) = server_config {
         if !server_pairs.is_empty()
             || !server_fire_forget_events.is_empty()
             || !server_field_access_pairs.is_empty()
+            || !server_eventgroup_events.is_empty()
         {
-            // Inject synthetic <send> alongside each <raise> of an RPC
-            // response or FieldAccess notify so the mesh send callback
-            // fires for server response routing. FireForget is one-way
-            // (no raise), so its events are not in the response set.
-            let response_events: std::collections::HashSet<String> = server_pairs
-                .iter()
-                .map(|p| p.response_event.clone())
-                .chain(
-                    server_field_access_pairs
-                        .iter()
-                        .map(|p| p.response_event.clone()),
-                )
-                .collect();
-            mesh::topology::inject_server_response_sends(model, &response_events);
+            // Inject synthetic <send> alongside each <raise> of a server
+            // response/notification so the mesh send callback fires for
+            // server response/publish routing.
+            mesh::topology::inject_server_response_sends(model, &server_response_events);
             Some(mesh::topology::resolve_server_binding(
                 srv_cfg,
                 &server_pairs,
                 &server_fire_forget_events,
                 &server_field_access_pairs,
+                &server_eventgroup_events,
                 &effective_machine_name,
                 &external_resolution,
             )?)
@@ -985,26 +1001,13 @@ pub fn compile_mesh_transport(
     // Stage 2a.1: exempt server response self-sends from topology resolution
     // and event coverage validation. These are injected synthetic sends that
     // target the machine's own SCXML name — they are intercepted by
-    // handleServerResponse before route_send and never reach a transport
-    // binding. Without this exemption, the pipeline would fail with
-    // "unresolved target" (no binding for #self) or "uncovered event"
-    // (receiver has no transition for the response event).
+    // handleServerResponse / publishEventgroupNotify before route_send and
+    // never reach a transport binding. Without this exemption, the pipeline
+    // would fail with "unresolved target" or "uncovered event".
     //
-    // Covers both RPC responses (`service.response.X`) and FieldAccess
-    // notifies (`field.notify.X`) — both kinds flow through
-    // `inject_server_response_sends` and `handleServerResponse`.
-    if server_binding.is_some()
-        && (!server_pairs.is_empty() || !server_field_access_pairs.is_empty())
-    {
-        let response_events: std::collections::HashSet<String> = server_pairs
-            .iter()
-            .map(|p| p.response_event.clone())
-            .chain(
-                server_field_access_pairs
-                    .iter()
-                    .map(|p| p.response_event.clone()),
-            )
-            .collect();
+    // Reuses `server_response_events` built above (single-source set for
+    // both injection and exemption).
+    if server_binding.is_some() && !server_response_events.is_empty() {
         let scxml_name = if model.scxml_name.is_empty() {
             &model.name
         } else {
@@ -1014,10 +1017,10 @@ pub fn compile_mesh_transport(
         if let Some(self_tid) = mesh::target::TargetId::new(&self_target_str) {
             summary.targets.remove(&self_tid);
             summary.target_events.retain(|(t, e)| {
-                !(t == &self_tid && response_events.contains(e))
+                !(t == &self_tid && server_response_events.contains(e))
             });
             summary.actions.retain(|a| {
-                !(a.target == self_tid && response_events.contains(&a.event))
+                !(a.target == self_tid && server_response_events.contains(&a.event))
             });
         }
     }

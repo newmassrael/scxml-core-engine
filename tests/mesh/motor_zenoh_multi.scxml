@@ -26,6 +26,15 @@
         <transition event="field.get.position" target="ready">
             <raise event="field.notify.position"/>
         </transition>
+        <!-- Session J: spontaneous eventgroup notification. A sensor
+             update triggers a field.notify without any preceding
+             getter/setter request. inject_server_response_sends appends
+             a synthetic <send>; the mesh send callback routes it through
+             publishEventgroupNotify (Zenoh session.put on the server
+             key) because handleServerResponse finds no pending query. -->
+        <transition event="sensor.update" target="ready">
+            <raise event="field.notify.position"/>
+        </transition>
     </state>
     <state id="computing">
         <onentry>

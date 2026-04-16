@@ -18,6 +18,11 @@
           "name": "status_group",
           "eventgroup": "0x0001",
           "events": ["0x8001"]
+        },
+        {
+          "name": "speed_group",
+          "eventgroup": "0x0002",
+          "events": ["0x8002"]
         }
       ]
     }

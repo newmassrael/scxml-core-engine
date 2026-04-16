@@ -1944,6 +1944,40 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             TIMEOUT 30
             RESOURCE_LOCK vsomeip_routing_socket
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
+        # Session J: SOME/IP eventgroup notification (server-initiated push).
+        # Motor raises field.notify.vehicle_speed spontaneously (no preceding
+        # getter/setter) → offer_event + notify path.
+        add_executable(mesh_someip_eventgroup_engine_driven_test
+            mesh/test_mesh_someip_eventgroup_engine_driven.cpp
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
+            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
+        )
+
+        target_include_directories(mesh_someip_eventgroup_engine_driven_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_MULTI_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_eventgroup_engine_driven_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_eventgroup_engine_driven_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_eventgroup_engine_driven_test)
+        add_test(NAME mesh_someip_eventgroup_engine_driven
+                 COMMAND mesh_someip_eventgroup_engine_driven_test)
+        set_tests_properties(mesh_someip_eventgroup_engine_driven PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK vsomeip_routing_socket
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
     endif()
@@ -2266,6 +2300,38 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         add_test(NAME mesh_zenoh_rpc_engine_driven
                  COMMAND mesh_zenoh_rpc_engine_driven_test)
         set_tests_properties(mesh_zenoh_rpc_engine_driven PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_multi_port_17447
+        )
+
+        # Session J: Zenoh eventgroup notification (server-initiated push).
+        # Motor raises field.notify.position spontaneously (no preceding
+        # getter/setter) → session.put on the server key.
+        add_executable(mesh_zenoh_eventgroup_engine_driven_test
+            mesh/test_mesh_zenoh_eventgroup_engine_driven.cpp
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_eventgroup_engine_driven_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_MULTI_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_eventgroup_engine_driven_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_eventgroup_engine_driven_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_eventgroup_engine_driven_test)
+        add_test(NAME mesh_zenoh_eventgroup_engine_driven
+                 COMMAND mesh_zenoh_eventgroup_engine_driven_test)
+        set_tests_properties(mesh_zenoh_eventgroup_engine_driven PROPERTIES
             TIMEOUT 30
             RESOURCE_LOCK zenoh_multi_port_17447
         )

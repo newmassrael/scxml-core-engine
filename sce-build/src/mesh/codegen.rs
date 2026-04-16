@@ -442,12 +442,21 @@ struct ServerContext {
     /// `zenoh_server_put_sub_` subscriber.
     has_server_put: bool,
     /// Unique `field.notify.X` event names the server may emit — one
-    /// entry per distinct response event across `field_access_pairs`.
-    /// A single suffix can appear as both getter and setter (e.g.
-    /// `field.get.position` + `field.set.position`) and raises the same
-    /// `field.notify.position`; the template uses this dedup list for
-    /// `resolvePattern` so the generated `if` chain has no duplicates.
+    /// entry per distinct response event across `field_access_pairs`
+    /// AND `eventgroup_events`. A single suffix can appear as both
+    /// getter and setter (e.g. `field.get.position` +
+    /// `field.set.position`) and raises the same `field.notify.position`;
+    /// the template uses this dedup list for `resolvePattern` so the
+    /// generated `if` chain has no duplicates.
     field_notify_events: Vec<String>,
+    /// Per-event context for eventgroup notification publish
+    /// (SCE_MESH.md §8.1). SOME/IP: `offer_event` + `notify`. Zenoh:
+    /// `session.put`. Empty when no eventgroup events are declared.
+    eventgroup_events: Vec<ServerEventgroupContext>,
+    /// True when [`Self::eventgroup_events`] is non-empty. Controls
+    /// emission of `publishEventgroupNotify` and the fallback path in
+    /// the mesh send callback.
+    has_eventgroup: bool,
 }
 
 /// Per-RPC-pair context for server-side codegen.
@@ -506,6 +515,28 @@ struct ServerFieldAccessContext {
     /// SOME/IP getter/setter method ID (`0xNNNN`). `None` for Zenoh.
     #[serde(skip_serializing_if = "Option::is_none")]
     method_id: Option<String>,
+}
+
+/// Per-event context for server-side eventgroup notification codegen
+/// (SCE_MESH.md §8.1). SOME/IP: `offer_event` + `notify`. Zenoh:
+/// `session.put` on the server key.
+///
+/// Eventgroup events are published spontaneously (without a preceding
+/// request). The mesh send callback routes them through
+/// `publishEventgroupNotify` when `handleServerResponse` returns false
+/// (no pending request to correlate against).
+#[derive(Debug, Clone, serde::Serialize)]
+struct ServerEventgroupContext {
+    /// Event name to publish (e.g. `"field.notify.vehicle_speed"`).
+    event: String,
+    /// C++-safe upper-snake constant suffix for per-event naming.
+    event_const: String,
+    /// SOME/IP eventgroup ID (`0xNNNN`). `None` for Zenoh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_group_id: Option<String>,
+    /// SOME/IP event ID (`0xNNNN`, >= 0x8000). `None` for Zenoh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_id: Option<String>,
 }
 
 /// Build a [`ServerContext`] from a resolved [`super::topology::ServerBinding`].
@@ -589,12 +620,50 @@ fn build_server_context(
         .any(|p| p.kind == FieldAccessKind::Setter);
     let has_server_put = has_fire_forget || has_setter;
 
-    // Deduplicate response events (getter and setter on the same suffix
-    // share one `field.notify.X` name). BTreeSet gives stable ordering.
+    // Build eventgroup event contexts.
+    let eventgroup_events: Vec<ServerEventgroupContext> = binding
+        .eventgroup_events
+        .iter()
+        .map(|eg| {
+            let (eg_id, ev_id) = match &binding.state {
+                TransportState::Someip { event_bindings, .. } => {
+                    match event_bindings.get(&eg.event) {
+                        Some(SomeipEventIds::EventGroup {
+                            event_group_id,
+                            event_id,
+                        }) => (
+                            Some(fmt_someip_id(*event_group_id)),
+                            Some(fmt_someip_id(*event_id)),
+                        ),
+                        _ => (None, None),
+                    }
+                }
+                _ => (None, None),
+            };
+            ServerEventgroupContext {
+                event: eg.event.clone(),
+                event_const: event_to_const_suffix(&eg.event),
+                event_group_id: eg_id,
+                event_id: ev_id,
+            }
+        })
+        .collect();
+    let has_eventgroup = !eventgroup_events.is_empty();
+
+    // Deduplicate response events: field_access_pairs notifies +
+    // eventgroup events with field.notify prefix share the same
+    // resolvePattern entry. BTreeSet gives stable ordering.
     let field_notify_events: Vec<String> = binding
         .field_access_pairs
         .iter()
         .map(|p| p.response_event.clone())
+        .chain(
+            binding
+                .eventgroup_events
+                .iter()
+                .filter(|eg| eg.event.starts_with("field.notify."))
+                .map(|eg| eg.event.clone()),
+        )
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -608,6 +677,8 @@ fn build_server_context(
         field_access_pairs,
         has_server_put,
         field_notify_events,
+        eventgroup_events,
+        has_eventgroup,
     }
 }
 
