@@ -501,11 +501,18 @@ fn cmd_generate(
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown");
-            // Pass the full basename (with extension) as the library
-            // `name` so diagnostics' `location.file` carries enough
-            // to disambiguate fixtures whose stems collide across
-            // directories. Stem alone (pre-existing convention) lost
-            // the `.scxml` suffix and hid that it was an SCXML file.
+            // `input_stem` is the parser's `name` — a pure symbol
+            // identifier that flows through `to_snake_case` into Go
+            // package names, C++ namespaces, Kotlin packages, etc. Any
+            // `.scxml` extension folded into it would corrupt those
+            // identifiers (`crossfile_procedure_codec_scxml`).
+            //
+            // `input_basename` is the diagnostic label — the filename
+            // with extension, enough for downstream tooling to open
+            // the file without guessing the suffix. It replaces the
+            // parser-threaded `file` field on any error before emission
+            // via `Located::with_file`, keeping the two concerns
+            // separate across the library boundary.
             let input_basename = Path::new(scxml_path)
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -519,7 +526,7 @@ fn cmd_generate(
             };
             match sce_build::compile_forge_with_imports(
                 &scxml_content,
-                input_basename,
+                input_stem,
                 lang,
                 base_dir,
                 &forge_opts,
@@ -550,7 +557,7 @@ fn cmd_generate(
                     emit_generate_manifest(&report);
                     return;
                 }
-                Err(e) => error_format.emit_forge_and_exit(&e),
+                Err(e) => error_format.emit_forge_and_exit(&e.with_file(input_basename)),
             }
         }
         sce_build::Pipeline::Scxml => {}

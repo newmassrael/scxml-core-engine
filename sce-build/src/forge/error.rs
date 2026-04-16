@@ -70,6 +70,19 @@ impl<E> Located<E> {
             },
         }
     }
+
+    /// Replace the `file` label while preserving `line`/`col` and the
+    /// wrapped error. Used at the CLI boundary where the layer that
+    /// owns the full on-disk path (e.g. the basename-with-extension)
+    /// wants to override the identifier-oriented `name` that inner
+    /// parser layers threaded into `location.file`. Separating these
+    /// two concerns keeps parsers' `name` pure (a symbol identifier
+    /// for model storage) without giving up the diagnostic precision
+    /// downstream tooling expects when it opens `location.file`.
+    pub fn with_file(mut self, file: impl Into<String>) -> Self {
+        self.location.file = file.into();
+        self
+    }
 }
 
 impl<E: std::fmt::Display> std::fmt::Display for Located<E> {
