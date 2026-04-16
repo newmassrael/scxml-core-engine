@@ -45,8 +45,6 @@ namespace {
 
 using namespace SCE::Test::Mesh;
 
-constexpr const char* kListen = "tcp/127.0.0.1:17449";
-
 int run_test() {
     namespace brake_gen = SCE::Generated::brake_zenoh_multi;
     namespace motor_gen = SCE::Generated::motor_zenoh_multi;
@@ -54,53 +52,17 @@ int run_test() {
     using BrakeRouterT = brake_gen::TransportRouter<TestSenderEngine>;
     using MotorRouterT = motor_gen::TransportRouter<TestSenderEngine>;
 
-    // ── Motor (server) setup: listen on kListen ──────────────────────
+    // Both routers bring up their own zenoh session through the generated
+    // init() — motor listens, brake connects — driven entirely by the
+    // two-device transports block in deploy_zenoh_multi.yaml. Bring up
+    // the listener first so the endpoint is accepting before brake dials.
     TestSenderEngine motor_engine;
     MotorRouterT motor_router(motor_engine);
+    MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed");
 
-    {
-        auto config = zenoh::Config::create_default();
-        config.insert_json5("mode", "\"peer\"");
-        config.insert_json5("listen/endpoints", std::string("[\"") + kListen + "\"]");
-        config.insert_json5("scouting/multicast/enabled", "false");
-        motor_router.zenoh_session_.emplace(zenoh::Session::open(std::move(config)));
-    }
-    motor_router.zenoh_queryable_.emplace(motor_router.zenoh_session_->declare_queryable(
-        zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY),
-        [&motor_router](const zenoh::Query& query) {
-            auto payload_opt = query.get_payload();
-            if (!payload_opt.has_value()) {
-                return;
-            }
-            auto bytes = payload_opt->get().as_vector();
-            SCE::Mesh::MeshEnvelope env;
-            if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
-                return;
-            }
-            auto cid = env.invoke_id.value_or(
-                env.correlation_id.value_or(SCE::uuid::v7()));
-            {
-                std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
-                motor_router.pending_server_queries_.insert_or_assign(
-                    MotorRouterT::CorrelationKey{cid}, query.clone());
-            }
-            env.correlation_id = cid;
-            env.pattern = SCE::Mesh::PatternKind::RpcRequest;
-            (void)motor_router.dispatchToSender(env);
-        },
-        [] {}));
-
-    // ── Brake (client) setup: connect to motor ───────────────────────
     TestSenderEngine brake_engine;
     BrakeRouterT brake_router(brake_engine);
-
-    {
-        auto config = zenoh::Config::create_default();
-        config.insert_json5("mode", "\"peer\"");
-        config.insert_json5("connect/endpoints", std::string("[\"") + kListen + "\"]");
-        config.insert_json5("scouting/multicast/enabled", "false");
-        brake_router.zenoh_session_.emplace(zenoh::Session::open(std::move(config)));
-    }
+    MESH_TEST_REQUIRE(brake_router.init(), "brake_router.init() failed");
 
     // Peer discovery stabilization.
     std::this_thread::sleep_for(std::chrono::seconds(1));

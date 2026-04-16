@@ -37,6 +37,7 @@ using namespace SCE::Test::Mesh;
 namespace PK = SCE::Mesh;
 
 constexpr const char* kMotorKey = "sce/brake/motor";
+// Must match deploy_zenoh_multi.yaml ecu_motor transports.zenoh.listen.
 constexpr const char* kListen   = "tcp/127.0.0.1:17447";
 
 int run_test() {
@@ -51,15 +52,9 @@ int run_test() {
     //    so the TCP endpoint is accepting before the peer dials. ──────
     auto motor_session = open_peer(/*connect=*/"", /*listen=*/kListen);
 
-    // Open the router's zenoh session directly with an explicit locator
-    // so peer discovery is deterministic under CI.
-    {
-        auto config = zenoh::Config::create_default();
-        config.insert_json5("mode", "\"peer\"");
-        config.insert_json5("connect/endpoints", std::string("[\"") + kListen + "\"]");
-        config.insert_json5("scouting/multicast/enabled", "false");
-        router.zenoh_session_.emplace(zenoh::Session::open(std::move(config)));
-    }
+    // router.init() opens brake's zenoh session with the mode/connect
+    // endpoints generated from deploy_zenoh_multi.yaml (ecu_brake device).
+    MESH_TEST_REQUIRE(router.init(), "router.init() failed");
 
     // FireForget / FieldWrite receive point — plain subscriber on the
     // motor key. Record whatever arrives so the test can assert on it.

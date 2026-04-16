@@ -35,7 +35,8 @@ namespace {
 
 using namespace SCE::Test::Mesh;
 
-constexpr const char* kListen = "tcp/127.0.0.1:17448";
+// Must match deploy_zenoh_multi.yaml ecu_motor transports.zenoh.listen.
+constexpr const char* kListen = "tcp/127.0.0.1:17447";
 
 int run_test() {
     namespace motor_gen = SCE::Generated::motor_zenoh_multi;
@@ -43,47 +44,14 @@ int run_test() {
     using MotorRouterT = motor_gen::TransportRouter<TestSenderEngine>;
 
     // ── Motor (server) side: TestSenderEngine + generated TransportRouter ──
+    //
+    // router.init() opens the motor session (listen on kListen) and
+    // declares the queryable that stores inbound RPC requests and
+    // dispatches them to motor_engine. Both pieces come from the
+    // generated ecu_motor device block in deploy_zenoh_multi.yaml.
     TestSenderEngine motor_engine;
     MotorRouterT motor_router(motor_engine);
-
-    // Open motor's zenoh session in peer mode (listening). Cannot call
-    // router.init() because the generated init() uses default config
-    // (no peer mode, no explicit locator). Manual setup mirrors the
-    // init() path but with test-friendly peer configuration.
-    {
-        auto config = zenoh::Config::create_default();
-        config.insert_json5("mode", "\"peer\"");
-        config.insert_json5("listen/endpoints", std::string("[\"") + kListen + "\"]");
-        config.insert_json5("scouting/multicast/enabled", "false");
-        motor_router.zenoh_session_.emplace(zenoh::Session::open(std::move(config)));
-    }
-
-    // Declare server-side queryable (same callback as generated init()).
-    // The queryable receives inbound RPC requests, stores the Query for
-    // later reply, and dispatches the request to the motor engine.
-    motor_router.zenoh_queryable_.emplace(motor_router.zenoh_session_->declare_queryable(
-        zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY),
-        [&motor_router](const zenoh::Query& query) {
-            auto payload_opt = query.get_payload();
-            if (!payload_opt.has_value()) {
-                return;
-            }
-            auto bytes = payload_opt->get().as_vector();
-            SCE::Mesh::MeshEnvelope env;
-            if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
-                return;
-            }
-            auto cid = env.correlation_id.value_or(SCE::uuid::v7());
-            {
-                std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
-                motor_router.pending_server_queries_.insert_or_assign(
-                    MotorRouterT::CorrelationKey{cid}, query.clone());
-            }
-            env.correlation_id = cid;
-            env.pattern = SCE::Mesh::PatternKind::RpcRequest;
-            (void)motor_router.dispatchToSender(env);
-        },
-        [] {}));
+    MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed");
 
     // ── Client side: raw zenoh session ──
     auto client_session = open_peer(/*connect=*/kListen, /*listen=*/"");

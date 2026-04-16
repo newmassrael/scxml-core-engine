@@ -1,16 +1,24 @@
-# SCE Mesh Session D+E: Zenoh multi-pattern compile verification.
+# SCE Mesh Session D+E+G: Zenoh multi-pattern compile & runtime verification.
 # brake_zenoh_multi.scxml exercises FireForget/RpcRequest/EventSubscribe/
 # FieldRead/FieldWrite; the generated send_zenoh member function must
 # handle every PatternKind on a single Zenoh key expression (native
 # correlation via session.get reply callbacks).
 # Session E adds server-side registration for motor (declare_queryable +
 # Query::reply for compute_force RPC).
+#
+# Session G splits brake and motor across two devices so each side owns
+# its own session role (brake connects, motor listens) under deterministic
+# explicit TCP locators. This lets runtime tests call router.init() instead
+# of hand-rolling a zenoh::Config with matching mode/endpoints. The shared
+# port 17447 is serialized across the three zenoh runtime tests via ctest
+# RESOURCE_LOCK (tests/CMakeLists.txt).
 version: "1.0"
 topology:
-  ecu1:
+  ecu_brake:
     transports:
       zenoh:
         mode: peer
+        connect: ["tcp/127.0.0.1:17447"]
     machines:
       brake_zenoh_multi:
         source: brake_zenoh_multi.scxml
@@ -18,6 +26,12 @@ topology:
           "#motor":
             transport: zenoh
             key: "sce/brake/motor"
+  ecu_motor:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17447"]
+    machines:
       # Motor: receiver + RPC server. deploy.yaml key "motor" matches
       # the SCXML name attribute; codegen uses source-based lookup.
       motor:

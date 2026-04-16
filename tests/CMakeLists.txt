@@ -2077,8 +2077,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         apply_sce_test_policies(mesh_zenoh_multipattern_runtime_test)
         add_test(NAME mesh_zenoh_multipattern_runtime
                  COMMAND mesh_zenoh_multipattern_runtime_test)
-        # Give peer discovery room even on busy CI nodes.
-        set_tests_properties(mesh_zenoh_multipattern_runtime PROPERTIES TIMEOUT 30)
+        # Give peer discovery room even on busy CI nodes. RESOURCE_LOCK
+        # serializes tests that bind the shared loopback port declared in
+        # deploy_zenoh_multi.yaml so parallel runs don't fight for it.
+        set_tests_properties(mesh_zenoh_multipattern_runtime PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_multi_port_17447
+        )
 
         # ── Session F: zenoh server-side runtime E2E ──────────────────
         # Exercises the generated server-side TransportRouter (declare_queryable,
@@ -2110,7 +2115,10 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         apply_sce_test_policies(mesh_zenoh_server_runtime_test)
         add_test(NAME mesh_zenoh_server_runtime
                  COMMAND mesh_zenoh_server_runtime_test)
-        set_tests_properties(mesh_zenoh_server_runtime PROPERTIES TIMEOUT 30)
+        set_tests_properties(mesh_zenoh_server_runtime PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_multi_port_17447
+        )
 
         # ── Session F: mesh-rpc over Zenoh end-to-end ─────────────────
         # Full client↔server round-trip: brake send_zenoh RpcRequest →
@@ -2143,7 +2151,10 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         apply_sce_test_policies(mesh_zenoh_rpc_e2e_test)
         add_test(NAME mesh_zenoh_rpc_e2e
                  COMMAND mesh_zenoh_rpc_e2e_test)
-        set_tests_properties(mesh_zenoh_rpc_e2e PROPERTIES TIMEOUT 30)
+        set_tests_properties(mesh_zenoh_rpc_e2e PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_multi_port_17447
+        )
     else()
         message(STATUS "zenohcxx not found — skipping mesh_zenoh_compile_test")
     endif()
