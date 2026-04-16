@@ -2027,6 +2027,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             PRIVATE
                 ${CMAKE_SOURCE_DIR}/sce/include
                 ${MESH_ZENOH_MULTI_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
         )
 
         target_link_libraries(mesh_zenoh_multipattern_runtime_test
@@ -2042,6 +2043,71 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                  COMMAND mesh_zenoh_multipattern_runtime_test)
         # Give peer discovery room even on busy CI nodes.
         set_tests_properties(mesh_zenoh_multipattern_runtime PROPERTIES TIMEOUT 30)
+
+        # ── Session F: zenoh server-side runtime E2E ──────────────────
+        # Exercises the generated server-side TransportRouter (declare_queryable,
+        # pending_server_queries_, handleServerResponse) end-to-end in peer
+        # mode. Proves: (a) queryable callback receives and stores Query;
+        # (b) handleServerResponse correlates by UUID and calls Query::reply;
+        # (c) CBOR payload round-trips through server encode/decode.
+        add_executable(mesh_zenoh_server_runtime_test
+            mesh/test_mesh_zenoh_server_runtime.cpp
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_server_runtime_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_MULTI_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_server_runtime_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_server_runtime_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_server_runtime_test)
+        add_test(NAME mesh_zenoh_server_runtime
+                 COMMAND mesh_zenoh_server_runtime_test)
+        set_tests_properties(mesh_zenoh_server_runtime PROPERTIES TIMEOUT 30)
+
+        # ── Session F: mesh-rpc over Zenoh end-to-end ─────────────────
+        # Full client↔server round-trip: brake send_zenoh RpcRequest →
+        # motor queryable → handleServerResponse → Query::reply → brake
+        # on_reply → type rewrite → brake dispatchToSender. Both routers
+        # use generated transport headers with peer-mode sessions.
+        add_executable(mesh_zenoh_rpc_e2e_test
+            mesh/test_mesh_zenoh_rpc_e2e.cpp
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
+            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_rpc_e2e_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_MULTI_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_rpc_e2e_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_rpc_e2e_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_rpc_e2e_test)
+        add_test(NAME mesh_zenoh_rpc_e2e
+                 COMMAND mesh_zenoh_rpc_e2e_test)
+        set_tests_properties(mesh_zenoh_rpc_e2e PROPERTIES TIMEOUT 30)
     else()
         message(STATUS "zenohcxx not found — skipping mesh_zenoh_compile_test")
     endif()

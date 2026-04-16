@@ -903,7 +903,7 @@ struct TransportRouter {
                 auto cid = env.correlation_id.value_or(SCE::uuid::v7());
                 {
                     std::lock_guard<std::mutex> lock(server_pending_mutex_);
-                    pending_server_queries_[CorrelationKey{cid}] = query.clone();
+                    pending_server_queries_.insert_or_assign(CorrelationKey{cid}, query.clone());
                 }
                 env.correlation_id = cid;
                 env.pattern = SCE::Mesh::PatternKind::RpcRequest;
@@ -1004,7 +1004,7 @@ struct TransportRouter {
     ///
     /// @return true if the event was dispatched; false if the target is unknown
     ///         or the transport-specific send failed.
-    [[nodiscard]] bool route_send(const std::string& target, const SCE::Mesh::MeshEnvelope& env) {
+    [[nodiscard]] bool route_send({% if targets %}const std::string& target, const SCE::Mesh::MeshEnvelope& env{% else %}[[maybe_unused]] const std::string& target, [[maybe_unused]] const SCE::Mesh::MeshEnvelope& env{% endif %}) {
 {% for target in targets %}
         {% if not loop.first %}else {% endif %}if (target == "{{ target.target }}") {
 {% if target.state.kind == "local" %}
