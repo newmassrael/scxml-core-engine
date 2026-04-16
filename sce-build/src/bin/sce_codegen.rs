@@ -671,6 +671,17 @@ fn cmd_generate(
     // line/col is honest — fabricating `(1, 1)` would misroute agent
     // repair loops to the top of the source (see
     // `feedback_correctness_before_features`).
+    // SCE Mesh: inject server-response synthetic sends BEFORE SM
+    // generation. The SM generator must see the injected <send> actions
+    // to emit raiseExternal calls that trigger the mesh send callback
+    // for handleServerResponse routing. Idempotent — safe even if
+    // compile_mesh_transport re-runs the injection later.
+    if let Some(deploy_file) = deploy_path {
+        if let Err(e) = sce_build::inject_server_model_mutations(&mut model, Path::new(deploy_file)) {
+            error_format.emit_and_exit(&e, "Server model injection error: ");
+        }
+    }
+
     let locate_codegen = |e: sce_build::forge::error::GenerateError| -> Located<ForgeError> {
         Located::new(ForgeError::from(e), scxml_path, None, None)
     };
@@ -741,7 +752,8 @@ fn cmd_generate(
 
     // SCE Mesh: generate transport routing code when --deploy is provided.
     // Uses the public API (compile_mesh_transport) so CLI, tests, and build.rs
-    // share the same entry point. SM output remains byte-identical.
+    // share the same entry point. Server-response injection ran above (pre-SM)
+    // and is idempotent, so the re-run inside compile_mesh_transport is a no-op.
     if let Some(deploy_file) = deploy_path {
         match sce_build::compile_mesh_transport(
             &mut model,

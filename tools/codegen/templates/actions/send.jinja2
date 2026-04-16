@@ -251,6 +251,11 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
 } else {
     SCE_LOG_ERROR("Invalid child invoke target: {{ action.target }}");
 }
+{% elif action.target.startswith('#') %}
+// SCE Mesh: send to mesh target "{{ action.target }}". Validated at
+// build time by the deploy.yaml topology pipeline — no runtime
+// isInvalidTarget check needed (avoids requiring Event::Error_execution
+// on server-only machines that have no error handling states).
 {% else %}
 // W3C SCXML 6.2 (tests 159, 194): Validate send target using SendHelper
 if (::SCE::SendHelper::isInvalidTarget("{{ action.target }}")) {

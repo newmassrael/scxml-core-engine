@@ -560,12 +560,27 @@ pub fn inject_server_response_sends(
     #[derive(Clone, Copy)]
     enum BlockKind { OnEntry, OnExit, Transition(usize) }
 
+    // Idempotency guard: a raise is only a candidate if no synthetic
+    // send with the same event and self-target already follows it. This
+    // allows the function to be called multiple times (pre-SM and inside
+    // compile_mesh_transport) without inserting duplicate sends.
+    let already_followed_by_send = |actions: &[crate::model::Action], ai: usize, event: &str| -> bool {
+        if ai + 1 < actions.len() {
+            let next = &actions[ai + 1];
+            next.action_type == "send" && next.event == event && next.target == self_target
+        } else {
+            false
+        }
+    };
+
     let mut candidates: Vec<Candidate> = Vec::new();
 
     for (state_id, state) in &model.states {
         for (bi, block) in state.on_entry_blocks.iter().enumerate() {
             for (ai, action) in block.iter().enumerate() {
-                if action.action_type == "raise" && response_events.contains(action.event.as_str()) {
+                if action.action_type == "raise" && response_events.contains(action.event.as_str())
+                    && !already_followed_by_send(block, ai, &action.event)
+                {
                     candidates.push(Candidate {
                         state_id: state_id.clone(),
                         block_kind: BlockKind::OnEntry,
@@ -578,7 +593,9 @@ pub fn inject_server_response_sends(
         }
         for (bi, block) in state.on_exit_blocks.iter().enumerate() {
             for (ai, action) in block.iter().enumerate() {
-                if action.action_type == "raise" && response_events.contains(action.event.as_str()) {
+                if action.action_type == "raise" && response_events.contains(action.event.as_str())
+                    && !already_followed_by_send(block, ai, &action.event)
+                {
                     candidates.push(Candidate {
                         state_id: state_id.clone(),
                         block_kind: BlockKind::OnExit,
@@ -591,7 +608,9 @@ pub fn inject_server_response_sends(
         }
         for (ti, transition) in state.transitions.iter().enumerate() {
             for (ai, action) in transition.actions.iter().enumerate() {
-                if action.action_type == "raise" && response_events.contains(action.event.as_str()) {
+                if action.action_type == "raise" && response_events.contains(action.event.as_str())
+                    && !already_followed_by_send(&transition.actions, ai, &action.event)
+                {
                     candidates.push(Candidate {
                         state_id: state_id.clone(),
                         block_kind: BlockKind::Transition(ti),

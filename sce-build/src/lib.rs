@@ -835,6 +835,52 @@ pub struct MeshResult {
 ///      is read directly from `DeployConfig` (no extraction/merging step —
 ///      the schema makes shared config explicit).
 ///
+/// Inject server-response synthetic sends into the model.
+///
+/// Must be called BEFORE SM code generation (`generate_cpp`, etc.) when
+/// `--deploy` is provided and the machine is an RPC server. The SM
+/// generator must see the injected `<send>` actions to emit
+/// `raiseExternal` calls that trigger the mesh send callback for
+/// server response routing via `handleServerResponse`.
+///
+/// Idempotent: safe to call multiple times (the underlying injection
+/// skips raises that already have a following synthetic send).
+///
+/// Auto-symmetry injection (`inject_auto_subscriptions`) is NOT included
+/// here because unsubscribe events may lack Event enum variants in the
+/// SM — those sends are transport-level lifecycle actions that only the
+/// transport codegen needs to see.
+pub fn inject_server_model_mutations(
+    model: &mut SCXMLModel,
+    deploy_path: &Path,
+) -> Result<Vec<String>, mesh::error::MeshError> {
+    let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+
+    let effective_machine_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
+        model.name.clone()
+    } else {
+        deploy_cfg
+            .find_machine_name_by_source(&model.name)
+            .unwrap_or_else(|| model.name.clone())
+    };
+
+    let server_config = deploy_cfg
+        .device_for_machine(&effective_machine_name)
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .and_then(|m| m.server.as_ref());
+
+    if server_config.is_none() {
+        return Ok(vec![]);
+    }
+
+    let server_pairs = mesh::topology::detect_server_pairs(model);
+    if server_pairs.is_empty() {
+        return Ok(vec![]);
+    }
+
+    Ok(mesh::topology::inject_server_response_sends(model, &server_pairs))
+}
+
 /// Returns `Ok(MeshResult)` with generated files and all warnings,
 /// or `Err(MeshError)` on hard failure.
 pub fn compile_mesh_transport(
