@@ -1971,6 +1971,39 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
         add_test(NAME mesh_zenoh_compile_verification COMMAND mesh_zenoh_compile_test)
 
+        # ── Session G: base zenoh single-pattern runtime E2E ──────────
+        # Counterpart to the multi-pattern tests — exercises the simple
+        # brake.scxml + deploy_zenoh.yaml fixture end-to-end (FireForget
+        # only). Shares RESOURCE_LOCK with the multi-pattern runtime tests
+        # because both fixtures listen on tcp/127.0.0.1:17447.
+        add_executable(mesh_zenoh_runtime_test
+            mesh/test_mesh_zenoh_runtime.cpp
+            "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
+            "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_runtime_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_runtime_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_runtime_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_runtime_test)
+        add_test(NAME mesh_zenoh_runtime COMMAND mesh_zenoh_runtime_test)
+        set_tests_properties(mesh_zenoh_runtime PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_multi_port_17447
+        )
+
         # ── Session D: zenoh multi-pattern compile verification ──────
         # brake_zenoh_multi.scxml exercises all four zenoh capability
         # categories (FireForget/RpcRequest/EventSubscribe/FieldRead/

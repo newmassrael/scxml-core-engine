@@ -1,13 +1,19 @@
-# SCE Mesh compile verification — Zenoh transport binding.
+# SCE Mesh compile + runtime verification — Zenoh transport binding.
 # Device-shared session config lives under `transports:`; per-target `key:`
 # stays on the binding. The generator emits one zenoh::Session per device,
 # configured from this block.
+#
+# The connect endpoint is consumed by mesh_zenoh_runtime (base zenoh
+# runtime E2E), which stands up a raw listener on the same address and
+# verifies brake's generated router reaches it. The shared port is
+# serialized through ctest RESOURCE_LOCK (tests/CMakeLists.txt).
 version: "1.0"
 topology:
   ecu1:
     transports:
       zenoh:
         mode: peer
+        connect: ["tcp/127.0.0.1:17447"]
     machines:
       brake:
         source: brake.scxml
