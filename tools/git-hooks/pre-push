@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+#
+# SCE pre-push hook: mirror the GitHub CI gates that have actually broken
+# push in the past so they fail locally, not on the runner. Stages are
+# ordered cheapest-first; the first failure short-circuits the rest.
+#
+# Gates:
+#   1. cargo build sce-codegen               — every downstream gate uses it
+#   2. cargo test --workspace --release      — Rust unit + integration suite
+#                                              (covers forge goldens, mesh,
+#                                              diagnostic contract tests)
+#   3. Go forge conformance regen + build    — catches Go codegen drift
+#                                              (reproduces the crossfile
+#                                              _scxml package-alias bug)
+#   4. C++ forge conformance build           — catches C++ codegen drift
+#                                              (reproduces the harness
+#                                              include-name mismatch)
+#   5. Example codegen (doom_wasm / smart_light) — catches namespace /
+#                                              statechart-parser drift
+#                                              without pulling in emscripten
+#
+# Bypass (for genuine emergencies): `SKIP_PREPUSH=1 git push ...`.
+# Do not skip hooks by habit — every gate here corresponds to a CI
+# failure that has already cost a round-trip.
+
+set -euo pipefail
+
+if [[ "${SKIP_PREPUSH:-0}" == "1" ]]; then
+    echo "pre-push: SKIP_PREPUSH=1 — bypassing all local CI gates" >&2
+    exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+log_step() { printf '\n==> pre-push: %s\n' "$1" >&2; }
+fail_step() { printf '\nERROR pre-push: %s FAILED — push aborted.\n  Fix the issue or bypass with SKIP_PREPUSH=1 for emergencies.\n' "$1" >&2; exit 1; }
+
+# ── Stage 1: sce-codegen build (baseline) ─────────────────────────
+log_step "Stage 1/5 — cargo build sce-codegen --release"
+cargo build --bin sce-codegen --features cli --release -p sce-build \
+    || fail_step "Stage 1 (sce-codegen build)"
+
+# ── Stage 2: Rust workspace tests ─────────────────────────────────
+log_step "Stage 2/5 — cargo test --workspace --release"
+cargo test --workspace --release \
+    || fail_step "Stage 2 (cargo test --workspace)"
+
+# ── Stage 3: Go forge conformance ─────────────────────────────────
+# generate.sh already runs `go build ./conformance/...` as a smoke check,
+# so a codegen drift that produces uncompilable Go (the package-alias bug
+# this hook was born to catch) surfaces right here.
+log_step "Stage 3/5 — Go forge conformance regenerate + go build"
+( cd sce-forge-runtime/go/conformance && bash generate.sh ) \
+    || fail_step "Stage 3 (Go forge conformance)"
+
+# ── Stage 4: C++ forge conformance build ──────────────────────────
+# Uses a dedicated scratch build dir so it does not clobber a developer's
+# main build tree. The codegen dependency is passed explicitly via
+# -DSCE_CODEGEN so CMake cannot quietly pick up a stale binary.
+log_step "Stage 4/5 — C++ forge conformance build"
+BUILD_DIR="$(mktemp -d)"
+trap 'rm -rf "$BUILD_DIR"' EXIT
+cmake -S sce-forge-runtime/cpp/tests/conformance \
+      -B "$BUILD_DIR" \
+      -DSCE_CODEGEN="$REPO_ROOT/target/release/sce-codegen" \
+      -Wno-dev >/dev/null \
+    || fail_step "Stage 4 (C++ forge conformance configure)"
+cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
+    || fail_step "Stage 4 (C++ forge conformance build)"
+
+# ── Stage 5: Example codegen smoke test ───────────────────────────
+# The emscripten-backed doom_wasm / visualizer builds are too heavy for
+# a push-time gate, but codegen failures (the kind that broke the
+# `urn:sce:extensions` → `http://sce.dev/ext` namespace migration) surface
+# well before link time. Run sce-codegen over each example SCXML in a
+# scratch output dir and abort push if any fail to produce artifacts.
+log_step "Stage 5/5 — Example SCXML codegen smoke"
+GEN_OUT="$(mktemp -d)"
+trap 'rm -rf "$BUILD_DIR" "$GEN_OUT"' EXIT
+example_failures=0
+for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.scxml; do
+    [[ -f "$scxml" ]] || continue
+    if ! "$REPO_ROOT/target/release/sce-codegen" generate "$scxml" \
+            --language cpp \
+            --output-dir "$GEN_OUT/" >/dev/null 2>&1; then
+        printf '  FAIL: %s\n' "$scxml" >&2
+        example_failures=$((example_failures + 1))
+    fi
+done
+(( example_failures == 0 )) || fail_step "Stage 5 ($example_failures example(s) failed codegen)"
+
+printf '\npre-push: all 5 gates passed — push allowed.\n' >&2
