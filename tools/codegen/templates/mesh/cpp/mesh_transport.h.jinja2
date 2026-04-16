@@ -131,7 +131,10 @@
 
 {# ── (A) Transport includes (NEW TRANSPORT: add conditional) ── #}
 {% if "local" in transport_types %}
+#include <functional>
+#include <string>
 #include <type_traits>
+#include <unordered_map>
 {% endif %}
 {% for target in targets if target.state.kind == "local" %}
 #include "{{ target.target_stem }}_sm.h"
@@ -343,6 +346,26 @@ struct TransportRouter {
     std::thread {{ target.target_snake }}_thread_;
 {% endif %}
 {% endfor %}
+
+{# ── (D1b) Cross-router link table (SCE_MESH.md §9.5) ──
+   Maps an SCXML target string to a type-erased inbound dispatcher. When
+   two routers share engines in-process — caller router A owns the
+   outbound InvokeCorrelation; callee router B routes replies back to A
+   — linkTo wires the reply path through A.dispatchToSender so
+   RPC-reply correlation happens on the sender's router rather than
+   bypassing it via the raw engine external queue. Unlinked local
+   targets fall through to the direct dispatchEnvelope path, which
+   preserves the single-router mesh_local_runtime_verification test.
+
+   Thread-safety discipline mirrors sender_ (ctor binding):
+   linkTo registrations MUST happen before init() and any outbound
+   mesh sends. The map is then read-only from the router's step and
+   transport callback threads, so no mutex is required. #}
+{% if "local" in transport_types %}
+    std::unordered_map<std::string,
+                       std::function<bool(const SCE::Mesh::MeshEnvelope&)>>
+        linked_;
+{% endif %}
 
 {# ── (D2) Shared transport resources (device-wide, not per-target) ── #}
 {% if "zenoh" in transport_types %}
@@ -726,6 +749,34 @@ struct TransportRouter {
     ~TransportRouter() { shutdown(); }
 {% endif %}
 
+{% if "local" in transport_types %}
+{# ── (D4b) linkTo — register cross-router inbound dispatcher ── #}
+    /// Register a dispatcher for a local target so outbound envelopes to
+    /// that target route through another router's inbound path rather
+    /// than the raw engine external queue. SCE_MESH.md §9.5: the caller
+    /// router owns InvokeCorrelation for mesh-rpc; the callee router
+    /// uses this hook to hand replies back through
+    /// caller.dispatchToSender(env), which consults the correlation
+    /// table and raises done.invoke.<id> / error.invoke.<id> on the
+    /// caller engine.
+    ///
+    /// Typical wiring (both directions):
+    ///   routerA.linkTo("#engineB",
+    ///       [&routerB](const auto& env){ return routerB.dispatchToSender(env); });
+    ///   routerB.linkTo("#engineA",
+    ///       [&routerA](const auto& env){ return routerA.dispatchToSender(env); });
+    ///
+    /// Setup-only: MUST be called before init() and before any outbound
+    /// mesh send. The map is read-only after that, so no mutex is held
+    /// on the dispatch path. Unlinked targets fall back to the direct
+    /// dispatchEnvelope path in route_send (preserves single-router
+    /// test fixtures).
+    void linkTo(const std::string& target,
+                std::function<bool(const SCE::Mesh::MeshEnvelope&)> dispatcher) {
+        linked_[target] = std::move(dispatcher);
+    }
+{% endif %}
+
 {# ── (D5) route_send() dispatch (NEW TRANSPORT: add {% elif %} block) ── #}
     /// Dispatch an envelope to the target identified by the SCXML target string.
     ///
@@ -738,6 +789,15 @@ struct TransportRouter {
 {% for target in targets %}
         {% if not loop.first %}else {% endif %}if (target == "{{ target.target }}") {
 {% if target.state.kind == "local" %}
+            // SCE_MESH.md §9.5: if another router has registered a link
+            // for this target, route through its dispatcher — typically
+            // the peer's dispatchToSender, which consults its
+            // InvokeCorrelation table before delivering to the engine.
+            // Unlinked targets fall through to direct external-queue
+            // enqueue so single-router fixtures keep working unchanged.
+            if (auto it = linked_.find("{{ target.target }}"); it != linked_.end()) {
+                return it->second(env);
+            }
             // W3C SCXML 3.12: enqueue to external queue only. Macrostep
             // timing is scheduler/application responsibility — the transport
             // layer does not drive target engine execution.

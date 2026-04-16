@@ -40,6 +40,12 @@ int main() {
     (void)invoke_fn;
     (void)cancel_fn;
 
+    // SCE_MESH.md §9.5 — linkTo plumbing for cross-router correlation
+    // handoff. Same overload-resolution forcing so a template
+    // regression surfaces at this TU, not silently at the call site.
+    constexpr auto link_fn = &Router::linkTo;
+    (void)link_fn;
+
     std::printf("SCE Mesh §9.5 invoke plumbing compile verification: PASS\n");
     return 0;
 }
