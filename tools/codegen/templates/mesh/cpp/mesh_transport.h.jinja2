@@ -119,6 +119,14 @@
 {% set has_mesh_rpc.v = true %}
 {% endfor %}
 
+{# Detect whether any target has PubSub patterns (subscribe/notification).
+   Drives conditional emission of the subscription refcount map and the
+   refcount logic in the mesh send callback. SCE_MESH.md §13. #}
+{% set has_pubsub = namespace(v=false) %}
+{% for target in targets if target.has_pubsub %}
+{% set has_pubsub.v = true %}
+{% endfor %}
+
 {% if has_mesh_rpc.v %}
 #include <array>
 #include <chrono>
@@ -513,6 +521,17 @@ struct TransportRouter {
                        InvokeSiteKeyHash> active_invokes_;
 {% endif %}
 
+{# ── (D2e) Subscription refcount (SCE_MESH.md §13) ── #}
+{% if has_pubsub.v %}
+    // Per-(target, event) subscription refcount. Parallel regions may
+    // subscribe to the same event independently; the transport-native
+    // subscribe/unsubscribe fires only on 0→1 / 1→0 transitions.
+    // Key: "target|event" (e.g. "#bus|event.subscribe.brake_status").
+    // Concurrency: written only from the owning engine's step thread
+    // (mesh send callback), same thread-safety model as zenoh_subscribers_.
+    std::unordered_map<std::string, int> subscription_refcount_;
+{% endif %}
+
 {# ── (D3) Constructor ──
    Sender-first binding: the ctor takes the sender engine and any local
    target engines, wires the mesh-send callback onto the sender in the
@@ -619,6 +638,41 @@ struct TransportRouter {
                         std::lock_guard<std::mutex> lock(correlation_mutex_);
                         pending_rpcs_[CorrelationKey{cid}] = reply;
                     }
+                }
+{% endif %}
+{% if has_pubsub.v %}
+                // Subscription refcount (SCE_MESH.md §13): parallel regions
+                // may subscribe to the same event independently. The
+                // transport-native subscribe/unsubscribe fires only on
+                // refcount 0→1 (first subscriber) / 1→0 (last unsubscriber).
+                //
+                // Refcount key uses the subscribe event name for both
+                // subscribe and unsubscribe so they share the same counter.
+                using PK = SCE::Mesh::PatternKind;
+                if (env.pattern == PK::EventSubscribe) {
+                    auto key = target + "|" + eventName;
+                    if (subscription_refcount_[key]++ > 0) {
+                        return true;  // transport already subscribed
+                    }
+                }
+                if (env.pattern == PK::EventUnsubscribe) {
+                    // Derive the subscribe key from the unsubscribe event.
+                    // "event.unsubscribe.X" → "event.subscribe.X"
+                    std::string sub_event = eventName;
+                    const std::string unsub_prefix = "event.unsubscribe";
+                    const std::string sub_prefix = "event.subscribe";
+                    if (sub_event.compare(0, unsub_prefix.size(), unsub_prefix) == 0) {
+                        sub_event = sub_prefix + sub_event.substr(unsub_prefix.size());
+                    }
+                    auto key = target + "|" + sub_event;
+                    auto it = subscription_refcount_.find(key);
+                    if (it != subscription_refcount_.end()) {
+                        if (--it->second > 0) {
+                            return true;  // other regions still subscribed
+                        }
+                        subscription_refcount_.erase(it);
+                    }
+                    // Fall through to transport-native unsubscribe (refcount 1→0)
                 }
 {% endif %}
                 return route_send(target, env);
@@ -733,11 +787,41 @@ struct TransportRouter {
             return false;
         }
 {% endif %}
+{% if machine_subscriptions %}
+        // Machine-lifetime subscriptions (SCE_MESH.md §13 deploy.yaml path).
+        // Subscribe on init, unsubscribe on shutdown. Each entry came from
+        // deploy.yaml `machines.<name>.subscriptions[*]`.
+{% for sub in machine_subscriptions %}
+        {
+            SCE::Mesh::MeshEnvelope sub_env;
+            sub_env.id = SCE::uuid::v7();
+            sub_env.source = "{{ machine_name }}";
+            sub_env.type = "{{ sub.event }}";
+            sub_env.pattern = SCE::Mesh::PatternKind::EventSubscribe;
+            sub_env.datacontenttype = SCE::Mesh::PayloadCodec::None;
+            (void)route_send("{{ sub.source }}", sub_env);
+        }
+{% endfor %}
+{% endif %}
         return true;
     }
 
     /// Stop all transport connections and release shared resources.
     void shutdown() {
+{% if machine_subscriptions %}
+        // Machine-lifetime unsubscribe (reverse of init subscriptions).
+{% for sub in machine_subscriptions %}
+        {
+            SCE::Mesh::MeshEnvelope unsub_env;
+            unsub_env.id = SCE::uuid::v7();
+            unsub_env.source = "{{ machine_name }}";
+            unsub_env.type = "{{ sub.event }}";
+            unsub_env.pattern = SCE::Mesh::PatternKind::EventUnsubscribe;
+            unsub_env.datacontenttype = SCE::Mesh::PayloadCodec::None;
+            (void)route_send("{{ sub.source }}", unsub_env);
+        }
+{% endfor %}
+{% endif %}
 {% for target in targets if target.state.kind == "someip" %}
         if ({{ target.target_snake }}_app_) {{ target.target_snake }}_app_->stop();
         if ({{ target.target_snake }}_thread_.joinable()) {{ target.target_snake }}_thread_.join();

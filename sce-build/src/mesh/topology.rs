@@ -1222,6 +1222,15 @@ pub fn validate_event_coverage(
             if event.is_empty() {
                 continue; // No event name — content-only send
             }
+            // SCE_MESH.md §13: subscribe/unsubscribe events are transport-
+            // layer lifecycle actions, not receiver-engine events.
+            if let Some(p) = super::pattern::detect_pattern(event) {
+                if p == super::pattern::CommunicationPattern::Subscribe
+                    || p == super::pattern::CommunicationPattern::Unsubscribe
+                {
+                    continue;
+                }
+            }
 
             // Resolve target to machine name: "#motor" → "motor"
             let receiver_name = target.name();
@@ -1441,6 +1450,16 @@ pub fn check_sender_event_coverage(
         if event.is_empty() {
             continue; // content-only <send>; no event name to match
         }
+        // SCE_MESH.md §13: subscribe and unsubscribe events are transport-
+        // layer lifecycle actions consumed by the sender's own router, not
+        // by the receiver engine. Skip coverage check for both patterns.
+        if let Some(p) = super::pattern::detect_pattern(event) {
+            if p == super::pattern::CommunicationPattern::Subscribe
+                || p == super::pattern::CommunicationPattern::Unsubscribe
+            {
+                continue;
+            }
+        }
         let receiver_name = target.name();
         let rx_events = match receiver_events.get(receiver_name) {
             Some(s) => s,
@@ -1472,6 +1491,252 @@ pub fn check_sender_event_coverage(
     });
 
     findings
+}
+
+// ── Subscription auto-symmetry (SCE_MESH.md §13) ────────────
+
+/// A single auto-symmetry site: an `<onentry>` `<send event="event.subscribe.X">`
+/// that qualifies for automatic `<onexit>` unsubscribe generation.
+#[derive(Debug, Clone)]
+pub struct AutoSubscription {
+    /// State containing the qualifying `<onentry>` subscribe.
+    pub state_id: String,
+    /// Target of the subscribe send (e.g. `#bus`).
+    pub target: TargetId,
+    /// The original subscribe event name (`event.subscribe.X`).
+    pub subscribe_event: String,
+    /// The synthesized unsubscribe event name (`event.unsubscribe.X`).
+    pub unsubscribe_event: String,
+}
+
+/// Lint notice emitted when a subscribe send does not qualify for
+/// auto-symmetry. Not a build error — the document still compiles —
+/// but subscription lifecycle becomes the author's responsibility.
+#[derive(Debug, Clone)]
+pub struct SubscriptionLintNotice {
+    /// State containing the ineligible subscribe.
+    pub state_id: String,
+    /// The subscribe event name.
+    pub event: String,
+    /// Why auto-symmetry was suppressed.
+    pub reason: SubscriptionLintReason,
+}
+
+/// Reason auto-symmetry was suppressed for a subscribe send.
+#[derive(Debug, Clone)]
+pub enum SubscriptionLintReason {
+    /// The `<send>` is nested inside `<if>`, `<foreach>`, or other
+    /// conditional/iterative executable content (not a direct child of
+    /// `<onentry>`).
+    NestedInConditional,
+    /// The state's `<onexit>` already contains a manual
+    /// `<send event="event.unsubscribe.X">` for the same topic.
+    ManualUnsubscribePresent,
+    /// Duplicate subscribe for the same event in the same `<onentry>` block.
+    DuplicateSubscribe,
+}
+
+impl std::fmt::Display for SubscriptionLintNotice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let reason = match &self.reason {
+            SubscriptionLintReason::NestedInConditional =>
+                "subscribe is nested inside <if>/<foreach> (not a direct child of <onentry>)",
+            SubscriptionLintReason::ManualUnsubscribePresent =>
+                "state already has a manual <onexit> unsubscribe for the same event",
+            SubscriptionLintReason::DuplicateSubscribe =>
+                "duplicate subscribe for the same event in the same <onentry> block",
+        };
+        write!(
+            f,
+            "state '{}': <send event=\"{}\"> does not qualify for auto-symmetry \
+             unsubscribe generation ({}). Write an explicit <onexit> unsubscribe \
+             if subscription lifecycle management is intended.",
+            self.state_id, self.event, reason
+        )
+    }
+}
+
+/// Detect subscribe sends eligible for auto-symmetry and inject
+/// synthetic unsubscribe sends into the model's `<onexit>` blocks.
+///
+/// SCE_MESH.md §13 auto-symmetry rules:
+///   1. Direct child of `<onentry>` (not nested in `<if>`, `<foreach>`)
+///   2. No manual `<send event="event.unsubscribe.X">` in `<onexit>`
+///   3. Not a duplicate subscribe in the same `<onentry>` block
+///
+/// Returns qualifying sites + lint notices for suppressed ones. The
+/// model is mutated in place: synthetic `Action { action_type: "send",
+/// event: "event.unsubscribe.X", target: ... }` entries are appended
+/// to the state's first `on_exit_blocks` entry (created if absent).
+///
+/// Must be called BEFORE `collect_send_summary` so the synthetic
+/// sends are visible to pattern detection and event coverage.
+pub fn inject_auto_subscriptions(
+    model: &mut crate::model::SCXMLModel,
+) -> (Vec<AutoSubscription>, Vec<SubscriptionLintNotice>) {
+    let mut sites = Vec::new();
+    let mut notices = Vec::new();
+
+    // Collect subscription candidates by scanning all states.
+    // Two-pass: first collect (immutable read), then inject (mutable write).
+    struct Candidate {
+        state_id: String,
+        target: TargetId,
+        subscribe_event: String,
+        unsubscribe_event: String,
+    }
+    let mut candidates: Vec<Candidate> = Vec::new();
+
+    for (state_id, state) in &model.states {
+        // Collect existing manual unsubscribe event names in onexit.
+        // Used to suppress auto-symmetry (rule 3: manual takes precedence).
+        let manual_unsubscribes: std::collections::HashSet<String> = state
+            .on_exit_blocks
+            .iter()
+            .flat_map(|block| block.iter())
+            .filter(|a| a.action_type == "send")
+            .filter(|a| {
+                super::pattern::detect_pattern(&a.event)
+                    == Some(super::pattern::CommunicationPattern::Unsubscribe)
+            })
+            .map(|a| a.event.clone())
+            .collect();
+
+        // Also scan nested actions for subscribe patterns that don't
+        // qualify (for lint notices).
+        let mut seen_subscribes_in_block: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        for block in &state.on_entry_blocks {
+            seen_subscribes_in_block.clear();
+
+            // Scan nested actions for non-qualifying subscribe sends.
+            for action in block {
+                if action.action_type == "if" || action.action_type == "foreach" {
+                    collect_nested_subscribe_notices(
+                        state_id,
+                        action,
+                        &mut notices,
+                    );
+                }
+            }
+
+            // Direct children: check eligibility.
+            for action in block {
+                if action.action_type != "send" {
+                    continue;
+                }
+                if super::pattern::detect_pattern(&action.event)
+                    != Some(super::pattern::CommunicationPattern::Subscribe)
+                {
+                    continue;
+                }
+
+                let Some(unsub_event) =
+                    super::pattern::subscribe_to_unsubscribe(&action.event)
+                else {
+                    continue;
+                };
+
+                // Rule 3: duplicate subscribe in same block
+                if !seen_subscribes_in_block.insert(action.event.clone()) {
+                    notices.push(SubscriptionLintNotice {
+                        state_id: state_id.clone(),
+                        event: action.event.clone(),
+                        reason: SubscriptionLintReason::DuplicateSubscribe,
+                    });
+                    continue;
+                }
+
+                // Rule 2: manual unsubscribe already present
+                if manual_unsubscribes.contains(&unsub_event) {
+                    notices.push(SubscriptionLintNotice {
+                        state_id: state_id.clone(),
+                        event: action.event.clone(),
+                        reason: SubscriptionLintReason::ManualUnsubscribePresent,
+                    });
+                    continue;
+                }
+
+                // Eligible — collect candidate.
+                let Some(tid) = TargetId::new(&action.target) else {
+                    continue;
+                };
+                candidates.push(Candidate {
+                    state_id: state_id.clone(),
+                    target: tid,
+                    subscribe_event: action.event.clone(),
+                    unsubscribe_event: unsub_event,
+                });
+            }
+        }
+    }
+
+    // Inject synthetic unsubscribe sends into the model.
+    for c in &candidates {
+        let state = model.states.get_mut(&c.state_id).expect(
+            "state must exist — collected from the same model",
+        );
+
+        // Build synthetic send action.
+        let mut unsub_action = crate::model::Action::default();
+        unsub_action.action_type = "send".to_string();
+        unsub_action.event = c.unsubscribe_event.clone();
+        unsub_action.target = c.target.as_str().to_string();
+
+        // Append to the first onexit block; create one if absent.
+        if state.on_exit_blocks.is_empty() {
+            state.on_exit_blocks.push(Vec::new());
+        }
+        state.on_exit_blocks[0].push(unsub_action);
+
+        sites.push(AutoSubscription {
+            state_id: c.state_id.clone(),
+            target: c.target.clone(),
+            subscribe_event: c.subscribe_event.clone(),
+            unsubscribe_event: c.unsubscribe_event.clone(),
+        });
+    }
+
+    (sites, notices)
+}
+
+/// Recursively scan nested actions (inside `<if>`, `<foreach>`) for
+/// subscribe sends and emit lint notices for each.
+fn collect_nested_subscribe_notices(
+    state_id: &str,
+    action: &crate::model::Action,
+    notices: &mut Vec<SubscriptionLintNotice>,
+) {
+    // Flat list of all action sequences inside this conditional/iterative.
+    let sequences: Vec<&[crate::model::Action]> = {
+        let mut seqs: Vec<&[crate::model::Action]> = Vec::new();
+        seqs.push(&action.then_actions);
+        for branch in &action.elseif_branches {
+            seqs.push(&branch.actions);
+        }
+        seqs.push(&action.else_actions);
+        seqs.push(&action.actions); // <foreach> body
+        seqs
+    };
+
+    for seq in sequences {
+        for a in seq {
+            if a.action_type == "send"
+                && super::pattern::detect_pattern(&a.event)
+                    == Some(super::pattern::CommunicationPattern::Subscribe)
+            {
+                notices.push(SubscriptionLintNotice {
+                    state_id: state_id.to_string(),
+                    event: a.event.clone(),
+                    reason: SubscriptionLintReason::NestedInConditional,
+                });
+            }
+            if a.action_type == "if" || a.action_type == "foreach" {
+                collect_nested_subscribe_notices(state_id, a, notices);
+            }
+        }
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────
@@ -2283,5 +2548,136 @@ topology:
         let res = resolve_for_mesh_rpc(None, "");
         assert!(res.deadline_overrides.is_empty());
         assert_eq!(res.targets[0].invoke_sites[0].deadline_ms, None);
+    }
+
+    // ── inject_auto_subscriptions ─────────────────────────────
+
+    /// SCXML with a qualifying onentry subscribe (direct child, no manual unsubscribe).
+    const AUTO_SUB_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="sub_test" initial="monitoring">
+    <state id="monitoring">
+        <onentry>
+            <send target="#bus" event="event.subscribe.brake_status"/>
+        </onentry>
+        <transition event="event.notification.brake_status" target="monitoring"/>
+    </state>
+</scxml>"##;
+
+    /// SCXML with a subscribe nested inside <if> (should lint, not auto-generate).
+    const NESTED_SUB_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="nested_test" initial="s">
+    <state id="s">
+        <onentry>
+            <if cond="true">
+                <send target="#bus" event="event.subscribe.speed"/>
+            </if>
+        </onentry>
+    </state>
+</scxml>"##;
+
+    /// SCXML with a manual unsubscribe in onexit (should suppress auto-generation).
+    const MANUAL_UNSUB_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="manual_test" initial="s">
+    <state id="s">
+        <onentry>
+            <send target="#bus" event="event.subscribe.brake_status"/>
+        </onentry>
+        <onexit>
+            <send target="#bus" event="event.unsubscribe.brake_status"/>
+        </onexit>
+    </state>
+</scxml>"##;
+
+    #[test]
+    fn auto_subscription_injects_unsubscribe_in_onexit() {
+        let mut model = parse_model(AUTO_SUB_SCXML, "sub_test");
+        let (sites, notices) = inject_auto_subscriptions(&mut model);
+
+        assert_eq!(sites.len(), 1, "one qualifying site");
+        assert_eq!(sites[0].state_id, "monitoring");
+        assert_eq!(sites[0].subscribe_event, "event.subscribe.brake_status");
+        assert_eq!(sites[0].unsubscribe_event, "event.unsubscribe.brake_status");
+        assert_eq!(sites[0].target, "#bus");
+        assert!(notices.is_empty(), "no lint notices for qualifying site");
+
+        // Verify the model was mutated: onexit block should have the synthetic send.
+        let state = model.states.get("monitoring").expect("state exists");
+        assert!(!state.on_exit_blocks.is_empty(), "onexit block created");
+        let exit_block = &state.on_exit_blocks[0];
+        let unsub = exit_block.iter().find(|a| {
+            a.action_type == "send" && a.event == "event.unsubscribe.brake_status"
+        });
+        assert!(unsub.is_some(), "synthetic unsubscribe send injected");
+        let unsub = unsub.unwrap();
+        assert_eq!(unsub.target, "#bus");
+    }
+
+    #[test]
+    fn nested_subscribe_emits_lint_notice() {
+        let mut model = parse_model(NESTED_SUB_SCXML, "nested_test");
+        let (sites, notices) = inject_auto_subscriptions(&mut model);
+
+        assert!(sites.is_empty(), "nested subscribe should not auto-generate");
+        assert_eq!(notices.len(), 1, "one lint notice");
+        assert_eq!(notices[0].event, "event.subscribe.speed");
+        assert!(matches!(
+            notices[0].reason,
+            SubscriptionLintReason::NestedInConditional
+        ));
+    }
+
+    #[test]
+    fn manual_unsubscribe_suppresses_auto_generation() {
+        let mut model = parse_model(MANUAL_UNSUB_SCXML, "manual_test");
+        let (sites, notices) = inject_auto_subscriptions(&mut model);
+
+        assert!(sites.is_empty(), "manual unsubscribe suppresses auto-generation");
+        assert_eq!(notices.len(), 1, "one lint notice for manual suppression");
+        assert!(matches!(
+            notices[0].reason,
+            SubscriptionLintReason::ManualUnsubscribePresent
+        ));
+    }
+
+    #[test]
+    fn auto_subscription_detected_by_collect_send_summary() {
+        let mut model = parse_model(AUTO_SUB_SCXML, "sub_test");
+        inject_auto_subscriptions(&mut model);
+
+        // After injection, collect_send_summary should see both subscribe and unsubscribe.
+        let summary = collect_send_summary(&model);
+        let events: Vec<&str> = summary.actions.iter().map(|a| a.event.as_str()).collect();
+        assert!(events.contains(&"event.subscribe.brake_status"), "subscribe detected");
+        assert!(events.contains(&"event.unsubscribe.brake_status"), "unsubscribe detected");
+    }
+
+    #[test]
+    fn subscribe_events_exempt_from_coverage() {
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sub_test: { source: sub_test.scxml, bindings: { "#bus": { transport: local } } }
+      bus: { source: bus.scxml }
+"##,
+        )
+        .unwrap();
+        let mut model = parse_model(AUTO_SUB_SCXML, "sub_test");
+        inject_auto_subscriptions(&mut model);
+
+        let bus_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="bus" initial="idle">
+    <state id="idle"/>
+</scxml>"##;
+        let bus_model = parse_model(bus_scxml, "bus");
+        let receivers = vec![("bus".to_string(), bus_model)];
+
+        let summary = collect_send_summary(&model);
+        let findings = check_sender_event_coverage("sub_test", &summary, &receivers, &deploy);
+        assert!(
+            findings.is_empty(),
+            "subscribe/unsubscribe events should be exempt from coverage: {findings:?}"
+        );
     }
 }

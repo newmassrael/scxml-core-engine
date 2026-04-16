@@ -749,7 +749,7 @@ fn cmd_generate(
             eprintln!("Deprecation: {notice}");
         }
         match sce_build::compile_mesh_transport(
-            &model,
+            &mut model,
             Path::new(deploy_file),
             lang,
         ) {
@@ -759,6 +759,9 @@ fn cmd_generate(
                 }
                 for n in &result.deadline_override_notices {
                     eprintln!("Notice: {n}");
+                }
+                for n in &result.subscription_lint_notices {
+                    eprintln!("Lint: {n}");
                 }
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
                 for (filename, code) in &mesh_files {

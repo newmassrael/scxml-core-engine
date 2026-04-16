@@ -178,6 +178,36 @@ pub struct MachineConfig {
     /// stringly-free past the deploy.yaml boundary.
     #[serde(default)]
     pub bindings: HashMap<TargetId, BindingConfig>,
+    /// Machine-lifetime subscriptions (SCE_MESH.md §13). Subscribe on
+    /// engine init, unsubscribe on engine shutdown. Each entry names an
+    /// event to subscribe to and the source target that hosts the
+    /// publisher.
+    ///
+    /// ```yaml
+    /// subscriptions:
+    ///   - event: event.notification.vehicle_speed
+    ///     source: "#chassis"
+    /// ```
+    #[serde(default)]
+    pub subscriptions: Vec<SubscriptionConfig>,
+}
+
+/// A single machine-lifetime subscription declaration (SCE_MESH.md §13).
+///
+/// Codegen emits subscribe on engine init and unsubscribe on engine
+/// shutdown. The SCXML document is not touched — these subscriptions
+/// exist only in deploy.yaml.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubscriptionConfig {
+    /// Event name to subscribe to (e.g. `event.notification.vehicle_speed`).
+    /// Must match the `event.notification.*` or `event.subscribe.*` prefix
+    /// convention; validated at topology resolution time.
+    pub event: String,
+    /// Source target that publishes the event (e.g. `"#chassis"`). Must
+    /// have a matching entry in the machine's `bindings:` map so the
+    /// transport layer knows which channel to subscribe on.
+    pub source: String,
 }
 
 /// Per-event SOME/IP binding (SCE_MESH.md §14).
@@ -719,5 +749,45 @@ topology:
       motor: { source: motor.scxml }
 "#;
         parse_deploy_str(yaml).expect("parse");
+    }
+
+    #[test]
+    fn machine_subscriptions_parsed() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        subscriptions:
+          - event: event.notification.vehicle_speed
+            source: "#chassis"
+          - event: event.notification.brake_pressure
+            source: "#sensor"
+      chassis: { source: chassis.scxml }
+      sensor: { source: sensor.scxml }
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        assert_eq!(brake.subscriptions.len(), 2);
+        assert_eq!(brake.subscriptions[0].event, "event.notification.vehicle_speed");
+        assert_eq!(brake.subscriptions[0].source, "#chassis");
+        assert_eq!(brake.subscriptions[1].event, "event.notification.brake_pressure");
+        assert_eq!(brake.subscriptions[1].source, "#sensor");
+    }
+
+    #[test]
+    fn machine_subscriptions_default_empty() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml }
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        assert!(brake.subscriptions.is_empty());
     }
 }

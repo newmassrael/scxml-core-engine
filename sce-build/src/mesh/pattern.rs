@@ -55,6 +55,12 @@ pub enum CommunicationPattern {
     FireForget,
     /// `event.subscribe` — Register interest in a topic/event group (Pub/Sub setup).
     Subscribe,
+    /// `event.unsubscribe` — Cancel interest in a topic/event group (Pub/Sub teardown).
+    /// Lifecycle-emitted by codegen for auto-symmetry (`<onexit>` unsubscribe
+    /// paired with `<onentry>` subscribe — SCE_MESH.md §13). Authors may also
+    /// write explicit `<send event="event.unsubscribe.*">` when auto-symmetry
+    /// does not apply (conditional subscribe, manual lifecycle management).
+    Unsubscribe,
     /// `event.notification` — Received event from subscription (Pub/Sub delivery).
     Notification,
     /// `field.get` — Read a named data field (property access).
@@ -74,6 +80,7 @@ impl CommunicationPattern {
         Self::ServiceRequest,
         Self::ServiceResponse,
         Self::Subscribe,
+        Self::Unsubscribe,
         Self::Notification,
         Self::FieldGet,
         Self::FieldSet,
@@ -90,6 +97,7 @@ impl CommunicationPattern {
             Self::ServiceRequest  => "service.request",
             Self::ServiceResponse => "service.response",
             Self::Subscribe       => "event.subscribe",
+            Self::Unsubscribe     => "event.unsubscribe",
             Self::Notification    => "event.notification",
             Self::FieldGet        => "field.get",
             Self::FieldSet        => "field.set",
@@ -101,7 +109,7 @@ impl CommunicationPattern {
         match self {
             Self::ServiceRequest | Self::ServiceResponse => TransportCapability::RequestReply,
             Self::FireForget => TransportCapability::FireForget,
-            Self::Subscribe | Self::Notification => TransportCapability::PubSub,
+            Self::Subscribe | Self::Unsubscribe | Self::Notification => TransportCapability::PubSub,
             Self::FieldGet | Self::FieldSet => TransportCapability::FieldAccess,
         }
     }
@@ -123,7 +131,7 @@ impl CommunicationPattern {
         use SomeipFieldKind::*;
         match self {
             Self::FireForget | Self::ServiceRequest | Self::ServiceResponse => Method,
-            Self::Subscribe | Self::Notification => EventGroup,
+            Self::Subscribe | Self::Unsubscribe | Self::Notification => EventGroup,
             Self::FieldGet => Getter,
             Self::FieldSet => Setter,
         }
@@ -147,26 +155,26 @@ impl CommunicationPattern {
     /// Values MUST match `sce/include/mesh/PatternKind.h`; any drift is caught
     /// by the C++ static_asserts in that header.
     ///
-    /// Note: `CommunicationPattern` is the SCXML-detectable subset (7 variants).
-    /// C++ `PatternKind` has 9 variants — `EventUnsubscribe` (5) is lifecycle-
-    /// emitted by codegen (not detected from `<send>`), and `FieldNotify` (9)
-    /// is inbound-only (arrives via `register_message_handler`, never sent).
-    /// Hence neither appears here; they exist only on the C++ side.
+    /// Note: `CommunicationPattern` covers 8 of the 9 C++ `PatternKind`
+    /// variants. `FieldNotify` (9) is inbound-only (arrives via
+    /// `register_message_handler`, never sent from SCXML) and has no
+    /// Rust counterpart.
     pub fn wire_value(self) -> u16 {
         match self {
             Self::FireForget       => 1,
             Self::ServiceRequest   => 2,
             Self::ServiceResponse  => 3,
             Self::Subscribe        => 4,
+            Self::Unsubscribe      => 5,
             Self::Notification     => 6,
             Self::FieldGet         => 7,
             Self::FieldSet         => 8,
         }
     }
 
-    /// Inverse of [`wire_value`] over the SCXML-detectable subset. Returns
-    /// `None` for wire values that exist in the C++ `PatternKind` enum but
-    /// cannot originate from `<send>` (e.g. `EventUnsubscribe`, `FieldNotify`).
+    /// Inverse of [`wire_value`]. Returns `None` for wire values that
+    /// exist in the C++ `PatternKind` enum but have no Rust counterpart
+    /// (currently only `FieldNotify` = 9, which is inbound-only).
     ///
     /// Consumers that need to recover the symbolic pattern from a cached
     /// `pattern_kind_value` (e.g. validators) go through this — no open-coded
@@ -182,7 +190,7 @@ impl CommunicationPattern {
     /// Only `ServiceRequest` has a paired reply under path B — other
     /// patterns either never reply (`FireForget`, `FieldSet`, `Subscribe`,
     /// `Unsubscribe`) or ARE the reply themselves (`ServiceResponse`,
-    /// `Notification`, `FieldGet`). The paired reply is built from
+    /// `Notification`, `FieldGet`).  The paired reply is built from
     /// `ServiceResponse.prefix_str()`; no literal strings are duplicated.
     pub fn infer_reply_event(self, event: &str) -> Option<String> {
         if self != Self::ServiceRequest {
@@ -196,6 +204,24 @@ impl CommunicationPattern {
             format!("{resp}.{suffix}")
         })
     }
+}
+
+/// Derive the paired unsubscribe event name from a subscribe event name.
+///
+/// `event.subscribe.X` → `Some("event.unsubscribe.X")`
+/// `event.subscribe`   → `Some("event.unsubscribe")`
+/// anything else        → `None`
+///
+/// SCE_MESH.md §13 auto-symmetry: the topology analyzer uses this to
+/// synthesize `<onexit>` unsubscribe sends from `<onentry>` subscribe sends.
+pub fn subscribe_to_unsubscribe(event: &str) -> Option<String> {
+    let suffix = CommunicationPattern::Subscribe.match_suffix(event)?;
+    let unsub = CommunicationPattern::Unsubscribe.prefix_str();
+    Some(if suffix.is_empty() {
+        unsub.to_string()
+    } else {
+        format!("{unsub}.{suffix}")
+    })
 }
 
 // ── Wire value constants (C++ PatternKind.h mirror) ─────────
@@ -347,6 +373,18 @@ mod tests {
     }
 
     #[test]
+    fn detect_unsubscribe() {
+        assert_eq!(
+            detect_pattern("event.unsubscribe"),
+            Some(CommunicationPattern::Unsubscribe)
+        );
+        assert_eq!(
+            detect_pattern("event.unsubscribe.speed_updates"),
+            Some(CommunicationPattern::Unsubscribe)
+        );
+    }
+
+    #[test]
     fn detect_notification() {
         assert_eq!(
             detect_pattern("event.notification"),
@@ -431,6 +469,7 @@ mod tests {
             CommunicationPattern::ServiceResponse,
             CommunicationPattern::FireForget,
             CommunicationPattern::Subscribe,
+            CommunicationPattern::Unsubscribe,
             CommunicationPattern::Notification,
             CommunicationPattern::FieldGet,
             CommunicationPattern::FieldSet,
@@ -484,6 +523,10 @@ mod tests {
             TransportCapability::PubSub
         );
         assert_eq!(
+            CommunicationPattern::Unsubscribe.required_capability(),
+            TransportCapability::PubSub
+        );
+        assert_eq!(
             CommunicationPattern::Notification.required_capability(),
             TransportCapability::PubSub
         );
@@ -515,6 +558,7 @@ mod tests {
     fn someip_field_event_group_family() {
         use SomeipFieldKind::EventGroup;
         assert_eq!(CommunicationPattern::Subscribe.someip_field(), EventGroup);
+        assert_eq!(CommunicationPattern::Unsubscribe.someip_field(), EventGroup);
         assert_eq!(CommunicationPattern::Notification.someip_field(), EventGroup);
     }
 
@@ -539,9 +583,37 @@ mod tests {
 
     // ── Display ─────────────────────────────────────────────
 
+    // ── subscribe_to_unsubscribe ──────────────────────────────
+
+    #[test]
+    fn subscribe_to_unsubscribe_with_suffix() {
+        assert_eq!(
+            subscribe_to_unsubscribe("event.subscribe.brake_status"),
+            Some("event.unsubscribe.brake_status".to_string())
+        );
+    }
+
+    #[test]
+    fn subscribe_to_unsubscribe_bare_prefix() {
+        assert_eq!(
+            subscribe_to_unsubscribe("event.subscribe"),
+            Some("event.unsubscribe".to_string())
+        );
+    }
+
+    #[test]
+    fn subscribe_to_unsubscribe_none_for_non_subscribe() {
+        assert_eq!(subscribe_to_unsubscribe("event.notification.x"), None);
+        assert_eq!(subscribe_to_unsubscribe("service.request.x"), None);
+        assert_eq!(subscribe_to_unsubscribe("brake.activate"), None);
+    }
+
+    // ── Display ─────────────────────────────────────────────
+
     #[test]
     fn pattern_display() {
         assert_eq!(CommunicationPattern::ServiceRequest.to_string(), "service.request");
+        assert_eq!(CommunicationPattern::Unsubscribe.to_string(), "event.unsubscribe");
         assert_eq!(CommunicationPattern::FieldSet.to_string(), "field.set");
     }
 

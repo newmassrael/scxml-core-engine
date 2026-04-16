@@ -122,8 +122,8 @@ fn end_to_end_name_resolution_produces_numeric_constants() {
     fx.write("motor.scxml", MOTOR_SCXML);
     let deploy_path = fx.write("deploy.yaml", &deploy_with_names("vsomeip.json"));
 
-    let model = parse_brake();
-    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
+    let mut model = parse_brake();
+    let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
 
     // Exactly one generated mesh header for the brake machine.
@@ -228,10 +228,10 @@ topology:
     let deploy_path = fx.write("deploy.yaml", deploy);
 
     let mut parser = sce_build::parser::SCXMLParser::new();
-    let model = parser
+    let mut model = parser
         .parse_string(brake, "brake")
         .expect("parse brake");
-    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
+    let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
     let (_name, code) = &result.output.files[0];
 
@@ -287,8 +287,8 @@ topology:
 "##;
     let deploy_path = fx.write("deploy.yaml", deploy);
 
-    let model = parse_brake();
-    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+    let mut model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp) {
         Ok(_) => panic!("must fail on unused event binding"),
         Err(e) => e,
     };
@@ -314,8 +314,8 @@ fn unresolved_method_name_fails_build_with_config_path() {
     );
     let deploy_path = fx.write("deploy.yaml", &bad_deploy);
 
-    let model = parse_brake();
-    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp);
+    let mut model = parse_brake();
+    let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp);
     let err = match result {
         Ok(_) => panic!("must fail on unresolved method"),
         Err(e) => e,
@@ -348,8 +348,8 @@ fn missing_external_config_file_reports_path() {
     fx.write("motor.scxml", MOTOR_SCXML);
     let deploy_path = fx.write("deploy.yaml", &deploy_with_names("vsomeip_missing.json"));
 
-    let model = parse_brake();
-    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+    let mut model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp) {
         Ok(_) => panic!("must fail when vsomeip.json missing"),
         Err(e) => e,
     };
@@ -374,8 +374,8 @@ fn malformed_external_config_reports_parse_error() {
     fx.write("motor.scxml", MOTOR_SCXML);
     let deploy_path = fx.write("deploy.yaml", &deploy_with_names("vsomeip.json"));
 
-    let model = parse_brake();
-    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+    let mut model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp) {
         Ok(_) => panic!("must fail on malformed JSON"),
         Err(e) => e,
     };
@@ -400,8 +400,8 @@ fn application_name_from_deploy_yaml_reaches_generated_code() {
     fx.write("motor.scxml", MOTOR_SCXML);
     let deploy_path = fx.write("deploy.yaml", &deploy_with_names("vsomeip.json"));
 
-    let model = parse_brake();
-    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
+    let mut model = parse_brake();
+    let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
 
     let (_name, code) = &result.output.files[0];
@@ -447,8 +447,8 @@ topology:
 "##;
     let deploy_path = fx.write("deploy.yaml", deploy);
 
-    let model = parse_brake();
-    let result = sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp)
+    let mut model = parse_brake();
+    let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
 
     let (_name, code) = &result.output.files[0];
@@ -500,8 +500,8 @@ topology:
 "##;
     let deploy_path = fx.write("deploy.yaml", yaml);
 
-    let model = parse_brake();
-    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+    let mut model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp) {
         Ok(_) => panic!("empty event entry must be rejected"),
         Err(e) => e,
     };
@@ -539,8 +539,8 @@ topology:
 "##;
     let deploy_path = fx.write("deploy.yaml", yaml);
 
-    let model = parse_brake();
-    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+    let mut model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp) {
         Ok(_) => panic!("reserved keys on zenoh binding must be rejected"),
         Err(e) => e,
     };
@@ -582,8 +582,8 @@ topology:
 "##;
     let deploy_path = fx.write("deploy.yaml", yaml);
 
-    let model = parse_brake();
-    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+    let mut model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp) {
         Ok(_) => panic!("reserved SOME/IP ID keys must be rejected"),
         Err(e) => e,
     };
@@ -644,8 +644,8 @@ topology:
     let deploy_path = fx.write("deploy.yaml", deploy);
 
     let mut parser = sce_build::parser::SCXMLParser::new();
-    let model = parser.parse_string(scxml, "brake").expect("parse");
-    let err = match sce_build::compile_mesh_transport(&model, &deploy_path, Language::Cpp) {
+    let mut model = parser.parse_string(scxml, "brake").expect("parse");
+    let err = match sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp) {
         Err(e) => e,
         Ok(_) => panic!("collision must reject codegen"),
     };

@@ -799,6 +799,14 @@ pub struct MeshResult {
     /// silently overrides a deploy.yaml binding-level deadline with a
     /// per-invoke `<param name="_mesh_deadline_ms">` value.
     pub deadline_override_notices: Vec<mesh::topology::DeadlineOverrideNotice>,
+    /// Auto-symmetry subscription sites injected by the topology analyzer
+    /// (SCE_MESH.md §13). Each entry means an `<onexit>` unsubscribe was
+    /// synthesized for a qualifying `<onentry>` subscribe.
+    pub auto_subscriptions: Vec<mesh::topology::AutoSubscription>,
+    /// Lint notices for subscribe sends that did not qualify for
+    /// auto-symmetry (nested in conditional, manual unsubscribe present,
+    /// duplicate). Non-fatal informational output.
+    pub subscription_lint_notices: Vec<mesh::topology::SubscriptionLintNotice>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -831,7 +839,7 @@ pub struct MeshResult {
 /// Returns `Ok(MeshResult)` with generated files and all warnings,
 /// or `Err(MeshError)` on hard failure.
 pub fn compile_mesh_transport(
-    model: &SCXMLModel,
+    model: &mut SCXMLModel,
     deploy_path: &Path,
     language: generator::Language,
 ) -> Result<MeshResult, mesh::error::MeshError> {
@@ -844,6 +852,12 @@ pub fn compile_mesh_transport(
     let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
     let external_resolution =
         mesh::external::resolve_external_bindings(&deploy_cfg, deploy_dir)?;
+
+    // Stage 1c: auto-symmetry injection (SCE_MESH.md §13). Must run
+    // BEFORE collect_send_summary so synthesized unsubscribe sends are
+    // visible to pattern detection and event coverage validation.
+    let (auto_subscriptions, subscription_lint_notices) =
+        mesh::topology::inject_auto_subscriptions(model);
 
     // Stage 2: single-pass send action collection
     let summary = mesh::topology::collect_send_summary(model);
@@ -870,6 +884,8 @@ pub fn compile_mesh_transport(
             output: generator::GeneratedOutput { files: vec![] },
             dynamic_target_warnings,
             deadline_override_notices,
+            auto_subscriptions,
+            subscription_lint_notices,
         });
     }
 
@@ -905,12 +921,18 @@ pub fn compile_mesh_transport(
     let device = deploy_cfg.device_for_machine(&model.name);
     let zenoh_session = device.and_then(|d| d.transports.zenoh.as_ref());
     let someip_config = device.and_then(|d| d.transports.someip.as_ref());
+    // Machine-lifetime subscriptions from deploy.yaml (SCE_MESH.md §13).
+    let machine_subscriptions = device
+        .and_then(|d| d.machines.get(&model.name))
+        .map(|m| m.subscriptions.as_slice())
+        .unwrap_or(&[]);
     let template_base = find_template_base();
     let output = mesh::codegen::generate_mesh(
         &model.name,
         &resolved,
         zenoh_session,
         someip_config,
+        machine_subscriptions,
         language,
         &template_base,
     )?;
@@ -918,6 +940,8 @@ pub fn compile_mesh_transport(
         output,
         dynamic_target_warnings,
         deadline_override_notices,
+        auto_subscriptions,
+        subscription_lint_notices,
     })
 }
 

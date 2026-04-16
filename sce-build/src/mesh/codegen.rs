@@ -408,10 +408,11 @@ pub fn generate_mesh(
     targets: &[ResolvedTarget],
     zenoh_session: Option<&ZenohTransportConfig>,
     someip_config: Option<&SomeipTransportConfig>,
+    subscriptions: &[super::deploy::SubscriptionConfig],
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
-    if targets.is_empty() {
+    if targets.is_empty() && subscriptions.is_empty() {
         return Ok(GeneratedOutput { files: vec![] });
     }
 
@@ -421,6 +422,7 @@ pub fn generate_mesh(
             targets,
             zenoh_session,
             someip_config,
+            subscriptions,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -432,6 +434,7 @@ fn generate_cpp_mesh(
     targets: &[ResolvedTarget],
     zenoh_session: Option<&ZenohTransportConfig>,
     someip_config: Option<&SomeipTransportConfig>,
+    subscriptions: &[super::deploy::SubscriptionConfig],
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -629,6 +632,7 @@ fn generate_cpp_mesh(
         zenoh_session_json5 => zenoh_session_json5,
         zenoh_session_json5_present => zenoh_session_json5_present,
         someip_transport => someip_transport,
+        machine_subscriptions => subscriptions,
     };
 
     let code = tmpl
