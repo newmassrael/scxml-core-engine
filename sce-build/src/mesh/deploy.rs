@@ -464,7 +464,18 @@ pub struct ServerConfig {
     #[serde(default)]
     pub key: Option<String>,
     /// Per-server Zenoh queryable response deadline (SCE Mesh §9.5, gap
-    /// Z2). Absent ⇒ no deadline armed per inbound query, matching the
+    /// Z2).
+    ///
+    /// **Zenoh-only scope**: SOME/IP (and other non-zenoh) server-side
+    /// response lifecycles use distinct transport-native state
+    /// (`pending_server_requests_` for vsomeip), not the
+    /// `pending_server_queries_` map that this knob targets. Parse-time
+    /// validation rejects the knob on non-zenoh servers so a SOME/IP
+    /// author cannot inadvertently ship a silent no-op. A future
+    /// SOME/IP equivalent will land under its own gap memo
+    /// (`mesh_someip_sd_gaps_roadmap.md`) with its own knob.
+    ///
+    /// Absent ⇒ no deadline armed per inbound query, matching the
     /// pre-Z2 behaviour where `pending_server_queries_` leaks any entry
     /// whose engine never emits the paired response. Present ⇒ each
     /// inbound query arms a scheduler entry that, on expiry, silently
@@ -472,7 +483,8 @@ pub struct ServerConfig {
     /// observe the drop via the Z3 on_drop path
     /// (`RpcStatus::Unavailable`), so no new `error.communication` row
     /// is introduced. Validated at parse time
-    /// (`query_timeout_ms >= MIN_SERVER_QUERY_TIMEOUT_MS`).
+    /// (`query_timeout_ms >= MIN_SERVER_QUERY_TIMEOUT_MS` AND
+    /// `transport == "zenoh"`).
     #[serde(default)]
     pub query_timeout_ms: Option<u64>,
     /// Transport-native passthrough (e.g. `protocol: tcp`).
@@ -484,16 +496,39 @@ impl ServerConfig {
     /// Validate the `query_timeout_ms` field. Returns the rejection
     /// reason without the machine name — the caller wraps this into
     /// [`DeployError::InvalidServerQueryTimeout`].
+    ///
+    /// Two rejection paths:
+    ///   1. Value below [`MIN_SERVER_QUERY_TIMEOUT_MS`] — would race
+    ///      engine macrostep latency and cause every query to time
+    ///      out before a response is possible.
+    ///   2. Non-zenoh transport — Z2 wires the scheduler to the
+    ///      zenoh-specific `pending_server_queries_` map, so the knob
+    ///      is a silent no-op on SOME/IP and other transports today.
+    ///      Rejecting at parse time surfaces the mistake before it
+    ///      reaches the generated router.
     fn query_timeout_validation_error(&self) -> Option<String> {
-        match self.query_timeout_ms {
-            Some(ms) if ms < MIN_SERVER_QUERY_TIMEOUT_MS => Some(format!(
+        let Some(ms) = self.query_timeout_ms else {
+            return None;
+        };
+        if ms < MIN_SERVER_QUERY_TIMEOUT_MS {
+            return Some(format!(
                 "query_timeout_ms ({}) must be >= {} ms — values below this \
                  floor race typical engine macrostep latency and would cause \
                  every inbound query to time out before the engine can respond",
                 ms, MIN_SERVER_QUERY_TIMEOUT_MS,
-            )),
-            _ => None,
+            ));
         }
+        if self.transport != "zenoh" {
+            return Some(format!(
+                "query_timeout_ms is currently supported only on Zenoh servers \
+                 (transport: zenoh); this server declares `transport: {}`. \
+                 SOME/IP and other server-side response lifecycles are tracked \
+                 separately (SCE Mesh §9.5 gap Z2 does not cover them yet). \
+                 Remove the knob, or switch the server transport to zenoh",
+                self.transport,
+            ));
+        }
+        None
     }
 }
 
@@ -1610,6 +1645,40 @@ topology:
             Some(500),
             "explicit knob must propagate the value verbatim"
         );
+    }
+
+    #[test]
+    fn server_query_timeout_on_non_zenoh_rejected() {
+        // SOME/IP server has no `pending_server_queries_` map — Z2 wires
+        // the scheduler to a zenoh-specific structure, so the knob would
+        // silently no-op on SOME/IP. Parse-time rejection prevents the
+        // silent-hook pattern at the config layer.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: someip
+          service: motor_control
+          query_timeout_ms: 500
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidServerQueryTimeout { machine, reason }) => {
+                assert_eq!(machine, "motor");
+                assert!(
+                    reason.contains("zenoh"),
+                    "reason must cite the required transport: {reason}"
+                );
+                assert!(
+                    reason.contains("someip"),
+                    "reason must cite the declared transport: {reason}"
+                );
+            }
+            other => panic!("expected InvalidServerQueryTimeout, got {other:?}"),
+        }
     }
 
     #[test]
