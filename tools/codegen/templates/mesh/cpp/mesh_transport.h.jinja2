@@ -211,6 +211,15 @@ dispatchToSender({{ env_name }})
    even if the deploy.yaml declared a liveliness block by mistake. #}
 {% set has_zenoh_liveliness = ("zenoh" in transport_types) and machine_liveliness %}
 
+{# Emission gate for Zenoh client-side `session.get` on_drop wiring
+   (SCE Mesh gap Z3). The on_drop closure early-cancels a mesh-rpc
+   invoke whose query terminated without a reply, so `error.invoke.<id>`
+   surfaces in milliseconds instead of waiting out `_mesh_deadline_ms`.
+   Gate requires BOTH zenoh transport AND `<invoke type="sce:mesh-rpc">`
+   on this machine — without mesh-rpc the outbound envelope never
+   stamps `invoke_id`, so there is no correlation entry to cancel. #}
+{% set has_zenoh_mesh_rpc = ("zenoh" in transport_types) and has_mesh_rpc.v %}
+
 {# Joint emission gate for the `raiseCommunicationError` helper
    (SCE_MESH.md §10.7.1). Either ordering-path raises (MISSING_SEQUENCE /
    ORDERING_GAP via the ordering tick) or liveliness-path raises
@@ -301,6 +310,16 @@ dispatchToSender({{ env_name }})
 #include "mesh/CommunicationError.h"
 #include <chrono>
 #include <mutex>
+{% endif %}
+{% if has_zenoh_mesh_rpc %}
+// SCE Mesh gap Z3: shared "reply observed" flag coordinates the
+// zenoh `session.get` on_reply and on_drop closures. `<atomic>` pairs
+// with `std::shared_ptr` (from `<memory>`) so both closures observe
+// the same flag across zenoh runtime threads. `zenoh_shutdown_in_progress_`
+// uses the same atomic to suppress early-cancel raises during router
+// teardown.
+#include <atomic>
+#include <memory>
 {% endif %}
 
 namespace SCE::Generated::{{ machine_name }} {
@@ -609,6 +628,22 @@ struct TransportRouter {
     std::optional<zenoh::Subscriber<void>> liveliness_subscriber_;
     std::mutex liveliness_mutex_;
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> peer_last_seen_;
+{% endif %}
+{% if has_zenoh_mesh_rpc %}
+    // SCE Mesh gap Z3: suppress mesh-rpc early-cancel raises during
+    // router teardown. `zenoh_session_.reset()` in shutdown() fires
+    // every inflight `session.get`'s on_drop closure in parallel on
+    // zenoh runtime threads. Without suppression each would call
+    // `onZenohQueryDropped` and raise `error.invoke.<id>` on a
+    // sender engine that may itself be mid-teardown — observable as
+    // spurious N-firing.
+    //
+    // Mirrors `MeshDeadlineScheduler::shutdown`'s "benign drop"
+    // semantics (§9.5): a router destroyed mid-flight cannot deliver
+    // any further events, so dropped queries match cancel rather than
+    // failure. The flag is set in shutdown() BEFORE any zenoh reset
+    // under release ordering; the on_drop closure reads with acquire.
+    std::atomic<bool> zenoh_shutdown_in_progress_{false};
 {% endif %}
 {% if has_undeduped_transport %}
     // Runtime per-sender envelope-id dedup (SCE_MESH.md §10.5). Consulted
@@ -1504,6 +1539,15 @@ struct TransportRouter {
         zenoh_queryable_.reset();
 {% endif %}
 {% if "zenoh" in transport_types %}
+{% if has_zenoh_mesh_rpc %}
+        // SCE Mesh gap Z3: arm the shutdown flag BEFORE any zenoh reset
+        // so the cascade of on_drop closures fired by session teardown
+        // short-circuits `onZenohQueryDropped` instead of raising late
+        // `error.invoke.<id>` on a mid-teardown sender engine. Release
+        // pairs with the acquire load inside the closure. The flag
+        // never unsets — shutdown is one-way.
+        zenoh_shutdown_in_progress_.store(true, std::memory_order_release);
+{% endif %}
 {% if has_zenoh_liveliness %}
         // SCE Mesh §16.7 row 9: drop the liveliness observers before the
         // session so the subscriber's ~Subscriber doesn't race the
@@ -2109,6 +2153,50 @@ struct TransportRouter {
         (void)deadline_scheduler_.cancelDeadline(uuid);
         return invoke_correlation_.handleCancel(uuid);
     }
+{% if has_zenoh_mesh_rpc %}
+
+    /// Early-cancel a mesh-rpc invoke whose Zenoh `session.get` query
+    /// terminated without a successful reply (SCE Mesh gap Z3).
+    ///
+    /// Zenoh fires the `on_drop` closure exactly once per query — after
+    /// the last reply, on `queries_default_timeout` expiry, or on
+    /// client session teardown. When that fires without any reply having
+    /// been dispatched AND the query carried an `invoke_id` (§9.5 mesh-rpc
+    /// path), the correlation entry would otherwise sit pending until
+    /// `_mesh_deadline_ms` — wasting the deadline budget even though zenoh
+    /// has already signalled query termination in milliseconds.
+    ///
+    /// This helper closes the gap. Deadline is cancelled first so the
+    /// scheduler thread cannot fire `handleDeadline` on an entry we are
+    /// about to erase — same ordering `cancelMeshRpc` uses. Then
+    /// `handleReply(uuid, Unavailable, {})` delivers
+    /// `error.invoke.<id>` through the standard invoke lifecycle path;
+    /// `RpcStatus::Unavailable` (grpc::UNAVAILABLE, wire value 14)
+    /// matches "peer not reachable" semantics for a dropped query.
+    ///
+    /// Thread-safety: runs on a zenoh runtime thread. Both
+    /// `MeshDeadlineScheduler::cancelDeadline` and
+    /// `InvokeCorrelation::handleReply` are internally synchronized.
+    /// The deliver callback invoked by `handleReply` runs outside the
+    /// correlation mutex, so a slow sender engine cannot block other
+    /// drops on the same router.
+    ///
+    /// Shutdown semantics: router teardown closes the zenoh session,
+    /// which fires on_drop for every inflight query in parallel. The
+    /// `zenoh_shutdown_in_progress_` flag suppresses those firings —
+    /// matches `MeshDeadlineScheduler::shutdown`'s "benign drop" policy
+    /// (§9.5): a router being destroyed cannot deliver events, so
+    /// dropped queries observe the same silent outcome as cancel.
+    void onZenohQueryDropped(
+        const std::array<std::uint8_t, 16>& uuid) noexcept {
+        if (zenoh_shutdown_in_progress_.load(std::memory_order_acquire)) {
+            return;
+        }
+        (void)deadline_scheduler_.cancelDeadline(uuid);
+        (void)invoke_correlation_.handleReply(
+            uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+    }
+{% endif %}
 {% endif %}
 {% endif %}
 
@@ -2204,11 +2292,36 @@ struct TransportRouter {
 
             zenoh::Session::GetOptions opts;
             opts.payload = zenoh::Bytes(std::move(encoded));
+{% if has_zenoh_mesh_rpc %}
+            // SCE Mesh gap Z3: the reply and on_drop closures share a
+            // "reply observed" flag so on_drop can tell whether the
+            // query terminated happily (reply dispatched) or needs an
+            // early cancellation. `shared_ptr<atomic<bool>>` is the
+            // textbook lifetime tool here — each closure is an
+            // independent heap-allocated callable inside zenoh's
+            // runtime, so capture-by-value + shared state is the only
+            // way to coordinate. `invoke_id_capture` is the mesh-rpc
+            // correlation key; when absent (plain `<send>`-triggered
+            // RpcRequest) the on_drop closure short-circuits because
+            // there is no InvokeCorrelation entry to cancel.
+            auto reply_seen = std::make_shared<std::atomic<bool>>(false);
+            std::optional<std::array<std::uint8_t, 16>> invoke_id_capture = env.invoke_id;
+{% endif %}
             zenoh_session_->get(
                 key, "",
                 [this, reply_event, reply_pattern,
-                 target_owned = std::string(target_name)](const zenoh::Reply& reply_msg) {
+                 target_owned = std::string(target_name){% if has_zenoh_mesh_rpc %},
+                 reply_seen{% endif %}](const zenoh::Reply& reply_msg) {
                     if (!reply_msg.is_ok()) return;
+{% if has_zenoh_mesh_rpc %}
+                    // Mark reply observed BEFORE decode/dispatch — a
+                    // racing on_drop on another zenoh runtime thread
+                    // must see this store. Acquire/release ordering
+                    // establishes happens-before; an on_drop firing
+                    // after this line is guaranteed to see `true` and
+                    // skip the early-cancel branch.
+                    reply_seen->store(true, std::memory_order_release);
+{% endif %}
                     const auto& sample = reply_msg.get_ok();
                     auto bytes = sample.get_payload().as_vector();
                     SCE::Mesh::MeshEnvelope resp;
@@ -2227,11 +2340,28 @@ struct TransportRouter {
                     // SCXML's unmatched-external-event semantics.
                     (void)this->admitZenohInbound(target_owned, resp);
                 },
-                // on_drop: fires when zenoh signals query completion (all
-                // replies received or session closed). Per-query state is
-                // self-contained in the reply closure above, so no
-                // teardown work is required on this side.
-                []{},
+{% if has_zenoh_mesh_rpc %}
+                // SCE Mesh gap Z3: zenoh fires this once per query —
+                // after the last reply, on `queries_default_timeout`
+                // expiry, or on session teardown. If no reply was seen
+                // AND the query carried an `invoke_id` (mesh-rpc path),
+                // delegate to `onZenohQueryDropped` which cancels the
+                // deadline entry and raises `error.invoke.<id>` with
+                // `RpcStatus::Unavailable`. Non-invoke queries (plain
+                // `<send>` RpcRequest, no `invoke_id`) have no
+                // correlation entry to cancel — the branch short-circuits.
+                [this, reply_seen, invoke_id_capture]() noexcept {
+                    if (reply_seen->load(std::memory_order_acquire)) return;
+                    if (!invoke_id_capture) return;
+                    this->onZenohQueryDropped(*invoke_id_capture);
+                },
+{% else %}
+                // on_drop fires once at query termination. No mesh-rpc
+                // machinery on this machine, so there is no InvokeCorrelation
+                // entry to early-cancel; the reply closure above is
+                // self-contained and per-query state rides with it.
+                []() noexcept {},
+{% endif %}
                 std::move(opts));
             return true;
         }
