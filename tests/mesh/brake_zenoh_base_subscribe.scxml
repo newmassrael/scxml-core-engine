@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh base zenoh EventSubscribe fixture: minimal subscriber side.
+     Sibling of brake.scxml (FireForget-only). Paired with
+     deploy_zenoh_base_subscribe.yaml so the base zenoh codegen path
+     gets runtime coverage of PatternKind::EventSubscribe without
+     editing brake.scxml (shared across 7+ consumers). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_zenoh_base_subscribe" initial="idle">
+    <state id="idle">
+        <onentry>
+            <send target="#motor" event="event.subscribe.status"/>
+        </onentry>
+        <transition event="event.notification.status" target="subscribed"/>
+    </state>
+    <state id="subscribed"/>
+</scxml>

@@ -2278,6 +2278,70 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             RESOURCE_LOCK zenoh_multi_port_17447
         )
 
+        # ── Base zenoh EventSubscribe runtime E2E ─────────────────────
+        # Closes the gap flagged by next_session_cleanup_small.md Item 2:
+        # the base zenoh codegen path had no EventSubscribe runtime
+        # coverage (mesh_zenoh_runtime only exercised FireForget). New
+        # fixture pair (brake_zenoh_base_subscribe.scxml +
+        # motor_zenoh_base_subscribe.scxml) keeps the shared brake.scxml
+        # untouched. Shares RESOURCE_LOCK zenoh_multi_port_17447 with
+        # the other zenoh runtime tests.
+        set(MESH_ZENOH_BASE_SUB_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_base_subscribe_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
+                    -l cpp -o "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh base subscribe: Generating brake_zenoh_base_subscribe_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
+                    -l cpp -o "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_base_subscribe.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
+                    "${MESH_TEST_DIR}/motor_zenoh_base_subscribe.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_base_subscribe.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h"
+            COMMENT "Mesh zenoh base subscribe: Generating brake_zenoh_base_subscribe_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_base_subscribe_test
+            mesh/test_mesh_zenoh_base_subscribe.cpp
+            "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h"
+            "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_base_subscribe_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_base_subscribe_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_base_subscribe_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_base_subscribe_test)
+        add_test(NAME mesh_zenoh_base_subscribe_verification
+                 COMMAND mesh_zenoh_base_subscribe_test)
+        set_tests_properties(mesh_zenoh_base_subscribe_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_multi_port_17447
+        )
+
         # ── Session E2-2: dedup injection regression (§10.5) ──────────
         # Hermetic (no live zenoh session, no network) integration test
         # that injects the same envelope twice into a generated Zenoh

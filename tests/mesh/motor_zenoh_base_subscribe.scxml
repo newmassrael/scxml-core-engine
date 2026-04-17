@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh base zenoh EventSubscribe fixture: minimal publisher side.
+     Only needed so the topology has both machines declared. The runtime
+     test drives publication via a raw zenoh::Session (not through this
+     machine's generated router) because the goal is to verify brake's
+     subscriber-side declare_subscriber call reaches the wire. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="motor_zenoh_base_subscribe" initial="ready">
+    <state id="ready"/>
+</scxml>

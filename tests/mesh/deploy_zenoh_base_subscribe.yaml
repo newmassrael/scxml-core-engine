@@ -1,0 +1,33 @@
+# SCE Mesh base zenoh EventSubscribe coverage.
+#
+# New fixture pair (per `next_session_cleanup_small.md` Item 2 Option B)
+# that exercises PatternKind::EventSubscribe on the base zenoh fixture
+# without touching shared brake.scxml / motor.scxml. The multi-pattern
+# runtime test already covers EventSubscribe on a different fixture —
+# this closes the gap for the base codegen path (mesh_zenoh_runtime)
+# which previously had zero EventSubscribe runtime coverage.
+#
+# Port 17447 is shared with the other zenoh runtime tests; ctest
+# RESOURCE_LOCK zenoh_multi_port_17447 serializes them.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/127.0.0.1:17447"]
+    machines:
+      brake_zenoh_base_subscribe:
+        source: brake_zenoh_base_subscribe.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake_base_subscribe/motor/status"
+  ecu_motor:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17447"]
+    machines:
+      motor:
+        source: motor_zenoh_base_subscribe.scxml
