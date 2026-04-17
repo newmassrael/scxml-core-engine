@@ -13,12 +13,13 @@
 // `MeshEnvelope::data` when `datacontenttype == PayloadCodec::Json`.
 //
 // Field set covers the baseline (errorName, reason, detail, source,
-// envelope_id) plus the §16.7 row-13 `ORDERING_GAP` extras
-// (lost_seq_lo / lost_seq_hi). Other §16.7 rows add their own extras
-// (transport, target, invoke_id, etc.) — those grow here when a raise
-// site needs them. The current surface is the minimal one Session
-// E2-gap-recovery emits (MISSING_SEQUENCE + ORDERING_GAP); add fields
-// as additional reason codes are wired up.
+// envelope_id), the §16.7 row-9 `PEER_PARTITIONED` extras
+// (target / last_seen_ms_ago), and the §16.7 row-13 `ORDERING_GAP`
+// extras (lost_seq_lo / lost_seq_hi). Other §16.7 rows add their own
+// extras (transport, invoke_id, etc.) — those grow here when a raise
+// site needs them. Each raise site populates only the extras named in
+// its row of the catalog; the remainder stay empty and are skipped on
+// render.
 //
 // Design notes:
 //   * Pure header; the canonical JSON render uses
@@ -67,6 +68,22 @@ struct CommunicationError {
     /// RFC 4122 canonical 36-char string via SCE::uuid::to_string.
     std::optional<std::array<std::uint8_t, 16>> envelope_id;
 
+    /// §16.7 row 9 (PEER_PARTITIONED): deploy.yaml name of the peer
+    /// whose liveliness token transitioned to DELETE (e.g. "motor").
+    /// Authors branch on this inside
+    /// `<transition event="error.communication"
+    ///  cond="_event.data.reason == 'PEER_PARTITIONED' &&
+    ///        _event.data.target == 'motor'">` to react to a specific
+    /// peer's drop.
+    std::optional<std::string> target;
+
+    /// §16.7 row 9 (PEER_PARTITIONED): milliseconds since the last
+    /// PUT sample was observed for this peer, measured against
+    /// `std::chrono::steady_clock`. Signed so a reasonable sentinel
+    /// exists should a future raise site need one; current raise
+    /// sites populate it only when a PUT has been observed.
+    std::optional<std::int64_t> last_seen_ms_ago;
+
     /// §16.7 row 13 (ORDERING_GAP): inclusive low end of the fast-
     /// forwarded sequence range.
     std::optional<std::uint64_t> lost_seq_lo;
@@ -96,6 +113,12 @@ struct CommunicationError {
         }
         if (envelope_id) {
             j["envelope_id"] = SCE::uuid::to_string(*envelope_id);
+        }
+        if (target) {
+            j["target"] = *target;
+        }
+        if (last_seen_ms_ago) {
+            j["last_seen_ms_ago"] = *last_seen_ms_ago;
         }
         if (lost_seq_lo) {
             j["lost_seq_lo"] = *lost_seq_lo;

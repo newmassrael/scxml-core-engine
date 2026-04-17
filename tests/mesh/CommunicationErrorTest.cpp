@@ -13,6 +13,7 @@
 // to unordered insertion) must fail at least:
 //   * MissingSequenceMinimalShape
 //   * OrderingGapFullShape
+//   * PeerPartitionedShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -66,6 +67,24 @@ TEST(CommunicationErrorTest, OrderingGapFullShape) {
               "\"source\":\"motor\","
               "\"lost_seq_lo\":2,"
               "\"lost_seq_hi\":5}");
+}
+
+TEST(CommunicationErrorTest, PeerPartitionedShape) {
+    // §16.7 row 9 — PEER_PARTITIONED carries target + last_seen_ms_ago.
+    // No `source` / `envelope_id` because the raise is not triggered
+    // by any specific inbound envelope — the observation is the peer's
+    // liveliness DELETE sample.
+    CommunicationError err;
+    err.reason = "PEER_PARTITIONED";
+    err.target = "motor";
+    err.last_seen_ms_ago = 142;
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"PEER_PARTITIONED\","
+              "\"target\":\"motor\","
+              "\"last_seen_ms_ago\":142}");
 }
 
 TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {

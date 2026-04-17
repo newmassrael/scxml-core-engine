@@ -202,6 +202,23 @@ dispatchToSender({{ env_name }})
 {% set has_server_someip = has_server and server.transport_kind == "someip" %}
 {% set has_server_zenoh = has_server and server.transport_kind == "zenoh" %}
 
+{# SCE Mesh §16.7 row 9 (PEER_PARTITIONED): per-machine opt-in liveliness.
+   `machine_liveliness` is null when the deploy.yaml author omitted the
+   `liveliness:` section; present-but-truthy when they declared one.
+   Liveliness is a Zenoh-only feature today (zenoh-cpp native API), so
+   the emission gate requires BOTH a zenoh transport on this machine AND
+   the opt-in section. A SCXML that never sends over zenoh pays zero LoC
+   even if the deploy.yaml declared a liveliness block by mistake. #}
+{% set has_zenoh_liveliness = ("zenoh" in transport_types) and machine_liveliness %}
+
+{# Joint emission gate for the `raiseCommunicationError` helper
+   (SCE_MESH.md §10.7.1). Either ordering-path raises (MISSING_SEQUENCE /
+   ORDERING_GAP via the ordering tick) or liveliness-path raises
+   (PEER_PARTITIONED via the liveliness subscriber) need it, so the
+   helper and its include live behind this shared flag rather than each
+   caller gate. Keeps `raiseCommunicationError` a single definition. #}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness %}
+
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
 {% set needs_correlation_key = ("someip" in transport_types) or has_server_someip or has_server_zenoh %}
@@ -272,15 +289,18 @@ dispatchToSender({{ env_name }})
 // route rides an inherently-ordered transport (local, shm, custom_tcp,
 // SOME/IP `protocol: tcp`) pay zero overhead.
 #include "mesh/OrderingBuffer.h"
-// SCE_MESH.md §10.7.1 + §16.7: `_event.data` builder for the
-// MISSING_SEQUENCE + ORDERING_GAP reason codes raised from the
-// ordering admit path and the periodic tick thread below.
-#include "mesh/CommunicationError.h"
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
-#include <mutex>
 #include <thread>
+{% endif %}
+{% if raises_communication_error %}
+// SCE_MESH.md §10.7.1 + §16.7: `_event.data` builder for the
+// error.communication reason codes raised from the ordering admit path
+// (MISSING_SEQUENCE / ORDERING_GAP), the periodic ordering tick, and
+// the Zenoh liveliness subscriber (PEER_PARTITIONED).
+#include "mesh/CommunicationError.h"
+#include <chrono>
+#include <mutex>
 {% endif %}
 
 namespace SCE::Generated::{{ machine_name }} {
@@ -560,6 +580,35 @@ struct TransportRouter {
     // correlation_mutex_ is deliberate (SOME/IP's pending_rpcs_ IS read
     // on vsomeip callback threads; this map is not).
     std::unordered_map<std::string, zenoh::Subscriber<void>> zenoh_subscribers_;
+{% endif %}
+{% if has_zenoh_liveliness %}
+    // SCE Mesh §16.7 row 9 (PEER_PARTITIONED). Opt-in Zenoh liveliness.
+    //
+    // `liveliness_token_` declares our presence under the reserved key
+    // `sce/live/{{ machine_name }}`; destroying it (or losing Zenoh
+    // connectivity) emits a DELETE sample that peers' liveliness
+    // subscribers observe. `liveliness_subscriber_` listens on
+    // `sce/live/**`, updates `peer_last_seen_` on PUT samples (peer up),
+    // and raises `error.communication` with reason `PEER_PARTITIONED`
+    // on DELETE samples (peer down).
+    //
+    // Concurrency: `peer_last_seen_` is written from the Zenoh runtime
+    // thread (callback) and read from the same thread on DELETE. The
+    // mutex protects against concurrent PUT/DELETE samples for
+    // different peers and against the shutdown path tearing the map
+    // down while a callback is in flight. `raiseCommunicationError` is
+    // invoked AFTER the mutex is released — the mutex-hygiene lesson
+    // from Session E2-gap-recovery applies verbatim.
+    //
+    // RAII ordering: subscriber is declared after the token so its
+    // destructor (running first in reverse declaration order) cannot
+    // observe its own token's DELETE sample. Session E2-ordering-style
+    // self-filter (`keyexpr == sce/live/<machine_name>`) defends
+    // against the same race if the order ever shifts.
+    std::optional<zenoh::LivelinessToken> liveliness_token_;
+    std::optional<zenoh::Subscriber<void>> liveliness_subscriber_;
+    std::mutex liveliness_mutex_;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> peer_last_seen_;
 {% endif %}
 {% if has_undeduped_transport %}
     // Runtime per-sender envelope-id dedup (SCE_MESH.md §10.5). Consulted
@@ -1127,6 +1176,77 @@ struct TransportRouter {
             shutdown();
             return false;
         }
+{% if has_zenoh_liveliness %}
+        // SCE Mesh §16.7 row 9: declare the self-token first so a peer
+        // who subscribes with `history=true` sees us, then subscribe to
+        // `sce/live/**` so we observe the current set. The subscriber
+        // callback self-filters samples on our own key so the PUT we
+        // just emitted does not populate `peer_last_seen_` with
+        // ourselves (Trap #3 from the plan memo).
+        try {
+            liveliness_token_.emplace(zenoh_session_->liveliness_declare_token(
+                zenoh::KeyExpr("sce/live/{{ machine_name }}")));
+            // `history = true`: receive PUT samples for tokens already
+            // declared when this subscriber comes up, so late-joining
+            // observers still get a `peer_last_seen_` anchor for
+            // `last_seen_ms_ago`. Without history, the subscriber only
+            // sees future state changes — a peer that came up first
+            // would register as "never seen" and PEER_PARTITIONED would
+            // omit the extra.
+            zenoh::Session::LivelinessSubscriberOptions liveliness_opts;
+            liveliness_opts.history = true;
+            liveliness_subscriber_.emplace(zenoh_session_->liveliness_declare_subscriber(
+                zenoh::KeyExpr("sce/live/**"),
+                [this](const zenoh::Sample& sample) {
+                    auto key = std::string(sample.get_keyexpr().as_string_view());
+                    // Reserved namespace is `sce/live/<peer>` — skip
+                    // malformed samples and self-samples.
+                    constexpr std::string_view kPrefix = "sce/live/";
+                    if (key.compare(0, kPrefix.size(), kPrefix) != 0) return;
+                    if (key == "sce/live/{{ machine_name }}") return;
+                    std::string peer = key.substr(kPrefix.size());
+
+                    if (sample.get_kind() == ::Z_SAMPLE_KIND_PUT) {
+                        std::lock_guard<std::mutex> lk(liveliness_mutex_);
+                        peer_last_seen_[peer] = std::chrono::steady_clock::now();
+                        return;
+                    }
+
+                    // DELETE: peer token dropped (explicit undeclare or
+                    // connectivity lost). Capture last_seen under lock,
+                    // release, then raise outside the mutex so a slow
+                    // sender cannot block concurrent callbacks
+                    // (mutex-hygiene lesson from Session E2-gap-recovery).
+                    std::optional<std::int64_t> last_seen_ms_ago;
+                    {
+                        std::lock_guard<std::mutex> lk(liveliness_mutex_);
+                        auto it = peer_last_seen_.find(peer);
+                        if (it != peer_last_seen_.end()) {
+                            const auto delta = std::chrono::steady_clock::now() - it->second;
+                            last_seen_ms_ago =
+                                std::chrono::duration_cast<std::chrono::milliseconds>(delta).count();
+                            peer_last_seen_.erase(it);
+                        }
+                    }
+                    SCE::Mesh::CommunicationError err;
+                    err.reason = "PEER_PARTITIONED";
+                    err.target = std::move(peer);
+                    if (last_seen_ms_ago) {
+                        err.last_seen_ms_ago = *last_seen_ms_ago;
+                    }
+                    raiseCommunicationError(std::move(err));
+                },
+                []{},
+                std::move(liveliness_opts)));
+        } catch (const zenoh::ZException&) {
+            // Token/subscriber declaration failed — session stays open
+            // but the liveliness observer is gone. Fail init so the
+            // caller sees a clean teardown rather than a half-configured
+            // router. shutdown() is idempotent.
+            shutdown();
+            return false;
+        }
+{% endif %}
 {% endif %}
 {% if has_server_someip %}
         // Server SOME/IP: offer service + register request handlers.
@@ -1384,6 +1504,15 @@ struct TransportRouter {
         zenoh_queryable_.reset();
 {% endif %}
 {% if "zenoh" in transport_types %}
+{% if has_zenoh_liveliness %}
+        // SCE Mesh §16.7 row 9: drop the liveliness observers before the
+        // session so the subscriber's ~Subscriber doesn't race the
+        // session teardown, and the token's ~LivelinessToken emits its
+        // final DELETE sample to the network. Reverse of init order —
+        // subscriber first, then token.
+        liveliness_subscriber_.reset();
+        liveliness_token_.reset();
+{% endif %}
         // Drop subscriber handles before closing session (RAII order matters:
         // each ~Subscriber calls into zenoh_session_).
         zenoh_subscribers_.clear();
@@ -1596,7 +1725,7 @@ struct TransportRouter {
     }
 {% endif %}
 
-{% if has_ordered_binding %}
+{% if raises_communication_error %}
     /// Raise an `error.communication` event on the bound sender engine
     /// with the §10.7.1 / §16.7 `_event.data` shape encoded as JSON.
     ///
@@ -1609,6 +1738,10 @@ struct TransportRouter {
     ///     `reason = "ORDERING_GAP"` with `lost_seq_lo`/`lost_seq_hi`
     ///     (§16.7 row 13). Recovery signal: the receiver has fast-
     ///     forwarded past the missing range.
+    ///   * The Zenoh liveliness subscriber (when
+    ///     `machines.<name>.liveliness:` is declared) on DELETE samples —
+    ///     raises `reason = "PEER_PARTITIONED"` with `target` and, when
+    ///     a prior PUT was observed, `last_seen_ms_ago` (§16.7 row 9).
     ///
     /// The event reaches the sender via `dispatchToSender`, the same
     /// path used for ordinary inbound envelopes. SCXML authors can
@@ -1631,7 +1764,9 @@ struct TransportRouter {
         evt.data = err.toJsonBytes();
         (void)dispatchToSender(evt);
     }
+{% endif %}
 
+{% if has_ordered_binding %}
     /// Drive one tick of the ordering buffer's gap-timeout processing.
     ///
     /// The buffer's `tick()` returns an `OrderingTickResult` (released
