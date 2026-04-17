@@ -522,6 +522,12 @@ pub struct ServerBinding {
     pub state: TransportState,
     /// Per-event pattern metadata for the inbound request events.
     pub event_patterns: Vec<EventPatternInfo>,
+    /// SCE Mesh §9.5 gap Z2: per-server Zenoh queryable response
+    /// deadline. Propagated verbatim from [`super::deploy::ServerConfig`].
+    /// `None` ⇒ no deadline armed (pre-Z2 behaviour); Some ⇒ codegen emits
+    /// `server_deadline_scheduler_` + register/cancel at the
+    /// `pending_server_queries_` mutation sites.
+    pub query_timeout_ms: Option<u64>,
 }
 
 /// Detect server RPC pairs from an SCXML model.
@@ -1079,6 +1085,7 @@ pub fn resolve_server_binding(
         eventgroup_events: eventgroup_events.to_vec(),
         state,
         event_patterns,
+        query_timeout_ms: server_cfg.query_timeout_ms,
     })
 }
 

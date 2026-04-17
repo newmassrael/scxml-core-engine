@@ -519,6 +519,15 @@ struct ServerContext {
     /// emission of `publishEventgroupNotify` and the fallback path in
     /// the mesh send callback.
     has_eventgroup: bool,
+    /// SCE Mesh §9.5 gap Z2: per-server Zenoh queryable response
+    /// deadline in milliseconds. `None` ⇒ no deadline emitted,
+    /// matching the pre-Z2 behaviour where `pending_server_queries_`
+    /// leaks entries whose engine never responds. Some ⇒ the template
+    /// gates `has_server_query_timeout`, instantiates the deadline
+    /// scheduler (gate-shared with `has_mesh_rpc.v`), and arms a
+    /// scheduler entry at every `pending_server_queries_` insert.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    query_timeout_ms: Option<u64>,
 }
 
 /// Per-RPC-pair context for server-side codegen.
@@ -741,6 +750,7 @@ fn build_server_context(
         field_notify_events,
         eventgroup_events,
         has_eventgroup,
+        query_timeout_ms: binding.query_timeout_ms,
     }
 }
 
