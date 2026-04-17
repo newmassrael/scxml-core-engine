@@ -83,6 +83,7 @@
         "mesh/deploy-duplicate-machine",
         "mesh/deploy-invalid-ordering-timings",
         "mesh/deploy-invalid-liveliness",
+        "mesh/deploy-invalid-server-query-timeout",
         "mesh/external-read",
         "mesh/external-parse",
         "mesh/external-unresolved-names",

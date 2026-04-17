@@ -322,6 +322,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-duplicate-machine` | Mesh Deploy |
 | `mesh/deploy-invalid-ordering-timings` | Mesh Deploy |
 | `mesh/deploy-invalid-liveliness` | Mesh Deploy |
+| `mesh/deploy-invalid-server-query-timeout` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

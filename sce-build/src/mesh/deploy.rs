@@ -280,6 +280,17 @@ impl Default for OrderingTimings {
 /// plan memo locked.
 pub const MIN_LIVELINESS_LEASE_MS: u64 = 100;
 
+/// Minimum `query_timeout_ms` accepted in a `server:` section.
+///
+/// SCE Mesh §9.5 Zenoh server queryable timeout (gap Z2): values
+/// below this floor are almost certainly typos — even a trivial
+/// engine macrostep usually takes longer than 10 ms, so a sub-floor
+/// value would cause every inbound query to time out before the
+/// engine can respond. Parse-time rejection surfaces the mistake
+/// at the offending deploy.yaml line rather than a silent runtime
+/// cleanup cascade.
+pub const MIN_SERVER_QUERY_TIMEOUT_MS: u64 = 10;
+
 /// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 9).
 ///
 /// Opt-in: absent section ⇒ no liveliness token declared, no
@@ -452,9 +463,38 @@ pub struct ServerConfig {
     /// Zenoh key expression for queryable registration.
     #[serde(default)]
     pub key: Option<String>,
+    /// Per-server Zenoh queryable response deadline (SCE Mesh §9.5, gap
+    /// Z2). Absent ⇒ no deadline armed per inbound query, matching the
+    /// pre-Z2 behaviour where `pending_server_queries_` leaks any entry
+    /// whose engine never emits the paired response. Present ⇒ each
+    /// inbound query arms a scheduler entry that, on expiry, silently
+    /// erases the stored `zenoh::Query`; the destructor lets the client
+    /// observe the drop via the Z3 on_drop path
+    /// (`RpcStatus::Unavailable`), so no new `error.communication` row
+    /// is introduced. Validated at parse time
+    /// (`query_timeout_ms >= MIN_SERVER_QUERY_TIMEOUT_MS`).
+    #[serde(default)]
+    pub query_timeout_ms: Option<u64>,
     /// Transport-native passthrough (e.g. `protocol: tcp`).
     #[serde(flatten)]
     pub extra: HashMap<String, serde_yaml_ng::Value>,
+}
+
+impl ServerConfig {
+    /// Validate the `query_timeout_ms` field. Returns the rejection
+    /// reason without the machine name — the caller wraps this into
+    /// [`DeployError::InvalidServerQueryTimeout`].
+    fn query_timeout_validation_error(&self) -> Option<String> {
+        match self.query_timeout_ms {
+            Some(ms) if ms < MIN_SERVER_QUERY_TIMEOUT_MS => Some(format!(
+                "query_timeout_ms ({}) must be >= {} ms — values below this \
+                 floor race typical engine macrostep latency and would cause \
+                 every inbound query to time out before the engine can respond",
+                ms, MIN_SERVER_QUERY_TIMEOUT_MS,
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// A single machine-lifetime subscription declaration (SCE_MESH.md §13).
@@ -644,6 +684,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_machine_name_uniqueness(&cfg)?;
     validate_ordering_timings(&cfg)?;
     validate_liveliness(&cfg)?;
+    validate_server_query_timeout(&cfg)?;
 
     Ok(cfg)
 }
@@ -693,6 +734,32 @@ fn validate_liveliness(cfg: &DeployConfig) -> Result<(), DeployError> {
     for (machine, liveliness) in by_machine {
         if let Some(reason) = liveliness.validation_error() {
             return Err(DeployError::InvalidLiveliness {
+                machine: machine.to_string(),
+                reason,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Walk every machine that declared an explicit `server.query_timeout_ms`
+/// and reject values below [`MIN_SERVER_QUERY_TIMEOUT_MS`]. Runs at parse
+/// time so the diagnostic surfaces the offending deploy.yaml line rather
+/// than a silent runtime cleanup cascade when every inbound query times
+/// out before the engine can respond.
+fn validate_server_query_timeout(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let mut by_machine: BTreeMap<&str, &ServerConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            if let Some(s) = &machine.server {
+                by_machine.insert(machine_name.as_str(), s);
+            }
+        }
+    }
+    for (machine, server) in by_machine {
+        if let Some(reason) = server.query_timeout_validation_error() {
+            return Err(DeployError::InvalidServerQueryTimeout {
                 machine: machine.to_string(),
                 reason,
             });
@@ -1497,6 +1564,82 @@ topology:
 "#;
         let err = parse_deploy_str(yaml).unwrap_err();
         assert!(matches!(err, DeployError::Yaml(_)));
+    }
+
+    #[test]
+    fn server_query_timeout_absent_is_default_none() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: zenoh
+          key: "sce/motor"
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["motor"];
+        let server = machine.server.as_ref().expect("server");
+        assert!(
+            server.query_timeout_ms.is_none(),
+            "absent knob must deserialize as None (opt-in gate — Z2)"
+        );
+    }
+
+    #[test]
+    fn server_query_timeout_present_parses() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: zenoh
+          key: "sce/motor"
+          query_timeout_ms: 500
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["motor"];
+        let server = machine.server.as_ref().expect("server");
+        assert_eq!(
+            server.query_timeout_ms,
+            Some(500),
+            "explicit knob must propagate the value verbatim"
+        );
+    }
+
+    #[test]
+    fn server_query_timeout_below_floor_rejected() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: zenoh
+          key: "sce/motor"
+          query_timeout_ms: 5
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidServerQueryTimeout { machine, reason }) => {
+                assert_eq!(machine, "motor");
+                assert!(
+                    reason.contains("query_timeout_ms"),
+                    "reason must cite the knob: {reason}"
+                );
+                assert!(
+                    reason.contains("10"),
+                    "reason must cite the floor: {reason}"
+                );
+            }
+            other => panic!("expected InvalidServerQueryTimeout, got {other:?}"),
+        }
     }
 
     #[test]

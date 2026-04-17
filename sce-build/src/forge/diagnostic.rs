@@ -397,6 +397,8 @@ pub enum DiagnosticCode {
     MeshDeployInvalidOrderingTimings,
     #[serde(rename = "mesh/deploy-invalid-liveliness")]
     MeshDeployInvalidLiveliness,
+    #[serde(rename = "mesh/deploy-invalid-server-query-timeout")]
+    MeshDeployInvalidServerQueryTimeout,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -558,6 +560,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployDuplicateMachine,
         MeshDeployInvalidOrderingTimings,
         MeshDeployInvalidLiveliness,
+        MeshDeployInvalidServerQueryTimeout,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -695,6 +698,9 @@ impl DiagnosticCode {
             // ── Mesh communication errors (SCE_MESH.md §16.7) ────
             MeshDeployInvalidLiveliness => Some("SCE Mesh §16.7"),
 
+            // ── Mesh server-side lifecycle (SCE_MESH.md §9.5) ────
+            MeshDeployInvalidServerQueryTimeout => Some("SCE Mesh §9.5"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -831,6 +837,7 @@ impl DiagnosticCode {
             MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
             MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
             MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
+            MeshDeployInvalidServerQueryTimeout => "mesh/deploy-invalid-server-query-timeout",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2216,6 +2223,17 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:45153e0eac48ec1b","code":"mesh/deploy-invalid-liveliness","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"machine 'brake': invalid `liveliness:` section in deploy.yaml — lease_ms (50) must be >= 100 ms — values below this floor race Zenoh's own keepalive and generate spurious DELETE/PUT churn. Either fix the value or omit the section entirely to disable liveliness.","actual":"brake"}"#,
             ),
             (
+                "mesh/deploy-invalid-server-query-timeout",
+                DeployError::InvalidServerQueryTimeout {
+                    machine: "motor".into(),
+                    reason: "query_timeout_ms (5) must be >= 10 ms — values below this floor race typical engine macrostep latency and would cause every inbound query to time out before the engine can respond".into(),
+                }
+                .into(),
+                // Hash placeholder — the byte-stability assertion patches
+                // it on first run. Shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:f3bf5c36574e7396","code":"mesh/deploy-invalid-server-query-timeout","stage":"mesh-deploy","spec":"SCE Mesh §9.5","message":"machine 'motor': invalid `server.query_timeout_ms` in deploy.yaml — query_timeout_ms (5) must be >= 10 ms — values below this floor race typical engine macrostep latency and would cause every inbound query to time out before the engine can respond. Either fix the value or omit the knob entirely to disable the server deadline.","actual":"motor"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -2854,6 +2872,7 @@ mod tests {
             | MeshDeployDuplicateMachine
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidLiveliness
+            | MeshDeployInvalidServerQueryTimeout
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3108,6 +3127,7 @@ mod tests {
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidLiveliness
+                | MeshDeployInvalidServerQueryTimeout
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3138,9 +3158,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            90,
+            91,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 90 distinct variants to match the DiagnosticCode \
+             expected 91 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }
