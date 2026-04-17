@@ -18,7 +18,8 @@
 use crate::filters;
 use crate::generator::{GeneratedOutput, Language};
 use crate::mesh::deploy::{
-    CustomTcpTransportConfig, OrderingTimings, SomeipTransportConfig, ZenohTransportConfig,
+    CustomTcpTransportConfig, LivelinessConfig, OrderingTimings, SomeipTransportConfig,
+    ZenohTransportConfig,
 };
 use crate::mesh::error::CodegenError;
 use crate::mesh::topology::ResolvedTarget;
@@ -764,6 +765,7 @@ pub fn generate_mesh(
     custom_tcp_config: Option<&CustomTcpTransportConfig>,
     subscriptions: &[super::deploy::SubscriptionConfig],
     machine_ordering: OrderingTimings,
+    machine_liveliness: Option<LivelinessConfig>,
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -793,6 +795,7 @@ pub fn generate_mesh(
             custom_tcp_config,
             subscriptions,
             machine_ordering,
+            machine_liveliness,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -883,6 +886,7 @@ fn generate_cpp_mesh(
     custom_tcp_config: Option<&CustomTcpTransportConfig>,
     subscriptions: &[super::deploy::SubscriptionConfig],
     machine_ordering: OrderingTimings,
+    machine_liveliness: Option<LivelinessConfig>,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -1156,6 +1160,18 @@ fn generate_cpp_mesh(
         "tick_period_ms": machine_ordering.tick_period_ms,
     });
 
+    // SCE Mesh §16.7 row 9 (PEER_PARTITIONED): per-machine Zenoh
+    // liveliness opt-in. `null` when the deploy.yaml author declared no
+    // `liveliness:` section, which the template reads as a falsy gate —
+    // zero lines of liveliness code emitted. Present value carries the
+    // deploy-validated `lease_ms` (floor enforced by
+    // `LivelinessConfig::validation_error`), which the test uses to size
+    // the PEER_PARTITIONED observation window.
+    let machine_liveliness_ctx = match machine_liveliness {
+        Some(l) => serde_json::json!({ "lease_ms": l.lease_ms }),
+        None => serde_json::Value::Null,
+    };
+
     let ctx = minijinja::context! {
         machine_name => machine_name,
         machine_pascal => machine_pascal,
@@ -1165,6 +1181,7 @@ fn generate_cpp_mesh(
         server_needs_dedup => server_needs_dedup,
         has_ordered_binding => has_ordered_binding,
         machine_ordering => machine_ordering_ctx,
+        machine_liveliness => machine_liveliness_ctx,
         zenoh_session_json5 => zenoh_session_json5,
         zenoh_session_json5_present => zenoh_session_json5_present,
         someip_transport => someip_transport,

@@ -1129,6 +1129,14 @@ pub fn compile_mesh_transport(
         .and_then(|d| d.machines.get(&effective_machine_name))
         .map(mesh::deploy::MachineConfig::resolved_ordering_timings)
         .unwrap_or_else(mesh::deploy::OrderingTimings::default_const);
+    // SCE Mesh §16.7 row 9 (PEER_PARTITIONED): opt-in Zenoh liveliness
+    // tokens. Absent section on the machine ⇒ `None`, and the template
+    // emits zero liveliness code for that machine. `LivelinessConfig`
+    // is `Copy`, so we flatten with `copied()` rather than holding a
+    // reference across the codegen boundary.
+    let machine_liveliness = device
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .and_then(|m| m.liveliness);
     let template_base = find_template_base();
     let output = mesh::codegen::generate_mesh(
         &model.name,
@@ -1139,6 +1147,7 @@ pub fn compile_mesh_transport(
         custom_tcp_config,
         machine_subscriptions,
         machine_ordering,
+        machine_liveliness,
         language,
         &template_base,
     )?;
