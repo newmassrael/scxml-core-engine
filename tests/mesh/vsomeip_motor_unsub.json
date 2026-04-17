@@ -1,0 +1,19 @@
+{
+  "applications": [
+    { "name": "brake_someip_unsub_app" }
+  ],
+  "services": [
+    {
+      "name": "motor_control",
+      "service": "0x2000",
+      "instance": "0x0001",
+      "eventgroups": [
+        {
+          "name": "speed_group",
+          "eventgroup": "0x0002",
+          "events": ["0x8002"]
+        }
+      ]
+    }
+  ]
+}

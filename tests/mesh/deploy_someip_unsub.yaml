@@ -1,0 +1,30 @@
+# SCE Mesh gap S6: SOME/IP EventUnsubscribe E2E deploy config.
+# Dedicated fixture pair so Session C's multi-pattern tests retain
+# their precise assertions. Covers ONLY the subscribe/unsubscribe
+# lifecycle — the rest of the SOME/IP capability matrix stays in the
+# multi fixture.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_motor_unsub.json
+        application_name: brake_someip_unsub_app
+    machines:
+      brake_someip_unsub:
+        source: brake_someip_unsub.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              "event.subscribe.speed":
+                event_group: speed_group
+      motor:
+        source: motor_someip_unsub.scxml
+        server:
+          transport: someip
+          service: motor_control
+          events:
+            "field.notify.vehicle_speed":
+              event_group: speed_group

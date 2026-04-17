@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh gap S6: SOME/IP EventUnsubscribe E2E fixture (publisher side).
+     On each sensor.update external event, raise field.notify.vehicle_speed.
+     inject_server_response_sends appends a synthetic <send> so the mesh
+     send callback routes the raise through publishEventgroupNotify
+     (server_app_->notify on the offered eventgroup). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="motor_someip_unsub" initial="ready">
+    <state id="ready">
+        <transition event="sensor.update" target="ready">
+            <raise event="field.notify.vehicle_speed"/>
+        </transition>
+    </state>
+</scxml>

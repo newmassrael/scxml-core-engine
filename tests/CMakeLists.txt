@@ -2174,6 +2174,94 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             TIMEOUT 30
             RESOURCE_LOCK vsomeip_routing_socket
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
+        # ── Gap S6: SOME/IP EventUnsubscribe E2E ──────────────────────
+        # Closes next_session_someip_s6_event_unsubscribe.md: verifies
+        # that app.unsubscribe() on PatternKind::EventUnsubscribe
+        # retracts the subscription end-to-end. Dedicated fixture pair
+        # so Session C's multi-pattern assertions stay undisturbed.
+        set(MESH_SOMEIP_UNSUB_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_unsub_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
+                    -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_someip_unsub.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh someip unsub: Generating brake_someip_unsub_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
+                    -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/motor_someip_unsub.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh someip unsub: Generating motor_someip_unsub_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
+                    -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
+                    "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
+                    "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
+                    "${MESH_TEST_DIR}/vsomeip_motor_unsub.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h"
+            COMMENT "Mesh someip unsub: Generating brake_someip_unsub_transport.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
+                    -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
+            DEPENDS "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
+                    "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
+                    "${MESH_TEST_DIR}/vsomeip_motor_unsub.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h"
+            COMMENT "Mesh someip unsub: Generating motor_someip_unsub_transport.h (server)"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_unsubscribe_test
+            mesh/test_mesh_someip_unsubscribe.cpp
+            "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h"
+            "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h"
+            "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_transport.h"
+            "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_transport.h"
+        )
+
+        target_include_directories(mesh_someip_unsubscribe_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_UNSUB_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_unsubscribe_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_unsubscribe_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_unsubscribe_test)
+        add_test(NAME mesh_someip_unsubscribe
+                 COMMAND mesh_someip_unsubscribe_test)
+        set_tests_properties(mesh_someip_unsubscribe PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK vsomeip_routing_socket
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_unsub.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
     endif()
