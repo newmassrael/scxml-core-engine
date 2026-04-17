@@ -1321,13 +1321,13 @@ Rule: the `<param>` value, if present, **overrides** any deploy.yaml binding-lev
 
 **Runtime mapping to `_event`** (on reply delivery to parent):
 - `_event.name` = `done.invoke.<id>` (success) or `error.invoke.<id>` (non-Ok status)
-- `_event.data` = deserialized reply payload (for success) or the structured error object defined in §10.6 (for error)
+- `_event.data` = deserialized reply payload (for success) or the structured error object defined in §10.7 (for error)
 - `_event.invokeid` = the SCXML invoke id
-- `_event.origin` = `mesh://<envelope.source>` (URI form per §10.6)
+- `_event.origin` = `mesh://<envelope.source>` (URI form per §10.7)
 - `_event.origintype` = `"sce:mesh-rpc"`
 - `_event.sendid` = undefined (RPC reply, not a `<send>`)
 
-**Graceful degradation**: a foreign W3C SCXML 1.0 processor that does not understand `sce:mesh-rpc` raises `error.execution` per §6.4.1. The document author may catch this with `<transition event="error.execution">` for local fallback logic. The structured `_event.data` payload for such errors follows the convention in §10.6.
+**Graceful degradation**: a foreign W3C SCXML 1.0 processor that does not understand `sce:mesh-rpc` raises `error.execution` per §6.4.1. The document author may catch this with `<transition event="error.execution">` for local fallback logic. The structured `_event.data` payload for such errors follows the convention in §10.7.
 
 ### 9.6 `<invoke type="scxml">` — full remote SCXML session (Session F)
 
@@ -1336,7 +1336,7 @@ When `type="scxml"` (or the default, which equals `"http://www.w3.org/TR/scxml/"
 Implementation scope is **Session F**. Sessions E1 and E2 provide:
 - Wire format for full-session invoke (envelope schema below) — documented but not yet emitted.
 - Conformance guarantees this section makes — stated in spec, not yet verified by tests.
-- Static recognition in parser/model so documents using full remote invoke parse cleanly; at runtime they raise `error.execution` with `_event.data.reason == "SESSION_F_NOT_IMPLEMENTED"` (per the structured convention in §10.6.1) until Session F lands.
+- Static recognition in parser/model so documents using full remote invoke parse cleanly; at runtime they raise `error.execution` with `_event.data.reason == "SESSION_F_NOT_IMPLEMENTED"` (per the structured convention in §10.7.1) until Session F lands.
 
 #### 9.6.1 Session establishment
 
@@ -1615,7 +1615,7 @@ Every transport implementation must honour the following lifecycle phases. The g
 | **Ready → Active** (`connect()`) | Transport establishes network presence (TCP connect, SOME/IP offer, Zenoh open). Blocking is permitted for session-shared transports; per-target transports may defer connection to first `send()`. |
 | **Active → Active** (`send(envelope)` / `receive()`) | The four conformance properties (§10.4) apply. `send` returns success or an error that triggers `error.communication`. `receive` delivers envelopes to the engine's external queue via callback. |
 | **Active → Disconnected** (transport fault) | Transport detects loss (TCP RST, SOME/IP availability change, Zenoh disconnect). Must emit `error.communication` with `reason: TRANSPORT_UNAVAILABLE` (§16.7). Enqueued-but-unsent envelopes are failed individually with `reason: SEND_FAILED`. |
-| **Disconnected → Active** (`reconnect()`) | Transparent to SCXML author. Pending RPC correlation entries survive reconnection; the deadline timer (§10.7) is unaffected by transport-layer reconnect. A successful reconnect does NOT raise an event. |
+| **Disconnected → Active** (`reconnect()`) | Transparent to SCXML author. Pending RPC correlation entries survive reconnection; the deadline timer (§10.8) is unaffected by transport-layer reconnect. A successful reconnect does NOT raise an event. |
 | **Active/Disconnected → Shutdown** (`shutdown()`) | Transport releases resources. Outstanding RPC entries are cancelled with `reason: INVOKE_CHILD_LOST`. The mesh runtime calls `shutdown()` exactly once per engine lifetime; double-shutdown is a programming error. |
 
 **Best-effort transports** (`conformance: degraded`) relax the `send → error.communication` guarantee: `send` may return success for a payload that is silently dropped. The `Disconnected` state may never be entered if the transport has no connection concept (UDP). These relaxations must be declared in `TransportDescriptor::degraded_aspects`.
@@ -1633,7 +1633,7 @@ Every transport implementation must honour the following lifecycle phases. The g
 
 Adding a transport requires exactly **two changes** (Rust registry entry + Jinja2 template block); the template's `#error` fallback catches drift at C++ compile time.
 
-**Future extensions** (E2): `supplies_dedup: bool` (skip dedup layer for inherently-duplicate-free transports), `conformance_level: Complete | Degraded` (validated against deploy.yaml declarations), `max_payload_bytes: Option<usize>` (envelope size validation at build time).
+**Future extensions** (E2): `supplies_dedup: bool` (skip dedup layer for inherently-duplicate-free transports), `supplies_ordering: bool` + `ordering_representable: bool` (gate the §10.6 sequence-ordering runtime buffer and the CAN-style topology reject), `conformance_level: Complete | Degraded` (validated against deploy.yaml declarations), `max_payload_bytes: Option<usize>` (envelope size validation at build time).
 
 #### 10.4.3 Conformance Verification
 
@@ -1675,7 +1675,78 @@ Transports that **inherently suppress duplicates** (TCP single stream, SOME/IP o
 | zenoh (reliable) | `false` (application id dedup still runs — router reordering possible) |
 | udp, generic unreliable | `false` |
 
-### 10.6 `_event` Field Wiring for Distributed Events
+### 10.6 Sequence Ordering Buffer
+
+§10.1 classifies per-source FIFO as the transport's responsibility: TCP-based substrates deliver in order by construction, UDP-based substrates may reorder. SCXML state transitions are order-sensitive — `brake.press` arriving after `brake.release` leaves the system in the braking state until another press. The mesh runtime closes this gap for UDP-backed bindings via a sequence-ordered admit layer that sits alongside §10.5's dedup filter.
+
+The design mirrors §10.5: per-binding declaration in deploy.yaml + runtime buffer emitted only when the transport cannot provide the guarantee natively. TCP-based bindings pay zero runtime cost.
+
+#### 10.6.1 deploy.yaml schema
+
+```yaml
+topology:
+  ecu1:
+    machines:
+      brake:
+        ordering:                   # NEW — per-machine receiver buffer timings
+          gap_timeout_ms: 100       # required if section present (no field-level default)
+          tick_period_ms: 50        # required if section present
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: motor/cmd
+            ordering: required      # per-binding; default "none"
+```
+
+The two `ordering` keys answer different questions:
+
+- **Per-binding `ordering:`** (under `bindings.<target>`) — *whether* the route enforces FIFO. Values: `none` (default — engine sees arrival order) | `required` (per-source FIFO guaranteed by either the transport or the runtime buffer).
+- **Per-machine `ordering:`** (sibling of `bindings:`) — *how* the receiver buffer behaves once activated. Both fields are required when the section is present so a partial override cannot leave the relationship between the two values implicit; omit the section entirely to accept the defaults (100 ms / 50 ms — module constants `DEFAULT_GAP_TIMEOUT_MS` / `DEFAULT_TICK_PERIOD_MS` in `sce-build/src/mesh/deploy.rs`, the single source of truth). Validation (`mesh/deploy-invalid-ordering-timings`): both fields must be positive AND `tick_period_ms` must be strictly less than `gap_timeout_ms` (Nyquist), so a missed sequence is detected within `gap_timeout + tick_period`.
+
+#### 10.6.2 Dispatch decision
+
+| Transport | `ordering` | Behavior |
+|---|---|---|
+| local, shm, custom_tcp | `required` or `none` | Transport supplies order natively — zero runtime cost. |
+| SOME/IP `protocol: tcp` | `required` or `none` | Transport supplies order — zero runtime cost. |
+| Zenoh | `required` | Runtime `OrderingBuffer` activated; envelopes sorted by sender-stamped `sequence_no` before dispatch. |
+| Zenoh | `none` | Current §10.1 contract — arrival order. |
+| SOME/IP (UDP default) | `required` | Runtime `OrderingBuffer` activated. |
+| SOME/IP (UDP default) | `none` | Current §10.1 contract. |
+| DDS (any QoS) | `required` | Runtime `OrderingBuffer` activated. |
+| CAN | `required` | **Rejected at topology stage** — broadcast bus cannot represent a per-(sender, receiver) sequence domain. Use `ordering: none` or switch transport. |
+| CAN | `none` | Current §10.1 contract. |
+
+The registry predicate pair is `supplies_ordering` (transport provides native FIFO) and `ordering_representable` (receiver, given a sender-stamped `sequence_no`, can reconstruct per-sender order). CAN is the sole `ordering_representable = false` transport: every frame reaches every bus participant, so a per-(source, target) sequence domain does not exist on the wire.
+
+#### 10.6.3 Sequence stamping
+
+Each sender maintains a per-target monotonic counter. The codegen-generated mesh-send-callback stamps `env.sequence_no = ++seq_counter_<target>` immediately before `route_send`, and only when the target binding has `ordering: required` on a non-ordered transport.
+
+- Scope: per-(sender machine, target binding). Different targets on the same machine have independent counters.
+- Type: `uint64_t`. At 1 kHz per target the counter wraps after ~5.8 × 10⁸ years; no wrap guard.
+- Concurrency: mesh-send-callback runs on the engine's single step thread — no mutex.
+- Wire: envelope field `sequence_no` (CBOR integer key 14, optional). Absent when the sender is not on an ordered route. A receiver with an active `OrderingBuffer` that observes an envelope without `sequence_no` drops the envelope and raises `error.communication.missing_sequence`. Topology guarantees all senders on an ordered route stamp the field; a missing value signals an out-of-sync sender. Pre-release wire format, no backward-compat shim.
+
+#### 10.6.4 Receiver buffer
+
+`OrderingBuffer` holds per-source state: `next_expected_seq` (starts at 1) and a sorted map of buffered envelopes. On `admit(source, env)`:
+
+1. If `env.sequence_no == next_expected_seq` — dispatch immediately, increment `next_expected_seq`, then drain any contiguous higher sequences already buffered.
+2. If `env.sequence_no > next_expected_seq` — buffer with an arrival timestamp.
+3. If `env.sequence_no < next_expected_seq` (post-fast-forward straggler) — drop silently.
+
+`tick()` fires gap timeouts: for each source whose `next_expected_seq` has been blocked longer than `gap_timeout`, fast-forward past the gap, raise `error.communication` with `reason = "ORDERING_GAP"` and the lost range carried in `_event.data.lost_seq_lo` / `lost_seq_hi` (§16.7 row 13), and drain buffered envelopes now contiguous with the new `next_expected_seq`. The generated `TransportRouter` owns a periodic tick thread that drives `tick()` at the deploy-supplied `tick_period_ms` cadence; cross-source gaps and gap-at-stream-end (no further inbound traffic) are recovered within one tick plus `gap_timeout`. `gap_timeout` and the tick cadence both come from the per-machine `ordering:` block in deploy.yaml (§10.6.1) — the receiver runtime carries no fallback constant, the values are emitted into the generated router verbatim. Defaults (100 ms / 50 ms) apply when the `ordering:` section is omitted; the parser enforces Nyquist (`tick_period_ms < gap_timeout_ms`).
+
+An envelope that reaches `admitOrdered` on an ordered route without `sequence_no` is dropped and `error.communication` with `reason = "MISSING_SEQUENCE"` (§16.7 row 12) is raised, carrying `source` and `envelope_id` in `_event.data` for diagnosis. Topology guarantees all senders on the route stamp `sequence_no`; the event surfaces a sender drift condition.
+
+Interaction with §10.5 dedup: the generated admit path is `admitOrdered`, which chains dedup → ordering → dispatch internally. A single generated method body; the `ordering: required` + `needs_dedup` composition introduces no code duplication.
+
+Interaction with correlation-keyed patterns: `RpcReply` and `FieldNotify` envelopes carry `correlation_id` and match pending requests by that field, so their order across the wire is irrelevant to correctness. `admitOrdered` bypasses the buffer for those patterns (direct `dispatchToSender`) to avoid paying reply latency for an order invariant no handler depends on.
+
+Per-source state (`state_` map inside `OrderingBuffer`) is bounded by the `deploy.yaml` machine roster — same argument as §10.5's DedupRouter; no eviction policy.
+
+### 10.7 `_event` Field Wiring for Distributed Events
 
 W3C §5.10.2 defines the standard `_event` fields. SCE Mesh populates them deterministically from envelope fields:
 
@@ -1691,7 +1762,7 @@ W3C §5.10.2 defines the standard `_event` fields. SCE Mesh populates them deter
 
 These fields are surface-compatible with local execution — an author's `<transition cond="_event.origin == 'mesh://chassis'">` works identically whether the event arrives locally or via any transport.
 
-#### 10.6.1 Structured `_event.data` for `error.*` events
+#### 10.7.1 Structured `_event.data` for `error.*` events
 
 W3C SCXML 1.0 does not prescribe a `_event.data` schema for `error.execution` / `error.communication`; the spec only fixes the event names (§5.10.1). SCE Mesh pins a **JSON-shaped convention** so authors have a stable contract:
 
@@ -1719,7 +1790,7 @@ Reason code catalog for `error.communication` is in §16.7. `error.execution` re
 
 Foreign W3C SCXML 1.0 processors that do not implement SCE Mesh will raise `error.execution` with their own `_event.data` shape (if any). Documents that must be portable between foreign and SCE processors should guard on `_event.name == 'error.execution'` only, not on `_event.data.reason`. SCE's own error handlers may read `_event.data.reason` reliably for diagnostics and recovery logic.
 
-### 10.7 Delayed Send + Cancel (Cross-Process)
+### 10.8 Delayed Send + Cancel (Cross-Process)
 
 Per W3C §6.2.4, `<send delay="5s" id="later">` queues an event for future delivery, cancellable by `<cancel sendid="later">`. Distribution extends this as follows:
 
@@ -2342,8 +2413,8 @@ Sessions B-E execute the design above. Each session is a working unit; estimates
 | **C (DONE)** | SOME/IP multi-pattern: pattern-branching send (`send_to_X` switches on `PatternKind`), RPC correlation table (`pending_rpcs_` with mutex), `register_message_handler` for RPC response + event notify + field notify, `sce:reply-event` SCXML attribute parsed + threaded to codegen, `resolvePattern()` build-time event→PatternKind lookup in `wireTo()`, `MeshDispatch.h` handles RpcReply/EventNotify/FieldNotify inbound patterns, deploy.yaml extended with `event_group_id`/`event_id`/`getter_id`/`setter_id`. 32/32 tests GREEN. | Existing `mesh_someip_compile_test` + all 32 ctest pass |
 | **D (DONE)** | Zenoh multi-pattern client-side realization: `send_zenoh` TransportRouter member dispatches on `PatternKind` (put for FireForget/FieldWrite; `session.get` with on_reply closure for RpcRequest/FieldRead; `declare_subscriber` + `zenoh_subscribers_` RAII handle map for EventSubscribe/EventUnsubscribe). Native correlation replaces `pending_rpcs_` — zenoh runtime delivers replies to the capturing closure. `find_package(zenohc)` precedes `find_package(zenohcxx)` to resolve the `zenohcxx::zenohc` target. ZENOH capability descriptor adds `RequestReply`. Multi-pattern compile-only + peer-mode runtime E2E (TCP locator discovery, no daemon) validate all five switch branches. **Post-review textbook refactor**: `wireTo()` removed entirely; `TransportRouter<SenderEngine, LocalEngines...>` takes the sender in its ctor, stores a `SenderEngine& sender_` const reference, installs `setMeshSendCallback` in the ctor body. Replaces type-erased mutable `receive_callback_` with direct `dispatchToSender()` — race on reassignment is structurally impossible. All call sites migrated; no legacy stub. Pattern-capability negative test restored (shm+RPC replaces the deleted zenoh case). | Multi-pattern peer-mode E2E without daemon: `mesh_zenoh_multipattern_runtime` 1/1 PASS (FireForget, RpcRequest round-trip with `sce:reply-event` rewrite, EventSubscribe → EventNotify, FieldRead, EventUnsubscribe handle drop). 35/35 ctest + 369/369 cargo test GREEN. |
 | **E1 (path C, in progress)** | **SCXML purity + mesh-rpc correction**. Architectural correction: remove `sce:pattern`/`sce:reply-event`/`sce:reply-timeout`/`sce:qos`/`sce:deadline`/`sce:priority`; migrate Session C/D test fixtures. External config integration: deploy.yaml references `vsomeip.json` / `zenoh.json5`; `sce-build` parses them at build time. 3-way consistency check. Topology-inferred request↔response pairing. `<invoke type="sce:mesh-rpc">` full lifecycle (§9.5). Subscription dual-lifecycle (state-entry auto-symmetry + deploy.yaml machine-lifetime). **W3C compat doc**: `docs/MESH_SCXML_COMPATIBILITY.md`. No partition/distribution machinery yet. | (1) All Session C/D tests migrated, zero `sce:*` attributes remaining on `<send>`; (2) `<invoke type="sce:mesh-rpc">` integration test passes on zenoh or someip; (3) 3-way consistency check rejects a seeded misnamed method at build time; (4) reserved-name conflict rule rejects a seeded `<param name="_mesh_event">` collision at build time; (5) `docs/MESH_SCXML_COMPATIBILITY.md` landed; (6) 35+ ctest + 369+ cargo test green, zero regressions. |
-| **E2 (path C, next)** | **Distributed conformance foundation**. Transport Contract (§10.4); `custom_tcp` reference transport; mesh runtime dedup layer (§10.5); `_event` field wiring (§10.6) including structured `error.*` data (§10.6.1); sender-hold delayed send + cancel (§10.7); `partitions:` schema in deploy.yaml with explicit coverage rule (§14); distributability analyzer + auto-merge (§16.3/16.4); parallel `<final>` barrier runtime + `ParallelRegionDone` wire pattern 21 (§16.5); `error.communication` catalog (§16.7); IRP distributed harness (§16.8) for the `<parallel>`-only distributable subset. | (1) `custom_tcp` transport passes a minimal FireForget E2E; (2) dedup layer suppresses seeded duplicate envelopes; (3) sender-hold cancel test: cancel before emit_at leaves zero wire traffic; (4) Distributed IRP harness runs the `<parallel>`-only `distributable: yes` subset with identical verdicts to single-process; (5) Distributability analyzer correctly flags R1/R2 violations in seeded test documents; (6) `merged_single_partition` label appears for seeded shared-write test; (7) Parallel `<final>` barrier test: N region partitions each reach `<final>` → root raises `done.state.PAR` at correct macrostep boundary; (8) zero regressions of E1 acid tests. |
-| **F (path C, after E2)** | **Full remote `<invoke type="scxml">` + complete IRP distributed coverage**. Wire patterns InvokeStart/InvokeStarted/ChildEvent/ParentEvent/InvokeDone/InvokeCancel/InvokeError (§9.6.2). `_event.invokeid`/`origin` wiring for child events (§9.6.3). `<finalize>` at parent's macrostep on child events (§9.6.4). `autoforward="true"` parent→child forwarding (§9.6.5). Inline `<content>` precompilation — synthesize `<parent>__sce_synth_invoke__<id>` machines (§9.6.6), with collision detection. Extend IRP distributed manifest to cover `<invoke type="scxml">`-using tests. Foreign processor compatibility harness (graceful `error.execution` validation with an external SCXML 1.0 reference interpreter). Mesh Conformance Suite: distributed-only tests exercising §10.4/10.5/10.7/16.5/16.7 edge cases not covered by W3C IRP. | (1) All IRP tests classified `distributable: yes` pass in both single-process and distributed mode; (2) Remote `<invoke>` lifecycle test across processes (done/error/cancel); (3) `autoforward="true"` forwarding test; (4) Inline `<content>` synthesized child executes on a different partition; (5) Synthesized-name collision test is rejected at build time; (6) Mesh Conformance Suite 100% pass; (7) Zero single-process regressions. |
+| **E2 (path C, next)** | **Distributed conformance foundation**. Transport Contract (§10.4); `custom_tcp` reference transport; mesh runtime dedup layer (§10.5); `_event` field wiring (§10.7) including structured `error.*` data (§10.7.1); sender-hold delayed send + cancel (§10.8); `partitions:` schema in deploy.yaml with explicit coverage rule (§14); distributability analyzer + auto-merge (§16.3/16.4); parallel `<final>` barrier runtime + `ParallelRegionDone` wire pattern 21 (§16.5); `error.communication` catalog (§16.7); IRP distributed harness (§16.8) for the `<parallel>`-only distributable subset. | (1) `custom_tcp` transport passes a minimal FireForget E2E; (2) dedup layer suppresses seeded duplicate envelopes; (3) sender-hold cancel test: cancel before emit_at leaves zero wire traffic; (4) Distributed IRP harness runs the `<parallel>`-only `distributable: yes` subset with identical verdicts to single-process; (5) Distributability analyzer correctly flags R1/R2 violations in seeded test documents; (6) `merged_single_partition` label appears for seeded shared-write test; (7) Parallel `<final>` barrier test: N region partitions each reach `<final>` → root raises `done.state.PAR` at correct macrostep boundary; (8) zero regressions of E1 acid tests. |
+| **F (path C, after E2)** | **Full remote `<invoke type="scxml">` + complete IRP distributed coverage**. Wire patterns InvokeStart/InvokeStarted/ChildEvent/ParentEvent/InvokeDone/InvokeCancel/InvokeError (§9.6.2). `_event.invokeid`/`origin` wiring for child events (§9.6.3). `<finalize>` at parent's macrostep on child events (§9.6.4). `autoforward="true"` parent→child forwarding (§9.6.5). Inline `<content>` precompilation — synthesize `<parent>__sce_synth_invoke__<id>` machines (§9.6.6), with collision detection. Extend IRP distributed manifest to cover `<invoke type="scxml">`-using tests. Foreign processor compatibility harness (graceful `error.execution` validation with an external SCXML 1.0 reference interpreter). Mesh Conformance Suite: distributed-only tests exercising §10.4/10.5/10.8/16.5/16.7 edge cases not covered by W3C IRP. | (1) All IRP tests classified `distributable: yes` pass in both single-process and distributed mode; (2) Remote `<invoke>` lifecycle test across processes (done/error/cancel); (3) `autoforward="true"` forwarding test; (4) Inline `<content>` synthesized child executes on a different partition; (5) Synthesized-name collision test is rejected at build time; (6) Mesh Conformance Suite 100% pass; (7) Zero single-process regressions. |
 
 #### Out of Phase 3.5 scope
 
@@ -3191,7 +3262,7 @@ Each region partition maintains its own `<history>` states locally. On parallel 
 
 ### 16.7 `error.communication` raise policy
 
-Runtime conditions that raise `error.communication`. Each condition pins a machine-readable `reason` code and the `_event.data` shape that carries it (extends §10.6.1 base schema).
+Runtime conditions that raise `error.communication`. Each condition pins a machine-readable `reason` code and the `_event.data` shape that carries it (extends §10.7.1 base schema).
 
 | # | Condition | `reason` | Extra `_event.data` fields |
 |---|---|---|---|
@@ -3206,8 +3277,10 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 | 9 | Network partition detected (peer heartbeat or liveness probe fail) | `PEER_PARTITIONED` | `target: string`, `last_seen_ms_ago: int` |
 | 10 | Transport backpressure queue full, outbound envelope dropped | `BACKPRESSURE_DROP` | `transport: string`, `target: string`, `queue_depth: int` |
 | 11 | Peer rejected envelope due to authorization failure | `UNAUTHORIZED` | `target: string`, `transport_status?: string` |
+| 12 | Inbound envelope reached an active `OrderingBuffer` without `sequence_no` (§10.6.3) | `MISSING_SEQUENCE` | *(baseline only — `source`, `envelope_id` carry the diagnosis)* |
+| 13 | `OrderingBuffer` fast-forwarded past a missing sequence range after `gap_timeout` expired (§10.6.4) | `ORDERING_GAP` | `lost_seq_lo: uint64`, `lost_seq_hi: uint64` (inclusive range of skipped sequence numbers) |
 
-**Common fields (§10.6.1 baseline)**: `errorName: "communication"`, `reason: <one of above>`, `detail?: string`, `source?: string` (envelope `source` field for inbound conditions), `sendid?: string`, `envelope_id?: string`, `invoke_id?: string`. These are always available when relevant; the table above lists condition-specific additional fields.
+**Common fields (§10.7.1 baseline)**: `errorName: "communication"`, `reason: <one of above>`, `detail?: string`, `source?: string` (envelope `source` field for inbound conditions), `sendid?: string`, `envelope_id?: string`, `invoke_id?: string`. These are always available when relevant; the table above lists condition-specific additional fields.
 
 **Delivery semantics**: `error.communication` is raised into the affected machine's external queue (W3C §5.10) and delivered at the next macrostep boundary. Multiple conditions observed within a single microstep produce multiple events (one per condition); coalescing is not permitted because authors rely on one-to-one condition-to-event mapping.
 
@@ -3326,8 +3399,8 @@ The spec above describes the target state. Implementation is split into three se
 **Session E2 (distributed conformance foundation)** — adds the partition machinery and `<parallel>`-only IRP coverage:
 - §10.4 Transport Contract and `custom_tcp` reference transport.
 - §10.5 mesh runtime dedup layer.
-- §10.6 `_event` field wiring for distributed events, including the structured `error.*` convention (§10.6.1).
-- §10.7 sender-hold delayed send + cancel.
+- §10.7 `_event` field wiring for distributed events, including the structured `error.*` convention (§10.7.1).
+- §10.8 sender-hold delayed send + cancel.
 - §14 `partitions:` schema + deploy.yaml partition resolver with explicit coverage rule.
 - §16.3/16.4 distributability analyzer (R1–R4) + cross-region transition auto-merge.
 - §16.5 parallel `<final>` barrier runtime, using the dedicated `ParallelRegionDone` wire value 21.
@@ -3343,7 +3416,7 @@ The spec above describes the target state. Implementation is split into three se
 - §9.6.6 inline `<content>` precompilation in `sce-build`, with the `__sce_synth_invoke__` collision check.
 - Extension of the IRP distributable manifest to cover tests using `<invoke type="scxml">`.
 - Foreign processor compatibility harness (exercise `error.execution` graceful degrade against an external SCXML 1.0 reference interpreter).
-- Mesh Conformance Suite: distributed-only tests exercising §10.4/10.5/10.7/16.5/16.7 edge cases not covered by W3C IRP.
+- Mesh Conformance Suite: distributed-only tests exercising §10.4/10.5/10.8/16.5/16.7 edge cases not covered by W3C IRP.
 
 **Session-scoped acid tests** are in the §13 roadmap table (one row per session). The overall conformance claim of §16.1 is satisfied only when Session F lands; E1 and E2 deliver subsets of the claim against documented subsets of the IRP suite.
 

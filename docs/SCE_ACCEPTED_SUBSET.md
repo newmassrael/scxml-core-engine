@@ -320,6 +320,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-parse` | Mesh Deploy |
 | `mesh/deploy-unsupported-version` | Mesh Deploy |
 | `mesh/deploy-duplicate-machine` | Mesh Deploy |
+| `mesh/deploy-invalid-ordering-timings` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |
@@ -339,6 +340,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/topology-missing-binding-field` | Mesh Topology |
 | `mesh/topology-invalid-binding-field` | Mesh Topology |
 | `mesh/topology-event-binding-unused` | Mesh Topology |
+| `mesh/topology-ordering-cannot-be-guaranteed` | Mesh Topology |
 | `mesh/codegen-unsupported-language` | Mesh Codegen |
 | `mesh/codegen-unsupported-transport` | Mesh Codegen |
 | `mesh/codegen-event-name-collision` | Mesh Codegen |

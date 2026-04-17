@@ -55,7 +55,7 @@ public:
     /// * on a matching [`handleReply`] — `status` reflects the
     ///   envelope's `rpc_status` (`Ok` → fire `done.invoke.<id>`,
     ///   anything else → `error.invoke.<id>` with the status as
-    ///   part of the §10.6 structured error), `data` holds the
+    ///   part of the §10.7 structured error), `data` holds the
     ///   reply payload bytes (possibly empty, codec-encoded per
     ///   `MeshEnvelope.datacontenttype`).
     /// * on [`handleDeadline`] — `status = RpcStatus::DeadlineExceeded`,

@@ -86,7 +86,7 @@ Authors who want strict portability (document compiles AND executes correctly on
 If you intend a document to run on both SCE Mesh and a foreign processor with graceful degradation, follow these three rules:
 
 1. **Always handle `error.execution` near every mesh-targeted `<send>` and `<invoke>`.** The W3C-compliant handler lets foreign processors fall back cleanly. SCE Mesh uses `error.communication` for transport faults — handle both when portability matters.
-2. **Do not rely on `_event.data.reason` from either `error.execution` or `error.communication`.** W3C SCXML 1.0 does not fix `_event.data` shapes for error events (§5.10.1). Foreign processors emit whatever shape they choose. SCE Mesh pins a shape (§10.6.1, §16.7), but those fields are only guaranteed on SCE-generated code.
+2. **Do not rely on `_event.data.reason` from either `error.execution` or `error.communication`.** W3C SCXML 1.0 does not fix `_event.data` shapes for error events (§5.10.1). Foreign processors emit whatever shape they choose. SCE Mesh pins a shape (§10.7.1, §16.7), but those fields are only guaranteed on SCE-generated code.
 3. **Treat event names as opaque tokens in receiver transitions.** The `service.request.*`, `event.notification.*`, `field.get.*`, … conventions are for SCE tooling (build-time pattern inference, §8.1). A foreign processor sees ordinary strings — `<transition event="service.request.compute_force">` matches the literal event name, nothing more.
 
 ## Verification

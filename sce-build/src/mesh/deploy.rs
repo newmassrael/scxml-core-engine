@@ -167,6 +167,109 @@ pub struct SomeipTransportConfig {
     pub application_name: Option<String>,
 }
 
+/// Ordering guarantee declared on a per-binding basis (SCE_MESH.md §10.6).
+///
+/// - `None` (default): the receiver sees envelopes in arrival order. This is
+///   correct for transports that natively preserve per-sender FIFO (local,
+///   shm, custom_tcp, SOME/IP over TCP) AND for authors who do not depend on
+///   order across a UDP-backed route.
+/// - `Required`: the route guarantees per-sender FIFO, either via the
+///   transport's native order or via the runtime `OrderingBuffer` emitted
+///   by the codegen. Topology rejects this value on transports whose
+///   `ordering_representable` is `false` (CAN).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderingRequirement {
+    #[default]
+    None,
+    Required,
+}
+
+impl OrderingRequirement {
+    /// `true` when no runtime ordering action is requested. Used by the
+    /// codegen and by `skip_serializing_if` so the default serializes out
+    /// cleanly.
+    pub fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+
+/// Default `gap_timeout_ms` applied when a machine omits the `ordering:`
+/// section (SCE_MESH.md §10.6.1). 100 ms covers the Zenoh session-refresh
+/// window and the SOME/IP retransmit envelope at 1 kHz sender rates. This
+/// constant is the single source of truth — the C++ runtime no longer
+/// hard-codes a fallback; every emitted router carries an explicit value.
+pub const DEFAULT_GAP_TIMEOUT_MS: u64 = 100;
+
+/// Default `tick_period_ms` applied when a machine omits the `ordering:`
+/// section (SCE_MESH.md §10.6.1). One half of [`DEFAULT_GAP_TIMEOUT_MS`]
+/// (Nyquist) so worst-case gap recovery latency is bounded by
+/// `gap_timeout + tick_period`.
+pub const DEFAULT_TICK_PERIOD_MS: u64 = 50;
+
+/// Per-machine ordering buffer timings (SCE_MESH.md §10.6.1).
+///
+/// Both fields are required when the `ordering:` section is present —
+/// no field-level default. Authors who want one knob accept both
+/// [`DEFAULT_GAP_TIMEOUT_MS`] / [`DEFAULT_TICK_PERIOD_MS`] by omitting
+/// the section entirely; partial overrides are rejected at parse time
+/// to keep the deploy.yaml ↔ runtime mapping unambiguous.
+///
+/// The `ordering:` section configures HOW the per-machine ordering
+/// buffer behaves (timing constants); it is independent of any
+/// per-binding `ordering: required` declaration which controls
+/// WHETHER the buffer activates for a given route.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderingTimings {
+    /// Worst-case wait before fast-forwarding past a missing sequence
+    /// number. SCE_MESH.md §10.6.4 — the receiver buffer drains contiguous
+    /// envelopes and emits `ORDERING_GAP` on timeout.
+    pub gap_timeout_ms: u64,
+    /// Cadence at which the generated router drives `OrderingBuffer::tick`
+    /// (SCE_MESH.md §10.6.4). Must be strictly less than
+    /// [`Self::gap_timeout_ms`] so a single missed sequence is detected
+    /// within `gap_timeout + tick_period`.
+    pub tick_period_ms: u64,
+}
+
+impl OrderingTimings {
+    /// Default timings applied when a machine omits the `ordering:` section.
+    pub const fn default_const() -> Self {
+        Self {
+            gap_timeout_ms: DEFAULT_GAP_TIMEOUT_MS,
+            tick_period_ms: DEFAULT_TICK_PERIOD_MS,
+        }
+    }
+
+    /// Validate constraints common to every machine that declares an
+    /// `ordering:` section. Returns the rejection reason without the
+    /// machine name — the caller wraps this into
+    /// [`DeployError::InvalidOrderingTimings`].
+    fn validation_error(&self) -> Option<String> {
+        if self.gap_timeout_ms == 0 {
+            return Some("gap_timeout_ms must be greater than zero".to_string());
+        }
+        if self.tick_period_ms == 0 {
+            return Some("tick_period_ms must be greater than zero".to_string());
+        }
+        if self.tick_period_ms >= self.gap_timeout_ms {
+            return Some(format!(
+                "tick_period_ms ({}) must be strictly less than gap_timeout_ms ({}) \
+                 so a missed sequence is detected within `gap_timeout + tick_period`",
+                self.tick_period_ms, self.gap_timeout_ms,
+            ));
+        }
+        None
+    }
+}
+
+impl Default for OrderingTimings {
+    fn default() -> Self {
+        Self::default_const()
+    }
+}
+
 /// Zenoh session mode.
 ///
 /// Typed at parse time so an invalid value (typo, wrong case) fails the
@@ -249,6 +352,24 @@ pub struct MachineConfig {
     /// ```
     #[serde(default)]
     pub server: Option<ServerConfig>,
+    /// Per-machine ordering buffer timings (SCE_MESH.md §10.6.1). Absent
+    /// section ⇒ [`OrderingTimings::default_const`] (100 ms /
+    /// 50 ms). Section present ⇒ both fields are required and validated
+    /// (positive, Nyquist) at parse time. The values are emitted directly
+    /// into the generated router; no fallback exists below the deploy
+    /// layer.
+    #[serde(default)]
+    pub ordering: Option<OrderingTimings>,
+}
+
+impl MachineConfig {
+    /// Resolve the machine's ordering timings, filling defaults when the
+    /// `ordering:` section is absent. Single source for downstream
+    /// consumers (codegen, lib.rs) so the absent-section default lives
+    /// in exactly one place.
+    pub fn resolved_ordering_timings(&self) -> OrderingTimings {
+        self.ordering.unwrap_or_else(OrderingTimings::default_const)
+    }
 }
 
 /// Server-side transport binding (SCE_MESH.md §13 Session E).
@@ -410,6 +531,14 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline_ms: Option<u64>,
 
+    /// Per-binding ordering declaration (SCE_MESH.md §10.6). Default
+    /// `None` keeps the legacy "engine sees arrival order" behavior;
+    /// `Required` activates the runtime `OrderingBuffer` for transports
+    /// whose `supplies_ordering` is `false`, and is a topology error for
+    /// transports whose `ordering_representable` is `false` (CAN).
+    #[serde(default)]
+    pub ordering: OrderingRequirement,
+
     /// Per-target transport-native settings passed through to templates
     /// (zenoh `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
     /// Reserved SOME/IP ID key names are collected here at parse time but
@@ -457,8 +586,37 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     }
 
     validate_machine_name_uniqueness(&cfg)?;
+    validate_ordering_timings(&cfg)?;
 
     Ok(cfg)
+}
+
+/// Walk every machine that declared an explicit `ordering:` section and
+/// reject zero/Nyquist violations. Runs at parse time so the diagnostic
+/// surfaces the offending deploy.yaml line rather than a deferred
+/// runtime mis-tick.
+fn validate_ordering_timings(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    // Walk in deterministic order (sorted by machine name) so the first
+    // reported violation is stable across runs even though the
+    // underlying topology map is a HashMap.
+    let mut by_machine: BTreeMap<&str, &OrderingTimings> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            if let Some(t) = &machine.ordering {
+                by_machine.insert(machine_name.as_str(), t);
+            }
+        }
+    }
+    for (machine, timings) in by_machine {
+        if let Some(reason) = timings.validation_error() {
+            return Err(DeployError::InvalidOrderingTimings {
+                machine: machine.to_string(),
+                reason,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Ensure each machine name appears under at most one device.
@@ -956,6 +1114,84 @@ topology:
         assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
     }
 
+    // ── ordering (SCE_MESH.md §10.6) ──────────────────────────
+
+    #[test]
+    fn binding_ordering_required_parsed() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: motor/cmd
+            ordering: required
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        let motor = &brake.bindings[&TargetId::new("#motor").unwrap()];
+        assert_eq!(motor.ordering, OrderingRequirement::Required);
+    }
+
+    #[test]
+    fn binding_ordering_absent_defaults_to_none() {
+        // Same fixture as binding_ordering_required_parsed but without
+        // the ordering key — must default to None, not fail parse.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: motor/cmd
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        let motor = &brake.bindings[&TargetId::new("#motor").unwrap()];
+        assert_eq!(motor.ordering, OrderingRequirement::None);
+        assert!(motor.ordering.is_none());
+    }
+
+    #[test]
+    fn binding_ordering_typo_rejected() {
+        // `required` is the only non-default variant; a typo must fail
+        // at parse time rather than silently falling through to the
+        // `extra` map.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: motor/cmd
+            ordering: reqired
+"##;
+        let err = parse_deploy_str(yaml).unwrap_err();
+        match err {
+            DeployError::Yaml(msg) => {
+                assert!(
+                    msg.to_lowercase().contains("ordering")
+                        || msg.to_lowercase().contains("variant")
+                        || msg.to_lowercase().contains("required"),
+                    "expected OrderingRequirement unknown-variant message, got: {msg}"
+                );
+            }
+            other => panic!("expected DeployError::Yaml, got {other:?}"),
+        }
+    }
+
     #[test]
     fn machine_subscriptions_default_empty() {
         let yaml = r#"
@@ -968,5 +1204,163 @@ topology:
         let cfg = parse_deploy_str(yaml).expect("parse");
         let brake = &cfg.topology["ecu1"].machines["brake"];
         assert!(brake.subscriptions.is_empty());
+    }
+
+    // ── ordering timings (SCE_MESH.md §10.6.1) ────────────────
+
+    #[test]
+    fn ordering_timings_absent_section_resolves_to_defaults() {
+        // Machine without an `ordering:` section ⇒ defaults from the
+        // single source (DEFAULT_GAP_TIMEOUT_MS / DEFAULT_TICK_PERIOD_MS).
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml }
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        assert!(brake.ordering.is_none());
+        let resolved = brake.resolved_ordering_timings();
+        assert_eq!(resolved.gap_timeout_ms, DEFAULT_GAP_TIMEOUT_MS);
+        assert_eq!(resolved.tick_period_ms, DEFAULT_TICK_PERIOD_MS);
+    }
+
+    #[test]
+    fn ordering_timings_full_section_overrides_defaults() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        ordering:
+          gap_timeout_ms: 250
+          tick_period_ms: 80
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        let timings = brake.ordering.expect("section present");
+        assert_eq!(timings.gap_timeout_ms, 250);
+        assert_eq!(timings.tick_period_ms, 80);
+        // resolved_ordering_timings echoes the explicit value, not the
+        // module default.
+        let resolved = brake.resolved_ordering_timings();
+        assert_eq!(resolved, timings);
+    }
+
+    #[test]
+    fn ordering_timings_partial_section_rejected() {
+        // Only `gap_timeout_ms:` is set — the schema requires both
+        // because partial overrides leave the relationship between the
+        // two values implicit.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        ordering:
+          gap_timeout_ms: 250
+"#;
+        let err = parse_deploy_str(yaml).unwrap_err();
+        match err {
+            DeployError::Yaml(msg) => assert!(
+                msg.to_lowercase().contains("tick_period_ms")
+                    || msg.to_lowercase().contains("missing field"),
+                "expected missing-field message about tick_period_ms; got: {msg}"
+            ),
+            other => panic!("expected DeployError::Yaml, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ordering_timings_unknown_field_rejected() {
+        // Typo: `tcik_period_ms` — deny_unknown_fields must fire.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        ordering:
+          gap_timeout_ms: 250
+          tcik_period_ms: 80
+"#;
+        let err = parse_deploy_str(yaml).unwrap_err();
+        assert!(matches!(err, DeployError::Yaml(_)));
+    }
+
+    #[test]
+    fn ordering_timings_zero_gap_rejected() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        ordering:
+          gap_timeout_ms: 0
+          tick_period_ms: 1
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidOrderingTimings { machine, reason }) => {
+                assert_eq!(machine, "brake");
+                assert!(reason.contains("gap_timeout_ms"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidOrderingTimings, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ordering_timings_zero_tick_rejected() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        ordering:
+          gap_timeout_ms: 100
+          tick_period_ms: 0
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidOrderingTimings { machine, reason }) => {
+                assert_eq!(machine, "brake");
+                assert!(reason.contains("tick_period_ms"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidOrderingTimings, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ordering_timings_nyquist_violation_rejected() {
+        // tick_period_ms == gap_timeout_ms — the buffer can drift up to
+        // an entire window before tick observes the gap. Rejected so the
+        // recovery latency bound `gap_timeout + tick_period` always
+        // implies tick fires at least once during a single gap.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        ordering:
+          gap_timeout_ms: 100
+          tick_period_ms: 100
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidOrderingTimings { reason, .. }) => {
+                assert!(reason.contains("strictly less"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidOrderingTimings, got {other:?}"),
+        }
     }
 }

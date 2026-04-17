@@ -292,6 +292,7 @@ references against a real document and drift silently.
 | `mesh/topology-missing-binding-field` | `mesh-topology` | `add_attribute` | SCE Mesh §14 |
 | `mesh/topology-invalid-binding-field` | `mesh-topology` | no | SCE Mesh §14 |
 | `mesh/topology-event-binding-unused` | `mesh-topology` | `remove_fields` | SCE Mesh §14 |
+| `mesh/topology-ordering-cannot-be-guaranteed` | `mesh-topology` | no | SCE Mesh §10.6 |
 | `mesh/codegen-unsupported-language` | `mesh-codegen` | `replace_one_of` | SCE Mesh §7 |
 | `mesh/codegen-unsupported-transport` | `mesh-codegen` | `replace_one_of` | SCE Mesh §8 |
 | `mesh/codegen-template-read` | `mesh-codegen` | no | |

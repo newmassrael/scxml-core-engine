@@ -78,6 +78,19 @@ pub enum DeployError {
         machine: String,
         devices: Vec<String>,
     },
+
+    /// A machine declared an `ordering:` section with a value that
+    /// violates the per-machine ordering timing constraints
+    /// (SCE_MESH.md §10.6.1): both fields must be positive AND
+    /// `tick_period_ms` must be strictly less than `gap_timeout_ms`
+    /// (Nyquist). Rejected at parse time so a bad value cannot reach
+    /// the generated router.
+    #[error("machine '{machine}': invalid `ordering:` section in deploy.yaml — {reason}. \
+             Either fix the values or omit the section entirely to accept the defaults.")]
+    InvalidOrderingTimings {
+        machine: String,
+        reason: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -393,6 +406,23 @@ pub enum TopologyError {
         target: super::target::TargetId,
         event: String,
     },
+
+    /// A binding declares `ordering: required` on a transport whose
+    /// broadcast semantics leave no per-(sender, receiver) sequence
+    /// domain — the runtime `OrderingBuffer` cannot operate because a
+    /// sender-stamped `sequence_no` is indistinguishable at each
+    /// receiver on the bus (SCE_MESH.md §10.6.2). CAN is the only
+    /// in-tree transport in this category today.
+    #[error("machine '{machine}': binding for '{target}' (transport: {transport}) declares \
+             `ordering: required`, but '{transport}' is a broadcast bus whose semantics do not \
+             support per-(sender, receiver) sequence reconstruction (SCE Mesh §10.6.2). \
+             Either change the transport to a point-to-point one (e.g. local, shm, custom_tcp, \
+             someip, zenoh) or remove the `ordering: required` declaration from this binding.")]
+    OrderingCannotBeGuaranteed {
+        machine: String,
+        target: super::target::TargetId,
+        transport: String,
+    },
 }
 
 // ── Stage 3: Template rendering ──────────────────────────────
@@ -502,6 +532,19 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 k.extend(devices.iter().cloned());
                 k
             },
+        },
+        DeployError::InvalidOrderingTimings { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidOrderingTimings,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // No mechanical repair: the author chooses between fixing
+            // the explicit values and dropping back to the defaults
+            // (omit the section). Same shape as
+            // `MeshTopologyOrderingCannotBeGuaranteed` — author intent
+            // decides which side gives way.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
         },
     }
 }
@@ -770,6 +813,24 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 fields: vec![event.clone()],
             }),
             key_fragments: vec![machine.clone(), target.as_str().to_string(), event.clone()],
+        },
+        TopologyError::OrderingCannotBeGuaranteed { machine, target, transport } => DiagnosticPayload {
+            code: DiagnosticCode::MeshTopologyOrderingCannotBeGuaranteed,
+            stage: Stage::MeshTopology,
+            actual: Some(transport.clone()),
+            expected: None,
+            // Two equally-valid repairs (switch transport OR drop the
+            // ordering requirement). Neither is mechanically derivable
+            // from this diagnostic alone — the author's intent decides.
+            // Leaving `fix: None` keeps agents from prescribing a
+            // transport switch when the author may have meant to accept
+            // arrival order.
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                target.as_str().to_string(),
+                transport.clone(),
+            ],
         },
     }
 }

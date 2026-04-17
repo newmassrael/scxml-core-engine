@@ -77,6 +77,9 @@ CborError encodeBody(CborEncoder *m, const MeshEnvelope &env) {
     // optional; serialization (key 13, nested map) is added together with
     // the first consuming transport in Sessions C/D.
 
+    if (e == CborNoError && env.sequence_no)
+        e = encodeUintKey(m, kEnvelopeKeySequenceNo, *env.sequence_no);
+
     return e;
 }
 
@@ -90,6 +93,7 @@ size_t countEntries(const MeshEnvelope &env) {
     if (env.rpc_status)        ++n;
     if (env.rpc_error_message) ++n;
     if (env.deadline_unix_ms)  ++n;
+    if (env.sequence_no)       ++n;
     return n;
 }
 
@@ -308,6 +312,12 @@ bool decodeEnvelope(const uint8_t *raw, std::size_t len, MeshEnvelope &out) {
             uint64_t v = 0;
             if (!readU64(&it, v)) return false;
             out.deadline_unix_ms = v;
+            break;
+        }
+        case kEnvelopeKeySequenceNo: {
+            uint64_t v = 0;
+            if (!readU64(&it, v)) return false;
+            out.sequence_no = v;
             break;
         }
         default:

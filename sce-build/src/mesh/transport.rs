@@ -115,6 +115,38 @@ pub struct TransportDescriptor {
     /// - multicast bus transports (dds, can) have no single source
     ///   ordering
     pub supplies_dedup: bool,
+    /// Does this transport inherently deliver per-(source, target)
+    /// envelopes in send order?
+    ///
+    /// Consumed by the codegen's ordering branching (SCE_MESH.md §10.6):
+    /// when a binding declares `ordering: required` AND this flag is
+    /// `false`, the generated `TransportRouter` emits an
+    /// `OrderingBuffer` member and routes inbound envelopes through
+    /// `admitOrdered`. When `true`, the binding's `ordering` value is
+    /// a no-op — the transport's native FIFO already holds.
+    ///
+    /// Classification rationale:
+    /// - in-process queueing + single-stream TCP preserve send order by
+    ///   construction (local, shm, custom_tcp — same set as supplies_dedup)
+    /// - UDP-capable transports (someip default, zenoh, dds) may reorder
+    ///   across routers or datagrams
+    /// - CAN frame arbitration is priority-based, not sender-FIFO
+    pub supplies_ordering: bool,
+    /// Can a receiver, given a sender-stamped per-(source, target)
+    /// `sequence_no`, reconstruct send order?
+    ///
+    /// `true` for every transport with a point-to-point delivery model
+    /// (sender → receiver pair has a private sequence domain). `false`
+    /// for broadcast buses where every frame reaches every participant:
+    /// CAN has no per-receiver sequence domain because the sender's
+    /// counter stream is observed identically by every ECU on the bus,
+    /// so the runtime `OrderingBuffer` cannot distinguish "skipped for
+    /// this receiver" from "not destined for this receiver".
+    ///
+    /// Topology validation (SCE_MESH.md §10.6.2) rejects a binding
+    /// declaring `ordering: required` on a transport whose
+    /// `ordering_representable` is `false`.
+    pub ordering_representable: bool,
 }
 
 // ── Single registry ─────────────────────────────────────────
@@ -138,6 +170,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         required_binding_fields: &[],
         // In-process direct dispatch — no wire, no reordering.
         supplies_dedup: true,
+        // Direct function call preserves invocation order.
+        supplies_ordering: true,
+        ordering_representable: true,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -147,6 +182,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Single shared ring per channel with READY_MAGIC gating — a
         // producer cannot publish the same slot twice.
         supplies_dedup: true,
+        // FIFO ring buffer per channel preserves producer order.
+        supplies_ordering: true,
+        ordering_representable: true,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -169,6 +207,15 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // separate registry entry (e.g. `someip_tcp`) rather than a
         // per-binding probe here.
         supplies_dedup: false,
+        // Default UDP datagrams may reorder; per-binding `protocol: tcp`
+        // is a runtime upgrade handled by the codegen's
+        // `compute_needs_ordering` helper, not by flipping this flag.
+        // Same rationale as `supplies_dedup`.
+        supplies_ordering: false,
+        // Per-(service_id, method_id) or (service_id, event_group_id)
+        // routing is point-to-point; receivers can track a sender-stamped
+        // sequence per binding.
+        ordering_representable: true,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },
@@ -182,6 +229,11 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Zenoh router reordering is visible to applications even in reliable
         // mode — the runtime-level DedupWindow filters re-delivered envelopes.
         supplies_dedup: false,
+        // Same router-reorder concern applies to FIFO: reliable delivery
+        // does not imply ordered delivery across a multi-hop Zenoh fabric.
+        supplies_ordering: false,
+        // Per-(key, subscriber) stream carries a private sequence domain.
+        ordering_representable: true,
     };
     // SCE Mesh §16.8.3 reference transport: TCP loopback, length-prefixed
     // CBOR envelope framing, zero external dependencies. Each binding has a
@@ -198,6 +250,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // One TCP socket per sender→receiver pair; the stream itself
         // guarantees at-most-once delivery of any framed envelope.
         supplies_dedup: true,
+        // TCP preserves byte stream order; the length-prefixed CBOR
+        // framing layered on top preserves envelope order.
+        supplies_ordering: true,
+        ordering_representable: true,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -208,6 +264,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // duplicates; reliable-only deployments still need dedup for
         // cross-participant fan-out.
         supplies_dedup: false,
+        // BEST_EFFORT can reorder; reliable multicast participants still
+        // see late-join replay. Runtime buffer is required for
+        // `ordering: required` bindings.
+        supplies_ordering: false,
+        // Per-(topic, reader) unicast delivery from each publisher
+        // supports a stamped sequence domain.
+        ordering_representable: true,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -217,6 +280,14 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // CAN is a broadcast bus — retransmits and bridged segments can
         // redeliver the same frame.
         supplies_dedup: false,
+        // CAN frame arbitration is priority-based, not sender-FIFO; a
+        // burst of high-priority frames can overtake a queued lower-
+        // priority one from the same sender.
+        supplies_ordering: false,
+        // Broadcast bus — every frame reaches every participant, so a
+        // sender-stamped per-receiver sequence has no meaning on the
+        // wire. Topology rejects `ordering: required` for CAN bindings.
+        ordering_representable: false,
     };
 
     match transport {
@@ -398,6 +469,99 @@ mod tests {
                 "broadcast transport '{name}' must require runtime dedup"
             );
         }
+    }
+
+    // ── supplies_ordering / ordering_representable (SCE_MESH.md §10.6) ──
+
+    #[test]
+    fn in_process_transports_supply_ordering() {
+        // local + shm preserve sender order by construction (direct
+        // dispatch / FIFO ring).
+        for name in &["local", "shm"] {
+            let d = lookup(name).unwrap();
+            assert!(
+                d.supplies_ordering,
+                "in-process transport '{name}' preserves order"
+            );
+            assert!(d.ordering_representable);
+        }
+    }
+
+    #[test]
+    fn custom_tcp_supplies_ordering() {
+        // TCP stream preserves bytes in order; CBOR length-prefix framing
+        // preserves envelope order.
+        let d = lookup("custom_tcp").unwrap();
+        assert!(d.supplies_ordering);
+        assert!(d.ordering_representable);
+    }
+
+    #[test]
+    fn someip_requires_runtime_ordering() {
+        // Default UDP path may reorder. Per-binding `protocol: tcp` is a
+        // runtime upgrade in `compute_needs_ordering`, not here.
+        let d = lookup("someip").unwrap();
+        assert!(!d.supplies_ordering);
+        assert!(d.ordering_representable);
+    }
+
+    #[test]
+    fn zenoh_requires_runtime_ordering() {
+        // Router fabric may reorder even under reliable QoS.
+        let d = lookup("zenoh").unwrap();
+        assert!(!d.supplies_ordering);
+        assert!(d.ordering_representable);
+    }
+
+    #[test]
+    fn dds_can_be_ordered_by_runtime_buffer() {
+        // BEST_EFFORT multicast reorders; per-(topic, reader) unicast
+        // still supports a sender-stamped sequence domain.
+        let d = lookup("dds").unwrap();
+        assert!(!d.supplies_ordering);
+        assert!(d.ordering_representable);
+    }
+
+    #[test]
+    fn can_cannot_represent_ordering() {
+        // Priority-arbitrated broadcast bus has no per-receiver sequence
+        // domain. Topology rejects `ordering: required` for CAN.
+        let d = lookup("can").unwrap();
+        assert!(!d.supplies_ordering);
+        assert!(!d.ordering_representable);
+    }
+
+    #[test]
+    fn exactly_two_implemented_transports_require_runtime_ordering() {
+        // Regression guard mirroring `exactly_two_implemented_transports_require_runtime_dedup`:
+        // today SOME/IP and Zenoh are the implemented transports that may
+        // reorder. local/shm/custom_tcp preserve order by construction.
+        // If this count changes, the classification table in
+        // supplies_ordering comments MUST be updated in the same commit.
+        let unordered_impls: Vec<&&str> = implemented_names()
+            .iter()
+            .filter(|name| !lookup(name).unwrap().supplies_ordering)
+            .collect();
+        assert_eq!(
+            unordered_impls.len(),
+            2,
+            "expected exactly two implemented transports to require runtime ordering \
+             (someip + zenoh); got {unordered_impls:?}"
+        );
+    }
+
+    #[test]
+    fn only_can_cannot_represent_ordering() {
+        // Regression guard: CAN is the sole transport whose broadcast
+        // semantics make sender-stamped sequence meaningless at the
+        // receiver. Adding another such transport would force this test
+        // to update alongside the topology reject path.
+        let nonrepresentable: Vec<&str> = ["local", "shm", "someip", "zenoh", "custom_tcp", "dds", "can"]
+            .iter()
+            .copied()
+            .filter(|n| !lookup(n).unwrap().ordering_representable)
+            .collect();
+        assert_eq!(nonrepresentable, vec!["can"]);
     }
 
     #[test]

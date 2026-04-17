@@ -90,15 +90,18 @@
                 // Dispatch result ignored intentionally — unknown event
                 // names in the sender policy drop the envelope, which is
                 // the desired behavior for unmatched inbound messages.
-                // SCE_MESH.md §10.5: per-binding dedup. A SOME/IP binding
-                // pinned to `protocol: tcp` rides a single TCP stream per
-                // client↔server pair — duplicates are physically
-                // impossible and the runtime DedupWindow is bypassed.
-                // Unpinned (UDP-default) bindings route through
-                // admitInbound to filter on (source, id). Forwarded
-                // to the shared `dedup_or_dispatch` macro so all eight
-                // inbound call sites read identically.
-                (void)this->{{ dedup_or_dispatch(target.needs_dedup, "env") }};
+                // SCE_MESH.md §10.5 / §10.6: per-binding admit layering.
+                // A SOME/IP binding pinned to `protocol: tcp` rides a
+                // single TCP stream per client↔server pair — duplicates
+                // are physically impossible and the runtime DedupWindow
+                // is bypassed. Unpinned (UDP-default) bindings route
+                // through `admitInbound` to filter on (source, id). When
+                // the binding additionally declares `ordering: required`,
+                // the path becomes `admitOrdered` — the ordering buffer
+                // runs first and chains dedup internally. Forwarded to
+                // the shared `admit_or_dispatch` macro so every inbound
+                // call site reads identically.
+                (void)this->{{ admit_or_dispatch(target.needs_ordering, target.needs_dedup, "env") }};
             });
 {%- endmacro %}
 {#
@@ -123,6 +126,36 @@
 #}
 {%- macro dedup_or_dispatch(condition, env_name) -%}
 {%- if condition -%}
+admitInbound({{ env_name }})
+{%- else -%}
+dispatchToSender({{ env_name }})
+{%- endif -%}
+{%- endmacro %}
+{#
+  SCE_MESH.md §10.6: per-target admit layering for ordered routes.
+
+  `needs_ordering` and `needs_dedup` are the per-binding flags computed
+  by `compute_needs_ordering` / `compute_needs_dedup` in codegen.rs.
+  The three-layer chain (ordering → dedup → dispatch) is emitted as a
+  single method name at each inbound call site, so the generated code
+  contains no dead branches:
+
+    * ordered route + undeduped transport → `admitOrdered`
+      (internally consults dedup on each released envelope)
+    * undeduped transport, no ordering requirement → `admitInbound`
+    * neither → `dispatchToSender` direct
+
+  Server-side closures and zenoh client-side reply/subscribe closures
+  keep using the machine-wide `dedup_or_dispatch` macro above; the
+  per-binding `ordering: required` declaration only addresses
+  client-target dispatch today, so the server side does not enter the
+  ordering branch until SCE_MESH.md §10.6 is extended with a server
+  schema.
+#}
+{%- macro admit_or_dispatch(needs_ordering, needs_dedup, env_name) -%}
+{%- if needs_ordering -%}
+admitOrdered({{ env_name }})
+{%- elif needs_dedup -%}
 admitInbound({{ env_name }})
 {%- else -%}
 dispatchToSender({{ env_name }})
@@ -230,6 +263,24 @@ dispatchToSender({{ env_name }})
 // inherently-deduped transports pay zero overhead (no include, no
 // member, no call).
 #include "mesh/DedupRouter.h"
+{% endif %}
+{% if has_ordered_binding %}
+// SCE_MESH.md §10.6: runtime per-sender sequence-ordered admit layer
+// for bindings that declared `ordering: required` on a transport whose
+// `supplies_ordering=false`. Emitted only when at least one target on
+// this machine needs the runtime buffer; machines whose every ordered
+// route rides an inherently-ordered transport (local, shm, custom_tcp,
+// SOME/IP `protocol: tcp`) pay zero overhead.
+#include "mesh/OrderingBuffer.h"
+// SCE_MESH.md §10.7.1 + §16.7: `_event.data` builder for the
+// MISSING_SEQUENCE + ORDERING_GAP reason codes raised from the
+// ordering admit path and the periodic tick thread below.
+#include "mesh/CommunicationError.h"
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 {% endif %}
 
 namespace SCE::Generated::{{ machine_name }} {
@@ -524,6 +575,53 @@ struct TransportRouter {
     // need a TTL-based cleanup, which is explicitly out of scope today.
     SCE::Mesh::DedupRouter dedup_;
 {% endif %}
+{% if has_ordered_binding %}
+    // SCE_MESH.md §10.6: per-sender sequence-ordered admit layer.
+    // Emitted only when at least one target has
+    // `needs_ordering = true` (computed by `compute_needs_ordering`
+    // in codegen.rs). The buffer keys on `env.source` and holds
+    // per-sender state; the gap timeout is supplied verbatim from
+    // deploy.yaml `machines.<name>.ordering.gap_timeout_ms`
+    // ({{ machine_ordering.gap_timeout_ms }} ms here) — see
+    // SCE_MESH.md §10.6.1. There is no fallback constant in the
+    // runtime; deploy.yaml is the only source.
+    //
+    // No eviction: same bounded-source argument as `dedup_` above.
+    SCE::Mesh::OrderingBuffer ordering_buffer_{std::chrono::milliseconds({{ machine_ordering.gap_timeout_ms }})};
+
+    // SCE_MESH.md §10.6.4: periodic tick thread that drives
+    // `OrderingBuffer::tick()` at a fixed cadence so a gap at the end
+    // of an ordered stream (no further inbound traffic) still recovers
+    // within `gap_timeout`. Cadence comes from deploy.yaml
+    // `machines.<name>.ordering.tick_period_ms`
+    // ({{ machine_ordering.tick_period_ms }} ms here); the parser
+    // enforces `tick_period_ms < gap_timeout_ms` so a missed sequence
+    // is detected within `gap_timeout + tick_period`.
+    //
+    // Lifecycle: started at the end of `init()`, stopped at the start
+    // of `shutdown()` (shutdown-aware wait_for → notify → join).
+    // Idempotent shutdown via `joinable()` guard so the dtor's
+    // implicit `shutdown()` is safe after an explicit call.
+    //
+    // Ordering of members matters: the thread captures `this` and
+    // reads `ordering_buffer_` / `ordering_tick_shutdown_` /
+    // `ordering_tick_cv_` / `ordering_tick_mutex_`, all declared
+    // above it, so member destruction (reverse declaration order)
+    // tears the thread down before the state it touches.
+    std::atomic<bool> ordering_tick_shutdown_{false};
+    std::mutex ordering_tick_mutex_;
+    std::condition_variable ordering_tick_cv_;
+    std::thread ordering_tick_thread_;
+{% endif %}
+{# SCE_MESH.md §10.6.3: per-target monotonic sequence counter. One
+   counter per binding that has `needs_ordering = true`; counter is
+   incremented inside the mesh-send-callback on the engine's single
+   step thread, so no mutex is needed. The codegen emits counters
+   only for the specific targets that need them, so zero-overhead
+   mixed-binding machines keep their existing layout. #}
+{% for target in targets if target.needs_ordering %}
+    std::uint64_t seq_counter_{{ target.target_snake }}_ = 0;
+{% endfor %}
 
 {# ── (D2b-pre) Server SOME/IP application — declared BEFORE sender_
    so the initializer-list order (server_app_ then sender_) matches
@@ -886,6 +984,16 @@ struct TransportRouter {
 {% endif %}
                 }
 {% endif %}
+{% for t in targets if t.needs_ordering %}
+                // SCE_MESH.md §10.6.3: sequence stamp for {{ t.target }}.
+                // The counter is incremented on the engine's single step
+                // thread (mesh-send-callback is only invoked from there),
+                // so no atomic fetch_add is needed. u64 wrap takes ~5.8e8
+                // years at 1 kHz — no wrap guard emitted.
+                if (target == "{{ t.target }}") {
+                    env.sequence_no = ++seq_counter_{{ t.target_snake }}_;
+                }
+{% endfor %}
                 return route_send(target, env);
             });
 {% if has_mesh_rpc.v %}
@@ -1212,11 +1320,41 @@ struct TransportRouter {
         }
 {% endfor %}
 {% endif %}
+{% if has_ordered_binding %}
+        // SCE_MESH.md §10.6.4 periodic tick. Started last so a partial
+        // init() that returned false above did not leave a joinable
+        // thread behind for shutdown() to manage. The thread reads
+        // `ordering_tick_shutdown_` (atomic, initialized to false) and
+        // exits on the next wakeup once shutdown() flips it.
+        ordering_tick_thread_ = std::thread(&TransportRouter::orderingTickLoop, this);
+{% endif %}
         return true;
     }
 
     /// Stop all transport connections and release shared resources.
     void shutdown() {
+{% if has_ordered_binding %}
+        // Stop the periodic ordering tick before transport shutdown so
+        // no late tick fires while the sender engine reference may be
+        // racing another teardown path. Idempotent: after the first
+        // call, `joinable()` returns false and subsequent calls are
+        // no-ops (dtor-via-shutdown safety).
+        //
+        // The flag flip is performed under `ordering_tick_mutex_` so
+        // the waiting thread cannot miss the wakeup — if the worker's
+        // predicate check and our store interleave without the lock,
+        // a just-started wait could block until the next tick period
+        // despite the shutdown signal. Standard condvar teardown
+        // idiom (cppreference `notify_all` guidance).
+        {
+            std::lock_guard<std::mutex> lk(ordering_tick_mutex_);
+            ordering_tick_shutdown_.store(true);
+        }
+        ordering_tick_cv_.notify_all();
+        if (ordering_tick_thread_.joinable()) {
+            ordering_tick_thread_.join();
+        }
+{% endif %}
 {% if machine_subscriptions %}
         // Machine-lifetime unsubscribe (reverse of init subscriptions).
 {% for sub in machine_subscriptions %}
@@ -1458,6 +1596,188 @@ struct TransportRouter {
     }
 {% endif %}
 
+{% if has_ordered_binding %}
+    /// Raise an `error.communication` event on the bound sender engine
+    /// with the §10.7.1 / §16.7 `_event.data` shape encoded as JSON.
+    ///
+    /// Call sites:
+    ///   * `admitOrdered` when an envelope arrives on an ordered route
+    ///     without `sequence_no` — raises `reason = "MISSING_SEQUENCE"`
+    ///     (§16.7 row 12). Drift diagnostic for the sender.
+    ///   * `driveOrderingTick` via the `OrderingBuffer::OnGap` callback
+    ///     when a gap has been blocked past `gap_timeout` — raises
+    ///     `reason = "ORDERING_GAP"` with `lost_seq_lo`/`lost_seq_hi`
+    ///     (§16.7 row 13). Recovery signal: the receiver has fast-
+    ///     forwarded past the missing range.
+    ///
+    /// The event reaches the sender via `dispatchToSender`, the same
+    /// path used for ordinary inbound envelopes. SCXML authors can
+    /// guard with `<transition event="error.communication"
+    /// cond="_event.data.reason == 'ORDERING_GAP'">` etc.; unhandled
+    /// events are silently dropped per W3C SCXML 1.0 §3.12, which is
+    /// the desired behaviour when the author did not opt in.
+    ///
+    /// No cycling hazard: `dispatchToSender` goes straight to
+    /// `MeshDispatch`, never back through the transport callback or
+    /// ordering admit layer, so the `error.communication` envelope
+    /// cannot re-trigger another raise.
+    void raiseCommunicationError(SCE::Mesh::CommunicationError err) {
+        SCE::Mesh::MeshEnvelope evt;
+        evt.id = SCE::uuid::v7();
+        evt.source = "{{ machine_name }}";
+        evt.type = "error.communication";
+        evt.pattern = SCE::Mesh::PatternKind::FireForget;
+        evt.datacontenttype = SCE::Mesh::PayloadCodec::Json;
+        evt.data = err.toJsonBytes();
+        (void)dispatchToSender(evt);
+    }
+
+    /// Drive one tick of the ordering buffer's gap-timeout processing.
+    ///
+    /// The buffer's `tick()` returns an `OrderingTickResult` (released
+    /// envelopes + gap events) — all engine-visible work (raising
+    /// `error.communication` with reason `ORDERING_GAP`, dispatching
+    /// the fast-forwarded data envelopes) runs AFTER the buffer's
+    /// mutex has been released, so a slow sender or reentrant raise
+    /// cannot stall concurrent admit() calls on the same buffer.
+    ///
+    /// Dispatch chain mirrors `admitOrdered`: dedup is applied per
+    /// released envelope when the transport is undeduped, same
+    /// rationale as there.
+    ///
+    /// Called by the periodic `ordering_tick_thread_` and by
+    /// `tickOrdering()` below.
+    ///
+    /// @return total number of data envelopes dispatched to the
+    ///         sender engine during this tick across all sources
+    ///         (error.communication raises are NOT counted — only the
+    ///         fast-forwarded data envelopes are).
+    std::size_t driveOrderingTick() {
+        auto result = ordering_buffer_.tick();
+        // §16.7 row 13: one error.communication per timed-out gap.
+        // Raised outside the buffer mutex — reentrant admit() calls
+        // from other transport threads are not blocked by this loop.
+        for (const auto& gap : result.gaps) {
+            SCE::Mesh::CommunicationError err;
+            err.reason = "ORDERING_GAP";
+            err.source = gap.source;
+            err.lost_seq_lo = gap.lost_lo;
+            err.lost_seq_hi = gap.lost_hi;
+            raiseCommunicationError(std::move(err));
+        }
+        std::size_t dispatched = 0;
+        for (auto& env : result.released) {
+{% if has_undeduped_transport %}
+            // §10.5 dedup chained after ordering, same rationale as
+            // admitOrdered: needs_ordering implies needs_dedup for
+            // every registry transport today.
+            if (!dedup_.admit(env.source, env.id)) continue;
+{% endif %}
+            if (dispatchToSender(env)) ++dispatched;
+        }
+        return dispatched;
+    }
+
+    /// Test hook: drive a single tick synchronously from the calling
+    /// thread, bypassing the periodic tick thread's 50 ms cadence.
+    /// Hermetic injection tests use this to verify gap behaviour
+    /// without depending on the thread's wakeup timing.
+    ///
+    /// The behaviour is identical to one iteration of the periodic
+    /// thread — `error.communication` events land on `sender_` via
+    /// `raiseCommunicationError`, observable through whatever capture
+    /// the test's sender-engine double provides.
+    ///
+    /// @return total number of envelopes released during this tick.
+    std::size_t tickOrdering() {
+        return driveOrderingTick();
+    }
+
+    /// Body of the `ordering_tick_thread_`. Blocks on the shutdown
+    /// condvar with the deploy.yaml-supplied tick cadence
+    /// ({{ machine_ordering.tick_period_ms }} ms here, from
+    /// `machines.<name>.ordering.tick_period_ms`); drives one tick per
+    /// wakeup until shutdown is signalled. Wait-lock is dropped around
+    /// the tick call because `driveOrderingTick` takes the
+    /// OrderingBuffer's internal mutex — nesting would deadlock if a
+    /// raise path later acquired `ordering_tick_mutex_`.
+    void orderingTickLoop() {
+        while (true) {
+            {
+                std::unique_lock<std::mutex> lk(ordering_tick_mutex_);
+                ordering_tick_cv_.wait_for(
+                    lk, std::chrono::milliseconds({{ machine_ordering.tick_period_ms }}),
+                    [this] { return ordering_tick_shutdown_.load(); });
+                if (ordering_tick_shutdown_.load()) return;
+            }
+            (void)driveOrderingTick();
+        }
+    }
+
+    /// Sequence-ordered admit + dispatch (SCE_MESH.md §10.6).
+    ///
+    /// Chains the three inbound layers the codegen composes for an
+    /// ordered route: RpcReply/FieldNotify bypass → OrderingBuffer
+    /// per-sender reorder → (optional) DedupRouter (source, id)
+    /// filter → `dispatchToSender`.
+    ///
+    /// Why RpcReply / FieldNotify bypass: both patterns carry a
+    /// `correlation_id` and match pending requests by that field,
+    /// so their wire-level order is irrelevant to correctness.
+    /// Routing them through the ordering buffer would add reply
+    /// latency for an invariant no handler depends on.
+    ///
+    /// Why missing-sequence raise: §10.6.3 guarantees every sender on
+    /// an ordered route stamps `sequence_no`. An envelope that
+    /// reaches this method without the field signals an out-of-sync
+    /// sender. The envelope is dropped from the ordering domain AND
+    /// an `error.communication` event with reason `MISSING_SEQUENCE`
+    /// is raised so authors can surface the drift (§16.7 row 12).
+    ///
+    /// @return true iff at least one DATA envelope (from the
+    ///         sequence-ordered stream) was released to the sender
+    ///         engine during this admit call. Error.communication
+    ///         raises are a side-channel dispatch and do NOT affect
+    ///         this return value — they are always observable on
+    ///         the sender regardless of what is returned here.
+    ///         Callers that need to detect a MISSING_SEQUENCE raise
+    ///         should watch for `error.communication` on the sender,
+    ///         not poll the return value.
+    [[nodiscard]] bool admitOrdered(const SCE::Mesh::MeshEnvelope& env) {
+        using PK = SCE::Mesh::PatternKind;
+        if (env.pattern == PK::RpcReply || env.pattern == PK::FieldNotify) {
+            return dispatchToSender(env);
+        }
+        if (!env.sequence_no.has_value()) {
+            // §10.6.3 drift: raise MISSING_SEQUENCE so the engine
+            // sees the condition, then drop from the ordering domain.
+            SCE::Mesh::CommunicationError err;
+            err.reason = "MISSING_SEQUENCE";
+            err.source = env.source;
+            err.envelope_id = env.id;
+            raiseCommunicationError(std::move(err));
+            return false;
+        }
+        auto released = ordering_buffer_.admit(env.source, env);
+        bool dispatched = false;
+        for (auto& released_env : released) {
+{% if has_undeduped_transport %}
+            // §10.5 dedup chained after ordering. needs_ordering=true
+            // + supplies_ordering=false implies needs_dedup=true for
+            // every registry entry today, so this branch is the
+            // common path — never a dead branch on current transports.
+            if (!dedup_.admit(released_env.source, released_env.id)) {
+                continue;
+            }
+{% endif %}
+            if (dispatchToSender(released_env)) {
+                dispatched = true;
+            }
+        }
+        return dispatched;
+    }
+{% endif %}
+
 {% if has_server %}
     /// Route an outbound server response back through the transport layer.
     ///
@@ -1692,6 +2012,29 @@ struct TransportRouter {
     /// @return true if the zenoh primitive accepted the operation; false if
     ///         the pattern is not outbound on this transport (inbound-only
     ///         patterns like EventNotify are rejected here).
+    /// Per-target inbound dispatch for Zenoh client closures
+    /// (SCE_MESH.md §10.5/§10.6). Keeps the admit-layer decision
+    /// per-binding (SSoT with the SOME/IP side) instead of routing
+    /// Zenoh through a machine-level flag: `reply` and subscribe
+    /// callbacks close over the outbound target name, dispatch into
+    /// this helper, and the build-time switch picks the right admit
+    /// chain (ordering → dedup → direct) for exactly that binding.
+    ///
+    /// The switch is emitted with one arm per Zenoh target on this
+    /// machine. Unknown-target fallback calls `dispatchToSender`
+    /// directly — reachable only if a future refactor introduces a
+    /// Zenoh inbound envelope that does not originate from a declared
+    /// binding, which would also violate the registry invariants.
+    [[nodiscard]] bool admitZenohInbound(const std::string& target,
+                                         const SCE::Mesh::MeshEnvelope& env) {
+{% for t in targets if t.state.kind == "zenoh" %}
+        if (target == "{{ t.target }}") {
+            return this->{{ admit_or_dispatch(t.needs_ordering, t.needs_dedup, "env") }};
+        }
+{% endfor %}
+        return this->dispatchToSender(env);
+    }
+
     [[nodiscard]] bool send_zenoh(const SCE::Mesh::MeshEnvelope& env,
                                   const char* key_expr_str,
                                   const std::string& target_name) {
@@ -1728,7 +2071,8 @@ struct TransportRouter {
             opts.payload = zenoh::Bytes(std::move(encoded));
             zenoh_session_->get(
                 key, "",
-                [this, reply_event, reply_pattern](const zenoh::Reply& reply_msg) {
+                [this, reply_event, reply_pattern,
+                 target_owned = std::string(target_name)](const zenoh::Reply& reply_msg) {
                     if (!reply_msg.is_ok()) return;
                     const auto& sample = reply_msg.get_ok();
                     auto bytes = sample.get_payload().as_vector();
@@ -1736,23 +2080,17 @@ struct TransportRouter {
                     if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) return;
                     if (!reply_event.empty()) resp.type = reply_event;
                     resp.pattern = reply_pattern;
-                    // Dispatch result ignored intentionally: MeshDispatch
-                    // returns false for unknown event names, which in a
-                    // reply closure means the sender has no handler for
-                    // this event — the envelope is dropped silently, same
-                    // as any W3C SCXML unmatched external event.
-                    //
-                    // SCE_MESH.md §10.5: Zenoh client reply gate. Uses
-                    // `has_undeduped_transport` rather than
-                    // `server_needs_dedup` because this closure runs on
-                    // the client path — the server flag can be false on
-                    // pure-client machines that still have Zenoh targets.
-                    // The invariant chain (Zenoh target →
-                    // `needs_dedup = true` → `has_undeduped_transport`)
-                    // keeps the `admitInbound` branch live here today;
-                    // the fallback is the same registry-shift defence
-                    // as the server-side gates above.
-                    (void)this->{{ dedup_or_dispatch(has_undeduped_transport, "resp") }};
+                    // SCE_MESH.md §10.5/§10.6 SSoT dispatch: the per-
+                    // target admit chain (ordering → dedup → direct) is
+                    // selected by the build-time switch inside
+                    // `admitZenohInbound`. Capturing `target_name` by
+                    // value (the zenoh runtime can invoke this closure
+                    // past the scope of `send_zenoh`) keeps the dispatch
+                    // identity stable for the lifetime of the reply.
+                    // Dispatch result ignored intentionally: an unknown
+                    // reply event name drops the envelope, matching W3C
+                    // SCXML's unmatched-external-event semantics.
+                    (void)this->admitZenohInbound(target_owned, resp);
                 },
                 // on_drop: fires when zenoh signals query completion (all
                 // replies received or session closed). Per-query state is
@@ -1765,15 +2103,18 @@ struct TransportRouter {
         case PK::EventSubscribe: {
             auto sub = zenoh_session_->declare_subscriber(
                 key,
-                [this](const zenoh::Sample& sample) {
+                [this,
+                 target_owned = std::string(target_name)](const zenoh::Sample& sample) {
                     auto bytes = sample.get_payload().as_vector();
                     SCE::Mesh::MeshEnvelope notify;
                     if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), notify)) return;
                     notify.pattern = SCE::Mesh::PatternKind::EventNotify;
-                    // SCE_MESH.md §10.5: Zenoh client subscribe gate —
-                    // same `has_undeduped_transport` flag as the reply
-                    // closure above.
-                    (void)this->{{ dedup_or_dispatch(has_undeduped_transport, "notify") }};
+                    // SCE_MESH.md §10.5/§10.6: per-target admit chain
+                    // via the same SSoT helper the reply closure uses.
+                    // The captured `target_owned` lifetime matches the
+                    // subscriber handle in `zenoh_subscribers_`, which
+                    // the router owns.
+                    (void)this->admitZenohInbound(target_owned, notify);
                 },
                 // on_drop: fires when the Subscriber handle is destroyed
                 // (removed from zenoh_subscribers_ or router shutdown).

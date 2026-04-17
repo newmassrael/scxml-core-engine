@@ -47,6 +47,15 @@ struct MeshEnvelope {
     /// Wire serialization (CBOR key 13) is added in Session C/D together
     /// with the first transport that consumes QoS hints.
     std::optional<QosHints>                qos;
+    /// Per-(source, target) monotonic sequence number stamped by the
+    /// sender's mesh-send-callback when the route requires ordering. Wire
+    /// serialization is CBOR integer key 14 (SCE_MESH.md §10.6.3). Absent
+    /// on envelopes whose sending route has `ordering: none` or runs on a
+    /// transport that `supplies_ordering=true`; receivers with an active
+    /// OrderingBuffer drop envelopes missing this field and raise
+    /// error.communication.missing_sequence (pre-release wire format; no
+    /// backward-compat shim).
+    std::optional<std::uint64_t>           sequence_no;
 
     bool operator==(const MeshEnvelope &other) const noexcept {
         return id                == other.id
@@ -62,7 +71,8 @@ struct MeshEnvelope {
             && rpc_status        == other.rpc_status
             && rpc_error_message == other.rpc_error_message
             && deadline_unix_ms  == other.deadline_unix_ms
-            && qos               == other.qos;
+            && qos               == other.qos
+            && sequence_no       == other.sequence_no;
     }
 };
 

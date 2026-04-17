@@ -393,6 +393,8 @@ pub enum DiagnosticCode {
     MeshDeployUnsupportedVersion,
     #[serde(rename = "mesh/deploy-duplicate-machine")]
     MeshDeployDuplicateMachine,
+    #[serde(rename = "mesh/deploy-invalid-ordering-timings")]
+    MeshDeployInvalidOrderingTimings,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -439,6 +441,8 @@ pub enum DiagnosticCode {
     MeshTopologyInvalidBindingField,
     #[serde(rename = "mesh/topology-event-binding-unused")]
     MeshTopologyEventBindingUnused,
+    #[serde(rename = "mesh/topology-ordering-cannot-be-guaranteed")]
+    MeshTopologyOrderingCannotBeGuaranteed,
     // Codegen stage
     #[serde(rename = "mesh/codegen-unsupported-language")]
     MeshCodegenUnsupportedLanguage,
@@ -550,6 +554,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployParse,
         MeshDeployUnsupportedVersion,
         MeshDeployDuplicateMachine,
+        MeshDeployInvalidOrderingTimings,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -574,6 +579,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshTopologyMissingBindingField,
         MeshTopologyInvalidBindingField,
         MeshTopologyEventBindingUnused,
+        MeshTopologyOrderingCannotBeGuaranteed,
         // Mesh Codegen
         MeshCodegenUnsupportedLanguage,
         MeshCodegenUnsupportedTransport,
@@ -678,6 +684,10 @@ impl DiagnosticCode {
 
             // ── Mesh protocol mapping (SCE_MESH.md §8) ───────────
             MeshCodegenUnsupportedTransport => Some("SCE Mesh §8"),
+
+            // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
+            MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
+            MeshDeployInvalidOrderingTimings => Some("SCE Mesh §10.6"),
 
             // ── No authoritative citation ────────────────────────
             //
@@ -813,6 +823,7 @@ impl DiagnosticCode {
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
             MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
+            MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -835,6 +846,7 @@ impl DiagnosticCode {
             MeshTopologyMissingBindingField => "mesh/topology-missing-binding-field",
             MeshTopologyInvalidBindingField => "mesh/topology-invalid-binding-field",
             MeshTopologyEventBindingUnused => "mesh/topology-event-binding-unused",
+            MeshTopologyOrderingCannotBeGuaranteed => "mesh/topology-ordering-cannot-be-guaranteed",
             MeshCodegenUnsupportedLanguage => "mesh/codegen-unsupported-language",
             MeshCodegenUnsupportedTransport => "mesh/codegen-unsupported-transport",
             MeshCodegenTemplateRead => "mesh/codegen-template-read",
@@ -2173,6 +2185,18 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:2696f6f9c7da22b8","code":"mesh/deploy-duplicate-machine","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'motor' is declared on multiple devices: ecu_a, ecu_b. Machine names must be globally unique across the deployment.","actual":"motor"}"#,
             ),
             (
+                "mesh/deploy-invalid-ordering-timings",
+                DeployError::InvalidOrderingTimings {
+                    machine: "brake".into(),
+                    reason: "tick_period_ms (100) must be strictly less than gap_timeout_ms (100) so a missed sequence is detected within `gap_timeout + tick_period`".into(),
+                }
+                .into(),
+                // Hash placeholder — will be replaced with the runtime-
+                // observed value on first failure of the byte-stability
+                // assertion. The shape is what's pinned here.
+                r#"{"v":1,"id":"fnv1a:8dedacb2b46600f4","code":"mesh/deploy-invalid-ordering-timings","stage":"mesh-deploy","spec":"SCE Mesh §10.6","message":"machine 'brake': invalid `ordering:` section in deploy.yaml — tick_period_ms (100) must be strictly less than gap_timeout_ms (100) so a missed sequence is detected within `gap_timeout + tick_period`. Either fix the values or omit the section entirely to accept the defaults.","actual":"brake"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -2408,6 +2432,16 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:4fdd02e5a9781de8","code":"mesh/topology-event-binding-unused","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding '#motor' declares events.legacy.ping in deploy.yaml, but the SCXML model never sends 'legacy.ping' to this target. Remove the unused entry, or correct the event name.","actual":"legacy.ping","fix":{"kind":"remove_fields","location":"machines.ecu_a.bindings.#motor.events","fields":["legacy.ping"]}}"#,
+            ),
+            (
+                "mesh/topology-ordering-cannot-be-guaranteed",
+                TopologyError::OrderingCannotBeGuaranteed {
+                    machine: "ecu_a".into(),
+                    target: TargetId::new("#motor").unwrap(),
+                    transport: "can".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ad421a502df8f70d","code":"mesh/topology-ordering-cannot-be-guaranteed","stage":"mesh-topology","spec":"SCE Mesh §10.6","message":"machine 'ecu_a': binding for '#motor' (transport: can) declares `ordering: required`, but 'can' is a broadcast bus whose semantics do not support per-(sender, receiver) sequence reconstruction (SCE Mesh §10.6.2). Either change the transport to a point-to-point one (e.g. local, shm, custom_tcp, someip, zenoh) or remove the `ordering: required` declaration from this binding.","actual":"can"}"#,
             ),
             (
                 "mesh/codegen-unsupported-language",
@@ -2799,6 +2833,7 @@ mod tests {
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
+            | MeshDeployInvalidOrderingTimings
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -2819,6 +2854,7 @@ mod tests {
             | MeshTopologyMissingBindingField
             | MeshTopologyInvalidBindingField
             | MeshTopologyEventBindingUnused
+            | MeshTopologyOrderingCannotBeGuaranteed
             | MeshCodegenTemplateRead
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
@@ -3050,7 +3086,8 @@ mod tests {
                 | CliInvalidFormatOption | CliJsonSerialization
                 | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
-                | MeshDeployDuplicateMachine | MeshExternalRead | MeshExternalParse
+                | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
+                | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
                 | MeshExternalNamedReferenceWithoutConfig
@@ -3064,7 +3101,8 @@ mod tests {
                 | MeshTopologyReceiverSourceParse | MeshTopologyUncoveredEvents
                 | MeshTopologyPatternCapabilityViolation
                 | MeshTopologyMissingBindingField | MeshTopologyInvalidBindingField
-                | MeshTopologyEventBindingUnused | MeshCodegenUnsupportedLanguage
+                | MeshTopologyEventBindingUnused | MeshTopologyOrderingCannotBeGuaranteed
+                | MeshCodegenUnsupportedLanguage
                 | MeshCodegenUnsupportedTransport | MeshCodegenTemplateRead
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
                 | MeshIo => true,
@@ -3079,9 +3117,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            87,
+            89,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 87 distinct variants to match the DiagnosticCode \
+             expected 89 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

@@ -1283,6 +1283,62 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_dedup_router_verification COMMAND mesh_dedup_router_test)
 
+    # ── OrderingBuffer unit tests (SCE_MESH.md §10.6) ─────────────
+    # Pure unit tests on the per-sender sequence-ordered admit layer.
+    # Verifies in-order/out-of-order/gap-fill/gap-timeout/per-sender
+    # isolation/straggler-drop invariants. Wired into the generated
+    # TransportRouter via `admit(env.source, env)` on inbound call
+    # sites for bindings whose `ordering: required` combines with a
+    # transport whose descriptor declares `supplies_ordering: false`.
+    add_executable(mesh_ordering_buffer_test
+        mesh/OrderingBufferTest.cpp
+    )
+
+    target_include_directories(mesh_ordering_buffer_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_ordering_buffer_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_ordering_buffer_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_ordering_buffer_test)
+
+    add_test(NAME mesh_ordering_buffer_verification COMMAND mesh_ordering_buffer_test)
+
+    # ── CommunicationError unit tests (SCE_MESH.md §10.7.1 + §16.7) ─
+    # Pins the JSON render shape of `_event.data` for `error.communication`
+    # events raised by the mesh runtime (MISSING_SEQUENCE + ORDERING_GAP
+    # catalogue rows landed in Session E2-gap-recovery). Byte-compare on
+    # the happy path keeps the SCXML-author-visible contract stable.
+    add_executable(mesh_communication_error_test
+        mesh/CommunicationErrorTest.cpp
+    )
+
+    target_include_directories(mesh_communication_error_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_communication_error_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_communication_error_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_communication_error_test)
+
+    add_test(NAME mesh_communication_error_verification COMMAND mesh_communication_error_test)
+
     # ── MeshDeadlineScheduler unit tests (SCE_MESH.md §9.5 F3c) ───
     # Pure unit tests on the callback-based deadline timer that backs
     # the mesh-rpc `_mesh_deadline_ms` behaviour. Covers the register /
@@ -2240,6 +2296,65 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         add_test(NAME mesh_dedup_injection_verification
                  COMMAND mesh_dedup_injection_test)
         set_tests_properties(mesh_dedup_injection_verification PROPERTIES
+            TIMEOUT 10
+        )
+
+        # ── Session E2-ordering: ordering injection regression (§10.6) ─
+        # Hermetic integration test for the generated admitOrdered on a
+        # Zenoh binding with `ordering: required`. The fixture is a
+        # dedicated deploy.yaml (deploy_ordered.yaml) so the existing
+        # zenoh tests keep their baseline behavior. No session is
+        # opened — envelopes are stamped by hand and injected directly
+        # into admitOrdered. Verifies out-of-order → sorted release,
+        # gap-timeout → error.communication.gap callback via
+        # tickOrdering, and RpcReply bypass.
+        set(MESH_ORDERED_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_ordered_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ORDERED_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ORDERED_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh ordered: Generating brake_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ORDERED_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_ordered.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_ordered.yaml"
+                    "${MESH_TEST_DIR}/motor.scxml"
+                    "${SCE_CODEGEN}" "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
+            COMMENT "Mesh ordered: Generating brake_transport.h (zenoh + ordering:required)"
+            VERBATIM
+        )
+
+        add_executable(mesh_order_injection_test
+            mesh/test_mesh_order_injection.cpp
+            "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
+            "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h"
+        )
+
+        target_include_directories(mesh_order_injection_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ORDERED_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_order_injection_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_order_injection_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_order_injection_test)
+        add_test(NAME mesh_order_injection_verification
+                 COMMAND mesh_order_injection_test)
+        set_tests_properties(mesh_order_injection_verification PROPERTIES
             TIMEOUT 10
         )
 

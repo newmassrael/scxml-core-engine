@@ -1,0 +1,39 @@
+# SCE Mesh §10.6 integration fixture — Zenoh + `ordering: required`.
+#
+# Consumed by `test_mesh_order_injection.cpp` to exercise the generated
+# `admitOrdered` path end-to-end. The binding declares `ordering:
+# required` on zenoh (supplies_ordering=false), so the generated
+# `TransportRouter` emits the runtime `OrderingBuffer` and the
+# receive handler chain becomes ordering → dedup → dispatch.
+#
+# `ordering:` (per-machine, SCE_MESH.md §10.6.1) overrides the default
+# 100 ms / 50 ms timings with fast 10 ms / 5 ms values so case 5 of
+# the injection test can wait out a gap timeout in <30 ms instead of
+# 250 ms — same coverage, hermetic CI runs faster.
+#
+# The fixture reuses the `brake.scxml` / `motor.scxml` pair from the
+# other Zenoh fixtures — only the deploy file is new so the existing
+# tests keep their old binding behavior.
+#
+# No `connect:` endpoint is declared: the test never opens a live
+# zenoh session. It instantiates the generated router, stamps
+# envelopes by hand, and calls `admitOrdered` directly.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        ordering:
+          gap_timeout_ms: 10
+          tick_period_ms: 5
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake/motor/cmd"
+            ordering: required
+      motor:
+        source: motor.scxml

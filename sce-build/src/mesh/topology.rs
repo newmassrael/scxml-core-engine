@@ -309,6 +309,14 @@ pub struct ResolvedTarget {
     /// summary collected in [`collect_send_summary`].
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub invoke_sites: Vec<MeshRpcInvokeSite>,
+    /// SCE_MESH.md §10.6 per-binding ordering declaration. Copied
+    /// verbatim from the binding's `ordering:` key; default is
+    /// [`OrderingRequirement::None`]. Codegen consumes this alongside
+    /// the registry-level `supplies_ordering` to decide whether the
+    /// generated mesh-send-callback must stamp `env.sequence_no` and
+    /// whether the receiver path must route through `admitOrdered`.
+    #[serde(default, skip_serializing_if = "crate::mesh::deploy::OrderingRequirement::is_none")]
+    pub ordering: crate::mesh::deploy::OrderingRequirement,
 }
 
 /// Build-time warning about dynamic targets that cannot be statically resolved.
@@ -1344,6 +1352,12 @@ pub(crate) struct PartialTarget {
     /// stage touches invokes (per-invoke deadlines / event names are
     /// authoritative from `<param>`, no vsomeip.json lookup needed).
     pub invoke_sites: Vec<MeshRpcInvokeSite>,
+    /// SCE_MESH.md §10.6 per-binding ordering declaration, copied
+    /// verbatim from the `BindingConfig`. Carried through to
+    /// [`ResolvedTarget::ordering`] so codegen can compute the
+    /// per-binding `needs_ordering` decision without revisiting
+    /// deploy.yaml.
+    pub ordering: crate::mesh::deploy::OrderingRequirement,
 }
 
 /// Resolve SCXML send targets against deploy.yaml bindings for a specific
@@ -1430,6 +1444,7 @@ pub(crate) fn resolve_partials(
                     extra: binding.extra.clone(),
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
                     invoke_sites: merged_sites,
+                    ordering: binding.ordering,
                 });
             }
             None => {
@@ -1467,6 +1482,24 @@ pub(crate) fn resolve_partials(
         // present. SCE_MESH.md Section 7.5.
         if pt.transport == "shm" {
             validate_shm_extras_partial(machine_name, pt)?;
+        }
+
+        // SCE_MESH.md §10.6.2: `ordering: required` on a transport whose
+        // broadcast semantics leave no per-(sender, receiver) sequence
+        // domain is structurally unrepairable by a runtime buffer.
+        // Reject at topology time with an actionable diagnostic rather
+        // than deferring to a silently-incorrect OrderingBuffer that
+        // cannot distinguish "skipped for me" from "not destined for me".
+        if pt.ordering == crate::mesh::deploy::OrderingRequirement::Required {
+            if let Some(desc) = super::transport::lookup(&pt.transport) {
+                if !desc.ordering_representable {
+                    return Err(TopologyError::OrderingCannotBeGuaranteed {
+                        machine: machine_name.to_string(),
+                        target: pt.target.clone(),
+                        transport: pt.transport.clone(),
+                    });
+                }
+            }
         }
 
         // SOME/IP per-event ID validation runs after `finalize_targets`
@@ -1673,6 +1706,7 @@ pub(crate) fn finalize_targets(
             event_patterns: pt.event_patterns,
             state,
             invoke_sites: pt.invoke_sites,
+            ordering: pt.ordering,
         });
     }
 
@@ -2617,6 +2651,7 @@ mod tests {
             event_patterns: Vec::new(),
             state: TransportState::Local,
             invoke_sites: Vec::new(),
+            ordering: crate::mesh::deploy::OrderingRequirement::None,
         }]
     }
 
@@ -3460,6 +3495,153 @@ topology:
         assert!(
             findings.is_empty(),
             "subscribe/unsubscribe events should be exempt from coverage: {findings:?}"
+        );
+    }
+
+    // ── §10.6 ordering validation ────────────────────────────
+
+    #[test]
+    fn zenoh_with_ordering_required_passes_topology() {
+        // Zenoh: supplies_ordering=false, ordering_representable=true.
+        // `ordering: required` is valid — codegen will emit the runtime
+        // buffer — and must traverse topology without error.
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: zenoh
+            key: receiver/key
+            ordering: required
+      receiver: { source: r.scxml }
+"##;
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(SHM_SCXML, "sender");
+        let external = super::super::external::ExternalResolution::default();
+        let resolved = build_resolved_targets(
+            &summary_for(&model),
+            &deploy,
+            "sender",
+            &external,
+        )
+        .expect("zenoh + ordering:required is valid");
+        assert_eq!(resolved.targets.len(), 1);
+        assert_eq!(
+            resolved.targets[0].ordering,
+            crate::mesh::deploy::OrderingRequirement::Required,
+            "ordering must survive the topology→resolved pipeline"
+        );
+    }
+
+    #[test]
+    fn zenoh_with_ordering_none_passes_topology() {
+        // Default path: ordering key absent → OrderingRequirement::None.
+        // No runtime buffer emitted; arrival order contract.
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: zenoh
+            key: receiver/key
+      receiver: { source: r.scxml }
+"##;
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(SHM_SCXML, "sender");
+        let external = super::super::external::ExternalResolution::default();
+        let resolved = build_resolved_targets(
+            &summary_for(&model),
+            &deploy,
+            "sender",
+            &external,
+        )
+        .expect("zenoh without ordering key is valid");
+        assert_eq!(
+            resolved.targets[0].ordering,
+            crate::mesh::deploy::OrderingRequirement::None
+        );
+    }
+
+    #[test]
+    fn can_with_ordering_required_rejected_at_topology() {
+        // CAN: ordering_representable=false (broadcast bus). A binding
+        // that asks for runtime-reconstructed order is structurally
+        // unrepairable — topology must reject before codegen reaches
+        // the `implemented=false` check. The resulting diagnostic
+        // points at the CAN binding and enumerates the two repair
+        // paths in the error message.
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: can
+            ordering: required
+      receiver: { source: r.scxml }
+"##;
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(SHM_SCXML, "sender");
+        let external = super::super::external::ExternalResolution::default();
+        let err = build_resolved_targets(
+            &summary_for(&model),
+            &deploy,
+            "sender",
+            &external,
+        )
+        .expect_err("CAN + ordering:required must be rejected");
+        match err {
+            TopologyError::OrderingCannotBeGuaranteed { machine, target, transport } => {
+                assert_eq!(machine, "sender");
+                assert_eq!(target.as_str(), "#receiver");
+                assert_eq!(transport, "can");
+            }
+            other => panic!("expected OrderingCannotBeGuaranteed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn can_with_ordering_none_passes_ordering_check() {
+        // CAN with default ordering (None) bypasses the §10.6 check
+        // entirely — no runtime reconstruction is requested. The
+        // build still fails later at codegen because CAN has
+        // implemented=false, but the topology-stage ordering check
+        // must not be the failure point.
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      sender:
+        source: s.scxml
+        bindings:
+          "#receiver":
+            transport: can
+      receiver: { source: r.scxml }
+"##;
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(SHM_SCXML, "sender");
+        let external = super::super::external::ExternalResolution::default();
+        // Topology succeeds — the ordering check is the only one we
+        // care about here. Downstream codegen would reject CAN for
+        // the separate implemented=false reason.
+        let resolved = build_resolved_targets(
+            &summary_for(&model),
+            &deploy,
+            "sender",
+            &external,
+        )
+        .expect("CAN with ordering:none must clear the §10.6 check");
+        assert_eq!(
+            resolved.targets[0].ordering,
+            crate::mesh::deploy::OrderingRequirement::None
         );
     }
 }

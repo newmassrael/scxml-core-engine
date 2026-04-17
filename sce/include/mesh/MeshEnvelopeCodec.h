@@ -35,6 +35,7 @@ inline constexpr int kEnvelopeKeyRpcStatus       = 10;
 inline constexpr int kEnvelopeKeyRpcErrorMessage = 11;
 inline constexpr int kEnvelopeKeyDeadlineUnixMs  = 12;
 inline constexpr int kEnvelopeKeyQos             = 13;
+inline constexpr int kEnvelopeKeySequenceNo      = 14;
 
 /// Encode envelope into canonical CBOR bytes.
 ///

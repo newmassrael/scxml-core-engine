@@ -1105,6 +1105,15 @@ pub fn compile_mesh_transport(
         .and_then(|d| d.machines.get(&effective_machine_name))
         .map(|m| m.subscriptions.as_slice())
         .unwrap_or(&[]);
+    // SCE_MESH.md §10.6.1: per-machine ordering buffer timings. The
+    // `resolved_ordering_timings` helper supplies the absent-section
+    // defaults from a single source (deploy::DEFAULT_*), so a
+    // pure-receiver machine that never enters this branch and a fully
+    // configured one share the same constants.
+    let machine_ordering = device
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .map(mesh::deploy::MachineConfig::resolved_ordering_timings)
+        .unwrap_or_else(mesh::deploy::OrderingTimings::default_const);
     let template_base = find_template_base();
     let output = mesh::codegen::generate_mesh(
         &model.name,
@@ -1114,6 +1123,7 @@ pub fn compile_mesh_transport(
         someip_config,
         custom_tcp_config,
         machine_subscriptions,
+        machine_ordering,
         language,
         &template_base,
     )?;

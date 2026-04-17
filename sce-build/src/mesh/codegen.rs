@@ -17,7 +17,9 @@
 
 use crate::filters;
 use crate::generator::{GeneratedOutput, Language};
-use crate::mesh::deploy::{CustomTcpTransportConfig, SomeipTransportConfig, ZenohTransportConfig};
+use crate::mesh::deploy::{
+    CustomTcpTransportConfig, OrderingTimings, SomeipTransportConfig, ZenohTransportConfig,
+};
 use crate::mesh::error::CodegenError;
 use crate::mesh::topology::ResolvedTarget;
 use crate::mesh::transport;
@@ -302,6 +304,15 @@ struct TargetContext {
     /// reports `needs_dedup = true` via the machine-wide
     /// `has_undeduped_transport` flag.
     needs_dedup: bool,
+    /// Does THIS binding need the runtime OrderingBuffer on inbound
+    /// envelopes (SCE_MESH.md §10.6)?
+    ///
+    /// `true` iff the binding declares `ordering: required` AND the
+    /// transport cannot supply order natively AND no per-binding
+    /// upgrade (e.g. SOME/IP `protocol: tcp`) lifts that default.
+    /// Drives both the per-target `seq_counter` emission on the
+    /// sender side and the receiver-side `admitOrdered` branch.
+    needs_ordering: bool,
     /// Per-event pattern metadata for pattern-aware send logic.
     event_patterns: Vec<EventPatternContext>,
     /// True if any event uses RPC patterns (ServiceRequest/ServiceResponse).
@@ -752,6 +763,7 @@ pub fn generate_mesh(
     someip_config: Option<&SomeipTransportConfig>,
     custom_tcp_config: Option<&CustomTcpTransportConfig>,
     subscriptions: &[super::deploy::SubscriptionConfig],
+    machine_ordering: OrderingTimings,
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -780,6 +792,7 @@ pub fn generate_mesh(
             someip_config,
             custom_tcp_config,
             subscriptions,
+            machine_ordering,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -822,6 +835,45 @@ fn compute_needs_dedup(
     default_needs_dedup
 }
 
+/// Per-binding ordering decision (SCE_MESH.md §10.6).
+///
+/// Composes three facts:
+///   1. The per-binding `ordering:` declaration from deploy.yaml
+///      ([`OrderingRequirement`]). `None` short-circuits to `false`;
+///      no runtime buffer is emitted regardless of transport.
+///   2. The transport-level `supplies_ordering` from the registry.
+///      When the transport guarantees FIFO natively, the runtime
+///      buffer is redundant and is NOT emitted.
+///   3. Per-binding SOME/IP `protocol: tcp` upgrade — pins the binding
+///      to a single TCP stream per client↔server pair, which also
+///      supplies order. Same shape as [`compute_needs_dedup`]'s
+///      `pinned_tcp` upgrade.
+///
+/// Extending this to another transport's per-binding ordering upgrade
+/// (e.g. Zenoh `reliability: reliable_ordered` if Zenoh ever exposes
+/// that as a per-link knob) follows the same `default && !upgrade`
+/// structure.
+fn compute_needs_ordering(
+    state: &crate::mesh::topology::TransportState,
+    transport_supplies_ordering: bool,
+    binding_ordering: crate::mesh::deploy::OrderingRequirement,
+) -> bool {
+    use crate::mesh::deploy::OrderingRequirement;
+    use crate::mesh::topology::TransportState;
+    if binding_ordering == OrderingRequirement::None {
+        return false;
+    }
+    let default_needs_ordering = !transport_supplies_ordering;
+    if let TransportState::Someip { extra, .. } = state {
+        let pinned_tcp = extra
+            .get("protocol")
+            .and_then(|v| v.as_str())
+            .is_some_and(|p| p == "tcp");
+        return default_needs_ordering && !pinned_tcp;
+    }
+    default_needs_ordering
+}
+
 fn generate_cpp_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
@@ -830,6 +882,7 @@ fn generate_cpp_mesh(
     someip_config: Option<&SomeipTransportConfig>,
     custom_tcp_config: Option<&CustomTcpTransportConfig>,
     subscriptions: &[super::deploy::SubscriptionConfig],
+    machine_ordering: OrderingTimings,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -966,6 +1019,8 @@ fn generate_cpp_mesh(
             let has_receive = has_rpc || has_pubsub || has_field;
 
             let needs_dedup = compute_needs_dedup(&t.state, desc.supplies_dedup);
+            let needs_ordering =
+                compute_needs_ordering(&t.state, desc.supplies_ordering, t.ordering);
 
             TargetContext {
                 target: t.target.clone(),
@@ -976,6 +1031,7 @@ fn generate_cpp_mesh(
                 state: TargetStateView::from_topology(&t.state),
                 has_per_target_field: desc.shape.has_per_target_field,
                 needs_dedup,
+                needs_ordering,
                 event_patterns,
                 has_rpc,
                 has_pubsub,
@@ -1042,6 +1098,14 @@ fn generate_cpp_mesh(
     });
     let has_undeduped_transport = any_target_needs_dedup || server_needs_dedup;
 
+    // SCE_MESH.md §10.6: machine-level ordering flag drives
+    // OrderingBuffer include/member/seq_counter emission. The server
+    // role does not yet carry an `ordering:` declaration, so the
+    // server side never contributes here — extend the expression
+    // alongside any future server-side ordering schema, mirroring how
+    // dedup is composed above.
+    let has_ordered_binding = target_contexts.iter().any(|t| t.needs_ordering);
+
     // Pre-escape Zenoh session config into C++ string literals so the template
     // never constructs literals by string concatenation.
     let zenoh_session_json5 = zenoh_session.map(ZenohSessionJson5::from_config);
@@ -1080,6 +1144,18 @@ fn generate_cpp_mesh(
         .get_template("mesh_transport.h.jinja2")
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
 
+    // SCE_MESH.md §10.6.1: per-machine ordering buffer timings.
+    // Always emitted, whether or not the machine has an ordered
+    // binding — the template only reads inside `{% if
+    // has_ordered_binding %}`, but the absent-section default
+    // (filled by `MachineConfig::resolved_ordering_timings`) is
+    // serialized so a future template branch needing the values
+    // cannot crash on undefined.
+    let machine_ordering_ctx = serde_json::json!({
+        "gap_timeout_ms": machine_ordering.gap_timeout_ms,
+        "tick_period_ms": machine_ordering.tick_period_ms,
+    });
+
     let ctx = minijinja::context! {
         machine_name => machine_name,
         machine_pascal => machine_pascal,
@@ -1087,6 +1163,8 @@ fn generate_cpp_mesh(
         transport_types => transport_types,
         has_undeduped_transport => has_undeduped_transport,
         server_needs_dedup => server_needs_dedup,
+        has_ordered_binding => has_ordered_binding,
+        machine_ordering => machine_ordering_ctx,
         zenoh_session_json5 => zenoh_session_json5,
         zenoh_session_json5_present => zenoh_session_json5_present,
         someip_transport => someip_transport,
@@ -1317,5 +1395,102 @@ mod tests {
             ring_capacity: None,
         };
         assert!(!compute_needs_dedup(&state, true));
+    }
+
+    // ── compute_needs_ordering (SCE_MESH.md §10.6) ─────────────
+    //
+    // Exercise the per-binding ordering decision across the four
+    // relevant axes: transport supplies_ordering, per-binding
+    // ordering declaration, and SOME/IP protocol: tcp upgrade.
+
+    use crate::mesh::deploy::OrderingRequirement;
+
+    #[test]
+    fn ordering_none_never_emits_buffer() {
+        // The binding declared OrderingRequirement::None — no buffer
+        // regardless of transport. Covers zenoh + someip UDP.
+        let zenoh = TransportState::Zenoh {
+            key: "k".into(),
+            extra: HashMap::new(),
+        };
+        assert!(!compute_needs_ordering(&zenoh, false, OrderingRequirement::None));
+        let someip = someip_state(HashMap::new());
+        assert!(!compute_needs_ordering(&someip, false, OrderingRequirement::None));
+    }
+
+    #[test]
+    fn zenoh_with_ordering_required_emits_buffer() {
+        // Zenoh has supplies_ordering=false; binding demands order →
+        // runtime OrderingBuffer is required.
+        let state = TransportState::Zenoh {
+            key: "k".into(),
+            extra: HashMap::new(),
+        };
+        assert!(compute_needs_ordering(&state, false, OrderingRequirement::Required));
+    }
+
+    #[test]
+    fn someip_udp_with_ordering_required_emits_buffer() {
+        // Default SOME/IP (no protocol key or explicit udp) → UDP →
+        // needs runtime buffer.
+        let state = someip_state(HashMap::new());
+        assert!(compute_needs_ordering(&state, false, OrderingRequirement::Required));
+
+        let mut udp_extra = HashMap::new();
+        udp_extra.insert("protocol".to_string(), yaml_str("udp"));
+        let state_udp = someip_state(udp_extra);
+        assert!(compute_needs_ordering(&state_udp, false, OrderingRequirement::Required));
+    }
+
+    #[test]
+    fn someip_tcp_with_ordering_required_skips_buffer() {
+        // Per-binding TCP pin supplies order per stream — no runtime
+        // buffer even though the transport-level flag is false.
+        let mut extra = HashMap::new();
+        extra.insert("protocol".to_string(), yaml_str("tcp"));
+        let state = someip_state(extra);
+        assert!(!compute_needs_ordering(&state, false, OrderingRequirement::Required));
+    }
+
+    #[test]
+    fn someip_unknown_protocol_falls_back_to_buffer() {
+        // Conservative against typos: only the exact literal "tcp"
+        // lifts the requirement. Matches compute_needs_dedup's
+        // policy so the two helpers treat edge cases identically.
+        let mut extra = HashMap::new();
+        extra.insert("protocol".to_string(), yaml_str("sctp"));
+        let state = someip_state(extra);
+        assert!(compute_needs_ordering(&state, false, OrderingRequirement::Required));
+    }
+
+    #[test]
+    fn local_with_ordering_required_skips_buffer() {
+        // In-process direct dispatch — transport supplies_ordering=true
+        // short-circuits the decision to `false`.
+        assert!(!compute_needs_ordering(
+            &TransportState::Local,
+            true,
+            OrderingRequirement::Required
+        ));
+    }
+
+    #[test]
+    fn custom_tcp_with_ordering_required_skips_buffer() {
+        // TCP stream preserves order — buffer is redundant.
+        let state = TransportState::CustomTcp {
+            connect: "127.0.0.1:9000".into(),
+            extra: HashMap::new(),
+        };
+        assert!(!compute_needs_ordering(&state, true, OrderingRequirement::Required));
+    }
+
+    #[test]
+    fn shm_with_ordering_required_skips_buffer() {
+        // FIFO ring preserves order.
+        let state = TransportState::Shm {
+            arena_bytes: None,
+            ring_capacity: None,
+        };
+        assert!(!compute_needs_ordering(&state, true, OrderingRequirement::Required));
     }
 }

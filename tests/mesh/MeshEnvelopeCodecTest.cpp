@@ -49,6 +49,7 @@ MeshEnvelope fullEnvelope() {
     env.rpc_status = RpcStatus::DeadlineExceeded;
     env.rpc_error_message = "remote took too long";
     env.deadline_unix_ms = 1'713'000'000'000ULL;
+    env.sequence_no = 42ULL;
     return env;
 }
 
@@ -106,6 +107,7 @@ TEST(MeshEnvelopeCodecTest, OptionalsAbsentStayAbsent) {
     EXPECT_FALSE(decoded.rpc_status);
     EXPECT_FALSE(decoded.rpc_error_message);
     EXPECT_FALSE(decoded.deadline_unix_ms);
+    EXPECT_FALSE(decoded.sequence_no);
 }
 
 TEST(MeshEnvelopeCodecTest, EmptyTextStringRoundTrip) {
@@ -302,8 +304,25 @@ TEST(MeshEnvelopeCodecTest, MinimalEnvelopeUsesDefiniteMap) {
 TEST(MeshEnvelopeCodecTest, FullEnvelopeMapHeaderEntries) {
     auto bytes = SCE::Mesh::encodeEnvelope(fullEnvelope());
     ASSERT_FALSE(bytes.empty());
-    // 6 required + 7 optionals = 13 entries (single-byte map header form).
-    EXPECT_EQ(bytes[0], 0xAD);
+    // 6 required + 8 optionals = 14 entries (single-byte map header form).
+    EXPECT_EQ(bytes[0], 0xAE);
+}
+
+TEST(MeshEnvelopeCodecTest, SequenceNoRoundTrip) {
+    // §10.6.3 — sequence_no is an optional uint64 on CBOR key 14. Round-trip
+    // covers the stamped case; OptionalsAbsentStayAbsent covers the absent
+    // case for the default-ordered route.
+    auto env = minimalEnvelope();
+    env.sequence_no = 123456789ULL;
+
+    auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty());
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    ASSERT_TRUE(decoded.sequence_no.has_value());
+    EXPECT_EQ(*decoded.sequence_no, 123456789ULL);
+    EXPECT_EQ(env, decoded);
 }
 
 TEST(MeshEnvelopeCodecTest, GoldenBytesForFixedEnvelope) {
