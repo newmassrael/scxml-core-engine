@@ -2430,6 +2430,69 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             RESOURCE_LOCK zenoh_multi_port_17447
         )
 
+        # ── Session Z1: Zenoh liveliness PEER_PARTITIONED E2E (§16.7) ─
+        # Verifies the generated router's liveliness token + subscriber
+        # pair surfaces `error.communication` with reason
+        # PEER_PARTITIONED when a peer's liveliness token is
+        # undeclared. Port 17448 is distinct from the 17447 pool the
+        # other mesh_zenoh_* tests share; isolating the lock keeps
+        # liveliness state from bleeding between tests.
+        set(MESH_ZENOH_LIVELINESS_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_liveliness_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
+                    -l cpp -o "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh liveliness: Generating brake_zenoh_liveliness_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
+                    -l cpp -o "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_liveliness.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
+                    "${MESH_TEST_DIR}/motor_zenoh_liveliness.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_liveliness.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h"
+            COMMENT "Mesh zenoh liveliness: Generating brake_zenoh_liveliness_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_liveliness_test
+            mesh/test_mesh_zenoh_liveliness.cpp
+            "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h"
+            "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_liveliness_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_liveliness_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_liveliness_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_liveliness_test)
+        add_test(NAME mesh_zenoh_liveliness_verification
+                 COMMAND mesh_zenoh_liveliness_test)
+        set_tests_properties(mesh_zenoh_liveliness_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_liveliness_port_17448
+        )
+
         # ── Session E2-2: dedup injection regression (§10.5) ──────────
         # Hermetic (no live zenoh session, no network) integration test
         # that injects the same envelope twice into a generated Zenoh

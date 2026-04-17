@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh Zenoh liveliness E2E fixture — observer side.
+     Declares one zenoh binding so `"zenoh" in transport_types` becomes
+     true and the generated router emits both the session and, via the
+     deploy.yaml `liveliness:` opt-in, the liveliness token + subscriber
+     pair (SCE Mesh §16.7 row 9). The <send> itself is never actually
+     exercised in the test — the test drives liveliness directly and
+     never walks brake's SCXML. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_zenoh_liveliness" initial="idle">
+    <state id="idle">
+        <onentry>
+            <send target="#motor" event="event.ping"/>
+        </onentry>
+        <transition event="event.ack" target="done"/>
+    </state>
+    <state id="done"/>
+</scxml>

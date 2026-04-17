@@ -1,0 +1,37 @@
+# SCE Mesh Zenoh liveliness E2E fixture (SCE Mesh §16.7 row 9).
+#
+# Opt-in `liveliness:` block on brake drives generation of the Zenoh
+# liveliness token + subscriber pair — the same pair that surfaces
+# PEER_PARTITIONED on peer drop. The subscriber observes `sce/live/**`,
+# so when the test's raw-zenoh motor peer drops its own token, brake's
+# generated code raises `error.communication` with reason
+# `PEER_PARTITIONED` and target `motor`.
+#
+# Port 17448 is distinct from the 17447 pool the other mesh_zenoh_*
+# runtime tests share; ctest RESOURCE_LOCK serializes this test on its
+# own lock so liveliness state from other tests cannot leak into this
+# observer.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/127.0.0.1:17448"]
+    machines:
+      brake_zenoh_liveliness:
+        source: brake_zenoh_liveliness.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake_liveliness/motor/ping"
+        liveliness:
+          lease_ms: 200
+  ecu_motor:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17448"]
+    machines:
+      motor:
+        source: motor_zenoh_liveliness.scxml
