@@ -2493,6 +2493,84 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             RESOURCE_LOCK zenoh_liveliness_port_17448
         )
 
+        # ── Gap Z3: Zenoh session.get on_drop early-cancel E2E ────────
+        # Verifies the generated router translates zenoh's query-drop
+        # signal into `error.invoke.<id>` on a mesh-rpc invoke whose
+        # queryable never answers. `zenoh_on_drop_session.json5` shortens
+        # queries_default_timeout from 10 s to 300 ms so the test
+        # completes in seconds; without the Z3 wiring brake would sit
+        # out the 10 s `_mesh_deadline_ms` budget before error.invoke
+        # surfaced. Port 17449 is distinct from the 17447 pool (multi-
+        # pattern) and 17448 (liveliness); RESOURCE_LOCK isolates.
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/mesh/zenoh_on_drop_session.json5"
+            "${CMAKE_CURRENT_BINARY_DIR}/zenoh_on_drop_session.json5"
+            COPYONLY
+        )
+
+        set(MESH_ZENOH_ON_DROP_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_on_drop_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
+                    -l cpp -o "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh on_drop: Generating brake_zenoh_on_drop_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
+                    -l cpp -o "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_on_drop.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
+                    "${MESH_TEST_DIR}/motor_zenoh_on_drop.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_on_drop.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h"
+            COMMENT "Mesh zenoh on_drop: Generating brake_zenoh_on_drop_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_on_drop_test
+            mesh/test_mesh_zenoh_on_drop.cpp
+            "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h"
+            "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_on_drop_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_ON_DROP_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_on_drop_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        # SCE_THREAD_SAFE: zenoh runtime thread raises error.invoke on
+        # brake's external queue while the main thread drives step().
+        # Without the define, std::sleep_for alone does not establish
+        # happens-before per the C++ memory model — same rationale as
+        # mesh_invoke_deadline_expiry.
+        target_compile_definitions(mesh_zenoh_on_drop_test PRIVATE SCE_THREAD_SAFE)
+        target_compile_features(mesh_zenoh_on_drop_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_on_drop_test)
+        add_test(NAME mesh_zenoh_on_drop_verification
+                 COMMAND mesh_zenoh_on_drop_test
+                 WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+        set_tests_properties(mesh_zenoh_on_drop_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_on_drop_port_17449
+        )
+
         # ── Session E2-2: dedup injection regression (§10.5) ──────────
         # Hermetic (no live zenoh session, no network) integration test
         # that injects the same envelope twice into a generated Zenoh

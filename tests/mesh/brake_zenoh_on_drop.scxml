@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh gap Z3 E2E: brake fires a mesh-rpc invoke over Zenoh to a
+     peer that never replies. `_mesh_deadline_ms` is deliberately long
+     (10 s) so the test only passes if the zenoh `session.get` on_drop
+     closure early-cancels the InvokeCorrelation entry once zenoh's
+     internal `queries_default_timeout` (300 ms via the session config
+     override) fires — i.e., the Z3 wiring actually took effect. Without
+     Z3 the test would sit for ~10 s before error.invoke surfaced. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="brake_zenoh_on_drop" initial="idle">
+    <state id="idle">
+        <transition event="go" target="computing"/>
+    </state>
+    <state id="computing">
+        <invoke type="sce:mesh-rpc" src="#motor">
+            <param name="_mesh_event" expr="'service.request.compute_force'"/>
+            <param name="_mesh_deadline_ms" expr="10000"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+    </state>
+    <final id="ok"/>
+    <final id="failed"/>
+</scxml>

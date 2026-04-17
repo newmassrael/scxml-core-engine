@@ -1,0 +1,41 @@
+# SCE Mesh gap Z3 E2E fixture (zenoh session.get on_drop early-cancel).
+#
+# brake declares a `<invoke type="sce:mesh-rpc">` targeting motor over
+# zenoh; no motor peer ever answers, so zenoh's internal query timeout
+# (300 ms via zenoh_on_drop_session.json5) fires on_drop while
+# `_mesh_deadline_ms` (10 000 ms in the SCXML) is still outstanding.
+# The Z3 template wiring must early-cancel the InvokeCorrelation entry
+# and surface `error.invoke.<id>` in hundreds of ms rather than the full
+# 10 s deadline budget.
+#
+# Port 17449 is distinct from the 17447 pool (zenoh multi-pattern tests)
+# and 17448 (liveliness PEER_PARTITIONED). ctest serializes this test on
+# its own RESOURCE_LOCK so transient zenoh peer discovery from adjacent
+# tests cannot leak into this observer.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      zenoh:
+        config: zenoh_on_drop_session.json5
+        mode: peer
+        listen: ["tcp/127.0.0.1:17449"]
+    machines:
+      brake_zenoh_on_drop:
+        source: brake_zenoh_on_drop.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake_on_drop/motor/compute_force"
+  ecu_motor:
+    # Topology-only: motor is referenced by brake's mesh-rpc binding so
+    # codegen's invoke_sites resolver needs an entry, but the Z3 test
+    # never instantiates this machine — absence of the peer queryable
+    # is exactly what triggers the on_drop path under test.
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17450"]
+    machines:
+      motor:
+        source: motor_zenoh_on_drop.scxml

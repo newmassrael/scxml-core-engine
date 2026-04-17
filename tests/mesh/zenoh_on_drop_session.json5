@@ -1,0 +1,19 @@
+// SCE Mesh gap Z3 test-only zenoh session config.
+//
+// `queries_default_timeout: 300` shortens zenoh's internal per-query
+// deadline from the 10 s default. The Z3 fix hinges on on_drop firing
+// well before `_mesh_deadline_ms`; with the default 10 s zenoh timeout
+// the test would take ~10 s to observe the cancellation path, which
+// obscures whether on_drop or the SCE deadline scheduler surfaced the
+// error.invoke.<id> event.
+//
+// `scouting/multicast/enabled: false` isolates this test from any other
+// zenoh peers on the same host — matches `ZenohTestUtils::open_peer`.
+{
+  queries_default_timeout: 300,
+  scouting: {
+    multicast: {
+      enabled: false,
+    },
+  },
+}

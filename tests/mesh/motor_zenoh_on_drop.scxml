@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Topology-only counterpart for brake_zenoh_on_drop's mesh-rpc target.
+     Never instantiated at runtime — the Z3 test exercises the client
+     on_drop path, which fires precisely when no peer queryable responds.
+     Codegen still requires both endpoints of a mesh-rpc binding to be
+     declared so the generated transport's invoke_sites table resolves. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="motor_zenoh_on_drop" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="replying"/>
+    </state>
+    <state id="replying"/>
+</scxml>
