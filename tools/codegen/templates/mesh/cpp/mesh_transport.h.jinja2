@@ -2315,6 +2315,25 @@ struct TransportRouter {
 {% endif %}
 {% endif %}
 
+{% if has_mesh_rpc.v or has_server_query_timeout %}
+    /// Test-only accessor: number of currently-armed deadlines in
+    /// `deadline_scheduler_`. Reads `active_.size()` through the
+    /// scheduler's own const-correct accessor (`MeshDeadlineScheduler.h`).
+    ///
+    /// Verification role: the Z2 happy-path scenario calls this
+    /// IMMEDIATELY after `handleServerResponse` to confirm
+    /// `cancelDeadline` released the scheduler's `active_` entry.
+    /// Without this direct signal, the test can only observe
+    /// `pending_server_size() == 0` — which is trivially true whether
+    /// `cancelDeadline` succeeded or the timer already fired and its
+    /// callback ran a no-op erase, so the two failure modes are
+    /// indistinguishable. Observing `deadline_scheduler_size() == 0`
+    /// within milliseconds of the cancel (well before the deadline
+    /// could elapse) pins the cancel path's liveness directly.
+    [[nodiscard]] std::size_t deadline_scheduler_size() const {
+        return deadline_scheduler_.size();
+    }
+{% endif %}
 {% if has_server_query_timeout %}
     /// SCE Mesh gap Z2: fire when a stranded server queryable entry
     /// outlives `server.query_timeout_ms` because the engine never

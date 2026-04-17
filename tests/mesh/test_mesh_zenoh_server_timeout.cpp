@@ -153,6 +153,18 @@ int scenario_happy_path_cancels_deadline() {
                       }),
                       "motor engine never received request");
 
+    // Baseline invariants immediately after the queryable callback
+    // returned: the pending map AND the scheduler must both reflect
+    // the one armed entry. Reading both sides rules out a degenerate
+    // state where the callback inserted into one surface but not the
+    // other (e.g. a future refactor that splits the register site
+    // from the insert site).
+    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 1,
+                      "pending_server_size should be 1 after dispatch");
+    MESH_TEST_REQUIRE(motor_router.deadline_scheduler_size() == 1,
+                      "deadline_scheduler_ should have one armed entry "
+                      "after dispatch — register site missed the insert?");
+
     // Pull the correlation_id through the public `server_first_cid`
     // accessor — the generated transport keeps `pending_server_queries_`
     // and `server_pending_mutex_` as implementation details; the
@@ -171,6 +183,20 @@ int scenario_happy_path_cancels_deadline() {
     MESH_TEST_REQUIRE(replied,
                       "handleServerResponse returned false — correlation miss");
 
+    // Direct signal that the cancel path is live. This call runs
+    // within milliseconds of `handleServerResponse` returning — far
+    // shorter than `kQueryTimeoutMs = 500 ms` — so the scheduler's
+    // `active_` entry cannot have been drained by the timer firing.
+    // If the size here is still 1, `cancelDeadline` failed to
+    // release the entry: the timer would eventually fire and erase
+    // a no-op, leaving `pending_server_size() == 0` either way, so
+    // size of the pending map alone cannot expose the failure.
+    // Reading `deadline_scheduler_size()` before the deadline could
+    // possibly elapse is the only test-observable that pins the
+    // cancel's liveness.
+    MESH_TEST_REQUIRE(motor_router.deadline_scheduler_size() == 0,
+                      "cancelDeadline did not release the scheduler's "
+                      "active_ entry — cancel-before-erase ordering broken");
     MESH_TEST_REQUIRE(motor_router.pending_server_size() == 0,
                       "pending_server_size should be 0 after handleServerResponse");
 
@@ -180,24 +206,9 @@ int scenario_happy_path_cancels_deadline() {
                       }),
                       "client did not receive reply via Query::reply");
 
-    // Post-timeout re-check: if `cancelDeadline` did not actually erase
-    // the scheduler's `active_` entry for this cid, the timer would
-    // fire around `kQueryTimeoutMs` anyway. `onServerQueryTimedOut`
-    // would then run `erase(cid)` on an already-gone entry — a no-op
-    // that leaves `pending_server_size()` at 0 — so size alone cannot
-    // expose a missing cancel. What a missing cancel WOULD produce is
-    // a bogus race window where the callback runs on a valid cid if a
-    // new query re-used it; since the test dispatches no further
-    // queries, the observable contract here is simply "size stays 0
-    // past the nominal deadline, no surprise re-population, no crash".
-    std::this_thread::sleep_for(kQueryTimeoutMs + kTimeoutSlack);
-    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 0,
-                      "pending_server_size regressed past nominal deadline — "
-                      "cancelDeadline failed to release the scheduler entry");
-
     motor_router.shutdown();
-    std::printf("[§2 happy path] PASS: reply delivered, deadline cancelled "
-                "(re-checked past nominal deadline)\n");
+    std::printf("[§2 happy path] PASS: reply delivered, scheduler cleared "
+                "immediately by cancelDeadline\n");
     return 0;
 }
 
