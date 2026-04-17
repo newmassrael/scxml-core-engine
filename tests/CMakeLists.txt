@@ -1201,6 +1201,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     set(MESH_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mesh")
     set(MESH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_generated")
 
+    # Jinja2 template consumed by sce-codegen --deploy. Listed in the
+    # DEPENDS of every *_transport.h custom_command so template edits
+    # trigger re-codegen without manually deleting cached headers.
+    set(SCE_MESH_CPP_TEMPLATE
+        "${CMAKE_SOURCE_DIR}/tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2")
+
     # ── MeshEnvelope codec unit tests (Phase 3.5 Step 3) ──────────
     # Pure unit tests on the CBOR envelope codec — no codegen, no
     # transport, no scheduler. Catches wire-format regressions early.
@@ -1423,7 +1429,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy.yaml"
         DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy.yaml"
-                "${SCE_CODEGEN}" "${MESH_OUTPUT_DIR}/brake_sm.h"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_OUTPUT_DIR}/brake_sm.h"
         COMMENT "Mesh: Generating brake_transport.h (local transport)"
         VERBATIM
     )
@@ -1483,7 +1490,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
         DEPENDS "${MESH_TEST_DIR}/brake_invoke.scxml" "${MESH_TEST_DIR}/deploy_invoke.yaml"
                 "${MESH_TEST_DIR}/motor_invoke.scxml"
-                "${SCE_CODEGEN}" "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
         COMMENT "Mesh: Generating brake_invoke_transport.h (§9.5 invoke plumbing)"
         VERBATIM
     )
@@ -1499,7 +1507,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
         DEPENDS "${MESH_TEST_DIR}/motor_invoke.scxml" "${MESH_TEST_DIR}/deploy_invoke.yaml"
                 "${MESH_TEST_DIR}/brake_invoke.scxml"
-                "${SCE_CODEGEN}" "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
         COMMENT "Mesh: Generating motor_invoke_transport.h (§9.5 invoke reply path)"
         VERBATIM
     )
@@ -1647,7 +1656,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_shm.yaml"
         DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_shm.yaml"
-                "${SCE_CODEGEN}" "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
         COMMENT "Mesh shm: Generating brake_transport.h (shm transport)"
         VERBATIM
     )
@@ -1785,7 +1795,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         DEPENDS "${MESH_TEST_DIR}/brake.scxml"
                 "${MESH_TEST_DIR}/motor.scxml"
                 "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
-                "${SCE_CODEGEN}"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
         COMMENT "Mesh custom_tcp: Generating brake_sm.h + brake_transport.h"
         VERBATIM
     )
@@ -1800,7 +1810,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         DEPENDS "${MESH_TEST_DIR}/brake.scxml"
                 "${MESH_TEST_DIR}/motor.scxml"
                 "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
-                "${SCE_CODEGEN}"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
         COMMENT "Mesh custom_tcp: Generating motor_sm.h + motor_transport.h"
         VERBATIM
     )
@@ -1876,7 +1886,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         DEPENDS "${MESH_TEST_DIR}/brake_payload.scxml"
                 "${MESH_TEST_DIR}/motor_payload.scxml"
                 "${MESH_TEST_DIR}/deploy_shm_payload.yaml"
-                "${SCE_CODEGEN}"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                 "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h"
         COMMENT "Mesh shm payload: Generating brake_payload_transport.h"
         VERBATIM
@@ -1945,7 +1955,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                     --deploy "${MESH_TEST_DIR}/deploy_someip.yaml"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_someip.yaml"
                     "${MESH_TEST_DIR}/motor.scxml"
-                    "${SCE_CODEGEN}" "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
             COMMENT "Mesh someip: Generating brake_transport.h (someip transport)"
             VERBATIM
         )
@@ -2006,7 +2017,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                     --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
             DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
                     "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
-                    "${SCE_CODEGEN}" "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
             COMMENT "Mesh someip multi: Generating brake_someip_multi_transport.h (multi-pattern)"
             VERBATIM
         )
@@ -2018,7 +2030,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                     --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
             DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
                     "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
-                    "${SCE_CODEGEN}" "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
             COMMENT "Mesh someip multi: Generating motor_someip_multi_transport.h (server-side Session E)"
             VERBATIM
         )
@@ -2200,7 +2213,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh.yaml"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_zenoh.yaml"
                     "${MESH_TEST_DIR}/motor.scxml"
-                    "${SCE_CODEGEN}" "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
             COMMENT "Mesh zenoh: Generating brake_transport.h (zenoh transport)"
             VERBATIM
         )
@@ -2325,7 +2339,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                     --deploy "${MESH_TEST_DIR}/deploy_ordered.yaml"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_ordered.yaml"
                     "${MESH_TEST_DIR}/motor.scxml"
-                    "${SCE_CODEGEN}" "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
             COMMENT "Mesh ordered: Generating brake_transport.h (zenoh + ordering:required)"
             VERBATIM
         )
@@ -2389,7 +2404,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
                     "${MESH_TEST_DIR}/motor_zenoh_multi.scxml"
-                    "${SCE_CODEGEN}" "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
             COMMENT "Mesh zenoh multi: Generating brake_zenoh_multi_transport.h (multi-pattern)"
             VERBATIM
         )
@@ -2400,7 +2416,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
             DEPENDS "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
-                    "${SCE_CODEGEN}" "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
             COMMENT "Mesh zenoh multi: Generating motor_zenoh_multi_transport.h (server-side Session E)"
             VERBATIM
         )
