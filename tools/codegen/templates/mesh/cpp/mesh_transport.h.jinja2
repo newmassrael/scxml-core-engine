@@ -1271,7 +1271,15 @@ struct TransportRouter {
                     }
                     raiseCommunicationError(std::move(err));
                 },
-                []{},
+                // Liveliness subscriber on_drop: zenoh invokes this once
+                // when the Subscriber handle is destroyed (shutdown() or
+                // partial-init teardown). The handle lifetime is owned
+                // by `liveliness_subscriber_` on the router; there is no
+                // per-sample state to unwind and raising a late
+                // error.communication during teardown would duplicate
+                // the §9.5 benign-drop semantics already honored by the
+                // sibling raise path in the on_sample closure.
+                []() noexcept {},
                 std::move(liveliness_opts)));
         } catch (const zenoh::ZException&) {
             // Token/subscriber declaration failed — session stays open
@@ -1425,7 +1433,13 @@ struct TransportRouter {
                 // dedup) lands correctly without template edits.
                 (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
             },
-            []{}));
+            // Queryable on_drop: zenoh invokes this once when the
+            // Queryable handle is destroyed (shutdown() resets
+            // `zenoh_queryable_`). Pending query state, if any, is
+            // managed by `pending_server_queries_` — that map is
+            // cleared as part of the router teardown sequence and does
+            // not need per-drop bookkeeping here.
+            []() noexcept {}));
 {% if server.has_server_put %}
         // Server Zenoh inbound-put subscriber (SCE_MESH.md §8.3).
         // `session.put` from clients does not trigger the queryable, so a
@@ -1456,7 +1470,13 @@ struct TransportRouter {
                 // same `server_needs_dedup` flag as the queryable above.
                 (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
             },
-            []{}));
+            // Server put-subscriber on_drop: zenoh invokes this once
+            // when the Subscriber handle is destroyed (shutdown() resets
+            // `zenoh_server_put_sub_`). The subscriber keeps no
+            // per-sample state — each inbound put is processed
+            // synchronously in the on_sample closure above — so teardown
+            // is purely handle destruction.
+            []() noexcept {}));
 {% endif %}
 {% endif %}
 {% if machine_subscriptions %}
@@ -2381,10 +2401,15 @@ struct TransportRouter {
                     // the router owns.
                     (void)this->admitZenohInbound(target_owned, notify);
                 },
-                // on_drop: fires when the Subscriber handle is destroyed
-                // (removed from zenoh_subscribers_ or router shutdown).
-                // Handle lifetime is managed by the map; nothing to do.
-                []{});
+                // Client subscriber on_drop: zenoh invokes this once
+                // when the Subscriber handle is destroyed, which happens
+                // exactly when this machine removes the target from
+                // `zenoh_subscribers_` (duplicate-subscribe refresh,
+                // EventUnsubscribe pattern, or router shutdown). The
+                // undeclare is deliberate and author-triggered — the
+                // on_sample closure owns the admit chain, so there is
+                // no per-subscription state to unwind on teardown.
+                []() noexcept {});
             // Duplicate-subscribe semantics: silent replace (refresh).
             // SCXML state-entry bindings re-execute on every entry to the
             // owning state, so re-entering a subscribed state MUST be a
