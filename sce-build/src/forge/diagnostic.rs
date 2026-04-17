@@ -395,6 +395,8 @@ pub enum DiagnosticCode {
     MeshDeployDuplicateMachine,
     #[serde(rename = "mesh/deploy-invalid-ordering-timings")]
     MeshDeployInvalidOrderingTimings,
+    #[serde(rename = "mesh/deploy-invalid-liveliness")]
+    MeshDeployInvalidLiveliness,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -555,6 +557,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployUnsupportedVersion,
         MeshDeployDuplicateMachine,
         MeshDeployInvalidOrderingTimings,
+        MeshDeployInvalidLiveliness,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -688,6 +691,9 @@ impl DiagnosticCode {
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
             MeshDeployInvalidOrderingTimings => Some("SCE Mesh §10.6"),
+
+            // ── Mesh communication errors (SCE_MESH.md §16.7) ────
+            MeshDeployInvalidLiveliness => Some("SCE Mesh §16.7"),
 
             // ── No authoritative citation ────────────────────────
             //
@@ -824,6 +830,7 @@ impl DiagnosticCode {
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
             MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
             MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
+            MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2197,6 +2204,18 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:8dedacb2b46600f4","code":"mesh/deploy-invalid-ordering-timings","stage":"mesh-deploy","spec":"SCE Mesh §10.6","message":"machine 'brake': invalid `ordering:` section in deploy.yaml — tick_period_ms (100) must be strictly less than gap_timeout_ms (100) so a missed sequence is detected within `gap_timeout + tick_period`. Either fix the values or omit the section entirely to accept the defaults.","actual":"brake"}"#,
             ),
             (
+                "mesh/deploy-invalid-liveliness",
+                DeployError::InvalidLiveliness {
+                    machine: "brake".into(),
+                    reason: "lease_ms (50) must be >= 100 ms — values below this floor race Zenoh's own keepalive and generate spurious DELETE/PUT churn".into(),
+                }
+                .into(),
+                // Hash placeholder — will be replaced with the runtime-
+                // observed value on first failure of the byte-stability
+                // assertion. The shape is what's pinned here.
+                r#"{"v":1,"id":"fnv1a:45153e0eac48ec1b","code":"mesh/deploy-invalid-liveliness","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"machine 'brake': invalid `liveliness:` section in deploy.yaml — lease_ms (50) must be >= 100 ms — values below this floor race Zenoh's own keepalive and generate spurious DELETE/PUT churn. Either fix the value or omit the section entirely to disable liveliness.","actual":"brake"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -2834,6 +2853,7 @@ mod tests {
             | MeshDeployParse
             | MeshDeployDuplicateMachine
             | MeshDeployInvalidOrderingTimings
+            | MeshDeployInvalidLiveliness
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3087,6 +3107,7 @@ mod tests {
                 | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
+                | MeshDeployInvalidLiveliness
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3117,9 +3138,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            89,
+            90,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 89 distinct variants to match the DiagnosticCode \
+             expected 90 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

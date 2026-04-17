@@ -270,6 +270,55 @@ impl Default for OrderingTimings {
     }
 }
 
+/// Minimum `lease_ms` accepted in a `liveliness:` section.
+///
+/// SCE Mesh §16.7 row 9 (`PEER_PARTITIONED`) couples peer-failure
+/// detection latency to Zenoh's own keepalive cadence. Values below
+/// this floor race the router's own internal heartbeat and generate
+/// spurious DELETE/PUT churn, so parse-time rejection is preferred
+/// over runtime misbehaviour. Matches the Nyquist-style floor the
+/// plan memo locked.
+pub const MIN_LIVELINESS_LEASE_MS: u64 = 100;
+
+/// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 9).
+///
+/// Opt-in: absent section ⇒ no liveliness token declared, no
+/// subscriber installed, zero generated code — matches the
+/// [`OrderingTimings`] convention so authors pay only for what they
+/// declare. Section present ⇒ the field is required and validated
+/// (`lease_ms >= MIN_LIVELINESS_LEASE_MS`) at parse time so a bad
+/// value cannot reach the generated router.
+///
+/// `lease_ms` is the keepalive cadence negotiated with the Zenoh
+/// router — the application-side bound on DELETE-sample latency
+/// when a peer drops. SCXML authors who need peer-failure detection
+/// to raise `error.communication` (reason `PEER_PARTITIONED`)
+/// within a bounded window declare this section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LivelinessConfig {
+    /// Keepalive cadence in milliseconds. Must be `>= MIN_LIVELINESS_LEASE_MS`.
+    /// Worst-case PEER_PARTITIONED latency is `lease_ms` plus a small
+    /// Zenoh-internal jitter (typically <50 ms on loopback).
+    pub lease_ms: u64,
+}
+
+impl LivelinessConfig {
+    /// Validate the constraint. Returns the rejection reason without
+    /// the machine name — the caller wraps this into
+    /// [`DeployError::InvalidLiveliness`].
+    fn validation_error(&self) -> Option<String> {
+        if self.lease_ms < MIN_LIVELINESS_LEASE_MS {
+            return Some(format!(
+                "lease_ms ({}) must be >= {} ms — values below this floor race \
+                 Zenoh's own keepalive and generate spurious DELETE/PUT churn",
+                self.lease_ms, MIN_LIVELINESS_LEASE_MS,
+            ));
+        }
+        None
+    }
+}
+
 /// Zenoh session mode.
 ///
 /// Typed at parse time so an invalid value (typo, wrong case) fails the
@@ -360,6 +409,13 @@ pub struct MachineConfig {
     /// layer.
     #[serde(default)]
     pub ordering: Option<OrderingTimings>,
+    /// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 9).
+    /// Absent section ⇒ no liveliness token declared and no subscriber
+    /// installed; the generated router emits zero liveliness code.
+    /// Section present ⇒ `lease_ms` is required and validated at parse
+    /// time. Opt-in by design — see [`LivelinessConfig`].
+    #[serde(default)]
+    pub liveliness: Option<LivelinessConfig>,
 }
 
 impl MachineConfig {
@@ -587,6 +643,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
 
     validate_machine_name_uniqueness(&cfg)?;
     validate_ordering_timings(&cfg)?;
+    validate_liveliness(&cfg)?;
 
     Ok(cfg)
 }
@@ -611,6 +668,31 @@ fn validate_ordering_timings(cfg: &DeployConfig) -> Result<(), DeployError> {
     for (machine, timings) in by_machine {
         if let Some(reason) = timings.validation_error() {
             return Err(DeployError::InvalidOrderingTimings {
+                machine: machine.to_string(),
+                reason,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Walk every machine that declared an explicit `liveliness:` section
+/// and reject values below [`MIN_LIVELINESS_LEASE_MS`]. Runs at parse
+/// time so the diagnostic surfaces the offending deploy.yaml line
+/// rather than a deferred runtime misbehaviour.
+fn validate_liveliness(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let mut by_machine: BTreeMap<&str, &LivelinessConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            if let Some(l) = &machine.liveliness {
+                by_machine.insert(machine_name.as_str(), l);
+            }
+        }
+    }
+    for (machine, liveliness) in by_machine {
+        if let Some(reason) = liveliness.validation_error() {
+            return Err(DeployError::InvalidLiveliness {
                 machine: machine.to_string(),
                 reason,
             });
@@ -1337,6 +1419,84 @@ topology:
             }
             other => panic!("expected InvalidOrderingTimings, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn liveliness_section_absent_is_default_none() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        assert!(
+            machine.liveliness.is_none(),
+            "absent section must deserialize as None (opt-in gate)"
+        );
+    }
+
+    #[test]
+    fn liveliness_section_present_parses() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        liveliness:
+          lease_ms: 2000
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        assert_eq!(
+            machine.liveliness.unwrap().lease_ms,
+            2000,
+            "explicit section must propagate the lease_ms value"
+        );
+    }
+
+    #[test]
+    fn liveliness_lease_below_floor_rejected() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        liveliness:
+          lease_ms: 50
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidLiveliness { machine, reason }) => {
+                assert_eq!(machine, "brake");
+                assert!(reason.contains("lease_ms"), "reason: {reason}");
+                assert!(reason.contains("100"), "reason must cite the floor: {reason}");
+            }
+            other => panic!("expected InvalidLiveliness, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn liveliness_unknown_field_rejected() {
+        // Typo: `leese_ms` — deny_unknown_fields must fire.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        liveliness:
+          leese_ms: 2000
+"#;
+        let err = parse_deploy_str(yaml).unwrap_err();
+        assert!(matches!(err, DeployError::Yaml(_)));
     }
 
     #[test]

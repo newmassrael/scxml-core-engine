@@ -82,6 +82,7 @@
         "mesh/deploy-unsupported-version",
         "mesh/deploy-duplicate-machine",
         "mesh/deploy-invalid-ordering-timings",
+        "mesh/deploy-invalid-liveliness",
         "mesh/external-read",
         "mesh/external-parse",
         "mesh/external-unresolved-names",

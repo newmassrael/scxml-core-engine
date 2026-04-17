@@ -91,6 +91,17 @@ pub enum DeployError {
         machine: String,
         reason: String,
     },
+
+    /// A machine declared a `liveliness:` section whose `lease_ms`
+    /// violates the minimum-floor constraint (SCE Mesh §16.7 row 9;
+    /// see `MIN_LIVELINESS_LEASE_MS` in deploy.rs). Rejected at parse
+    /// time so a bad value cannot reach the generated router.
+    #[error("machine '{machine}': invalid `liveliness:` section in deploy.yaml — {reason}. \
+             Either fix the value or omit the section entirely to disable liveliness.")]
+    InvalidLiveliness {
+        machine: String,
+        reason: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -542,6 +553,16 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // (omit the section). Same shape as
             // `MeshTopologyOrderingCannotBeGuaranteed` — author intent
             // decides which side gives way.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::InvalidLiveliness { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidLiveliness,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // Same author-intent shape as InvalidOrderingTimings:
+            // either fix the explicit value or omit the section.
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
