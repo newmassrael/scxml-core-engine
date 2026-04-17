@@ -875,7 +875,21 @@ pub fn inject_server_model_mutations(
 
     let server_pairs = mesh::topology::detect_server_pairs(model);
     let field_access_pairs = mesh::topology::detect_server_field_access_pairs(model);
-    if server_pairs.is_empty() && field_access_pairs.is_empty() {
+    // SCE_MESH.md §8.1: spontaneous eventgroup notifications declared in
+    // deploy.yaml `server.events` with `event_group:` (SOME/IP) — these
+    // raises have no in-SCXML request-pair sibling, so they must be read
+    // from the deploy config directly. Omitting them here left the
+    // injection set depending on whether some other pair (RPC, field get)
+    // happened to share the same event name, which is exactly the shape
+    // that accidentally masked the bug on the multi fixture while the
+    // dedicated unsubscribe fixture exposed it.
+    let eventgroup_events = server_config
+        .map(mesh::topology::detect_server_eventgroup_events)
+        .unwrap_or_default();
+    if server_pairs.is_empty()
+        && field_access_pairs.is_empty()
+        && eventgroup_events.is_empty()
+    {
         return Ok(vec![]);
     }
 
@@ -883,6 +897,7 @@ pub fn inject_server_model_mutations(
         .iter()
         .map(|p| p.response_event.clone())
         .chain(field_access_pairs.iter().map(|p| p.response_event.clone()))
+        .chain(eventgroup_events.iter().map(|eg| eg.event.clone()))
         .collect();
     Ok(mesh::topology::inject_server_response_sends(model, &response_events))
 }
@@ -1268,5 +1283,124 @@ mod tests {
             "expected ValidationError::DynamicFeatures(name=\"typed_probe\"), got: {:?}",
             err.error,
         );
+    }
+
+    /// Regression guard for the bug fixed in this commit: a server whose
+    /// only reply path is a spontaneous eventgroup notification (no RPC
+    /// pair, no FieldAccess pair) must still trigger
+    /// `inject_server_response_sends` so the SM generator sees the
+    /// synthetic `<send>` alongside the `<raise>`. Before the fix,
+    /// eventgroup-only servers hit the `server_pairs.is_empty() &&
+    /// field_access_pairs.is_empty()` early return; the raise emitted
+    /// but the mesh send callback never fired.
+    ///
+    /// Pre-fix behaviour was masked on the multi fixture because a
+    /// field.get pair happened to produce the same response event
+    /// name as the eventgroup push — SCE Mesh §8.1's pure-push case
+    /// (spontaneous `field.notify.X` from a sensor.update trigger)
+    /// was therefore never exercised until the dedicated unsubscribe
+    /// fixture landed.
+    #[test]
+    fn inject_server_model_mutations_handles_eventgroup_only_server() {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_inject_eventgroup_only_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+        application_name: brake_app
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              "event.subscribe.speed":
+                event_group: speed_group
+      motor:
+        source: motor.scxml
+        server:
+          transport: someip
+          service: motor_control
+          events:
+            "field.notify.vehicle_speed":
+              event_group: speed_group
+"##;
+        let vsomeip = r##"{
+  "applications": [{"name": "brake_app"}],
+  "services": [{
+    "name": "motor_control",
+    "service": "0x2000",
+    "instance": "0x0001",
+    "eventgroups": [{"name": "speed_group", "eventgroup": "0x0002", "events": ["0x8002"]}]
+  }]
+}
+"##;
+        // Motor has ONLY a spontaneous raise — no field.get/field.set pair,
+        // no RPC pair. This is the exact shape the bug bit on.
+        let motor_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="motor" initial="ready">
+    <state id="ready">
+        <transition event="sensor.update" target="ready">
+            <raise event="field.notify.vehicle_speed"/>
+        </transition>
+    </state>
+</scxml>"##;
+        let brake_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="brake" initial="idle">
+    <state id="idle"/>
+</scxml>"##;
+        fs::write(tmp.join("deploy.yaml"), deploy).unwrap();
+        fs::write(tmp.join("vsomeip.json"), vsomeip).unwrap();
+        fs::write(tmp.join("motor.scxml"), motor_scxml).unwrap();
+        fs::write(tmp.join("brake.scxml"), brake_scxml).unwrap();
+
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("motor.scxml").to_str().unwrap())
+            .expect("parse motor");
+
+        let injected = inject_server_model_mutations(&mut model, &tmp.join("deploy.yaml"))
+            .expect("inject");
+
+        assert!(
+            !injected.is_empty(),
+            "eventgroup-only server should trigger injection; got empty vec"
+        );
+
+        // The motor's single transition now carries a [raise, send] pair
+        // instead of the naked raise. Find it and assert the shape.
+        let ready_state = model.states.get("ready").expect("ready state exists");
+        let transition = ready_state
+            .transitions
+            .iter()
+            .find(|t| t.event == "sensor.update")
+            .expect("sensor.update transition exists");
+        assert_eq!(
+            transition.actions.len(),
+            2,
+            "transition must have raise + injected send (got {} actions)",
+            transition.actions.len()
+        );
+        assert_eq!(transition.actions[0].action_type, "raise");
+        assert_eq!(transition.actions[0].event, "field.notify.vehicle_speed");
+        assert_eq!(transition.actions[1].action_type, "send");
+        assert_eq!(transition.actions[1].event, "field.notify.vehicle_speed");
+        assert_eq!(transition.actions[1].target, "#motor");
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 }
