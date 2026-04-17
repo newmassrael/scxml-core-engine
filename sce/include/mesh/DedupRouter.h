@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// SCE Mesh DedupRouter — per-envelope duplicate suppression for inbound
+// transport callbacks.
+//
+// SCE_MESH.md §10.5: transports that cannot guarantee at-most-once
+// envelope delivery (Zenoh's reliable mode can still reorder across
+// routers, broadcast buses can bridge duplicates) need an
+// application-level filter. Each receiving TransportRouter holds one
+// DedupRouter per envelope source (`MeshEnvelope.source`, i.e. the
+// sender machine name); each source owns a fixed-size window of
+// recently-seen envelope ids. On inbound delivery, the router consults
+// the window for that source and drops the envelope if the id is
+// already present.
+//
+// The window size is 256 entries. UUID v7's ms-prefix timestamp makes
+// the ring a time-bounded sliding filter: at 1 000 events/sec/sender
+// that is a 256 ms window — longer than any practical retransmit
+// interval at the transport layer.
+//
+// Scope (what this class is NOT):
+//   * No sender eviction. The per-source map grows to the cardinality
+//     of distinct senders the receiver has ever observed. Current
+//     mesh topologies pin sender identity to the machine roster in
+//     deploy.yaml (bounded, small), so this is acceptable; game-scale
+//     fan-in would need an eviction policy layered on top.
+//   * No cross-session replay defence. An envelope that arrives more
+//     than 256 events after its first delivery will pass the filter.
+//     §10.5 calls this out — the DedupWindow is a correctness guard
+//     against transport-level re-delivery, not against a malicious
+//     replay attacker.
+//   * No interaction with RPC correlation. The mesh-rpc reply path
+//     (`InvokeCorrelation`) independently guards against
+//     duplicate replies via its "at-most-once" callback contract.
+//   * Per-router scope (not per-transport). The DedupRouter is keyed
+//     on `(env.source, env.id)` alone — not on the transport that
+//     delivered the envelope. Every inbound path from a transport
+//     that declared `supplies_dedup: false` in transport.rs (today:
+//     Zenoh, and SOME/IP bindings without `protocol: tcp`) funnels
+//     through the same DedupRouter, so even a hypothetical envelope
+//     that re-arrives on a different transport with an identical
+//     `(source, id)` pair would be caught by the window. In
+//     practice this scenario does not occur: the sender stamps
+//     `env.id` once per mesh-send-callback invocation and
+//     `route_send` picks exactly one transport per target, so a
+//     given wire envelope cannot physically originate on two
+//     transports. The per-router scope is a natural fit for today's
+//     sender semantics — it is neither a blind spot nor load-bearing
+//     defence-in-depth.
+//
+// Thread-safety: transport callback threads (vsomeip application
+// threads, zenoh runtime threads, custom_tcp reader threads, local
+// cross-router dispatcher) can call `admit()` concurrently. The
+// implementation holds one mutex per DedupRouter across the whole
+// admit path.
+//
+// Scaling: per-sender mutex striping (e.g. one mutex per window)
+// would shorten the critical section under high-fan-in fan-out.
+// Today's deploy.yaml rosters are small (harness fixtures use 1-3
+// senders) and no benchmark has been run on a high-rate inbound
+// path, so the single mutex is sufficient until measurement shows
+// otherwise — revisit if a Zenoh subscriber stream at > 10 kHz
+// contends on this lock.
+
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
+namespace SCE::Mesh {
+
+/// Ring-buffer window of recently-observed envelope ids for a single
+/// sender. `observe(id)` returns `true` iff the id was novel (not in
+/// the window at call time); in that case the id is also inserted,
+/// evicting the oldest entry when the ring is full.
+///
+/// Populated-slot tracking: the default-constructed ring holds all-zero
+/// ids, which would otherwise match an incoming all-zero envelope id
+/// (legal under the UUID bit pattern; common in test fixtures). The
+/// scan uses `wrapped_` + `head_` to walk only the slots that have
+/// actually been written, so a fresh window always admits its first id
+/// regardless of its value.
+class DedupWindow {
+public:
+    /// Capacity is fixed at 256 per §10.5. Exposed as a constant so
+    /// tests can assert the "257th distinct id evicts the first"
+    /// invariant without a magic number.
+    static constexpr std::size_t kCapacity = 256;
+
+    using Id = std::array<std::uint8_t, 16>;
+
+    /// Returns true iff `id` is novel. Inserts on true.
+    ///
+    /// Complexity: O(kCapacity). Linear scan over a 4 KiB array beats
+    /// hash-set overhead at this size, and there is no sorting to
+    /// maintain: the ring is append-only with head-rotation.
+    [[nodiscard]] bool observe(const Id& id) noexcept {
+        const std::size_t filled = wrapped_ ? kCapacity : head_;
+        for (std::size_t i = 0; i < filled; ++i) {
+            if (recent_ids_[i] == id) {
+                return false;
+            }
+        }
+        recent_ids_[head_] = id;
+        head_ = (head_ + 1) % kCapacity;
+        if (head_ == 0) {
+            wrapped_ = true;
+        }
+        return true;
+    }
+
+private:
+    std::array<Id, kCapacity> recent_ids_{};
+    std::size_t head_ = 0;
+    bool wrapped_ = false;
+};
+
+/// Per-sender DedupWindow registry. One instance lives on a receiving
+/// TransportRouter when at least one of its bound transports declares
+/// `supplies_dedup: false` (SCE_MESH.md §10.5; see
+/// `sce-build::mesh::transport::TransportDescriptor::supplies_dedup`).
+///
+/// Generated TransportRouter code calls `admit(env.source, env.id)`
+/// on every inbound envelope that arrived via such a transport.
+/// Envelopes from transports with inherent dedup (local, shm, SOME/IP
+/// over TCP, custom_tcp) MUST NOT traverse this class — the codegen
+/// branches at the inbound call site so those paths are zero-cost.
+class DedupRouter {
+public:
+    using Id = DedupWindow::Id;
+
+    /// Returns true iff the envelope should proceed to the engine.
+    /// Returns false iff the (source, id) pair was already observed
+    /// within the window and the envelope should be dropped.
+    [[nodiscard]] bool admit(const std::string& source, const Id& id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // `operator[]` value-initializes the window on first insert,
+        // i.e. an all-zero ring with head_ = 0 — any non-zero UUID is
+        // novel on first observation, which is the intended behavior.
+        return windows_[source].observe(id);
+    }
+
+private:
+    std::mutex mutex_;
+    std::unordered_map<std::string, DedupWindow> windows_;
+};
+
+}  // namespace SCE::Mesh

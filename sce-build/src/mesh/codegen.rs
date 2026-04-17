@@ -288,6 +288,20 @@ struct TargetContext {
     /// initializer? Data-driven — removes transport-name hardcoding from
     /// the template's field/ctor sections.
     has_per_target_field: bool,
+    /// Does THIS binding need the runtime DedupWindow on inbound envelopes?
+    ///
+    /// Per-binding refinement of the transport-level `supplies_dedup`
+    /// default: a SOME/IP binding with `protocol: tcp` runs on a single
+    /// TCP stream per client↔server pair, so duplicates are physically
+    /// impossible and the inbound path can call `dispatchToSender`
+    /// directly. The default SOME/IP path (UDP + multicast SD) still
+    /// needs dedup.
+    ///
+    /// SCE_MESH.md §10.5: the runtime DedupWindow is keyed on
+    /// `(env.source, env.id)` and emitted per-machine when any binding
+    /// reports `needs_dedup = true` via the machine-wide
+    /// `has_undeduped_transport` flag.
+    needs_dedup: bool,
     /// Per-event pattern metadata for pattern-aware send logic.
     event_patterns: Vec<EventPatternContext>,
     /// True if any event uses RPC patterns (ServiceRequest/ServiceResponse).
@@ -772,6 +786,42 @@ pub fn generate_mesh(
     }
 }
 
+/// Per-binding dedup decision (SCE_MESH.md §10.5).
+///
+/// The decision composes two facts:
+///   1. the transport-level default (`!transport_supplies_dedup`), and
+///   2. an optional per-binding upgrade to dedup-safe when the binding
+///      pins a reliable substrate the transport itself cannot assume.
+///
+/// Today the only per-binding upgrade is SOME/IP `protocol: tcp`,
+/// which binds the method call to a single TCP stream per
+/// client↔server pair and carries the same at-most-once guarantee as
+/// custom_tcp. The upgrade is expressed as a conjunction so both
+/// inputs flow through every arm: if a future registry flipped
+/// SOME/IP's transport-level `supplies_dedup` to `true`, the TCP-pin
+/// case would stay correct (no dedup needed) AND the UDP case would
+/// defer to the new transport-level claim rather than over-deduping
+/// against it.
+///
+/// If a future transport grows a similar per-binding knob
+/// (e.g. Zenoh unicast-only), extend the `if let` below with the
+/// same `default && !upgrade` shape.
+fn compute_needs_dedup(
+    state: &crate::mesh::topology::TransportState,
+    transport_supplies_dedup: bool,
+) -> bool {
+    use crate::mesh::topology::TransportState;
+    let default_needs_dedup = !transport_supplies_dedup;
+    if let TransportState::Someip { extra, .. } = state {
+        let pinned_tcp = extra
+            .get("protocol")
+            .and_then(|v| v.as_str())
+            .is_some_and(|p| p == "tcp");
+        return default_needs_dedup && !pinned_tcp;
+    }
+    default_needs_dedup
+}
+
 fn generate_cpp_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
@@ -915,6 +965,8 @@ fn generate_cpp_mesh(
             // (notifications), or Field (notifications).
             let has_receive = has_rpc || has_pubsub || has_field;
 
+            let needs_dedup = compute_needs_dedup(&t.state, desc.supplies_dedup);
+
             TargetContext {
                 target: t.target.clone(),
                 target_stem: stripped.to_string(),
@@ -923,6 +975,7 @@ fn generate_cpp_mesh(
                 events: t.events.clone(),
                 state: TargetStateView::from_topology(&t.state),
                 has_per_target_field: desc.shape.has_per_target_field,
+                needs_dedup,
                 event_patterns,
                 has_rpc,
                 has_pubsub,
@@ -964,6 +1017,30 @@ fn generate_cpp_mesh(
     if custom_tcp_config.is_some_and(CustomTcpTransportConfig::hosts_server) {
         transport_types.insert("custom_tcp");
     }
+
+    // SCE_MESH.md §10.5: per-binding dedup decision drives machine-level
+    // emission. A receiver emits the runtime DedupRouter iff at least one
+    // inbound path on the machine actually needs runtime dedup — that's
+    // any target with `needs_dedup = true` (typically Zenoh, or a SOME/IP
+    // binding without `protocol: tcp`) plus any server-side path whose
+    // transport does not supply inherent dedup.
+    //
+    // Call-site branching lives in the template: client-side SOME/IP
+    // receive handlers read `target.needs_dedup`, server-side handlers
+    // read `server_needs_dedup`. Mixed-binding machines (e.g. SOME/IP-TCP
+    // to one target + Zenoh to another) still emit the DedupRouter once
+    // but only the undeduped paths pay the admit cost.
+    let any_target_needs_dedup = target_contexts.iter().any(|t| t.needs_dedup);
+    let server_needs_dedup = server_context.as_ref().is_some_and(|sc| {
+        // Server transport kind is "someip" or "zenoh" today. SOME/IP
+        // server sockets default to UDP multicast (per vsomeip.json), so
+        // conservatively treat both as needing dedup. If a future deploy
+        // schema adds a server-side `protocol: tcp` pin, extend this
+        // match to recognise it — same pattern as the target-side
+        // `needs_dedup` computation above.
+        matches!(sc.transport_kind.as_str(), "someip" | "zenoh")
+    });
+    let has_undeduped_transport = any_target_needs_dedup || server_needs_dedup;
 
     // Pre-escape Zenoh session config into C++ string literals so the template
     // never constructs literals by string concatenation.
@@ -1008,6 +1085,8 @@ fn generate_cpp_mesh(
         machine_pascal => machine_pascal,
         targets => target_contexts,
         transport_types => transport_types,
+        has_undeduped_transport => has_undeduped_transport,
+        server_needs_dedup => server_needs_dedup,
         zenoh_session_json5 => zenoh_session_json5,
         zenoh_session_json5_present => zenoh_session_json5_present,
         someip_transport => someip_transport,
@@ -1138,5 +1217,105 @@ mod tests {
         };
         let j = ZenohSessionJson5::from_config(&cfg);
         assert!(j.is_empty());
+    }
+
+    // ── compute_needs_dedup (SCE_MESH.md §10.5) ─────────────────
+    //
+    // These tests exercise the per-binding dedup decision in isolation.
+    // The helper synthesises a minimal TransportState rather than driving
+    // the whole deploy.yaml → topology pipeline — only the fields
+    // `compute_needs_dedup` inspects need to be populated.
+
+    use crate::mesh::topology::{SomeipEventIds, SomeipServiceIds, TransportState};
+    use std::collections::{BTreeMap, HashMap};
+
+    fn someip_state(extra: HashMap<String, serde_yaml_ng::Value>) -> TransportState {
+        TransportState::Someip {
+            service: SomeipServiceIds { service_id: 0x0001, instance_id: 0x0001 },
+            event_bindings: BTreeMap::<String, SomeipEventIds>::new(),
+            extra,
+        }
+    }
+
+    fn yaml_str(s: &str) -> serde_yaml_ng::Value {
+        serde_yaml_ng::Value::String(s.to_string())
+    }
+
+    #[test]
+    fn someip_without_protocol_needs_dedup() {
+        // Default in-tree SOME/IP fixture: no `protocol:` key → UDP by
+        // vsomeip convention → runtime dedup required.
+        let state = someip_state(HashMap::new());
+        assert!(compute_needs_dedup(&state, /* supplies_dedup */ false));
+    }
+
+    #[test]
+    fn someip_with_protocol_udp_needs_dedup() {
+        // Explicit `protocol: udp` — UDP confirmed, dedup required.
+        let mut extra = HashMap::new();
+        extra.insert("protocol".to_string(), yaml_str("udp"));
+        let state = someip_state(extra);
+        assert!(compute_needs_dedup(&state, false));
+    }
+
+    #[test]
+    fn someip_with_protocol_tcp_skips_dedup() {
+        // `protocol: tcp` pins the binding to a single TCP stream, so
+        // runtime dedup is not needed for this binding. The
+        // DedupRouter member may still be emitted at machine level if a
+        // sibling binding is undeduped; only this call site is cheap.
+        let mut extra = HashMap::new();
+        extra.insert("protocol".to_string(), yaml_str("tcp"));
+        let state = someip_state(extra);
+        assert!(!compute_needs_dedup(&state, false));
+    }
+
+    #[test]
+    fn someip_with_unknown_protocol_falls_back_to_dedup() {
+        // Any string that is not "tcp" falls back to the UDP-default
+        // treatment. Keeps the classifier conservative against typos.
+        let mut extra = HashMap::new();
+        extra.insert("protocol".to_string(), yaml_str("sctp"));
+        let state = someip_state(extra);
+        assert!(compute_needs_dedup(&state, false));
+    }
+
+    #[test]
+    fn zenoh_always_needs_dedup_regardless_of_extra() {
+        // Zenoh lacks a per-binding TCP pin — the extra map cannot flip
+        // the decision. The transport-level `supplies_dedup: false`
+        // propagates straight through.
+        let state = TransportState::Zenoh {
+            key: "brake/cmd".to_string(),
+            extra: HashMap::new(),
+        };
+        assert!(compute_needs_dedup(&state, false));
+    }
+
+    #[test]
+    fn local_never_needs_dedup() {
+        // local dispatch is in-process — duplicates are physically
+        // impossible. Transport-level supplies_dedup=true → false.
+        assert!(!compute_needs_dedup(&TransportState::Local, true));
+    }
+
+    #[test]
+    fn custom_tcp_never_needs_dedup() {
+        // Single TCP stream per binding.
+        let state = TransportState::CustomTcp {
+            connect: "127.0.0.1:55821".to_string(),
+            extra: HashMap::new(),
+        };
+        assert!(!compute_needs_dedup(&state, true));
+    }
+
+    #[test]
+    fn shm_never_needs_dedup() {
+        // Single shared ring with READY_MAGIC gating.
+        let state = TransportState::Shm {
+            arena_bytes: None,
+            ring_capacity: None,
+        };
+        assert!(!compute_needs_dedup(&state, true));
     }
 }

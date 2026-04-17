@@ -90,8 +90,43 @@
                 // Dispatch result ignored intentionally — unknown event
                 // names in the sender policy drop the envelope, which is
                 // the desired behavior for unmatched inbound messages.
-                (void)this->dispatchToSender(env);
+                // SCE_MESH.md §10.5: per-binding dedup. A SOME/IP binding
+                // pinned to `protocol: tcp` rides a single TCP stream per
+                // client↔server pair — duplicates are physically
+                // impossible and the runtime DedupWindow is bypassed.
+                // Unpinned (UDP-default) bindings route through
+                // admitInbound to filter on (source, id). Forwarded
+                // to the shared `dedup_or_dispatch` macro so all eight
+                // inbound call sites read identically.
+                (void)this->{{ dedup_or_dispatch(target.needs_dedup, "env") }};
             });
+{%- endmacro %}
+{#
+  SCE_MESH.md §10.5: single decision point for every inbound call site
+  that can see an envelope from a transport with `supplies_dedup: false`.
+
+  `condition` is the flag the caller wants to gate on:
+    * `server_needs_dedup` for server-side handlers (SOME/IP method
+      callbacks, Zenoh queryable / put-subscriber). True whenever the
+      server is served by an undeduped transport.
+    * `has_undeduped_transport` for client-side closures invoked by
+      `send_zenoh` (Zenoh reply + subscribe). True whenever ANY target
+      on the machine routes through an undeduped transport, which is
+      the same condition that emits the `admitInbound` method itself,
+      so the fallback branch is unreachable on today's registry.
+
+  `env_name` names the C++ variable holding the decoded envelope at
+  the call site (`env`, `resp`, `notify`, …). The caller supplies the
+  `(void)this->…;` wrapper and any leading indentation, so the macro
+  stays a one-line expression and every caller keeps its local
+  context unchanged.
+#}
+{%- macro dedup_or_dispatch(condition, env_name) -%}
+{%- if condition -%}
+admitInbound({{ env_name }})
+{%- else -%}
+dispatchToSender({{ env_name }})
+{%- endif -%}
 {%- endmacro %}
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
@@ -186,6 +221,15 @@
 {% if "custom_tcp" in transport_types %}
 #include <memory>
 #include "mesh/transports/CustomTcpTransport.h"
+{% endif %}
+{% if has_undeduped_transport %}
+// SCE_MESH.md §10.5: runtime per-sender envelope-id dedup for transports
+// that do not inherently suppress duplicates (today: zenoh). The member
+// is only emitted when at least one bound transport declares
+// `supplies_dedup: false` in transport.rs; receivers bound only to
+// inherently-deduped transports pay zero overhead (no include, no
+// member, no call).
+#include "mesh/DedupRouter.h"
 {% endif %}
 
 namespace SCE::Generated::{{ machine_name }} {
@@ -465,6 +509,20 @@ struct TransportRouter {
     // correlation_mutex_ is deliberate (SOME/IP's pending_rpcs_ IS read
     // on vsomeip callback threads; this map is not).
     std::unordered_map<std::string, zenoh::Subscriber<void>> zenoh_subscribers_;
+{% endif %}
+{% if has_undeduped_transport %}
+    // Runtime per-sender envelope-id dedup (SCE_MESH.md §10.5). Consulted
+    // only by `admitInbound`, which is invoked from the inbound call sites
+    // of transports that declared `supplies_dedup: false` in
+    // transport.rs. Inbound paths from transports with inherent dedup
+    // (SOME/IP-over-TCP, custom_tcp, local cross-router, shm) still call
+    // the unchecked `dispatchToSender` directly — bypassing this filter
+    // is intentional, not a bug.
+    //
+    // No eviction: the per-source window count is bounded by the sender
+    // roster in deploy.yaml (small, static). Game-scale fan-in would
+    // need a TTL-based cleanup, which is explicitly out of scope today.
+    SCE::Mesh::DedupRouter dedup_;
 {% endif %}
 
 {# ── (D2b-pre) Server SOME/IP application — declared BEFORE sender_
@@ -993,7 +1051,15 @@ struct TransportRouter {
                     pending_server_requests_[CorrelationKey{cid}] = msg;
                 }
                 env.correlation_id = cid;
-                (void)this->dispatchToSender(env);
+                // SCE_MESH.md §10.5: server-side dedup gate. Today the
+                // deploy schema has no server-side `protocol: tcp` knob,
+                // so SOME/IP server sockets ride the vsomeip.json-defined
+                // endpoint (UDP-default) and `server_needs_dedup` is
+                // true. pending_server_requests_ stashing happens BEFORE
+                // admit; on a duplicate, the next insert overwrites with
+                // the same correlation_id and handleServerResponse
+                // still finds a valid entry when the engine replies.
+                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
             });
 {% endfor %}
 {% for ff in server.fire_forget_events if ff.method_id %}
@@ -1011,7 +1077,9 @@ struct TransportRouter {
                 if (!pl) return;
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
-                (void)this->dispatchToSender(env);
+                // SCE_MESH.md §10.5: same server-side dedup gate as the
+                // RPC handler above.
+                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
             });
 {% endfor %}
 {% for fa in server.field_access_pairs if fa.method_id %}
@@ -1041,7 +1109,9 @@ struct TransportRouter {
                     pending_server_requests_[CorrelationKey{cid}] = msg;
                 }
                 env.correlation_id = cid;
-                (void)this->dispatchToSender(env);
+                // SCE_MESH.md §10.5: same server-side dedup gate as the
+                // RPC / FireForget handlers above.
+                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
             });
 {% endfor %}
 {% for eg in server.eventgroup_events if eg.event_group_id %}
@@ -1080,7 +1150,17 @@ struct TransportRouter {
                     pending_server_queries_.insert_or_assign(CorrelationKey{cid}, query.clone());
                 }
                 env.correlation_id = cid;
-                (void)this->dispatchToSender(env);
+                // SCE_MESH.md §10.5: Zenoh server queryable gate. Uses
+                // the same `server_needs_dedup` flag as the SOME/IP
+                // server handlers above so all server-side inbound
+                // call sites read identically. Today's Zenoh
+                // classification (`supplies_dedup = false`) forces
+                // `server_needs_dedup = true` whenever this block
+                // emits, so the fallback is unreachable — it is
+                // retained so a future registry shift (e.g. Zenoh
+                // gaining a reliable-unicast profile that supplies
+                // dedup) lands correctly without template edits.
+                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
             },
             []{}));
 {% if server.has_server_put %}
@@ -1109,7 +1189,9 @@ struct TransportRouter {
                 // instance per machine name) is safe. Multi-instance
                 // would need a session-unique origin ID instead.
                 if (env.source == "{{ machine_name }}") return;
-                (void)this->dispatchToSender(env);
+                // SCE_MESH.md §10.5: Zenoh server put-subscriber gate —
+                // same `server_needs_dedup` flag as the queryable above.
+                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
             },
             []{}));
 {% endif %}
@@ -1342,6 +1424,39 @@ struct TransportRouter {
         using SenderPolicy = std::decay_t<decltype(sender_.getPolicy())>;
         return SCE::Mesh::dispatchEnvelope<SenderPolicy>(env, sender_);
     }
+
+{% if has_undeduped_transport %}
+    /// Filter + dispatch inbound envelopes from transports without
+    /// inherent duplicate suppression (SCE_MESH.md §10.5).
+    ///
+    /// Keyed on `(env.source, env.id)`: envelopes whose id is already in
+    /// the per-sender window are dropped silently (return false). Novel
+    /// ids are forwarded to `dispatchToSender`, which still performs the
+    /// mesh-rpc correlation lookup for RpcReply+invoke_id envelopes.
+    ///
+    /// Called only on inbound paths from transports that declared
+    /// `supplies_dedup: false` in transport.rs (Zenoh queryable, Zenoh
+    /// put subscriber, Zenoh session.get reply closure, Zenoh subscribe
+    /// notify closure). SOME/IP-over-TCP, custom_tcp, shm, and local
+    /// inbound paths continue to call `dispatchToSender` directly —
+    /// their transport already guarantees at-most-once delivery.
+    ///
+    /// The `[[nodiscard]]` attribute mirrors `dispatchToSender`: the
+    /// transport-callback call sites explicitly `(void)`-cast the
+    /// return (there is no meaningful recovery action at that layer
+    /// — the decoder has already committed to a dropped envelope),
+    /// but `test_mesh_dedup_injection.cpp` does consume the return to
+    /// assert the §10.5 contract. Removing the attribute would let a
+    /// test regress to "admit returns are unchecked" silently.
+    ///
+    /// @return true iff the envelope was novel AND MeshDispatch accepted it
+    [[nodiscard]] bool admitInbound(const SCE::Mesh::MeshEnvelope& env) {
+        if (!dedup_.admit(env.source, env.id)) {
+            return false;
+        }
+        return dispatchToSender(env);
+    }
+{% endif %}
 
 {% if has_server %}
     /// Route an outbound server response back through the transport layer.
@@ -1626,7 +1741,18 @@ struct TransportRouter {
                     // reply closure means the sender has no handler for
                     // this event — the envelope is dropped silently, same
                     // as any W3C SCXML unmatched external event.
-                    (void)this->dispatchToSender(resp);
+                    //
+                    // SCE_MESH.md §10.5: Zenoh client reply gate. Uses
+                    // `has_undeduped_transport` rather than
+                    // `server_needs_dedup` because this closure runs on
+                    // the client path — the server flag can be false on
+                    // pure-client machines that still have Zenoh targets.
+                    // The invariant chain (Zenoh target →
+                    // `needs_dedup = true` → `has_undeduped_transport`)
+                    // keeps the `admitInbound` branch live here today;
+                    // the fallback is the same registry-shift defence
+                    // as the server-side gates above.
+                    (void)this->{{ dedup_or_dispatch(has_undeduped_transport, "resp") }};
                 },
                 // on_drop: fires when zenoh signals query completion (all
                 // replies received or session closed). Per-query state is
@@ -1644,7 +1770,10 @@ struct TransportRouter {
                     SCE::Mesh::MeshEnvelope notify;
                     if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), notify)) return;
                     notify.pattern = SCE::Mesh::PatternKind::EventNotify;
-                    (void)this->dispatchToSender(notify);
+                    // SCE_MESH.md §10.5: Zenoh client subscribe gate —
+                    // same `has_undeduped_transport` flag as the reply
+                    // closure above.
+                    (void)this->{{ dedup_or_dispatch(has_undeduped_transport, "notify") }};
                 },
                 // on_drop: fires when the Subscriber handle is destroyed
                 // (removed from zenoh_subscribers_ or router shutdown).

@@ -24,6 +24,7 @@
 #include "brake_transport.h"
 #include "motor_transport.h"
 
+#include "common/Uuid.h"
 #include "mesh/transports/CustomTcpTransport.h"
 #include "mesh/MeshEnvelope.h"
 
@@ -192,7 +193,15 @@ int main() {
 
     for (int i = 0; i < kFifoCount; ++i) {
         SCE::Mesh::MeshEnvelope env;
-        env.id = {};
+        // Stamp a fresh UUID v7 per envelope — matches the
+        // generated mesh-send callback and the other test
+        // fixtures (MeshTestUtils::make_envelope). custom_tcp's
+        // inbound path bypasses the DedupRouter because
+        // `supplies_dedup = true` in transport.rs, so the id
+        // value does not affect delivery here; the consistency
+        // matters for fixture uniformity and any future tooling
+        // (e.g. wire captures) that keys on `env.id`.
+        env.id = SCE::uuid::v7();
         env.source = "fifo_test";
         // Sequence-numbered event names: each envelope is unique, so the
         // recorder's vector is a literal log of arrival order. A reorder

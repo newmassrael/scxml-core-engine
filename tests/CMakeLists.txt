@@ -1254,6 +1254,35 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_invoke_correlation_verification COMMAND mesh_invoke_correlation_test)
 
+    # ── DedupRouter unit tests (SCE_MESH.md §10.5) ────────────────
+    # Pure unit tests on the per-sender envelope-id dedup filter.
+    # Verifies the 256-entry ring (novel/repeat/eviction/wrap) plus
+    # per-sender isolation and a concurrency smoke. Wired into the
+    # generated TransportRouter via `admit(env.source, env.id)` on
+    # inbound call sites for transports whose descriptor declares
+    # `supplies_dedup: false`.
+    add_executable(mesh_dedup_router_test
+        mesh/DedupRouterTest.cpp
+    )
+
+    target_include_directories(mesh_dedup_router_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_dedup_router_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_dedup_router_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_dedup_router_test)
+
+    add_test(NAME mesh_dedup_router_verification COMMAND mesh_dedup_router_test)
+
     # ── MeshDeadlineScheduler unit tests (SCE_MESH.md §9.5 F3c) ───
     # Pure unit tests on the callback-based deadline timer that backs
     # the mesh-rpc `_mesh_deadline_ms` behaviour. Covers the register /
@@ -2177,6 +2206,41 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         set_tests_properties(mesh_zenoh_runtime PROPERTIES
             TIMEOUT 30
             RESOURCE_LOCK zenoh_multi_port_17447
+        )
+
+        # ── Session E2-2: dedup injection regression (§10.5) ──────────
+        # Hermetic (no live zenoh session, no network) integration test
+        # that injects the same envelope twice into a generated Zenoh
+        # router and asserts admitInbound drops the duplicate. Links
+        # zenohcxx because the brake transport header includes <zenoh.hxx>
+        # at the top-level, but no session is ever opened so the test is
+        # both fast and lock-free.
+        add_executable(mesh_dedup_injection_test
+            mesh/test_mesh_dedup_injection.cpp
+            "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
+            "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
+        )
+
+        target_include_directories(mesh_dedup_injection_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_dedup_injection_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_dedup_injection_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_dedup_injection_test)
+        add_test(NAME mesh_dedup_injection_verification
+                 COMMAND mesh_dedup_injection_test)
+        set_tests_properties(mesh_dedup_injection_verification PROPERTIES
+            TIMEOUT 10
         )
 
         # ── Session D: zenoh multi-pattern compile verification ──────

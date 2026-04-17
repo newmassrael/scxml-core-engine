@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "common/Uuid.h"
 #include "mesh/MeshEnvelope.h"
 #include "mesh/MeshEnvelopeCodec.h"
 #include "mesh/PatternKind.h"
@@ -111,7 +112,12 @@ inline SCE::Mesh::MeshEnvelope make_envelope(
         SCE::Mesh::PatternKind pattern,
         std::string_view data = {}) {
     SCE::Mesh::MeshEnvelope env;
-    env.id = {};
+    // Mirror the generated mesh send callback: stamp a fresh UUID v7 on
+    // every envelope so successive fixtures from the same logical source
+    // are distinguishable. SCE_MESH.md §10.5 dedup keys on
+    // (env.source, env.id); a zero-id default would alias every test
+    // envelope into a single dedup slot.
+    env.id = SCE::uuid::v7();
     env.source = "test";
     env.type = type;
     env.pattern = pattern;

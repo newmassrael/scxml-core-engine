@@ -101,7 +101,7 @@ int run_test() {
     // ── 1. RPC round-trip: brake → motor → brake ──────────────────────
     {
         SCE::Mesh::MeshEnvelope env;
-        env.id = {};
+        env.id = SCE::uuid::v7();
         env.source = "test";
         env.type = "service.request.compute_force";
         env.pattern = PK::RpcRequest;
@@ -173,7 +173,7 @@ int run_test() {
     motor_engine.received_.clear();
     {
         SCE::Mesh::MeshEnvelope env;
-        env.id = {};
+        env.id = SCE::uuid::v7();
         env.source = "test";
         env.type = "service.fire_forget.activate";
         env.pattern = PK::FireForget;
@@ -206,7 +206,7 @@ int run_test() {
     motor_engine.received_.clear();
     {
         SCE::Mesh::MeshEnvelope env;
-        env.id = {};
+        env.id = SCE::uuid::v7();
         env.source = "test";
         env.type = "field.get.vehicle_speed";
         env.pattern = PK::FieldRead;
@@ -230,7 +230,7 @@ int run_test() {
     motor_engine.received_.clear();
     {
         SCE::Mesh::MeshEnvelope env;
-        env.id = {};
+        env.id = SCE::uuid::v7();
         env.source = "test";
         env.type = "field.set.target_speed";
         env.pattern = PK::FieldWrite;

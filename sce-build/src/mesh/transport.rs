@@ -97,6 +97,24 @@ pub struct TransportDescriptor {
     ///
     /// Empty for transports with no required per-binding config (local, shm).
     pub required_binding_fields: &'static [&'static str],
+    /// Does this transport inherently suppress envelope duplicates?
+    ///
+    /// Consumed by the codegen's `dispatchToSender` branching (SCE_MESH.md
+    /// §10.5): when every transport on a receiver sets this `true`, the
+    /// generated `TransportRouter` omits the runtime `DedupRouter` member
+    /// entirely. When at least one is `false`, the receiver emits a
+    /// `DedupRouter` and every inbound call site funnels through
+    /// `admitEnvelope(env)` before reaching the engine.
+    ///
+    /// Classification rationale:
+    /// - in-process queueing (local, shm) cannot duplicate — no wire
+    /// - single-stream TCP (custom_tcp, SOME/IP over TCP default) is
+    ///   duplicate-free by design
+    /// - Zenoh's reliable mode can still reorder across routers, so
+    ///   application-level dedup runs
+    /// - multicast bus transports (dds, can) have no single source
+    ///   ordering
+    pub supplies_dedup: bool,
 }
 
 // ── Single registry ─────────────────────────────────────────
@@ -118,12 +136,17 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &[],
+        // In-process direct dispatch — no wire, no reordering.
+        supplies_dedup: true,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[FireForget, FieldAccess],
         implemented: true,
         required_binding_fields: &[],
+        // Single shared ring per channel with READY_MAGIC gating — a
+        // producer cannot publish the same slot twice.
+        supplies_dedup: true,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -135,6 +158,17 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // `event_bindings`) populated by `finalize_targets`, and
         // topology runs a typed check after that pass.
         required_binding_fields: &[],
+        // SOME/IP cannot guarantee at-most-once delivery across its layers:
+        // service discovery is UDP multicast (retransmits + bridged
+        // segments), eventgroups default to UDP, and current in-tree
+        // fixtures pick UDP for method calls too. Even per-binding
+        // `protocol: tcp` does not cover the SD layer, so the descriptor
+        // declares `false` across the board and receivers run the runtime
+        // DedupWindow on every inbound SOME/IP envelope. If an all-TCP
+        // SOME/IP profile with deduped SD ever lands, it deserves a
+        // separate registry entry (e.g. `someip_tcp`) rather than a
+        // per-binding probe here.
+        supplies_dedup: false,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },
@@ -145,6 +179,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &["key"],
+        // Zenoh router reordering is visible to applications even in reliable
+        // mode — the runtime-level DedupWindow filters re-delivered envelopes.
+        supplies_dedup: false,
     };
     // SCE Mesh §16.8.3 reference transport: TCP loopback, length-prefixed
     // CBOR envelope framing, zero external dependencies. Each binding has a
@@ -158,18 +195,28 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         capabilities: &[FireForget],
         implemented: true,
         required_binding_fields: &["connect"],
+        // One TCP socket per sender→receiver pair; the stream itself
+        // guarantees at-most-once delivery of any framed envelope.
+        supplies_dedup: true,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[FireForget, PubSub, FieldAccess],
         implemented: false,
         required_binding_fields: &[],
+        // DDS BEST_EFFORT and multicast paths admit application-visible
+        // duplicates; reliable-only deployments still need dedup for
+        // cross-participant fan-out.
+        supplies_dedup: false,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
         capabilities: &[FireForget, FieldAccess],
         implemented: false,
         required_binding_fields: &[],
+        // CAN is a broadcast bus — retransmits and bridged segments can
+        // redeliver the same frame.
+        supplies_dedup: false,
     };
 
     match transport {
@@ -299,6 +346,77 @@ mod tests {
             assert!(!d.implemented, "transport '{name}' has no template yet");
             assert!(!d.capabilities.is_empty(), "transport '{name}' should still have capabilities for pattern validation");
         }
+    }
+
+    // ── supplies_dedup (SCE_MESH.md §10.5) ──────────────────
+
+    #[test]
+    fn in_process_transports_supply_dedup() {
+        // local + shm cannot duplicate — no wire, no reordering.
+        for name in &["local", "shm"] {
+            assert!(
+                lookup(name).unwrap().supplies_dedup,
+                "in-process transport '{name}' should not need runtime dedup"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_tcp_supplies_dedup() {
+        // custom_tcp is a single client→server TCP stream per binding
+        // with length-prefixed framing — the stream itself guarantees
+        // at-most-once delivery. No SD layer, no multicast fallback.
+        assert!(lookup("custom_tcp").unwrap().supplies_dedup);
+    }
+
+    #[test]
+    fn someip_requires_runtime_dedup() {
+        // SOME/IP's service discovery is always UDP multicast, and
+        // current in-tree fixtures pick UDP for method calls too, so
+        // the descriptor is `false` across the board. Codegen must
+        // route every inbound SOME/IP envelope through the runtime
+        // DedupWindow. If an all-TCP profile with deduped SD lands,
+        // it should get its own registry entry (e.g. `someip_tcp`)
+        // rather than flipping this flag.
+        assert!(!lookup("someip").unwrap().supplies_dedup);
+    }
+
+    #[test]
+    fn zenoh_requires_runtime_dedup() {
+        // Zenoh router reordering is visible to applications even in
+        // reliable mode; receivers must run the DedupWindow.
+        assert!(!lookup("zenoh").unwrap().supplies_dedup);
+    }
+
+    #[test]
+    fn broadcast_transports_require_runtime_dedup() {
+        // dds + can broadcast semantics admit duplicates; runtime dedup
+        // is required as soon as the templates land.
+        for name in &["dds", "can"] {
+            assert!(
+                !lookup(name).unwrap().supplies_dedup,
+                "broadcast transport '{name}' must require runtime dedup"
+            );
+        }
+    }
+
+    #[test]
+    fn exactly_two_implemented_transports_require_runtime_dedup() {
+        // Regression guard: today SOME/IP and Zenoh are the two
+        // implemented transports that admit duplicates. local/shm/
+        // custom_tcp are duplicate-free by construction. If this count
+        // changes, the classification table in supplies_dedup comments
+        // MUST be updated in the same commit — this test fails loudly
+        // instead of the change landing silently.
+        let undeduped_impls: Vec<&&str> = implemented_names()
+            .iter()
+            .filter(|name| !lookup(name).unwrap().supplies_dedup)
+            .collect();
+        assert_eq!(
+            undeduped_impls.len(),
+            2,
+            "expected exactly two implemented transports to lack inherent dedup (someip + zenoh); got {undeduped_impls:?}"
+        );
     }
 
     // ── capabilities ────────────────────────────────────────

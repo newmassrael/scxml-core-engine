@@ -146,7 +146,7 @@ int run_test() {
     // carries the original request event name — not the case here.)
     {
         SCE::Mesh::MeshEnvelope env;
-        env.id = {};
+        env.id = SCE::uuid::v7();
         env.source = "test";
         env.type = "service.request.compute_force";
         env.pattern = PK::RpcRequest;
@@ -181,7 +181,7 @@ int run_test() {
     brake_engine.received_.clear();
     {
         SCE::Mesh::MeshEnvelope env;
-        env.id = {};
+        env.id = SCE::uuid::v7();
         env.source = "test";
         env.type = "field.get.vehicle_speed";
         env.pattern = PK::FieldRead;
