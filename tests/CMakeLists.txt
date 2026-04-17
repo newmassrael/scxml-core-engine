@@ -2571,6 +2571,72 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             RESOURCE_LOCK zenoh_on_drop_port_17449
         )
 
+        # ── Session Z2: server-side queryable deadline verification ───
+        # Motor declares a zenoh server binding with query_timeout_ms=500
+        # in deploy_zenoh_server_timeout.yaml. The test dispatches inbound
+        # requests via a raw zenoh peer and verifies pending_server_queries_
+        # entries are erased within timeout + slack when the engine never
+        # responds. Port 17451 is distinct from the 17447/17448/17449/17450
+        # pool; RESOURCE_LOCK isolates the listener.
+        set(MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_server_timeout_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
+                    -l cpp -o "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh server_timeout: Generating motor_zenoh_server_timeout_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
+                    -l cpp -o "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_server_timeout.yaml"
+            DEPENDS "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_server_timeout.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h"
+            COMMENT "Mesh zenoh server_timeout: Generating motor_zenoh_server_timeout_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_server_timeout_test
+            mesh/test_mesh_zenoh_server_timeout.cpp
+            "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h"
+            "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_server_timeout_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_server_timeout_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        # SCE_THREAD_SAFE: scheduler thread fires onServerQueryTimedOut
+        # concurrently with the main thread reading pending_server_size().
+        target_compile_definitions(mesh_zenoh_server_timeout_test PRIVATE SCE_THREAD_SAFE)
+        target_compile_features(mesh_zenoh_server_timeout_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_server_timeout_test)
+        add_test(NAME mesh_zenoh_server_timeout_verification
+                 COMMAND mesh_zenoh_server_timeout_test
+                 WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+        set_tests_properties(mesh_zenoh_server_timeout_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_server_timeout_port_17451
+        )
+
         # ── Session E2-2: dedup injection regression (§10.5) ──────────
         # Hermetic (no live zenoh session, no network) integration test
         # that injects the same envelope twice into a generated Zenoh

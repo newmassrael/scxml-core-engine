@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh gap Z2 verification fixture.
+
+     Motor receives `service.request.compute_force` via Zenoh queryable.
+     Whether the engine emits the paired `service.response.compute_force`
+     is decided by the test at runtime, not by the SCXML model:
+       - Timeout path: the test dispatches the request to TestSenderEngine
+         and does NOT call handleServerResponse — the entry in
+         pending_server_queries_ must be erased by the Z2 deadline.
+       - Happy path: the test calls handleServerResponse directly — the
+         scheduler's cancel must fire before erase so no spurious timer
+         callback runs.
+
+     The SCXML itself only exists so the topology analyzer detects the
+     (service.request.compute_force, service.response.compute_force) RPC
+     pair and sce-build emits the server-side queryable binding.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="motor_zenoh_server_timeout" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="computing"/>
+    </state>
+    <state id="computing">
+        <onentry>
+            <raise event="service.response.compute_force"/>
+        </onentry>
+        <transition target="ready"/>
+    </state>
+</scxml>

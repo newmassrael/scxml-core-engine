@@ -1,0 +1,30 @@
+# SCE Mesh gap Z2 E2E fixture (zenoh server-side queryable deadline).
+#
+# Motor declares a zenoh server binding with `query_timeout_ms: 500`.
+# The test dispatches inbound requests via a raw zenoh peer and verifies
+# that `pending_server_queries_` entries are erased within timeout +
+# slack when the engine never emits the paired response — closing the
+# server-side leak that Z2 targets.
+#
+# Port 17451 is distinct from 17447 (zenoh multi-pattern), 17448
+# (liveliness), 17449 (Z3 on_drop), 17450 (Z3 topology-only counterpart).
+# ctest serializes this binary on its own RESOURCE_LOCK so transient
+# peer discovery from adjacent tests cannot leak into this observer.
+version: "1.0"
+topology:
+  ecu_motor:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17451"]
+    machines:
+      motor_zenoh_server_timeout:
+        source: motor_zenoh_server_timeout.scxml
+        server:
+          transport: zenoh
+          key: "sce/motor_server_timeout/rpc"
+          # SCE Mesh §9.5 gap Z2: server-side deadline per inbound query.
+          # Chosen at 500 ms — comfortably above engine macrostep latency
+          # (~tens of ms on commodity hardware) and below the 2 s observation
+          # budget the test allows.
+          query_timeout_ms: 500
