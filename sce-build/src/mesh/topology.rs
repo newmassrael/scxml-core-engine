@@ -524,9 +524,19 @@ pub struct ServerBinding {
     pub event_patterns: Vec<EventPatternInfo>,
     /// SCE Mesh §9.5 gap Z2: per-server Zenoh queryable response
     /// deadline. Propagated verbatim from [`super::deploy::ServerConfig`].
-    /// `None` ⇒ no deadline armed (pre-Z2 behaviour); Some ⇒ codegen emits
-    /// `server_deadline_scheduler_` + register/cancel at the
-    /// `pending_server_queries_` mutation sites.
+    /// `None` ⇒ no deadline armed (pre-Z2 behaviour); `Some` ⇒ codegen
+    /// arms a `MeshDeadlineScheduler` entry at every
+    /// `pending_server_queries_` insert and cancels it at
+    /// `handleServerResponse`.
+    ///
+    /// **Zenoh-only scope**: this field only has meaning when the
+    /// resolved `state` is [`TransportState::Zenoh`]. Parse-time
+    /// validation in [`super::deploy::ServerConfig`] rejects the
+    /// knob on non-zenoh transports, so by the time codegen reads
+    /// this field the transport invariant holds. SOME/IP server-side
+    /// response lifecycles are tracked separately under
+    /// `mesh_someip_sd_gaps_roadmap.md` and will land under their
+    /// own knob rather than overloading this one.
     pub query_timeout_ms: Option<u64>,
 }
 

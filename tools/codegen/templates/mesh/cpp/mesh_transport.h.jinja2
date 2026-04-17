@@ -811,11 +811,14 @@ struct TransportRouter {
     //     `onServerQueryTimedOut(cid)` after the deploy.yaml
     //     `server.query_timeout_ms`, erasing the stranded
     //     `pending_server_queries_` entry.
-    // Both key spaces are 16-byte UUIDv7 (invoke_id vs CorrelationKey.id);
-    // a single scheduler instance suffices because collision probability
-    // across namespaces is negligible and no single machine plays both
-    // roles in today's fixtures. Destructor joins the timer thread; see
-    // MeshDeadlineScheduler header for shutdown semantics.
+    // Safety: the scheduler's key space is 16-byte UUIDv7, which is
+    // globally unique by construction. Client `invoke_id` and server
+    // `CorrelationKey.id` never alias inside the shared namespace, so
+    // a single scheduler instance covers both roles — the guarantee
+    // holds even on a hypothetical dual-role machine (mesh-rpc client
+    // + zenoh server on the same TransportRouter). Destructor joins
+    // the timer thread; see MeshDeadlineScheduler header for shutdown
+    // semantics.
     SCE::Mesh::MeshDeadlineScheduler deadline_scheduler_;
 {% endif %}
 
@@ -875,9 +878,11 @@ struct TransportRouter {
 {# ── (D2f) Server-side fields (SCE_MESH.md §13 Session E) ── #}
 {% if has_server_someip %}
     // Server SOME/IP pending request storage (server_app_ declared above
-    // for initializer-list ordering).
+    // for initializer-list ordering). `mutable` so read-only accessors
+    // (e.g. test hooks) can hold the mutex inside a const method —
+    // matches MeshDeadlineScheduler's mutable-mutex convention.
     std::thread server_thread_;
-    std::mutex server_pending_mutex_;
+    mutable std::mutex server_pending_mutex_;
     std::unordered_map<CorrelationKey, std::shared_ptr<vsomeip::message>,
                        CorrelationKeyHash> pending_server_requests_;
 {% endif %}
@@ -885,9 +890,11 @@ struct TransportRouter {
     // Server Zenoh queryable + pending query storage.
     // Inbound queries are stashed here keyed by correlation_id; when the
     // engine sends service.response.X the handleServerResponse method
-    // retrieves the stored Query and calls reply().
+    // retrieves the stored Query and calls reply(). `mutable` so read-only
+    // accessors (`pending_server_size`, `server_first_cid`) can hold
+    // the mutex inside a const method.
     std::optional<zenoh::Queryable<void>> zenoh_queryable_;
-    std::mutex server_pending_mutex_;
+    mutable std::mutex server_pending_mutex_;
     std::unordered_map<CorrelationKey, zenoh::Query,
                        CorrelationKeyHash> pending_server_queries_;
 {% if has_server_query_timeout %}
@@ -2085,8 +2092,19 @@ struct TransportRouter {
         // reply. `cancelDeadline` returns false if the timer has
         // already fired — in that case `onServerQueryTimedOut`
         // already removed the entry, `find()` missed it, and this
-        // line is unreachable. Lock-order matches the insert site
-        // (`server_pending_mutex_` first, scheduler mutex inside).
+        // line is unreachable.
+        //
+        // Deadlock analysis: `cancelDeadline` is `mark-cancelled,
+        // don't wait` — it briefly takes only the scheduler's own
+        // internal mutex, never blocks on in-flight callback
+        // completion. When the scheduler fires a callback it
+        // unlocks BEFORE invoking it (MeshDeadlineScheduler.h
+        // `run()` loop), so an in-flight `onServerQueryTimedOut`
+        // runs outside the scheduler mutex and blocks on
+        // `server_pending_mutex_` — which this thread holds — until
+        // handleServerResponse releases it, then executes
+        // `erase(cid)` on an already-gone entry (a no-op). No lock
+        // cycle, no wait dependency between the two mutexes.
         (void)deadline_scheduler_.cancelDeadline(ckey.id);
 {% endif %}
         // Move the Query out and erase before reply — the query
@@ -2334,9 +2352,23 @@ struct TransportRouter {
     /// awaiting an engine response. A verification test asserts this
     /// drops to zero within `query_timeout_ms + slack` after the
     /// engine fails to emit the paired response.
-    [[nodiscard]] std::size_t pending_server_size() {
+    [[nodiscard]] std::size_t pending_server_size() const {
         std::lock_guard<std::mutex> lock(server_pending_mutex_);
         return pending_server_queries_.size();
+    }
+
+    /// Test-only accessor: the `CorrelationKey.id` (16-byte UUIDv7)
+    /// of the first inbound server query still awaiting a response,
+    /// or `std::nullopt` if none. A verification test uses this to
+    /// hand-craft the matching response envelope without reaching
+    /// into `pending_server_queries_` or `server_pending_mutex_`
+    /// directly — preserves encapsulation of the pending map's
+    /// internal layout, mirroring the `pending_server_size` shape.
+    [[nodiscard]] std::optional<std::array<std::uint8_t, 16>>
+    server_first_cid() const {
+        std::lock_guard<std::mutex> lock(server_pending_mutex_);
+        if (pending_server_queries_.empty()) return std::nullopt;
+        return pending_server_queries_.begin()->first.id;
     }
 {% endif %}
 

@@ -153,18 +153,15 @@ int scenario_happy_path_cancels_deadline() {
                       }),
                       "motor engine never received request");
 
-    // Pull the correlation_id the queryable stamped onto the Query and
-    // hand-craft the reply envelope — same path the real mesh send
-    // callback uses, but driven by the test instead of a live SCXML
-    // <raise>. Matches the Session F test_mesh_zenoh_server_runtime
-    // precedent for correlating replies without a real engine run.
-    std::array<uint8_t, 16> cid{};
-    {
-        std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
-        MESH_TEST_REQUIRE(!motor_router.pending_server_queries_.empty(),
-                          "pending Query not stashed by queryable callback");
-        cid = motor_router.pending_server_queries_.begin()->first.id;
-    }
+    // Pull the correlation_id through the public `server_first_cid`
+    // accessor — the generated transport keeps `pending_server_queries_`
+    // and `server_pending_mutex_` as implementation details; the
+    // accessor is the documented test hook and mirrors the shape of
+    // `pending_server_size`.
+    auto cid_opt = motor_router.server_first_cid();
+    MESH_TEST_REQUIRE(cid_opt.has_value(),
+                      "pending Query not stashed by queryable callback");
+    const auto cid = *cid_opt;
 
     auto resp = make_envelope("service.response.compute_force", PK::RpcReply,
                               R"({"result":42})");
@@ -183,8 +180,24 @@ int scenario_happy_path_cancels_deadline() {
                       }),
                       "client did not receive reply via Query::reply");
 
+    // Post-timeout re-check: if `cancelDeadline` did not actually erase
+    // the scheduler's `active_` entry for this cid, the timer would
+    // fire around `kQueryTimeoutMs` anyway. `onServerQueryTimedOut`
+    // would then run `erase(cid)` on an already-gone entry — a no-op
+    // that leaves `pending_server_size()` at 0 — so size alone cannot
+    // expose a missing cancel. What a missing cancel WOULD produce is
+    // a bogus race window where the callback runs on a valid cid if a
+    // new query re-used it; since the test dispatches no further
+    // queries, the observable contract here is simply "size stays 0
+    // past the nominal deadline, no surprise re-population, no crash".
+    std::this_thread::sleep_for(kQueryTimeoutMs + kTimeoutSlack);
+    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 0,
+                      "pending_server_size regressed past nominal deadline — "
+                      "cancelDeadline failed to release the scheduler entry");
+
     motor_router.shutdown();
-    std::printf("[§2 happy path] PASS: reply delivered, deadline cancelled\n");
+    std::printf("[§2 happy path] PASS: reply delivered, deadline cancelled "
+                "(re-checked past nominal deadline)\n");
     return 0;
 }
 
