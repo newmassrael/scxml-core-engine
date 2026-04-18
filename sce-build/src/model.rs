@@ -24,6 +24,11 @@
 //!   `#[serde(skip_serializing_if = "Option::is_none")]`. These guards depend
 //!   on `undefined` semantics; serializing a literal `null` would evaluate
 //!   truthy, bypass `default()`, or feed through to downstream rendering.
+//!
+//! The convention is enforced by `sce-build/tests/option_serde_convention.rs`,
+//! which walks every jinja2 template for `.x is [not] none` probes and fails
+//! when a Rust `Option<x>` field in a non-wire-format file carries
+//! `skip_serializing_if = "Option::is_none"`.
 
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
