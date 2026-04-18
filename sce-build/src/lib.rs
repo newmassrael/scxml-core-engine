@@ -19,6 +19,7 @@
 pub mod model;
 pub mod parser;
 pub mod analyzer;
+pub mod script_engine_analyzer;
 pub mod filters;
 pub mod generator;
 pub mod kotlin;

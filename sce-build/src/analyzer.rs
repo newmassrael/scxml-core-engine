@@ -43,6 +43,13 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
 }
 
 /// W3C SCXML 5.3: Classify datamodel variables by type.
+///
+/// `needs_script_engine` is not set here — it is derived for the whole
+/// model by [`crate::script_engine_analyzer`] at the end of parse.
+/// Every variable with a non-empty initializer contributes a
+/// [`crate::script_engine_analyzer::NeedsScriptEngineCause::DatamodelVariableInit`]
+/// cause, which is a superset of the non-literal case this function used
+/// to flag individually.
 fn classify_variables(model: &mut SCXMLModel) {
     for var in &mut model.variables {
         let expr = &var.expr;
@@ -65,7 +72,6 @@ fn classify_variables(model: &mut SCXMLModel) {
             var.var_type = "bool".to_string();
         } else {
             var.var_type = "runtime".to_string();
-            model.needs_script_engine = true;
         }
     }
 }
@@ -141,29 +147,15 @@ fn analyze_model_features(model: &mut SCXMLModel) {
         }
     }
 
-    // Donedata with params or contentexpr requires script engine
-    let donedata_needs_script = model.states.values().any(|state| {
-        state.is_final
-            && state.donedata.as_ref().map_or(false, |dd| {
-                !dd.params.is_empty() || !dd.contentexpr.is_empty()
-            })
-    });
-    if donedata_needs_script {
-        model.needs_script_engine = true;
-        apply_script_engine_implications(model);
-    }
-
-    // Child invoke script engine propagation
-    if !model.needs_script_engine {
-        let needs = model.states.values().any(|s| {
-            s.iter_scxml_invokes()
-                .any(|si| si.child_needs_script_engine)
-        });
-        if needs {
-            model.needs_script_engine = true;
-            apply_script_engine_implications(model);
-        }
-    }
+    // Donedata-param/content and child-invoke `needs_script_engine`
+    // propagation used to flip the flag a second time here; both cases
+    // are now folded into [`crate::script_engine_analyzer`]
+    // ([`crate::script_engine_analyzer::NeedsScriptEngineCause::DonedataParam`] /
+    // [`crate::script_engine_analyzer::NeedsScriptEngineCause::DonedataContent`] /
+    // [`crate::script_engine_analyzer::NeedsScriptEngineCause::ChildInvokeNeedsScriptEngine`])
+    // and applied during parse. `apply_script_engine_implications` above
+    // has already fired once if the flag is set, so the downstream event
+    // metadata is consistent with the pre-refactor behaviour.
 }
 
 fn apply_script_engine_implications(model: &mut SCXMLModel) {

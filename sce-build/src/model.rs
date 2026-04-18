@@ -567,6 +567,17 @@ pub struct SCXMLModel {
     // Variables
     pub variables: Vec<Variable>,
     pub global_scripts: Vec<Action>,
+    /// True iff a `<script src="...">` element appeared in the source
+    /// document but could not be loaded because the parser had no
+    /// filesystem access (WASM-style `parse_string`). The script is not
+    /// pushed to [`Self::global_scripts`] — its contents are unknown —
+    /// so this is the only trace that the document carries executable
+    /// script. [`crate::script_engine_analyzer`] reads it as the
+    /// [`crate::script_engine_analyzer::NeedsScriptEngineCause::UnresolvedExternalScript`]
+    /// cause. Not serialised: template consumers read `global_scripts`
+    /// (which is empty in this case) and `needs_script_engine`.
+    #[serde(skip)]
+    pub has_unresolved_external_script: bool,
 
     // Every `<invoke>` declared in the document, in insertion order. The
     // typed sum makes "exactly one kind per invoke" a structural invariant —

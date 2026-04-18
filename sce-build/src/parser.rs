@@ -198,6 +198,16 @@ impl SCXMLParser {
         // Parse initial_children
         self.parse_initial_children(&mut model);
 
+        // SCE script-engine requirement — single source of truth. See
+        // [`crate::script_engine_analyzer`]. Must run before the
+        // `needs_nonstatic_method` derivation below (which reads the
+        // flag) and after every parse step that populates the model
+        // elements the analyzer walks (variables, states, invokes,
+        // donedata). Parser sub-routines no longer set this flag; each
+        // former write site is now a [`NeedsScriptEngineCause`] variant.
+        model.needs_script_engine =
+            crate::script_engine_analyzer::requires_script_engine(&model);
+
         // Compute needs_nonstatic_method
         model.needs_nonstatic_method = model.needs_script_engine
             || model.has_scxml_invoke()
@@ -290,7 +300,9 @@ impl SCXMLParser {
                     content,
                     var_type: String::new(),
                 });
-                model.needs_script_engine = true;
+                // `needs_script_engine` is derived post-parse by
+                // [`crate::script_engine_analyzer`] —
+                // [`NeedsScriptEngineCause::DatamodelVariableInit`].
             }
         }
         Ok(())
@@ -529,8 +541,11 @@ impl SCXMLParser {
                         }
                     }
                 } else {
-                    // No filesystem access (WASM) — skip external scripts
-                    model.needs_script_engine = true;
+                    // No filesystem access (WASM) — skip external scripts.
+                    // Record the document fact so the analyzer can surface
+                    // [`NeedsScriptEngineCause::UnresolvedExternalScript`]
+                    // even though `global_scripts` stays empty.
+                    model.has_unresolved_external_script = true;
                     continue;
                 }
             }
@@ -540,7 +555,8 @@ impl SCXMLParser {
                 content: content.trim().to_string(),
                 ..Default::default()
             });
-            model.needs_script_engine = true;
+            // [`NeedsScriptEngineCause::GlobalScript`] —
+            // derived post-parse from `model.global_scripts`.
         }
     }
 
@@ -697,7 +713,7 @@ impl SCXMLParser {
 
             // Parse donedata
             if let Some(dd_elem) = scxml_child(&child, "donedata") {
-                state.donedata = Some(self.parse_donedata(&dd_elem, model));
+                state.donedata = Some(self.parse_donedata(&dd_elem));
             }
 
             model.states.insert(final_id, state);
@@ -846,12 +862,12 @@ impl SCXMLParser {
 
         transition.actions = self.parse_executable_content(elem, model)?;
 
-        // Detect guard conditions requiring script engine and In() predicate
+        // Detect guard conditions requiring In() predicate. The
+        // script-engine side of this check is re-evaluated post-parse by
+        // [`crate::script_engine_analyzer`] —
+        // [`NeedsScriptEngineCause::TransitionGuard`].
         if !transition.cond.is_empty() && !transition.is_cpp_condition && !transition.is_kt_condition {
-            let (needs_se, has_in) = check_expression_needs(&transition.cond);
-            if needs_se {
-                model.needs_script_engine = true;
-            }
+            let (_needs_se, has_in) = check_expression_needs(&transition.cond);
             if has_in {
                 model.uses_in_predicate = true;
             }
@@ -907,9 +923,9 @@ impl SCXMLParser {
             model.has_child_communication = true;
         }
 
-        if !action.namelist.is_empty() {
-            model.needs_script_engine = true;
-        }
+        // [`NeedsScriptEngineCause::SendNamelist`] / `SendParamExpr` —
+        // derived post-parse by [`crate::script_engine_analyzer`] from
+        // the `namelist` attribute and each param's `expr`/`is_static_literal`.
 
         // Parse <param> children
         for param_elem in scxml_children(elem, "param") {
@@ -920,9 +936,6 @@ impl SCXMLParser {
             } else {
                 String::new()
             };
-            if !param_expr.is_empty() && !is_static_literal {
-                model.needs_script_engine = true;
-            }
             action.params.push(Param {
                 name: param_elem.attribute("name").unwrap_or("").to_string(),
                 expr: param_expr,
@@ -953,7 +966,8 @@ impl SCXMLParser {
             || !action.typeexpr.is_empty()
         {
             model.has_dynamic_expressions = true;
-            model.needs_script_engine = true;
+            // [`NeedsScriptEngineCause::SendDynamicAttr`] —
+            // derived post-parse by [`crate::script_engine_analyzer`].
         }
 
         if !action.targetexpr.is_empty() {
@@ -1023,10 +1037,10 @@ impl SCXMLParser {
         let mut cond_cpp = String::new();
         let mut cond_kt = String::new();
         if !cond.is_empty() {
-            let (needs_se, has_in) = check_expression_needs(&cond);
-            if needs_se {
-                model.needs_script_engine = true;
-            }
+            // [`NeedsScriptEngineCause::IfCondition`] is derived post-parse
+            // by [`crate::script_engine_analyzer`]; we only surface the
+            // In()-predicate side of the check here.
+            let (_needs_se, has_in) = check_expression_needs(&cond);
             if has_in {
                 model.uses_in_predicate = true;
             }
@@ -1052,8 +1066,12 @@ impl SCXMLParser {
                 "elseif" => {
                     let ei_cond = child.attribute("cond").unwrap_or("").to_string();
                     if !ei_cond.is_empty() {
-                        let (needs_se, has_in) = check_expression_needs(&ei_cond);
-                        if needs_se { model.needs_script_engine = true; }
+                        // [`NeedsScriptEngineCause::ElseIfCondition`] —
+                        // derived post-parse by
+                        // [`crate::script_engine_analyzer`]. In()-predicate
+                        // is still surfaced here for
+                        // `uses_in_predicate` gating.
+                        let (_needs_se, has_in) = check_expression_needs(&ei_cond);
                         if has_in { model.uses_in_predicate = true; }
                     }
                     let ei_pure_in = !ei_cond.is_empty() && is_pure_in_predicate(&ei_cond);
@@ -1128,14 +1146,14 @@ impl SCXMLParser {
                     }
                     action.content = xml;
                 }
-                model.needs_script_engine = true;
+                // [`NeedsScriptEngineCause::AssignAction`] — every
+                // `<assign>` routes through the engine-bound helper.
             }
             "log" => {
                 action.label = child.attribute("label").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
-                if !action.expr.is_empty() {
-                    model.needs_script_engine = true;
-                }
+                // [`NeedsScriptEngineCause::LogExpr`] is derived post-parse
+                // by [`crate::script_engine_analyzer`] when `expr` is non-empty.
             }
             "script" => {
                 // Check for <cpp> or <kt> native code child elements (same as parse_executable_content)
@@ -1168,18 +1186,19 @@ impl SCXMLParser {
                 }
                 if !found_native {
                     action.content = child.text().unwrap_or("").to_string();
-                    model.needs_script_engine = true;
+                    // [`NeedsScriptEngineCause::InlineScriptAction`] —
+                    // inline `<script>` body requires runtime evaluation.
                 }
             }
             "cancel" => {
                 action.sendid = child.attribute("sendid").unwrap_or("").to_string();
                 action.sendidexpr = child.attribute("sendidexpr").unwrap_or("").to_string();
-                if !action.sendidexpr.is_empty() {
-                    model.needs_script_engine = true;
-                }
+                // [`NeedsScriptEngineCause::CancelExpr`] — derived post-parse
+                // by [`crate::script_engine_analyzer`] from `sendidexpr`.
             }
             "foreach" => {
-                model.needs_script_engine = true;
+                // [`NeedsScriptEngineCause::ForeachAction`] — every
+                // `<foreach>` iterates a runtime expression.
                 action.array = child.attribute("array").unwrap_or("").to_string();
                 action.item = child.attribute("item").unwrap_or("").to_string();
                 action.index = child.attribute("index").unwrap_or("").to_string();
@@ -1245,7 +1264,6 @@ impl SCXMLParser {
         if invoke_type == "sce:mesh-rpc" {
             let info = self.parse_mesh_rpc_invoke(
                 elem,
-                model,
                 state_id,
                 source_name,
                 invoke_id,
@@ -1322,7 +1340,8 @@ impl SCXMLParser {
         let is_hybrid_invoke = scxml_type && (!srcexpr.is_empty() || !contentexpr.is_empty());
 
         if is_hybrid_invoke {
-            model.needs_script_engine = true;
+            // [`NeedsScriptEngineCause::HybridInvoke`] — the hybrid
+            // lifecycle resolves `srcexpr`/`contentexpr` at runtime.
             let idx = self.hybrid_invoke_counter;
             self.hybrid_invoke_counter += 1;
             return Ok(Some(Invoke::Hybrid(HybridInvokeInfo {
@@ -1344,10 +1363,9 @@ impl SCXMLParser {
         }
 
         if is_static_invoke {
-            // W3C SCXML 6.4.1: Namelist validation requires script engine
-            if !namelist.is_empty() {
-                model.needs_script_engine = true;
-            }
+            // W3C SCXML 6.4.1: `namelist` requires datamodel evaluation.
+            // [`NeedsScriptEngineCause::StaticInvokeNamelist`] —
+            // derived post-parse by [`crate::script_engine_analyzer`].
 
             // W3C SCXML 6.4: Inline `<content><scxml>` and external `src="..."`
             // resolve to a concrete child SCXML path eagerly, at parse time.
@@ -1453,7 +1471,6 @@ impl SCXMLParser {
     fn parse_mesh_rpc_invoke(
         &mut self,
         elem: &roxmltree::Node,
-        model: &mut SCXMLModel,
         state_id: &str,
         source_name: &str,
         invoke_id: String,
@@ -1489,14 +1506,11 @@ impl SCXMLParser {
         let target = if src_present {
             crate::model::MeshRpcTarget::Src { src }
         } else {
-            // SCE Mesh §9.5 runtime target resolution: the srcexpr
-            // entry block emitted by the code generator unconditionally
-            // calls `ensureScriptEngine()` + `evaluateExpression()`,
-            // so the flag is set at the moment the variant is chosen.
-            // Keeping this next to the SrcExpr constructor collocates
-            // "what makes the variant" with "what the variant requires"
-            // — callers no longer need to pattern-match after the fact.
-            model.needs_script_engine = true;
+            // SCE Mesh §9.5 runtime target resolution — the `srcexpr`
+            // entry block emitted by codegen calls `evaluateExpression`.
+            // [`NeedsScriptEngineCause::MeshRpcSrcExpr`] is derived
+            // post-parse by [`crate::script_engine_analyzer`] when the
+            // invoke's [`MeshRpcTarget::SrcExpr`] variant is chosen here.
             crate::model::MeshRpcTarget::SrcExpr { srcexpr }
         };
 
@@ -1605,32 +1619,27 @@ impl SCXMLParser {
         })
     }
 
-    fn parse_donedata(
-        &mut self,
-        elem: &roxmltree::Node,
-        model: &mut SCXMLModel,
-    ) -> DoneData {
+    fn parse_donedata(&mut self, elem: &roxmltree::Node) -> DoneData {
         let mut dd = DoneData::default();
 
-        // W3C SCXML 5.7: Parse <param> elements
+        // W3C SCXML 5.7: Parse <param> elements.
+        // [`NeedsScriptEngineCause::DonedataParam`] is derived post-parse
+        // by [`crate::script_engine_analyzer`] from `DoneData.params`.
         for child in scxml_children(elem, "param") {
             dd.params.push(DoneDataParam {
                 name: child.attribute("name").unwrap_or("").to_string(),
                 expr: child.attribute("expr").map(|s| s.to_string()),
                 location: child.attribute("location").map(|s| s.to_string()),
             });
-            // Donedata params require script engine
-            model.needs_script_engine = true;
         }
 
-        // W3C SCXML 5.5: Parse <content> element
+        // W3C SCXML 5.5: Parse <content> element.
+        // [`NeedsScriptEngineCause::DonedataContent`] is derived post-parse
+        // by [`crate::script_engine_analyzer`] from `content`/`contentexpr`.
         if let Some(content_elem) = scxml_child(elem, "content") {
             dd.contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
             if let Some(text) = content_elem.text() {
                 dd.content = text.trim().to_string();
-            }
-            if !dd.contentexpr.is_empty() || !dd.content.is_empty() {
-                model.needs_script_engine = true;
             }
         }
 
@@ -1647,8 +1656,10 @@ impl SCXMLParser {
             if state.parent.is_some() {
                 model.has_hierarchy = true;
             }
-            // Note: needs_script_engine and uses_in_predicate are already set
-            // during parse_transition via check_expression_needs. No redundant re-check.
+            // Note: `uses_in_predicate` is already set during
+            // `parse_transition` via `check_expression_needs`; no redundant
+            // re-check here. `needs_script_engine` is derived post-parse
+            // by [`crate::script_engine_analyzer`].
             // W3C SCXML: detect _event.* usage in guard conditions (transitions + if/elseif)
             for trans in &state.transitions {
                 if trans.cond.contains("_event.") {
@@ -2398,7 +2409,12 @@ fn convert_in_to_kotlin(cond: &str) -> String {
 
 /// Check if expression requires script engine evaluation (ports Python _requires_script_engine).
 /// Also returns whether the expression uses In() predicate.
-fn check_expression_needs(cond: &str) -> (bool, bool) {
+///
+/// Exposed to [`crate::script_engine_analyzer`] so the analyzer can replay
+/// the same classification on a fully-parsed model without reimplementing
+/// the heuristic — keeps the "which cond strings are native" boundary in
+/// one place.
+pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
     if cond.is_empty() {
         return (false, false);
     }
