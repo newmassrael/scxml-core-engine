@@ -377,7 +377,11 @@ pub struct MeshRpcInvokeInfo {
     /// Value of the optional `<param name="_mesh_deadline_ms">`, if present.
     /// `<param>` deadline overrides any deploy.yaml binding-level deadline
     /// (§9.5 precedence rule).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    ///
+    /// Serializes to JSON `null` when absent (no `skip_serializing_if`),
+    /// aligning with [`crate::model::DoneDataParam`] so minijinja
+    /// templates can use the canonical `is not none` test without
+    /// tripping over `undefined` vs `null` ambiguity.
     pub deadline_ms: Option<u64>,
 }
 

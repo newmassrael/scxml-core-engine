@@ -184,7 +184,13 @@ pub struct MeshRpcInvokeSite {
     /// Value of the optional `<param name="_mesh_deadline_ms">`.
     /// `None` means no per-invoke deadline; the deploy.yaml binding
     /// deadline (if any) applies, otherwise no timeout.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    ///
+    /// No `skip_serializing_if`: the field always serializes to JSON
+    /// `null` when absent so minijinja templates can distinguish
+    /// "attribute omitted" (`null` → fails `is not none`) from
+    /// "attribute missing" (undefined → succeeds `is not none` in
+    /// minijinja's lax semantics). `DoneDataParam.expr` / `.location`
+    /// follow the same convention (see `crate::model::DoneDataParam`).
     pub deadline_ms: Option<u64>,
     /// Author payload — the `<param>` entries that remained after the
     /// reserved `_mesh_*` names were stripped by
