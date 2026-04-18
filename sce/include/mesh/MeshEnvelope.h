@@ -39,6 +39,16 @@ struct MeshEnvelope {
     std::optional<std::array<uint8_t, 16>> correlation_id;      // RPC req↔resp matching (UUID v7)
     std::optional<std::string>             reply_to;            // CE-extension — response routing endpoint
     std::optional<std::array<uint8_t, 16>> invoke_id;           // RESERVED for <invoke type="sce:mesh-rpc"> lifecycle
+    /// SCE-extension — per-session routing identifier (UUID v7, generated
+    /// once per TransportRouter construction). `source` carries the stable
+    /// document identity (machine_name); `routing_id` discriminates sessions
+    /// of the same document at echo-filter and self-observation sites.
+    /// Absent on inbound envelopes from peers that have not yet been
+    /// migrated to stamp this field — self-filter callers MUST require both
+    /// `has_value()` AND equality against the local `routing_id_`, so an
+    /// unstamped envelope never collides with the local session. Document
+    /// identity invariant lives in SCE_MESH.md §10.9.
+    std::optional<std::array<uint8_t, 16>> routing_id;
     std::optional<RpcStatus>               rpc_status;          // RpcReply only (absent ⇒ Ok)
     std::optional<std::string>             rpc_error_message;   // RpcReply non-Ok detail
     std::optional<uint64_t>                deadline_unix_ms;    // RPC absolute deadline
@@ -72,7 +82,8 @@ struct MeshEnvelope {
             && rpc_error_message == other.rpc_error_message
             && deadline_unix_ms  == other.deadline_unix_ms
             && qos               == other.qos
-            && sequence_no       == other.sequence_no;
+            && sequence_no       == other.sequence_no
+            && routing_id        == other.routing_id;
     }
 };
 

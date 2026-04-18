@@ -807,6 +807,23 @@ struct TransportRouter {
     SenderEngine& sender_;
 {% endif %}
 
+    // SCE_MESH.md §10.9: per-session routing identity. Generated once at
+    // construction (UUID v7) and stamped on every outbound envelope's
+    // `routing_id` field. Self-filter sites (Zenoh server put-subscriber
+    // echo, prospective multi-instance echo paths) compare `env.routing_id`
+    // against this member to distinguish "message from a different session
+    // of the same machine" (pass through) from "our own wire echo" (drop).
+    // Declared const so the ctor initializer is the SSoT and the value
+    // cannot be rebound across a router's lifetime.
+    //
+    // Unconditional — narrower than `sender_` because the mesh-send-callback
+    // body (which stamps this field) is itself unconditional: even an
+    // shm-only router emits `setMeshSendCallback` and stamps `routing_id`
+    // on each outbound envelope, so the member must exist regardless of
+    // `emit_sender` (which is scoped to dispatchToSender's receive path,
+    // not the outbound stamp path).
+    const SCE::uuid::Bytes routing_id_;
+
 {# ── (D2c) Correlation types + SOME/IP RPC correlation table ── #}
 {# CorrelationKey/Hash: needed by client SOME/IP correlation AND/OR
    server pending-request storage. Emitted once under a shared guard. #}
@@ -1029,6 +1046,12 @@ struct TransportRouter {
 {%- if emit_sender %}
 {%-   set ns.parts = ns.parts + ["sender_(sender)"] %}
 {%- endif %}
+{#- routing_id_ initializer is unconditional — the stamp path runs even
+    for shm-only routers (see member declaration rationale). Appended
+    last so its declaration order (after sender_) is honoured by
+    -Wreorder; both orderings are legal but consistent with the member
+    layout keeps the generated code warning-clean across every fixture. #}
+{%- set ns.parts = ns.parts + ["routing_id_(SCE::uuid::v7())"] %}
 {%- if ns.parts %}
         : {{ ns.parts | join(", ") }}
 {%- endif %}
@@ -1045,6 +1068,7 @@ struct TransportRouter {
                 SCE::Mesh::MeshEnvelope env;
                 env.id = SCE::uuid::v7();
                 env.source = "{{ machine_name }}";
+                env.routing_id = routing_id_;
                 env.type = eventName;
                 env.pattern = resolvePattern(eventName);
                 env.datacontenttype = data.empty()
@@ -1574,12 +1598,17 @@ struct TransportRouter {
                 // notification back to its engine.
                 //
                 // Limitation: in multi-instance deployments where two
-                // instances share the same machine_name AND the same Zenoh
-                // key, instance A's inbound FireForget/FieldWrite from
-                // instance B would be dropped. Current scope (single-
-                // instance per machine name) is safe. Multi-instance
-                // would need a session-unique origin ID instead.
-                if (env.source == "{{ machine_name }}") return;
+                // Self-echo gate keys on `routing_id` (SCE_MESH.md §10.8):
+                // two sessions of the same machine_name generate distinct
+                // routing_ids at ctor time, so a session receiving its
+                // peer-session's put recognises it as non-self and passes
+                // through. Envelopes from peers that have not yet been
+                // migrated to stamp `routing_id` (Gap 3b-3e) carry an
+                // absent optional, which compares unequal to the local
+                // `routing_id_` bytes and therefore passes the gate — the
+                // cross-backend echo path is unblocked during per-backend
+                // rollout.
+                if (env.routing_id.has_value() && *env.routing_id == routing_id_) return;
                 // SCE_MESH.md §10.5: Zenoh server put-subscriber gate —
                 // same `server_needs_dedup` flag as the queryable above.
                 (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
@@ -1602,6 +1631,7 @@ struct TransportRouter {
             SCE::Mesh::MeshEnvelope sub_env;
             sub_env.id = SCE::uuid::v7();
             sub_env.source = "{{ machine_name }}";
+            sub_env.routing_id = routing_id_;
             sub_env.type = "{{ sub.event }}";
             sub_env.pattern = SCE::Mesh::PatternKind::EventSubscribe;
             sub_env.datacontenttype = SCE::Mesh::PayloadCodec::None;
@@ -1651,6 +1681,7 @@ struct TransportRouter {
             SCE::Mesh::MeshEnvelope unsub_env;
             unsub_env.id = SCE::uuid::v7();
             unsub_env.source = "{{ machine_name }}";
+            unsub_env.routing_id = routing_id_;
             unsub_env.type = "{{ sub.event }}";
             unsub_env.pattern = SCE::Mesh::PatternKind::EventUnsubscribe;
             unsub_env.datacontenttype = SCE::Mesh::PayloadCodec::None;
@@ -1952,6 +1983,7 @@ struct TransportRouter {
         SCE::Mesh::MeshEnvelope evt;
         evt.id = SCE::uuid::v7();
         evt.source = "{{ machine_name }}";
+        evt.routing_id = routing_id_;
         evt.type = "error.communication";
         evt.pattern = SCE::Mesh::PatternKind::FireForget;
         evt.datacontenttype = SCE::Mesh::PayloadCodec::Json;
@@ -2243,6 +2275,7 @@ struct TransportRouter {
         env.id = uuid;
         env.invoke_id = uuid;
         env.source = "{{ machine_name }}";
+        env.routing_id = routing_id_;
         env.pattern = SCE::Mesh::PatternKind::RpcRequest;
         env.datacontenttype = data.empty()
             ? SCE::Mesh::PayloadCodec::None

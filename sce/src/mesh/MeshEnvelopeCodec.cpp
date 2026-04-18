@@ -79,6 +79,8 @@ CborError encodeBody(CborEncoder *m, const MeshEnvelope &env) {
 
     if (e == CborNoError && env.sequence_no)
         e = encodeUintKey(m, kEnvelopeKeySequenceNo, *env.sequence_no);
+    if (e == CborNoError && env.routing_id)
+        e = encodeBytes16Key(m, kEnvelopeKeyRoutingId, *env.routing_id);
 
     return e;
 }
@@ -94,6 +96,7 @@ size_t countEntries(const MeshEnvelope &env) {
     if (env.rpc_error_message) ++n;
     if (env.deadline_unix_ms)  ++n;
     if (env.sequence_no)       ++n;
+    if (env.routing_id)        ++n;
     return n;
 }
 
@@ -318,6 +321,12 @@ bool decodeEnvelope(const uint8_t *raw, std::size_t len, MeshEnvelope &out) {
             uint64_t v = 0;
             if (!readU64(&it, v)) return false;
             out.sequence_no = v;
+            break;
+        }
+        case kEnvelopeKeyRoutingId: {
+            std::array<uint8_t, 16> v{};
+            if (!readBytes16(&it, v)) return false;
+            out.routing_id = v;
             break;
         }
         default:

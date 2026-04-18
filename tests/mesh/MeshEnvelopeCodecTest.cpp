@@ -28,6 +28,11 @@ constexpr std::array<uint8_t, 16> kSampleCorrelation = {
     0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 };
 
+constexpr std::array<uint8_t, 16> kSampleRoutingId = {
+    0x01, 0x92, 0x3c, 0x4a, 0x5b, 0x6c, 0x70, 0x33,
+    0x80, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+};
+
 MeshEnvelope minimalEnvelope() {
     MeshEnvelope env{};
     env.id = kSampleId;
@@ -50,6 +55,7 @@ MeshEnvelope fullEnvelope() {
     env.rpc_error_message = "remote took too long";
     env.deadline_unix_ms = 1'713'000'000'000ULL;
     env.sequence_no = 42ULL;
+    env.routing_id = kSampleRoutingId;
     return env;
 }
 
@@ -108,6 +114,7 @@ TEST(MeshEnvelopeCodecTest, OptionalsAbsentStayAbsent) {
     EXPECT_FALSE(decoded.rpc_error_message);
     EXPECT_FALSE(decoded.deadline_unix_ms);
     EXPECT_FALSE(decoded.sequence_no);
+    EXPECT_FALSE(decoded.routing_id);
 }
 
 TEST(MeshEnvelopeCodecTest, EmptyTextStringRoundTrip) {
@@ -304,8 +311,8 @@ TEST(MeshEnvelopeCodecTest, MinimalEnvelopeUsesDefiniteMap) {
 TEST(MeshEnvelopeCodecTest, FullEnvelopeMapHeaderEntries) {
     auto bytes = SCE::Mesh::encodeEnvelope(fullEnvelope());
     ASSERT_FALSE(bytes.empty());
-    // 6 required + 8 optionals = 14 entries (single-byte map header form).
-    EXPECT_EQ(bytes[0], 0xAE);
+    // 6 required + 9 optionals = 15 entries (single-byte map header form).
+    EXPECT_EQ(bytes[0], 0xAF);
 }
 
 TEST(MeshEnvelopeCodecTest, SequenceNoRoundTrip) {
@@ -322,6 +329,24 @@ TEST(MeshEnvelopeCodecTest, SequenceNoRoundTrip) {
     ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
     ASSERT_TRUE(decoded.sequence_no.has_value());
     EXPECT_EQ(*decoded.sequence_no, 123456789ULL);
+    EXPECT_EQ(env, decoded);
+}
+
+TEST(MeshEnvelopeCodecTest, RoutingIdRoundTrip) {
+    // §10.9 — routing_id is an optional 16-byte UUID v7 on CBOR key 15.
+    // Stamped on outbound envelopes by each TransportRouter to discriminate
+    // session identity from the stable document-level `source` (machine_name);
+    // self-filter and future per-session keying consume this axis.
+    auto env = minimalEnvelope();
+    env.routing_id = kSampleRoutingId;
+
+    auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty());
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    ASSERT_TRUE(decoded.routing_id.has_value());
+    EXPECT_EQ(*decoded.routing_id, kSampleRoutingId);
     EXPECT_EQ(env, decoded);
 }
 

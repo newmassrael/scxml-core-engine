@@ -1860,6 +1860,23 @@ t=51ms <cancel sendid="fast"/>
 
 **Tracking**: the sender's scheduler maintains `{sendid → (emit_at, envelope)}` for unfired delays. Cancel is a local hash-table removal. Emitted sends are tracked in a short-lived `{sendid → envelope.id}` so cancel after emit can generate the best-effort control envelope.
 
+### 10.9 Origin Identity — `source` vs `routing_id`
+
+Mesh distinguishes **document identity** from **session identity** on every envelope:
+
+- **`source`** (CBOR key 1, required, string) — the sending machine's stable document name, i.e. the deploy.yaml `machines.<name>` key and the SCXML `name=` attribute. This is the identity that survives across restarts of the same machine and is the axis SCXML authors reason about (`_event.data.source`, `error.communication.target`, liveliness `sce/live/<machine_name>` keyexpr).
+- **`routing_id`** (CBOR key 15, optional, 16-byte UUID v7) — a per-session identifier generated once at `TransportRouter` construction and stamped on every outbound envelope. This is the identity that discriminates two running sessions of the same document — today a no-op (single-session-per-machine is invariant; see `ServerPoolNotSupported` parse-time reject), but required infrastructure for multi-instance server pools (§14.4 pool evolution).
+
+**Invariants**:
+
+1. **Outbound stamp** — every envelope leaving a `TransportRouter` MUST carry `routing_id = self.routing_id_`. Generated code stamps this at every construction site (mesh-send-callback, machine-lifetime subscribe/unsubscribe, `error.communication` raises, mesh-rpc requests) so no outbound path bypasses the stamp.
+2. **Self-filter axis** — echo-suppression sites (e.g. the Zenoh server put-subscriber that observes its own publish on a shared key, liveliness observers that see their own token) compare `env.routing_id` against the local session's `routing_id_` — not `env.source` against `machine_name`. Same-document / different-session envelopes (the scenario multi-instance introduces) pass through the filter; same-session wire echoes are dropped. An absent `routing_id` (decoded from a peer backend that has not yet been migrated) compares unequal to the local value and therefore passes the filter — cross-backend rollout does not disturb echo semantics during the transition.
+3. **SCXML invisibility** — authors do not see `routing_id`. It is not exposed in `sce:` attributes, `_event.data`, or any datamodel surface. `error.communication.target` carries `machine_name` (document identity); author rules `cond="_event.data.source == 'motor'"` reason over the stable axis.
+4. **Liveliness axis stays on document identity** — Zenoh's `sce/live/<machine_name>` keyexpr, `CommunicationError.target` for `PEER_PARTITIONED`, and `peer_last_seen_` keying are document-level concepts: "is this machine reachable" is answered by the deploy.yaml roster, not by individual sessions. Under multi-instance (§14.4), a token remains alive while any session of the machine is up; partition is raised only when the last session drops.
+5. **Deploy-time bounded per-session state** — containers that key on sender identity for correctness (DedupRouter `windows_` §10.5, OrderingBuffer `state_` §10.6, `peer_last_seen_` §16.7 row 9) key on `env.source` under the current single-session-per-machine invariant. The migration to `routing_id`-keyed state is gated on multi-session server pool support (§14.4); until that gate opens, `env.source` is the correct keying axis because each machine contributes exactly one sequence/dedup/liveliness domain.
+
+**Wire compatibility**: `routing_id` is an optional CBOR key. Decoders MUST skip unknown keys (per §13 canonical CBOR contract), so a sender backend that has not yet been migrated emits envelopes without key 15 and peers decode correctly. The self-filter invariant above ensures that during per-backend rollout, cross-backend echo paths remain functional — unmigrated peers' envelopes are correctly passed through.
+
 ---
 
 ## 11. Performance Characteristics
