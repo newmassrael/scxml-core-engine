@@ -53,8 +53,11 @@ namespace motor_gen = SCE::Generated::motor_zenoh_server_timeout;
 using PK = SCE::Mesh::PatternKind;
 using MotorRouterT = motor_gen::TransportRouter<TestSenderEngine>;
 
-// Must match deploy_zenoh_server_timeout.yaml ecu_motor listen.
-constexpr const char* kMotorListen = "tcp/127.0.0.1:17451";
+// Mirrors motor's own listen endpoint (deploy_zenoh_server_timeout.yaml
+// ecu_motor): the raw client peer below dials this address so the generated
+// motor router's queryable observes the inbound request.
+constexpr const char* kMotorListen =
+    SCE::Generated::motor_zenoh_server_timeout::ZENOH_LISTEN_ENDPOINTS[0];
 
 // Must match deploy_zenoh_server_timeout.yaml server.query_timeout_ms.
 constexpr auto kQueryTimeoutMs = std::chrono::milliseconds(500);
@@ -69,8 +72,7 @@ int scenario_timeout_closes_leak() {
     TestSenderEngine motor_engine;
     MotorRouterT motor_router(motor_engine);
     MESH_TEST_REQUIRE(motor_router.init(),
-                      "motor_router.init() failed — zenoh listen "
-                      "unavailable on " "tcp/127.0.0.1:17451");
+                      "motor_router.init() failed — zenoh listen unavailable");
 
     auto client_session = open_peer(/*connect=*/kMotorListen, /*listen=*/"");
     std::this_thread::sleep_for(kPeerStabilization);

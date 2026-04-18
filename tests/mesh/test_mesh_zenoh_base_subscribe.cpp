@@ -35,8 +35,11 @@ namespace {
 
 using namespace SCE::Test::Mesh;
 
-// Must match deploy_zenoh_base_subscribe.yaml ecu_motor transports.zenoh.listen.
-constexpr const char* kListen   = "tcp/127.0.0.1:17447";
+// Mirrors brake's connect endpoint, which deploy_zenoh_base_subscribe.yaml
+// pins to motor's ecu_motor listen — co-locating the raw motor peer on the
+// same address is what makes the handshake converge.
+constexpr const char* kListen   =
+    SCE::Generated::brake_zenoh_base_subscribe::ZENOH_CONNECT_ENDPOINTS[0];
 // Must match deploy_zenoh_base_subscribe.yaml binding key for #motor.
 constexpr const char* kMotorKey = "sce/brake_base_subscribe/motor/status";
 

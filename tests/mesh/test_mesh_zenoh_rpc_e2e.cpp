@@ -45,8 +45,11 @@ namespace {
 
 using namespace SCE::Test::Mesh;
 
-// Must match deploy_zenoh_multi.yaml ecu_motor transports.zenoh.listen.
-constexpr const char* kListen = "tcp/127.0.0.1:17447";
+// Mirrors motor's own listen endpoint (deploy_zenoh_multi.yaml ecu_motor):
+// the throwaway probe peer below dials this address so declare_matching_listener
+// fires once motor's queryable has propagated to the shared routing table.
+constexpr const char* kListen =
+    SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
 
 int run_test() {
     namespace brake_gen = SCE::Generated::brake_zenoh_multi;

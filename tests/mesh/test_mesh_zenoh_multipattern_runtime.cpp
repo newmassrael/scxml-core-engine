@@ -37,8 +37,11 @@ using namespace SCE::Test::Mesh;
 namespace PK = SCE::Mesh;
 
 constexpr const char* kMotorKey = "sce/brake/motor";
-// Must match deploy_zenoh_multi.yaml ecu_motor transports.zenoh.listen.
-constexpr const char* kListen   = "tcp/127.0.0.1:17447";
+// Mirrors brake's connect endpoint (deploy_zenoh_multi.yaml ecu_brake),
+// which pins to motor's ecu_motor listen — co-locating the raw motor peer
+// on the same address is what makes brake's router reach it.
+constexpr const char* kListen   =
+    SCE::Generated::brake_zenoh_multi::ZENOH_CONNECT_ENDPOINTS[0];
 
 int run_test() {
     using namespace SCE::Generated::brake_zenoh_multi;

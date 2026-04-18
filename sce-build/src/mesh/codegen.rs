@@ -1147,6 +1147,18 @@ fn generate_cpp_mesh(
         .map(|z| !z.is_empty())
         .unwrap_or(false);
 
+    // Device-shared Zenoh endpoints (listen/connect) surfaced as generated
+    // namespace constants. Tests that need the endpoint for raw-peer
+    // harnesses read these instead of duplicating the deploy.yaml literal,
+    // so a port change in deploy.yaml regenerates the header and the drift
+    // surfaces at compile/link time rather than as a runtime flake.
+    let zenoh_listen_endpoints: Vec<String> = zenoh_session
+        .and_then(|cfg| cfg.listen.clone())
+        .unwrap_or_default();
+    let zenoh_connect_endpoints: Vec<String> = zenoh_session
+        .and_then(|cfg| cfg.connect.clone())
+        .unwrap_or_default();
+
     // SOME/IP device-shared context (application_name). None collapses to
     // empty so the template treats "no someip config" and "someip config
     // without application_name" identically — both fall back to the
@@ -1213,6 +1225,8 @@ fn generate_cpp_mesh(
         machine_liveliness => machine_liveliness_ctx,
         zenoh_session_json5 => zenoh_session_json5,
         zenoh_session_json5_present => zenoh_session_json5_present,
+        zenoh_listen_endpoints => zenoh_listen_endpoints,
+        zenoh_connect_endpoints => zenoh_connect_endpoints,
         someip_transport => someip_transport,
         custom_tcp_transport => custom_tcp_transport,
         machine_subscriptions => subscriptions,

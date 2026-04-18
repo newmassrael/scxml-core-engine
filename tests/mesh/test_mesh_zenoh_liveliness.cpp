@@ -30,8 +30,11 @@ namespace {
 
 using namespace SCE::Test::Mesh;
 
-constexpr const char* kListen  = "tcp/127.0.0.1:17448";
-constexpr const char* kConnect = "tcp/127.0.0.1:17448";
+// Mirrors brake's connect endpoint (deploy_zenoh_liveliness.yaml ecu_brake),
+// pinned to motor's ecu_motor listen. Putting the raw motor peer on the same
+// address is what keeps the Zenoh routing state hermetic for this E2E.
+constexpr const char* kListen =
+    SCE::Generated::brake_zenoh_liveliness::ZENOH_CONNECT_ENDPOINTS[0];
 // deploy_zenoh_liveliness.yaml lease_ms. The DELETE-sample delivery
 // budget is `lease_ms + small zenoh-internal jitter`. Test tolerates up
 // to 3× lease_ms before declaring flake, matching the pattern used in

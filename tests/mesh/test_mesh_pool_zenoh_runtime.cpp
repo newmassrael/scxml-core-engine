@@ -23,7 +23,7 @@
 //          decodes env.data JSON, extracts id="42"
 //          pool_key = "sce/player/{id}"  →  "sce/player/42"
 //          zenoh_session_.get("sce/player/42", ...)
-//     → harness queryable on tcp/127.0.0.1:17452 receives query
+//     → harness queryable on the client's connect endpoint receives query
 //          copies env.invoke_id into reply envelope (for correlation)
 //          replies via Query::reply
 //     → router on_reply: resp.type := resolveReplyEvent(req.type)
@@ -56,11 +56,13 @@ namespace {
 
 using namespace SCE::Test::Mesh;
 
-// Must match deploy_pool_zenoh.yaml. CMake RESOURCE_LOCK
-// zenoh_pool_port_17452 serializes this test against anything else
-// that binds 17452 — there is no other fixture on that port today,
-// so the lock is reserved purely for future co-location safety.
-constexpr const char* kListen = "tcp/127.0.0.1:17452";
+// Mirrors the client's connect endpoint (deploy_pool_zenoh.yaml ecu1):
+// the harness queryable below binds this address so the generated client
+// dials it. CMake RESOURCE_LOCK zenoh_pool_port_17452 serializes this
+// test against anything else that binds that port — there is no other
+// fixture on it today, so the lock is reserved for future co-location safety.
+constexpr const char* kListen =
+    SCE::Generated::pool_zenoh_client::ZENOH_CONNECT_ENDPOINTS[0];
 
 // The pool's key template is `sce/player/{id}` with the sample
 // invoke passing `id="42"`. This literal MUST match what the

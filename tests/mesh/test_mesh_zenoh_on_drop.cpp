@@ -61,8 +61,10 @@ using RouterT = SCE::Generated::brake_zenoh_on_drop::TransportRouter<BrakeSm>;
 // the cancellation.
 constexpr auto kZ3ObservationBudget = std::chrono::milliseconds(2000);
 
-// Must match deploy_zenoh_on_drop.yaml: brake listens on 17449.
-constexpr const char* kBrakeListen = "tcp/127.0.0.1:17449";
+// Mirrors brake's own listen endpoint (deploy_zenoh_on_drop.yaml ecu_brake):
+// the raw motor peer in §2 dials this address to sit on brake's routing table.
+constexpr const char* kBrakeListen =
+    SCE::Generated::brake_zenoh_on_drop::ZENOH_LISTEN_ENDPOINTS[0];
 // Must match deploy_zenoh_on_drop.yaml brake binding key.
 constexpr const char* kMotorKey = "sce/brake_on_drop/motor/compute_force";
 

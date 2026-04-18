@@ -29,9 +29,10 @@ namespace {
 
 using namespace SCE::Test::Mesh;
 
-// Must match deploy_zenoh.yaml ecu1 transports.zenoh.connect. The test's
+// Mirrors brake's connect endpoint (deploy_zenoh.yaml ecu1). The test's
 // raw listener binds this address so brake's generated init() dials it.
-constexpr const char* kListen   = "tcp/127.0.0.1:17447";
+constexpr const char* kListen   =
+    SCE::Generated::brake::ZENOH_CONNECT_ENDPOINTS[0];
 // Must match deploy_zenoh.yaml ecu1.machines.brake.bindings.#motor.key.
 constexpr const char* kMotorKey = "sce/brake/motor/cmd";
 

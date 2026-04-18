@@ -411,6 +411,22 @@ static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper 
 {% for target in targets if target.state.kind == "zenoh" %}
 static constexpr const char* ZENOH_KEY_{{ target.target_snake | upper }} = "{{ target.state.key }}";
 {% endfor %}
+{# Device-shared Zenoh endpoints mirrored from deploy.yaml
+   transports.zenoh.{listen,connect}. Flow: deploy.yaml → ZenohTransportConfig
+   → codegen context → this constant. Tests consume these directly so a port
+   change in deploy.yaml regenerates the header and drifted test literals
+   fail to compile or to connect, instead of silently masquerading as a
+   zenoh discovery flake. #}
+{% if zenoh_listen_endpoints %}
+static constexpr const char* ZENOH_LISTEN_ENDPOINTS[] = {
+{% for ep in zenoh_listen_endpoints %}    "{{ ep }}",
+{% endfor %}};
+{% endif %}
+{% if zenoh_connect_endpoints %}
+static constexpr const char* ZENOH_CONNECT_ENDPOINTS[] = {
+{% for ep in zenoh_connect_endpoints %}    "{{ ep }}",
+{% endfor %}};
+{% endif %}
 
 {% endif %}
 {# ── (B2) Server-side constants (SCE_MESH.md §13 Session E) ── #}
