@@ -1,9 +1,29 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
-//
-// Data structures for SCXML model representation.
-// Ports Python scxml_parser.py dataclasses to Rust structs with serde Serialize
-// for minijinja template rendering.
+
+//! Data structures for SCXML model representation.
+//! Ports Python scxml_parser.py dataclasses to Rust structs with serde Serialize
+//! for minijinja template rendering.
+//!
+//! # `Option<T>` template-field convention
+//!
+//! Template-consumed `Option<T>` fields take one of two shapes, keyed on how
+//! the consuming jinja2 template guards the field:
+//!
+//! - Guarded by `is not none` / `is none` — the field **must not** carry
+//!   `#[serde(skip_serializing_if = "Option::is_none")]`. The field serializes
+//!   to JSON `null` when absent. `is not none` correctly fails on `null` but
+//!   spuriously succeeds on `undefined` (minijinja's lax semantics), so
+//!   skipping serialization would emit the guarded block unconditionally.
+//!   Canonical examples: [`DoneDataParam::expr`] / [`DoneDataParam::location`],
+//!   [`crate::mesh::topology::MeshRpcInvokeSite::deadline_ms`], and
+//!   [`MeshRpcInvokeInfo::deadline_ms`].
+//!
+//! - Guarded by truthy (`{% if x %}`), subfield access
+//!   (`{% if x and x.foo %}`), or `| default(y)` — the field **must** carry
+//!   `#[serde(skip_serializing_if = "Option::is_none")]`. These guards depend
+//!   on `undefined` semantics; serializing a literal `null` would evaluate
+//!   truthy, bypass `default()`, or feed through to downstream rendering.
 
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
