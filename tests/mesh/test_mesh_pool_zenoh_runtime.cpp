@@ -78,19 +78,13 @@ int run_test() {
     // to produce. If the substitution emits anything else (e.g. the
     // template token survives, or a different numeric token lands in
     // the key), zenoh_session_.get will not route to this queryable
-    // and the engine deadlines out without entering State::Ok.
+    // and the engine never reaches State::Ok — the surviving assertion
+    // below catches that with a single, unambiguous failure point.
     auto harness_session = open_peer(/*connect=*/"", /*listen=*/kListen);
-
-    // RAII-scoped atomic — if the harness is never called, the
-    // engine-stuck assertion below surfaces first; this flag is a
-    // secondary confirmation that the query actually reached the
-    // correct key.
-    std::atomic<bool> query_reached{false};
 
     auto queryable = harness_session.declare_queryable(
         zenoh::KeyExpr(kSubstitutedKey),
-        [&query_reached](zenoh::Query& query) {
-            query_reached.store(true, std::memory_order_release);
+        [](zenoh::Query& query) {
             // Decode the inbound envelope so we can copy env.invoke_id
             // into the reply. invoke_correlation_.handleReply on the
             // client side keys on the UUID the client stamped at
@@ -130,7 +124,10 @@ int run_test() {
 
     // Peer handshake. Must come before raising the event so the
     // outbound session.get isn't fired while the transport is still
-    // in SYN_SENT and drops to the on_drop path.
+    // in SYN_SENT and drops to the on_drop path. 1 s matches every
+    // other zenoh peer-mode runtime test in this directory — zenoh
+    // peer discovery has no synchronous "connected" event, so a
+    // conservative fixed delay is the shared convention.
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // Driver thread pumps the external queue (same RAII pattern as
@@ -158,25 +155,25 @@ int run_test() {
     // substituted KeyExpr, and session.get lands on the harness.
     client.raiseExternal(Client::Event::Query_gamer);
 
-    // Wait up to ~5s for the engine to reach State::Ok. The pool
-    // dispatch path's on_reply runs on a zenoh runtime thread;
-    // admitInbound → dispatchToSender → invoke_correlation_.
-    // handleReply raises done.invoke which the driver thread
-    // consumes on the next step() tick.
+    // Wait for the engine to reach State::Ok within the shared mesh
+    // test timeout. The pool dispatch path's on_reply runs on a zenoh
+    // runtime thread; admitInbound → dispatchToSender →
+    // invoke_correlation_.handleReply raises done.invoke which the
+    // driver thread consumes on the next step() tick. Polling (rather
+    // than a condvar) keeps the engine API untouched — the generated
+    // `pool_zenoh_clientPolicy` exposes no state-transition signal.
     using std::chrono::steady_clock;
-    const auto deadline = steady_clock::now() + std::chrono::seconds(5);
+    const auto deadline = steady_clock::now() + kDefaultTimeout;
     while (steady_clock::now() < deadline) {
         if (client.getCurrentState() == Client::State::Ok) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    MESH_TEST_REQUIRE(query_reached.load(std::memory_order_acquire),
-                     "harness queryable on 'sce/player/42' was never "
-                     "hit — runtime KeyExpr substitution did not produce "
-                     "the expected key");
     MESH_TEST_REQUIRE(client.getCurrentState() == Client::State::Ok,
                      "pool_zenoh_client did not reach State::Ok — "
-                     "done.invoke correlation path broken");
+                     "regression in the §14.4 runtime KeyExpr "
+                     "substitution, pool dispatch, or "
+                     "admitZenohInbound → handleReply chain");
 
     pump.running.store(false, std::memory_order_release);
     pump.t.join();
