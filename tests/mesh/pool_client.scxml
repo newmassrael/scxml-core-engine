@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §14.4 pool compile verification.
+     Exercises both pool kinds from a single state machine:
+       - #gamer: Zenoh open pool. Runtime KeyExpr assembled from the
+                 `id` <param> and the binding's `sce/player/{id}` key.
+       - #controller: SOME/IP bounded pool. Runtime instance id taken
+                 from the `inst` <param>, validated against the declared
+                 `instances: [1, 2, 3]` set before vsomeip dispatch.
+     Both invokes live in sibling states so the onentry/onexit pairs emit
+     paired performMeshInvoke / performMeshCancel sites — regression in
+     either pool branch of mesh_transport.h.jinja2 surfaces at compile. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="pool_client" initial="idle">
+    <state id="idle">
+        <transition event="query.gamer" target="calling_gamer"/>
+        <transition event="query.controller" target="calling_controller"/>
+    </state>
+    <state id="calling_gamer">
+        <invoke type="sce:mesh-rpc" src="#gamer">
+            <param name="_mesh_event" expr="'service.request.ping'"/>
+            <!-- String literal so the compile-only fixture stays on
+                 datamodel="null". Runtime pool substitution parses the
+                 value shape-agnostically — the leading/trailing quotes
+                 from scriptValueToJsonString are stripped before
+                 KeyExpr assembly. -->
+            <param name="id" expr="'42'"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+    </state>
+    <state id="calling_controller">
+        <invoke type="sce:mesh-rpc" src="#controller">
+            <param name="_mesh_event" expr="'service.request.ping'"/>
+            <!-- String literal for the instance id — the pool dispatch
+                 strips quotes then std::from_chars the numeric value,
+                 so "1" parses as 1 and matches instances: [1, 2, 3]. -->
+            <param name="inst" expr="'1'"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+    </state>
+    <final id="ok"/>
+    <final id="failed"/>
+</scxml>

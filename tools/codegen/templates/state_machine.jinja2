@@ -70,6 +70,9 @@
 #include "common/DoneDataHelper.h"
 {% endif %}
 #include "common/InPredicateHelper.h"
+{% if model.invokes | mesh_rpc | selectattr('srcexpr') | list | length > 0 %}
+#include <regex>  // SCE_MESH.md §9.5 srcexpr shape check.
+{% endif %}
 {% if inline_kind_code %}
 #include <optional>
 #include <vector>
@@ -338,6 +341,17 @@ struct {{ model.name }}Policy {
     {% endfor %}
     {% for invoke_info in model.invokes | hybrid %}
     mutable bool pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
+    {% endfor %}
+
+    // SCE_MESH.md §9.5 srcexpr: runtime-resolved source target, stashed at
+    // <invoke> entry so the paired <cancel> at state exit can re-use the
+    // same literal. Re-evaluating the expression on exit would re-observe
+    // the datamodel and could pick a different machine than the one the
+    // correlation entry was registered against.
+    {% for invoke_info in model.invokes | mesh_rpc %}
+    {% if invoke_info.srcexpr %}
+    mutable std::string _mesh_resolved_src_{{ invoke_info.field_suffix }}_;
+    {% endif %}
     {% endfor %}
 
     // W3C SCXML 6.4: Child session tracking

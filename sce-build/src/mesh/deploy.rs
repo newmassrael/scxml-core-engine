@@ -463,6 +463,21 @@ pub struct ServerConfig {
     /// Zenoh key expression for queryable registration.
     #[serde(default)]
     pub key: Option<String>,
+    /// SCE Mesh §14.4 — server-side multi-instance pool is **not**
+    /// supported: a single SCXML session cannot semantically back N
+    /// independent service instances (the W3C SCXML execution model
+    /// ties one document to one state machine to one identity).
+    /// Declaring this field is a build-time hard error
+    /// ([`DeployError::ServerPoolNotSupported`]) so the silently-broken
+    /// alternative — the field sinking into `extra` and vanishing — is
+    /// impossible. Multi-session server pools require per-instance
+    /// SCXML sessions, which is a separate spec track; the pre-release
+    /// stance (§0) means no deprecation shim is carried between phases.
+    /// Until then, deploy "N independent instances of service S" as N
+    /// processes each hosting a single-instance server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<Vec<u16>>,
+
     /// Per-server Zenoh queryable response deadline (SCE Mesh §9.5, gap
     /// Z2).
     ///
@@ -670,6 +685,31 @@ pub struct BindingConfig {
     #[serde(default)]
     pub ordering: OrderingRequirement,
 
+    /// SCE Mesh §14.4 — bounded instance pool for a SOME/IP binding that
+    /// carries a placeholder. vsomeip's
+    /// `request_service(SERVICE, ANY_INSTANCE)` does not actually
+    /// subscribe to every instance (treated as specific 0xFFFF), so
+    /// codegen must emit one `request_service(SERVICE, i)` per declared
+    /// instance at init(). Runtime placeholder values outside this list
+    /// raise `error.invoke.<id>` with `RpcStatus::Unavailable`. Required
+    /// alongside [`Self::instance_from`]; omitted for bindings without
+    /// placeholders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<Vec<u16>>,
+
+    /// SCE Mesh §14.4 — names the `<param>` whose runtime value feeds
+    /// `message->set_instance(...)` on a SOME/IP pool binding. Unified
+    /// with the Zenoh `{name}` KeyExpr mechanism: both describe "the
+    /// binding references an author-named `<param>`". SOME/IP uses an
+    /// explicit field (rather than a `{name}` embed) because the
+    /// `instance_id` is a typed `uint16_t`, not a string. Required
+    /// alongside [`Self::instances`] for SOME/IP pool bindings; rejected
+    /// at parse time on non-SOME/IP transports (no set_instance() API)
+    /// and when the binding also embeds a `{name}` placeholder (the two
+    /// mechanisms are mutually exclusive per binding).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_from: Option<String>,
+
     /// Per-target transport-native settings passed through to templates
     /// (zenoh `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
     /// Reserved SOME/IP ID key names are collected here at parse time but
@@ -720,6 +760,8 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_ordering_timings(&cfg)?;
     validate_liveliness(&cfg)?;
     validate_server_query_timeout(&cfg)?;
+    validate_server_pool_rejection(&cfg)?;
+    validate_pool_capability(&cfg)?;
 
     Ok(cfg)
 }
@@ -772,6 +814,277 @@ fn validate_liveliness(cfg: &DeployConfig) -> Result<(), DeployError> {
                 machine: machine.to_string(),
                 reason,
             });
+        }
+    }
+    Ok(())
+}
+
+// ── SCE Mesh §14.4 binding pool support ─────────────────────
+//
+// A binding value field may carry `{name}` tokens substituted at runtime
+// from `<send>`/`<invoke>` `<param>` values. Detection is textual and
+// transport-agnostic: any string value in `extra` is scanned. SOME/IP
+// pool bindings additionally require an explicit `instances:` list
+// because vsomeip's `request_service(SERVICE, ANY_INSTANCE)` does not
+// subscribe to every instance.
+
+/// Extract every `{name}` placeholder from a string value. Names are
+/// `[A-Za-z_][A-Za-z0-9_]*`. Malformed braces (unbalanced, empty name,
+/// invalid characters inside) return `Err` so the caller surfaces them
+/// as a build-time diagnostic rather than silently accepting them.
+pub(crate) fn extract_placeholders(s: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            // Find the matching `}`.
+            let start = i + 1;
+            let mut end = start;
+            while end < bytes.len() && bytes[end] != b'}' {
+                end += 1;
+            }
+            if end >= bytes.len() {
+                return Err(format!(
+                    "unbalanced '{{' at byte {i} — every '{{' must have a matching '}}' \
+                     within the same value"
+                ));
+            }
+            if end == start {
+                return Err(format!(
+                    "empty placeholder `{{}}` at byte {i} — placeholder name cannot be empty"
+                ));
+            }
+            let name = &s[start..end];
+            let first = name.chars().next().unwrap();
+            if !(first.is_ascii_alphabetic() || first == '_') {
+                return Err(format!(
+                    "placeholder '{{{name}}}' at byte {i} — name must start with an \
+                     ASCII letter or underscore"
+                ));
+            }
+            if !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                return Err(format!(
+                    "placeholder '{{{name}}}' at byte {i} — name may only contain ASCII \
+                     letters, digits, and underscores"
+                ));
+            }
+            out.push(name.to_string());
+            i = end + 1;
+        } else if bytes[i] == b'}' {
+            return Err(format!(
+                "unmatched '}}' at byte {i} — every '}}' must be paired with an earlier '{{'"
+            ));
+        } else {
+            i += 1;
+        }
+    }
+    Ok(out)
+}
+
+/// True iff the binding carries any `{name}` placeholder in a string
+/// `extra` value. Parse errors from [`extract_placeholders`] are also
+/// signalled here — the caller surfaces them through the dedicated
+/// diagnostic so an invalid placeholder never silently degrades to "no
+/// pool behaviour".
+fn binding_placeholder_names(
+    binding: &BindingConfig,
+) -> Result<Vec<String>, String> {
+    let mut names = Vec::new();
+    for value in binding.extra.values() {
+        if let serde_yaml_ng::Value::String(s) = value {
+            let placeholders = extract_placeholders(s)?;
+            for name in placeholders {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+        }
+    }
+    Ok(names)
+}
+
+/// SCE_MESH.md §14.4 — multi-instance *server* pool is **not**
+/// supported. A single SCXML session cannot semantically back N
+/// independent service instances (the W3C SCXML execution model ties
+/// one document to one state machine to one identity). Rejecting the
+/// `server.instances:` field at parse time — rather than letting it
+/// sink silently into `ServerConfig` and vanish — is the
+/// foundation-before-features guard. Multi-session server pools live
+/// on a separate spec track; the pre-release stance (§0) means no
+/// deprecation shim is needed when that track opens the field.
+fn validate_server_pool_rejection(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    // Deterministic sorted scan so the first reported violation is stable
+    // across runs even though `topology` is a HashMap.
+    let mut by_machine: BTreeMap<&str, &ServerConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            if let Some(server) = &machine.server {
+                by_machine.insert(machine_name.as_str(), server);
+            }
+        }
+    }
+    for (machine_name, server) in by_machine {
+        if server.instances.is_some() {
+            return Err(DeployError::ServerPoolNotSupported {
+                machine: machine_name.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// SCE_MESH.md §14.4 — a binding requesting a runtime pool may only
+/// target a transport whose
+/// [`crate::mesh::transport::TransportDescriptor::supports_pool`] is
+/// `true`. A pool request is expressed via one of two transport-specific
+/// mechanisms:
+///   - **Zenoh**: `{name}` placeholder embedded in `key:`.
+///   - **SOME/IP**: `instance_from: <param-name>` binding field, paired
+///     with an explicit `instances:` list (vsomeip's `ANY_INSTANCE` is
+///     not a wildcard; the finite instance set must be declared so
+///     codegen can emit one `request_service` per member at `init()`).
+///
+/// The two mechanisms are mutually exclusive per binding — the author
+/// chooses the mechanism by transport, not by field-packing style.
+/// Bindings without pool requests pass through (pool support is purely
+/// additive).
+///
+/// **Precondition.** This validator assumes [`validate_machine_name_uniqueness`]
+/// has already run and succeeded. The internal `by_machine` map
+/// collapses duplicate machine names silently (last-writer-wins on
+/// `BTreeMap::insert`); without upstream uniqueness enforcement, the
+/// diagnostic from this validator could point at the wrong device's
+/// copy of a duplicate machine. The `debug_assert_eq!` below pins the
+/// precondition explicitly — a debug build that reorders
+/// `parse_deploy_str`'s validator chain will trip this assertion rather
+/// than ship a misleading diagnostic.
+fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let mut by_machine: BTreeMap<&str, &MachineConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            by_machine.insert(machine_name.as_str(), machine);
+        }
+    }
+    // Hack-5 guard: the BTreeMap collapses duplicates silently. If the
+    // caller pipeline forgot to run machine-name uniqueness first, the
+    // collapsed count would be strictly less than the raw declaration
+    // count and every downstream diagnostic in this function would
+    // read from the last-seen copy instead of the real duplicate.
+    let total_declarations: usize =
+        cfg.topology.values().map(|d| d.machines.len()).sum();
+    debug_assert_eq!(
+        by_machine.len(),
+        total_declarations,
+        "validate_pool_capability was called before validate_machine_name_uniqueness: \
+         {} machine declarations collapsed to {} unique names. Reorder parse_deploy_str \
+         so duplicate-detection precedes pool validation.",
+        total_declarations,
+        by_machine.len(),
+    );
+    for (machine_name, machine) in by_machine {
+        let mut sorted_bindings: Vec<(&TargetId, &BindingConfig)> =
+            machine.bindings.iter().collect();
+        sorted_bindings.sort_by_key(|(k, _)| k.as_str());
+        for (binding_key, binding) in sorted_bindings {
+            let placeholders = binding_placeholder_names(binding).map_err(|reason| {
+                DeployError::PoolInvalidPlaceholder {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    reason,
+                }
+            })?;
+            let has_placeholder = !placeholders.is_empty();
+            let has_instance_from = binding.instance_from.is_some();
+
+            // Transport-specific mechanism constraints.
+            //
+            // `instance_from:` is a SOME/IP-only field because the
+            // typed `uint16_t` instance_id is not a string carrier —
+            // other transports have no target for the substituted
+            // value. A non-SOME/IP binding declaring `instance_from:`
+            // would sink into codegen silently; reject at parse.
+            if has_instance_from && binding.transport != "someip" {
+                return Err(DeployError::PoolNotSupportedByTransport {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    transport: binding.transport.clone(),
+                });
+            }
+            // Conversely, `{name}` placeholders have no wire surface
+            // on SOME/IP: the only SOME/IP-side substitution target
+            // (`set_instance`) is a typed integer, not a string
+            // carrier. A SOME/IP binding declaring `{name}` is
+            // therefore an author-facing mechanism mix-up; the
+            // uniform answer is "use instance_from for SOME/IP".
+            if has_placeholder && binding.transport == "someip" {
+                return Err(DeployError::PoolInvalidPlaceholder {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    reason:
+                        "SOME/IP bindings express runtime instance selection via \
+                         `instance_from: <param-name>`, not `{name}` placeholders \
+                         — the instance_id is a typed uint16_t, not a string carrier"
+                            .to_string(),
+                });
+            }
+
+            let pool_requested = has_placeholder || has_instance_from;
+            // SOME/IP `instances:` without a pool request still needs
+            // the list to be non-empty if the author declared one,
+            // but the transport-capability gate below only fires when
+            // runtime substitution is actually requested.
+            if !pool_requested {
+                if let Some(list) = &binding.instances {
+                    if list.is_empty() {
+                        return Err(DeployError::PoolEmptyInstanceList {
+                            machine: machine_name.to_string(),
+                            binding: binding_key.as_str().to_string(),
+                        });
+                    }
+                }
+                continue;
+            }
+            // Transport capability gate.
+            let descriptor =
+                crate::mesh::transport::lookup(&binding.transport).ok_or_else(|| {
+                    DeployError::PoolNotSupportedByTransport {
+                        machine: machine_name.to_string(),
+                        binding: binding_key.as_str().to_string(),
+                        transport: binding.transport.clone(),
+                    }
+                })?;
+            if !descriptor.supports_pool {
+                return Err(DeployError::PoolNotSupportedByTransport {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    transport: binding.transport.clone(),
+                });
+            }
+            // SOME/IP-specific bounded-pool requirement: the
+            // `instance_from:` / `instances:` pair goes together.
+            if binding.transport == "someip" {
+                match &binding.instances {
+                    None => {
+                        return Err(DeployError::PoolMissingInstanceList {
+                            machine: machine_name.to_string(),
+                            binding: binding_key.as_str().to_string(),
+                        });
+                    }
+                    Some(list) if list.is_empty() => {
+                        return Err(DeployError::PoolEmptyInstanceList {
+                            machine: machine_name.to_string(),
+                            binding: binding_key.as_str().to_string(),
+                        });
+                    }
+                    Some(_) => {}
+                }
+            }
         }
     }
     Ok(())
@@ -1734,5 +2047,272 @@ topology:
             }
             other => panic!("expected InvalidOrderingTimings, got {other:?}"),
         }
+    }
+
+    // ── SCE Mesh §14.4 binding pool ──────────────────────────
+
+    #[test]
+    fn pool_placeholder_grammar_unbalanced_brace_rejected() {
+        let reason = extract_placeholders("sce/player/{id").unwrap_err();
+        assert!(reason.contains("unbalanced '{'"), "reason: {reason}");
+    }
+
+    #[test]
+    fn pool_placeholder_grammar_empty_name_rejected() {
+        let reason = extract_placeholders("sce/player/{}").unwrap_err();
+        assert!(reason.contains("empty placeholder"), "reason: {reason}");
+    }
+
+    #[test]
+    fn pool_placeholder_grammar_extracts_name_list() {
+        let names = extract_placeholders("sce/{room}/{id}/chat").unwrap();
+        assert_eq!(names, vec!["room".to_string(), "id".to_string()]);
+    }
+
+    #[test]
+    fn pool_placeholder_on_shm_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#logger":
+            transport: shm
+            shm_channel: "ch-{id}"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolNotSupportedByTransport { machine, binding, transport }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#logger");
+                assert_eq!(transport, "shm");
+            }
+            other => panic!("expected PoolNotSupportedByTransport, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_someip_instance_from_without_instances_rejected() {
+        // `instance_from:` requested a pool but the matching
+        // `instances:` list is missing; vsomeip cannot enumerate.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: someip
+            service: player_service
+            method: handle_request
+            instance_from: id
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolMissingInstanceList { machine, binding }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#player");
+            }
+            other => panic!("expected PoolMissingInstanceList, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_someip_empty_instances_list_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: someip
+            service: player_service
+            method: handle_request
+            instance_from: id
+            instances: []
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolEmptyInstanceList { machine, binding }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#player");
+            }
+            other => panic!("expected PoolEmptyInstanceList, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_someip_with_brace_placeholder_rejected() {
+        // SOME/IP bindings express runtime instance selection via
+        // `instance_from:`, not `{name}` placeholders — the
+        // instance_id is a typed uint16_t, not a string carrier.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: someip
+            service: player_service
+            method: handle_request
+            instances: [1, 2, 3]
+            key: "unused-{id}"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolInvalidPlaceholder { machine, binding, reason }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#player");
+                assert!(
+                    reason.contains("instance_from") && reason.contains("uint16"),
+                    "reason should steer author to instance_from for SOME/IP; got: {reason}"
+                );
+            }
+            other => panic!("expected PoolInvalidPlaceholder, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_instance_from_on_non_someip_rejected() {
+        // `instance_from:` has no wire surface outside SOME/IP.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: zenoh
+            key: "sce/player/x"
+            instance_from: id
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolNotSupportedByTransport { machine, binding, transport }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#player");
+                assert_eq!(transport, "zenoh");
+            }
+            other => panic!("expected PoolNotSupportedByTransport, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_someip_with_instance_from_and_instances_accepted() {
+        // The canonical SOME/IP client pool shape: `instance_from:`
+        // names the <param>, `instances:` pre-declares the finite set.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: someip
+            service: player_service
+            method: handle_request
+            instance_from: id
+            instances: [1, 2, 3, 100, 101]
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let binding = cfg.topology["ecu1"].machines["brake"]
+            .bindings
+            .iter()
+            .find(|(k, _)| k.as_str() == "#player")
+            .expect("binding")
+            .1;
+        assert_eq!(binding.instance_from.as_deref(), Some("id"));
+        assert_eq!(binding.instances.as_ref().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn server_pool_instances_rejected() {
+        // `server.instances:` asks for multi-instance server hosting,
+        // which needs per-instance SCXML sessions. The current topology
+        // rejects at parse time so the field cannot sink silently into
+        // server state.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: someip
+          service: motor_service
+          instances: [1, 2, 3]
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::ServerPoolNotSupported { machine }) => {
+                assert_eq!(machine, "motor");
+            }
+            other => panic!("expected ServerPoolNotSupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_zenoh_placeholder_accepted_at_parse_time() {
+        // Zenoh `{id}` placeholder is accepted; the codegen-time
+        // substitution threads through TargetContext.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: zenoh
+            key: "sce/player/{id}"
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        let binding = brake
+            .bindings
+            .iter()
+            .find(|(k, _)| k.as_str() == "#player")
+            .expect("binding")
+            .1;
+        assert_eq!(binding.transport, "zenoh");
+    }
+
+    #[test]
+    fn pool_without_placeholder_unchanged_behaviour() {
+        // A deploy.yaml without placeholders is accepted exactly as before
+        // — the placeholder machinery is purely additive.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/motor"
+"##;
+        parse_deploy_str(yaml).expect("parse");
     }
 }

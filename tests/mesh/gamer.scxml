@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Topology-only counterpart for pool_client's Zenoh pool binding.
+     Codegen requires the receiver end of every mesh-rpc target to be
+     declared so invoke_sites resolution completes; this stub never
+     instantiates at runtime (the pool compile test links only
+     pool_client and exits before any transport session is opened). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="gamer" initial="ready">
+    <state id="ready">
+        <transition event="service.request.ping" target="replying"/>
+    </state>
+    <state id="replying"/>
+</scxml>

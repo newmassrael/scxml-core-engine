@@ -179,6 +179,51 @@
                     // ctor (gated on has_mesh_rpc.v); absence of the callback
                     // here means the document was rendered without mesh
                     // wiring — raise error.execution per W3C §6.4.1.
+{% if invoke_info.srcexpr %}
+                    // SCE_MESH.md §9.5 srcexpr: resolve target at entry via
+                    // the datamodel. Stashed in `_mesh_resolved_src_*_` so
+                    // the paired <cancel> at state exit reuses the same
+                    // literal (re-evaluating would re-read the datamodel and
+                    // could pick a different machine than the correlation
+                    // entry was registered against).
+                    {
+                        this->ensureScriptEngine();
+                        auto& _srcexpr_engine_{{ invoke_info.invoke_id }} = getScriptEngine();
+                        auto _srcexpr_result_{{ invoke_info.invoke_id }} =
+                            _srcexpr_engine_{{ invoke_info.invoke_id }}.evaluateExpression(
+                                sessionId_.value(),
+                                "{{ invoke_info.srcexpr }}").get();
+                        if (!::SCE::ScriptResultUtils::isSuccess(_srcexpr_result_{{ invoke_info.invoke_id }})) {
+                            engine.raise(typename Engine::EventWithMetadata(
+                                Event::Error_execution,
+                                "mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr evaluation failed: {{ invoke_info.srcexpr }}"));
+                            this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
+                        } else {
+                            std::string _resolved_src_{{ invoke_info.invoke_id }} =
+                                ::SCE::ScriptResultUtils::resultToString(_srcexpr_result_{{ invoke_info.invoke_id }});
+                            static const std::regex _srcexpr_shape_{{ invoke_info.invoke_id }}(
+                                R"(^#[A-Za-z_][A-Za-z0-9_]*$)");
+                            if (!std::regex_match(_resolved_src_{{ invoke_info.invoke_id }},
+                                                   _srcexpr_shape_{{ invoke_info.invoke_id }})) {
+                                engine.raise(typename Engine::EventWithMetadata(
+                                    Event::Error_execution,
+                                    "mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr produced invalid shape (must match '#<machine_name>'): " + _resolved_src_{{ invoke_info.invoke_id }}));
+                                this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
+                            } else {
+                                this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_ =
+                                    _resolved_src_{{ invoke_info.invoke_id }};
+                                if (!engine.performMeshInvoke(this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_,
+                                                               "{{ invoke_info.field_suffix }}",
+                                                               _mesh_invoke_id_{{ invoke_info.invoke_id }},
+                                                               _mesh_data_{{ invoke_info.invoke_id }})) {
+                                    engine.raise(typename Engine::EventWithMetadata(
+                                        Event::Error_execution,
+                                        "mesh-rpc invoke '{{ invoke_info.invoke_id }}' failed: no transport router wired or target unknown"));
+                                }
+                            }
+                        }
+                    }
+{% else %}
                     if (!engine.performMeshInvoke("{{ invoke_info.src }}",
                                                    "{{ invoke_info.field_suffix }}",
                                                    _mesh_invoke_id_{{ invoke_info.invoke_id }},
@@ -187,6 +232,7 @@
                             Event::Error_execution,
                             "mesh-rpc invoke '{{ invoke_info.invoke_id }}' failed: no transport router wired or target unknown"));
                     }
+{% endif %}
                 }
 {% endfor %}
 {% endif %}
@@ -548,7 +594,20 @@
                 // <cancel> semantics for mesh-rpc do not raise done/error,
                 // so no event is emitted here.
                 {% for invoke_info in state.invokes | mesh_rpc %}
+{% if invoke_info.srcexpr %}
+                // SCE_MESH.md §9.5 srcexpr cancel: reuse the literal the
+                // entry block resolved (stashed in _mesh_resolved_src_*_).
+                // Empty stash means entry failed before registering the
+                // correlation entry, so performMeshCancel is skipped.
+                if (!this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.empty()) {
+                    (void)engine.performMeshCancel(
+                        this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_,
+                        "{{ invoke_info.field_suffix }}");
+                    this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
+                }
+{% else %}
                 (void)engine.performMeshCancel("{{ invoke_info.src }}", "{{ invoke_info.field_suffix }}");
+{% endif %}
                 {% endfor %}
 {% endif %}
 {% if state.on_exit_blocks %}

@@ -1244,7 +1244,16 @@ impl SCXMLParser {
         // would otherwise silently drop the invoke (scxml_type=false).
         if invoke_type == "sce:mesh-rpc" {
             return self
-                .parse_mesh_rpc_invoke(elem, state_id, source_name, invoke_id, field_suffix, src, idlocation)
+                .parse_mesh_rpc_invoke(
+                    elem,
+                    state_id,
+                    source_name,
+                    invoke_id,
+                    field_suffix,
+                    src.clone(),
+                    srcexpr.clone(),
+                    idlocation,
+                )
                 .map(|info| Some(Invoke::MeshRpc(info)));
         }
 
@@ -1449,6 +1458,7 @@ impl SCXMLParser {
         invoke_id: String,
         field_suffix: String,
         src: String,
+        srcexpr: String,
         idlocation: String,
     ) -> Result<
         MeshRpcInvokeInfo,
@@ -1459,6 +1469,26 @@ impl SCXMLParser {
         let locate = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
             let pos = elem.document().text_pos_at(elem.range().start);
             Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+        };
+
+        // SCE Mesh §9.5 exactly-one rule: `src` and `srcexpr` are
+        // mutually exclusive on `<invoke type="sce:mesh-rpc">`. Both
+        // absent or both present is a build-time hard error. The
+        // validation runs *before* constructing [`MeshRpcTarget`] so the
+        // sum type is only built on well-formed inputs — its two
+        // variants map 1:1 to the surviving cases.
+        let src_present = !src.is_empty();
+        let srcexpr_present = !srcexpr.is_empty();
+        if !src_present && !srcexpr_present {
+            return Err(locate(ValidationError::MeshRpcMissingTarget));
+        }
+        if src_present && srcexpr_present {
+            return Err(locate(ValidationError::MeshRpcDuplicateTarget));
+        }
+        let target = if src_present {
+            crate::model::MeshRpcTarget::Src { src }
+        } else {
+            crate::model::MeshRpcTarget::SrcExpr { srcexpr }
         };
 
         // First pass: scan every `<param>` to detect reserved-name
@@ -1560,7 +1590,7 @@ impl SCXMLParser {
                 params: payload_params,
                 idlocation,
             },
-            src,
+            target,
             mesh_event,
             deadline_ms,
         })
@@ -3792,7 +3822,7 @@ mod tests {
             </state>
         </scxml>"##;
         let info = first_mesh_rpc_invoke(scxml);
-        assert_eq!(info.src, "#motor");
+        assert_eq!(info.target.src_literal(), Some("#motor"));
         assert_eq!(info.mesh_event, "service.request.compute_force");
         assert_eq!(info.deadline_ms, Some(250));
         // Reserved names are stripped from the payload; author params
@@ -3887,6 +3917,64 @@ mod tests {
         </scxml>"##;
         let info = first_mesh_rpc_invoke(scxml);
         assert_eq!(info.deadline_ms, Some(50));
+    }
+
+    // ── §9.5 srcexpr exactly-one rule ───────────────────────────
+
+    #[test]
+    fn mesh_rpc_invoke_accepts_srcexpr_alone() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" srcexpr="'#motor_' + id">
+                    <param name="_mesh_event" expr="'x'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let info = first_mesh_rpc_invoke(scxml);
+        assert!(info.target.src_literal().is_none(),
+            "SrcExpr variant has no build-time literal");
+        match &info.target {
+            MeshRpcTarget::SrcExpr { srcexpr } => {
+                assert_eq!(srcexpr, "'#motor_' + id");
+            }
+            other => panic!("expected SrcExpr variant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_rejects_missing_target() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc">
+                    <param name="_mesh_event" expr="'x'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        use crate::forge::error::{ForgeError, ValidationError};
+        let mut parser = SCXMLParser::new();
+        let err = parser.parse_string(scxml, "test").unwrap_err();
+        match err.error {
+            ForgeError::Validation(ValidationError::MeshRpcMissingTarget) => {}
+            other => panic!("expected MeshRpcMissingTarget, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mesh_rpc_invoke_rejects_both_src_and_srcexpr() {
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor" srcexpr="'#motor'">
+                    <param name="_mesh_event" expr="'x'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        use crate::forge::error::{ForgeError, ValidationError};
+        let mut parser = SCXMLParser::new();
+        let err = parser.parse_string(scxml, "test").unwrap_err();
+        match err.error {
+            ForgeError::Validation(ValidationError::MeshRpcDuplicateTarget) => {}
+            other => panic!("expected MeshRpcDuplicateTarget, got {other:?}"),
+        }
     }
 
     // ── Session C/D attribute deprecation → Stage 2 hard error ─────

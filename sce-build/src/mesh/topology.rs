@@ -317,6 +317,68 @@ pub struct ResolvedTarget {
     /// whether the receiver path must route through `admitOrdered`.
     #[serde(default, skip_serializing_if = "crate::mesh::deploy::OrderingRequirement::is_none")]
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// SCE_MESH.md §14.4 — runtime pool substitution plan, or `None` if
+    /// this target has no placeholder bindings. The typed sum type
+    /// (`Zenoh { placeholders }` vs `Someip { instance_from, instances }`)
+    /// replaces the historical pattern of consulting `pt.extra` +
+    /// `pt.instance_from` + `pt.instances` at every codegen / validator
+    /// site; each consumer dispatches by variant and cannot observe an
+    /// ambiguous half-built pool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_plan: Option<PoolPlan>,
+}
+
+/// SCE_MESH.md §14.4 — resolved binding pool plan for runtime target
+/// substitution. Transport-specific because each transport exposes a
+/// different substitution surface (Zenoh uses `{name}` embeds inside a
+/// `key:` string; SOME/IP uses a typed `uint16_t` instance selector).
+/// Tagged serialisation (`{"kind":"zenoh", "placeholders":[...]}`)
+/// keeps the minijinja template branch unambiguous.
+///
+/// Call sites dispatch by variant; every field a consumer reads is
+/// populated by construction, so there is no "pool requested but
+/// half-wired" middle state like the old `placeholder_names` + `instances`
+/// pair would permit.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PoolPlan {
+    /// Zenoh open pool: `key:` carries one or more `{name}` placeholder
+    /// tokens; codegen emits `zenoh::KeyExpr(std::string(prefix) + ...)`
+    /// assembling the runtime address from named `<param>` values.
+    Zenoh {
+        /// Placeholder identifiers in declaration order (sorted). Each
+        /// must be supplied as a `<param name="<id>">` on every using
+        /// invoke / send site — enforced by
+        /// [`validate_pool_param_names`].
+        placeholders: Vec<String>,
+    },
+    /// SOME/IP bounded pool: `instance_from: <param-name>` names the
+    /// `<param>` whose runtime value feeds `message->set_instance(...)`,
+    /// validated against the finite `instances:` list before dispatch.
+    Someip {
+        /// `<param>` name whose value becomes the instance_id at send
+        /// time. Enforced present on every using invoke / send site by
+        /// [`validate_pool_param_names`].
+        instance_from: String,
+        /// Finite instance set pre-registered at init via
+        /// `request_service(SERVICE, i)`. Runtime values outside the
+        /// list fail fast with `RpcStatus::Unavailable`.
+        instances: Vec<u16>,
+    },
+}
+
+impl PoolPlan {
+    /// The set of `<param>` names that every using invoke / send site
+    /// must supply for this pool to resolve. Consumed by
+    /// [`validate_pool_param_names`]; a missing name is a build error.
+    pub fn required_param_names(&self) -> Vec<&str> {
+        match self {
+            Self::Zenoh { placeholders } => {
+                placeholders.iter().map(String::as_str).collect()
+            }
+            Self::Someip { instance_from, .. } => vec![instance_from.as_str()],
+        }
+    }
 }
 
 /// Build-time warning about dynamic targets that cannot be statically resolved.
@@ -1257,10 +1319,17 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
         let Invoke::MeshRpc(info) = invoke else {
             continue;
         };
-        let Some(tid) = TargetId::new(&info.src) else {
-            // `src` absent / malformed — mesh-rpc without a resolvable
-            // target is a pure-parse problem that should have been
-            // flagged at parse time. Skip here rather than invent a
+        // Only the `Src` variant contributes a build-time-resolvable
+        // target. `SrcExpr` is evaluated at `<invoke>` entry; its target
+        // cannot be enumerated at build time and is looked up against
+        // the existing static topology at runtime — a miss raises
+        // `error.invoke.<id>` with `RpcStatus::Unavailable` (§9.5).
+        let Some(src_literal) = info.target.src_literal() else {
+            continue;
+        };
+        let Some(tid) = TargetId::new(src_literal) else {
+            // `src` malformed — pure-parse problem that should have
+            // been flagged earlier. Skip rather than invent a
             // diagnostic in the wrong layer.
             continue;
         };
@@ -1349,6 +1418,33 @@ pub fn analyze_event_pairs(
         });
     }
 
+    // SCE_MESH.md §9.5: <invoke type="sce:mesh-rpc"> contributes its
+    // `_mesh_event` as an RpcRequest event on the target binding. Without
+    // this, a SOME/IP binding targeted only by mesh-rpc invokes has an
+    // empty `event_patterns` → no per-event method_id constant is emitted
+    // → the §14.4 pool dispatch in invokeMeshRpc finds no method match
+    // and silently returns RpcStatus::Unavailable for every invoke. The
+    // Zenoh path is independent (ZENOH_KEY_<target> is per-target, not
+    // per-event), but the SOME/IP per-event ID resolution is driven off
+    // this map so the entry must land here too.
+    for (target, sites) in &summary.invoke_sites_by_target {
+        for site in sites {
+            if site.mesh_event.is_empty() {
+                continue;
+            }
+            let entry = pattern_map.entry(target.clone()).or_default();
+            if entry.iter().any(|e| e.event == site.mesh_event) {
+                continue;
+            }
+            let pattern = super::pattern::CommunicationPattern::ServiceRequest;
+            entry.push(EventPatternInfo {
+                event: site.mesh_event.clone(),
+                pattern_kind_value: pattern.wire_value(),
+                reply_event: pattern.infer_reply_event(&site.mesh_event),
+            });
+        }
+    }
+
     pattern_map
 }
 
@@ -1375,6 +1471,16 @@ pub(crate) struct PartialTarget {
     /// per-binding `needs_ordering` decision without revisiting
     /// deploy.yaml.
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// SCE_MESH.md §14.4 — raw `BindingConfig.instance_from` copied
+    /// for SOME/IP pool resolution in [`finalize_targets`]. `None`
+    /// means no SOME/IP pool is requested at this binding; the exact
+    /// SOME/IP validation (transport match, instances pairing) has
+    /// already run at parse time in `validate_pool_capability` so
+    /// `Some(_)` here implies a SOME/IP binding.
+    pub instance_from: Option<String>,
+    /// SCE_MESH.md §14.4 — raw `BindingConfig.instances` copied for
+    /// SOME/IP pool resolution. `None` / empty means no bounded pool.
+    pub instances: Option<Vec<u16>>,
 }
 
 /// Resolve SCXML send targets against deploy.yaml bindings for a specific
@@ -1462,6 +1568,8 @@ pub(crate) fn resolve_partials(
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
                     invoke_sites: merged_sites,
                     ordering: binding.ordering,
+                    instance_from: binding.instance_from.clone(),
+                    instances: binding.instances.clone(),
                 });
             }
             None => {
@@ -1546,10 +1654,61 @@ pub fn build_resolved_targets(
     let (partials, deadline_overrides) = resolve_partials(summary, deploy, machine_name)?;
     let resolved = finalize_targets(partials, machine_name, external)?;
     validate_someip_event_fields(&resolved, machine_name)?;
+    validate_pool_param_names(&resolved, machine_name)?;
     Ok(TargetResolution {
         targets: resolved,
         deadline_overrides,
     })
+}
+
+/// SCE_MESH.md §14.4 — cross-reference pool placeholder / instance_from
+/// names against every `<invoke type="sce:mesh-rpc">` site targeting a
+/// pooled binding. A pool binding that no using invoke supplies
+/// substitution values for is a silently-broken deployment (every
+/// dispatch would miss at runtime with `RpcStatus::Unavailable`).
+/// Detecting at build time pinpoints the (state, invoke_id, missing
+/// names) triple so the author can fix one invoke site instead of
+/// diagnosing runtime misfires.
+///
+/// Scope: only `<invoke type="sce:mesh-rpc">` sites are cross-referenced
+/// here. `<send>` does not carry `<param>` metadata through
+/// [`SendActionSummary`], and the pool dispatch path in `invokeMeshRpc`
+/// is the only emission site that consumes pool plans, so there is no
+/// other call-site kind to verify. If `<send>` later grows a param-
+/// propagating path, extend [`SendActionSummary`] and add a parallel
+/// cross-reference branch here.
+fn validate_pool_param_names(
+    resolved: &[ResolvedTarget],
+    machine_name: &str,
+) -> Result<(), TopologyError> {
+    for rt in resolved {
+        let Some(plan) = &rt.pool_plan else {
+            continue;
+        };
+        let required: Vec<&str> = plan.required_param_names();
+        for site in &rt.invoke_sites {
+            let supplied: std::collections::BTreeSet<&str> = site
+                .params
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect();
+            let missing: Vec<String> = required
+                .iter()
+                .filter(|name| !supplied.contains(*name))
+                .map(|s| s.to_string())
+                .collect();
+            if !missing.is_empty() {
+                return Err(TopologyError::PoolParamNameMissing {
+                    machine: machine_name.to_string(),
+                    target: rt.target.clone(),
+                    state: site.state_name.clone(),
+                    invoke_id: site.invoke_id.clone(),
+                    missing,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validate SOME/IP per-event field presence.
@@ -1715,6 +1874,7 @@ pub(crate) fn finalize_targets(
             None
         };
 
+        let pool_plan = derive_pool_plan(&pt);
         let state = build_transport_state(&pt, someip_resolved);
 
         resolved.push(ResolvedTarget {
@@ -1724,10 +1884,62 @@ pub(crate) fn finalize_targets(
             state,
             invoke_sites: pt.invoke_sites,
             ordering: pt.ordering,
+            pool_plan,
         });
     }
 
     Ok(resolved)
+}
+
+/// Compute the typed [`PoolPlan`] for a binding, or `None` if no pool
+/// substitution is requested. `validate_pool_capability` (deploy.rs)
+/// has already enforced the transport / field pairing (Zenoh uses
+/// `{name}` in `extra`; SOME/IP uses `instance_from` + `instances`),
+/// so the match here is exhaustive over the remaining valid shapes.
+/// Invalid combinations are parse-time errors and do not reach this
+/// function.
+fn derive_pool_plan(pt: &PartialTarget) -> Option<PoolPlan> {
+    match pt.transport.as_str() {
+        "zenoh" => {
+            // Zenoh placeholders live inside string `extra` values
+            // (today: `key:`). Collect every `{name}` in insertion
+            // order, de-duplicate, sort — the template's
+            // substitution plan is position-independent.
+            let mut names: std::collections::BTreeSet<String> =
+                std::collections::BTreeSet::new();
+            for value in pt.extra.values() {
+                if let Some(s) = value.as_str() {
+                    if let Ok(ids) =
+                        crate::mesh::deploy::extract_placeholders(s)
+                    {
+                        names.extend(ids);
+                    }
+                }
+            }
+            if names.is_empty() {
+                None
+            } else {
+                Some(PoolPlan::Zenoh {
+                    placeholders: names.into_iter().collect(),
+                })
+            }
+        }
+        "someip" => {
+            // SOME/IP bounded pool: `instance_from` + `instances`
+            // pair gated by `validate_pool_capability`. Either both
+            // present or both absent by that point.
+            match (pt.instance_from.as_ref(), pt.instances.as_ref()) {
+                (Some(instance_from), Some(list)) if !list.is_empty() => {
+                    Some(PoolPlan::Someip {
+                        instance_from: instance_from.clone(),
+                        instances: list.clone(),
+                    })
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 /// Construct the [`TransportState`] variant for a partial target.
@@ -2669,6 +2881,7 @@ mod tests {
             state: TransportState::Local,
             invoke_sites: Vec::new(),
             ordering: crate::mesh::deploy::OrderingRequirement::None,
+            pool_plan: None,
         }]
     }
 

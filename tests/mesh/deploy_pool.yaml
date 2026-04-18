@@ -1,0 +1,44 @@
+# SCE Mesh §14.4 pool compile verification.
+#
+# A single `pool_client` machine that exercises both pool kinds:
+#   * `#gamer` — Zenoh open pool. `{id}` placeholder in `key:` is
+#     substituted at invoke time from the `id` <param> value, and the
+#     generated router bypasses the literal-KeyExpr path to assemble the
+#     runtime address directly.
+#   * `#controller` — SOME/IP bounded pool. The `inst` <param> value is
+#     validated against `instances: [1, 2, 3]` (each request_service'd at
+#     init so vsomeip's SD actually subscribes), then fed to
+#     `set_instance()` before the vsomeip send.
+#
+# Both bindings co-exist on the same machine so the generated transport
+# header renders the pool includes (`<algorithm>`, `<charconv>`,
+# `common/EventDataHelper.h`) exactly once, and both Jinja2 pool branches
+# (WO7.A / WO7.B) are exercised in a single byte-golden / compile gate.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+      someip:
+        config: vsomeip_pool_controller.json
+        application_name: pool_client_app
+    machines:
+      pool_client:
+        source: pool_client.scxml
+        bindings:
+          "#gamer":
+            transport: zenoh
+            key: "sce/player/{id}"
+          "#controller":
+            transport: someip
+            service: controller_svc
+            instances: [1, 2, 3]
+            instance_from: inst
+            events:
+              "service.request.ping":
+                method: ping
+      gamer:
+        source: gamer.scxml
+      controller:
+        source: controller.scxml

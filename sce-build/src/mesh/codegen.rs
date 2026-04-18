@@ -331,6 +331,16 @@ struct TargetContext {
     /// being non-empty (`has_mesh_rpc.v` flag).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     invoke_sites: Vec<super::topology::MeshRpcInvokeSite>,
+    /// SCE_MESH.md §14.4 — runtime pool substitution plan. `None` when the
+    /// binding has no placeholder (all existing fixtures). When present,
+    /// the template routes the matched-site block through a pool-specific
+    /// dispatch path that decodes `env.data` JSON once per invoke and
+    /// builds the runtime address (Zenoh KeyExpr) or selects the runtime
+    /// instance id (SOME/IP), bypassing the literal-address `route_send`
+    /// path. Non-pool targets render byte-identical output because every
+    /// pool branch is gated on `{% if target.pool_plan %}`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pool_plan: Option<super::topology::PoolPlan>,
 }
 
 /// Per-event pattern context for template rendering.
@@ -1052,6 +1062,7 @@ fn generate_cpp_mesh(
                 has_field,
                 has_receive,
                 invoke_sites: t.invoke_sites.clone(),
+                pool_plan: t.pool_plan.clone(),
             }
         })
         .collect();

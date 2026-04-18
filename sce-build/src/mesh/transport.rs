@@ -147,6 +147,37 @@ pub struct TransportDescriptor {
     /// declaring `ordering: required` on a transport whose
     /// `ordering_representable` is `false`.
     pub ordering_representable: bool,
+    /// Does this transport carry a native routing layer that can
+    /// substitute runtime values into a binding's address (SCE_MESH.md
+    /// §14.4)?
+    ///
+    /// `true` for transports whose native stack delivers an envelope to
+    /// whatever peer matches a given address without SCE maintaining a
+    /// peer table:
+    ///   - Zenoh: `session.put` / `session.get` dispatch on KeyExpr; the
+    ///     address may be assembled at runtime from a
+    ///     placeholder-bearing `key:` value.
+    ///   - SOME/IP: vsomeip's routing manager delivers to any instance
+    ///     whose availability has been registered. Because
+    ///     `request_service(SERVICE, ANY_INSTANCE)` is interpreted as
+    ///     specific-instance-0xFFFF (not a wildcard), SOME/IP's pool
+    ///     support is *bounded* — the binding must declare an explicit
+    ///     `instances:` list so codegen can emit one `request_service`
+    ///     per member at `init()`.
+    ///
+    /// `false` for transports with no routing-layer substitution:
+    ///   - local / shm: endpoints are compile-time process addresses.
+    ///   - custom_tcp: `connect:` / `listen:` are single static TCP
+    ///     endpoints. Adding a pool would require SCE to implement its
+    ///     own SD protocol, which the §3.3 design invariant explicitly
+    ///     rejects.
+    ///   - can: broadcast bus with no peer-level addressing.
+    ///
+    /// A binding value field containing a `{name}` placeholder token is
+    /// rejected at the topology stage when the transport declares
+    /// `supports_pool: false`
+    /// (`mesh/pool-not-supported-by-transport`).
+    pub supports_pool: bool,
 }
 
 // ── Single registry ─────────────────────────────────────────
@@ -173,6 +204,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Direct function call preserves invocation order.
         supplies_ordering: true,
         ordering_representable: true,
+        // Same-process target identity is compile-time; no runtime
+        // address substitution.
+        supports_pool: false,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -185,6 +219,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // FIFO ring buffer per channel preserves producer order.
         supplies_ordering: true,
         ordering_representable: true,
+        // SHM channels are pre-declared in deploy.yaml; runtime values
+        // cannot address a new channel.
+        supports_pool: false,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -216,6 +253,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // routing is point-to-point; receivers can track a sender-stamped
         // sequence per binding.
         ordering_representable: true,
+        // Bounded pool: placeholder on `instance_id:` requires an
+        // explicit `instances:` list because `request_service(SERVICE,
+        // ANY_INSTANCE)` does not subscribe to every instance (vsomeip
+        // routing_manager_impl treats 0xFFFF as a specific instance ID).
+        // Codegen emits one `request_service(SERVICE, i)` per declared
+        // instance at init().
+        supports_pool: true,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },
@@ -234,6 +278,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supplies_ordering: false,
         // Per-(key, subscriber) stream carries a private sequence domain.
         ordering_representable: true,
+        // Open pool: KeyExpr substitution passes the assembled string to
+        // Zenoh's native routing, which delivers to whichever peer has a
+        // matching subscriber. No SCE-side enumeration required.
+        supports_pool: true,
     };
     // SCE Mesh §16.8.3 reference transport: TCP loopback, length-prefixed
     // CBOR envelope framing, zero external dependencies. Each binding has a
@@ -254,6 +302,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // framing layered on top preserves envelope order.
         supplies_ordering: true,
         ordering_representable: true,
+        // No native routing layer. Endpoints are static in deploy.yaml;
+        // adding a pool would require SCE to implement its own SD
+        // protocol (§3.3 design invariant rejects middleware SD).
+        supports_pool: false,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -271,6 +323,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Per-(topic, reader) unicast delivery from each publisher
         // supports a stamped sequence domain.
         ordering_representable: true,
+        // DCPS participant discovery is native. Gated on
+        // `implemented: false` but the capability already exists.
+        supports_pool: true,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -288,6 +343,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // sender-stamped per-receiver sequence has no meaning on the
         // wire. Topology rejects `ordering: required` for CAN bindings.
         ordering_representable: false,
+        // CAN frame IDs are compile-time allocations; the bus has no
+        // peer-level addressing for placeholder substitution.
+        supports_pool: false,
     };
 
     match transport {

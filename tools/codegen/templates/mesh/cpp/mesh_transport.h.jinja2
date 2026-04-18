@@ -60,7 +60,17 @@
 {% macro someip_receive_handler(target, method_constant, pattern_kind, kind) -%}
         {{ target.target_snake }}_app_->register_message_handler(
             SOMEIP_SERVICE_{{ target.target_snake | upper }},
+{% if target.pool_plan and target.pool_plan.kind == "someip" %}
+            // SCE_MESH.md §14.4 SOME/IP pool: register once for every
+            // instance in the set. vsomeip application_impl.cpp:683/700/745
+            // treats ANY_INSTANCE as a wildcard for handler-side APIs
+            // (unlike request_service, which treats it as a literal id —
+            // see next_session_phase5_binding_placeholder.md). Replies
+            // from any pool member reach the same correlation table.
+            vsomeip::ANY_INSTANCE,
+{% else %}
             SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+{% endif %}
             {{ method_constant }},
             [this](const std::shared_ptr<vsomeip::message>& msg) {
 {% if kind == "rpc" %}
@@ -277,6 +287,14 @@ dispatchToSender({{ env_name }})
 #include <thread>
 #include <unordered_map>
 #include <vsomeip/vsomeip.hpp>
+{% if targets | selectattr('pool_plan') | selectattr('state.kind', 'equalto', 'someip') | list | length > 0 %}
+// SCE_MESH.md §14.4 SOME/IP pool: runtime instance-id validation against the
+// static `pool_plan.instances[]` and numeric parsing of the `<param>` value
+// selected by `instance_from:`. Emitted only when at least one SOME/IP
+// binding on this machine declares a pool; non-pool bindings pay nothing.
+#include <algorithm>
+#include <charconv>
+{% endif %}
 {% endif %}
 {% if "zenoh" in transport_types %}
 #include <functional>
@@ -286,6 +304,15 @@ dispatchToSender({{ env_name }})
 #include <unordered_map>
 #include <utility>
 #include <zenoh.hxx>
+{% endif %}
+{% if targets | selectattr('pool_plan') | list | length > 0 %}
+// SCE_MESH.md §14.4 pool dispatch: placeholder values travel on
+// `env.data` as JSON; the pool path in `invokeMeshRpc` decodes once per
+// invoke and reads the named property to substitute into the address
+// (Zenoh KeyExpr) or select the runtime instance (SOME/IP). Included
+// only when at least one binding on this machine declares a pool.
+#include "common/EventDataHelper.h"
+#include <variant>
 {% endif %}
 {% if "custom_tcp" in transport_types %}
 #include <memory>
@@ -1176,9 +1203,22 @@ struct TransportRouter {
             shutdown();
             return false;
         }
+{% if target.pool_plan and target.pool_plan.kind == "someip" %}
+        // SCE_MESH.md §14.4 SOME/IP pool: request every member of the
+        // instance set at init so vsomeip opens an SD subscription for
+        // each. Runtime selection between them happens in invokeMeshRpc
+        // via set_instance; unknown instance ids are rejected there
+        // before vsomeip would silently drop them.
+{% for i in target.pool_plan.instances %}
+        {{ target.target_snake }}_app_->request_service(
+            SOMEIP_SERVICE_{{ target.target_snake | upper }},
+            static_cast<vsomeip::instance_t>({{ i }}));
+{% endfor %}
+{% else %}
         {{ target.target_snake }}_app_->request_service(
             SOMEIP_SERVICE_{{ target.target_snake | upper }},
             SOMEIP_INSTANCE_{{ target.target_snake | upper }});
+{% endif %}
 {# Per-event receive handlers (SCE_MESH.md §14): one register_message_handler
    per (target, event) so different events on the same target can use
    different methods/event-groups/getters/setters. Dispatch keys on the
@@ -2243,6 +2283,169 @@ struct TransportRouter {
             active_invokes_[InvokeSiteKey{target, fieldSuffix}] = uuid;
         }
 
+{% for target in targets if target.pool_plan and target.pool_plan.kind == "someip" %}
+        // SCE_MESH.md §14.4: SOME/IP bounded pool — runtime instance selection.
+        // The instance id is read from the `{{ target.pool_plan.instance_from }}`
+        // <param> value on the invoking <invoke>, validated against the
+        // compile-time `instances: [...]` set (all of which were already
+        // request_service'd in init), and fed to vsomeip via set_instance
+        // before the request is sent. Out-of-set values fail closed with
+        // RpcStatus::Unavailable — vsomeip would silently drop them
+        // otherwise because no request_service was ever issued for the id.
+        if (target == "{{ target.target }}") {
+            std::string pool_json(env.data.begin(), env.data.end());
+            auto pool_parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
+            if (!pool_parsed) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            auto* pool_obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*pool_parsed);
+            if (!pool_obj_sp || !*pool_obj_sp) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            auto& pool_obj = **pool_obj_sp;
+            auto inst_it = pool_obj.properties.find("{{ target.pool_plan.instance_from }}");
+            if (inst_it == pool_obj.properties.end()) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            std::string inst_str = ::SCE::EventDataHelper::scriptValueToJsonString(inst_it->second);
+            if (inst_str.size() >= 2 && inst_str.front() == '"' && inst_str.back() == '"') {
+                inst_str = inst_str.substr(1, inst_str.size() - 2);
+            }
+            unsigned long long inst_ul = 0;
+            const char* inst_begin = inst_str.data();
+            const char* inst_end = inst_begin + inst_str.size();
+            auto parse = std::from_chars(inst_begin, inst_end, inst_ul);
+            if (parse.ec != std::errc() || parse.ptr != inst_end || inst_ul > 0xFFFFu) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            vsomeip::instance_t runtime_instance = static_cast<vsomeip::instance_t>(inst_ul);
+            static constexpr vsomeip::instance_t pool_instances_{{ target.target_snake }}[] = {
+{% for i in target.pool_plan.instances %}                {{ i }}{% if not loop.last %},{% endif %}
+{% endfor %}
+            };
+            if (std::find(std::begin(pool_instances_{{ target.target_snake }}),
+                          std::end(pool_instances_{{ target.target_snake }}),
+                          runtime_instance) == std::end(pool_instances_{{ target.target_snake }})) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            vsomeip::method_t method_id = 0;
+            bool method_set = false;
+{% for ep in target.event_patterns if ep.field_kind == "method" %}
+            if (env.type == "{{ ep.event }}") {
+                method_id = SOMEIP_METHOD_{{ target.target_snake | upper }}_{{ ep.event_const }};
+                method_set = true;
+            }
+{% endfor %}
+            if (!method_set) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            auto request = vsomeip::runtime::get()->create_request(
+                {% if target.state.extra.protocol is defined and target.state.extra.protocol == "tcp" %}true{% else %}false{% endif %});
+            request->set_service(SOMEIP_SERVICE_{{ target.target_snake | upper }});
+            request->set_instance(runtime_instance);
+            request->set_method(method_id);
+            auto buf = SCE::Mesh::encodeEnvelope(env);
+            auto payload = vsomeip::runtime::get()->create_payload(
+                reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
+                static_cast<uint32_t>(buf.size()));
+            request->set_payload(payload);
+            {{ target.target_snake }}_app_->send(request);
+            return true;
+        }
+{% endfor %}
+{% for target in targets if target.pool_plan and target.pool_plan.kind == "zenoh" %}
+        // SCE_MESH.md §14.4: Zenoh open pool — bind-time `key:` carries
+        // `{name}` placeholders. Substituted at invoke time from the
+        // JSON envelope payload (populated by the generator from the
+        // author's `<param>` entries), yielding a per-invoke KeyExpr.
+        // route_send cannot see placeholder values (it only accepts
+        // `env`), so the pool path bypasses it and dispatches directly
+        // via `zenoh_session_->get` with the same reply / on_drop
+        // closures as the literal-key path (see `send_zenoh` RpcRequest
+        // branch — semantics must stay in sync).
+        if (target == "{{ target.target }}") {
+            if (!zenoh_session_) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            std::string pool_json(env.data.begin(), env.data.end());
+            auto pool_parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
+            if (!pool_parsed) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            auto* pool_obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*pool_parsed);
+            if (!pool_obj_sp || !*pool_obj_sp) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+            auto& pool_obj = **pool_obj_sp;
+            std::string pool_key = "{{ target.state.key }}";
+{% for ph in target.pool_plan.placeholders %}
+            {
+                auto it = pool_obj.properties.find("{{ ph }}");
+                if (it == pool_obj.properties.end()) {
+                    invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                    return false;
+                }
+                // scriptValueToJsonString wraps strings in quotes; strip
+                // them so the substitution yields the raw token value.
+                std::string pv = ::SCE::EventDataHelper::scriptValueToJsonString(it->second);
+                if (pv.size() >= 2 && pv.front() == '"' && pv.back() == '"') {
+                    pv = pv.substr(1, pv.size() - 2);
+                }
+                const std::string token = "{{ '{' }}{{ ph }}{{ '}' }}";
+                auto pos = pool_key.find(token);
+                if (pos == std::string::npos) {
+                    invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                    return false;
+                }
+                pool_key.replace(pos, token.size(), pv);
+            }
+{% endfor %}
+            try {
+                zenoh::KeyExpr pool_kexpr(pool_key);
+                auto encoded = SCE::Mesh::encodeEnvelope(env);
+                const char* reply = resolveReplyEvent(env.type);
+                std::string reply_event = reply;
+                zenoh::Session::GetOptions opts;
+                opts.payload = zenoh::Bytes(std::move(encoded));
+                auto reply_seen = std::make_shared<std::atomic<bool>>(false);
+                std::optional<std::array<std::uint8_t, 16>> invoke_id_capture = env.invoke_id;
+                zenoh_session_->get(
+                    pool_kexpr, "",
+                    [this, reply_event,
+                     target_owned = std::string("{{ target.target }}"),
+                     reply_seen](const zenoh::Reply& reply_msg) {
+                        if (!reply_msg.is_ok()) return;
+                        reply_seen->store(true, std::memory_order_release);
+                        const auto& sample = reply_msg.get_ok();
+                        auto bytes = sample.get_payload().as_vector();
+                        SCE::Mesh::MeshEnvelope resp;
+                        if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) return;
+                        if (!reply_event.empty()) resp.type = reply_event;
+                        resp.pattern = SCE::Mesh::PatternKind::RpcReply;
+                        (void)this->admitZenohInbound(target_owned, resp);
+                    },
+                    [this, reply_seen, invoke_id_capture]() noexcept {
+                        if (reply_seen->load(std::memory_order_acquire)) return;
+                        if (!invoke_id_capture) return;
+                        this->onZenohQueryDropped(*invoke_id_capture);
+                    },
+                    std::move(opts));
+                return true;
+            } catch (const zenoh::ZException&) {
+                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                return false;
+            }
+        }
+{% endfor %}
         return route_send(target, env);
     }
 

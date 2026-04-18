@@ -309,6 +309,16 @@ pub enum ValidationError {
         attribute: String,
         event: Option<String>,
     },
+
+    /// `<invoke type="sce:mesh-rpc">` is missing both `src` and
+    /// `srcexpr`. Exactly one must be present (SCE_MESH.md §9.5).
+    #[error("<invoke type=\"sce:mesh-rpc\"> must declare exactly one of `src` or `srcexpr` — both are missing. Add `src=\"#<machine>\"` for a build-time target, or `srcexpr=\"...\"` to pick among declared bindings at runtime.")]
+    MeshRpcMissingTarget,
+
+    /// `<invoke type="sce:mesh-rpc">` has both `src` and `srcexpr`. They
+    /// are mutually exclusive (SCE_MESH.md §9.5).
+    #[error("<invoke type=\"sce:mesh-rpc\"> declares both `src` and `srcexpr` — they are mutually exclusive. Keep only the one matching how the target is chosen (static vs runtime).")]
+    MeshRpcDuplicateTarget,
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

@@ -113,6 +113,76 @@ pub enum DeployError {
         machine: String,
         reason: String,
     },
+
+    /// A binding carries a `{name}` placeholder value but the binding's
+    /// transport declares `supports_pool: false` in the registry
+    /// (SCE Mesh §14.4). Transports without a native routing layer
+    /// (local, shm, custom_tcp, can) cannot substitute runtime values
+    /// without SCE reimplementing transport discovery, which the §3.3
+    /// design invariant explicitly rejects.
+    #[error("machine '{machine}': binding '{binding}' on transport '{transport}' carries a \
+             '{{name}}' placeholder, but this transport does not support pool bindings \
+             (supports_pool = false). Use a routing-capable transport (zenoh, someip) or \
+             drop the placeholder.")]
+    PoolNotSupportedByTransport {
+        machine: String,
+        binding: String,
+        transport: String,
+    },
+
+    /// A SOME/IP binding uses a placeholder but does not declare the
+    /// required `instances:` list (SCE Mesh §14.4). vsomeip's
+    /// `request_service(SERVICE, ANY_INSTANCE)` is interpreted as
+    /// specific-instance-0xFFFF, not a wildcard, so codegen must know
+    /// the finite set of instance IDs to pre-request at init().
+    #[error("machine '{machine}': SOME/IP binding '{binding}' uses a '{{name}}' placeholder \
+             but is missing the required `instances:` list. vsomeip does not support \
+             open-ended instance subscription; declare the expected instance IDs explicitly.")]
+    PoolMissingInstanceList {
+        machine: String,
+        binding: String,
+    },
+
+    /// A binding declared an empty `instances: []` list (SCE Mesh §14.4).
+    /// An empty pool would generate zero `request_service` calls and the
+    /// runtime would refuse every placeholder value, so the
+    /// configuration is silently broken.
+    #[error("machine '{machine}': binding '{binding}' has an empty `instances: []` list. \
+             Declare at least one instance ID or remove the list entirely.")]
+    PoolEmptyInstanceList {
+        machine: String,
+        binding: String,
+    },
+
+    /// A binding value field contains a malformed placeholder (unbalanced
+    /// braces, empty name, invalid characters). Rejected at parse time
+    /// so a malformed placeholder cannot be confused with a literal
+    /// brace in the value string.
+    #[error("machine '{machine}': binding '{binding}' has an invalid placeholder — {reason}. \
+             Fix the placeholder syntax or escape intended literal braces.")]
+    PoolInvalidPlaceholder {
+        machine: String,
+        binding: String,
+        reason: String,
+    },
+
+    /// A machine's `server:` section declared `instances: [...]` — a
+    /// server-side pool that SCE currently does not support. A single
+    /// SCXML session cannot semantically back N independent service
+    /// instances (the W3C SCXML execution model ties one document to
+    /// one state machine to one identity). Multi-instance server
+    /// support requires per-instance SCXML sessions, which is a
+    /// separate spec track; until it lands, deploy "N independent
+    /// instances of the same service" as N processes each hosting a
+    /// single instance. See SCE_MESH.md §14.4.
+    #[error("machine '{machine}': `server.instances:` is not supported — a single SCXML \
+             session cannot host N independent SOME/IP instances (multi-session \
+             territory). Drop `instances:` from the server section (exposing exactly one \
+             instance), or run N processes each hosting a single-instance server. \
+             See SCE_MESH.md §14.4.")]
+    ServerPoolNotSupported {
+        machine: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -445,6 +515,28 @@ pub enum TopologyError {
         target: super::target::TargetId,
         transport: String,
     },
+
+    /// A binding declares a runtime pool (Zenoh `{name}` placeholders or
+    /// SOME/IP `instance_from:`) but at least one `<invoke
+    /// type="sce:mesh-rpc">` site targeting this binding does not
+    /// supply the corresponding `<param>` name. Without a value at the
+    /// invoke site there is nothing to substitute into the transport
+    /// address, and the runtime would raise `error.invoke.<id>` with
+    /// `RpcStatus::Unavailable` on every dispatch — a silently-broken
+    /// deployment. Detecting at build time pinpoints the offending
+    /// invoke site (state + invoke id) in a single diagnostic instead
+    /// of dozens of runtime misfires.
+    #[error("machine '{machine}': binding '{target}' declares a runtime pool that needs \
+             <param> values {missing:?} at every using <invoke>, but invoke '{invoke_id}' \
+             in state '{state}' does not supply {missing:?}. Add the missing <param>(s) \
+             to that invoke, or drop the placeholder / `instance_from:` from the binding.")]
+    PoolParamNameMissing {
+        machine: String,
+        target: super::target::TargetId,
+        state: String,
+        invoke_id: String,
+        missing: Vec<String>,
+    },
 }
 
 // ── Stage 3: Template rendering ──────────────────────────────
@@ -587,6 +679,61 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::PoolNotSupportedByTransport {
+            machine,
+            binding,
+            transport,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPoolNotSupportedByTransport,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), binding.clone(), transport.clone()],
+        },
+        DeployError::PoolMissingInstanceList { machine, binding } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPoolMissingInstanceList,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), binding.clone()],
+        },
+        DeployError::PoolEmptyInstanceList { machine, binding } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPoolEmptyInstanceList,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), binding.clone()],
+        },
+        DeployError::PoolInvalidPlaceholder {
+            machine,
+            binding,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPoolInvalidPlaceholder,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), binding.clone(), reason.clone()],
+        },
+        DeployError::ServerPoolNotSupported { machine } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployServerPoolNotSupported,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // Single deterministic repair: remove `instances:` from the
+            // server section. The alternative shape ("run N processes")
+            // is deployment-topology advice, not a field-level edit, so
+            // it stays in the prose rather than `fix`.
+            expected: None,
+            fix: Some(Fix::RemoveFields {
+                location: format!("topology.*.machines.{machine}.server"),
+                fields: vec!["instances".to_string()],
+            }),
+            key_fragments: vec![machine.clone()],
         },
     }
 }
@@ -873,6 +1020,27 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 target.as_str().to_string(),
                 transport.clone(),
             ],
+        },
+        TopologyError::PoolParamNameMissing { machine, target, state, invoke_id, missing } => DiagnosticPayload {
+            code: DiagnosticCode::MeshTopologyPoolParamNameMissing,
+            stage: Stage::MeshTopology,
+            actual: Some(invoke_id.clone()),
+            // Two equally-valid repairs (add the missing <param>(s) OR
+            // drop the binding-level pool). Author intent decides;
+            // leaving fix unstructured keeps agents from prescribing
+            // either automatically.
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut k = vec![
+                    machine.clone(),
+                    target.as_str().to_string(),
+                    state.clone(),
+                    invoke_id.clone(),
+                ];
+                k.extend(missing.iter().cloned());
+                k
+            },
         },
     }
 }

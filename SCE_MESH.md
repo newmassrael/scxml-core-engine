@@ -412,11 +412,12 @@ Discovery determines how logical `#target` IDs are resolved to physical addresse
 
 **Static Discovery (codegen'd):** deploy.yaml bindings are compiled into `constexpr` routing tables. Zero runtime overhead. This is the primary mode for Phase 1-3.
 
-**Dynamic Discovery (runtime):** For environments where targets appear/disappear at runtime (cloud auto-scaling, game zone migration), a minimal `IDiscovery` runtime concept is provided in `sce_mesh_common`. This is Phase 5 scope.
+**Runtime Target Selection (Phase 5):** SCE does not reimplement transport-native service discovery. When a client wants to select among runtime instances of an already-declared binding (cloud auto-scaling, game zone migration), binding value-field placeholders (§14.4) substitute a `<param>` value into the transport's native address at the send site; the transport stack (Zenoh scouting / vsomeip SD) handles peer availability. No SCE-maintained peer table, no `IDiscovery` trait, no `runtime_targets_` map.
 
 ```
-Phase 1-3: Static (build-time) — constexpr routing tables
-Phase 5:   Dynamic (runtime)   — IDiscovery concept for runtime resolution
+Phase 1-3: Static (build-time)       — constexpr routing tables
+Phase 5:   Runtime target selection  — binding placeholders + transport-native routing
+Phase 6:   Multi-session (deferred)  — server-side instance pool
 ```
 
 #### Static Discovery (Phase 1-3)
@@ -434,16 +435,33 @@ constexpr auto route_target(const char* target) {
 }
 ```
 
-#### Dynamic Discovery (Phase 5, Deferred)
+#### Runtime Target Selection via Binding Placeholders (Phase 5)
 
-For dynamic environments, `sce_mesh_common` provides a minimal discovery concept:
+SCE Mesh does not reimplement transport discovery. When a transport has a native routing layer (Zenoh's KeyExpr matching with scouting and gossiping, vsomeip's SD with availability handlers, DDS participant discovery), SCE emits the transport-specific identifier (KeyExpr string or `(service_id, instance_id, method_id)` triple) and hands off to the transport. Peer availability tracking, endpoint resolution, and failover live inside the transport stack.
 
-| Discovery Strategy | Mechanism | Domain |
-|--------------------|-----------|--------|
-| Transport-native SD | SOME/IP-SD, Zenoh scouting, mDNS | Each transport's built-in discovery |
-| External registry | Consul, etcd | Datacenter |
+The one primitive SCE adds above the transport is **binding value-field placeholders**: deploy.yaml binding values may carry `{name}` tokens that are substituted at `<send>` / `<invoke>` time from `<param>` values. This lets a single binding represent a family of runtime targets without SCE maintaining a peer table.
 
-Dynamic discovery generates code that calls the transport's native discovery API (e.g., `vsomeip::request_service()`, `zenoh::scout()`), preserving transport-specific discovery features. The codegen template emits callbacks that update the routing table at runtime when services appear/disappear.
+```yaml
+# deploy.yaml excerpt
+bindings:
+  "#player":
+    transport: zenoh
+    key: "sce/player/{id}"    # {id} resolved at runtime
+```
+
+```xml
+<!-- SCXML -->
+<invoke type="sce:mesh-rpc" src="#player">
+  <param name="_mesh_event" expr="'service.request.damage'"/>
+  <param name="id" expr="targetPlayerId"/>
+</invoke>
+```
+
+Codegen emits `zenoh::KeyExpr("sce/player/" + std::to_string(targetPlayerId))` and calls `session.put` or `session.get`. Zenoh's native routing delivers the envelope to whichever peer has declared a matching subscriber; SCE does not enumerate peers.
+
+Transports without a native routing layer (local, shm, custom_tcp, can) do not support placeholder bindings — see §4.3 and §16.8.3. The spec-level capability flag is `TransportDescriptor::supports_pool`.
+
+Cross-transport automatic bridging is explicitly rejected (not deferred) — see §14.5. A machine that receives over one transport and forwards over another does so through explicit SCXML transitions, not middleware-level envelope translation.
 
 ---
 
@@ -527,6 +545,8 @@ discovery:
 ```
 
 **Best for**: Game server auto-scaling, IoT fleet management.
+
+**Phase 5 scope**: only the "transport-native runtime target selection" subset of dynamic mode is landed. Priority-based cross-transport resolution (`resolution.strategy: priority`), per-instance dedup (`dedup.key: instance_id`), external registries (Consul, etcd, mDNS), and an SCE-level peer table are all deferred or rejected. What IS landed is the binding-value-field placeholder mechanism described in §3.3 and formalised in §14.4 — a deploy.yaml binding may carry `{name}` tokens resolved at `<send>` / `<invoke>` time from `<param>` values. Per-transport capability gating is enforced at build time (`TransportDescriptor::supports_pool`): today Zenoh supports open placeholder substitution, SOME/IP supports a bounded `instances:` list (because vsomeip's `request_service(ANY_INSTANCE)` does not actually subscribe to every instance — see §14.4), and custom_tcp / shm / local / can do not support placeholders at all.
 
 ### 4.4 Event Deduplication
 
@@ -1303,6 +1323,19 @@ error: <param name="_mesh_event"> is reserved metadata for <invoke type="sce:mes
 ```
 
 The mesh envelope's `type` (CBOR key 2) is always populated from `_mesh_event`; it is not taken from any author-named `<param>`.
+
+**Target selection — `src` vs `srcexpr`**:
+
+`<invoke type="sce:mesh-rpc">` accepts exactly one of `src` (static `#<machine_name>`, resolved at build time) or `srcexpr` (datamodel expression, evaluated at `<invoke>` entry). Both absent or both present is a build-time hard error. This mirrors W3C §6.4 for `type="scxml"` but applies narrowly to `sce:mesh-rpc`; the two invoke types do not share semantics — a `sce:mesh-rpc` `srcexpr` selects a remote target by name, not a child SCXML session.
+
+| Form | Resolution point | Target must match |
+|---|---|---|
+| `src="#<name>"` | Build time | A static deploy.yaml binding |
+| `srcexpr="<expr>"` | Runtime at `<invoke>` entry | A static deploy.yaml binding whose key the expression resolves to |
+
+The `srcexpr` expression must evaluate to a string of the form `"#<machine_name>"`. Evaluation follows the datamodel's standard expression pipeline; the resulting name is looked up in static topology. If the name does not match any binding at runtime, `error.invoke.<id>` is raised immediately with `RpcStatus::Unavailable` — no retry or wait. Authors who need wait-for-peer semantics must encode the wait in SCXML (`<transition cond="...">` gating the `<invoke>`).
+
+**`srcexpr` does not imply runtime peer discovery.** It only allows the author to pick among already-declared bindings at runtime. For a runtime-varying *instance of a bound service*, use the binding-value-field placeholder mechanism (§14.4) together with a static `src`.
 
 **Deadline precedence** (per-invoke `<param>` vs deploy.yaml binding-level):
 
@@ -2421,7 +2454,9 @@ Sessions B-E execute the design above. Each session is a working unit; estimates
 - Additional transports (DDS, gRPC, MQTT, UDP) — Phase 4
 - Stream patterns (Unary/Server/Client/Bidi streaming) — Phase 4 (wire values 10-13 reserved)
 - Performance optimizations (drain allocation, Lua compile bypass, double serialization) — re-evaluated after envelope settles
-- Dynamic discovery (SOME/IP-SD, Zenoh scouting, Consul) — Phase 5
+- Middleware-level service discovery (SCE-maintained peer tables, IDiscovery trait, `runtime_targets_` map) — rejected; transport-native routing is not reimplemented (§3.3 invariant)
+- Cross-transport automatic bridging codegen — rejected; bridging is explicit SCXML responsibility (§14.5)
+- Runtime target selection via binding placeholders — landed in §14.4 (Phase 5)
 - True blocking RPC (`sce:blocking="true"`) — rejected; revisit only if a concrete use case forces it
 
 ### Phase 4: Game Scale (Directional — refined after Phase 3)
@@ -2436,18 +2471,48 @@ High-throughput batch processing for massive entity counts.
 - Delta state synchronization (changed-state-only client updates)
 - **Codegen trade-off**: SoA layout requires a second codegen mode alongside the existing per-instance AoS generation. Evaluated based on Phase 3 benchmarks
 
-### Phase 5: Dynamic Discovery + Cloud (Directional — refined after Phase 4)
+### Phase 5: Runtime Target Selection (landed)
 
-Dynamic environments where targets appear/disappear at runtime.
+Runtime selection of a remote target *instance* within an already-declared binding. Scope kept deliberately narrow; see §3.3 for the design invariant (SCE does not reimplement transport discovery).
 
-- **`IDiscovery` runtime concept** in `sce_mesh_common` — minimal runtime discovery for dynamic environments
-- Dynamic discovery codegen: templates generate code that calls transport-native discovery (SOME/IP-SD, Zenoh scouting, Consul) and updates routing table at runtime
-- Cross-transport bridging codegen: sce-build generates bridge functions that convert events between wire formats (e.g., SOME/IP payload → gRPC protobuf)
-- Build-time verification: circular dependency detection, reachability analysis
+**Foundation (landed)**:
+- **Binding value-field placeholder grammar** (§14.4) — `{name}` tokens in Zenoh `key:` and the `instance_from: <param-name>` binding field for SOME/IP are parsed, capability-gated, and substituted at runtime. Zenoh emits `zenoh::KeyExpr(std::string(...) + ...)` at the send site; SOME/IP emits a `request_service(SERVICE, i)` loop over `instances:` at init and validates runtime values against the list before `set_instance`. Out-of-range values raise `error.invoke.<id>` with `RpcStatus::Unavailable`.
+- **Transport capability gating** — `TransportDescriptor::supports_pool` registry field; custom_tcp / shm / local / can do not support placeholders and a binding on them carrying a placeholder is rejected at parse time (`mesh/pool-not-supported-by-transport`).
+- **`<invoke type="sce:mesh-rpc" srcexpr>`** (§9.5) — parser accepts `srcexpr` with the exactly-one rule against `src`, typed as the `MeshRpcTarget` sum type so "both empty" and "both set" are structurally impossible. `srcexpr` is evaluated at `<invoke>` entry through the datamodel; the resolved `#<name>` is looked up in static topology, and a miss raises `error.invoke.<id>` with `RpcStatus::Unavailable` — no retry, no wait.
 
-### Future Direction (Beyond Phase 5)
+**Rejected (explicitly, not deferred)**:
+- Middleware-level service discovery (IDiscovery trait / `runtime_targets_` map / SCE-maintained peer tables) — transport-native routing is the source of truth (§3.3)
+- Cross-transport automatic bridging codegen — bridging is explicit SCXML responsibility (§14.5)
+- `discovery.mode: static | dynamic` deploy-level switch — runtime target selection is a per-binding property, not a deployment mode
+- `PEER_NAME_COLLISION` error.communication row — SCE does not maintain a peer table, so collisions are not observable at the SCE layer
+- Server-side pool (`server.instances: [...]`) — rejected at parse time with `mesh/server-pool-not-supported`; a single SCXML session cannot semantically back N independent service instances. Opens in Phase 6 (multi-session). See §14.4 for rationale.
 
-The following capabilities are explicitly deferred. They will be evaluated after Phase 1-5 are validated in at least one production domain:
+**Deferred (may land in later phase after concrete motivation)**:
+- External registries (Consul, etcd, mDNS) — the binding-placeholder surface does not preclude them but requires a separate adapter
+- Priority-based cross-transport resolution (see §4.3 dynamic mode) — requires multi-transport binding per target
+
+### Phase 6: Multi-session (Server-side instance pool)
+
+Runtime support for a single SCE-generated process hosting N independent SCXML sessions, each representing one SOME/IP instance of a service. Triggered by the server-pool rejection in Phase 5 (§14.4). Scope is SCE-runtime-wide, not per-transport: the capability surfaces through the transport registry (`supports_multi_instance_server` flag), but the lifecycle / isolation / dispatch machinery lives in the SCE runtime common to all backends (C++, Rust, Kotlin, Go, Python).
+
+**Motivation**. vsomeip fully supports one process offering multiple service instances (verified empirically — `routing_manager_impl.cpp` tracks per-(service, instance) state independently, handlers can dispatch by `msg->get_instance()`). SCE's current "one document = one state machine = one identity" runtime model is therefore the constraint, not the transport. Phase 6 lifts that constraint for SOME/IP (and transports whose native routing provides peer-distinguishable inbound delivery) while preserving SCXML authoring unchanged: the same brake.scxml runs as one of N instances without source edits.
+
+**Planned scope (not yet landed)**:
+- Per-instance SCXML session lifecycle — creation policy (lazy on first inbound message vs eager at `init()`), independent datamodel scope, independent state, shared vs per-session script engine (Lua)
+- Session ID scheme (derived from `instance_id` vs author-supplied), session-ID visibility in datamodel (`_event.session_id`?)
+- Inbound message routing — `msg->get_instance()` → session dispatch; fallback behaviour when an instance arrives for which no session exists (lazy-create vs reject)
+- Outbound response preservation — `create_response(original)` already echoes the instance; verify the path end-to-end under multi-session
+- Spontaneous notification — "which instance does `field.notify` emit from?" is a Phase 6 design call; lead candidate is *the notifying session's own instance* (no cross-instance fan-out)
+- Removal of the Phase 5 `mesh/server-pool-not-supported` rejection in the same commit that opens `server.instances:` (pre-release stance per §0 means no deprecation shim)
+
+**Not in Phase 6 scope**:
+- Cross-session SCXML communication primitives — a Phase 6 session is isolated; inter-session messaging still goes through `mesh-rpc` (same as inter-process today)
+- Session hot-swap / live reload — Beyond-Phase-6 per the Future Direction list
+- Multi-instance server on transports without peer-distinguishable inbound delivery (e.g., Zenoh's KeyExpr is not a peer identity) — the `supports_multi_instance_server` flag stays `false` for such transports
+
+### Future Direction (Beyond Phase 6)
+
+The following capabilities are explicitly deferred. They will be evaluated after Phase 1-6 are validated in at least one production domain:
 
 - **Saga pattern** — distributed compensation transactions as a separate orchestration layer above SCE Mesh
 - **Consistency modes** — strong/eventual consistency guarantees for cross-instance state
@@ -2559,10 +2624,45 @@ partitions:
                                          # done.state.PARALLEL_ID).
 
 events: <path to events.yaml>          # Event payload type definitions
-
-discovery:
-  mode: static | dynamic               # static = build-time; dynamic = Phase 5
 ```
+
+### 14.4 Binding value-field placeholders
+
+A binding value field may carry `{name}` tokens that are substituted at runtime from `<send>` / `<invoke>` `<param>` values. This is the only mechanism SCE Mesh adds above transport-native routing; see §3.3 for the design invariant ("SCE does not reimplement transport discovery"). The SCXML author writes a single `<param name="id" expr="...">`; deploy.yaml decides whether that param feeds a Zenoh KeyExpr substitution or a SOME/IP instance selector, without any SCXML change.
+
+**Grammar.** A placeholder is a `{` followed by a non-empty identifier (`[A-Za-z_][A-Za-z0-9_]*`) followed by a `}`. `{` and `}` literals are not escapable; this may be revisited if a transport's value space ever requires a literal brace, but today no supported transport does.
+
+**Placeholder carriers** (where substitution is legal today):
+
+| Transport | Binding field | Substitution source | Substitution target |
+|---|---|---|---|
+| Zenoh | `key:` | `{name}` tokens in the value | The KeyExpr string at `session.put` / `session.get` call site |
+| SOME/IP | `instance_from: <param-name>` | the named `<param>`'s runtime value (must be a member of `instances:`) | `message->set_instance(...)` argument |
+
+Both mechanisms converge on "binding references a `<param>` name". Zenoh embeds the reference syntactically inside `key:`; SOME/IP names it via an explicit binding field (`instance_from:`) because the instance_id is a typed `uint16_t`, not a string. A referenced `<param>` name that no `<param>` supplies at the call site is a build-time error (`mesh/pool-param-name-missing`). Reserved `_mesh_*` param names (§9.5) never supply placeholders.
+
+**Transport capability gating.** A binding may carry placeholders only if its transport declares `supports_pool: true` in the registry. Today:
+
+- **Zenoh** — `supports_pool: true`. Open placeholder range: the KeyExpr substitution is validated only for placeholder grammar; the resulting string is passed to Zenoh's native routing which delivers to whichever peer has a matching subscriber.
+- **SOME/IP** — `supports_pool: true` *with a bounded instance list*. vsomeip's `request_service(SERVICE, ANY_INSTANCE)` does not actually subscribe to every instance — it requests instance `0xFFFF` as a specific instance. A SOME/IP placeholder binding therefore requires an explicit `instances:` list in deploy.yaml. Codegen emits one `request_service(SERVICE, i)` per declared instance at `init()`; the runtime placeholder value is validated against the list and fails with `RpcStatus::Unavailable` if out of range.
+- **custom_tcp** / **shm** / **local** / **can** — `supports_pool: false`. These transports have no runtime routing layer; adding one would be middleware-SD reinvention (§3.3). Any binding on these transports carrying a placeholder is rejected at parse time (`mesh/pool-not-supported-by-transport`).
+
+**SOME/IP client pool schema.** When a SOME/IP binding declares `instance_from:`, it must also declare `instances: [<int>, ...]` — the finite set of instance IDs to pre-request at `init()`. Missing list is `mesh/pool-missing-instance-list`; empty list is `mesh/pool-empty-instance-list`. The runtime send path validates the resolved placeholder is a member of the list before calling `message->set_instance`; out-of-range values raise `error.invoke.<id>` with `RpcStatus::Unavailable`. This is a *client-side* pool — the sender selects which instance to invoke among the declared set.
+
+**Server-side multi-instance — rejected at this section (tracked as Phase 6).** A machine acting as a SOME/IP server currently exposes a *single* instance: the `server:` section accepts `service:` / `key:` / pattern-specific fields but no `instances:` list. Declaring `server.instances: [...]` is rejected at parse time (`mesh/server-pool-not-supported`) because a single SCXML session cannot semantically back N independent service instances — the W3C SCXML execution model (one document = one state machine = one identity) prevents reusing one session for N peers that each own their lifecycle. Multi-instance server support therefore requires per-instance SCXML sessions — a runtime capability tracked as Phase 6 (multi-session). Until Phase 6, the canonical SCE answer for "N independent instances of the same service on one node" is *N processes, each hosting one instance*. Phase 6 will open `server.instances:` and remove the parse-time rejection in the same commit; pre-release stance (§0) means no deprecation shim is needed.
+
+**Backward compatibility.** A binding without placeholders behaves exactly as before — the carrier field is a literal value resolved at build time. No `discovery:` deploy-level block is required or supported; runtime target selection is a *binding* property, not a deployment-wide mode.
+
+### 14.5 Cross-transport auto-bridging — rejected
+
+SCE Mesh does not automatically translate envelopes between transports. A machine that receives an envelope over one transport and wants to forward it over another does so through explicit SCXML transitions, with a `<send target="#other">` action whose target resolves to a binding on the second transport. This is application responsibility, not codegen.
+
+Rationale:
+1. Transport-native encoding matters (SOME/IP method_id, Zenoh KeyExpr structure, DDS topic QoS). Mechanical envelope translation erases semantics that the author may depend on.
+2. Bridging logic is often application-specific (rate limit, filter, enrich). Pushing it into codegen forces a one-size-fits-all policy.
+3. The explicit SCXML path makes the cross-transport hop visible in the state machine — essential for debugging and auditing.
+
+Any future revisit would require explicit motivation in a new section; the default answer remains "write the bridge as an SCXML transition in the bridging machine".
 
 **Principles**:
 

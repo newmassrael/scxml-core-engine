@@ -2992,6 +2992,68 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         message(STATUS "zenohcxx not found — skipping mesh_zenoh_compile_test")
     endif()
 
+    # ── SCE_MESH.md §14.4 pool compile verification ──────────────
+    # pool_client exercises both pool branches of the mesh_transport.h
+    # Jinja2 template in a single generated header:
+    #   * Zenoh open pool — runtime KeyExpr assembled from the `id`
+    #     <param> and the binding's `sce/player/{id}` key.
+    #   * SOME/IP bounded pool — runtime instance id selected from the
+    #     `inst` <param>, validated against `instances: [1, 2, 3]`.
+    # Gated on both vsomeip3 and zenohcxx being discovered because the
+    # fixture's deploy.yaml binds each transport for exactly one target.
+    if(vsomeip3_FOUND AND zenohc_FOUND AND zenohcxx_FOUND)
+        set(MESH_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_pool_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_POOL_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_client.scxml" -l cpp -o "${MESH_POOL_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/pool_client.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh pool: Generating pool_client_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_client.scxml" -l cpp -o "${MESH_POOL_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_pool.yaml"
+            DEPENDS "${MESH_TEST_DIR}/pool_client.scxml" "${MESH_TEST_DIR}/deploy_pool.yaml"
+                    "${MESH_TEST_DIR}/vsomeip_pool_controller.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
+            COMMENT "Mesh pool: Generating pool_client_transport.h (§14.4 pool dispatch)"
+            VERBATIM
+        )
+
+        add_executable(mesh_pool_compile_test
+            mesh/test_mesh_pool_compile.cpp
+            "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
+            "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h"
+        )
+
+        target_include_directories(mesh_pool_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_POOL_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_pool_compile_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_pool_compile_test PRIVATE cxx_std_17)
+
+        apply_sce_test_policies(mesh_pool_compile_test)
+
+        add_test(NAME mesh_pool_compile_verification COMMAND mesh_pool_compile_test)
+    else()
+        message(STATUS "vsomeip3 / zenohcxx not both found — skipping mesh_pool_compile_test")
+    endif()
+
     # ── Negative: event coverage violation must fail codegen ────
     # brake_bad.scxml sends "brake.activte" (typo) to #motor. The event
     # has no matching <transition> in motor.scxml, so TopologyError::

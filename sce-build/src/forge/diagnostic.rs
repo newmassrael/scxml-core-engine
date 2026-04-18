@@ -307,6 +307,10 @@ pub enum DiagnosticCode {
     ValidationDynamicFeatures,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
+    #[serde(rename = "validation/mesh-rpc-missing-target")]
+    ValidationMeshRpcMissingTarget,
+    #[serde(rename = "validation/mesh-rpc-duplicate-target")]
+    ValidationMeshRpcDuplicateTarget,
     #[serde(rename = "validation/removed-attribute")]
     ValidationRemovedAttribute,
 
@@ -399,6 +403,16 @@ pub enum DiagnosticCode {
     MeshDeployInvalidLiveliness,
     #[serde(rename = "mesh/deploy-invalid-server-query-timeout")]
     MeshDeployInvalidServerQueryTimeout,
+    #[serde(rename = "mesh/deploy-pool-not-supported-by-transport")]
+    MeshDeployPoolNotSupportedByTransport,
+    #[serde(rename = "mesh/deploy-pool-missing-instance-list")]
+    MeshDeployPoolMissingInstanceList,
+    #[serde(rename = "mesh/deploy-pool-empty-instance-list")]
+    MeshDeployPoolEmptyInstanceList,
+    #[serde(rename = "mesh/deploy-pool-invalid-placeholder")]
+    MeshDeployPoolInvalidPlaceholder,
+    #[serde(rename = "mesh/deploy-server-pool-not-supported")]
+    MeshDeployServerPoolNotSupported,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -447,6 +461,8 @@ pub enum DiagnosticCode {
     MeshTopologyEventBindingUnused,
     #[serde(rename = "mesh/topology-ordering-cannot-be-guaranteed")]
     MeshTopologyOrderingCannotBeGuaranteed,
+    #[serde(rename = "mesh/topology-pool-param-name-missing")]
+    MeshTopologyPoolParamNameMissing,
     // Codegen stage
     #[serde(rename = "mesh/codegen-unsupported-language")]
     MeshCodegenUnsupportedLanguage,
@@ -513,6 +529,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationWrongPipeline,
         ValidationDynamicFeatures,
         ValidationMeshRpcReservedParam,
+        ValidationMeshRpcMissingTarget,
+        ValidationMeshRpcDuplicateTarget,
         ValidationRemovedAttribute,
         // Expression
         ExpressionEmpty,
@@ -561,6 +579,11 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidOrderingTimings,
         MeshDeployInvalidLiveliness,
         MeshDeployInvalidServerQueryTimeout,
+        MeshDeployPoolNotSupportedByTransport,
+        MeshDeployPoolMissingInstanceList,
+        MeshDeployPoolEmptyInstanceList,
+        MeshDeployPoolInvalidPlaceholder,
+        MeshDeployServerPoolNotSupported,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -586,6 +609,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshTopologyInvalidBindingField,
         MeshTopologyEventBindingUnused,
         MeshTopologyOrderingCannotBeGuaranteed,
+        MeshTopologyPoolParamNameMissing,
         // Mesh Codegen
         MeshCodegenUnsupportedLanguage,
         MeshCodegenUnsupportedTransport,
@@ -680,7 +704,9 @@ impl DiagnosticCode {
             | MeshTopologyPatternCapabilityViolation => Some("SCE Mesh §9"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
-            ValidationMeshRpcReservedParam => Some("SCE Mesh §9.5"),
+            ValidationMeshRpcReservedParam
+            | ValidationMeshRpcMissingTarget
+            | ValidationMeshRpcDuplicateTarget => Some("SCE Mesh §9.5"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -700,6 +726,14 @@ impl DiagnosticCode {
 
             // ── Mesh server-side lifecycle (SCE_MESH.md §9.5) ────
             MeshDeployInvalidServerQueryTimeout => Some("SCE Mesh §9.5"),
+
+            // ── Mesh binding placeholder + server pool (SCE_MESH.md §14.4) ──
+            MeshDeployPoolNotSupportedByTransport
+            | MeshDeployPoolMissingInstanceList
+            | MeshDeployPoolEmptyInstanceList
+            | MeshDeployPoolInvalidPlaceholder
+            | MeshDeployServerPoolNotSupported
+            | MeshTopologyPoolParamNameMissing => Some("SCE Mesh §14.4"),
 
             // ── No authoritative citation ────────────────────────
             //
@@ -797,6 +831,8 @@ impl DiagnosticCode {
             ValidationWrongPipeline => "validation/wrong-pipeline",
             ValidationDynamicFeatures => "validation/dynamic-features",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
+            ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
+            ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
             ValidationRemovedAttribute => "validation/removed-attribute",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
@@ -838,6 +874,11 @@ impl DiagnosticCode {
             MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
             MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
             MeshDeployInvalidServerQueryTimeout => "mesh/deploy-invalid-server-query-timeout",
+            MeshDeployPoolNotSupportedByTransport => "mesh/deploy-pool-not-supported-by-transport",
+            MeshDeployPoolMissingInstanceList => "mesh/deploy-pool-missing-instance-list",
+            MeshDeployPoolEmptyInstanceList => "mesh/deploy-pool-empty-instance-list",
+            MeshDeployPoolInvalidPlaceholder => "mesh/deploy-pool-invalid-placeholder",
+            MeshDeployServerPoolNotSupported => "mesh/deploy-server-pool-not-supported",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -861,6 +902,7 @@ impl DiagnosticCode {
             MeshTopologyInvalidBindingField => "mesh/topology-invalid-binding-field",
             MeshTopologyEventBindingUnused => "mesh/topology-event-binding-unused",
             MeshTopologyOrderingCannotBeGuaranteed => "mesh/topology-ordering-cannot-be-guaranteed",
+            MeshTopologyPoolParamNameMissing => "mesh/topology-pool-param-name-missing",
             MeshCodegenUnsupportedLanguage => "mesh/codegen-unsupported-language",
             MeshCodegenUnsupportedTransport => "mesh/codegen-unsupported-transport",
             MeshCodegenTemplateRead => "mesh/codegen-template-read",
@@ -1312,6 +1354,22 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 }
                 k
             },
+        },
+        ValidationError::MeshRpcMissingTarget => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMeshRpcMissingTarget,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: Vec::new(),
+        },
+        ValidationError::MeshRpcDuplicateTarget => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMeshRpcDuplicateTarget,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: Vec::new(),
         },
     }
 }
@@ -1989,6 +2047,16 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:ea4f2baf300b7c54","code":"validation/mesh-rpc-reserved-param","stage":"validation","spec":"SCE Mesh §9.5","message":"<invoke type=\"sce:mesh-rpc\">: required <param name=\"_mesh_event\"> is missing (param '_mesh_event')","actual":"_mesh_event"}"#,
             ),
             (
+                "forge/mesh-rpc-missing-target",
+                ValidationError::MeshRpcMissingTarget.into(),
+                r##"{"v":1,"id":"fnv1a:690659a64033caa8","code":"validation/mesh-rpc-missing-target","stage":"validation","spec":"SCE Mesh §9.5","message":"<invoke type=\"sce:mesh-rpc\"> must declare exactly one of `src` or `srcexpr` — both are missing. Add `src=\"#<machine>\"` for a build-time target, or `srcexpr=\"...\"` to pick among declared bindings at runtime."}"##,
+            ),
+            (
+                "forge/mesh-rpc-duplicate-target",
+                ValidationError::MeshRpcDuplicateTarget.into(),
+                r##"{"v":1,"id":"fnv1a:03a5004c0b9aa29b","code":"validation/mesh-rpc-duplicate-target","stage":"validation","spec":"SCE Mesh §9.5","message":"<invoke type=\"sce:mesh-rpc\"> declares both `src` and `srcexpr` — they are mutually exclusive. Keep only the one matching how the target is chosen (static vs runtime)."}"##,
+            ),
+            (
                 "forge/removed-attribute",
                 ValidationError::RemovedAttribute {
                     attribute: "sce:qos".into(),
@@ -2232,6 +2300,53 @@ mod tests {
                 // Hash placeholder — the byte-stability assertion patches
                 // it on first run. Shape + message are the contract.
                 r#"{"v":1,"id":"fnv1a:f3bf5c36574e7396","code":"mesh/deploy-invalid-server-query-timeout","stage":"mesh-deploy","spec":"SCE Mesh §9.5","message":"machine 'motor': invalid `server.query_timeout_ms` in deploy.yaml — query_timeout_ms (5) must be >= 10 ms — values below this floor race typical engine macrostep latency and would cause every inbound query to time out before the engine can respond. Either fix the value or omit the knob entirely to disable the server deadline.","actual":"motor"}"#,
+            ),
+            (
+                "mesh/deploy-pool-not-supported-by-transport",
+                DeployError::PoolNotSupportedByTransport {
+                    machine: "brake".into(),
+                    binding: "#logger".into(),
+                    transport: "shm".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:d6c4a65cf22dfccc","code":"mesh/deploy-pool-not-supported-by-transport","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#logger' on transport 'shm' carries a '{name}' placeholder, but this transport does not support pool bindings (supports_pool = false). Use a routing-capable transport (zenoh, someip) or drop the placeholder.","actual":"brake"}"#,
+            ),
+            (
+                "mesh/deploy-pool-missing-instance-list",
+                DeployError::PoolMissingInstanceList {
+                    machine: "brake".into(),
+                    binding: "#player".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0bcba658bc670781","code":"mesh/deploy-pool-missing-instance-list","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': SOME/IP binding '#player' uses a '{name}' placeholder but is missing the required `instances:` list. vsomeip does not support open-ended instance subscription; declare the expected instance IDs explicitly.","actual":"brake"}"#,
+            ),
+            (
+                "mesh/deploy-pool-empty-instance-list",
+                DeployError::PoolEmptyInstanceList {
+                    machine: "brake".into(),
+                    binding: "#player".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1bacaac533ee1cea","code":"mesh/deploy-pool-empty-instance-list","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' has an empty `instances: []` list. Declare at least one instance ID or remove the list entirely.","actual":"brake"}"#,
+            ),
+            (
+                "mesh/deploy-pool-invalid-placeholder",
+                DeployError::PoolInvalidPlaceholder {
+                    machine: "brake".into(),
+                    binding: "#player".into(),
+                    reason: "unbalanced '{' at byte 10 — every '{' must have a matching '}' within the same value".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d4345eb44590146d","code":"mesh/deploy-pool-invalid-placeholder","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' has an invalid placeholder — unbalanced '{' at byte 10 — every '{' must have a matching '}' within the same value. Fix the placeholder syntax or escape intended literal braces.","actual":"brake"}"#,
+            ),
+            (
+                "mesh/deploy-server-pool-not-supported",
+                DeployError::ServerPoolNotSupported {
+                    machine: "motor".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f636ea6e6bff0317","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported — a single SCXML session cannot host N independent SOME/IP instances (multi-session territory). Drop `instances:` from the server section (exposing exactly one instance), or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
             ),
             (
                 "mesh/external-read",
@@ -2479,6 +2594,18 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:ad421a502df8f70d","code":"mesh/topology-ordering-cannot-be-guaranteed","stage":"mesh-topology","spec":"SCE Mesh §10.6","message":"machine 'ecu_a': binding for '#motor' (transport: can) declares `ordering: required`, but 'can' is a broadcast bus whose semantics do not support per-(sender, receiver) sequence reconstruction (SCE Mesh §10.6.2). Either change the transport to a point-to-point one (e.g. local, shm, custom_tcp, someip, zenoh) or remove the `ordering: required` declaration from this binding.","actual":"can"}"#,
+            ),
+            (
+                "mesh/topology-pool-param-name-missing",
+                TopologyError::PoolParamNameMissing {
+                    machine: "brake".into(),
+                    target: TargetId::new("#player").unwrap(),
+                    state: "s".into(),
+                    invoke_id: "_invoke_0".into(),
+                    missing: vec!["id".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a5b1eb818d07e3a7","code":"mesh/topology-pool-param-name-missing","stage":"mesh-topology","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' declares a runtime pool that needs <param> values [\"id\"] at every using <invoke>, but invoke '_invoke_0' in state 's' does not supply [\"id\"]. Add the missing <param>(s) to that invoke, or drop the placeholder / `instance_from:` from the binding.","actual":"_invoke_0"}"#,
             ),
             (
                 "mesh/codegen-unsupported-language",
@@ -2836,6 +2963,8 @@ mod tests {
             | ValidationWrongPipeline
             | ValidationDynamicFeatures
             | ValidationMeshRpcReservedParam
+            | ValidationMeshRpcMissingTarget
+            | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
             | ExpressionEmpty
             | ExpressionLex
@@ -2873,6 +3002,11 @@ mod tests {
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidLiveliness
             | MeshDeployInvalidServerQueryTimeout
+            | MeshDeployPoolNotSupportedByTransport
+            | MeshDeployPoolMissingInstanceList
+            | MeshDeployPoolEmptyInstanceList
+            | MeshDeployPoolInvalidPlaceholder
+            | MeshDeployServerPoolNotSupported
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -2894,6 +3028,7 @@ mod tests {
             | MeshTopologyInvalidBindingField
             | MeshTopologyEventBindingUnused
             | MeshTopologyOrderingCannotBeGuaranteed
+            | MeshTopologyPoolParamNameMissing
             | MeshCodegenTemplateRead
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
@@ -3109,6 +3244,8 @@ mod tests {
                 | ValidationEmptyValue | ValidationSingletonViolation
                 | ValidationRequireEither | ValidationWrongPipeline
                 | ValidationDynamicFeatures | ValidationMeshRpcReservedParam
+                | ValidationMeshRpcMissingTarget
+                | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
@@ -3128,6 +3265,11 @@ mod tests {
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidLiveliness
                 | MeshDeployInvalidServerQueryTimeout
+                | MeshDeployPoolNotSupportedByTransport
+                | MeshDeployPoolMissingInstanceList
+                | MeshDeployPoolEmptyInstanceList
+                | MeshDeployPoolInvalidPlaceholder
+                | MeshDeployServerPoolNotSupported
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3143,6 +3285,7 @@ mod tests {
                 | MeshTopologyPatternCapabilityViolation
                 | MeshTopologyMissingBindingField | MeshTopologyInvalidBindingField
                 | MeshTopologyEventBindingUnused | MeshTopologyOrderingCannotBeGuaranteed
+                | MeshTopologyPoolParamNameMissing
                 | MeshCodegenUnsupportedLanguage
                 | MeshCodegenUnsupportedTransport | MeshCodegenTemplateRead
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
@@ -3158,9 +3301,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            91,
+            99,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 91 distinct variants to match the DiagnosticCode \
+             expected 99 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

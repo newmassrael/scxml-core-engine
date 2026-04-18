@@ -307,6 +307,52 @@ impl std::ops::DerefMut for InvokeSessionCommon {
     }
 }
 
+/// SCE Mesh §9.5: target selector for a `<invoke type="sce:mesh-rpc">`.
+///
+/// W3C SCXML §6.4 requires exactly one of `src` / `srcexpr`; this sum type
+/// makes "both empty" and "both set" structurally impossible so parser
+/// consumers no longer carry that invariant as runtime discipline.
+///
+/// `#[serde(untagged)]` with struct-named variants serialises to a flat
+/// key — either `{"src": "#motor"}` or `{"srcexpr": "'#motor_' + id"}` —
+/// not a nested `{"target": {"Src": ...}}` shape. This keeps minijinja
+/// templates' flat attribute access (`{{ invoke_info.src }}`) working for
+/// the literal case and lets them branch on `{% if invoke_info.srcexpr %}`
+/// for runtime evaluation, mirroring every other SCXML dual-attribute
+/// pair (`content` / `contentexpr`, `type` / `typeexpr`). Variants are
+/// distinguished by field name, so untagged deserialisation has no
+/// string-shape ambiguity to resolve.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum MeshRpcTarget {
+    /// Static `src="#<machine_name>"`. Topology resolves it to a
+    /// deploy.yaml binding at build time.
+    Src { src: String },
+    /// Runtime `srcexpr="<datamodel expression>"`. Evaluated at
+    /// `<invoke>` entry; result must be a `#<machine_name>` string
+    /// matching a static binding (no peer discovery implied — §3.3).
+    SrcExpr { srcexpr: String },
+}
+
+impl Default for MeshRpcTarget {
+    fn default() -> Self {
+        Self::Src { src: String::new() }
+    }
+}
+
+impl MeshRpcTarget {
+    /// The static `#<machine_name>` literal, if this is the [`Self::Src`]
+    /// variant. `None` for [`Self::SrcExpr`] because the resolution of a
+    /// runtime expression cannot be surfaced at build time — topology
+    /// enumeration must skip such invokes.
+    pub fn src_literal(&self) -> Option<&str> {
+        match self {
+            Self::Src { src } => Some(src.as_str()),
+            Self::SrcExpr { .. } => None,
+        }
+    }
+}
+
 /// SCE Mesh §9.5: short-lived RPC invoke (`<invoke type="sce:mesh-rpc">`).
 ///
 /// Distinct from the SCXML-session kinds because mesh-rpc is a single
@@ -318,10 +364,13 @@ impl std::ops::DerefMut for InvokeSessionCommon {
 pub struct MeshRpcInvokeInfo {
     #[serde(flatten)]
     pub base: InvokeBase,
-    /// The raw `src` attribute (`#motor`). Topology resolves it to a target
-    /// binding; at parse time we only store the literal so the validator can
-    /// match against deploy.yaml.
-    pub src: String,
+    /// Target selector (§9.5). [`MeshRpcTarget`] enforces exactly-one
+    /// between `src` and `srcexpr` at the type level; the `#[serde(flatten)]`
+    /// on an untagged sum produces a flat `src`/`srcexpr` key in the
+    /// rendered template context, preserving pre-existing byte goldens
+    /// for every fixture that uses `src`.
+    #[serde(flatten)]
+    pub target: MeshRpcTarget,
     /// Value of the required `<param name="_mesh_event">`. This populates the
     /// envelope `type` field — never taken from any author-named `<param>`.
     pub mesh_event: String,

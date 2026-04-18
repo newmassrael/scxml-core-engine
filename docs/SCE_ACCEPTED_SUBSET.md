@@ -296,6 +296,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/wrong-pipeline` | Validation |
 | `validation/dynamic-features` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
+| `validation/mesh-rpc-missing-target` | Validation |
+| `validation/mesh-rpc-duplicate-target` | Validation |
 | `validation/removed-attribute` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
@@ -323,6 +325,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-ordering-timings` | Mesh Deploy |
 | `mesh/deploy-invalid-liveliness` | Mesh Deploy |
 | `mesh/deploy-invalid-server-query-timeout` | Mesh Deploy |
+| `mesh/deploy-pool-not-supported-by-transport` | Mesh Deploy |
+| `mesh/deploy-pool-missing-instance-list` | Mesh Deploy |
+| `mesh/deploy-pool-empty-instance-list` | Mesh Deploy |
+| `mesh/deploy-pool-invalid-placeholder` | Mesh Deploy |
+| `mesh/deploy-server-pool-not-supported` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |
@@ -343,6 +350,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/topology-invalid-binding-field` | Mesh Topology |
 | `mesh/topology-event-binding-unused` | Mesh Topology |
 | `mesh/topology-ordering-cannot-be-guaranteed` | Mesh Topology |
+| `mesh/topology-pool-param-name-missing` | Mesh Topology |
 | `mesh/codegen-unsupported-language` | Mesh Codegen |
 | `mesh/codegen-unsupported-transport` | Mesh Codegen |
 | `mesh/codegen-event-name-collision` | Mesh Codegen |
