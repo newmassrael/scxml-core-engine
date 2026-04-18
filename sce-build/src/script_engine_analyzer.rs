@@ -22,8 +22,7 @@
 //! side effects.
 
 use crate::model::{
-    Action, DoneData, ElseIfBranch, Invoke, InvokeSessionCommon, MeshRpcTarget, SCXMLModel, State,
-    Variable,
+    Action, DoneData, Invoke, InvokeSessionCommon, MeshRpcTarget, SCXMLModel, State, Variable,
 };
 
 /// One distinct reason a document needs a runtime script engine.
@@ -111,40 +110,27 @@ pub fn analyze(model: &SCXMLModel) -> Vec<NeedsScriptEngineCause> {
     causes
 }
 
-/// Convenience: `!analyze(model).is_empty()`. Avoids allocating the
-/// full cause list when only the flag is needed.
+/// `true` iff `analyze(model)` would return any cause. Thin wrapper —
+/// `analyze` is the single traversal, this spelling exists so callers
+/// that only need the bool can read at the intent level without
+/// spelling the `.is_empty()` check themselves.
 pub fn requires_script_engine(model: &SCXMLModel) -> bool {
-    // Inlined fast-path: stop at the first cause rather than building
-    // the full vector. `analyze` is still the canonical spelling for
-    // debug / test contexts that want the cause set.
-    has_datamodel_cause(&model.variables)
-        || has_global_script_cause(model)
-        || model
-            .states
-            .iter()
-            .any(|(state_id, state)| has_state_cause(state_id, state))
+    !analyze(model).is_empty()
 }
 
 fn collect_datamodel_causes(variables: &[Variable], out: &mut Vec<NeedsScriptEngineCause>) {
     for var in variables {
-        if variable_needs_engine(var) {
+        // W3C SCXML 5.3: any initializer (expr/src/content) needs the
+        // engine to evaluate at runtime. Tighter classification (int /
+        // string / bool literal → static init) is orthogonal — it
+        // happens later in [`crate::analyzer::classify_variables`] and
+        // doesn't affect this flag.
+        if !var.expr.is_empty() || !var.src.is_empty() || !var.content.is_empty() {
             out.push(NeedsScriptEngineCause::DatamodelVariableInit {
                 var_id: var.id.clone(),
             });
         }
     }
-}
-
-fn has_datamodel_cause(variables: &[Variable]) -> bool {
-    variables.iter().any(variable_needs_engine)
-}
-
-fn variable_needs_engine(var: &Variable) -> bool {
-    // W3C SCXML 5.3: any initializer (expr/src/content) needs the engine
-    // to evaluate at runtime. Tighter classification (int / string / bool
-    // literal → static init) is orthogonal — it happens later in
-    // [`crate::analyzer::classify_variables`] and doesn't affect this flag.
-    !var.expr.is_empty() || !var.src.is_empty() || !var.content.is_empty()
 }
 
 fn collect_global_script_causes(model: &SCXMLModel, out: &mut Vec<NeedsScriptEngineCause>) {
@@ -154,10 +140,6 @@ fn collect_global_script_causes(model: &SCXMLModel, out: &mut Vec<NeedsScriptEng
     if model.has_unresolved_external_script {
         out.push(NeedsScriptEngineCause::UnresolvedExternalScript);
     }
-}
-
-fn has_global_script_cause(model: &SCXMLModel) -> bool {
-    !model.global_scripts.is_empty() || model.has_unresolved_external_script
 }
 
 fn collect_state_causes(state_id: &str, state: &State, out: &mut Vec<NeedsScriptEngineCause>) {
@@ -190,53 +172,12 @@ fn collect_state_causes(state_id: &str, state: &State, out: &mut Vec<NeedsScript
     }
 }
 
-fn has_state_cause(state_id: &str, state: &State) -> bool {
-    for trans in &state.transitions {
-        if transition_guard_needs_engine(trans) {
-            return true;
-        }
-        if trans.actions.iter().any(|a| action_needs_engine(state_id, a)) {
-            return true;
-        }
-    }
-    let entry_exit = state
-        .on_entry_blocks
-        .iter()
-        .chain(state.on_exit_blocks.iter());
-    for block in entry_exit {
-        if block.iter().any(|a| action_needs_engine(state_id, a)) {
-            return true;
-        }
-    }
-    if state
-        .initial_transition_actions
-        .iter()
-        .any(|a| action_needs_engine(state_id, a))
-    {
-        return true;
-    }
-    if state
-        .initial_history_default_actions
-        .iter()
-        .any(|a| action_needs_engine(state_id, a))
-    {
-        return true;
-    }
-    if state.invokes.iter().any(invoke_needs_engine) {
-        return true;
-    }
-    if let Some(dd) = &state.donedata {
-        if donedata_needs_engine(dd) {
-            return true;
-        }
-    }
-    false
-}
-
 fn transition_guard_needs_engine(trans: &crate::model::Transition) -> bool {
-    if trans.cond.is_empty() || trans.is_cpp_condition || trans.is_kt_condition {
-        return false;
-    }
+    // `check_expression_needs` is the single classifier — it returns
+    // `(false, _)` for `cpp:` / `kt:` prefixes and pure-In() predicates,
+    // so no additional native-case guard is needed here. `is_cpp_condition`
+    // / `is_kt_condition` remain on [`crate::model::Transition`] for
+    // codegen template branching, not for flag decisions.
     let (needs_se, _has_in) = crate::parser::check_expression_needs(&trans.cond);
     needs_se
 }
@@ -268,13 +209,13 @@ fn collect_action_causes(
             }
         }
         "if" => {
-            if if_cond_needs_engine(&action.cond, action) {
+            if cond_needs_engine(&action.cond) {
                 out.push(NeedsScriptEngineCause::IfCondition {
                     state_id: state_id.to_string(),
                 });
             }
             for branch in &action.elseif_branches {
-                if elseif_needs_engine(branch) {
+                if cond_needs_engine(&branch.cond) {
                     out.push(NeedsScriptEngineCause::ElseIfCondition {
                         state_id: state_id.to_string(),
                     });
@@ -334,56 +275,6 @@ fn collect_action_causes(
     }
 }
 
-fn action_needs_engine(state_id: &str, action: &Action) -> bool {
-    match action.action_type.as_str() {
-        "send" => {
-            if !action.namelist.is_empty() {
-                return true;
-            }
-            if action
-                .params
-                .iter()
-                .any(|p| !p.expr.is_empty() && !p.is_static_literal)
-            {
-                return true;
-            }
-            send_has_dynamic_attr(action)
-        }
-        "if" => {
-            if if_cond_needs_engine(&action.cond, action) {
-                return true;
-            }
-            if action.elseif_branches.iter().any(elseif_needs_engine) {
-                return true;
-            }
-            if action
-                .then_actions
-                .iter()
-                .any(|a| action_needs_engine(state_id, a))
-            {
-                return true;
-            }
-            if action
-                .else_actions
-                .iter()
-                .any(|a| action_needs_engine(state_id, a))
-            {
-                return true;
-            }
-            action
-                .elseif_branches
-                .iter()
-                .any(|b| b.actions.iter().any(|a| action_needs_engine(state_id, a)))
-        }
-        "assign" => true,
-        "log" => !action.expr.is_empty(),
-        "script" => !action.is_cpp_function && !action.is_kt_function,
-        "cancel" => !action.sendidexpr.is_empty(),
-        "foreach" => true,
-        _ => false,
-    }
-}
-
 fn send_has_dynamic_attr(action: &Action) -> bool {
     !action.eventexpr.is_empty()
         || !action.targetexpr.is_empty()
@@ -391,28 +282,11 @@ fn send_has_dynamic_attr(action: &Action) -> bool {
         || !action.typeexpr.is_empty()
 }
 
-fn if_cond_needs_engine(cond: &str, action: &Action) -> bool {
-    // Mirrors `parse_if_action`: a native `<if>` condition is surfaced via
-    // `action.cond_cpp` / `action.cond_kt`; if either is populated the raw
-    // ECMAScript branch is not the one that gets emitted.
-    if cond.is_empty() {
-        return false;
-    }
-    if !action.cond_cpp.is_empty() || !action.cond_kt.is_empty() {
-        return false;
-    }
+fn cond_needs_engine(cond: &str) -> bool {
+    // `check_expression_needs` is the single classifier. It returns
+    // `(false, _)` for `cpp:` / `kt:` prefixes and pure-In() predicates
+    // alike; no separate `cond_cpp` / `cond_kt` inspection is needed.
     let (needs_se, _has_in) = crate::parser::check_expression_needs(cond);
-    needs_se
-}
-
-fn elseif_needs_engine(branch: &ElseIfBranch) -> bool {
-    if branch.cond.is_empty() {
-        return false;
-    }
-    if !branch.cond_cpp.is_empty() || !branch.cond_kt.is_empty() {
-        return false;
-    }
-    let (needs_se, _has_in) = crate::parser::check_expression_needs(&branch.cond);
     needs_se
 }
 
@@ -442,14 +316,6 @@ fn collect_invoke_causes(invoke: &Invoke, out: &mut Vec<NeedsScriptEngineCause>)
     }
 }
 
-fn invoke_needs_engine(invoke: &Invoke) -> bool {
-    match invoke {
-        Invoke::Hybrid(_) => true,
-        Invoke::Scxml(info) => !info.namelist.is_empty() || info.common.child_needs_script_engine,
-        Invoke::MeshRpc(info) => matches!(&info.target, MeshRpcTarget::SrcExpr { .. }),
-    }
-}
-
 fn push_child_invoke_cause(common: &InvokeSessionCommon, out: &mut Vec<NeedsScriptEngineCause>) {
     if common.child_needs_script_engine {
         out.push(NeedsScriptEngineCause::ChildInvokeNeedsScriptEngine {
@@ -473,10 +339,6 @@ fn collect_donedata_causes(
             state_id: state_id.to_string(),
         });
     }
-}
-
-fn donedata_needs_engine(dd: &DoneData) -> bool {
-    !dd.params.is_empty() || !dd.content.is_empty() || !dd.contentexpr.is_empty()
 }
 
 #[cfg(test)]
@@ -746,10 +608,11 @@ mod tests {
     }
 
     #[test]
-    fn requires_script_engine_matches_analyze() {
-        // Fast-path parity: `requires_script_engine` must return `true`
-        // exactly when `analyze` returns a non-empty set. The contract
-        // lets downstream pass through without allocating the vec.
+    fn requires_script_engine_is_analyze_is_not_empty() {
+        // `requires_script_engine` is a one-line wrapper over
+        // `!analyze(model).is_empty()`. Pin the wrapper contract so that
+        // a future optimisation that reintroduces a divergent fast path
+        // fails here.
         let docs: &[(&str, bool)] = &[
             (
                 r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"><state id="s"/></scxml>"#,
@@ -762,10 +625,12 @@ mod tests {
         ];
         for (scxml, expected) in docs {
             let model = parse(scxml);
-            let fast = requires_script_engine(&model);
-            let slow = !analyze(&model).is_empty();
-            assert_eq!(fast, slow, "fast/slow parity broken for {scxml}");
-            assert_eq!(fast, *expected, "unexpected flag for {scxml}");
+            assert_eq!(
+                requires_script_engine(&model),
+                !analyze(&model).is_empty(),
+                "requires_script_engine diverged from analyze for {scxml}",
+            );
+            assert_eq!(requires_script_engine(&model), *expected, "unexpected flag for {scxml}");
         }
     }
 }
