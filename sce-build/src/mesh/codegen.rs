@@ -1,19 +1,27 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
-//
-// SCE Mesh codegen dispatcher — per-target transport template rendering.
-//
-// Each target routes through its deploy.yaml-bound transport. Mixed transports
-// are supported: e.g. #motor via local, #display via shm, #logger via someip,
-// #telemetry via zenoh. The unified template generates a single TransportRouter
-// that dispatches per-target to the appropriate transport-specific send function.
-//
-// Adding a new transport — two required changes:
-//   1. Add one entry to `transport::lookup()` (shape + capabilities)
-//   2. Add {% elif %} blocks in mesh_transport.h.jinja2
-// If the transport has device-shared session config, also:
-//   3. Add a typed struct field to `deploy::TransportConfigs`
-//   4. Thread the config through `generate_mesh()` in `lib.rs`
+
+//! SCE Mesh codegen dispatcher — per-target transport template rendering.
+//!
+//! Each target routes through its deploy.yaml-bound transport. Mixed
+//! transports are supported: e.g. `#motor` via local, `#display` via
+//! shm, `#logger` via someip, `#telemetry` via zenoh. The unified
+//! template generates a single `TransportRouter` that dispatches
+//! per-target to the appropriate transport-specific send function.
+//!
+//! Adding a new transport — two required changes:
+//!   1. Add one entry to `transport::lookup()` (shape + capabilities).
+//!   2. Add `{% elif %}` blocks in `mesh_transport.h.jinja2`.
+//!
+//! If the transport has device-shared session config, also:
+//!   3. Add a typed struct field to `deploy::TransportConfigs`.
+//!   4. Thread the config through `generate_mesh()` in `lib.rs`.
+//!
+//! `Option<T>` fields in this module follow the serialization convention
+//! documented at [`crate::model`]: `is not none`-guarded template consumers
+//! omit `skip_serializing_if` (serialize JSON `null`); truthy / subfield /
+//! `| default(y)` consumers keep it (omit from JSON). When adding a new
+//! `Option<T>` field, consult that docstring before picking a shape.
 
 use crate::filters;
 use crate::generator::{GeneratedOutput, Language};

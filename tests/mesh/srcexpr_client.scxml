@@ -10,11 +10,18 @@
      never compiled — a textbook "built but unconsumed" gap.
 
      The srcexpr target expression always calls evaluateExpression at
-     runtime, so `parse_invoke` marks every MeshRpcTarget::SrcExpr
+     runtime, so `parse_mesh_rpc_invoke` marks every MeshRpcTarget::SrcExpr
      document as `needs_script_engine = true` unconditionally. This
      fixture therefore needs no surrounding script-engine trigger:
      `datamodel` can stay at the spec default and there is no
-     `<datamodel>` block. `calling_literal` keeps a static
+     `<datamodel>` block.
+
+     Note on datamodel semantics: W3C treats the omitted `datamodel`
+     attribute as `"null"` (no expression evaluation). The srcexpr here
+     is still resolved because SCE mesh-rpc evaluates srcexpr through
+     the build-configured default script engine (Lua) independently of
+     the document's declared datamodel — the attribute governs author
+     `<script>` / `<assign>` semantics, not the mesh-rpc binding. `calling_literal` keeps a static
      `src="#motor_srcexpr"` so the topology still resolves a binding
      (srcexpr invokes are skipped by `invoke_sites_by_target`, leaving
      `TransportRouter` without any dispatch entry otherwise).

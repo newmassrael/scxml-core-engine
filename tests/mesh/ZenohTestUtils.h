@@ -60,6 +60,13 @@ inline zenoh::Session open_peer(const std::string& connect,
     return zenoh::Session::open(std::move(config));
 }
 
+// Tighter than `MeshTestUtils.h::kDefaultTimeout` (5 s) because a wedged
+// zenoh listen endpoint should fail fast rather than extend every
+// migrated handshake site by the full default. Observed convergence on
+// this system is under 100 ms; 2 s gives a ~20× safety margin while
+// still surfacing a broken endpoint in well under one ctest job slot.
+constexpr auto kHandshakeTimeout = std::chrono::seconds(2);
+
 // ── Deterministic peer-mesh convergence barrier ──────────────────────
 //
 // Blocks until a liveliness token declared on `peer_session` is
@@ -85,7 +92,7 @@ inline zenoh::Session open_peer(const std::string& connect,
 inline void wait_for_peer_ready(
         zenoh::Session& local_session,
         zenoh::Session& peer_session,
-        std::chrono::milliseconds timeout = std::chrono::seconds(2)) {
+        std::chrono::milliseconds timeout = kHandshakeTimeout) {
     const std::string key = "sce/test/handshake/" +
         SCE::uuid::to_string(SCE::uuid::v7());
 

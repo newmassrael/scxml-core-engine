@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
-//
-// SCE Mesh topology analyzer — collects <send> targets from an SCXML model,
-// matches them against deploy.yaml bindings, and performs build-time validation.
+
+//! SCE Mesh topology analyzer — collects `<send>` targets from an SCXML
+//! model, matches them against deploy.yaml bindings, and performs
+//! build-time validation.
+//!
+//! `Option<T>` fields in this module follow the serialization convention
+//! documented at [`crate::model`]: `is not none`-guarded template consumers
+//! omit `skip_serializing_if` (serialize JSON `null`); truthy / subfield /
+//! `| default(y)` consumers keep it (omit from JSON). When adding a new
+//! `Option<T>` field, consult that docstring before picking a shape.
 
 use crate::mesh::deploy::{BindingConfig, DeployConfig};
 use crate::mesh::error::TopologyError;
