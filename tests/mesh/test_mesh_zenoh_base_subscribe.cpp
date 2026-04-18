@@ -52,8 +52,13 @@ int run_test() {
 
     MESH_TEST_REQUIRE(router.init(), "router.init() failed");
 
-    // Peer discovery stabilization.
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    // Deterministic peer-mesh handshake: the harness session joins the
+    // same listen endpoint and exchanges a liveliness token with motor.
+    // The router, motor, and harness share the kListen listener, so
+    // convergence of the raw-session pair proves the router↔motor edge
+    // has also converged.
+    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_peer_ready(motor_session, handshake_session);
 
     // Drive brake's subscribe side directly via send_zenoh. Using the
     // router API (not the SM step) isolates this test to the transport

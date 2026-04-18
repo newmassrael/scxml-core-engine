@@ -92,8 +92,12 @@ int run_test() {
         },
         [] {});
 
-    // Peer discovery stabilization.
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    // Deterministic peer-mesh handshake via a liveliness token exchanged
+    // with a throwaway peer on the same listen endpoint. Brake's router
+    // dials kListen from inside init(); once motor↔handshake has
+    // converged the motor↔brake edge has too.
+    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_peer_ready(motor_session, handshake_session);
 
     // ── 1. FireForget: send_zenoh → session.put → motor subscriber ─────
     {

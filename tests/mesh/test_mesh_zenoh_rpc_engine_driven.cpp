@@ -107,7 +107,15 @@ int run_test() {
     // declared in deploy_zenoh_multi.yaml; multicast scouting off so the
     // test is hermetic.
     auto client_session = open_peer(/*connect=*/kListen, /*listen=*/"");
-    std::this_thread::sleep_for(std::chrono::seconds(1));  // peer handshake
+
+    // Deterministic peer-mesh handshake: a harness session joins the
+    // same listen endpoint and exchanges a liveliness token with the
+    // client. In zenoh peer mode the motor router is the relay on the
+    // shared listener, so token propagation between the two raw sessions
+    // proves the client↔motor edge has also converged — replacing a
+    // non-deterministic sleep_for with a zenoh-native signal.
+    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_peer_ready(client_session, handshake_session);
 
     // ── §1. RPC roundtrip: engine-driven ──────────────────────────────
     //

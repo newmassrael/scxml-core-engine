@@ -66,8 +66,12 @@ int run_test() {
     // ── Client side: raw zenoh session ──
     auto client_session = open_peer(/*connect=*/kListen, /*listen=*/"");
 
-    // Peer discovery stabilization.
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    // Deterministic peer-mesh handshake via a liveliness token exchanged
+    // with a throwaway peer on the same listen endpoint. Motor is the
+    // relay on kListen, so convergence of client↔handshake proves
+    // client↔motor has also converged.
+    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_peer_ready(client_session, handshake_session);
 
     // ── 1. Server queryable receives RPC request ──────────────────────
     //

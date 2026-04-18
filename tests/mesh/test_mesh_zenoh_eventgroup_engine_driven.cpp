@@ -77,7 +77,13 @@ int run_test() {
 
     // Client session. Peer mode, connects to the motor's listen endpoint.
     auto client_session = open_peer(/*connect=*/kListen, /*listen=*/"");
-    std::this_thread::sleep_for(std::chrono::seconds(1));  // peer handshake
+
+    // Deterministic peer-mesh handshake via a liveliness token exchanged
+    // with a throwaway peer on the same listen endpoint. Motor is the
+    // relay on kListen, so convergence of client↔handshake proves
+    // client↔motor has also converged.
+    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_peer_ready(client_session, handshake_session);
 
     // ── §1. Eventgroup notification: engine-driven ───────────────
     //

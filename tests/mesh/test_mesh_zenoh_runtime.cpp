@@ -58,8 +58,12 @@ int run_test() {
 
     MESH_TEST_REQUIRE(router.init(), "router.init() failed");
 
-    // Peer discovery stabilization.
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    // Deterministic peer-mesh handshake via a liveliness token exchanged
+    // with a throwaway peer. Motor listens at kListen; the handshake
+    // peer dials it, and so does brake's router from inside init(). Once
+    // motor↔handshake has converged, motor↔brake_router has too.
+    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_peer_ready(motor_session, handshake_session);
 
     auto env = make_envelope("brake.activate", SCE::Mesh::PatternKind::FireForget);
     MESH_TEST_REQUIRE(router.send_zenoh(env, kMotorKey, "#motor"),

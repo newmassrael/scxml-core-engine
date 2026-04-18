@@ -124,11 +124,13 @@ int run_test() {
 
     // Peer handshake. Must come before raising the event so the
     // outbound session.get isn't fired while the transport is still
-    // in SYN_SENT and drops to the on_drop path. 1 s matches every
-    // other zenoh peer-mode runtime test in this directory — zenoh
-    // peer discovery has no synchronous "connected" event, so a
-    // conservative fixed delay is the shared convention.
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    // in SYN_SENT and drops to the on_drop path. Liveliness-token
+    // exchange between the harness and a throwaway handshake peer
+    // proves zenoh's routing has converged on this listen endpoint
+    // — the client router that dialed kListen from inside init() is
+    // then guaranteed to see the harness's queryable.
+    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_peer_ready(harness_session, handshake_session);
 
     // Driver thread pumps the external queue (same RAII pattern as
     // test_mesh_zenoh_rpc_engine_driven.cpp — Session I precedent).

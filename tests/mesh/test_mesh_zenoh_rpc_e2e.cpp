@@ -45,6 +45,9 @@ namespace {
 
 using namespace SCE::Test::Mesh;
 
+// Must match deploy_zenoh_multi.yaml ecu_motor transports.zenoh.listen.
+constexpr const char* kListen = "tcp/127.0.0.1:17447";
+
 int run_test() {
     namespace brake_gen = SCE::Generated::brake_zenoh_multi;
     namespace motor_gen = SCE::Generated::motor_zenoh_multi;
@@ -64,8 +67,14 @@ int run_test() {
     BrakeRouterT brake_router(brake_engine);
     MESH_TEST_REQUIRE(brake_router.init(), "brake_router.init() failed");
 
-    // Peer discovery stabilization.
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    // Deterministic peer-mesh handshake. Both routers use generated zenoh
+    // sessions that are not directly reachable for liveliness dances, so
+    // two raw handshake peers join the same listen endpoint and exchange
+    // a liveliness token. Motor is the relay on kListen; once the raw
+    // pair has converged, motor has also converged with brake_router.
+    auto handshake_observer = open_peer(/*connect=*/kListen, /*listen=*/"");
+    auto handshake_peer     = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_peer_ready(handshake_observer, handshake_peer);
 
     // ── 1. RPC round-trip: brake send_zenoh → motor queryable →
     //       motor mesh_send_cb_ → resolvePattern → handleServerResponse
