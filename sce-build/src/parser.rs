@@ -1243,18 +1243,26 @@ impl SCXMLParser {
         // than author data, and the static/hybrid classifier below
         // would otherwise silently drop the invoke (scxml_type=false).
         if invoke_type == "sce:mesh-rpc" {
-            return self
-                .parse_mesh_rpc_invoke(
-                    elem,
-                    state_id,
-                    source_name,
-                    invoke_id,
-                    field_suffix,
-                    src.clone(),
-                    srcexpr.clone(),
-                    idlocation,
-                )
-                .map(|info| Some(Invoke::MeshRpc(info)));
+            let info = self.parse_mesh_rpc_invoke(
+                elem,
+                state_id,
+                source_name,
+                invoke_id,
+                field_suffix,
+                src.clone(),
+                srcexpr.clone(),
+                idlocation,
+            )?;
+            // SCE Mesh §9.5 runtime target resolution: the srcexpr entry
+            // block calls `ensureScriptEngine()` + `evaluateExpression()`
+            // unconditionally, so `needs_script_engine` must be true or
+            // the generated code references a non-existent helper.
+            // Static `src` variants never evaluate expressions and do
+            // not promote the flag on their own.
+            if matches!(info.target, crate::model::MeshRpcTarget::SrcExpr { .. }) {
+                model.needs_script_engine = true;
+            }
+            return Ok(Some(Invoke::MeshRpc(info)));
         }
 
         let mut contentexpr = String::new();
@@ -3829,6 +3837,50 @@ mod tests {
         // pass through unchanged.
         assert_eq!(info.base.params.len(), 1);
         assert_eq!(info.base.params[0].name, "torque");
+    }
+
+    #[test]
+    fn mesh_rpc_srcexpr_promotes_needs_script_engine() {
+        // SCE Mesh §9.5: the srcexpr entry block calls
+        // `evaluateExpression` unconditionally, so `parse_invoke` must
+        // flip `needs_script_engine` on every document that carries a
+        // `MeshRpcTarget::SrcExpr`. Without the flag the generated code
+        // references a missing `ensureScriptEngine()` helper.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" srcexpr="'#motor'">
+                    <param name="_mesh_event" expr="'service.request.ping'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        assert!(
+            model.needs_script_engine,
+            "srcexpr invoke must promote needs_script_engine",
+        );
+    }
+
+    #[test]
+    fn mesh_rpc_static_src_does_not_promote_needs_script_engine() {
+        // Static `src="#motor"` carries no expression evaluation — the
+        // target is a build-time literal resolved through the topology.
+        // This document has no other script-engine trigger (no datamodel
+        // block, no content, no donedata), so the flag must stay off.
+        // Pairs with the previous test to pin both sides of the branch.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="sce:mesh-rpc" src="#motor">
+                    <param name="_mesh_event" expr="'service.request.ping'"/>
+                </invoke>
+            </state>
+        </scxml>"##;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        assert!(
+            !model.needs_script_engine,
+            "static src invoke without other triggers must not promote needs_script_engine",
+        );
     }
 
     #[test]
