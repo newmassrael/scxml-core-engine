@@ -1,0 +1,22 @@
+# SCE Mesh §14.4 Zenoh pool runtime verification.
+# Port 17452 is reserved for this fixture (see tests/CMakeLists.txt
+# RESOURCE_LOCK zenoh_pool_port_17452) so it does not collide with
+# the 17447/17448/17449/17450 ports already in use by the other
+# Zenoh runtime tests. peer mode + explicit TCP locator keeps the
+# test hermetic (no multicast scouting).
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/127.0.0.1:17452"]
+    machines:
+      pool_zenoh_client:
+        source: pool_zenoh_client.scxml
+        bindings:
+          "#gamer_pool":
+            transport: zenoh
+            key: "sce/player/{id}"
+      gamer_pool:
+        source: gamer_pool.scxml

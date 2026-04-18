@@ -3131,6 +3131,86 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         message(STATUS "vsomeip3 / zenohcxx not both found — skipping mesh_pool_compile_test")
     endif()
 
+    # ── SCE_MESH.md §14.4 Zenoh pool runtime verification ──────────
+    # Compile-only pool_client verifies the generated pool branches
+    # instantiate; this test drives the Zenoh pool path end-to-end:
+    #
+    #   engine onentry → performMeshInvoke → Zenoh pool branch
+    #     → substitute `{id}` token ("42") into `sce/player/{id}`
+    #     → zenoh_session_.get("sce/player/42", ...)
+    #     → harness queryable replies with invoke_id preserved
+    #     → on_reply → admitInbound → dispatchToSender → handleReply
+    #     → done.invoke raises → calling_gamer → ok
+    #
+    # Without this test a regression in the JSON decode / placeholder
+    # scan / pool_key.replace flow would emit a well-formed binary
+    # whose queries never reach any peer — the deadline path would
+    # silently mask it as error.invoke.
+    #
+    # Zenoh-only fixture (pool_zenoh_client.scxml) so the test does
+    # not need the vsomeip routing-manager daemon. Port 17452 is
+    # reserved via RESOURCE_LOCK to stay clear of the 17447/17448/
+    # 17449/17450 ports used by other Zenoh runtime tests.
+    if(zenohc_FOUND AND zenohcxx_FOUND)
+        set(MESH_POOL_ZENOH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_pool_zenoh_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_POOL_ZENOH_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_zenoh_client.scxml" -l cpp -o "${MESH_POOL_ZENOH_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/pool_zenoh_client.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh pool Zenoh: Generating pool_zenoh_client_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_zenoh_client.scxml" -l cpp -o "${MESH_POOL_ZENOH_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_pool_zenoh.yaml"
+            DEPENDS "${MESH_TEST_DIR}/pool_zenoh_client.scxml" "${MESH_TEST_DIR}/deploy_pool_zenoh.yaml"
+                    "${MESH_TEST_DIR}/gamer_pool.scxml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h"
+            COMMENT "Mesh pool Zenoh: Generating pool_zenoh_client_transport.h (§14.4 runtime)"
+            VERBATIM
+        )
+
+        add_executable(mesh_pool_zenoh_runtime_test
+            mesh/test_mesh_pool_zenoh_runtime.cpp
+            "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h"
+            "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h"
+        )
+
+        target_include_directories(mesh_pool_zenoh_runtime_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${CMAKE_SOURCE_DIR}/tests/mesh
+                ${MESH_POOL_ZENOH_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_pool_zenoh_runtime_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+                pthread
+        )
+
+        target_compile_features(mesh_pool_zenoh_runtime_test PRIVATE cxx_std_17)
+        target_compile_definitions(mesh_pool_zenoh_runtime_test PRIVATE SCE_THREAD_SAFE)
+
+        apply_sce_test_policies(mesh_pool_zenoh_runtime_test)
+
+        add_test(NAME mesh_pool_zenoh_runtime_verification
+                 COMMAND mesh_pool_zenoh_runtime_test)
+        set_tests_properties(mesh_pool_zenoh_runtime_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_pool_port_17452
+        )
+    else()
+        message(STATUS "zenohcxx not found — skipping mesh_pool_zenoh_runtime_test")
+    endif()
+
     # ── Negative: event coverage violation must fail codegen ────
     # brake_bad.scxml sends "brake.activte" (typo) to #motor. The event
     # has no matching <transition> in motor.scxml, so TopologyError::

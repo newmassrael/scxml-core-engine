@@ -2238,7 +2238,12 @@ struct TransportRouter {
 {% for site in target.invoke_sites %}
         if (target == "{{ target.target }}" && fieldSuffix == "{{ site.field_suffix }}") {
             env.type = "{{ site.mesh_event }}";
-{% if site.deadline_ms is not none %}
+{# `deadline_ms` is an Option<u64> with `skip_serializing_if=Option::is_none`,
+   so when unset it does not serialise at all — minijinja reports the
+   attribute as `undefined`, which `is not none` TREATS AS TRUTHY.  Using
+   `is defined` instead makes the guard fire iff the author supplied
+   `<param name="_mesh_deadline_ms">`. #}
+{% if site.deadline_ms is defined and site.deadline_ms is not none %}
             // Per-invoke deadline from <param name="_mesh_deadline_ms">.
             // Fires handleDeadline on the invoke_correlation_ table which
             // invokes the deliver callback with RpcStatus::DeadlineExceeded —

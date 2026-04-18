@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §14.4 Zenoh pool runtime verification (client side).
+
+     Zenoh-only variant of pool_client.scxml, split because the co-located
+     SOME/IP pool binding in pool_client.scxml pulls vsomeip into the
+     generated TransportRouter ctor (`vsomeip::runtime::get()->create_application(...)`)
+     unconditionally — which needs a routing-manager process to be alive.
+     The Zenoh pool E2E wants to stand on its own without the vsomeip
+     daemon, so this fixture carries only the `#gamer_pool` binding.
+
+     The `id` <param> value (`"42"`) is the one the runtime KeyExpr
+     concat in `invokeMeshRpc` substitutes into `sce/player/{id}` →
+     `sce/player/42`. The test harness declares a queryable at exactly
+     that key expression; without the runtime substitution step landing
+     correctly the query never reaches the harness and the invoke
+     deadlines out with RpcStatus::Unavailable. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="pool_zenoh_client" initial="idle">
+    <state id="idle">
+        <transition event="query.gamer" target="calling_gamer"/>
+    </state>
+    <state id="calling_gamer">
+        <invoke type="sce:mesh-rpc" src="#gamer_pool">
+            <param name="_mesh_event" expr="'service.request.ping'"/>
+            <param name="id" expr="'42'"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+    </state>
+    <final id="ok"/>
+    <final id="failed"/>
+</scxml>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Topology stub for the Zenoh pool runtime fixture. The pool binding's
+     wildcard `sce/player/{id}` has no single receiver SCXML — the test
+     harness is a raw zenoh queryable declared in C++. Codegen still
+     needs every bound target to be declared so event-coverage validation
+     and src-literal resolution succeed; this stub fills that role and
+     is never instantiated at runtime (the runtime test links only
+     pool_zenoh_client_sm.h). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="gamer_pool" initial="ready">
+    <state id="ready">
+        <transition event="service.request.ping" target="replying"/>
+    </state>
+    <state id="replying"/>
+</scxml>
