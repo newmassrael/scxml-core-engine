@@ -1538,6 +1538,83 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_invoke_compile_verification COMMAND mesh_invoke_compile_test)
 
+    # ── SCE_MESH §9.5 srcexpr compile verification ──────────────
+    # Forces the srcexpr `{% if invoke_info.srcexpr %}` branches in
+    # entry_exit_actions.jinja2 + state_machine.jinja2 to render and
+    # compile. Until this fixture landed, no SCXML in-tree used
+    # `<invoke type="sce:mesh-rpc" srcexpr="...">`, so the Phase 5 β
+    # srcexpr code sat "built but unconsumed" — the member declaration
+    # was even trapped inside the scxml/hybrid guard until this session
+    # moved it out. Compile-only test with sce_scripting linked so the
+    # generated `ensureScriptEngine()` + `evaluateExpression(...)` calls
+    # resolve without pulling a concrete engine at runtime.
+    set(MESH_SRCEXPR_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_srcexpr_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SRCEXPR_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_client.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/srcexpr_client.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh srcexpr: Generating srcexpr_client_sm.h (§9.5 srcexpr runtime target)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_srcexpr.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/motor_srcexpr.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh srcexpr: Generating motor_srcexpr_sm.h (§9.5 srcexpr receiver)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_client.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_srcexpr.yaml"
+        DEPENDS "${MESH_TEST_DIR}/srcexpr_client.scxml" "${MESH_TEST_DIR}/deploy_srcexpr.yaml"
+                "${MESH_TEST_DIR}/motor_srcexpr.scxml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h"
+        COMMENT "Mesh srcexpr: Generating srcexpr_client_transport.h (§9.5 srcexpr plumbing)"
+        VERBATIM
+    )
+
+    add_executable(mesh_srcexpr_compile_test
+        mesh/test_mesh_srcexpr_compile.cpp
+        "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h"
+        "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h"
+        "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h"
+    )
+
+    target_include_directories(mesh_srcexpr_compile_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SRCEXPR_OUTPUT_DIR}
+    )
+
+    # The generated srcexpr entry block calls `ensureScriptEngine()`,
+    # which resolves through `ScriptEngineProvider::getScriptEngine()`
+    # in sce_scripting (transitively pulled by sce_runtime). The
+    # mesh-rpc literal-src compile fixture (mesh_invoke_compile_test)
+    # links only sce_base + sce_mesh_common because brake_invoke.scxml
+    # is datamodel="null" with static-literal params; srcexpr_client.scxml
+    # needs `needs_script_engine = true` (triggered by the datamodel
+    # `<data>`), so its full link surface includes the script engine
+    # and its transitive pugixml dependency — sce_runtime is the
+    # umbrella target that aggregates those in tree.
+    target_link_libraries(mesh_srcexpr_compile_test
+        PRIVATE
+            sce_base
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_srcexpr_compile_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_srcexpr_compile_test)
+
+    add_test(NAME mesh_srcexpr_compile_verification COMMAND mesh_srcexpr_compile_test)
+
     # Round-trip runtime verification: exercises mesh-rpc end-to-end with
     # two linked routers in-process so an integration-level regression
     # (silent drop of auto-propagated _event.invokeid, dispatchToSender

@@ -1,0 +1,16 @@
+# SCE Mesh §9.5 srcexpr compile verification. Local transport is the
+# minimal binding kind that exercises the generated TransportRouter —
+# the srcexpr entry/exit code in entry_exit_actions.jinja2 renders
+# independently of the chosen transport so the loopback local path is
+# sufficient to prove the generated C++ compiles.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      srcexpr_client:
+        source: srcexpr_client.scxml
+        bindings:
+          "#motor_srcexpr":
+            transport: local
+      motor_srcexpr:
+        source: motor_srcexpr.scxml

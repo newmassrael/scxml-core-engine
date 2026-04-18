@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Passive receiver for the srcexpr compile-verification fixture.
+     No reply is sent back: the paired compile-only test never drives the
+     engine, so we need neither a response-side binding nor event-coverage
+     coupling with srcexpr_client. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="motor_srcexpr" initial="ready">
+    <state id="ready">
+        <transition event="service.request.ping" target="served"/>
+    </state>
+    <final id="served"/>
+</scxml>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.5 srcexpr compile verification.
+
+     Exercises the runtime-target-resolution path of
+     <invoke type="sce:mesh-rpc" srcexpr="...">. Until this fixture existed
+     there was no SCXML in-tree that emitted the `{% if invoke_info.srcexpr %}`
+     branch of entry_exit_actions.jinja2, so the generated C++ for that block
+     (ensureScriptEngine + evaluateExpression + std::regex shape check +
+     stash into `_mesh_resolved_src_<suffix>_` + paired exit reuse) was
+     never compiled — a textbook "built but unconsumed" gap.
+
+     `calling_literal` keeps a static `src="#motor_srcexpr"` so the topology
+     still resolves a binding (srcexpr invokes are skipped by
+     `invoke_sites_by_target`, leaving `TransportRouter` without any
+     dispatch entry otherwise). `calling_runtime` is the real verifier:
+     its srcexpr reads the `target_name` datamodel variable so
+     `needs_script_engine` is set, the template emits the srcexpr entry
+     block, and the class-scope `_mesh_resolved_src_<suffix>_` member
+     declaration is exercised through the paired onexit cancel. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" name="srcexpr_client" initial="idle">
+    <datamodel>
+        <!-- Non-static expr forces `classify_variables` to tag this as
+             `runtime`, which sets `model.needs_script_engine = true` so
+             `ensureScriptEngine()` is emitted. The srcexpr entry block
+             calls that method unconditionally; without a script-engine
+             trigger elsewhere in the document codegen produces a
+             reference to a non-existent member. -->
+        <data id="target_name" expr="'#motor_srcexpr'"/>
+    </datamodel>
+    <state id="idle">
+        <transition event="go.literal" target="calling_literal"/>
+        <transition event="go.runtime" target="calling_runtime"/>
+    </state>
+    <state id="calling_literal">
+        <!-- Static src: populates `invoke_sites_by_target` so the
+             generated `TransportRouter::invokeMeshRpc` has a non-empty
+             match table. Without this, the router's for-loop over
+             `targets` is empty and overload resolution on the generic
+             `const std::string&` parameters still works but the surface
+             area being compiled is essentially degenerate. -->
+        <invoke type="sce:mesh-rpc" src="#motor_srcexpr">
+            <param name="_mesh_event" expr="'service.request.ping'"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+    </state>
+    <state id="calling_runtime">
+        <!-- Runtime target resolution. `target_name` is read at entry,
+             shape-checked against ^#[A-Za-z_][A-Za-z0-9_]*$ before
+             `performMeshInvoke`, then stashed so the onexit <cancel>
+             path reuses the same literal (re-evaluating on exit could
+             observe a mutated datamodel and pick a different machine
+             than the one the correlation entry was registered against). -->
+        <invoke type="sce:mesh-rpc" srcexpr="target_name">
+            <param name="_mesh_event" expr="'service.request.ping'"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+    </state>
+    <final id="ok"/>
+    <final id="failed"/>
+</scxml>
