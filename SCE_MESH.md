@@ -1677,6 +1677,8 @@ A transport is verified against the §10.4 contract by:
 3. **Runtime (mesh conformance suite, Session E2)**: The IRP distributed harness (§16.8) runs identical tests over single-process and distributed modes. A transport that drops, reorders, or duplicates events (without dedup suppression) will produce verdict mismatches, surfacing the conformance violation.
 4. **Runtime (seeded fault injection, Session E2)**: Disconnect the transport mid-test. The engine must receive `error.communication` within one macrostep. The test verifies event delivery, `reason` payload, and macrostep boundary compliance.
 
+**Status**: gates 1 and 2 are active. Gates 3 and 4 are Session E2 scope (§16.9) and not yet implemented. Today's runtime evidence for transport conformance is the 44 mesh ctest fixtures catalogued in [`docs/SCE_MESH_CONFORMANCE_MATRIX.md`](../docs/SCE_MESH_CONFORMANCE_MATRIX.md) — per-sender FIFO is asserted wire-level by `mesh_custom_tcp_runtime_verification`, duplicate tolerance by the §10.5 fixtures, and fault-signal emission by the §16.7 liveness fixtures. These ctests verify the transport primitives that gate 3 will consume; they are not the gate 3 suite itself.
+
 ### 10.5 Duplicate Suppression
 
 Per-envelope duplicate suppression is a **mesh runtime responsibility**, not a transport-layer one. Runtime maintains a **per-sender recent-id window**:
@@ -3403,6 +3405,8 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 **Unknown transport errors**: A transport impl MUST map native errors to one of the catalogue reasons. Unclassifiable errors map to `SEND_FAILED` with `transport_error` carrying the raw transport-native string; `detail` carries a human-readable description. The catalogue is closed at this section — new reasons require a spec revision.
 
 ### 16.8 Conformance test harness
+
+**Status (2026-04-18)**: Session E2 scope per §16.9 — not yet implemented. None of the artifacts named in §16.8.1–16.8.4 exist in the tree: no `tests/w3c_distributed_manifest.yaml`, no `tests/w3c/dist/` tree, no `run_distributed.py` driver, no `w3c_distributed_conformance` ctest label, and none of the 44 mesh ctest fixtures spawn per-partition OS processes or cross-compare a distributed run against a single-process reference. The sub-sections below describe the Session E2 target shape; [`docs/SCE_MESH_CONFORMANCE_MATRIX.md`](../docs/SCE_MESH_CONFORMANCE_MATRIX.md) is the day-0 map of transport primitives and mesh-runtime invariants the harness will consume once built.
 
 SCE Mesh's conformance harness runs the full W3C IRP suite twice per test: once single-process, once distributed. Identical verdicts in both modes is the pass criterion.
 
