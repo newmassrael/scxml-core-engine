@@ -151,6 +151,15 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/sce_base_sources.cmake)
 add_library(sce_base
     ${SCE_BASE_SOURCES}
     $<$<BOOL:${SCE_USE_SPDLOG}>:${SCE_BASE_SPDLOG_SOURCES}>
+    # XMLDOMWrapper.cpp is in ${SCE_BASE_SOURCES} and pulls pugixml symbols
+    # directly (`pugi::xml_document`, `pugi::xml_node`). Compiling pugixml
+    # into sce_base here makes the link self-contained: any consumer
+    # linking sce_base gets XMLDOMWrapper + pugixml resolved transitively,
+    # without needing to link sce_runtime just for the parser's
+    # `PugiXMLParser.cpp` (which also uses pugixml). One compile unit
+    # for pugixml.cpp keeps ODR happy — sce_runtime's target_sources
+    # below no longer lists it.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
 )
 
 target_include_directories(sce_base
@@ -313,7 +322,6 @@ add_library(sce_runtime
     src/runtime/EventRaiserImpl.cpp
     src/runtime/InvokeExecutor.cpp
     src/runtime/SessionManagerImpl.cpp
-    src/runtime/DataContentHelpers.cpp
     src/runtime/TransitionDomainCalculator.cpp
     src/runtime/DataModelInitializer.cpp
 
@@ -402,10 +410,15 @@ if(SCE_ENABLE_HTTP)
     endif()
 endif()
 
-# XML Parser implementation (Unified)
+# XML Parser implementation (Unified).
+# pugixml.cpp is compiled into sce_base now — see the sce_base
+# definition above — so sce_runtime only adds the SCE-side parser
+# that wraps pugixml through the IXMLElement interface. The previous
+# arrangement (pugixml.cpp here) forced consumers whose only pugixml
+# dependency was XMLDOMWrapper.cpp (already in sce_base) to link the
+# full sce_runtime umbrella just to resolve pugi:: symbols.
 target_sources(sce_runtime PRIVATE
     src/parsing/PugiXMLParser.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
 )
 
 # Runtime-specific include directories for short (unqualified) includes

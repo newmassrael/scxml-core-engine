@@ -25,6 +25,12 @@ set(SCE_BASE_SOURCES
     # Runtime utilities (engine-agnostic)
     src/runtime/TypeRegistry.cpp
     src/runtime/JsonUtils.cpp
+    # W3C SCXML B.2 text helpers (normalizeWhitespace, isXMLContent).
+    # Pure string manipulation with no engine/runtime dependency;
+    # referenced from sce_scripting's LuaEngine.cpp and
+    # DataModelInitializer, so it lives in sce_base to keep the
+    # dependency direction sce_scripting → sce_base unidirectional.
+    src/runtime/DataContentHelpers.cpp
 )
 
 # SpdlogBackend is conditional — not in the base list

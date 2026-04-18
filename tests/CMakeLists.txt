@@ -1592,16 +1592,16 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             ${MESH_SRCEXPR_OUTPUT_DIR}
     )
 
-    # The generated srcexpr entry block calls `ensureScriptEngine()`,
+    # The generated srcexpr entry block calls `ensureScriptEngine()`
     # which resolves through `ScriptEngineProvider::getScriptEngine()`
-    # in sce_scripting (transitively pulled by sce_runtime). The
-    # mesh-rpc literal-src compile fixture (mesh_invoke_compile_test)
-    # links only sce_base + sce_mesh_common because brake_invoke.scxml
-    # is datamodel="null" with static-literal params; srcexpr_client.scxml
-    # needs `needs_script_engine = true` (triggered by the datamodel
-    # `<data>`), so its full link surface includes the script engine
-    # and its transitive pugixml dependency — sce_runtime is the
-    # umbrella target that aggregates those in tree.
+    # in sce_scripting. Ideally we would link just sce_scripting +
+    # sce_base, but sce_scripting::LuaEngine references runtime-only
+    # symbols (`EventRaiserService::getRegistry` etc.), so consumers
+    # of sce_scripting currently must also link sce_runtime to resolve
+    # the back-edge. Same pattern as mesh_shm_payload_runtime_test and
+    # the W3C AOT harness. Refactoring LuaEngine to drop its
+    # runtime-layer back-edge would let this collapse to just
+    # sce_scripting, but that is an independent layering cleanup.
     target_link_libraries(mesh_srcexpr_compile_test
         PRIVATE
             sce_base
