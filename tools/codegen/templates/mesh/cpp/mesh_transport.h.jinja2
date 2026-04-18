@@ -2827,16 +2827,15 @@ struct TransportRouter {
             // The window is intrinsic to state-entry lifecycle
             // semantics (subscribe on entry, unsubscribe on exit), not
             // a transport-level defect. Authors who need at-least-once
-            // delivery across state re-entry should reach for the
+            // delivery across state re-entry reach for the
             // machine-lifetime path — deploy.yaml
             // `machines.<name>.subscriptions:` (emitted in `init()`
-            // above, Session Task #7). That path's runtime dispatch
-            // is tracked as open gap Z5a in
-            // `mesh_zenoh_gaps_roadmap.md`: `route_send` has no
-            // synthesized arm for subscription-only bindings, so the
-            // machine-lifetime subscribe currently does not reach the
-            // transport. Until Z5a closes, the escape is documented,
-            // not yet verified end-to-end.
+            // above, Session Task #7 / Z5a). Build-time target
+            // synthesis projects each subscription source into an
+            // implicit ResolvedTarget, so the init-time
+            // `route_send(source, sub_env)` lands on the same
+            // per-target arm an SCXML `<send>` would — the subscribe
+            // reaches this dispatcher unchanged.
             zenoh_subscribers_.insert_or_assign(target_name, std::move(sub));
             return true;
         }

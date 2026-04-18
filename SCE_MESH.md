@@ -2312,16 +2312,14 @@ Codegen emits subscribe on engine init, unsubscribe on engine shutdown. SCXML do
 | Concern | State-entry (plain SCXML) | Machine-lifetime (deploy.yaml) |
 |---|---|---|
 | Subscription scope | Per-state — auto-unsubscribe at exit | Per-router — subscribe at init, unsubscribe at shutdown |
-| Events delivered during state re-entry cycle | **Dropped** during the exit → re-entry window (subscriber undeclared at exit, redeclared on next entry) | **Designed: delivered** — subscription intended to span the router's entire lifetime. Runtime dispatch is currently not synthesized end-to-end; see **Z5a** below for the open gap. |
+| Events delivered during state re-entry cycle | **Dropped** during the exit → re-entry window (subscriber undeclared at exit, redeclared on next entry) | **Delivered** — subscription spans the router's entire lifetime. The build-time resolver synthesises an implicit target per `subscriptions.source`, so the subscribe envelope dispatched at `init()` reaches the transport through the same `route_send` path SCXML-driven sends use. |
 | Author surface | Standard SCXML `<send event="event.subscribe.X"/>` in `<onentry>` | No SCXML change; deploy.yaml `machines.<name>.subscriptions:` |
 | Bus cost | Subscription present only while the owning state is active | Subscription present for the router's entire lifetime |
 | Use when | Interest is genuinely scoped to a state — e.g. monitoring state subscribes to a diagnostic event, closing it on exit frees peer fan-out | Event delivery must not drop across state changes — e.g. vehicle-speed telemetry feeding multiple states concurrently |
 
 The state-entry path's re-entry window is intrinsic to its semantics: the synthetic `event.unsubscribe.X` on exit is a real transport-level undeclare, and the re-entry's `event.subscribe.X` is a real redeclare. Between the two, no subscriber is active on the transport. This is transport-behaviour-as-declared, not a transport defect — authors who need at-least-once delivery across state transitions should pick the machine-lifetime path.
 
-**Z5a — machine-lifetime dispatch not yet synthesized end-to-end.** `machines.<name>.subscriptions:` is parsed and the generated `init()` emits `route_send(source, subscribe_env)` (Task #7), but `route_send`'s per-target arms come exclusively from `summary.actions` (SCXML `<send>`). A machine whose `<scxml>` document contains no send to the subscription source has no matching arm, so the subscribe never reaches the transport layer. Closing Z5a requires synthesizing an implicit resolved target per subscription source (with `EventSubscribe`/`EventUnsubscribe` patterns) before codegen reads the target list, then a pin-test that delivers a burst of distinct envelopes end-to-end. Until Z5a lands, the trade-off table's machine-lifetime column describes designed semantics, not verified runtime behaviour — existing pub/sub-per-state fixtures rely on the state-entry path and are unaffected.
-
-Mixing is supported by design: one machine may declare both a machine-lifetime subscription (continuous telemetry) and a state-entry subscribe (scoped interest) for different events on the same binding. The mixing contract matures once Z5a lands.
+Mixing is supported by design: one machine may declare both a machine-lifetime subscription (continuous telemetry) and a state-entry subscribe (scoped interest) for different events on the same binding. Both paths compose through the same subscription refcount (SCE_MESH.md §13 refcount) — a duplicate subscribe on the same `(target, event)` is a refcount no-op, and the state-entry unsubscribe refs down only its own contribution.
 
 #### External infrastructure config integration
 

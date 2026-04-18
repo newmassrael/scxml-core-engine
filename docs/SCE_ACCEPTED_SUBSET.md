@@ -351,6 +351,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/topology-event-binding-unused` | Mesh Topology |
 | `mesh/topology-ordering-cannot-be-guaranteed` | Mesh Topology |
 | `mesh/topology-pool-param-name-missing` | Mesh Topology |
+| `mesh/topology-subscription-source-unbound` | Mesh Topology |
+| `mesh/topology-machine-lifetime-subscription-unsupported` | Mesh Topology |
 | `mesh/codegen-unsupported-language` | Mesh Codegen |
 | `mesh/codegen-unsupported-transport` | Mesh Codegen |
 | `mesh/codegen-event-name-collision` | Mesh Codegen |

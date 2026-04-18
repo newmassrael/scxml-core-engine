@@ -537,6 +537,58 @@ pub enum TopologyError {
         invoke_id: String,
         missing: Vec<String>,
     },
+
+    /// A deploy.yaml `machines.<name>.subscriptions:` entry names a
+    /// `source:` that has no matching binding in the machine's
+    /// `bindings:` map. Without the binding, transport synthesis has
+    /// no key expression / service identity to subscribe on, so the
+    /// machine-lifetime subscribe would silently never reach the wire.
+    /// Detected at topology time so the diagnostic points at the
+    /// deploy.yaml entry rather than surfacing as a runtime no-op.
+    ///
+    /// SCE_MESH.md §13 machine-lifetime path: the `source:` attribute
+    /// is the same target identifier the machine's `bindings:` map is
+    /// keyed on — the two must agree for the subscribe to resolve.
+    #[error("machine '{machine}': subscription source '{source_target}' has no matching binding. \
+             Available: {available}. Add the source to machines.{machine}.bindings:, \
+             or drop the subscription from machines.{machine}.subscriptions:.",
+             available = if .available.is_empty() {
+                 "(none)".to_string()
+             } else {
+                 .available.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(", ")
+             })]
+    SubscriptionSourceUnbound {
+        machine: String,
+        source_target: String,
+        available: Vec<super::target::TargetId>,
+    },
+
+    /// A deploy.yaml `machines.<name>.subscriptions:` entry names a
+    /// `source:` whose binding transport does not support the
+    /// machine-lifetime synthesis path. The init-time subscribe
+    /// envelope synthesised from deploy.yaml alone would drop at the
+    /// transport's send path — not because pub/sub is missing, but
+    /// because the send path needs per-event external metadata
+    /// (e.g. SOME/IP event_group_id) that synthesis cannot supply.
+    /// Detected at topology time so the diagnostic fires at the
+    /// build rather than surfacing as a never-delivered subscription
+    /// at runtime.
+    ///
+    /// SSoT: `super::transport::TransportDescriptor::
+    /// supports_machine_lifetime_subscribe`. Currently `true` only
+    /// for `zenoh`; SOME/IP support is tracked under
+    /// `mesh_someip_sd_gaps_roadmap.md`.
+    #[error("machine '{machine}': subscription on source '{source_target}' for event \
+             '{event}' uses transport '{transport}', which does not support the \
+             machine-lifetime subscription path in this build. Move the binding to a \
+             transport that supports it (e.g. 'zenoh') or drop the subscription from \
+             machines.{machine}.subscriptions:.")]
+    MachineLifetimeSubscriptionUnsupported {
+        machine: String,
+        source_target: super::target::TargetId,
+        event: String,
+        transport: String,
+    },
 }
 
 // ── Stage 3: Template rendering ──────────────────────────────
@@ -1041,6 +1093,37 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 k.extend(missing.iter().cloned());
                 k
             },
+        },
+        TopologyError::SubscriptionSourceUnbound { machine, source_target, available } => DiagnosticPayload {
+            code: DiagnosticCode::MeshTopologySubscriptionSourceUnbound,
+            stage: Stage::MeshTopology,
+            actual: Some(source_target.clone()),
+            // Candidate list rides `fix` alone; `expected` stays None
+            // to preserve non-overlap. Same shape as MachineNotFound.
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: available.iter().map(|t| t.as_str().to_string()).collect(),
+            }),
+            key_fragments: vec![machine.clone(), source_target.clone()],
+        },
+        TopologyError::MachineLifetimeSubscriptionUnsupported {
+            machine, source_target, event, transport,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshTopologyMachineLifetimeSubscriptionUnsupported,
+            stage: Stage::MeshTopology,
+            actual: Some(transport.clone()),
+            // Two equally-valid repairs (change transport OR drop the
+            // subscription). Neither is mechanically derivable from
+            // this diagnostic alone — author intent decides, same
+            // shape as OrderingCannotBeGuaranteed.
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                source_target.as_str().to_string(),
+                event.clone(),
+                transport.clone(),
+            ],
         },
     }
 }

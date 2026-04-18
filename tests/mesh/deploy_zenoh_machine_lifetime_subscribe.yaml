@@ -1,0 +1,39 @@
+# SCE Mesh Z5a machine-lifetime subscription coverage (zenoh).
+#
+# Exercises the deploy.yaml `subscriptions:` path end-to-end on a
+# subscriptions-only brake machine — no SCXML `<send>` to the
+# subscription source. Before Z5a the generated `route_send` had no
+# arm for the subscription source (targets came from SCXML sends
+# only), so the init()-time subscribe never reached Zenoh. The
+# build-time topology now synthesises an implicit ResolvedTarget
+# per subscription source, making this deployment runtime-functional.
+#
+# Port 17453 is distinct from the 17447/17448/17449/17450/17451/17452
+# ports already in use by other Zenoh runtime tests; ctest
+# RESOURCE_LOCK `zenoh_machine_lifetime_port_17453` serialises this
+# suite against any future test that reuses the port.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/127.0.0.1:17453"]
+    machines:
+      brake_zenoh_machine_lifetime_subscribe:
+        source: brake_zenoh_machine_lifetime_subscribe.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake_lifetime/motor/status"
+        subscriptions:
+          - event: event.notification.status
+            source: "#motor"
+  ecu_motor:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17453"]
+    machines:
+      motor:
+        source: motor_zenoh_base_subscribe.scxml

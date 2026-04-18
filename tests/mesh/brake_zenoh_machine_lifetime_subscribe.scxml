@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh Z5a machine-lifetime subscription fixture (brake side).
+     Subscriptions-only: no <send> in the document. Every edge the
+     transport layer exercises must come from deploy.yaml
+     `machines.brake_zenoh_machine_lifetime_subscribe.subscriptions:`
+     resolving to an implicit ResolvedTarget. Events arrive through the
+     subscriber callback declared at init() and drive the engine via
+     admitZenohInbound → dispatchEnvelope. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_zenoh_machine_lifetime_subscribe" initial="armed">
+    <state id="armed">
+        <transition event="event.notification.status" target="armed"/>
+    </state>
+</scxml>

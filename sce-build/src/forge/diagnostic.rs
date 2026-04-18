@@ -463,6 +463,10 @@ pub enum DiagnosticCode {
     MeshTopologyOrderingCannotBeGuaranteed,
     #[serde(rename = "mesh/topology-pool-param-name-missing")]
     MeshTopologyPoolParamNameMissing,
+    #[serde(rename = "mesh/topology-subscription-source-unbound")]
+    MeshTopologySubscriptionSourceUnbound,
+    #[serde(rename = "mesh/topology-machine-lifetime-subscription-unsupported")]
+    MeshTopologyMachineLifetimeSubscriptionUnsupported,
     // Codegen stage
     #[serde(rename = "mesh/codegen-unsupported-language")]
     MeshCodegenUnsupportedLanguage,
@@ -610,6 +614,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshTopologyEventBindingUnused,
         MeshTopologyOrderingCannotBeGuaranteed,
         MeshTopologyPoolParamNameMissing,
+        MeshTopologySubscriptionSourceUnbound,
+        MeshTopologyMachineLifetimeSubscriptionUnsupported,
         // Mesh Codegen
         MeshCodegenUnsupportedLanguage,
         MeshCodegenUnsupportedTransport,
@@ -710,6 +716,10 @@ impl DiagnosticCode {
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
+
+            // ── Machine-lifetime subscription wiring (SCE_MESH.md §13) ──
+            MeshTopologySubscriptionSourceUnbound
+            | MeshTopologyMachineLifetimeSubscriptionUnsupported => Some("SCE Mesh §13"),
 
             // ── Mesh build pipeline (SCE_MESH.md §7) ─────────────
             MeshCodegenUnsupportedLanguage => Some("SCE Mesh §7"),
@@ -903,6 +913,8 @@ impl DiagnosticCode {
             MeshTopologyEventBindingUnused => "mesh/topology-event-binding-unused",
             MeshTopologyOrderingCannotBeGuaranteed => "mesh/topology-ordering-cannot-be-guaranteed",
             MeshTopologyPoolParamNameMissing => "mesh/topology-pool-param-name-missing",
+            MeshTopologySubscriptionSourceUnbound => "mesh/topology-subscription-source-unbound",
+            MeshTopologyMachineLifetimeSubscriptionUnsupported => "mesh/topology-machine-lifetime-subscription-unsupported",
             MeshCodegenUnsupportedLanguage => "mesh/codegen-unsupported-language",
             MeshCodegenUnsupportedTransport => "mesh/codegen-unsupported-transport",
             MeshCodegenTemplateRead => "mesh/codegen-template-read",
@@ -2608,6 +2620,30 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:a5b1eb818d07e3a7","code":"mesh/topology-pool-param-name-missing","stage":"mesh-topology","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' declares a runtime pool that needs <param> values [\"id\"] at every using <invoke>, but invoke '_invoke_0' in state 's' does not supply [\"id\"]. Add the missing <param>(s) to that invoke, or drop the placeholder / `instance_from:` from the binding.","actual":"_invoke_0"}"#,
             ),
             (
+                "mesh/topology-subscription-source-unbound",
+                TopologyError::SubscriptionSourceUnbound {
+                    machine: "brake".into(),
+                    source_target: "#ghost".into(),
+                    available: vec![
+                        TargetId::new("#motor").unwrap(),
+                        TargetId::new("#chassis").unwrap(),
+                    ],
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:899faa900fbcb018","code":"mesh/topology-subscription-source-unbound","stage":"mesh-topology","spec":"SCE Mesh §13","message":"machine 'brake': subscription source '#ghost' has no matching binding. Available: #motor, #chassis. Add the source to machines.brake.bindings:, or drop the subscription from machines.brake.subscriptions:.","actual":"#ghost","fix":{"kind":"replace_one_of","candidates":["#motor","#chassis"]}}"##,
+            ),
+            (
+                "mesh/topology-machine-lifetime-subscription-unsupported",
+                TopologyError::MachineLifetimeSubscriptionUnsupported {
+                    machine: "brake".into(),
+                    source_target: TargetId::new("#motor").unwrap(),
+                    event: "event.notification.status".into(),
+                    transport: "someip".into(),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:a66a86a130ed11be","code":"mesh/topology-machine-lifetime-subscription-unsupported","stage":"mesh-topology","spec":"SCE Mesh §13","message":"machine 'brake': subscription on source '#motor' for event 'event.notification.status' uses transport 'someip', which does not support the machine-lifetime subscription path in this build. Move the binding to a transport that supports it (e.g. 'zenoh') or drop the subscription from machines.brake.subscriptions:.","actual":"someip"}"##,
+            ),
+            (
                 "mesh/codegen-unsupported-language",
                 CodegenError::UnsupportedLanguage("ruby".into()).into(),
                 r#"{"v":1,"id":"fnv1a:7d6e0a4752f9975b","code":"mesh/codegen-unsupported-language","stage":"mesh-codegen","spec":"SCE Mesh §7","message":"mesh codegen not yet supported for language 'ruby'","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["cpp"]}}"#,
@@ -2938,6 +2974,7 @@ mod tests {
             | ValidationInvalidDirection
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
+            | MeshTopologySubscriptionSourceUnbound
             | MeshCodegenUnsupportedLanguage
             | MeshCodegenUnsupportedTransport
             | CliUnknownLanguage
@@ -3029,6 +3066,7 @@ mod tests {
             | MeshTopologyEventBindingUnused
             | MeshTopologyOrderingCannotBeGuaranteed
             | MeshTopologyPoolParamNameMissing
+            | MeshTopologyMachineLifetimeSubscriptionUnsupported
             | MeshCodegenTemplateRead
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
@@ -3086,6 +3124,15 @@ mod tests {
             TopologyError::MachineNotFound {
                 machine: "ecu_z".into(),
                 available: vec!["ecu_a".into(), "ecu_b".into()],
+            }
+            .into(),
+            TopologyError::SubscriptionSourceUnbound {
+                machine: "brake".into(),
+                source_target: "#ghost".into(),
+                available: vec![
+                    crate::mesh::target::TargetId::new("#motor").unwrap(),
+                    crate::mesh::target::TargetId::new("#chassis").unwrap(),
+                ],
             }
             .into(),
             MeshCodegen::UnsupportedLanguage("ruby".into()).into(),
@@ -3286,6 +3333,8 @@ mod tests {
                 | MeshTopologyMissingBindingField | MeshTopologyInvalidBindingField
                 | MeshTopologyEventBindingUnused | MeshTopologyOrderingCannotBeGuaranteed
                 | MeshTopologyPoolParamNameMissing
+                | MeshTopologySubscriptionSourceUnbound
+                | MeshTopologyMachineLifetimeSubscriptionUnsupported
                 | MeshCodegenUnsupportedLanguage
                 | MeshCodegenUnsupportedTransport | MeshCodegenTemplateRead
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
@@ -3301,9 +3350,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            99,
+            101,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 99 distinct variants to match the DiagnosticCode \
+             expected 101 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

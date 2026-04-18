@@ -178,6 +178,37 @@ pub struct TransportDescriptor {
     /// `supports_pool: false`
     /// (`mesh/pool-not-supported-by-transport`).
     pub supports_pool: bool,
+    /// Is the deploy.yaml `machines.<name>.subscriptions:` (SCE_MESH.md
+    /// §13 machine-lifetime path) realised end-to-end on this transport?
+    ///
+    /// Distinct from the general `PubSub` capability: a transport may
+    /// support pub/sub for SCXML-driven `<send event="event.subscribe.X">`
+    /// (which flows through per-event resolved metadata —
+    /// `SomeipEventIds::EventGroup`, Zenoh key) while *not* supporting
+    /// the machine-lifetime synthesis path, which dispatches from
+    /// deploy.yaml-only information with no per-event external
+    /// resolution.
+    ///
+    /// Classification rationale:
+    /// - `local` / `shm` / `custom_tcp`: no pub/sub capability at all.
+    ///   Already rejected earlier; set `false` for structural
+    ///   consistency.
+    /// - `someip`: pub/sub works through SCXML `<send>` (template emits
+    ///   `request_event` + `subscribe` from per-event event_group_id
+    ///   resolved via vsomeip.json), but machine-lifetime synthesis
+    ///   never consults vsomeip.json — it has no event_group_id to
+    ///   emit, so the subscribe would land in the "unknown event" arm
+    ///   and silently drop. Tracked under
+    ///   `mesh_someip_sd_gaps_roadmap.md`.
+    /// - `zenoh`: binding-wide `key:` is sufficient for subscribe
+    ///   dispatch — no per-event resolution needed. `true`.
+    /// - `dds` / `can`: unimplemented; set `false`.
+    ///
+    /// Consumed by the topology-stage synthesis (`topology::
+    /// synthesize_subscription_partials`): a subscription source whose
+    /// binding transport has this set to `false` is rejected with
+    /// `mesh/topology-machine-lifetime-subscription-unsupported`.
+    pub supports_machine_lifetime_subscribe: bool,
 }
 
 // ── Single registry ─────────────────────────────────────────
@@ -207,6 +238,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Same-process target identity is compile-time; no runtime
         // address substitution.
         supports_pool: false,
+        // No pub/sub capability at all — machine-lifetime is moot.
+        supports_machine_lifetime_subscribe: false,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -222,6 +255,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // SHM channels are pre-declared in deploy.yaml; runtime values
         // cannot address a new channel.
         supports_pool: false,
+        // No pub/sub capability; machine-lifetime path does not apply.
+        supports_machine_lifetime_subscribe: false,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -260,6 +295,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Codegen emits one `request_service(SERVICE, i)` per declared
         // instance at init().
         supports_pool: true,
+        // SCXML-driven subscribes work (template emits request_event +
+        // subscribe from vsomeip.json-resolved event_group_id), but the
+        // machine-lifetime synthesis path has no external resolution
+        // step — the subscribe envelope would hit the "unknown event"
+        // arm and drop. Gap tracked under
+        // `mesh_someip_sd_gaps_roadmap.md`.
+        supports_machine_lifetime_subscribe: false,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },
@@ -282,6 +324,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Zenoh's native routing, which delivers to whichever peer has a
         // matching subscriber. No SCE-side enumeration required.
         supports_pool: true,
+        // Binding-wide `key:` is sufficient for dispatch — no per-event
+        // external resolution needed for subscribe. SCE_MESH.md §13
+        // machine-lifetime path is fully wired end-to-end.
+        supports_machine_lifetime_subscribe: true,
     };
     // SCE Mesh §16.8.3 reference transport: TCP loopback, length-prefixed
     // CBOR envelope framing, zero external dependencies. Each binding has a
@@ -306,6 +352,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // adding a pool would require SCE to implement its own SD
         // protocol (§3.3 design invariant rejects middleware SD).
         supports_pool: false,
+        // No pub/sub capability in this session — machine-lifetime is
+        // moot. Dedup + duplex correlation for FireForget-only today.
+        supports_machine_lifetime_subscribe: false,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -326,6 +375,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // DCPS participant discovery is native. Gated on
         // `implemented: false` but the capability already exists.
         supports_pool: true,
+        // Unimplemented; gated by `implemented: false` before this
+        // flag is ever consulted. Consistent `false` keeps the
+        // registry shape uniform.
+        supports_machine_lifetime_subscribe: false,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -346,6 +399,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // CAN frame IDs are compile-time allocations; the bus has no
         // peer-level addressing for placeholder substitution.
         supports_pool: false,
+        // Unimplemented + broadcast bus; machine-lifetime subscribe
+        // semantic does not apply.
+        supports_machine_lifetime_subscribe: false,
     };
 
     match transport {

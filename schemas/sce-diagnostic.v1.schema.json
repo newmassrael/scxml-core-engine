@@ -115,6 +115,8 @@
         "mesh/topology-event-binding-unused",
         "mesh/topology-ordering-cannot-be-guaranteed",
         "mesh/topology-pool-param-name-missing",
+        "mesh/topology-subscription-source-unbound",
+        "mesh/topology-machine-lifetime-subscription-unsupported",
         "mesh/codegen-unsupported-language",
         "mesh/codegen-unsupported-transport",
         "mesh/codegen-template-read",

@@ -306,10 +306,25 @@ impl TransportState {
 pub struct ResolvedTarget {
     /// The target ID from SCXML (e.g. "#motor").
     pub target: TargetId,
-    /// Events sent to this target (for documentation/validation).
+    /// Outbound events this machine `<send>`s to the target. Scoped to
+    /// outbound vocabulary so `resolvePattern()` classification stays
+    /// honest — machine-lifetime subscription interest lives on
+    /// [`Self::subscription_events`] instead.
     pub events: Vec<String>,
     /// Per-event pattern metadata for codegen (pattern-aware send + RPC correlation).
     pub event_patterns: Vec<EventPatternInfo>,
+    /// Inbound machine-lifetime subscription events (SCE_MESH.md §13,
+    /// Z5a). Populated by
+    /// [`synthesize_subscription_partials`] from deploy.yaml
+    /// `machines.<name>.subscriptions:` entries; empty for targets
+    /// that only participate in outbound sends. Feeds codegen's
+    /// `has_pubsub` computation so the subscription refcount map is
+    /// emitted whether the target's pub/sub edge came from SCXML or
+    /// deploy.yaml. Kept separate from [`Self::events`] so the
+    /// outbound-pattern invariant behind `resolvePattern()` is not
+    /// stretched to classify inbound notification names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscription_events: Vec<String>,
     /// Tagged transport state — variant identity is the dispatch key for
     /// codegen and validators. Replaces the historical
     /// `transport: String` + `someip_service: Option<...>` +
@@ -1473,6 +1488,10 @@ pub(crate) struct PartialTarget {
     pub transport: String,
     pub extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     pub event_patterns: Vec<EventPatternInfo>,
+    /// See [`ResolvedTarget::subscription_events`]. Populated by the
+    /// machine-lifetime synthesis pass; always empty on partials
+    /// produced by `resolve_partials` from SCXML sends.
+    pub subscription_events: Vec<String>,
     /// Mesh-RPC invoke sites targeting this binding. Carried through
     /// to the final [`ResolvedTarget`] unchanged — no external-config
     /// stage touches invokes (per-invoke deadlines / event names are
@@ -1509,15 +1528,12 @@ pub(crate) struct PartialTarget {
 /// Returns an error if any SCXML target has no matching binding in deploy.yaml.
 pub(crate) fn resolve_partials(
     summary: &SendActionSummary,
-    deploy: &DeployConfig,
+    bindings: &std::collections::HashMap<TargetId, BindingConfig>,
     machine_name: &str,
 ) -> Result<(Vec<PartialTarget>, Vec<DeadlineOverrideNotice>), TopologyError> {
     if summary.targets.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
-
-    // Find the machine's bindings in deploy.yaml topology
-    let bindings = find_machine_bindings(deploy, machine_name)?;
 
     // Build events-per-target map from summary
     let mut events_map: std::collections::HashMap<TargetId, Vec<String>> =
@@ -1583,6 +1599,10 @@ pub(crate) fn resolve_partials(
                     ordering: binding.ordering,
                     instance_from: binding.instance_from.clone(),
                     instances: binding.instances.clone(),
+                    // Machine-lifetime subscription interest is layered
+                    // on by `synthesize_subscription_partials` after
+                    // this loop runs; SCXML-send partials start empty.
+                    subscription_events: Vec::new(),
                 });
             }
             None => {
@@ -1663,8 +1683,32 @@ pub fn build_resolved_targets(
     deploy: &DeployConfig,
     machine_name: &str,
     external: &super::external::ExternalResolution,
+    machine_subscriptions: &[super::deploy::SubscriptionConfig],
 ) -> Result<TargetResolution, TopologyError> {
-    let (partials, deadline_overrides) = resolve_partials(summary, deploy, machine_name)?;
+    // Single lookup of the machine's deploy.yaml bindings drives both
+    // SCXML-send resolution and machine-lifetime subscription synthesis.
+    // Both stages consult the same map so a future divergence (e.g.
+    // subscriptions targeting a binding that SCXML also uses) cannot
+    // observe a half-indexed machine.
+    let bindings = find_machine_bindings(deploy, machine_name)?;
+    let (mut partials, deadline_overrides) = resolve_partials(summary, bindings, machine_name)?;
+    // SCE_MESH.md §13 machine-lifetime path (Z5a): deploy.yaml
+    // `machines.<name>.subscriptions:` names subscription sources by the
+    // same `#target` identifier the bindings map is keyed on. The
+    // template emits `route_send("{{ sub.source }}", sub_env)` at
+    // `init()`; for that call to reach the transport layer, each
+    // subscription source must resolve to a `ResolvedTarget` so
+    // `route_send` gets a matching arm. Synthesis folds those targets
+    // in here so every downstream validator / codegen consumer sees
+    // them through the same pipeline as SCXML-derived targets.
+    if !machine_subscriptions.is_empty() {
+        synthesize_subscription_partials(
+            &mut partials,
+            machine_subscriptions,
+            bindings,
+            machine_name,
+        )?;
+    }
     let resolved = finalize_targets(partials, machine_name, external)?;
     validate_someip_event_fields(&resolved, machine_name)?;
     validate_pool_param_names(&resolved, machine_name)?;
@@ -1672,6 +1716,134 @@ pub fn build_resolved_targets(
         targets: resolved,
         deadline_overrides,
     })
+}
+
+/// SCE_MESH.md §13 — fold deploy.yaml `machines.<name>.subscriptions:`
+/// entries into the partial-target list so the subscribe dispatched at
+/// `init()` has a matching `route_send` arm. Each subscription's
+/// `source:` must match an entry in the machine's `bindings:` map; the
+/// binding supplies the transport identity (Zenoh key expression,
+/// SOME/IP service IDs, …) the synthesized target carries into codegen.
+///
+/// Semantic separation from the SCXML path:
+/// - `PartialTarget.events` / `event_patterns` stay scoped to the
+///   machine's **outbound send** vocabulary — an SCXML `<send
+///   target="#x" event="E"/>` pushes `E` into `events` and an
+///   `EventPatternInfo { event: "E", … }` into `event_patterns`.
+/// - Machine-lifetime subscriptions are inbound interest, not outbound
+///   sends, so they ride a dedicated `subscription_events` list. This
+///   keeps `resolvePattern()`'s outbound classification (`event →
+///   pattern`) honest — it never sees a notification event name
+///   classified as Subscribe. `has_pubsub` is computed from both
+///   lists in codegen.
+/// - Transport capability is checked at synthesis: a binding whose
+///   transport lacks `TransportCapability::PubSub` (e.g. SOME/IP
+///   before pub/sub support lands) rejects with
+///   `MachineLifetimeSubscriptionUnsupported` rather than silently
+///   dispatching to a `route_send` arm whose transport handler has
+///   no `case EventSubscribe`.
+///
+/// Merge contract:
+/// - If `partials` already contains a target for `sub.source` (the
+///   SCXML model also sends to it), the binding's transport state,
+///   ordering, and pool plan stay intact; only
+///   `subscription_events` grows.
+/// - Otherwise, project the binding into a fresh `PartialTarget` with
+///   empty `events` / `event_patterns` and a single
+///   `subscription_events` entry, so `finalize_targets` and
+///   `validate_someip_event_fields` still see a well-formed partial.
+///
+/// Errors:
+/// - `SubscriptionSourceUnbound` when the source has no binding at
+///   all — the available bindings ride the diagnostic as
+///   `Fix::ReplaceOneOf`.
+/// - `MachineLifetimeSubscriptionUnsupported` when the binding's
+///   transport does not support pub/sub — fail-closed on a transport
+///   whose runtime would silently drop the subscribe envelope.
+fn synthesize_subscription_partials(
+    partials: &mut Vec<PartialTarget>,
+    subscriptions: &[super::deploy::SubscriptionConfig],
+    bindings: &std::collections::HashMap<TargetId, BindingConfig>,
+    machine_name: &str,
+) -> Result<(), TopologyError> {
+    for sub in subscriptions {
+        let Some(source_target) = TargetId::new(sub.source.clone()) else {
+            // Empty source — rejected at deploy parse time, but guard
+            // against a future parser bypass. Treat as unbound with
+            // empty key for diagnostic symmetry.
+            return Err(TopologyError::SubscriptionSourceUnbound {
+                machine: machine_name.to_string(),
+                source_target: sub.source.clone(),
+                available: sorted_target_keys(bindings),
+            });
+        };
+
+        let binding = bindings.get(&source_target).ok_or_else(|| {
+            TopologyError::SubscriptionSourceUnbound {
+                machine: machine_name.to_string(),
+                source_target: sub.source.clone(),
+                available: sorted_target_keys(bindings),
+            }
+        })?;
+
+        // Machine-lifetime synthesis gate: the transport must be able
+        // to dispatch a subscribe envelope from deploy.yaml-only
+        // information (no per-event external resolution). The
+        // `supports_machine_lifetime_subscribe` flag is the registry
+        // SSoT — true only for transports where a binding-wide
+        // address (e.g. Zenoh `key:`) is sufficient. Fail-closed so a
+        // SOME/IP subscription source does not silently fall through
+        // to the transport's "unknown event" arm.
+        let transport_supports_machine_lifetime = super::transport::lookup(&binding.transport)
+            .is_some_and(|d| d.supports_machine_lifetime_subscribe);
+        if !transport_supports_machine_lifetime {
+            return Err(TopologyError::MachineLifetimeSubscriptionUnsupported {
+                machine: machine_name.to_string(),
+                source_target: source_target.clone(),
+                event: sub.event.clone(),
+                transport: binding.transport.clone(),
+            });
+        }
+
+        if let Some(existing) = partials.iter_mut().find(|pt| pt.target == source_target) {
+            // SCXML send already targets this source — the outbound
+            // pattern metadata stays untouched; only inbound
+            // subscription interest accumulates. Dedupe so identical
+            // subscriptions entered twice (or entered alongside an
+            // SCXML-send to the same event) don't carry duplicate
+            // entries.
+            if !existing.subscription_events.contains(&sub.event) {
+                existing.subscription_events.push(sub.event.clone());
+            }
+            continue;
+        }
+
+        partials.push(PartialTarget {
+            target: source_target,
+            events: Vec::new(),
+            transport: binding.transport.clone(),
+            extra: binding.extra.clone(),
+            event_patterns: Vec::new(),
+            invoke_sites: Vec::new(),
+            ordering: binding.ordering,
+            instance_from: binding.instance_from.clone(),
+            instances: binding.instances.clone(),
+            subscription_events: vec![sub.event.clone()],
+        });
+    }
+    Ok(())
+}
+
+/// Deterministic ordering for the `available` field of the unbound
+/// subscription diagnostic. HashMap iteration order is
+/// unspecified; sorted output gives stable diagnostics and stable
+/// byte-goldens.
+fn sorted_target_keys(
+    bindings: &std::collections::HashMap<TargetId, BindingConfig>,
+) -> Vec<TargetId> {
+    let mut keys: Vec<TargetId> = bindings.keys().cloned().collect();
+    keys.sort();
+    keys
 }
 
 /// SCE_MESH.md §14.4 — cross-reference pool placeholder / instance_from
@@ -1894,6 +2066,7 @@ pub(crate) fn finalize_targets(
             target: pt.target,
             events: pt.events,
             event_patterns: pt.event_patterns,
+            subscription_events: pt.subscription_events,
             state,
             invoke_sites: pt.invoke_sites,
             ordering: pt.ordering,
@@ -2891,6 +3064,7 @@ mod tests {
             target: TargetId::new("#motor").unwrap(),
             events: vec!["brake.activate".to_string()],
             event_patterns: Vec::new(),
+            subscription_events: Vec::new(),
             state: TransportState::Local,
             invoke_sites: Vec::new(),
             ordering: crate::mesh::deploy::OrderingRequirement::None,
@@ -3331,7 +3505,7 @@ topology:
         let deploy = parse_deploy_str(yaml).unwrap();
         let model = parse_model(SHM_SCXML, "sender");
         let external = super::super::external::ExternalResolution::default();
-        build_resolved_targets(&summary_for(&model), &deploy, "sender", &external)
+        build_resolved_targets(&summary_for(&model), &deploy, "sender", &external, &[])
             .map(|r| r.targets)
     }
 
@@ -3558,7 +3732,7 @@ topology:
         let model = parse_model(&mesh_rpc_sender_scxml(per_invoke), "brake");
         let deploy = parse_deploy_str(&deploy_with_motor_binding(binding_yaml)).unwrap();
         let external = super::super::external::ExternalResolution::default();
-        build_resolved_targets(&summary_for(&model), &deploy, "brake", &external)
+        build_resolved_targets(&summary_for(&model), &deploy, "brake", &external, &[])
             .expect("resolve")
     }
 
@@ -3769,6 +3943,7 @@ topology:
             &deploy,
             "sender",
             &external,
+            &[],
         )
         .expect("zenoh + ordering:required is valid");
         assert_eq!(resolved.targets.len(), 1);
@@ -3803,6 +3978,7 @@ topology:
             &deploy,
             "sender",
             &external,
+            &[],
         )
         .expect("zenoh without ordering key is valid");
         assert_eq!(
@@ -3839,6 +4015,7 @@ topology:
             &deploy,
             "sender",
             &external,
+            &[],
         )
         .expect_err("CAN + ordering:required must be rejected");
         match err {
@@ -3880,11 +4057,265 @@ topology:
             &deploy,
             "sender",
             &external,
+            &[],
         )
         .expect("CAN with ordering:none must clear the §10.6 check");
         assert_eq!(
             resolved.targets[0].ordering,
             crate::mesh::deploy::OrderingRequirement::None
         );
+    }
+
+    // ── Machine-lifetime subscription synthesis (SCE Mesh §13 / Z5a) ──
+    //
+    // A machine that declares `subscriptions:` without any SCXML `<send>`
+    // to the subscription source must still produce a `ResolvedTarget`
+    // for that source so codegen emits a matching `route_send` arm.
+    // Without synthesis the subscribe envelope dispatched at `init()`
+    // lands on an empty switch and never reaches the transport.
+
+    const SUBSCRIPTION_ONLY_SCXML: &str = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="brake" initial="idle">
+    <state id="idle">
+        <transition event="event.notification.status" target="subscribed"/>
+    </state>
+    <state id="subscribed"/>
+</scxml>"#;
+
+    #[test]
+    fn synthesizes_implicit_target_for_subscription_only_machine() {
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
+    machines:
+      brake:
+        source: b.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: brake/motor/status
+        subscriptions:
+          - event: event.notification.status
+            source: "#motor"
+      motor: { source: m.scxml }
+"##;
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(SUBSCRIPTION_ONLY_SCXML, "brake");
+        let external = super::super::external::ExternalResolution::default();
+        let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
+        let resolution = build_resolved_targets(
+            &summary_for(&model),
+            &deploy,
+            "brake",
+            &external,
+            &subs,
+        )
+        .expect("synthesis should succeed when the subscription source is bound");
+        assert_eq!(
+            resolution.targets.len(),
+            1,
+            "subscriptions-only machine must still produce one resolved target"
+        );
+        let t = &resolution.targets[0];
+        assert_eq!(t.target.as_str(), "#motor");
+        assert!(
+            matches!(t.state, crate::mesh::topology::TransportState::Zenoh { .. }),
+            "synthesized target must carry the binding's transport state",
+        );
+        assert!(
+            t.events.is_empty() && t.event_patterns.is_empty(),
+            "subscriptions-only target must NOT pollute the outbound-send vocabulary \
+             (events/event_patterns stay empty); inbound subscription interest lives \
+             on `subscription_events` instead",
+        );
+        assert_eq!(
+            t.subscription_events,
+            vec!["event.notification.status".to_string()],
+            "subscription event must land on the inbound list for codegen has_pubsub",
+        );
+    }
+
+    #[test]
+    fn unbound_subscription_source_rejected_with_candidates() {
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
+    machines:
+      brake:
+        source: b.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: brake/motor/status
+          "#chassis":
+            transport: zenoh
+            key: brake/chassis/speed
+        subscriptions:
+          - event: event.notification.foo
+            source: "#ghost"
+      motor: { source: m.scxml }
+      chassis: { source: c.scxml }
+"##;
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(SUBSCRIPTION_ONLY_SCXML, "brake");
+        let external = super::super::external::ExternalResolution::default();
+        let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
+        let err = build_resolved_targets(
+            &summary_for(&model),
+            &deploy,
+            "brake",
+            &external,
+            &subs,
+        )
+        .expect_err("unbound subscription source must reject");
+        match err {
+            TopologyError::SubscriptionSourceUnbound { machine, source_target, available } => {
+                assert_eq!(machine, "brake");
+                assert_eq!(source_target, "#ghost");
+                let names: Vec<&str> = available.iter().map(|t| t.as_str()).collect();
+                assert!(names.contains(&"#motor") && names.contains(&"#chassis"),
+                        "available must enumerate all existing bindings, got {names:?}");
+            }
+            other => panic!("expected SubscriptionSourceUnbound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn subscription_on_already_sent_target_merges_into_existing_partial() {
+        // Machine both <send>s to #motor AND declares a machine-lifetime
+        // subscription against #motor. The synthesis must NOT duplicate
+        // the partial — it folds the subscribe pattern into the existing
+        // target so downstream consumers (route_send arms, event
+        // coverage, etc.) see one arm per target.
+        let scxml = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="brake" initial="idle">
+    <state id="idle">
+        <onentry>
+            <send target="#motor" event="service.fire_forget.tick"/>
+        </onentry>
+    </state>
+</scxml>"##;
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
+    machines:
+      brake:
+        source: b.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: brake/motor/tick
+        subscriptions:
+          - event: event.notification.heartbeat
+            source: "#motor"
+      motor: { source: m.scxml }
+"##;
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(scxml, "brake");
+        let external = super::super::external::ExternalResolution::default();
+        let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
+        let resolution = build_resolved_targets(
+            &summary_for(&model),
+            &deploy,
+            "brake",
+            &external,
+            &subs,
+        )
+        .expect("mixed SCXML-send + subscription must resolve");
+        assert_eq!(
+            resolution.targets.len(),
+            1,
+            "one target per source — the subscription must merge into the existing partial"
+        );
+        let t = &resolution.targets[0];
+        assert_eq!(
+            t.events,
+            vec!["service.fire_forget.tick".to_string()],
+            "outbound events stay scoped to SCXML sends; the subscription event \
+             must not leak into this list",
+        );
+        assert_eq!(
+            t.subscription_events,
+            vec!["event.notification.heartbeat".to_string()],
+            "subscription interest lands on the dedicated inbound list",
+        );
+        assert!(
+            t.event_patterns
+                .iter()
+                .any(|ep| ep.event == "service.fire_forget.tick"),
+            "SCXML-derived outbound pattern metadata must survive the merge",
+        );
+        assert!(
+            !t.event_patterns
+                .iter()
+                .any(|ep| ep.event == "event.notification.heartbeat"),
+            "merging must NOT classify the inbound notification name as an \
+             outbound pattern — that was the Subscribe-pattern-drift invariant",
+        );
+    }
+
+    #[test]
+    fn subscription_on_non_pubsub_transport_rejected() {
+        // SOME/IP currently has no `case EventSubscribe` in its send path
+        // (mesh_someip_sd_gaps_roadmap.md). A deploy.yaml that points a
+        // subscription source at a SOME/IP binding would otherwise build
+        // successfully and silently drop every subscribe envelope at the
+        // transport. Topology-stage reject pins this fail-closed so the
+        // §13 "delivered" claim stays honest transport-agnostically.
+        let scxml = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="brake" initial="idle">
+    <state id="idle">
+        <transition event="event.notification.heartbeat" target="idle"/>
+    </state>
+</scxml>"##;
+        // Minimal someip binding — no SCXML send targets #motor, so
+        // per-event ID resolution never runs (the synthesis path
+        // rejects at capability check before finalize_targets).
+        let yaml = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: b.scxml
+        bindings:
+          "#motor":
+            transport: someip
+        subscriptions:
+          - event: event.notification.heartbeat
+            source: "#motor"
+      motor: { source: m.scxml }
+"##;
+        let deploy = parse_deploy_str(yaml).unwrap();
+        let model = parse_model(scxml, "brake");
+        let external = super::super::external::ExternalResolution::default();
+        let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
+        let err = build_resolved_targets(
+            &summary_for(&model),
+            &deploy,
+            "brake",
+            &external,
+            &subs,
+        )
+        .expect_err("SOME/IP machine-lifetime subscribe must reject at topology");
+        match err {
+            TopologyError::MachineLifetimeSubscriptionUnsupported {
+                machine, source_target, event, transport,
+            } => {
+                assert_eq!(machine, "brake");
+                assert_eq!(source_target.as_str(), "#motor");
+                assert_eq!(event, "event.notification.heartbeat");
+                assert_eq!(transport, "someip");
+            }
+            other => panic!("expected MachineLifetimeSubscriptionUnsupported, got {other:?}"),
+        }
     }
 }

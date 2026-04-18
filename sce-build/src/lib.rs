@@ -1041,6 +1041,18 @@ pub fn compile_mesh_transport(
         }
     }
 
+    // Machine-lifetime subscriptions from deploy.yaml (SCE_MESH.md §13).
+    // Looked up once and consumed by both `build_resolved_targets` (to
+    // synthesise the implicit target per source) and the codegen call
+    // below (to emit the init-time subscribe blocks). Using
+    // `effective_machine_name` — the deploy.yaml key — because it may
+    // differ from the SCXML `name` attribute / file stem.
+    let device = deploy_cfg.device_for_machine(&effective_machine_name);
+    let machine_subscriptions: &[mesh::deploy::SubscriptionConfig] = device
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .map(|m| m.subscriptions.as_slice())
+        .unwrap_or(&[]);
+
     // Stage 2b: resolve static targets against deploy.yaml bindings,
     // attach per-event SOME/IP IDs, and validate per-event field presence
     // in a single pipeline — callers cannot observe the half-built state
@@ -1048,8 +1060,9 @@ pub fn compile_mesh_transport(
     let resolution = mesh::topology::build_resolved_targets(
         &summary,
         &deploy_cfg,
-        &model.name,
+        &effective_machine_name,
         &external_resolution,
+        machine_subscriptions,
     )?;
     let resolved = resolution.targets;
     let deadline_override_notices = resolution.deadline_overrides;
@@ -1061,8 +1074,7 @@ pub fn compile_mesh_transport(
     // the listen socket and dispatch inbound envelopes (SCE_MESH.md §16.8.3).
     // The same predicate gates `transport_types.insert("custom_tcp")` in
     // codegen.rs; `CustomTcpTransportConfig::hosts_server` is the SSoT.
-    let has_custom_tcp_listen = deploy_cfg
-        .device_for_machine(&effective_machine_name)
+    let has_custom_tcp_listen = device
         .and_then(|d| d.transports.custom_tcp.as_ref())
         .is_some_and(mesh::deploy::CustomTcpTransportConfig::hosts_server);
 
@@ -1112,15 +1124,11 @@ pub fn compile_mesh_transport(
     // Use effective_machine_name for device lookup — model.name is the file
     // stem (e.g. "motor_zenoh_multi") which may differ from the deploy.yaml
     // key (e.g. "motor") when the SCXML name attribute is used.
-    let device = deploy_cfg.device_for_machine(&effective_machine_name);
+    // `device` + `machine_subscriptions` are hoisted above the Stage 2b
+    // call so the same slice feeds synthesis and codegen.
     let zenoh_session = device.and_then(|d| d.transports.zenoh.as_ref());
     let someip_config = device.and_then(|d| d.transports.someip.as_ref());
     let custom_tcp_config = device.and_then(|d| d.transports.custom_tcp.as_ref());
-    // Machine-lifetime subscriptions from deploy.yaml (SCE_MESH.md §13).
-    let machine_subscriptions = device
-        .and_then(|d| d.machines.get(&effective_machine_name))
-        .map(|m| m.subscriptions.as_slice())
-        .unwrap_or(&[]);
     // SCE_MESH.md §10.6.1: per-machine ordering buffer timings. The
     // `resolved_ordering_timings` helper supplies the absent-section
     // defaults from a single source (deploy::DEFAULT_*), so a

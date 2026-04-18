@@ -1040,9 +1040,16 @@ fn generate_cpp_mesh(
             let has_rpc = event_patterns
                 .iter()
                 .any(|ep| category_of(ep.pattern_kind) == Some(TransportCapability::RequestReply));
+            // SCE_MESH.md §13: `has_pubsub` fires for either (a) an
+            // outbound pub/sub send in the SCXML model, or (b) a
+            // machine-lifetime subscription declared in deploy.yaml.
+            // The two signals are kept in separate fields so
+            // `resolvePattern()`'s outbound-event classification is
+            // not polluted by inbound notification names.
             let has_pubsub = event_patterns
                 .iter()
-                .any(|ep| category_of(ep.pattern_kind) == Some(TransportCapability::PubSub));
+                .any(|ep| category_of(ep.pattern_kind) == Some(TransportCapability::PubSub))
+                || !t.subscription_events.is_empty();
             let has_field = event_patterns
                 .iter()
                 .any(|ep| category_of(ep.pattern_kind) == Some(TransportCapability::FieldAccess));

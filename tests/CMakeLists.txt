@@ -2507,6 +2507,76 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             RESOURCE_LOCK zenoh_multi_port_17447
         )
 
+        # ── Z5a: Zenoh machine-lifetime subscription runtime E2E (§13) ─
+        # Pins the Z5a fix from mesh_zenoh_gaps_roadmap.md: deploy.yaml
+        # `machines.<name>.subscriptions:` on a subscriptions-only
+        # machine now reaches the wire through topology-synthesised
+        # implicit targets. Before the synthesis landed, the generated
+        # `route_send` had no arm for the subscription source (targets
+        # came from SCXML <send> only), so the init()-time subscribe
+        # envelope dropped silently. This fixture fails closed if
+        # Z5a regresses — the subscriber is never declared and the
+        # five published envelopes are all lost.
+        #
+        # Port 17453 is distinct from the 17447–17452 ports used by
+        # the other zenoh runtime tests; isolating the RESOURCE_LOCK
+        # keeps subscription state from bleeding into / from them.
+        set(MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_machine_lifetime_subscribe_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
+                    -l cpp -o "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh machine-lifetime subscribe: Generating brake_zenoh_machine_lifetime_subscribe_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
+                    -l cpp -o "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_machine_lifetime_subscribe.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
+                    "${MESH_TEST_DIR}/motor_zenoh_base_subscribe.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_machine_lifetime_subscribe.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h"
+            COMMENT "Mesh zenoh machine-lifetime subscribe: Generating brake_zenoh_machine_lifetime_subscribe_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_machine_lifetime_subscribe_test
+            mesh/test_mesh_zenoh_machine_lifetime_subscribe.cpp
+            "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h"
+            "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_machine_lifetime_subscribe_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_machine_lifetime_subscribe_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_machine_lifetime_subscribe_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_machine_lifetime_subscribe_test)
+        add_test(NAME mesh_zenoh_machine_lifetime_subscribe_verification
+                 COMMAND mesh_zenoh_machine_lifetime_subscribe_test)
+        set_tests_properties(mesh_zenoh_machine_lifetime_subscribe_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_machine_lifetime_port_17453
+        )
+
         # ── Session Z1: Zenoh liveliness PEER_PARTITIONED E2E (§16.7) ─
         # Verifies the generated router's liveliness token + subscriber
         # pair surfaces `error.communication` with reason
