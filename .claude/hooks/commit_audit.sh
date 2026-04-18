@@ -407,6 +407,192 @@ if [ -n "$FWD_REF_HITS" ]; then
   exit 2
 fi
 
+# ── COMMIT_FORMAT.md structural detector ─────────────────────────
+#
+# Hard-block commits whose message violates COMMIT_FORMAT.md. These
+# are deterministic rules (type prefix, bullet body, 1-3 items, no
+# Co-Authored-By / emoji / Claude Code attribution), not waivable by
+# the self-audit questions. No marker written, so the command must be
+# rewritten — not re-answered — to pass.
+#
+# Scope: only runs when the command provides a message via -m /
+# --message / heredoc. `--amend --no-edit` and editor-based commits
+# (no -m) are skipped because there is no inline message to inspect.
+FORMAT_VIOLATIONS="$(printf '%s' "$CMD" | python3 -c '
+import re, shlex, sys
+cmd = sys.stdin.read()
+
+# Extract -m / --message values plus --amend --no-edit marker.
+messages = []
+amend_no_edit = False
+saw_m = False
+try:
+    tokens = shlex.split(cmd, posix=True)
+except ValueError:
+    tokens = []
+i = 0
+while i < len(tokens):
+    t = tokens[i]
+    if t in ("-m", "--message") and i + 1 < len(tokens):
+        messages.append(tokens[i + 1])
+        saw_m = True
+        i += 2
+        continue
+    if t.startswith("--message="):
+        messages.append(t.split("=", 1)[1])
+        saw_m = True
+    elif t.startswith("-m") and len(t) > 2:
+        # Glued `-mTEXT` form (legal but rare).
+        messages.append(t[2:])
+        saw_m = True
+    elif t == "--no-edit":
+        amend_no_edit = True
+    i += 1
+
+# Heredoc-embedded bodies — shlex preserves `$(cat <<EOF ... EOF)` as
+# an opaque token, so the real message lives inside the heredoc tag.
+for m in re.finditer(
+    r"<<-?\s*[\x27\x22]?([A-Za-z_][A-Za-z0-9_]*)[\x27\x22]?\s*\n(.*?)\n\s*\1\s*(?:\n|$)",
+    cmd, re.DOTALL):
+    messages.append(m.group(2))
+    saw_m = True
+
+# --amend --no-edit reuses the existing (already-audited) message; no
+# new text to check. Commits without -m / heredoc (editor-based) are
+# not inspectable here — git will open $EDITOR and the user authors
+# directly, which is out of scope.
+if amend_no_edit or not saw_m:
+    sys.exit(0)
+
+# Drop messages that are shell-expansion placeholders (e.g.
+# "$(cat <<EOF ... EOF)" literal from an unresolved substitution);
+# the real content comes from the heredoc body extracted above.
+def is_expansion_placeholder(s):
+    s = s.strip()
+    return s.startswith("$(") or s.startswith("${") or s.startswith("`")
+
+real_messages = [m for m in messages if m.strip() and not is_expansion_placeholder(m)]
+if not real_messages:
+    sys.exit(0)
+
+# Git -m semantics: first value is subject, each subsequent -m is a
+# body paragraph separated by a blank line. Heredoc bodies already
+# carry their own newlines; keep them intact.
+if len(real_messages) == 1:
+    full_msg = real_messages[0]
+else:
+    full_msg = "\n\n".join(m.strip() for m in real_messages)
+
+lines = full_msg.splitlines()
+# Strip trailing empty lines so bullet counting is not skewed by
+# trailing newlines that heredoc patterns add.
+while lines and not lines[-1].strip():
+    lines.pop()
+if not lines:
+    sys.exit(0)
+
+subject = lines[0]
+rest = lines[1:]
+
+violations = []
+
+# ── Subject rules (COMMIT_FORMAT.md §"Subject Line") ──
+SUBJECT_RE = re.compile(r"^(feat|refactor|fix|docs|test|chore)(?:\([^)]+\))?: \S.*$")
+if not SUBJECT_RE.match(subject):
+    violations.append(("subject-type",
+        f"Subject must match `<type>: <text>` where type ∈ "
+        f"{{feat, refactor, fix, docs, test, chore}} (optional scope "
+        f"`(name)`). Got: {subject!r}"))
+if len(subject) > 72:
+    violations.append(("subject-length",
+        f"Subject is {len(subject)} chars; max 72. Got: {subject!r}"))
+if subject.rstrip().endswith("."):
+    violations.append(("subject-period",
+        f"Subject must not end with a period. Got: {subject!r}"))
+
+# ── Body rules (COMMIT_FORMAT.md §"Body") ──
+# Strip leading blanks (the mandatory blank line after subject).
+while rest and not rest[0].strip():
+    rest.pop(0)
+
+if rest:
+    # Parse bullets. A bullet starts with "- " at column 0. Lines
+    # that begin with whitespace are treated as wrap continuations
+    # of the preceding bullet. Any other non-blank line is a violation.
+    bullets = []
+    saw_nonbullet = False
+    current_bullet = None
+    for line in rest:
+        if line.startswith("- "):
+            current_bullet = line
+            bullets.append(current_bullet)
+        elif not line.strip():
+            current_bullet = None
+        elif line[:1] in (" ", "\t") and current_bullet is not None:
+            # Wrap continuation — OK.
+            continue
+        else:
+            if not saw_nonbullet:
+                violations.append(("body-nonbullet",
+                    f"Body line is not a bullet and not a wrap "
+                    f"continuation: {line!r}. COMMIT_FORMAT.md requires "
+                    f"bullet points (`- ` prefix) only."))
+                saw_nonbullet = True
+
+    n = len(bullets)
+    if n == 0 and not saw_nonbullet:
+        violations.append(("body-no-bullets",
+            "Body has no bullet points. COMMIT_FORMAT.md requires "
+            "1-3 bullets after the subject line."))
+    elif n > 3:
+        violations.append(("body-too-many",
+            f"Body has {n} bullets. COMMIT_FORMAT.md requires "
+            f"1-3 items (fewer is better)."))
+
+# ── Forbidden style (COMMIT_FORMAT.md §"Style") ──
+if re.search(r"Co-?Authored-?By\s*:", full_msg, re.IGNORECASE):
+    violations.append(("coauthor-tag",
+        "`Co-Authored-By` tag is forbidden by COMMIT_FORMAT.md §Style. "
+        "Project rule overrides any global template."))
+if re.search(r"Generated with \[?Claude Code", full_msg, re.IGNORECASE):
+    violations.append(("claude-attribution",
+        "`Generated with Claude Code` attribution is forbidden by "
+        "COMMIT_FORMAT.md §Style."))
+# Emoji: conservative ranges — Miscellaneous Symbols, Dingbats, and
+# the Emoji blocks. Latin text + §, ×, ≤ etc. are outside these ranges.
+if re.search(r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F02F]",
+             full_msg):
+    violations.append(("emoji",
+        "Emojis are forbidden by COMMIT_FORMAT.md §Style."))
+
+for kind, body in violations:
+    print(f"  [{kind}] {body}")
+')"
+
+if [ -n "$FORMAT_VIOLATIONS" ]; then
+  {
+    echo "=== COMMIT BLOCKED: COMMIT_FORMAT.md violation ==="
+    echo ""
+    echo "The commit message does not match the project's commit rules"
+    echo "(COMMIT_FORMAT.md in the repo root). These are deterministic"
+    echo "format rules and not waivable by the self-audit questions."
+    echo ""
+    echo "$FORMAT_VIOLATIONS"
+    echo ""
+    echo "Rule summary (see COMMIT_FORMAT.md for full spec):"
+    echo "  - Subject: \`<type>: <text>\` (type ∈ feat/refactor/fix/docs/test/chore),"
+    echo "    max 72 chars, no trailing period."
+    echo "  - Body:    one blank line after subject, then 1-3 bullets with"
+    echo "             \`- \` prefix. No prose paragraphs."
+    echo "  - Style:   no Co-Authored-By tag, no 'Generated with Claude Code',"
+    echo "             no emojis. Project rule overrides global templates."
+    echo ""
+    echo "No marker written — retrying the same command keeps failing."
+    echo "Rewrite the commit message and re-run."
+  } >&2
+  exit 2
+fi
+
 GIT_DIR="$(git -C "${CWD:-.}" rev-parse --git-dir 2>/dev/null || echo .git)"
 # Normalize to absolute path so the marker lives next to the repo,
 # not in whichever directory the hook happened to run from.
