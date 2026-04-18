@@ -315,7 +315,7 @@ pub struct ResolvedTarget {
     pub event_patterns: Vec<EventPatternInfo>,
     /// Inbound machine-lifetime subscription events (SCE_MESH.md §13,
     /// Z5a). Populated by
-    /// [`synthesize_subscription_partials`] from deploy.yaml
+    /// [`contribute_subscription_partials`] from deploy.yaml
     /// `machines.<name>.subscriptions:` entries; empty for targets
     /// that only participate in outbound sends. Feeds codegen's
     /// `has_pubsub` computation so the subscription refcount map is
@@ -467,7 +467,7 @@ impl std::fmt::Display for DeadlineOverrideNotice {
     }
 }
 
-/// Result of [`resolve_partials`] / [`build_resolved_targets`]: the
+/// Result of [`contribute_send_partials`] / [`build_resolved_targets`]: the
 /// payload (targets) plus any informational notices the resolution
 /// stage produced. Named struct rather than a tuple so call sites read
 /// `outcome.targets` / `outcome.deadline_overrides` instead of
@@ -1286,7 +1286,7 @@ pub struct SendActionSummary {
     /// Per-action details for QoS and pattern validation.
     pub actions: Vec<SendActionDetail>,
     /// Mesh-RPC invoke sites keyed by the target their `src="#X"`
-    /// resolves to. Consumed by [`resolve_partials`] — each partial
+    /// resolves to. Consumed by [`contribute_send_partials`] — each partial
     /// target pops its bucket and carries the sites through to
     /// [`ResolvedTarget::invoke_sites`]. Absent targets yield an
     /// empty site list (i.e. a pure-`<send>` target).
@@ -1476,7 +1476,7 @@ pub fn analyze_event_pairs(
     pattern_map
 }
 
-/// Intermediate target produced by [`resolve_partials`] before the
+/// Intermediate target produced by [`contribute_send_partials`] before the
 /// external-config stage has filled in per-event SOME/IP IDs. Internal
 /// to topology — it exists precisely to keep `ResolvedTarget` free of the
 /// half-built `event_bindings: BTreeMap::new()` state. External callers
@@ -1490,7 +1490,7 @@ pub(crate) struct PartialTarget {
     pub event_patterns: Vec<EventPatternInfo>,
     /// See [`ResolvedTarget::subscription_events`]. Populated by the
     /// machine-lifetime synthesis pass; always empty on partials
-    /// produced by `resolve_partials` from SCXML sends.
+    /// produced by `contribute_send_partials` from SCXML sends.
     pub subscription_events: Vec<String>,
     /// Mesh-RPC invoke sites targeting this binding. Carried through
     /// to the final [`ResolvedTarget`] unchanged — no external-config
@@ -1515,18 +1515,24 @@ pub(crate) struct PartialTarget {
     pub instances: Option<Vec<u16>>,
 }
 
-/// Resolve SCXML send targets against deploy.yaml bindings for a specific
-/// machine. Pre-external stage — produces [`PartialTarget`]s that carry
-/// every field independent of vsomeip.json resolution. [`finalize_targets`]
-/// then attaches per-event SOME/IP IDs and produces the public
-/// [`ResolvedTarget`]s.
+/// SCXML-outbound contributor (SCE_MESH.md §9.5 `<invoke>` + §13 `<send>`).
 ///
-/// Uses pre-collected targets and target_events from `SendActionSummary`
-/// to avoid redundant model traversal. Pattern/pairing metadata is produced
-/// by `analyze_event_pairs` and consumed here.
+/// Resolves every `<send>`/`<invoke>` target in the model against the
+/// machine's deploy.yaml bindings and produces a [`PartialTarget`] per
+/// target, with outbound slot fields (`events`, `event_patterns`,
+/// `invoke_sites`) populated from the model and binding-derived fields
+/// (`transport`, `extra`, `ordering`, `instance_from`, `instances`) copied
+/// from the binding. The inbound slot (`subscription_events`) is left empty
+/// — that slot belongs to [`contribute_subscription_partials`].
 ///
-/// Returns an error if any SCXML target has no matching binding in deploy.yaml.
-pub(crate) fn resolve_partials(
+/// Also emits [`DeadlineOverrideNotice`]s when per-invoke `_mesh_deadline_ms`
+/// disagrees with the binding's fallback: SCXML-specific metadata the CLI
+/// surfaces to the operator, not part of the resolved-target shape.
+///
+/// Returns `TopologyError::UnresolvedTargets` when an SCXML target has no
+/// binding, `MissingBindingField` / `OrderingCannotBeGuaranteed` / shm-extras
+/// validation errors when a binding is malformed.
+pub(crate) fn contribute_send_partials(
     summary: &SendActionSummary,
     bindings: &std::collections::HashMap<TargetId, BindingConfig>,
     machine_name: &str,
@@ -1600,8 +1606,9 @@ pub(crate) fn resolve_partials(
                     instance_from: binding.instance_from.clone(),
                     instances: binding.instances.clone(),
                     // Machine-lifetime subscription interest is layered
-                    // on by `synthesize_subscription_partials` after
-                    // this loop runs; SCXML-send partials start empty.
+                    // on by `contribute_subscription_partials` via the
+                    // `build_resolved_targets` merge step; SCXML-send
+                    // partials always start with an empty slot here.
                     subscription_events: Vec::new(),
                 });
             }
@@ -1678,37 +1685,63 @@ pub(crate) fn resolve_partials(
 /// SCE_MESH.md §9.5). Notices are non-fatal and exposed for the CLI to
 /// surface to the operator; consumers that only care about the targets
 /// can pattern-match `(resolved, _)`.
+/// Bundled inputs for every build-time target contributor that feeds
+/// [`build_resolved_targets`].
+///
+/// Each field is consumed by exactly one contributor function. Adding a
+/// new contributor (e.g. runtime `<invoke srcexpr>` target binding per
+/// Gap 4, or reply-source routing per Gap 6) extends this struct with a
+/// new field rather than growing `build_resolved_targets`' positional
+/// argument list — the pattern that was pushing the signature from
+/// five parameters toward seven before Z5a.
+///
+/// All fields are borrows; the caller owns the underlying data for the
+/// lifetime of the `build_resolved_targets` call.
+pub struct TargetContributions<'a> {
+    /// SCXML `<send>` / `<invoke>` action summary. Consumed by
+    /// [`contribute_send_partials`].
+    pub send_summary: &'a SendActionSummary,
+    /// deploy.yaml `machines.<name>.subscriptions:` entries. Consumed by
+    /// [`contribute_subscription_partials`] (SCE_MESH.md §13 / Z5a).
+    /// Empty slice is the "no machine-lifetime subscriptions" case; the
+    /// contributor short-circuits without consulting bindings.
+    pub subscriptions: &'a [super::deploy::SubscriptionConfig],
+}
+
 pub fn build_resolved_targets(
-    summary: &SendActionSummary,
+    contributions: &TargetContributions<'_>,
     deploy: &DeployConfig,
     machine_name: &str,
     external: &super::external::ExternalResolution,
-    machine_subscriptions: &[super::deploy::SubscriptionConfig],
 ) -> Result<TargetResolution, TopologyError> {
-    // Single lookup of the machine's deploy.yaml bindings drives both
-    // SCXML-send resolution and machine-lifetime subscription synthesis.
-    // Both stages consult the same map so a future divergence (e.g.
-    // subscriptions targeting a binding that SCXML also uses) cannot
-    // observe a half-indexed machine.
+    // Single lookup of the machine's deploy.yaml bindings drives every
+    // contributor. They all consult the same map so a future divergence
+    // (e.g. subscriptions targeting a binding that SCXML also uses)
+    // cannot observe a half-indexed machine.
     let bindings = find_machine_bindings(deploy, machine_name)?;
-    let (mut partials, deadline_overrides) = resolve_partials(summary, bindings, machine_name)?;
-    // SCE_MESH.md §13 machine-lifetime path (Z5a): deploy.yaml
-    // `machines.<name>.subscriptions:` names subscription sources by the
-    // same `#target` identifier the bindings map is keyed on. The
-    // template emits `route_send("{{ sub.source }}", sub_env)` at
-    // `init()`; for that call to reach the transport layer, each
-    // subscription source must resolve to a `ResolvedTarget` so
-    // `route_send` gets a matching arm. Synthesis folds those targets
-    // in here so every downstream validator / codegen consumer sees
-    // them through the same pipeline as SCXML-derived targets.
-    if !machine_subscriptions.is_empty() {
-        synthesize_subscription_partials(
-            &mut partials,
-            machine_subscriptions,
+
+    // Contributor order matters for the deterministic-per-input property:
+    // SCXML-outbound runs first so binding-derived fields on each target
+    // are seeded from the SCXML path's binding lookup; later contributors
+    // that land on the same target merge their slot fields through
+    // `merge_partial_into`, which leaves the seed fields untouched. Since
+    // every contributor reads the same `bindings` map the seed values
+    // are by construction identical — the discipline is about keeping
+    // that guarantee observable rather than proving it per-contributor.
+    let (mut partials, deadline_overrides) =
+        contribute_send_partials(contributions.send_summary, bindings, machine_name)?;
+
+    if !contributions.subscriptions.is_empty() {
+        let subscription_partials = contribute_subscription_partials(
+            contributions.subscriptions,
             bindings,
             machine_name,
         )?;
+        for p in subscription_partials {
+            merge_partial_into(&mut partials, p);
+        }
     }
+
     let resolved = finalize_targets(partials, machine_name, external)?;
     validate_someip_event_fields(&resolved, machine_name)?;
     validate_pool_param_names(&resolved, machine_name)?;
@@ -1718,14 +1751,51 @@ pub fn build_resolved_targets(
     })
 }
 
-/// SCE_MESH.md §13 — fold deploy.yaml `machines.<name>.subscriptions:`
-/// entries into the partial-target list so the subscribe dispatched at
-/// `init()` has a matching `route_send` arm. Each subscription's
-/// `source:` must match an entry in the machine's `bindings:` map; the
-/// binding supplies the transport identity (Zenoh key expression,
-/// SOME/IP service IDs, …) the synthesized target carries into codegen.
+/// Merge a contributor-produced [`PartialTarget`] into the accumulating
+/// list, folding its per-source slot fields (`events`, `event_patterns`,
+/// `invoke_sites`, `subscription_events`) into any existing entry for
+/// the same target. Binding-derived fields (`transport`, `extra`,
+/// `ordering`, `instance_from`, `instances`) stay at the first
+/// contributor's values — every contributor reads the same `bindings`
+/// map, so the values are identical by construction.
 ///
-/// Semantic separation from the SCXML path:
+/// `events` / `subscription_events` dedupe on merge so identical
+/// entries from separate contributors (e.g. a subscription entered
+/// twice in deploy.yaml) do not compound. `event_patterns` /
+/// `invoke_sites` accumulate unconditionally — contributors are
+/// responsible for emitting no duplicates within their own output.
+///
+/// If no existing entry matches, `new` is appended as-is.
+fn merge_partial_into(partials: &mut Vec<PartialTarget>, new: PartialTarget) {
+    let Some(existing) = partials.iter_mut().find(|pt| pt.target == new.target) else {
+        partials.push(new);
+        return;
+    };
+    for ev in new.events {
+        if !existing.events.contains(&ev) {
+            existing.events.push(ev);
+        }
+    }
+    existing.event_patterns.extend(new.event_patterns);
+    existing.invoke_sites.extend(new.invoke_sites);
+    for se in new.subscription_events {
+        if !existing.subscription_events.contains(&se) {
+            existing.subscription_events.push(se);
+        }
+    }
+}
+
+/// Machine-lifetime inbound contributor (SCE_MESH.md §13 / Z5a).
+///
+/// Folds deploy.yaml `machines.<name>.subscriptions:` entries into a
+/// list of [`PartialTarget`]s so the subscribe dispatched at `init()`
+/// has a matching `route_send` arm. Each subscription's `source:` must
+/// match an entry in the machine's `bindings:` map; the binding supplies
+/// the transport identity (Zenoh key expression, SOME/IP service IDs, …)
+/// the produced target carries into codegen.
+///
+/// Semantic separation from the SCXML-outbound contributor
+/// ([`contribute_send_partials`]):
 /// - `PartialTarget.events` / `event_patterns` stay scoped to the
 ///   machine's **outbound send** vocabulary — an SCXML `<send
 ///   target="#x" event="E"/>` pushes `E` into `events` and an
@@ -1736,22 +1806,18 @@ pub fn build_resolved_targets(
 ///   pattern`) honest — it never sees a notification event name
 ///   classified as Subscribe. `has_pubsub` is computed from both
 ///   lists in codegen.
-/// - Transport capability is checked at synthesis: a binding whose
-///   transport lacks `TransportCapability::PubSub` (e.g. SOME/IP
-///   before pub/sub support lands) rejects with
+/// - Transport capability is checked per entry: a binding whose
+///   transport lacks `TransportDescriptor::supports_machine_lifetime_subscribe`
+///   (e.g. SOME/IP before pub/sub support lands) rejects with
 ///   `MachineLifetimeSubscriptionUnsupported` rather than silently
 ///   dispatching to a `route_send` arm whose transport handler has
 ///   no `case EventSubscribe`.
 ///
-/// Merge contract:
-/// - If `partials` already contains a target for `sub.source` (the
-///   SCXML model also sends to it), the binding's transport state,
-///   ordering, and pool plan stay intact; only
-///   `subscription_events` grows.
-/// - Otherwise, project the binding into a fresh `PartialTarget` with
-///   empty `events` / `event_patterns` and a single
-///   `subscription_events` entry, so `finalize_targets` and
-///   `validate_someip_event_fields` still see a well-formed partial.
+/// The returned vector is already deduplicated within this contributor's
+/// output (two subscription entries naming the same source + event
+/// collapse into one partial). Cross-contributor merge — with the
+/// SCXML-outbound partials — happens through
+/// [`merge_partial_into`] in `build_resolved_targets`.
 ///
 /// Errors:
 /// - `SubscriptionSourceUnbound` when the source has no binding at
@@ -1760,12 +1826,12 @@ pub fn build_resolved_targets(
 /// - `MachineLifetimeSubscriptionUnsupported` when the binding's
 ///   transport does not support pub/sub — fail-closed on a transport
 ///   whose runtime would silently drop the subscribe envelope.
-fn synthesize_subscription_partials(
-    partials: &mut Vec<PartialTarget>,
+pub(crate) fn contribute_subscription_partials(
     subscriptions: &[super::deploy::SubscriptionConfig],
     bindings: &std::collections::HashMap<TargetId, BindingConfig>,
     machine_name: &str,
-) -> Result<(), TopologyError> {
+) -> Result<Vec<PartialTarget>, TopologyError> {
+    let mut partials: Vec<PartialTarget> = Vec::new();
     for sub in subscriptions {
         let Some(source_target) = TargetId::new(sub.source.clone()) else {
             // Empty source — rejected at deploy parse time, but guard
@@ -1805,33 +1871,28 @@ fn synthesize_subscription_partials(
             });
         }
 
-        if let Some(existing) = partials.iter_mut().find(|pt| pt.target == source_target) {
-            // SCXML send already targets this source — the outbound
-            // pattern metadata stays untouched; only inbound
-            // subscription interest accumulates. Dedupe so identical
-            // subscriptions entered twice (or entered alongside an
-            // SCXML-send to the same event) don't carry duplicate
-            // entries.
-            if !existing.subscription_events.contains(&sub.event) {
-                existing.subscription_events.push(sub.event.clone());
-            }
-            continue;
-        }
-
-        partials.push(PartialTarget {
-            target: source_target,
-            events: Vec::new(),
-            transport: binding.transport.clone(),
-            extra: binding.extra.clone(),
-            event_patterns: Vec::new(),
-            invoke_sites: Vec::new(),
-            ordering: binding.ordering,
-            instance_from: binding.instance_from.clone(),
-            instances: binding.instances.clone(),
-            subscription_events: vec![sub.event.clone()],
-        });
+        // Intra-contributor dedup shares the cross-contributor merge
+        // helper: a subscription that names a source another entry
+        // already covered accumulates its `subscription_events`, which
+        // is the same operation `build_resolved_targets` runs when
+        // this vector later merges into the SCXML-outbound partials.
+        merge_partial_into(
+            &mut partials,
+            PartialTarget {
+                target: source_target,
+                events: Vec::new(),
+                transport: binding.transport.clone(),
+                extra: binding.extra.clone(),
+                event_patterns: Vec::new(),
+                invoke_sites: Vec::new(),
+                ordering: binding.ordering,
+                instance_from: binding.instance_from.clone(),
+                instances: binding.instances.clone(),
+                subscription_events: vec![sub.event.clone()],
+            },
+        );
     }
-    Ok(())
+    Ok(partials)
 }
 
 /// Deterministic ordering for the `available` field of the unbound
@@ -3505,8 +3566,16 @@ topology:
         let deploy = parse_deploy_str(yaml).unwrap();
         let model = parse_model(SHM_SCXML, "sender");
         let external = super::super::external::ExternalResolution::default();
-        build_resolved_targets(&summary_for(&model), &deploy, "sender", &external, &[])
-            .map(|r| r.targets)
+        build_resolved_targets(
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &[],
+            },
+            &deploy,
+            "sender",
+            &external,
+        )
+        .map(|r| r.targets)
     }
 
     #[test]
@@ -3732,8 +3801,16 @@ topology:
         let model = parse_model(&mesh_rpc_sender_scxml(per_invoke), "brake");
         let deploy = parse_deploy_str(&deploy_with_motor_binding(binding_yaml)).unwrap();
         let external = super::super::external::ExternalResolution::default();
-        build_resolved_targets(&summary_for(&model), &deploy, "brake", &external, &[])
-            .expect("resolve")
+        build_resolved_targets(
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &[],
+            },
+            &deploy,
+            "brake",
+            &external,
+        )
+        .expect("resolve")
     }
 
     #[test]
@@ -3939,11 +4016,13 @@ topology:
         let model = parse_model(SHM_SCXML, "sender");
         let external = super::super::external::ExternalResolution::default();
         let resolved = build_resolved_targets(
-            &summary_for(&model),
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &[],
+            },
             &deploy,
             "sender",
             &external,
-            &[],
         )
         .expect("zenoh + ordering:required is valid");
         assert_eq!(resolved.targets.len(), 1);
@@ -3974,11 +4053,13 @@ topology:
         let model = parse_model(SHM_SCXML, "sender");
         let external = super::super::external::ExternalResolution::default();
         let resolved = build_resolved_targets(
-            &summary_for(&model),
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &[],
+            },
             &deploy,
             "sender",
             &external,
-            &[],
         )
         .expect("zenoh without ordering key is valid");
         assert_eq!(
@@ -4011,11 +4092,13 @@ topology:
         let model = parse_model(SHM_SCXML, "sender");
         let external = super::super::external::ExternalResolution::default();
         let err = build_resolved_targets(
-            &summary_for(&model),
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &[],
+            },
             &deploy,
             "sender",
             &external,
-            &[],
         )
         .expect_err("CAN + ordering:required must be rejected");
         match err {
@@ -4053,11 +4136,13 @@ topology:
         // care about here. Downstream codegen would reject CAN for
         // the separate implemented=false reason.
         let resolved = build_resolved_targets(
-            &summary_for(&model),
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &[],
+            },
             &deploy,
             "sender",
             &external,
-            &[],
         )
         .expect("CAN with ordering:none must clear the §10.6 check");
         assert_eq!(
@@ -4107,11 +4192,13 @@ topology:
         let external = super::super::external::ExternalResolution::default();
         let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
         let resolution = build_resolved_targets(
-            &summary_for(&model),
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &subs,
+            },
             &deploy,
             "brake",
             &external,
-            &subs,
         )
         .expect("synthesis should succeed when the subscription source is bound");
         assert_eq!(
@@ -4166,11 +4253,13 @@ topology:
         let external = super::super::external::ExternalResolution::default();
         let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
         let err = build_resolved_targets(
-            &summary_for(&model),
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &subs,
+            },
             &deploy,
             "brake",
             &external,
-            &subs,
         )
         .expect_err("unbound subscription source must reject");
         match err {
@@ -4223,11 +4312,13 @@ topology:
         let external = super::super::external::ExternalResolution::default();
         let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
         let resolution = build_resolved_targets(
-            &summary_for(&model),
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &subs,
+            },
             &deploy,
             "brake",
             &external,
-            &subs,
         )
         .expect("mixed SCXML-send + subscription must resolve");
         assert_eq!(
@@ -4299,11 +4390,13 @@ topology:
         let external = super::super::external::ExternalResolution::default();
         let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
         let err = build_resolved_targets(
-            &summary_for(&model),
+            &TargetContributions {
+                send_summary: &summary_for(&model),
+                subscriptions: &subs,
+            },
             &deploy,
             "brake",
             &external,
-            &subs,
         )
         .expect_err("SOME/IP machine-lifetime subscribe must reject at topology");
         match err {

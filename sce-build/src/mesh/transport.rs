@@ -204,8 +204,8 @@ pub struct TransportDescriptor {
     ///   dispatch — no per-event resolution needed. `true`.
     /// - `dds` / `can`: unimplemented; set `false`.
     ///
-    /// Consumed by the topology-stage synthesis (`topology::
-    /// synthesize_subscription_partials`): a subscription source whose
+    /// Consumed by the topology-stage contributor
+    /// (`topology::contribute_subscription_partials`): a subscription source whose
     /// binding transport has this set to `false` is rejected with
     /// `mesh/topology-machine-lifetime-subscription-unsupported`.
     pub supports_machine_lifetime_subscribe: bool,

@@ -1058,11 +1058,13 @@ pub fn compile_mesh_transport(
     // in a single pipeline — callers cannot observe the half-built state
     // between resolution and attach.
     let resolution = mesh::topology::build_resolved_targets(
-        &summary,
+        &mesh::topology::TargetContributions {
+            send_summary: &summary,
+            subscriptions: machine_subscriptions,
+        },
         &deploy_cfg,
         &effective_machine_name,
         &external_resolution,
-        machine_subscriptions,
     )?;
     let resolved = resolution.targets;
     let deadline_override_notices = resolution.deadline_overrides;
