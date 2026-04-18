@@ -78,12 +78,12 @@ int run_test() {
     // Client session. Peer mode, connects to the motor's listen endpoint.
     auto client_session = open_peer(/*connect=*/kListen, /*listen=*/"");
 
-    // Deterministic peer-mesh handshake via a liveliness token exchanged
-    // with a throwaway peer on the same listen endpoint. Motor is the
-    // relay on kListen, so convergence of client↔handshake proves
-    // client↔motor has also converged.
-    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
-    wait_for_peer_ready(client_session, handshake_session);
+    // Deterministic convergence barrier. The motor router's init()
+    // declared a queryable on ZENOH_SERVER_KEY; once the client-side
+    // matching listener fires the client↔motor peer-mesh routing
+    // state has converged, which includes the subscriber path this
+    // test relies on (motor `session.put` → client subscriber).
+    wait_for_queryable(client_session, motor_gen::ZENOH_SERVER_KEY);
 
     // ── §1. Eventgroup notification: engine-driven ───────────────
     //

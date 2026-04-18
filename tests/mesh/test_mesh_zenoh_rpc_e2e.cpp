@@ -67,14 +67,15 @@ int run_test() {
     BrakeRouterT brake_router(brake_engine);
     MESH_TEST_REQUIRE(brake_router.init(), "brake_router.init() failed");
 
-    // Deterministic peer-mesh handshake. Both routers use generated zenoh
-    // sessions that are not directly reachable for liveliness dances, so
-    // two raw handshake peers join the same listen endpoint and exchange
-    // a liveliness token. Motor is the relay on kListen; once the raw
-    // pair has converged, motor has also converged with brake_router.
-    auto handshake_observer = open_peer(/*connect=*/kListen, /*listen=*/"");
-    auto handshake_peer     = open_peer(/*connect=*/kListen, /*listen=*/"");
-    wait_for_peer_ready(handshake_observer, handshake_peer);
+    // Deterministic convergence barrier. Both routers are generated
+    // and expose no raw session, so a single throwaway probe peer
+    // joins the shared listen endpoint and installs a matching
+    // listener on motor's ZENOH_SERVER_KEY. When matching fires, the
+    // probe's peer mesh has motor in its routing table; zenoh peer
+    // mode makes that state representative of any co-located peer,
+    // so brake_router has also converged with motor.
+    auto probe_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_queryable(probe_session, motor_gen::ZENOH_SERVER_KEY);
 
     // ── 1. RPC round-trip: brake send_zenoh → motor queryable →
     //       motor mesh_send_cb_ → resolvePattern → handleServerResponse

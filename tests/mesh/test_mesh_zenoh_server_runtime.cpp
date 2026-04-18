@@ -66,12 +66,13 @@ int run_test() {
     // ── Client side: raw zenoh session ──
     auto client_session = open_peer(/*connect=*/kListen, /*listen=*/"");
 
-    // Deterministic peer-mesh handshake via a liveliness token exchanged
-    // with a throwaway peer on the same listen endpoint. Motor is the
-    // relay on kListen, so convergence of client↔handshake proves
-    // client↔motor has also converged.
-    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
-    wait_for_peer_ready(client_session, handshake_session);
+    // Deterministic convergence barrier: wait until the motor router's
+    // queryable on ZENOH_SERVER_KEY is reachable from the client side.
+    // The motor's init() declared that queryable as a first-class
+    // init-time entity, so `declare_matching_listener` on a client-side
+    // querier fires the moment zenoh's routing state has propagated
+    // that fact — more precise than the liveliness proxy.
+    wait_for_queryable(client_session, motor_gen::ZENOH_SERVER_KEY);
 
     // ── 1. Server queryable receives RPC request ──────────────────────
     //

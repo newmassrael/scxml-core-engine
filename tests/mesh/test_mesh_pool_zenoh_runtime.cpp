@@ -124,13 +124,14 @@ int run_test() {
 
     // Peer handshake. Must come before raising the event so the
     // outbound session.get isn't fired while the transport is still
-    // in SYN_SENT and drops to the on_drop path. Liveliness-token
-    // exchange between the harness and a throwaway handshake peer
-    // proves zenoh's routing has converged on this listen endpoint
-    // — the client router that dialed kListen from inside init() is
-    // then guaranteed to see the harness's queryable.
-    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
-    wait_for_peer_ready(harness_session, handshake_session);
+    // in SYN_SENT and drops to the on_drop path. The client router is
+    // generated and exposes no raw session, so a throwaway probe peer
+    // joins the same listen endpoint as the client and installs a
+    // matching listener on kSubstitutedKey. When the probe sees the
+    // harness queryable, the client router — co-located on the same
+    // listen endpoint under zenoh peer mode — sees it too.
+    auto probe_session = open_peer(/*connect=*/kListen, /*listen=*/"");
+    wait_for_queryable(probe_session, kSubstitutedKey);
 
     // Driver thread pumps the external queue (same RAII pattern as
     // test_mesh_zenoh_rpc_engine_driven.cpp — Session I precedent).

@@ -108,14 +108,13 @@ int run_test() {
     // test is hermetic.
     auto client_session = open_peer(/*connect=*/kListen, /*listen=*/"");
 
-    // Deterministic peer-mesh handshake: a harness session joins the
-    // same listen endpoint and exchanges a liveliness token with the
-    // client. In zenoh peer mode the motor router is the relay on the
-    // shared listener, so token propagation between the two raw sessions
-    // proves the client↔motor edge has also converged — replacing a
-    // non-deterministic sleep_for with a zenoh-native signal.
-    auto handshake_session = open_peer(/*connect=*/kListen, /*listen=*/"");
-    wait_for_peer_ready(client_session, handshake_session);
+    // Deterministic convergence barrier. The motor router's init()
+    // declared a queryable on ZENOH_SERVER_KEY, so installing a
+    // matching listener on a client-side querier surfaces the exact
+    // invariant this test needs (client session.get can reach that
+    // queryable). More precise than the liveliness proxy — no
+    // intermediate handshake peer required.
+    wait_for_queryable(client_session, motor_gen::ZENOH_SERVER_KEY);
 
     // ── §1. RPC roundtrip: engine-driven ──────────────────────────────
     //
