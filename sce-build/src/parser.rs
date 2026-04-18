@@ -1245,6 +1245,7 @@ impl SCXMLParser {
         if invoke_type == "sce:mesh-rpc" {
             let info = self.parse_mesh_rpc_invoke(
                 elem,
+                model,
                 state_id,
                 source_name,
                 invoke_id,
@@ -1253,15 +1254,6 @@ impl SCXMLParser {
                 srcexpr.clone(),
                 idlocation,
             )?;
-            // SCE Mesh §9.5 runtime target resolution: the srcexpr entry
-            // block calls `ensureScriptEngine()` + `evaluateExpression()`
-            // unconditionally, so `needs_script_engine` must be true or
-            // the generated code references a non-existent helper.
-            // Static `src` variants never evaluate expressions and do
-            // not promote the flag on their own.
-            if matches!(info.target, crate::model::MeshRpcTarget::SrcExpr { .. }) {
-                model.needs_script_engine = true;
-            }
             return Ok(Some(Invoke::MeshRpc(info)));
         }
 
@@ -1461,6 +1453,7 @@ impl SCXMLParser {
     fn parse_mesh_rpc_invoke(
         &mut self,
         elem: &roxmltree::Node,
+        model: &mut SCXMLModel,
         state_id: &str,
         source_name: &str,
         invoke_id: String,
@@ -1496,6 +1489,14 @@ impl SCXMLParser {
         let target = if src_present {
             crate::model::MeshRpcTarget::Src { src }
         } else {
+            // SCE Mesh §9.5 runtime target resolution: the srcexpr
+            // entry block emitted by the code generator unconditionally
+            // calls `ensureScriptEngine()` + `evaluateExpression()`,
+            // so the flag is set at the moment the variant is chosen.
+            // Keeping this next to the SrcExpr constructor collocates
+            // "what makes the variant" with "what the variant requires"
+            // — callers no longer need to pattern-match after the fact.
+            model.needs_script_engine = true;
             crate::model::MeshRpcTarget::SrcExpr { srcexpr }
         };
 
