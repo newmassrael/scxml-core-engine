@@ -2800,16 +2800,43 @@ struct TransportRouter {
                 // on_sample closure owns the admit chain, so there is
                 // no per-subscription state to unwind on teardown.
                 []() noexcept {});
-            // Duplicate-subscribe semantics: silent replace (refresh).
-            // SCXML state-entry bindings re-execute on every entry to the
-            // owning state, so re-entering a subscribed state MUST be a
-            // valid no-op-or-refresh, not an error. RAII destruction of
-            // the prior Subscriber undeclares it before the new one is
-            // installed; from the receiver's perspective there is at most
-            // a millisecond gap with no active subscription. Callers that
-            // need at-least-once delivery during a refresh should use
-            // machine-lifetime subscriptions (deploy.yaml, Session E)
-            // instead of state-entry bindings.
+            // State-entry subscription semantics (SCE Mesh Z5,
+            // mesh_zenoh_gaps_roadmap.md; SCE_MESH.md §13).
+            //
+            // The refcount emitted above (around the `has_pubsub` gate)
+            // already collapses duplicate subscribes on the same
+            // (target, event) — a second EventSubscribe returns early
+            // without reaching this dispatcher. Scope caveat: the
+            // refcount key is `target|event`, but `zenoh_subscribers_`
+            // is keyed by `target` alone. Two EventSubscribes on the
+            // same target but different events both reach this
+            // dispatcher with distinct `key` expressions, and the
+            // second `insert_or_assign` clobbers the first entry — a
+            // latent issue orthogonal to Z5 / state-entry lifecycle
+            // and not covered by the refcount.
+            //
+            // The residual window Z5 names is the re-entry cycle on a
+            // single (target, event) pair: state exit issues the
+            // auto-synthesized `event.unsubscribe.*` which runs
+            // refcount 1→0 and erases the map entry (RAII undeclare),
+            // then state re-entry re-issues subscribe → refcount
+            // 0→1 → fresh declare_subscriber here. Between exit and
+            // re-entry the transport has no subscriber; peer `put`
+            // deliveries on the keyexpr during that window are lost.
+            //
+            // The window is intrinsic to state-entry lifecycle
+            // semantics (subscribe on entry, unsubscribe on exit), not
+            // a transport-level defect. Authors who need at-least-once
+            // delivery across state re-entry should reach for the
+            // machine-lifetime path — deploy.yaml
+            // `machines.<name>.subscriptions:` (emitted in `init()`
+            // above, Session Task #7). That path's runtime dispatch
+            // is tracked as open gap Z5a in
+            // `mesh_zenoh_gaps_roadmap.md`: `route_send` has no
+            // synthesized arm for subscription-only bindings, so the
+            // machine-lifetime subscribe currently does not reach the
+            // transport. Until Z5a closes, the escape is documented,
+            // not yet verified end-to-end.
             zenoh_subscribers_.insert_or_assign(target_name, std::move(sub));
             return true;
         }
