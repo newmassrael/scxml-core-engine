@@ -649,25 +649,64 @@ pub enum CodegenError {
     },
 
     /// A machine combines a multi-instance SOME/IP server pool
-    /// (`server.instances: [N > 1]`) with at least one
-    /// `<invoke type="sce:mesh-rpc">` site (SCE Mesh §9.5 + §14.4).
-    /// `invoke_correlation_` and `active_invokes_` in the generated
-    /// router are router-scoped, not session-scoped, so a deliver
-    /// callback or `<cancel>` issued by one hosted session could
-    /// clobber a peer session's mesh-rpc entry. Rejected at codegen
-    /// so the deployment cannot silently mis-route correlations.
-    /// Two equally-valid repairs (drop the mesh-rpc invoke or switch
-    /// to a single-instance server) — the diagnostic keeps both
-    /// arms to let the author pick.
+    /// (`server.instances: [N > 1]`) with an outbound RPC client
+    /// path whose correlation state lives in a router-scoped table
+    /// (SCE Mesh §9.5 + §10.9 + §14.4). Two kinds of RPC client are
+    /// covered:
+    ///
+    /// * [`RpcClientKind::MeshRpc`] — any `<invoke type="sce:mesh-rpc">`
+    ///   site on the machine. `invoke_correlation_` and
+    ///   `active_invokes_` are router-scoped; hosting multiple
+    ///   SCXML sessions would alias their invoke_id tables.
+    /// * [`RpcClientKind::SomeipRpcRequest`] — any SOME/IP target
+    ///   with an outbound `<send>` RpcRequest pattern. `pending_rpcs_`
+    ///   is the router-scoped correlation table that maps
+    ///   `correlation_id → reply-event-name`, and the generated
+    ///   client-side receive handler dispatches replies to
+    ///   `sessions_[0]` because there is no per-session identity
+    ///   threaded through the correlation key.
+    ///
+    /// Two equally-valid repairs (drop the RPC client site or
+    /// reduce `server.instances:` to a single entry) — the
+    /// diagnostic keeps both arms so the author picks. Split
+    /// across deployments is fine: the rejection is per-router,
+    /// not per-deployment.
     #[error("machine '{machine}': SOME/IP server pool (`server.instances: [...]` with more than \
-             one entry) cannot be combined with `<invoke type=\"sce:mesh-rpc\">` in the same \
-             router. Mesh-rpc correlation is router-scoped today; hosting multiple SCXML \
-             sessions on one router would alias their invoke_id tables. Either remove the \
-             mesh-rpc invoke site(s) from this machine or reduce `server.instances:` to a \
-             single instance. See SCE_MESH.md §14.4.")]
-    PoolWithMeshRpcClientUnsupported {
+             one entry) cannot be combined with {kind} in the same router. Router-scoped \
+             correlation tables (`invoke_correlation_` / `active_invokes_` / `pending_rpcs_`) \
+             cannot safely alias across hosted sessions. Either remove the RPC client site(s) \
+             from this machine or reduce `server.instances:` to a single instance. See \
+             SCE_MESH.md §14.4.")]
+    PoolWithRpcClientUnsupported {
         machine: String,
+        kind: RpcClientKind,
     },
+}
+
+/// Which router-scoped correlation surface drove a
+/// [`CodegenError::PoolWithRpcClientUnsupported`] rejection. The
+/// `Display` rendering is consumed verbatim by the `#[error(...)]`
+/// format string so the diagnostic message names the exact shape
+/// the deployment picked up (authors fix one or the other, not a
+/// generic category).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RpcClientKind {
+    /// `<invoke type="sce:mesh-rpc">` outbound site — consumes
+    /// `invoke_correlation_` + `active_invokes_`.
+    MeshRpc,
+    /// SOME/IP `<send>` RpcRequest outbound event — consumes
+    /// `pending_rpcs_` with a `sessions_[0]`-hard-coded reply
+    /// dispatch path.
+    SomeipRpcRequest,
+}
+
+impl std::fmt::Display for RpcClientKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MeshRpc => write!(f, "`<invoke type=\"sce:mesh-rpc\">`"),
+            Self::SomeipRpcRequest => write!(f, "SOME/IP `<send>` RpcRequest"),
+        }
+    }
 }
 
 /// CLI exit code by error category.
@@ -1236,19 +1275,34 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
                 k
             },
         },
-        CodegenError::PoolWithMeshRpcClientUnsupported { machine } => DiagnosticPayload {
-            code: DiagnosticCode::MeshCodegenPoolWithMeshRpcClientUnsupported,
+        CodegenError::PoolWithRpcClientUnsupported { machine, kind } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenPoolWithRpcClientUnsupported,
             stage: Stage::MeshCodegen,
             actual: Some(machine.clone()),
-            // Two equally-valid repairs (drop the mesh-rpc invoke OR
-            // reduce `server.instances:` to a single entry). Neither
-            // is mechanically derivable from this diagnostic alone —
-            // the author's intent decides. Same shape as
-            // `MeshTopologyOrderingCannotBeGuaranteed`.
+            // Two equally-valid repairs (drop the RPC client site(s)
+            // OR reduce `server.instances:` to a single entry).
+            // Neither is mechanically derivable from this diagnostic
+            // alone — the author's intent decides. Same shape as
+            // `MeshTopologyOrderingCannotBeGuaranteed`. The kind
+            // discriminator is keyed so diagnostics from the two
+            // correlation surfaces stay distinguishable in golden
+            // snapshots + downstream tooling.
             expected: None,
             fix: None,
-            key_fragments: vec![machine.clone()],
+            key_fragments: vec![machine.clone(), rpc_client_kind_tag(kind).to_string()],
         },
+    }
+}
+
+/// Stable short tag for the [`RpcClientKind`] arm, fed into the
+/// diagnostic's `key_fragments` so `fnv1a:...` identity differs
+/// between the two rejection shapes. Tags stay ASCII-only and are
+/// never rendered to users — the human message reads `kind` via
+/// its [`Display`] impl.
+fn rpc_client_kind_tag(kind: &RpcClientKind) -> &'static str {
+    match kind {
+        RpcClientKind::MeshRpc => "mesh_rpc",
+        RpcClientKind::SomeipRpcRequest => "someip_rpc_request",
     }
 }
 

@@ -480,8 +480,8 @@ pub enum DiagnosticCode {
     MeshCodegenTemplateRender,
     #[serde(rename = "mesh/codegen-event-name-collision")]
     MeshCodegenEventNameCollision,
-    #[serde(rename = "mesh/codegen-pool-with-mesh-rpc-client-unsupported")]
-    MeshCodegenPoolWithMeshRpcClientUnsupported,
+    #[serde(rename = "mesh/codegen-pool-with-rpc-client-unsupported")]
+    MeshCodegenPoolWithRpcClientUnsupported,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -627,7 +627,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenTemplateRead,
         MeshCodegenTemplateRender,
         MeshCodegenEventNameCollision,
-        MeshCodegenPoolWithMeshRpcClientUnsupported,
+        MeshCodegenPoolWithRpcClientUnsupported,
         // Mesh Io
         MeshIo,
     ]
@@ -818,7 +818,7 @@ impl DiagnosticCode {
             | MeshCodegenTemplateRead
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
-            | MeshCodegenPoolWithMeshRpcClientUnsupported
+            | MeshCodegenPoolWithRpcClientUnsupported
             | MeshIo => None,
         }
     }
@@ -929,7 +929,7 @@ impl DiagnosticCode {
             MeshCodegenTemplateRead => "mesh/codegen-template-read",
             MeshCodegenTemplateRender => "mesh/codegen-template-render",
             MeshCodegenEventNameCollision => "mesh/codegen-event-name-collision",
-            MeshCodegenPoolWithMeshRpcClientUnsupported => "mesh/codegen-pool-with-mesh-rpc-client-unsupported",
+            MeshCodegenPoolWithRpcClientUnsupported => "mesh/codegen-pool-with-rpc-client-unsupported",
             MeshIo => "mesh/io",
         }
     }
@@ -2248,8 +2248,8 @@ mod tests {
     /// [`forge_golden_entries`] for the rationale; same shape.
     fn mesh_golden_entries() -> Vec<(&'static str, crate::mesh::error::MeshError, &'static str)> {
         use crate::mesh::error::{
-            CodegenError, DeployError, ExternalConfigError, MeshError, TopologyError,
-            UnresolvedName,
+            CodegenError, DeployError, ExternalConfigError, MeshError, RpcClientKind,
+            TopologyError, UnresolvedName,
         };
         use crate::mesh::pattern::{CommunicationPattern, PatternViolation};
         use crate::mesh::target::TargetId;
@@ -2703,15 +2703,28 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:97c61b17b678ca97","code":"mesh/codegen-event-name-collision","stage":"mesh-codegen","message":"target '#motor': SCXML events [\"service.request.x\", \"service-request-x\"] both map to the same C++ constant suffix 'SERVICE_REQUEST_X'. Rename one of the events (or use a per-event explicit mapping) so generated constants are unique.","actual":"SERVICE_REQUEST_X"}"#,
             ),
             (
-                "mesh/codegen-pool-with-mesh-rpc-client-unsupported",
-                CodegenError::PoolWithMeshRpcClientUnsupported {
+                "mesh/codegen-pool-with-rpc-client-unsupported (mesh-rpc)",
+                CodegenError::PoolWithRpcClientUnsupported {
                     machine: "motor_pool".into(),
+                    kind: RpcClientKind::MeshRpc,
                 }
                 .into(),
                 // Hash placeholder — the byte-stability assertion replaces
                 // it with the runtime-observed value on first failure.
                 // Shape + message are the contract.
-                r#"{"v":1,"id":"fnv1a:45478062959fac54","code":"mesh/codegen-pool-with-mesh-rpc-client-unsupported","stage":"mesh-codegen","message":"machine 'motor_pool': SOME/IP server pool (`server.instances: [...]` with more than one entry) cannot be combined with `<invoke type=\"sce:mesh-rpc\">` in the same router. Mesh-rpc correlation is router-scoped today; hosting multiple SCXML sessions on one router would alias their invoke_id tables. Either remove the mesh-rpc invoke site(s) from this machine or reduce `server.instances:` to a single instance. See SCE_MESH.md §14.4.","actual":"motor_pool"}"#,
+                r#"{"v":1,"id":"fnv1a:3386d55e1a264fda","code":"mesh/codegen-pool-with-rpc-client-unsupported","stage":"mesh-codegen","message":"machine 'motor_pool': SOME/IP server pool (`server.instances: [...]` with more than one entry) cannot be combined with `<invoke type=\"sce:mesh-rpc\">` in the same router. Router-scoped correlation tables (`invoke_correlation_` / `active_invokes_` / `pending_rpcs_`) cannot safely alias across hosted sessions. Either remove the RPC client site(s) from this machine or reduce `server.instances:` to a single instance. See SCE_MESH.md §14.4.","actual":"motor_pool"}"#,
+            ),
+            (
+                "mesh/codegen-pool-with-rpc-client-unsupported (someip-rpc-request)",
+                CodegenError::PoolWithRpcClientUnsupported {
+                    machine: "motor_pool".into(),
+                    kind: RpcClientKind::SomeipRpcRequest,
+                }
+                .into(),
+                // Distinct `id` from the MeshRpc arm above because the
+                // rejection kind is part of `key_fragments`. Keeps the
+                // two arms independently traceable downstream.
+                r#"{"v":1,"id":"fnv1a:2b42825f2462bed8","code":"mesh/codegen-pool-with-rpc-client-unsupported","stage":"mesh-codegen","message":"machine 'motor_pool': SOME/IP server pool (`server.instances: [...]` with more than one entry) cannot be combined with SOME/IP `<send>` RpcRequest in the same router. Router-scoped correlation tables (`invoke_correlation_` / `active_invokes_` / `pending_rpcs_`) cannot safely alias across hosted sessions. Either remove the RPC client site(s) from this machine or reduce `server.instances:` to a single instance. See SCE_MESH.md §14.4.","actual":"motor_pool"}"#,
             ),
             (
                 "mesh/io",
@@ -3103,7 +3116,7 @@ mod tests {
             | MeshCodegenTemplateRead
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
-            | MeshCodegenPoolWithMeshRpcClientUnsupported
+            | MeshCodegenPoolWithRpcClientUnsupported
             | MeshIo => NeutralOrDeterministic,
         }
     }
@@ -3373,7 +3386,7 @@ mod tests {
                 | MeshCodegenUnsupportedLanguage
                 | MeshCodegenUnsupportedTransport | MeshCodegenTemplateRead
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
-                | MeshCodegenPoolWithMeshRpcClientUnsupported
+                | MeshCodegenPoolWithRpcClientUnsupported
                 | MeshIo => true,
             }
         }

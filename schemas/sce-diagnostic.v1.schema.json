@@ -123,7 +123,7 @@
         "mesh/codegen-template-read",
         "mesh/codegen-template-render",
         "mesh/codegen-event-name-collision",
-        "mesh/codegen-pool-with-mesh-rpc-client-unsupported",
+        "mesh/codegen-pool-with-rpc-client-unsupported",
         "mesh/io"
       ]
     },

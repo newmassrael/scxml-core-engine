@@ -1417,7 +1417,7 @@ struct TransportRouter {
             // active_invokes_ bookkeeping that pairs cancel to the
             // right UUID. has_mesh_rpc.v combined with a SOME/IP server
             // pool is rejected at codegen (see
-            // CodegenError::PoolWithMeshRpcClientUnsupported), so
+            // CodegenError::PoolWithRpcClientUnsupported (kind: MeshRpc)), so
             // N_SESSIONS == 1 whenever this branch emits and the loop
             // body runs exactly once with i == 0.
             sessions_[i]->setMeshInvokeCallback(
@@ -2695,7 +2695,7 @@ struct TransportRouter {
     /// deadline outcome resolves.
     ///
     /// Pool + mesh-rpc-client is rejected at codegen
-    /// (CodegenError::PoolWithMeshRpcClientUnsupported), so every
+    /// (CodegenError::PoolWithRpcClientUnsupported (kind: MeshRpc)), so every
     /// router that synthesizes this method runs with N_SESSIONS == 1
     /// and `sessions_[0]` is the sole correlation target.
     ///

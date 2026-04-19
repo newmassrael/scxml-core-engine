@@ -922,6 +922,41 @@ fn compute_needs_ordering(
     default_needs_ordering
 }
 
+/// SCE_MESH.md §10.9 invariant 8: classify the pool + RPC-client
+/// rejection surface. The caller has already decided the machine is
+/// a pool router (`n_sessions > 1`); this helper inspects the
+/// target contexts and returns:
+///
+/// * `Some(RpcClientKind::MeshRpc)` — any target has
+///   `<invoke type="sce:mesh-rpc">` sites, which consume
+///   `invoke_correlation_` + `active_invokes_`.
+/// * `Some(RpcClientKind::SomeipRpcRequest)` — no mesh-rpc sites,
+///   but at least one SOME/IP target with an outbound Request-Reply
+///   pattern, which consumes `pending_rpcs_` on a
+///   `sessions_[0]`-hard-coded reply dispatch path.
+/// * `None` — no router-scoped correlation surface is in use;
+///   pool coexistence is safe.
+///
+/// Mesh-rpc wins reporting priority when both apply so the author
+/// lands on the spec-level feature (§9.5) rather than the
+/// by-event-name inference.
+fn classify_pool_rpc_client_conflict(
+    target_contexts: &[TargetContext],
+) -> Option<super::error::RpcClientKind> {
+    use super::error::RpcClientKind;
+    let has_mesh_rpc_client = target_contexts.iter().any(|t| !t.invoke_sites.is_empty());
+    if has_mesh_rpc_client {
+        return Some(RpcClientKind::MeshRpc);
+    }
+    let has_someip_rpc_request_client = target_contexts.iter().any(|t| {
+        t.has_rpc && matches!(t.state, TargetStateView::Someip { .. })
+    });
+    if has_someip_rpc_request_client {
+        return Some(RpcClientKind::SomeipRpcRequest);
+    }
+    None
+}
+
 fn generate_cpp_mesh(
     machine_name: &str,
     targets: &[ResolvedTarget],
@@ -1136,19 +1171,19 @@ fn generate_cpp_mesh(
         .filter(|&len| len > 0)
         .unwrap_or(1);
 
-    // SCE_MESH.md §14.4: pool + mesh-rpc client cannot share a router.
-    // `invoke_correlation_` and `active_invokes_` are router-scoped
-    // (one table per TransportRouter), so two hosted sessions would
-    // alias each other's UUID entries. The §9.5 invariant "each
-    // invoke has exactly one live correlation entry" would not
-    // hold under pool+client. Reject at codegen so the deployment
-    // cannot reach a silently-miscorrelated runtime.
+    // SCE_MESH.md §14.4 + §10.9 invariant 8: pool + any outbound
+    // RPC client whose correlation state lives in a router-scoped
+    // table cannot share a router. Delegation to
+    // `classify_pool_rpc_client_conflict` keeps the decision table
+    // unit-testable in isolation from the codegen boundary.
     let has_pool = n_sessions > 1;
-    let has_mesh_rpc_client = targets.iter().any(|t| !t.invoke_sites.is_empty());
-    if has_pool && has_mesh_rpc_client {
-        return Err(CodegenError::PoolWithMeshRpcClientUnsupported {
-            machine: machine_name.to_string(),
-        });
+    if has_pool {
+        if let Some(kind) = classify_pool_rpc_client_conflict(&target_contexts) {
+            return Err(CodegenError::PoolWithRpcClientUnsupported {
+                machine: machine_name.to_string(),
+                kind,
+            });
+        }
     }
 
     // A device-level custom_tcp listen endpoint emits a server even when no
@@ -1620,5 +1655,146 @@ mod tests {
             ring_capacity: None,
         };
         assert!(!compute_needs_ordering(&state, true, OrderingRequirement::Required));
+    }
+
+    // ── classify_pool_rpc_client_conflict (SCE_MESH.md §10.9 invariant 8) ─────
+    //
+    // The generated TransportRouter's `invoke_correlation_`,
+    // `active_invokes_`, and `pending_rpcs_` are all router-scoped
+    // containers. A §14.4 server pool hosts N sessions under one router,
+    // so any router-scoped RPC-client correlation would alias across
+    // sessions. `classify_pool_rpc_client_conflict` names the surface
+    // that drove the rejection so the author can act on the repair
+    // suggestion. Tests cover each branch of the decision table in
+    // isolation from the full `generate_cpp_mesh` pipeline.
+    //
+    // Mutation guide (drop into the helper body to verify these tests
+    // are load-bearing):
+    //   * Invert priority → mesh-rpc case asserts MeshRpc, SomeipRpcRequest.
+    //   * Drop the `matches!(TargetStateView::Someip { .. })` filter →
+    //     zenoh_with_rpc_is_safe fails with a spurious SomeipRpcRequest.
+    //   * Drop the mesh-rpc branch entirely → mesh_rpc_client_rejects_as_mesh_rpc
+    //     fails because the helper falls through to SomeipRpcRequest or None.
+
+    fn mk_target_context(
+        state: TargetStateView,
+        has_rpc: bool,
+        invoke_sites: Vec<crate::mesh::topology::MeshRpcInvokeSite>,
+    ) -> TargetContext {
+        TargetContext {
+            target: crate::mesh::target::TargetId::new("#probe").unwrap(),
+            target_stem: "probe".into(),
+            target_snake: "probe".into(),
+            target_pascal: "Probe".into(),
+            events: Vec::new(),
+            state,
+            has_per_target_field: false,
+            needs_dedup: false,
+            needs_ordering: false,
+            event_patterns: Vec::new(),
+            has_rpc,
+            has_pubsub: false,
+            has_field: false,
+            has_receive: false,
+            invoke_sites,
+            pool_plan: None,
+        }
+    }
+
+    fn sample_invoke_site() -> crate::mesh::topology::MeshRpcInvokeSite {
+        crate::mesh::topology::MeshRpcInvokeSite {
+            state_name: "compute".into(),
+            invoke_id: "inv-0".into(),
+            field_suffix: "inv_0".into(),
+            mesh_event: "service.request.compute".into(),
+            deadline_ms: None,
+            params: Vec::new(),
+        }
+    }
+
+    fn someip_state_no_extra() -> TargetStateView {
+        TargetStateView::Someip {
+            service: SomeipServiceLiterals {
+                service_id: "0x0001".into(),
+                instance_id: "0x0001".into(),
+            },
+            extra: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn classify_returns_none_without_any_rpc_client() {
+        // Pure server pool machine (no outbound RPC client sites at all).
+        // No router-scoped correlation table is in use, so pool coexistence
+        // is safe and the helper must not flag a rejection.
+        let tc = mk_target_context(someip_state_no_extra(), false, Vec::new());
+        assert_eq!(classify_pool_rpc_client_conflict(&[tc]), None);
+    }
+
+    #[test]
+    fn classify_returns_none_on_empty_targets() {
+        // Server-only machine with no client targets at all — the common
+        // pool shape. Helper must return None, not panic, on an empty slice.
+        assert_eq!(classify_pool_rpc_client_conflict(&[]), None);
+    }
+
+    #[test]
+    fn mesh_rpc_client_rejects_as_mesh_rpc() {
+        // Target has `<invoke type="sce:mesh-rpc">` sites. Regardless of
+        // transport, `invoke_correlation_` + `active_invokes_` are
+        // router-scoped, so pool coexistence would alias invoke_id entries.
+        let tc = mk_target_context(someip_state_no_extra(), false, vec![sample_invoke_site()]);
+        assert_eq!(
+            classify_pool_rpc_client_conflict(&[tc]),
+            Some(super::super::error::RpcClientKind::MeshRpc)
+        );
+    }
+
+    #[test]
+    fn someip_rpc_request_rejects_as_someip_rpc_request() {
+        // SOME/IP target with `has_rpc` but no mesh-rpc invoke sites —
+        // classic `<send event="service.request.X">` shape. The generated
+        // `pending_rpcs_` table is router-scoped and the client-side
+        // receive handler hard-codes `sessions_[0]` dispatch.
+        let tc = mk_target_context(someip_state_no_extra(), true, Vec::new());
+        assert_eq!(
+            classify_pool_rpc_client_conflict(&[tc]),
+            Some(super::super::error::RpcClientKind::SomeipRpcRequest)
+        );
+    }
+
+    #[test]
+    fn zenoh_with_rpc_is_safe() {
+        // Zenoh's `session.get()` on_reply closure correlates natively per
+        // query handle — no router-scoped `pending_rpcs_` entry is
+        // emitted. A pool router (§14.4 excludes Zenoh server pools anyway)
+        // that had a Zenoh RPC client target would not trigger this
+        // rejection surface. Guards against a future Zenoh server-pool
+        // extension accidentally treating Zenoh clients as unsafe.
+        let tc = mk_target_context(
+            TargetStateView::Zenoh {
+                key: "vehicle/probe".into(),
+                extra: HashMap::new(),
+            },
+            true,
+            Vec::new(),
+        );
+        assert_eq!(classify_pool_rpc_client_conflict(&[tc]), None);
+    }
+
+    #[test]
+    fn mesh_rpc_priority_wins_over_someip_rpc_request() {
+        // Machine has BOTH `<invoke>` sites (on one target) AND a SOME/IP
+        // `<send>` RpcRequest client (on another target). Report mesh-rpc
+        // first — its surface is spec-level (§9.5) so the repair suggestion
+        // is more tractable than the by-event-name inference. Also keeps
+        // the single-diagnostic shape of `CodegenError` stable.
+        let mesh_rpc_target =
+            mk_target_context(someip_state_no_extra(), false, vec![sample_invoke_site()]);
+        let send_rpc_target = mk_target_context(someip_state_no_extra(), true, Vec::new());
+        assert_eq!(
+            classify_pool_rpc_client_conflict(&[send_rpc_target, mesh_rpc_target]),
+            Some(super::super::error::RpcClientKind::MeshRpc)
+        );
     }
 }
