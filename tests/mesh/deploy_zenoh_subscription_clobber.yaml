@@ -1,0 +1,32 @@
+# SCE Mesh Gap 2a — T2 zenoh_subscribers_ clobber reproduction.
+#
+# Binding `#motor` carries both event.subscribe.alpha and
+# event.subscribe.beta over the same zenoh keyexpr — consistent with the
+# per-target single-keyexpr invariant (`ZENOH_KEY_*` constant per target).
+# The subscription lifecycle asymmetry is surfaced by the runtime test.
+#
+# Port 17454 is distinct from the 17447–17453 ports used by existing
+# mesh_zenoh_* runtime tests; isolating the RESOURCE_LOCK keeps
+# subscription state from bleeding into / from them.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/127.0.0.1:17454"]
+    machines:
+      brake_zenoh_subscription_clobber:
+        source: brake_zenoh_subscription_clobber.scxml
+        bindings:
+          "#motor_clobber":
+            transport: zenoh
+            key: "sce/brake_subscription_clobber/motor/events"
+  ecu_motor:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17454"]
+    machines:
+      motor_clobber:
+        source: motor_zenoh_subscription_clobber.scxml

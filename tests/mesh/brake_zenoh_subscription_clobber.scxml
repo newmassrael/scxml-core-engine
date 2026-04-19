@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh Gap 2a reproduction fixture (brake side).
+
+     Two EventSubscribes on the same target (#motor_clobber) for two distinct events
+     (alpha, beta), then an EventUnsubscribe for alpha alone. Under the pre-
+     Gap-2a codegen, zenoh_subscribers_ is keyed on target only, so the
+     unsubscribe.alpha path erases the shared transport subscriber that the
+     still-live beta subscription depends on — any subsequent publish of
+     notification.beta is lost at the transport layer.
+
+     The runtime test drives the mesh-send-callback directly so the
+     refcount block (subscription_refcount_ +, with the Gap 2a fix,
+     target_sub_live_count_) is exercised without relying on SCXML step
+     execution. The <send> actions below only exist so event_patterns
+     is populated and resolvePattern maps alpha/beta to the right
+     PatternKind values at codegen time. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_zenoh_subscription_clobber" initial="armed">
+    <state id="armed">
+        <onentry>
+            <send target="#motor_clobber" event="event.subscribe.alpha"/>
+            <send target="#motor_clobber" event="event.subscribe.beta"/>
+            <send target="#motor_clobber" event="event.unsubscribe.alpha"/>
+        </onentry>
+        <transition event="event.notification.alpha" target="armed"/>
+        <transition event="event.notification.beta" target="armed"/>
+    </state>
+</scxml>

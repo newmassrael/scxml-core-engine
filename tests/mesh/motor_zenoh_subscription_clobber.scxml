@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh Gap 2a reproduction fixture (motor side).
+     Exists only so the topology has both ends declared. The test
+     harness drives publications through a raw zenoh::Session; this
+     machine's generated router is not executed. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="motor_clobber" initial="ready">
+    <state id="ready"/>
+</scxml>

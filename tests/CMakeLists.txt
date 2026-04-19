@@ -2577,6 +2577,77 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             RESOURCE_LOCK zenoh_machine_lifetime_port_17453
         )
 
+        # ── Gap 2a: zenoh_subscribers_ clobber reproduction (§10.9) ───
+        # Pins the Gap 2a fix from docs/SCE_MESH_KEYING_AUDIT.md: under
+        # the pre-fix codegen, subscription_refcount_ keyed on
+        # (target, event) is paired with zenoh_subscribers_ keyed on
+        # target alone, so an unsubscribe for any one (target, event)
+        # that drives the refcount to zero erases the target-keyed
+        # transport subscriber that siblings still need. This fixture
+        # drives subscribe.alpha + subscribe.beta on #motor_clobber,
+        # confirms both notifications reach the sender while live, then
+        # unsubscribes alpha and asserts that notification.beta still
+        # arrives. Under the pre-fix codegen the final wait times out.
+        #
+        # Port 17454 is distinct from the 17447–17453 ports used by the
+        # other zenoh runtime tests; isolating the RESOURCE_LOCK keeps
+        # subscription state from bleeding into / from them.
+        set(MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_subscription_clobber_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
+                    -l cpp -o "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh subscription clobber: Generating brake_zenoh_subscription_clobber_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
+                    -l cpp -o "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_subscription_clobber.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
+                    "${MESH_TEST_DIR}/motor_zenoh_subscription_clobber.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_subscription_clobber.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h"
+            COMMENT "Mesh zenoh subscription clobber: Generating brake_zenoh_subscription_clobber_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_subscription_clobber_test
+            mesh/test_mesh_zenoh_subscription_clobber.cpp
+            "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h"
+            "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_subscription_clobber_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_subscription_clobber_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_subscription_clobber_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_subscription_clobber_test)
+        add_test(NAME mesh_zenoh_subscription_clobber_verification
+                 COMMAND mesh_zenoh_subscription_clobber_test)
+        set_tests_properties(mesh_zenoh_subscription_clobber_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_subscription_clobber_port_17454
+        )
+
         # ── Session Z1: Zenoh liveliness PEER_PARTITIONED E2E (§16.7) ─
         # Verifies the generated router's liveliness token + subscriber
         # pair surfaces `error.communication` with reason
