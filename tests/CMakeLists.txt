@@ -1615,6 +1615,77 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_srcexpr_compile_verification COMMAND mesh_srcexpr_compile_test)
 
+    # ── SCE_MESH §9.5 srcexpr target miss runtime verification ──
+    # Runtime counterpart to mesh_srcexpr_compile_verification. The
+    # compile test takes method pointers but never executes the raise
+    # path; this fixture drives the §9.5 L1340 / §10.7.1 pre-envelope
+    # setup-fault tier end-to-end — srcexpr resolves to a name absent
+    # from deploy.yaml, performMeshInvoke returns false, and the
+    # single error.execution raise fires. The scxml's `observe` state
+    # also traps a 35340cc7 double-raise regression via a transition
+    # to `double_raise_detected`.
+    #
+    # Same linkage posture as mesh_srcexpr_compile_test (sce_base +
+    # sce_runtime + sce_mesh_common): sce_runtime resolves
+    # LuaEngine's runtime-layer back-edge that ensureScriptEngine()
+    # pulls in. Refactoring that back-edge is an independent cleanup.
+    set(MESH_SRCEXPR_MISS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_srcexpr_miss_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_miss.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/srcexpr_miss.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh srcexpr miss: Generating srcexpr_miss_sm.h (§9.5 miss runtime SM)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_srcexpr.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
+        DEPENDS "${MESH_TEST_DIR}/motor_srcexpr.scxml" "${SCE_CODEGEN}"
+        COMMENT "Mesh srcexpr miss: Generating motor_srcexpr_sm.h (phantom binding stub)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_miss.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_srcexpr_miss.yaml"
+        DEPENDS "${MESH_TEST_DIR}/srcexpr_miss.scxml" "${MESH_TEST_DIR}/deploy_srcexpr_miss.yaml"
+                "${MESH_TEST_DIR}/motor_srcexpr.scxml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h"
+        COMMENT "Mesh srcexpr miss: Generating srcexpr_miss_transport.h (§9.5 miss plumbing)"
+        VERBATIM
+    )
+
+    add_executable(mesh_srcexpr_miss_test
+        mesh/test_mesh_srcexpr_miss.cpp
+        "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h"
+        "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h"
+        "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h"
+    )
+
+    target_include_directories(mesh_srcexpr_miss_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SRCEXPR_MISS_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_srcexpr_miss_test
+        PRIVATE
+            sce_base
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_srcexpr_miss_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_srcexpr_miss_test)
+
+    add_test(NAME mesh_srcexpr_miss_verification COMMAND mesh_srcexpr_miss_test)
+
     # Round-trip runtime verification: exercises mesh-rpc end-to-end with
     # two linked routers in-process so an integration-level regression
     # (silent drop of auto-propagated _event.invokeid, dispatchToSender

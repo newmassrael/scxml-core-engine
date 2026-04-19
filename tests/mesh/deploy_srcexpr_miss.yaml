@@ -1,0 +1,25 @@
+# SCE Mesh §9.5 srcexpr target miss runtime verification.
+#
+# The fixture's srcexpr resolves to `#ghost_target`, intentionally
+# absent from the bindings below. At runtime `performMeshInvoke`
+# finds no matching binding and returns false, driving the §9.5
+# L1340 / §10.7.1 error.execution raise path that the runtime test
+# asserts.
+#
+# `#motor_srcexpr` exists solely so the generator emits
+# `srcexpr_miss_transport.h` with a non-empty invoke_sites_by_target —
+# see the comment on `phantom` in srcexpr_miss.scxml. The binding
+# reuses the passive motor_srcexpr.scxml fixture because it only
+# needs to be a valid receiver; the static-src invoke that references
+# it never executes at runtime.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      srcexpr_miss:
+        source: srcexpr_miss.scxml
+        bindings:
+          "#motor_srcexpr":
+            transport: local
+      motor_srcexpr:
+        source: motor_srcexpr.scxml

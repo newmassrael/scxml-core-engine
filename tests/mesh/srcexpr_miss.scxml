@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.5 srcexpr target miss runtime verification.
+
+     Runtime counterpart to `mesh_srcexpr_compile_verification`. Drives
+     the §9.5 L1340 / §10.7.1 pre-envelope setup-fault raise path
+     end-to-end: srcexpr evaluates to a well-formed `#<machine_name>`
+     shape whose resolved name has no matching deploy.yaml binding,
+     `performMeshInvoke` returns false, and the single
+     `error.execution` raise at entry_exit_actions.jinja2 L219-224
+     fires exactly once.
+
+     Raise-class guard: the §9.5 L1345-1350 three-tier error table pins
+     pre-envelope setup failures to `error.execution` (not
+     `error.invoke.<id>`, which §9.5 L1347 reserves for reply-tier
+     faults with `rpc_status != Ok`). The `calling_miss` state has
+     transitions on both:
+       - `error.execution` → `observe` (happy path)
+       - `error.invoke` → `invoke_raise_regression` (final, fails test)
+     so any regression that raises the wrong class on the srcexpr miss
+     path is trapped by a state mismatch.
+
+     Single-raise guard: the srcexpr branch at
+     entry_exit_actions.jinja2 L197-223 has three distinct raise points
+     (eval fail, shape fail, miss). The single-invoke contract is that
+     exactly one fires per failed invoke. `observe` holds another
+     `error.execution` → `double_raise_detected` transition so a
+     regression that fires a second raise on this path is caught before
+     it reaches the W3C harness.
+
+     `datamodel="null"` mirrors the existing mesh-rpc runtime fixtures
+     (brake_invoke.scxml, pool_client.scxml, etc.). srcexpr evaluation
+     uses the build-configured default script engine (Lua) regardless
+     of the declared datamodel — the attribute governs author
+     `<script>` / `<assign>` semantics, not the mesh-rpc binding.
+
+     The `phantom` state carries a static `src="#motor_srcexpr_stub"`
+     invoke whose sole purpose is codegen: without at least one
+     static-src invoke the generator emits no `*_transport.h` and
+     `TransportRouter::invokeMeshRpc` is absent, so the srcexpr
+     raise path would have nothing to route through. `phantom` is
+     unreachable from `idle` / `calling_miss`, so its invoke never
+     executes at runtime — it exists purely so `invoke_sites_by_target`
+     is non-empty and `#ghost_target` genuinely misses the match
+     loop rather than hitting a degenerate empty table. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="srcexpr_miss" initial="idle">
+    <state id="idle">
+        <transition event="probe.go" target="calling_miss"/>
+    </state>
+    <state id="calling_miss">
+        <invoke type="sce:mesh-rpc" srcexpr="'#ghost_target'">
+            <param name="_mesh_event" expr="'service.request.ping'"/>
+        </invoke>
+        <transition event="error.execution" target="observe"/>
+        <!-- Raise-class guard: §9.5 L1345-1350 says the pre-envelope
+             tier is error.execution; any regression that routes this
+             miss through the error.invoke.<id> reply tier lands here. -->
+        <transition event="error.invoke" target="invoke_raise_regression"/>
+    </state>
+    <state id="observe">
+        <!-- Single-raise guard. If any entry_exit_actions.jinja2
+             L197-223 path fires twice on one invoke, the second
+             error.execution reaches here and routes to
+             double_raise_detected. On the correct path observe stays
+             stable until the test drives `settle`, giving a
+             deterministic final classification. -->
+        <transition event="error.execution" target="double_raise_detected"/>
+        <transition event="error.invoke" target="invoke_raise_regression"/>
+        <transition event="settle" target="handled"/>
+    </state>
+    <state id="phantom">
+        <!-- Unreachable at runtime. Static src populates the generated
+             router's invoke_sites_by_target so transport.h is emitted
+             and invokeMeshRpc has a non-empty match loop for
+             `#ghost_target` to genuinely miss against. -->
+        <invoke type="sce:mesh-rpc" src="#motor_srcexpr">
+            <param name="_mesh_event" expr="'service.request.ping'"/>
+        </invoke>
+    </state>
+    <final id="handled"/>
+    <final id="double_raise_detected"/>
+    <final id="invoke_raise_regression"/>
+</scxml>
