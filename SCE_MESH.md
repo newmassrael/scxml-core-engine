@@ -3453,6 +3453,8 @@ violation: regionA has <transition target="regionB.sub">
 
 Repeat until fixed point. Result is a **minimum-merge partition plan** that satisfies distributability while honoring as much of the author's partition request as possible.
 
+**Region-partition liveness scope (deferred to E2)**. `error.communication` with `reason="PEER_PARTITIONED"` (§16.7 row 9) carries a `target: string` that is a **deploy.yaml machine identity** — the same axis the `sce/live/<machine_name>` liveliness keyexpr keys on (§10.9 invariant 4). Under multi-instance (§14.4 server pool), the machine is reported alive while any session is up. **Region partition** — an intra-machine split of `<parallel>` regions across separate OS processes — is an orthogonal axis: a region's hosting process dying does not surface as `PEER_PARTITIONED` (the machine-identity axis), nor does it have a dedicated reason code in the §16.7 catalogue today. The available fallback is §16.5's `PARALLEL_BARRIER_TIMEOUT`, which fires only after the author-configured (or infinite, per W3C §3.7) barrier timer. A faster region-partition liveness signal — reusing SOME/IP `register_availability_handler` on per-partition apps, or Zenoh per-partition liveliness tokens under a `sce/live/<machine>/<partition>` key subspace — is a Session E2 deliverable (§16.9) and is not pinned to a reason code pre-runtime.
+
 ### 16.5 Parallel `<final>` barrier
 
 W3C §3.7: when every child region of a `<parallel>` reaches `<final>`, the enclosing session raises `done.state.<PARALLEL_ID>` with optional donedata. Distribution requires a **convergence barrier** across partitions:
@@ -3615,6 +3617,7 @@ The spec above describes the target state. Implementation is split into three se
 - §14 `partitions:` schema + deploy.yaml partition resolver with explicit coverage rule.
 - §16.3/16.4 distributability analyzer (R1–R4) + cross-region transition auto-merge.
 - §16.5 parallel `<final>` barrier runtime, using the dedicated `ParallelRegionDone` wire value 21.
+- §16.4 region-partition liveness signalling (transport-native hooks — SOME/IP `register_availability_handler` on per-partition apps, Zenoh per-partition liveliness tokens). Reason code and `_event.data` shape land with the runtime, not pre-reserved today.
 - §16.7 `error.communication` raise policy and catalog.
 - §16.8.1–16.8.3 harness architecture and `custom_tcp` harness transport.
 - IRP distributable manifest covering tests that use only `<parallel>` (no remote `<invoke type="scxml">`). Expected ~20 tests in the `yes` bucket, a handful in `merged_single_partition`, remainder `no`.
