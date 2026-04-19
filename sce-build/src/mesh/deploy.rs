@@ -38,7 +38,16 @@ pub struct DeployConfig {
     pub scheduler: Option<SchedulerConfig>,
     /// Device → `DeviceConfig` map.
     pub topology: HashMap<String, DeviceConfig>,
-    /// Discovery mode configuration (future expansion).
+    /// Reserved `discovery:` top-level key. Parsed as opaque `Value` so
+    /// the parse-time validator can surface a spec-linked diagnostic
+    /// instead of the generic `deny_unknown_fields` error. SCE Mesh §3.3
+    /// is the invariant: transport-native routing is the source of truth
+    /// for peer availability; SCE does not maintain a peer table, and
+    /// the §2572 rejected list + §2574 rejection of `discovery.mode`
+    /// both hold unconditionally. For per-binding runtime target
+    /// selection use value-field placeholders (§14.4); for
+    /// transport-level peer discovery configure external OEM config
+    /// (zenoh.json5 scouting, vsomeip.json service-discovery).
     pub discovery: Option<serde_yaml_ng::Value>,
 }
 
@@ -831,8 +840,54 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_server_pool_rejection(&cfg)?;
     validate_pool_capability(&cfg)?;
     validate_outbound_buffer(&cfg)?;
+    validate_discovery_not_supported(&cfg)?;
 
     Ok(cfg)
+}
+
+/// Reject any `discovery:` top-level block (SCE Mesh §3.3 + §2572 +
+/// §2574). Parsed as opaque [`serde_yaml_ng::Value`] so an authored
+/// `discovery:` key lands here rather than triggering the generic
+/// `deny_unknown_fields` message; the validator produces a spec-linked
+/// diagnostic that names the replacement mechanisms (§14.4 binding
+/// value-field placeholders for per-binding runtime target selection,
+/// external OEM config for transport-level peer discovery). `null` /
+/// absent discovery values deserialise as `None` and pass through.
+fn validate_discovery_not_supported(cfg: &DeployConfig) -> Result<(), DeployError> {
+    let Some(value) = &cfg.discovery else {
+        return Ok(());
+    };
+    Err(DeployError::DiscoveryNotSupported {
+        content_kind: summarize_discovery_content(value),
+    })
+}
+
+/// Render a short, deterministic description of the rejected
+/// `discovery:` content. Used in both the `thiserror` message (so the
+/// author sees what was rejected) and the diagnostic `key_fragments`
+/// (so two different authored shapes get distinct fnv1a ids).
+fn summarize_discovery_content(value: &serde_yaml_ng::Value) -> String {
+    use serde_yaml_ng::Value;
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(_) => "scalar bool".to_string(),
+        Value::Number(_) => "scalar number".to_string(),
+        Value::String(_) => "scalar string".to_string(),
+        Value::Sequence(_) => "sequence".to_string(),
+        Value::Mapping(map) if map.is_empty() => "empty object".to_string(),
+        Value::Mapping(map) => {
+            let mut keys: Vec<String> = map
+                .keys()
+                .map(|k| match k {
+                    Value::String(s) => s.clone(),
+                    other => format!("{other:?}"),
+                })
+                .collect();
+            keys.sort();
+            format!("object with keys [{}]", keys.join(", "))
+        }
+        Value::Tagged(_) => "tagged value".to_string(),
+    }
 }
 
 /// Walk every machine that declared an explicit `ordering:` section and
@@ -2083,6 +2138,88 @@ topology:
             }
             other => panic!("expected InvalidOutboundBuffer, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn discovery_block_absent_is_ok() {
+        // No `discovery:` key — validator must pass.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+"#;
+        parse_deploy_str(yaml).expect("parse");
+    }
+
+    #[test]
+    fn discovery_block_with_keys_rejected() {
+        // Authored §4.3 example-shaped block — rejected per §3.3 / §2574.
+        let yaml = r#"
+version: "1.0"
+discovery:
+  mode: dynamic
+  resolution:
+    strategy: priority
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::DiscoveryNotSupported { content_kind }) => {
+                assert_eq!(
+                    content_kind, "object with keys [mode, resolution]",
+                    "content_kind must enumerate observed top-level keys",
+                );
+            }
+            other => panic!("expected DiscoveryNotSupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn discovery_empty_map_rejected() {
+        // An empty `discovery: {}` map is still Some(Value::Mapping(_)); §3.3
+        // rejects the existence of the block, not its contents, so the
+        // validator fires here too. Covers the "author sketched the key
+        // but did not fill it in" shape.
+        let yaml = r#"
+version: "1.0"
+discovery: {}
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::DiscoveryNotSupported { content_kind }) => {
+                assert_eq!(content_kind, "empty object");
+            }
+            other => panic!("expected DiscoveryNotSupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn discovery_null_treated_as_absent() {
+        // `discovery: null` deserialises to `Option::None`, so the
+        // validator leaves it alone. This is intentional — `null` is
+        // indistinguishable from absence at the YAML level, and
+        // rejecting both under one diagnostic would force authors to
+        // delete the key in every downstream template they copy from.
+        let yaml = r#"
+version: "1.0"
+discovery: ~
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+"#;
+        parse_deploy_str(yaml).expect("null discovery must parse");
     }
 
     #[test]

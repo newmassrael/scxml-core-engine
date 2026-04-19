@@ -87,6 +87,7 @@
         "mesh/deploy-invalid-liveliness",
         "mesh/deploy-invalid-server-query-timeout",
         "mesh/deploy-invalid-outbound-buffer",
+        "mesh/deploy-discovery-not-supported",
         "mesh/deploy-pool-not-supported-by-transport",
         "mesh/deploy-pool-missing-instance-list",
         "mesh/deploy-pool-empty-instance-list",

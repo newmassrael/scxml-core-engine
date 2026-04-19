@@ -128,6 +128,25 @@ pub enum DeployError {
         reason: String,
     },
 
+    /// A `discovery:` top-level block appeared in deploy.yaml. SCE Mesh
+    /// §3.3 invariant: transport-native routing is the source of truth
+    /// for peer availability, and SCE does not maintain a peer table
+    /// (§2572 rejected list, §2574 rejection of `discovery.mode:
+    /// static | dynamic`). Authors wanting per-binding runtime target
+    /// selection use value-field placeholders (§14.4); authors wanting
+    /// transport-level peer discovery configure the external OEM config
+    /// (zenoh.json5 scouting, vsomeip.json service-discovery). Rejected
+    /// at parse time so an authored block cannot silently round-trip
+    /// through codegen producing no runtime behaviour.
+    #[error("deploy.yaml 'discovery:' top-level block is not supported ({content_kind}). \
+             SCE Mesh §3.3 invariant: transport-native routing is the source of truth for \
+             peer availability; SCE does not maintain a peer table (§2572 rejected list, \
+             §2574 rejection of `discovery.mode: static | dynamic`). For per-binding runtime \
+             target selection use value-field placeholders (§14.4). For transport-level peer \
+             discovery configure the external OEM config (zenoh.json5 scouting, \
+             vsomeip.json service-discovery).")]
+    DiscoveryNotSupported { content_kind: String },
+
     /// A binding carries a `{name}` placeholder value but the binding's
     /// transport declares `supports_pool: false` in the registry
     /// (SCE Mesh §14.4). Transports without a native routing layer
@@ -817,6 +836,19 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::DiscoveryNotSupported { content_kind } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployDiscoveryNotSupported,
+            stage: Stage::MeshDeploy,
+            // No per-machine target: `discovery:` is a top-level deploy
+            // key. `actual` surfaces the rejected content summary so
+            // the CLI wire format points the author at what was seen.
+            actual: Some(content_kind.clone()),
+            expected: None,
+            fix: None,
+            // fnv1a keying on the content summary so two differently
+            // shaped rejections hash distinct.
+            key_fragments: vec![content_kind.clone()],
         },
         DeployError::PoolNotSupportedByTransport {
             machine,

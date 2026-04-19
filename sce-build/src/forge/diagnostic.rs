@@ -405,6 +405,8 @@ pub enum DiagnosticCode {
     MeshDeployInvalidServerQueryTimeout,
     #[serde(rename = "mesh/deploy-invalid-outbound-buffer")]
     MeshDeployInvalidOutboundBuffer,
+    #[serde(rename = "mesh/deploy-discovery-not-supported")]
+    MeshDeployDiscoveryNotSupported,
     #[serde(rename = "mesh/deploy-pool-not-supported-by-transport")]
     MeshDeployPoolNotSupportedByTransport,
     #[serde(rename = "mesh/deploy-pool-missing-instance-list")]
@@ -588,6 +590,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidLiveliness,
         MeshDeployInvalidServerQueryTimeout,
         MeshDeployInvalidOutboundBuffer,
+        MeshDeployDiscoveryNotSupported,
         MeshDeployPoolNotSupportedByTransport,
         MeshDeployPoolMissingInstanceList,
         MeshDeployPoolEmptyInstanceList,
@@ -744,6 +747,9 @@ impl DiagnosticCode {
             MeshDeployInvalidServerQueryTimeout => Some("SCE Mesh §9.5"),
             MeshDeployInvalidOutboundBuffer => Some("SCE Mesh §10.10"),
 
+            // ── Discovery invariant (SCE_MESH.md §3.3) ──────────
+            MeshDeployDiscoveryNotSupported => Some("SCE Mesh §3.3"),
+
             // ── Mesh binding placeholder + server pool (SCE_MESH.md §14.4) ──
             MeshDeployPoolNotSupportedByTransport
             | MeshDeployPoolMissingInstanceList
@@ -893,6 +899,7 @@ impl DiagnosticCode {
             MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
             MeshDeployInvalidServerQueryTimeout => "mesh/deploy-invalid-server-query-timeout",
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
+            MeshDeployDiscoveryNotSupported => "mesh/deploy-discovery-not-supported",
             MeshDeployPoolNotSupportedByTransport => "mesh/deploy-pool-not-supported-by-transport",
             MeshDeployPoolMissingInstanceList => "mesh/deploy-pool-missing-instance-list",
             MeshDeployPoolEmptyInstanceList => "mesh/deploy-pool-empty-instance-list",
@@ -2334,6 +2341,15 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:a62483a5bfc65457","code":"mesh/deploy-invalid-outbound-buffer","stage":"mesh-deploy","spec":"SCE Mesh §10.10","message":"machine 'brake': invalid `outbound_buffer:` section in deploy.yaml — max_pending_per_target (0) must be >= 1 — a zero-capacity buffer cannot hold any envelope, which is indistinguishable from the pre-§10.10 silent-drop behaviour; omit the section entirely to opt out of buffering instead. Either fix the value or omit the section entirely to opt out of §10.10 buffering.","actual":"brake"}"#,
             ),
             (
+                "mesh/deploy-discovery-not-supported",
+                DeployError::DiscoveryNotSupported {
+                    content_kind: "object with keys [mode, resolution]".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:b515214da13d33fa","code":"mesh/deploy-discovery-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §3.3","message":"deploy.yaml 'discovery:' top-level block is not supported (object with keys [mode, resolution]). SCE Mesh §3.3 invariant: transport-native routing is the source of truth for peer availability; SCE does not maintain a peer table (§2572 rejected list, §2574 rejection of `discovery.mode: static | dynamic`). For per-binding runtime target selection use value-field placeholders (§14.4). For transport-level peer discovery configure the external OEM config (zenoh.json5 scouting, vsomeip.json service-discovery).","actual":"object with keys [mode, resolution]"}"#,
+            ),
+            (
                 "mesh/deploy-pool-not-supported-by-transport",
                 DeployError::PoolNotSupportedByTransport {
                     machine: "brake".into(),
@@ -3085,6 +3101,7 @@ mod tests {
             | MeshDeployInvalidLiveliness
             | MeshDeployInvalidServerQueryTimeout
             | MeshDeployInvalidOutboundBuffer
+            | MeshDeployDiscoveryNotSupported
             | MeshDeployPoolNotSupportedByTransport
             | MeshDeployPoolMissingInstanceList
             | MeshDeployPoolEmptyInstanceList
@@ -3360,6 +3377,7 @@ mod tests {
                 | MeshDeployInvalidLiveliness
                 | MeshDeployInvalidServerQueryTimeout
                 | MeshDeployInvalidOutboundBuffer
+                | MeshDeployDiscoveryNotSupported
                 | MeshDeployPoolNotSupportedByTransport
                 | MeshDeployPoolMissingInstanceList
                 | MeshDeployPoolEmptyInstanceList
@@ -3399,9 +3417,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            103,
+            104,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 103 distinct variants to match the DiagnosticCode \
+             expected 104 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }
