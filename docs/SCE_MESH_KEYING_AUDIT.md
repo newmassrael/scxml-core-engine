@@ -182,9 +182,14 @@ refusing "two-region same-target invokes" would be strictly more
 restrictive than W3C §3.14 — rejecting legitimate auto-id shapes
 that never collide — and is the wrong axis.
 
-**Action**: no mesh-side change. A follow-up parser diagnostic for
-W3C §3.14 on `<invoke>` ids closes the residual gap; that work is
-mesh-orthogonal and tracked separately.
+**Action (landed 2026-04-19, commit `452e6791`)**: parser now
+rejects duplicate `<invoke>` ids (author-supplied, auto-shadowed, or
+author-vs-auto collision) via `ValidationError::DuplicateId` with
+`ForgeKind::Statechart`. `SCXMLParser::invoke_ids_seen` tracks all
+parsed ids in one set; 3 unit tests pin the coverage. Other SCXML
+id namespaces (state / parallel / data) keep their implicit
+behavior — out of scope for the invoke-site invariant this audit
+section documents.
 
 ### Linked to Gap 3 — T3, R2, R4
 
