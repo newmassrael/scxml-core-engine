@@ -7,13 +7,13 @@
 Distributed systems require state machines that span multiple devices, processes, and networks. Today, developers hand-code state logic on top of communication middleware (Zenoh, SOME/IP, gRPC), resulting in:
 
 - Fragile if/else state management scattered across codebases
-- No formal verification of cross-device state interactions
+- No static checking of cross-device state interactions (topology, event coverage, pattern/transport compatibility)
 - Tight coupling between application logic and transport protocols
-- Impossible to visualize or reason about system-wide behavior
+- Impossible to reason about system-wide behavior from a single artifact
 
 ### Solution
 
-SCE Mesh extends the SCXML Core Engine with **location-transparent state machine communication**. The same SCXML that runs locally runs across devices, processes, and clouds — unchanged.
+SCE Mesh extends the SCXML Core Engine with **location-transparent state machine communication**. The same SCXML source can be deployed across devices, processes, and networks by swapping `deploy.yaml` — subject to the distributed-friendly design principles in §17 (authors who violate them see the analyzer either auto-merge partitions or fail the build in strict mode).
 
 ```
 SCXML Author sees:           sce-build generates:
@@ -26,28 +26,38 @@ SCXML Author sees:           sce-build generates:
 
 ### Core Principle
 
-**SCXML authors write business logic. Platform engineers configure deploy.yaml. Neither needs to know the other's domain.** SCXML declares behavioral intent; deploy.yaml declares platform-specific realization; sce-build generates transport-native code that directly calls each middleware's API — no runtime abstraction layer, no feature loss.
+**SCXML authors write business logic. Platform engineers configure deploy.yaml. Neither needs to know the other's domain.** SCXML declares behavioral intent; deploy.yaml declares platform-specific realization; sce-build generates transport-native code that directly calls each middleware's API. A minimal shared runtime (`sce_mesh_common`: scheduler concepts, MPSC event bridge, and optional dedup/ordering/outbound-buffer primitives — see §10.5/§10.6/§10.10) supplies only what cannot be resolved at build time.
 
 ### Design Principle: Build-Time Resolution
 
-SCE's core philosophy is: **resolve at build time what can be resolved at build time.** The AOT engine compiles state machines into switch/case at build time. The expression transpiler compiles ECMAScript expressions into target-language code at build time. Transport dispatch follows the same principle — `deploy.yaml` determines routing at build time, and sce-build generates code that calls transport APIs directly. No runtime indirection, no vtable overhead, and no loss of transport-native features (DDS QoS policies, SOME/IP service model, D-Bus object paths, etc.).
+SCE's core philosophy is: **resolve at build time what can be resolved at build time.** The AOT engine compiles state machines into switch/case at build time. The expression transpiler compiles ECMAScript expressions into target-language code at build time. Transport dispatch follows the same principle — `deploy.yaml` determines routing at build time, and sce-build generates code that calls transport APIs directly. No vtable-based transport abstraction, no dispatch indirection on the hot path, and transport-native features remain reachable (DDS QoS policies, SOME/IP service model, D-Bus object paths, etc.).
 
 ### Positioning
 
-SCE Mesh does not compete with communication middleware. It sits above them.
-
-```
-Zenoh/SOME/IP/gRPC = roads     (how data moves)
-SCE Mesh           = navigation (what to do when data arrives)
-```
+SCE Mesh does not compete with communication middleware — it generates code that calls middleware APIs directly. It sits between SCXML authoring and the transport libraries.
 
 Value SCE Mesh adds on top of existing middleware:
 
-- **Formal verification** of cross-device state interactions at build time
-- **Visual design** of distributed behavior via statecharts
-- **AOT code generation** eliminating runtime overhead
-- **Transport independence** — same SCXML works over any protocol
-- **Build-time topology analysis** — routing tables, serialization, proxies generated automatically
+- **Build-time topology and pattern-compatibility validation** — `deploy.yaml` + SCXML are checked together; unsupported pattern/transport combinations fail the build (§8.2)
+- **AOT code generation** — transport dispatch compiled to direct native API calls (not interpreted at runtime)
+- **Single-source multi-deployment** — one SCXML document, many `deploy.yaml` targets (single-process, multi-host, hybrid edge/cloud), subject to §17
+- **Build-time artifacts** — routing tables, event serialization, and transport proxies generated automatically from the two inputs
+
+### Scope and Status
+
+SCE Mesh is a **build-time + minimal-runtime** layer. It is explicitly **not**:
+
+- A continuous state replication layer (no shared mutable datamodel, no synchronous remote reads — §8.1)
+- A game-netcode framework (MMO-style `UPROPERTY(Replicated)` / Unity NetCode magic variable sync is an external `sce-game-netcode` concern — §8.1)
+- A persistence, area-of-interest, or client-prediction layer (external adapters — see project scope boundaries)
+
+Current realization state (see §8.3 and §13 for authoritative detail):
+
+- **Language coverage**: mesh runtime targets **C++ only**. The other five codegen backends (Kotlin, Rust, Python, Go, plus interpreter path) ship state-machine codegen without mesh. Per-language mesh expansion is evaluated case-by-case, not a parity obligation.
+- **Pattern coverage**: `service.fire_forget` is realized end-to-end across local/shm/someip/zenoh. `service.request` / `event.subscribe` / `field.get` pass build-time validation but degrade to FireForget shape at runtime until Phase 3.5 closes the Pattern Realization Gap (§8.3).
+- **Conformance scope**: distributed W3C SCXML conformance is a weak-equivalence claim with explicit deferrals; see §16 and `SCE_MESH_CONFORMANCE_MATRIX.md`.
+
+Claims in the rest of this document are contractual relative to this scope. Sections below add, not retract, from it.
 
 ---
 
