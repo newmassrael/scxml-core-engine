@@ -1,0 +1,11 @@
+{
+  "unicast": "127.0.0.1",
+  "routing": "motor_pool_server",
+  "applications": [
+    { "name": "motor_pool_e2e_client", "id": "0x1111" },
+    { "name": "motor_pool_server", "id": "0x2222" }
+  ],
+  "service-discovery": {
+    "enable": "false"
+  }
+}

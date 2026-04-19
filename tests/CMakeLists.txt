@@ -3489,6 +3489,45 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
         add_test(NAME mesh_someip_server_pool_compile
                  COMMAND mesh_someip_server_pool_compile_test)
+
+        # ── SCE_MESH.md §14.4 server-pool runtime dispatch proof ──
+        # Companion to mesh_someip_server_pool_compile. The compile test
+        # only proves SOMEIP_SERVER_INSTANCES + N_SESSIONS +
+        # session_index_for_instance render correctly; this test proves
+        # the per-instance handler lambdas actually dispatch inbound
+        # vsomeip messages to the matching sessions_[idx] slot.
+        # Without it the whole §14.4 runtime dispatch contract
+        # (msg->get_instance() → session_idx → sessions_[idx]) is
+        # unobservable and a regression that mis-captured server_instance
+        # or short-circuited dispatch to sessions_[0] would compile clean.
+        add_executable(mesh_someip_server_pool_runtime_test
+            mesh/test_mesh_someip_server_pool_runtime.cpp
+            "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
+            "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h"
+        )
+
+        target_include_directories(mesh_someip_server_pool_runtime_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SERVER_POOL_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_server_pool_runtime_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_server_pool_runtime_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_server_pool_runtime_test)
+        add_test(NAME mesh_someip_server_pool_runtime
+                 COMMAND mesh_someip_server_pool_runtime_test)
+        set_tests_properties(mesh_someip_server_pool_runtime PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK vsomeip_routing_socket
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_motor_pool.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_server_pool_compile_test")
     endif()
