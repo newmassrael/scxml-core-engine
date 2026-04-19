@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh Zenoh liveliness runtime E2E (SCE Mesh §16.7 row 9).
+// SCE Mesh Zenoh liveliness runtime E2E (SCE Mesh §16.7 row 8).
 //
 // Verifies the PEER_PARTITIONED path end-to-end:
 //   - brake_router.init() declares a liveliness token at

@@ -93,7 +93,7 @@ pub enum DeployError {
     },
 
     /// A machine declared a `liveliness:` section whose `lease_ms`
-    /// violates the minimum-floor constraint (SCE Mesh §16.7 row 9;
+    /// violates the minimum-floor constraint (SCE Mesh §16.7 row 8;
     /// see `MIN_LIVELINESS_LEASE_MS` in deploy.rs). Rejected at parse
     /// time so a bad value cannot reach the generated router.
     #[error("machine '{machine}': invalid `liveliness:` section in deploy.yaml — {reason}. \

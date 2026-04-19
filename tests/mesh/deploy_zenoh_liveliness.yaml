@@ -1,4 +1,4 @@
-# SCE Mesh Zenoh liveliness E2E fixture (SCE Mesh §16.7 row 9).
+# SCE Mesh Zenoh liveliness E2E fixture (SCE Mesh §16.7 row 8).
 #
 # Opt-in `liveliness:` block on brake drives generation of the Zenoh
 # liveliness token + subscriber pair — the same pair that surfaces

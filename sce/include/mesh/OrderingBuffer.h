@@ -60,7 +60,7 @@ namespace SCE::Mesh {
 /// fast-forwarded past because the head envelope had been blocked
 /// longer than `gap_timeout_`. Reported alongside released envelopes
 /// so the caller can raise `error.communication` with reason
-/// `ORDERING_GAP` (SCE_MESH.md §16.7 row 13) outside the buffer mutex.
+/// `ORDERING_GAP` (SCE_MESH.md §16.7 row 12) outside the buffer mutex.
 struct OrderingGapEvent {
     std::string source;
     std::uint64_t lost_lo;

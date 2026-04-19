@@ -1140,7 +1140,7 @@ pub fn compile_mesh_transport(
         .and_then(|d| d.machines.get(&effective_machine_name))
         .map(mesh::deploy::MachineConfig::resolved_ordering_timings)
         .unwrap_or_else(mesh::deploy::OrderingTimings::default_const);
-    // SCE Mesh §16.7 row 9 (PEER_PARTITIONED): opt-in Zenoh liveliness
+    // SCE Mesh §16.7 row 8 (PEER_PARTITIONED): opt-in Zenoh liveliness
     // tokens. Absent section on the machine ⇒ `None`, and the template
     // emits zero liveliness code for that machine. `LivelinessConfig`
     // is `Copy`, so we flatten with `copied()` rather than holding a

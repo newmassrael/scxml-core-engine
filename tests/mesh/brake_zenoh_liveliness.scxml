@@ -3,7 +3,7 @@
      Declares one zenoh binding so `"zenoh" in transport_types` becomes
      true and the generated router emits both the session and, via the
      deploy.yaml `liveliness:` opt-in, the liveliness token + subscriber
-     pair (SCE Mesh §16.7 row 9). The <send> itself is never actually
+     pair (SCE Mesh §16.7 row 8). The <send> itself is never actually
      exercised in the test — the test drives liveliness directly and
      never walks brake's SCXML. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"

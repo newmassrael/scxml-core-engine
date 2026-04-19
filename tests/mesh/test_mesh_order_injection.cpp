@@ -24,11 +24,11 @@
 //   2. A gap that the deploy.yaml-supplied `gap_timeout_ms` cannot
 //      wait out falls back to fast-forward via `tickOrdering()` and
 //      emits `error.communication` with `reason: ORDERING_GAP`
-//      (§16.7 row 13).
+//      (§16.7 row 12).
 //   3. RpcReply envelopes bypass the buffer entirely (correlation-keyed).
 //   4. An envelope without `sequence_no` on an ordered route raises
 //      `error.communication` with `reason: MISSING_SEQUENCE`
-//      (§16.7 row 12) and is dropped from the ordering domain.
+//      (§16.7 row 11) and is dropped from the ordering domain.
 //   5. The router's periodic tick thread recovers a stalled gap with
 //      no further inbound traffic and no manual tick invocation
 //      (§10.6.4 gap-at-stream-end).
@@ -207,7 +207,7 @@ int run_test() {
     }
 
     // ── 4. Unstamped envelope → error.communication MISSING_SEQUENCE
-    // §16.7 row 12: an envelope that reaches admitOrdered without
+    // §16.7 row 11: an envelope that reaches admitOrdered without
     // `sequence_no` on an ordered route is a sender-drift condition.
     // The envelope is dropped from the ordering domain (return false
     // for the original envelope's flow) but an error.communication

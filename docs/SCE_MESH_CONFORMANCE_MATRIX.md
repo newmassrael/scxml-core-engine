@@ -21,7 +21,7 @@ Every fixture fits exactly one bucket.
 | 1. Core primitives (unit) | A helper class (`DedupRouter`, `OrderingBuffer`, `InvokeCorrelation`, etc.) exercised in isolation, no codegen. Evidence for transport-independent §10 / §16.7 invariants. |
 | 2. Codegen compile / reject | `sce-codegen` produces code that compiles (or a negative test rejecting an invalid deploy.yaml). No runtime behaviour exercised. Evidence for §10.4.3 gates 1 & 2 (build-time). |
 | 3. Two-machine runtime | Two SCXML engines (client + server, or brake + motor) wired through a transport end-to-end. Same OS process unless noted. Evidence for §9.5 mesh-rpc lifecycle, §10.4 per-sender FIFO, §13 topology, §14 pattern dispatch. |
-| 4. Ordering / dedup / gap-recovery | Runtime enforcement of §10.5 duplicate suppression and §10.6 sequence ordering, including §16.7 rows 12 (`MISSING_SEQUENCE`) and 13 (`ORDERING_GAP`). |
+| 4. Ordering / dedup / gap-recovery | Runtime enforcement of §10.5 duplicate suppression and §10.6 sequence ordering, including §16.7 rows 11 (`MISSING_SEQUENCE`) and 12 (`ORDERING_GAP`). |
 | 5. Liveness / availability | Runtime detection of transport-level faults that raise `error.communication` (§16.7). |
 
 ## Per-fixture table
@@ -68,7 +68,7 @@ Column legend:
 |---|---|---|---|
 | mesh_local_runtime_verification | §10.4 (local transport) | `<send>` across two in-process engines via local callback router. | 1P |
 | mesh_invoke_rpc_runtime_verification | §9.5 | mesh-rpc request / reply / correlation; `done.invoke.<id>` raised. | 1P |
-| mesh_invoke_deadline_expiry_verification | §9.5, §10.8 | mesh-rpc deadline expiry raises `error.communication` row 6 (`INVOKE_DEADLINE_EXCEEDED`). | 1P |
+| mesh_invoke_deadline_expiry_verification | §9.5, §10.8 | mesh-rpc deadline expiry fires `error.invoke.<id>` with `rpc_status = DeadlineExceeded` per §9.5 L1347. Not a §16.7 catalog condition. | 1P |
 | mesh_invoke_cancel_abort_verification | §9.5 | `<cancel>` on an in-flight mesh-rpc aborts correlation entry. | 1P |
 | mesh_shm_runtime_verification | §3.3, §10.4 | SHM ring + fork: parent brake → child motor, state change observed. | 2P (fork) |
 | mesh_custom_tcp_runtime_verification | §16.8.3, §10.4 (per-sender FIFO) | `custom_tcp` FireForget E2E plus wire-level FIFO assertion over 100 envelopes. | 1P (TCP loopback) |
@@ -92,13 +92,13 @@ Column legend:
 | Fixture | Spec anchor | Property verified | Shape |
 |---|---|---|---|
 | mesh_dedup_injection_verification | §10.5 | Generated `admitInbound` suppresses same-(source,id) duplicates. Mutation-verified. | 1P |
-| mesh_order_injection_verification | §10.6, §16.7 rows 12 + 13 | `OrderingBuffer` reorders out-of-order, gap-times out, raises `MISSING_SEQUENCE` / `ORDERING_GAP`. | 1P |
+| mesh_order_injection_verification | §10.6, §16.7 rows 11 + 12 | `OrderingBuffer` reorders out-of-order, gap-times out, raises `MISSING_SEQUENCE` / `ORDERING_GAP`. | 1P |
 
 ### Bucket 5 — Liveness / availability (3 fixtures)
 
 | Fixture | Spec anchor | Property verified | Shape |
 |---|---|---|---|
-| mesh_zenoh_liveliness_verification | §16.7 row 9 (`PEER_PARTITIONED`) | Zenoh liveliness token drop → `error.communication` with `target` and `last_seen_ms_ago`. | 1P |
+| mesh_zenoh_liveliness_verification | §16.7 row 8 (`PEER_PARTITIONED`) | Zenoh liveliness token drop → `error.communication` with `target` and `last_seen_ms_ago`. | 1P |
 | mesh_zenoh_on_drop_verification | §16.7, §9.5 | Zenoh `session.get` early-cancel → `RpcStatus::Unavailable` → reply drop during shutdown. | 1P |
 | mesh_zenoh_server_timeout_verification | §9.5, §10.8 | Zenoh queryable server-side `query_timeout_ms` silently drops stale queries. | 1P |
 
@@ -129,7 +129,7 @@ and delta"; `S` = spec-only, no runtime evidence.
 | §14 `partitions:` schema | S | Session E2 scope. Zero fixtures. |
 | §16.3 / §16.4 Distributability analyzer (R1–R4) | S | Session E2 scope. Zero fixtures. |
 | §16.5 Parallel `<final>` barrier + `ParallelRegionDone` wire value 21 | S | Session E2 scope. Wire value reserved; runtime absent. |
-| §16.7 `error.communication` catalog | P | Row 6 (`INVOKE_DEADLINE_EXCEEDED`) via `mesh_invoke_deadline_expiry_verification`. Row 9 (`PEER_PARTITIONED`) via `mesh_zenoh_liveliness_verification`. Rows 12 / 13 (`MISSING_SEQUENCE` / `ORDERING_GAP`) via `mesh_order_injection_verification`. All 13 rows covered by the structured-data builder (`mesh_communication_error_verification`). Rows 1 / 2 / 3 / 4 / 5 / 7 / 8 / 10 / 11: builder-only, no end-to-end transport-fault fixture. |
+| §16.7 `error.communication` catalog | P | Row 8 (`PEER_PARTITIONED`) via `mesh_zenoh_liveliness_verification`. Rows 11 / 12 (`MISSING_SEQUENCE` / `ORDERING_GAP`) via `mesh_order_injection_verification`. Byte-shape pins in `mesh_communication_error_verification` cover those three rows; rows 1 / 2 / 3 / 4 / 5 / 6 / 7 / 9 / 10 have no end-to-end transport-fault fixture. |
 | §16.8 IRP distributed harness | S | Session E2 scope. Zero fixtures. See below. |
 
 ## §16.8 status and delta

@@ -264,7 +264,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    SOME/IP's server-side lifecycle differs and has no gap memo yet. #}
 {% set has_server_query_timeout = has_server_zenoh and server.query_timeout_ms is defined %}
 
-{# SCE Mesh §16.7 row 9 (PEER_PARTITIONED): per-machine opt-in liveliness.
+{# SCE Mesh §16.7 row 8 (PEER_PARTITIONED): per-machine opt-in liveliness.
    `machine_liveliness` is null when the deploy.yaml author omitted the
    `liveliness:` section; present-but-truthy when they declared one.
    Liveliness is a Zenoh-only feature today (zenoh-cpp native API), so
@@ -731,7 +731,7 @@ struct TransportRouter {
     std::unordered_map<std::string, zenoh::Subscriber<void>> zenoh_subscribers_;
 {% endif %}
 {% if has_zenoh_liveliness %}
-    // SCE Mesh §16.7 row 9 (PEER_PARTITIONED). Opt-in Zenoh liveliness.
+    // SCE Mesh §16.7 row 8 (PEER_PARTITIONED). Opt-in Zenoh liveliness.
     //
     // `liveliness_token_` declares our presence under the reserved key
     // `sce/live/{{ machine_name }}`; destroying it (or losing Zenoh
@@ -1617,7 +1617,7 @@ struct TransportRouter {
 {% endfor %}
 {% endif %}
 {% if has_zenoh_liveliness %}
-        // SCE Mesh §16.7 row 9: declare the self-token first so a peer
+        // SCE Mesh §16.7 row 8: declare the self-token first so a peer
         // who subscribes with `history=true` sees us, then subscribe to
         // `sce/live/**` so we observe the current set. The subscriber
         // callback self-filters samples on our own key so the PUT we
@@ -2066,7 +2066,7 @@ struct TransportRouter {
         zenoh_shutdown_in_progress_.store(true, std::memory_order_release);
 {% endif %}
 {% if has_zenoh_liveliness %}
-        // SCE Mesh §16.7 row 9: drop the liveliness observers before the
+        // SCE Mesh §16.7 row 8: drop the liveliness observers before the
         // session so the subscriber's ~Subscriber doesn't race the
         // session teardown, and the token's ~LivelinessToken emits its
         // final DELETE sample to the network. Reverse of init order —
@@ -2158,7 +2158,7 @@ struct TransportRouter {
             // markReady state), otherwise enqueues up to
             // `max_pending_per_target`; overflow raises
             // `error.communication` with reason BACKPRESSURE_DROP
-            // (§16.7 row 10). The buffer owns the app-pointer null check
+            // (§16.7 row 9). The buffer owns the app-pointer null check
             // identically to the pre-§10.10 direct path.
             return {{ target.target_snake }}_outbound_.admit(env);
 {% else %}
@@ -2350,16 +2350,16 @@ struct TransportRouter {
     /// Call sites:
     ///   * `admitOrdered` when an envelope arrives on an ordered route
     ///     without `sequence_no` — raises `reason = "MISSING_SEQUENCE"`
-    ///     (§16.7 row 12). Drift diagnostic for the sender.
+    ///     (§16.7 row 11). Drift diagnostic for the sender.
     ///   * `driveOrderingTick` via the `OrderingBuffer::OnGap` callback
     ///     when a gap has been blocked past `gap_timeout` — raises
     ///     `reason = "ORDERING_GAP"` with `lost_seq_lo`/`lost_seq_hi`
-    ///     (§16.7 row 13). Recovery signal: the receiver has fast-
+    ///     (§16.7 row 12). Recovery signal: the receiver has fast-
     ///     forwarded past the missing range.
     ///   * The Zenoh liveliness subscriber (when
     ///     `machines.<name>.liveliness:` is declared) on DELETE samples —
     ///     raises `reason = "PEER_PARTITIONED"` with `target` and, when
-    ///     a prior PUT was observed, `last_seen_ms_ago` (§16.7 row 9).
+    ///     a prior PUT was observed, `last_seen_ms_ago` (§16.7 row 8).
     ///
     /// All three sites observe a condition at the transport layer, not
     /// on a specific SCXML document instance. SCE_MESH.md §14.4: the
@@ -2416,7 +2416,7 @@ struct TransportRouter {
     ///         fast-forwarded data envelopes are).
     std::size_t driveOrderingTick() {
         auto result = ordering_buffer_.tick();
-        // §16.7 row 13: one error.communication per timed-out gap.
+        // §16.7 row 12: one error.communication per timed-out gap.
         // Raised outside the buffer mutex — reentrant admit() calls
         // from other transport threads are not blocked by this loop.
         for (const auto& gap : result.gaps) {
@@ -2499,7 +2499,7 @@ struct TransportRouter {
     /// reaches this method without the field signals an out-of-sync
     /// sender. The envelope is dropped from the ordering domain AND
     /// an `error.communication` event with reason `MISSING_SEQUENCE`
-    /// is raised so authors can surface the drift (§16.7 row 12).
+    /// is raised so authors can surface the drift (§16.7 row 11).
     ///
     /// `session_idx` carries the SCE_MESH.md §14.4 session routing
     /// contract verbatim through the ordering layer to

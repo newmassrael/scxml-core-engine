@@ -33,7 +33,7 @@ std::string bytes_to_string(const std::vector<std::uint8_t>& b) {
 }  // namespace
 
 TEST(CommunicationErrorTest, MissingSequenceMinimalShape) {
-    // §16.7 row 12 — MISSING_SEQUENCE carries source + envelope_id; no
+    // §16.7 row 11 — MISSING_SEQUENCE carries source + envelope_id; no
     // reason-specific extras beyond the baseline.
     CommunicationError err;
     err.reason = "MISSING_SEQUENCE";
@@ -51,7 +51,7 @@ TEST(CommunicationErrorTest, MissingSequenceMinimalShape) {
 }
 
 TEST(CommunicationErrorTest, OrderingGapFullShape) {
-    // §16.7 row 13 — ORDERING_GAP carries lost_seq_lo + lost_seq_hi
+    // §16.7 row 12 — ORDERING_GAP carries lost_seq_lo + lost_seq_hi
     // plus the baseline `source`. Field order must match declaration
     // order in toJsonBytes so the wire shape is stable.
     CommunicationError err;
@@ -70,7 +70,7 @@ TEST(CommunicationErrorTest, OrderingGapFullShape) {
 }
 
 TEST(CommunicationErrorTest, PeerPartitionedShape) {
-    // §16.7 row 9 — PEER_PARTITIONED carries target + last_seen_ms_ago.
+    // §16.7 row 8 — PEER_PARTITIONED carries target + last_seen_ms_ago.
     // No `source` / `envelope_id` because the raise is not triggered
     // by any specific inbound envelope — the observation is the peer's
     // liveliness DELETE sample.

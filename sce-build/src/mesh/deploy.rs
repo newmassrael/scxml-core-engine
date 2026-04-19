@@ -281,7 +281,7 @@ impl Default for OrderingTimings {
 
 /// Minimum `lease_ms` accepted in a `liveliness:` section.
 ///
-/// SCE Mesh §16.7 row 9 (`PEER_PARTITIONED`) couples peer-failure
+/// SCE Mesh §16.7 row 8 (`PEER_PARTITIONED`) couples peer-failure
 /// detection latency to Zenoh's own keepalive cadence. Values below
 /// this floor race the router's own internal heartbeat and generate
 /// spurious DELETE/PUT churn, so parse-time rejection is preferred
@@ -300,7 +300,7 @@ pub const MIN_LIVELINESS_LEASE_MS: u64 = 100;
 /// cleanup cascade.
 pub const MIN_SERVER_QUERY_TIMEOUT_MS: u64 = 10;
 
-/// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 9).
+/// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 8).
 ///
 /// Opt-in: absent section ⇒ no liveliness token declared, no
 /// subscriber installed, zero generated code — matches the
@@ -373,7 +373,7 @@ pub const MIN_OUTBOUND_BUFFER_MAX_PENDING: u32 = 1;
 pub struct OutboundBufferConfig {
     /// Maximum number of envelopes buffered per opt-in target before
     /// overflow raises `error.communication` with reason
-    /// `BACKPRESSURE_DROP` (§16.7 row 10) and drops the newest. Must
+    /// `BACKPRESSURE_DROP` (§16.7 row 9) and drops the newest. Must
     /// be `>= MIN_OUTBOUND_BUFFER_MAX_PENDING`.
     pub max_pending_per_target: u32,
 }
@@ -486,7 +486,7 @@ pub struct MachineConfig {
     /// layer.
     #[serde(default)]
     pub ordering: Option<OrderingTimings>,
-    /// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 9).
+    /// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 8).
     /// Absent section ⇒ no liveliness token declared and no subscriber
     /// installed; the generated router emits zero liveliness code.
     /// Section present ⇒ `lease_ms` is required and validated at parse
@@ -501,7 +501,7 @@ pub struct MachineConfig {
     /// targets route through `OutboundBuffer::admit`, the transport's
     /// native readiness primitive feeds `markReady` / `markNotReady`,
     /// and overflow raises `error.communication` with reason
-    /// `BACKPRESSURE_DROP` (§16.7 row 10). See [`OutboundBufferConfig`].
+    /// `BACKPRESSURE_DROP` (§16.7 row 9). See [`OutboundBufferConfig`].
     #[serde(default)]
     pub outbound_buffer: Option<OutboundBufferConfig>,
 }

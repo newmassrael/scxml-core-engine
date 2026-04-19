@@ -27,7 +27,7 @@
 //     does not re-enqueue or retry (SCE_MESH.md §16.7 row 2
 //     `SEND_FAILED` and row 3 `DELIVERY_EXHAUSTED` are orthogonal).
 //   * No age-based drop. Overflow policy is fixed at
-//     `BACKPRESSURE_DROP` (§16.7 row 10) + drop-newest. Grammar
+//     `BACKPRESSURE_DROP` (§16.7 row 9) + drop-newest. Grammar
 //     additions (`max_age_ms`, `overflow: drop_oldest`) are deferred
 //     until a consumer lands.
 //   * No cross-target serialization. Each OutboundBuffer instance is
@@ -113,7 +113,7 @@ public:
     ///   * ready + empty queue ⇒ dispatch immediately (fast path).
     ///   * not ready ⇒ enqueue (up to `max_pending`); on overflow,
     ///     raise `error.communication` with reason `BACKPRESSURE_DROP`
-    ///     (§16.7 row 10) and drop the newest envelope.
+    ///     (§16.7 row 9) and drop the newest envelope.
     ///   * ready + non-empty queue (transient mid-drain) ⇒ enqueue to
     ///     preserve FIFO; the in-progress drain will release it.
     ///

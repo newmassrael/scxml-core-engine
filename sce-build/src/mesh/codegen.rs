@@ -1289,7 +1289,7 @@ fn generate_cpp_mesh(
         "tick_period_ms": machine_ordering.tick_period_ms,
     });
 
-    // SCE Mesh §16.7 row 9 (PEER_PARTITIONED): per-machine Zenoh
+    // SCE Mesh §16.7 row 8 (PEER_PARTITIONED): per-machine Zenoh
     // liveliness opt-in. `null` when the deploy.yaml author declared no
     // `liveliness:` section, which the template reads as a falsy gate —
     // zero lines of liveliness code emitted. Present value carries the
