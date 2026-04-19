@@ -1181,6 +1181,10 @@ Protocol Mapping (above) shows per-transport API calls. Communication Pattern Se
 
 These patterns enable **deploy.yaml-only middleware switching**: the same SCXML event patterns map to different native APIs depending on the transport binding. SCXML documents never reference transport-specific concepts.
 
+**Stream patterns (wire values 10-13) are reserved for a future class of communication patterns that pair a subscription with an initial state snapshot delivered as a one-shot event, followed by delta-encoded change events.** Stream patterns are **wire-layer optimizations of the W3C event model**: they materialize at the SCXML receiver as ordinary discrete events consumable via `<transition event="..."><assign>` — the platform's external event queue (W3C SCXML §5.10) delivers the snapshot and each delta as injected events. The same SCXML is valid whether the subscription is realized via FireForget or a future Stream pattern.
+
+SCE does **not** introduce continuous cross-session state sharing, synchronous remote state reads, or shared mutable datamodel. Those primitives would violate W3C §3.12 run-to-completion and the datamodel isolation that the "Same SCXML, Three Domains" claim (§1) rests on. MMO-style "replication" in the sense of Unreal Engine `UPROPERTY(Replicated)` or Unity NetCode — magic shared variables auto-synced across the network — is an **external game-netcode layer** responsibility (e.g., a `sce-game-netcode` adapter repo), not an SCE core feature. The terms collide; the semantics do not.
+
 ### 8.2 Transport Capability Matrix
 
 Not all transports support all communication patterns. sce-build validates pattern compatibility at build time:
