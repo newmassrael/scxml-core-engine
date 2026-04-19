@@ -137,7 +137,7 @@ target, so `zenoh_subscribers_` never holds more than one live entry
 per target and the clobber path is never exercised. The fix + its
 reproduction fixture both belong to a Gap 2 follow-up session.
 
-### Drift — invariant-bound: T5 `active_invokes_`
+### Drift — invariant-bound: T5 `active_invokes_` (revised 2026-04-19)
 
 **Axis**: `InvokeSiteKey{target, field_suffix}` → latest invoke UUID.
 Inserted at jinja2:2299 via plain `operator[]=`:
@@ -146,26 +146,45 @@ Inserted at jinja2:2299 via plain `operator[]=`:
 active_invokes_[InvokeSiteKey{target, fieldSuffix}] = uuid;
 ```
 
-The comment at jinja2:869–871 names the assumption: "latest invoke
-UUID" per site. Under SCXML's single-region invoke semantics (one
-`<invoke>` per state, one state entry per microstep), only one UUID
-is ever live per `(target, field_suffix)`.
+**Revised analysis** (replaces the original "parallel regions clobber
+by construction" claim). `field_suffix` is derived in `parser.rs:1249`
+as `invoke_id.trim_start_matches('_')`, where `invoke_id` is either:
 
-**Where the invariant can break**: SCXML `<parallel>` regions may
-concurrently host `<invoke>` elements with the same
-`(target, field_suffix)` by construction (two regions, two identical
-invoke targets). The W3C spec does not forbid this. Under that
-shape, the second region's entry clobbers the first region's UUID;
-on the first region's exit, `performMeshCancel` looks up the
-site, reads the second region's UUID, and cancels the *other*
-region's in-flight invoke — erase reaches the second region's
-correlation entry, not the first's.
+* The author's `<invoke id="…">` attribute, or
+* An auto-generated `_invoke_<N>` whose `N` comes from a parser-local
+  monotonic counter (`invoke_counter`).
 
-No fixture exercises this shape. The invariant holds by author
-convention today, but the map's key axis does not encode it — a
-structural fix would widen the key to
-`(target, field_suffix, originating_state_id)` or require codegen
-to refuse two-region same-site invokes. Both are post-Gap-2 work.
+For two `<invoke>` elements to land on the same `(target, field_suffix)`
+key, the author must write the same literal `id=` on both. W3C SCXML
+§3.14 forbids duplicate ids across an SCXML document, so the failing
+shape named in the original audit (two parallel regions carrying the
+same `<invoke id="X">`) is **already spec-invalid input**. Under
+W3C-valid SCXML — including auto-id parallel regions, which always
+yield distinct `invoke_0` / `invoke_1` suffixes — the map invariant
+holds by construction.
+
+Empirical probe: codegen on a `<parallel>` with two identical-target
+`<invoke>` elements (no author ids) emits `fieldSuffix == "invoke_0"`
+and `"invoke_1"` at the two site-match arms — distinct keys, no
+clobber. An explicit W3C §3.14-violating fixture (same author id on
+both invokes) currently passes the SCXML parser without diagnostic,
+so the *enforcement* of §3.14 is the residual concern, not the mesh
+map shape.
+
+**Gap reclassification**: the T5 fix is W3C §3.14 enforcement at the
+SCXML parser layer (orthogonal to mesh — any code that keys on
+invoke identity inherits the same assumption). Runtime key widening
+with `originating_state_id` would solve a symptom, not the root
+cause, and would not prevent the adjacent AOT-side breakage of
+`done.invoke.<id>` / `error.invoke.<id>` event matching that
+duplicate invoke ids already produce regardless of mesh. Codegen
+refusing "two-region same-target invokes" would be strictly more
+restrictive than W3C §3.14 — rejecting legitimate auto-id shapes
+that never collide — and is the wrong axis.
+
+**Action**: no mesh-side change. A follow-up parser diagnostic for
+W3C §3.14 on `<invoke>` ids closes the residual gap; that work is
+mesh-orthogonal and tracked separately.
 
 ### Linked to Gap 3 — T3, R2, R4
 
@@ -287,7 +306,8 @@ together.
 ## What this audit does NOT do
 
 * **Not a fix.** T2 clobber is documented, not resolved. T5 invariant
-  is documented, not structurally enforced. T3 / R2 / R4 are
+  holds under W3C-valid input; the residual §3.14 parser enforcement
+  is orthogonal to mesh and tracked separately. T3 / R2 / R4 are
   deferred to Gap 3.
 * **Not a spec edit.** SCE_MESH.md §10 is unchanged; the "suggested
   spec invariant" section is a proposal, not a spec commit.
