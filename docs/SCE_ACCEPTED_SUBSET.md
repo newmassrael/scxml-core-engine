@@ -337,6 +337,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-partition-unit-duplicate` | Mesh Deploy |
 | `mesh/deploy-partition-machine-not-listed` | Mesh Deploy |
 | `mesh/deploy-partition-empty` | Mesh Deploy |
+| `mesh/deploy-partition-synth-infix-collision` | Mesh Deploy |
+| `mesh/deploy-partition-uncovered-unit` | Mesh Deploy |
+| `mesh/deploy-partition-partial-coverage-requires-default` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

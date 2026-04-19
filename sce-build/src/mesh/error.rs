@@ -282,6 +282,62 @@ pub enum DeployError {
              `contains.invokes:`). Empty partitions have no runtime purpose (SCE_MESH.md \
              §14 rule 10); either add the units this partition hosts or delete the entry.")]
     PartitionEmpty { partition: String },
+
+    /// An author-declared machine id contains the reserved
+    /// `__sce_synth_invoke__` infix (SCE_MESH.md §14 rule 5 + §9.6.6).
+    /// The infix is used to name machines synthesised from
+    /// `<invoke type="scxml">` inline `<content>`: a colliding author
+    /// id would shadow or be shadowed by a synthesised peer at runtime,
+    /// and partition rules 1-2 could not disambiguate the two. Detected
+    /// unconditionally across every `topology.*.machines.*` key — the
+    /// reservation stands even when `partitions:` is absent, so that
+    /// opting into partitions later never turns previously-valid ids
+    /// into silent collisions.
+    #[error("machine '{machine}' uses the reserved `__sce_synth_invoke__` infix in its \
+             name. SCE Mesh §14 rule 5 reserves this substring for machines synthesised \
+             from `<invoke type=\"scxml\">` inline `<content>` (§9.6.6); an author id \
+             collision would silently shadow the synthesised peer at runtime. Rename the \
+             machine to drop the substring.")]
+    PartitionSynthInfixCollision { machine: String },
+
+    /// A machine listed under some partition's `machines:` leaves one or
+    /// more orthogonal units (parallel regions or invokes) uncovered,
+    /// *and* a `<machine>_default:` partition already exists
+    /// (SCE_MESH.md §14 rule 1). The default is therefore incomplete —
+    /// the cheapest repair is to extend its `contains:` with the
+    /// missing units, which is why this diagnostic is distinct from
+    /// [`Self::PartitionPartialCoverageRequiresDefault`] (where the
+    /// default partition has not been declared at all and the author
+    /// may prefer to assign units into other existing partitions).
+    #[error("machine '{machine}' has partitions declared but the following orthogonal \
+             units are not covered by any partition's `contains:`: {}. The \
+             '{machine}_default' partition exists, so the direct repair is to extend its \
+             `contains:` with the missing entries (SCE_MESH.md §14 rule 1).",
+             .units.iter().map(|u| format!("\n  - {u}")).collect::<String>())]
+    PartitionUncoveredUnit {
+        machine: String,
+        units: Vec<String>,
+    },
+
+    /// A machine is mentioned in some partition's `machines:` list but
+    /// one or more of its orthogonal units is not covered by any
+    /// partition's `contains:`, and **no** `<machine>_default:`
+    /// partition has been declared (SCE_MESH.md §14 rule 2). The error
+    /// message reproduces the spec L2793-2800 wording verbatim so
+    /// authors can follow the prescribed repair (extend an existing
+    /// partition or add a dedicated `<machine>_default:` with the
+    /// missing entries). Distinct from [`Self::PartitionUncoveredUnit`]
+    /// because the `_default` suggestion is only honest when that
+    /// partition does not already exist.
+    #[error("machine '{machine}' has partitions declared, but the following orthogonal \
+             units are unassigned:{}\n            Either add them to an existing \
+             partition under `machines: [{machine}]`, or declare a '{machine}_default' \
+             partition with `contains:` entries for each (SCE_MESH.md §14 rule 2).",
+             .missing.iter().map(|u| format!("\n              - {u}")).collect::<String>())]
+    PartitionPartialCoverageRequiresDefault {
+        machine: String,
+        missing: Vec<String>,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -1028,6 +1084,49 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![partition.clone()],
         },
+        DeployError::PartitionSynthInfixCollision { machine } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionSynthInfixCollision,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            // The only mechanical repair is "rename the machine", which
+            // the author must do with full knowledge of downstream
+            // name references — not a field-level edit sce-build can
+            // pre-compute.
+            fix: None,
+            key_fragments: vec![machine.clone()],
+        },
+        DeployError::PartitionUncoveredUnit { machine, units } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionUncoveredUnit,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            // Repair is semantic: the author picks which partition
+            // (existing or <machine>_default) each unit belongs in.
+            fix: None,
+            key_fragments: {
+                let mut k = vec![machine.clone()];
+                k.extend(units.iter().cloned());
+                k
+            },
+        },
+        DeployError::PartitionPartialCoverageRequiresDefault { machine, missing } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::MeshDeployPartitionPartialCoverageRequiresDefault,
+                stage: Stage::MeshDeploy,
+                actual: Some(machine.clone()),
+                expected: None,
+                // Two equally-valid repairs (extend an existing
+                // partition or add <machine>_default); the spec
+                // prose carries both options, so no mechanical fix.
+                fix: None,
+                key_fragments: {
+                    let mut k = vec![machine.clone()];
+                    k.extend(missing.iter().cloned());
+                    k
+                },
+            }
+        }
     }
 }
 

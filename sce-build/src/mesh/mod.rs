@@ -21,3 +21,4 @@ pub mod codegen;
 pub mod vsomeip_config;
 pub mod external;
 pub mod someip_format;
+pub mod partitions;

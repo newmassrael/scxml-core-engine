@@ -1022,10 +1022,39 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_pool_capability(&cfg)?;
     validate_outbound_buffer(&cfg)?;
     validate_discovery_not_supported(&cfg)?;
+    validate_synth_invoke_infix(&cfg)?;
     validate_partitions_schema(&cfg)?;
 
     Ok(cfg)
 }
+
+/// SCE Mesh §14 rule 5 — author-declared machine ids must not use the
+/// reserved `__sce_synth_invoke__` infix. Synthesized children from
+/// `<invoke type="scxml">` inline `<content>` (§9.6.6) are named
+/// `<parent>__sce_synth_invoke__<id>`; a collision would silently
+/// shadow or be shadowed by the synthesized peer at runtime, and the
+/// partition coverage rules could not tell the two apart. Checked
+/// unconditionally across every `topology.*.machines.*` key so
+/// opting into `partitions:` later never re-labels a previously-valid
+/// id as a collision.
+fn validate_synth_invoke_infix(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for name in device.machines.keys() {
+            if name.contains(SYNTH_INVOKE_INFIX) {
+                return Err(DeployError::PartitionSynthInfixCollision {
+                    machine: name.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The infix that names a machine synthesized from `<invoke type="scxml">`
+/// inline `<content>` (SCE_MESH.md §14 rule 5 + §9.6.6). Single source
+/// of truth so the parser, the validator, and any future synthesizer
+/// agree on the reserved string.
+pub const SYNTH_INVOKE_INFIX: &str = "__sce_synth_invoke__";
 
 /// SCE_MESH.md §14 rules 7-10 — structural checks on `partitions:`
 /// that do not require SCXML cross-reference. Rule 6 (duplicate

@@ -917,6 +917,15 @@ pub fn compile_mesh_transport(
     // produces a typed `ExternalResolution` map consumed by topology. The
     // deploy config itself is treated read-only from here on.
     let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
+
+    // SCE_MESH.md §14 rules 1, 2, 11 — cross-reference the declared
+    // partition coverage against each partition-listed machine's
+    // actual `<parallel>` / `<invoke>` inventory. Runs as a mesh-deploy
+    // stage diagnostic (errors wrap `DeployError`) but needs SCXML
+    // AST, so it lives after `parse_deploy` rather than inside
+    // `parse_deploy_str`. A no-op when `partitions:` is absent.
+    mesh::partitions::validate_partitions_against_scxml(deploy_dir, &deploy_cfg)?;
+
     let external_resolution =
         mesh::external::resolve_external_bindings(&deploy_cfg, deploy_dir)?;
 

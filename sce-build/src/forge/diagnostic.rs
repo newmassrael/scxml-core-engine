@@ -427,6 +427,12 @@ pub enum DiagnosticCode {
     MeshDeployPartitionMachineNotListed,
     #[serde(rename = "mesh/deploy-partition-empty")]
     MeshDeployPartitionEmpty,
+    #[serde(rename = "mesh/deploy-partition-synth-infix-collision")]
+    MeshDeployPartitionSynthInfixCollision,
+    #[serde(rename = "mesh/deploy-partition-uncovered-unit")]
+    MeshDeployPartitionUncoveredUnit,
+    #[serde(rename = "mesh/deploy-partition-partial-coverage-requires-default")]
+    MeshDeployPartitionPartialCoverageRequiresDefault,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -611,6 +617,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPartitionUnitDuplicate,
         MeshDeployPartitionMachineNotListed,
         MeshDeployPartitionEmpty,
+        MeshDeployPartitionSynthInfixCollision,
+        MeshDeployPartitionUncoveredUnit,
+        MeshDeployPartitionPartialCoverageRequiresDefault,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -778,7 +787,10 @@ impl DiagnosticCode {
             | MeshDeployPartitionMultiDevice
             | MeshDeployPartitionUnitDuplicate
             | MeshDeployPartitionMachineNotListed
-            | MeshDeployPartitionEmpty => Some("SCE Mesh §14"),
+            | MeshDeployPartitionEmpty
+            | MeshDeployPartitionSynthInfixCollision
+            | MeshDeployPartitionUncoveredUnit
+            | MeshDeployPartitionPartialCoverageRequiresDefault => Some("SCE Mesh §14"),
 
             // ── No authoritative citation ────────────────────────
             //
@@ -932,6 +944,9 @@ impl DiagnosticCode {
             MeshDeployPartitionUnitDuplicate => "mesh/deploy-partition-unit-duplicate",
             MeshDeployPartitionMachineNotListed => "mesh/deploy-partition-machine-not-listed",
             MeshDeployPartitionEmpty => "mesh/deploy-partition-empty",
+            MeshDeployPartitionSynthInfixCollision => "mesh/deploy-partition-synth-infix-collision",
+            MeshDeployPartitionUncoveredUnit => "mesh/deploy-partition-uncovered-unit",
+            MeshDeployPartitionPartialCoverageRequiresDefault => "mesh/deploy-partition-partial-coverage-requires-default",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2468,6 +2483,42 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5c3f22193c998160","code":"mesh/deploy-partition-empty","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'empty_part' is empty (no `contains.parallel_regions:` and no `contains.invokes:`). Empty partitions have no runtime purpose (SCE_MESH.md §14 rule 10); either add the units this partition hosts or delete the entry.","actual":"empty_part"}"#,
             ),
             (
+                "mesh/deploy-partition-synth-infix-collision",
+                DeployError::PartitionSynthInfixCollision {
+                    machine: "parent__sce_synth_invoke__child".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:6c17e971ff381f93","code":"mesh/deploy-partition-synth-infix-collision","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'parent__sce_synth_invoke__child' uses the reserved `__sce_synth_invoke__` infix in its name. SCE Mesh §14 rule 5 reserves this substring for machines synthesised from `<invoke type=\"scxml\">` inline `<content>` (§9.6.6); an author id collision would silently shadow the synthesised peer at runtime. Rename the machine to drop the substring.","actual":"parent__sce_synth_invoke__child"}"#,
+            ),
+            (
+                "mesh/deploy-partition-uncovered-unit",
+                DeployError::PartitionUncoveredUnit {
+                    machine: "brake".into(),
+                    units: vec![
+                        "parallel_region:brake/monitoring".into(),
+                        "invoke:brake/compute_force_inv".into(),
+                    ],
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:0ccf7ab1ec88806c","code":"mesh/deploy-partition-uncovered-unit","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'brake' has partitions declared but the following orthogonal units are not covered by any partition's `contains:`: \n  - parallel_region:brake/monitoring\n  - invoke:brake/compute_force_inv. The 'brake_default' partition exists, so the direct repair is to extend its `contains:` with the missing entries (SCE_MESH.md §14 rule 1).","actual":"brake"}"#,
+            ),
+            (
+                "mesh/deploy-partition-partial-coverage-requires-default",
+                DeployError::PartitionPartialCoverageRequiresDefault {
+                    machine: "brake".into(),
+                    missing: vec![
+                        "parallel_region:brake/monitoring".into(),
+                        "invoke:brake/compute_force_inv".into(),
+                    ],
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:f4c724f239f9f76f","code":"mesh/deploy-partition-partial-coverage-requires-default","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'brake' has partitions declared, but the following orthogonal units are unassigned:\n              - parallel_region:brake/monitoring\n              - invoke:brake/compute_force_inv\n            Either add them to an existing partition under `machines: [brake]`, or declare a 'brake_default' partition with `contains:` entries for each (SCE_MESH.md §14 rule 2).","actual":"brake"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -3182,6 +3233,9 @@ mod tests {
             | MeshDeployPartitionUnitDuplicate
             | MeshDeployPartitionMachineNotListed
             | MeshDeployPartitionEmpty
+            | MeshDeployPartitionSynthInfixCollision
+            | MeshDeployPartitionUncoveredUnit
+            | MeshDeployPartitionPartialCoverageRequiresDefault
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3463,6 +3517,9 @@ mod tests {
                 | MeshDeployPartitionUnitDuplicate
                 | MeshDeployPartitionMachineNotListed
                 | MeshDeployPartitionEmpty
+                | MeshDeployPartitionSynthInfixCollision
+                | MeshDeployPartitionUncoveredUnit
+                | MeshDeployPartitionPartialCoverageRequiresDefault
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3497,9 +3554,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            109,
+            112,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 109 distinct variants to match the DiagnosticCode \
+             expected 112 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }
