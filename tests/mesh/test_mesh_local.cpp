@@ -56,9 +56,9 @@ struct MockEngine {
     void processEvent(Event) {}
     void raiseExternal(Event, const std::string& = {}) {}
     void raiseExternal(const EventWithMetadata&) {}
-    // TransportRouter's ctor installs the outbound dispatch hook on the
-    // sender engine via this method; the mock just stores the callback
-    // (ignored by this compile test).
+    // TransportRouter's ctor installs the outbound dispatch hook on
+    // every hosted session via this method; the mock just stores the
+    // callback (ignored by this compile test).
     using MeshSendCb = std::function<bool(const std::string&, const std::string&,
                                           const std::string&, const std::string&,
                                           const std::string&)>;
@@ -66,10 +66,10 @@ struct MockEngine {
     void setMeshSendCallback(MeshSendCb cb) { mesh_send_cb_ = std::move(cb); }
 };
 
-// Sender-first ctor injection: SenderEngine template param precedes
-// per-target engine params, and the sender reference is passed first
-// to the ctor. The sender's MockEngine is the same type as the local
-// target engine here; production code uses different engine types.
+// Session-first ctor injection: SenderEngine template param precedes
+// per-target engine params, and the session pointer array is passed
+// first to the ctor. The session's MockEngine is the same type as the
+// local target engine here; production code uses different engine types.
 using Router = SCE::Generated::brake::TransportRouter<MockEngine, MockEngine>;
 
 static_assert(sizeof(Router) > 0,
@@ -80,7 +80,7 @@ static_assert(sizeof(Router) > 0,
 int main() {
     MockEngine sender;
     MockEngine motor;
-    Router router(sender, motor);
+    Router router({&sender}, motor);
 
     // Verify route_send compiles with MeshEnvelope API
     SCE::Mesh::MeshEnvelope env;

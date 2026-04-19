@@ -356,6 +356,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-unsupported-language` | Mesh Codegen |
 | `mesh/codegen-unsupported-transport` | Mesh Codegen |
 | `mesh/codegen-event-name-collision` | Mesh Codegen |
+| `mesh/codegen-pool-with-mesh-rpc-client-unsupported` | Mesh Codegen |
 
 ### Diagnostic-only
 

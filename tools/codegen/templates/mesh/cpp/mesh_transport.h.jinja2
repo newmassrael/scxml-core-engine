@@ -111,7 +111,14 @@
                 // runs first and chains dedup internally. Forwarded to
                 // the shared `admit_or_dispatch` macro so every inbound
                 // call site reads identically.
-                (void)this->{{ admit_or_dispatch(target.needs_ordering, target.needs_dedup, "env") }};
+                //
+                // session_idx is hard-coded `0`: this macro only fires
+                // on client-side SOME/IP receive handlers, which never
+                // drive a server pool (SCE_MESH.md §14.4 scopes the
+                // pool shape to SOME/IP server transports). Pool +
+                // mesh-rpc-client is rejected at codegen so N_SESSIONS
+                // is always 1 here.
+                (void)this->{{ admit_or_dispatch(target.needs_ordering, target.needs_dedup, "env", "0") }};
             });
 {%- endmacro %}
 {#
@@ -129,16 +136,19 @@
       so the fallback branch is unreachable on today's registry.
 
   `env_name` names the C++ variable holding the decoded envelope at
-  the call site (`env`, `resp`, `notify`, …). The caller supplies the
-  `(void)this->…;` wrapper and any leading indentation, so the macro
-  stays a one-line expression and every caller keeps its local
-  context unchanged.
+  the call site (`env`, `resp`, `notify`, …). `session_idx_expr` is a
+  C++ expression that evaluates to the sessions_ slot this envelope
+  should dispatch into (SCE_MESH.md §14.4). SOME/IP server handlers
+  pass `session_index_for_instance(server_instance)`; every other
+  call site passes `0` because its inbound path is not server-pool
+  multi-session. The caller supplies the `(void)this->…;` wrapper and
+  any leading indentation, so the macro stays a one-line expression.
 #}
-{%- macro dedup_or_dispatch(condition, env_name) -%}
+{%- macro dedup_or_dispatch(condition, env_name, session_idx_expr) -%}
 {%- if condition -%}
-admitInbound({{ env_name }})
+admitInbound({{ env_name }}, {{ session_idx_expr }})
 {%- else -%}
-dispatchToSender({{ env_name }})
+dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {%- endif -%}
 {%- endmacro %}
 {#
@@ -153,7 +163,13 @@ dispatchToSender({{ env_name }})
     * ordered route + undeduped transport → `admitOrdered`
       (internally consults dedup on each released envelope)
     * undeduped transport, no ordering requirement → `admitInbound`
-    * neither → `dispatchToSender` direct
+    * neither → `dispatchToSession` direct
+
+  `session_idx_expr` carries the same session-routing contract as
+  `dedup_or_dispatch` above (SCE_MESH.md §14.4). All admit layers
+  forward it untouched to the final `dispatchToSession` call so a
+  SOME/IP server-pool envelope lands on the session whose offered
+  instance received it.
 
   Server-side closures and zenoh client-side reply/subscribe closures
   keep using the machine-wide `dedup_or_dispatch` macro above; the
@@ -162,13 +178,13 @@ dispatchToSender({{ env_name }})
   ordering branch until SCE_MESH.md §10.6 is extended with a server
   schema.
 #}
-{%- macro admit_or_dispatch(needs_ordering, needs_dedup, env_name) -%}
+{%- macro admit_or_dispatch(needs_ordering, needs_dedup, env_name, session_idx_expr) -%}
 {%- if needs_ordering -%}
-admitOrdered({{ env_name }})
+admitOrdered({{ env_name }}, {{ session_idx_expr }})
 {%- elif needs_dedup -%}
-admitInbound({{ env_name }})
+admitInbound({{ env_name }}, {{ session_idx_expr }})
 {%- else -%}
-dispatchToSender({{ env_name }})
+dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {%- endif -%}
 {%- endmacro %}
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -225,6 +241,20 @@ dispatchToSender({{ env_name }})
 {% if has_server_someip %}
 {% set someip_server_instances = server.instance_pool if has_server_someip_pool else [server.state.service.instance_id] %}
 {% endif %}
+
+{# SCE_MESH.md §14.4 — canonical session count for this router.
+   Each SCXML document instance running under the router is a "session"
+   (W3C SCXML §2.4). A pool server hosts N independent sessions, each
+   backing one offered SOME/IP instance; every other router shape hosts
+   exactly one session. `n_sessions` is the single source of truth
+   consumed by the `sessions_` array, ctor, per-session callback loop,
+   and every dispatch site — no parallel "sender vs pool" codepath. #}
+{% if has_server_someip %}
+{% set n_sessions = someip_server_instances | length %}
+{% else %}
+{% set n_sessions = 1 %}
+{% endif %}
+
 
 {# SCE Mesh §9.5 gap Z2: per-server Zenoh queryable response deadline.
    Gate requires BOTH a zenoh server AND the deploy.yaml knob being set.
@@ -606,15 +636,23 @@ inline void send_to_{{ target.target_snake }}(
 /// corresponding transport function. Supports mixed transports
 /// — each target routes through its deploy.yaml-bound transport.
 ///
-/// Construction binds the sender engine at compile time: the ctor
-/// captures it as a const reference and installs the mesh-send
-/// callback on it. There is no post-construction wiring step — the
-/// invariant "sender is bound before init() runs" is enforced by the
-/// type system (sender_ is a `const SenderEngine&` member).
+/// Construction binds the session pool at compile time: the ctor
+/// takes a `std::array<SenderEngine*, N_SESSIONS>` and installs the
+/// mesh-send callback on every session. There is no post-construction
+/// wiring step — the invariant "every session is bound before init()
+/// runs" is enforced by the type system (sessions_ is a fixed-size
+/// array member populated in the initializer list).
+///
+/// N_SESSIONS is 1 for every router except a SOME/IP server pool
+/// (SCE_MESH.md §14.4), which offers N distinct vsomeip instances and
+/// hosts N independent SCXML document instances. Non-pool routers call
+/// `router({&engine}{% for target in targets if target.state.kind == "local" %}, {{ target.target_snake }}_engine{% endfor %})` with a single-element brace-init; pool
+/// routers pass all N engine pointers in declaration order matching
+/// `SOMEIP_SERVER_INSTANCES`.
 ///
 /// Usage:
 ///   {{ machine_name }}::TransportRouter<SenderEngine{% for target in targets if target.state.kind == "local" %}, {{ target.target_pascal }}Engine{% endfor %}>
-///       router(sender_engine{% for target in targets if target.state.kind == "local" %}, {{ target.target_snake }}_engine{% endfor %});
+///       router({&sender_engine}{% for target in targets if target.state.kind == "local" %}, {{ target.target_snake }}_engine{% endfor %});
 ///   router.init();  // only for transports with a connect/start lifecycle
 template<typename SenderEngine{% for target in targets if target.state.kind == "local" %}, typename {{ target.target_pascal }}Engine{% endfor %}>
 struct TransportRouter {
@@ -638,13 +676,13 @@ struct TransportRouter {
    Maps an SCXML target string to a type-erased inbound dispatcher. When
    two routers share engines in-process — caller router A owns the
    outbound InvokeCorrelation; callee router B routes replies back to A
-   — linkTo wires the reply path through A.dispatchToSender so
+   — linkTo wires the reply path through A.dispatchToSession so
    RPC-reply correlation happens on the sender's router rather than
    bypassing it via the raw engine external queue. Unlinked local
    targets fall through to the direct dispatchEnvelope path, which
    preserves the single-router mesh_local_runtime_verification test.
 
-   Thread-safety discipline mirrors sender_ (ctor binding):
+   Thread-safety discipline mirrors sessions_ (ctor binding):
    linkTo registrations MUST happen before init() and any outbound
    mesh sends. The map is then read-only from the router's step and
    transport callback threads, so no mutex is required. #}
@@ -674,7 +712,7 @@ struct TransportRouter {
     // Concurrency: written only from the owning engine's step thread
     // (route_send → send_zenoh). Zenoh reply/subscription callbacks on
     // runtime threads never touch this map — they dispatch through
-    // sender_ directly. No mutex needed; the asymmetry with SOME/IP's
+    // sessions_ directly. No mutex needed; the asymmetry with SOME/IP's
     // correlation_mutex_ is deliberate (SOME/IP's pending_rpcs_ IS read
     // on vsomeip callback threads; this map is not).
     std::unordered_map<std::string, zenoh::Subscriber<void>> zenoh_subscribers_;
@@ -730,7 +768,7 @@ struct TransportRouter {
     // of transports that declared `supplies_dedup: false` in
     // transport.rs. Inbound paths from transports with inherent dedup
     // (SOME/IP-over-TCP, custom_tcp, local cross-router, shm) still call
-    // the unchecked `dispatchToSender` directly — bypassing this filter
+    // the unchecked `dispatchToSession` directly — bypassing this filter
     // is intentional, not a bug.
     //
     // No eviction: the per-source window count is bounded by the sender
@@ -786,64 +824,104 @@ struct TransportRouter {
     std::uint64_t seq_counter_{{ target.target_snake }}_ = 0;
 {% endfor %}
 
-{# ── (D2b-pre) Server SOME/IP application — declared BEFORE sender_
-   so the initializer-list order (server_app_ then sender_) matches
+{# ── (D2b-pre) Server SOME/IP application — declared BEFORE sessions_
+   so the initializer-list order (server_app_ then sessions_) matches
    C++ member declaration order. ── #}
 {% if has_server_someip %}
     // Server SOME/IP application. Created in ctor initializer, started
-    // in init(). Must be declared before sender_ for -Wreorder safety.
+    // in init(). Must be declared before sessions_ for -Wreorder safety.
     std::shared_ptr<vsomeip::application> server_app_;
 {% endif %}
 
-{# ── (D2b) Sender engine — bound by ctor, dispatched to by transport
-   callback threads (vsomeip, zenoh runtime) and by cross-router
-   linkTo (local). Storing the reference (instead of a std::function
-   like pre-Session D) keeps the dispatch call direct (no type erasure)
-   and makes "bound exactly once" a compile-time guarantee via `const`
-   — there is no setter to misuse.
-   The `local` disjunct was added so a router whose only transport is
-   local can still host dispatchToSender and be the inbound target of
-   another router's linkTo closure (SCE_MESH.md §9.5 mesh-rpc pairs). ── #}
-{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
-    // Sender engine reference. Bound in the ctor and never rebound.
+{# ── (D2b) Session pool — every SCXML document instance running
+   under this router is a session (W3C SCXML §2.4). Non-pool routers
+   host exactly one session; `server.instances:` pool routers host
+   N independent sessions each backing one offered SOME/IP instance
+   (SCE_MESH.md §14.4). `sessions_` is the single source of truth for
+   dispatch — no parallel sender-alias shim. Sessions are stored as raw
+   pointers in a fixed-size array so the template can preserve the
+   existing `has_per_target_field` declaration order (reorder with
+   local targets is -Wreorder-sensitive) while staying allocation-free.
+   Emitted unconditionally: every mesh router installs the outbound
+   mesh-send callback in its ctor, which needs at least one session
+   handle to bind against. Pure-shm routers run with N_SESSIONS == 1
+   and have no inbound dispatch surface; pool routers size N to the
+   offered-instance count. ── #}
+    // Session pool. One entry per SCXML document instance hosted by this
+    // router; N_SESSIONS is 1 for every router except a SOME/IP server
+    // pool (SCE_MESH.md §14.4), which offers N distinct vsomeip instances
+    // backed by N independent sessions indexed identically to
+    // SOMEIP_SERVER_INSTANCES.
     //
     // Thread-safety: the ctor completes-then-publishes the router before
-    // init() spawns any transport callback threads, so the write (ctor
-    // initializer) happens-before any read (callback thread dispatch)
-    // per C++ §32.4.2. `const` prevents accidental reassignment after
-    // construction, which removes the data-race hazard that a mutable
-    // std::function receive callback would carry.
+    // init() spawns any transport callback threads, so the array write
+    // (ctor initializer) happens-before any read (callback thread
+    // dispatch) per C++ §32.4.2. Pointers are const after construction.
     //
     // Lifetime contract (caller-enforced):
-    //   sender_engine   MUST outlive TransportRouter
-    //   TransportRouter MUST outlive any inflight transport operations
+    //   every sessions_[i]  MUST outlive TransportRouter
+    //   TransportRouter     MUST outlive any inflight transport operations
     //
     // The second part is honored by shutdown():
     //   - vsomeip::application::stop() joins callback threads before return
     //   - zenoh::Session dtor (via zenoh_session_.reset()) blocks until
     //     all query reply/subscription callbacks finish (z_close semantics)
     // so once shutdown() returns, no callback can still be dispatching
-    // through this->sender_. Violating the first part (destroying the
-    // sender engine before the router) is a caller bug — the codegen
+    // through any sessions_[i]. Violating the first part (destroying
+    // session pointees before the router) is a caller bug — the codegen
     // cannot enforce it and there is no runtime check for it.
-    SenderEngine& sender_;
+    //
+    // Nullability: the ctor accepts `std::array<SenderEngine*, N_SESSIONS>`
+    // and the conventional call-site form `router({&engineA, &engineB})`
+    // produces non-null pointers because the `&` operator binds to named
+    // objects only. Passing `nullptr` is a caller bug; the array is not
+    // probed for null.
+    static constexpr std::size_t N_SESSIONS = {{ n_sessions }};
+    std::array<SenderEngine*, N_SESSIONS> sessions_;
+{% if has_server_someip %}
+    // Map a SOME/IP instance id to the sessions_ slot that hosts it.
+    // The inbound server-handler lambdas capture `server_instance`
+    // (bound by the for-loop over SOMEIP_SERVER_INSTANCES in init())
+    // and call this helper to route every decoded envelope to the
+    // specific SCXML session whose offered instance received it. Linear
+    // find is O(N_SESSIONS); N is the pool cardinality (deploy.yaml
+    // `server.instances:`), typically ≤ 8. A miss returns
+    // `N_SESSIONS` as a sentinel — reachable only if vsomeip dispatched
+    // for an instance not in the declared set (codegen/deployment
+    // drift), in which case the caller logs and drops (SCE_MESH.md
+    // §14.4).
+    static constexpr std::size_t session_index_for_instance(
+        vsomeip::instance_t instance) {
+        for (std::size_t i = 0; i < SOMEIP_SERVER_INSTANCES.size(); ++i) {
+            if (SOMEIP_SERVER_INSTANCES[i] == instance) return i;
+        }
+        return N_SESSIONS;
+    }
 {% endif %}
 
-    // SCE_MESH.md §10.9: per-session routing identity. Generated once at
-    // construction (UUID v7) and stamped on every outbound envelope's
+    // SCE_MESH.md §10.9: router-scoped routing identity. Generated once
+    // at construction (UUID v7) and stamped on every outbound envelope's
     // `routing_id` field. Self-filter sites (Zenoh server put-subscriber
     // echo, prospective multi-instance echo paths) compare `env.routing_id`
-    // against this member to distinguish "message from a different session
-    // of the same machine" (pass through) from "our own wire echo" (drop).
-    // Declared const so the ctor initializer is the SSoT and the value
-    // cannot be rebound across a router's lifetime.
+    // against this member to distinguish "message from a different router
+    // hosting the same machine name" (pass through) from "our own wire
+    // echo" (drop). Declared const so the ctor initializer is the SSoT
+    // and the value cannot be rebound across a router's lifetime.
     //
-    // Unconditional — narrower than `sender_` because the mesh-send-callback
-    // body (which stamps this field) is itself unconditional: even an
-    // shm-only router emits `setMeshSendCallback` and stamps `routing_id`
-    // on each outbound envelope, so the member must exist regardless of
-    // `emit_sender` (which is scoped to dispatchToSender's receive path,
-    // not the outbound stamp path).
+    // Pool scope (SCE_MESH.md §14.4): a pool router hosts N sessions
+    // that share this single routing_id. Self-echo filtering is a
+    // router-level property (one transport session per router on each
+    // backend), so sibling sessions within the same router are not
+    // distinguishable via `routing_id` — the current self-echo sites
+    // (Zenoh server put-sub) are invoked only under deployments that
+    // do not combine pool with Zenoh, which keeps the router-scoped
+    // identity sufficient for every currently supported shape.
+    //
+    // Unconditional — the mesh-send-callback body (which stamps this
+    // field) is itself unconditional: even an shm-only router installs
+    // `setMeshSendCallback` on each session and stamps `routing_id` on
+    // each outbound envelope, so the member must exist regardless of
+    // whether inbound dispatch surfaces are emitted.
     const SCE::uuid::Bytes routing_id_;
 
 {# ── (D2c) Correlation types + SOME/IP RPC correlation table ── #}
@@ -1010,20 +1088,22 @@ struct TransportRouter {
     // queryable does not observe puts. One subscriber fans every
     // put-based pattern (FireForget, FieldWrite) by inspecting
     // `env.type` in the decoded envelope and routing through
-    // dispatchToSender.
+    // dispatchToSession.
     std::optional<zenoh::Subscriber<void>> zenoh_server_put_sub_;
 {% endif %}
 {% endif %}
 
 {# ── (D3) Constructor ──
-   Sender-first binding: the ctor takes the sender engine and any local
-   target engines, wires the mesh-send callback onto the sender in the
-   body, and stores a const reference for dispatch use. The previous
-   two-step `ctor + wireTo()` pattern has been collapsed into this single
-   construction so the invariant "sender is bound before init()" is
-   enforced by the type system, not by caller discipline. #}
+   Session-first binding: the ctor takes a fixed-size pointer array
+   (one slot per SCXML document instance hosted on this router) and any
+   local target engines, wires the mesh-send callback onto every
+   session in the body, and stores the array for dispatch use. The
+   previous two-step `ctor + wireTo()` pattern has been collapsed into
+   this single construction so the invariant "every session is bound
+   before init()" is enforced by the type system, not by caller
+   discipline. #}
     TransportRouter(
-        SenderEngine& sender
+        std::array<SenderEngine*, N_SESSIONS> sessions
         {%- for target in targets if target.state.kind == "local" -%}
         , {{ target.target_pascal }}Engine& {{ target.target_snake }}
         {%- endfor -%}
@@ -1038,9 +1118,8 @@ struct TransportRouter {
    Order MUST mirror the member declaration order above (D1 → D2b), or
    GCC `-Wreorder` (part of `-Wall`) fails compilation at `-Werror`
    whenever the ctor is actually synthesized for a concrete engine type.
-   Declarations run per-target-fields first, then `sender_`, so the
+   Declarations run per-target-fields first, then `sessions_`, so the
    initializers do the same. #}
-{%- set emit_sender = "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server -%}
 {%- set ns = namespace(parts=[]) %}
 {%- for target in targets if target.has_per_target_field %}
 {%-   if target.state.kind == "local" %}
@@ -1064,12 +1143,14 @@ struct TransportRouter {
 {#-     custom_tcp client constructor: connect endpoint is pre-escaped as a
         complete C++ string literal in Rust (TargetStateView::CustomTcp);
         the on_receive callback dispatches inbound envelopes through
-        `dispatchToSender` so a single client field handles the duplex
-        path the same way SOME/IP and Zenoh do. #}
-{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.state.connect ~ ", [this](const SCE::Mesh::MeshEnvelope& env){ (void)this->dispatchToSender(env); })"] %}
+        `dispatchToSession` so a single client field handles the duplex
+        path the same way SOME/IP and Zenoh do. session_idx is `0`:
+        custom_tcp is client-only (no pool support), so N_SESSIONS
+        is always 1 when this ctor init fires. #}
+{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.state.connect ~ ", [this](const SCE::Mesh::MeshEnvelope& env){ (void)this->dispatchToSession(env, 0); })"] %}
 {%-   endif %}
 {%- endfor %}
-{#- Server SOME/IP app init: must appear in declaration order (before sender_).
+{#- Server SOME/IP app init: must appear in declaration order (before sessions_).
     The device-level `transports.someip.application_name` identifies the
     CLIENT app on this device. The server role belongs to a different
     machine on the same device and needs a distinct vsomeip application
@@ -1081,12 +1162,10 @@ struct TransportRouter {
 {%- if has_server_someip %}
 {%-   set ns.parts = ns.parts + ["server_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_server\"))"] %}
 {%- endif %}
-{%- if emit_sender %}
-{%-   set ns.parts = ns.parts + ["sender_(sender)"] %}
-{%- endif %}
+{%- set ns.parts = ns.parts + ["sessions_(sessions)"] %}
 {#- routing_id_ initializer is unconditional — the stamp path runs even
     for shm-only routers (see member declaration rationale). Appended
-    last so its declaration order (after sender_) is honoured by
+    last so its declaration order (after sessions_) is honoured by
     -Wreorder; both orderings are legal but consistent with the member
     layout keeps the generated code warning-clean across every fixture. #}
 {%- set ns.parts = ns.parts + ["routing_id_(SCE::uuid::v7())"] %}
@@ -1094,15 +1173,23 @@ struct TransportRouter {
         : {{ ns.parts | join(", ") }}
 {%- endif %}
     {
-        // Install the outbound dispatch hook on the sender engine. All
-        // `<send target="#machine"/>` invocations on the sender are
-        // rewritten into MeshEnvelopes here and routed to the matching
-        // transport via route_send(). Must happen after member
-        // initialization because the lambda captures `this`.
-        sender.setMeshSendCallback(
-            [this](const std::string& target, const std::string& eventName,
-                   const std::string& data, const std::string& /*sendId*/,
-                   const std::string& invokeId) -> bool {
+        // Install the outbound dispatch hook on every session. Each
+        // SCXML `<send target="#machine"/>` invocation on session i is
+        // rewritten into a MeshEnvelope here and routed to the matching
+        // transport via route_send(). The lambda captures the
+        // session's own index so paired-reply emission
+        // (publishEventgroupNotify, handleServerResponse) routes back
+        // to the raising session — critical for SOME/IP server pool
+        // (SCE_MESH.md §14.4), a no-op degeneracy for every
+        // non-pool router (N_SESSIONS == 1).
+        //
+        // Must happen after member initialization because the lambda
+        // captures `this`.
+        for (std::size_t i = 0; i < N_SESSIONS; ++i) {
+            sessions_[i]->setMeshSendCallback(
+                [this, i](const std::string& target, const std::string& eventName,
+                          const std::string& data, const std::string& /*sendId*/,
+                          const std::string& invokeId) -> bool {
                 SCE::Mesh::MeshEnvelope env;
                 env.id = SCE::uuid::v7();
                 env.source = "{{ machine_name }}";
@@ -1232,10 +1319,14 @@ struct TransportRouter {
                     }
 {% if server.has_eventgroup %}
                     // Reply path first (correlated to pending request).
-                    // Fallback to eventgroup publish (spontaneous
-                    // notification with no pending request to correlate).
+                    // Fallback to eventgroup publish — spontaneous
+                    // notification with no pending request to correlate.
+                    // `i` (captured by the outer setMeshSendCallback
+                    // loop) is the raising session's index; pool
+                    // deployments emit the notify on its own vsomeip
+                    // instance (§14.4), non-pool degenerates to i == 0.
                     if (handleServerResponse(env)) return true;
-                    return publishEventgroupNotify(env);
+                    return publishEventgroupNotify(env, i);
 {% else %}
                     return handleServerResponse(env);
 {% endif %}
@@ -1254,24 +1345,29 @@ struct TransportRouter {
                 return route_send(target, env);
             });
 {% if has_mesh_rpc.v %}
-
-        // SCE_MESH.md §9.5: install the mesh-rpc invoke + cancel hooks
-        // so generated onentry / onexit blocks can dispatch through
-        // `performMeshInvoke` / `performMeshCancel` without having a
-        // direct router reference. The lambdas forward to the member
-        // functions below, which own envelope construction, correlation
-        // registration, deadline arming, and the active_invokes_
-        // bookkeeping that pairs cancel to the right UUID.
-        sender.setMeshInvokeCallback(
-            [this](const std::string& target, const std::string& fieldSuffix,
-                   const std::string& invokeId, const std::string& data) -> bool {
-                return this->invokeMeshRpc(target, fieldSuffix, invokeId, data);
-            });
-        sender.setMeshCancelCallback(
-            [this](const std::string& target, const std::string& fieldSuffix) -> bool {
-                return this->cancelMeshRpc(target, fieldSuffix);
-            });
+            // SCE_MESH.md §9.5: install the mesh-rpc invoke + cancel
+            // hooks so generated onentry / onexit blocks can dispatch
+            // through `performMeshInvoke` / `performMeshCancel` without
+            // a direct router reference. The lambdas forward to the
+            // member functions below, which own envelope construction,
+            // correlation registration, deadline arming, and the
+            // active_invokes_ bookkeeping that pairs cancel to the
+            // right UUID. has_mesh_rpc.v combined with a SOME/IP server
+            // pool is rejected at codegen (see
+            // CodegenError::PoolWithMeshRpcClientUnsupported), so
+            // N_SESSIONS == 1 whenever this branch emits and the loop
+            // body runs exactly once with i == 0.
+            sessions_[i]->setMeshInvokeCallback(
+                [this](const std::string& target, const std::string& fieldSuffix,
+                       const std::string& invokeId, const std::string& data) -> bool {
+                    return this->invokeMeshRpc(target, fieldSuffix, invokeId, data);
+                });
+            sessions_[i]->setMeshCancelCallback(
+                [this](const std::string& target, const std::string& fieldSuffix) -> bool {
+                    return this->cancelMeshRpc(target, fieldSuffix);
+                });
 {% endif %}
+        }
     }
 {% if "someip" in transport_types or "zenoh" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
 
@@ -1296,12 +1392,13 @@ struct TransportRouter {
     ///         before returning — the router is left in a safe state for
     ///         destruction or a retry.
     [[nodiscard]] bool init() {
-        // No sender-binding assertion needed: `sender_` is a non-owning
-        // const reference bound in the ctor initializer list, so any
-        // attempt to reach init() with an unbound sender would have
-        // failed at construction. The happens-before relation between
-        // ctor completion and transport callback thread creation still
-        // holds (sender_ is written in ctor; threads are created below).
+        // No session-binding assertion needed: `sessions_` is a fixed-
+        // size pointer array populated in the ctor initializer list, so
+        // any attempt to reach init() with an unbound session would
+        // have failed at construction. The happens-before relation
+        // between ctor completion and transport callback thread
+        // creation still holds (sessions_ is written in ctor; threads
+        // are created below).
 {% for target in targets if target.state.kind == "someip" %}
         if (!{{ target.target_snake }}_app_ || !{{ target.target_snake }}_app_->init()) {
             shutdown();
@@ -1354,12 +1451,14 @@ struct TransportRouter {
 {% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
         // custom_tcp device-shared server: bind+listen happens in the
         // ctor; failure surfaces as `valid() == false`. Inbound envelopes
-        // dispatch through `dispatchToSender` on the per-connection read
-        // thread the Server class spawns. SCE_MESH.md §16.8.3.
+        // dispatch through `dispatchToSession` on the per-connection
+        // read thread the Server class spawns (SCE_MESH.md §16.8.3).
+        // session_idx is `0`: custom_tcp is client-only / non-pool, so
+        // N_SESSIONS is 1 here.
         custom_tcp_server_ = std::make_unique<SCE::Mesh::CustomTcp::Server>(
             {{ custom_tcp_transport.listen }},
             [this](const SCE::Mesh::MeshEnvelope& env) {
-                (void)this->dispatchToSender(env);
+                (void)this->dispatchToSession(env, 0);
             });
         if (!custom_tcp_server_->valid()) {
             shutdown();
@@ -1501,8 +1600,23 @@ struct TransportRouter {
             server_app_->register_message_handler(
                 SOMEIP_SERVER_SERVICE, server_instance,
                 SOMEIP_SERVER_METHOD_{{ pair.event_const }},
-                [this](const std::shared_ptr<vsomeip::message>& msg) {
+                [this, server_instance](const std::shared_ptr<vsomeip::message>& msg) {
                     if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                    // SCE_MESH.md §14.4: map the offered vsomeip instance
+                    // back to the sessions_ slot whose SCXML document
+                    // received the request. Non-pool deployments have
+                    // N_SESSIONS == 1 and resolve to 0 trivially. A
+                    // sentinel (N_SESSIONS) return signals codegen /
+                    // deployment drift — vsomeip dispatched for an
+                    // instance outside SOMEIP_SERVER_INSTANCES; log and
+                    // drop.
+                    const auto session_idx = session_index_for_instance(server_instance);
+                    if (session_idx == N_SESSIONS) {
+                        SCE_LOG_ERROR(
+                            "SOME/IP RPC handler: instance {} not in declared pool (drift); dropping",
+                            server_instance);
+                        return;
+                    }
                     auto pl = msg->get_payload();
                     if (!pl) return;
                     SCE::Mesh::MeshEnvelope env;
@@ -1528,7 +1642,7 @@ struct TransportRouter {
                     // admit; on a duplicate, the next insert overwrites with
                     // the same correlation_id and handleServerResponse
                     // still finds a valid entry when the engine replies.
-                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
+                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env", "session_idx") }};
                 });
 {% endfor %}
 {% for ff in server.fire_forget_events if ff.method_id %}
@@ -1540,15 +1654,24 @@ struct TransportRouter {
             server_app_->register_message_handler(
                 SOMEIP_SERVER_SERVICE, server_instance,
                 SOMEIP_SERVER_FIRE_FORGET_{{ ff.event_const }},
-                [this](const std::shared_ptr<vsomeip::message>& msg) {
+                [this, server_instance](const std::shared_ptr<vsomeip::message>& msg) {
                     if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                    // §14.4: session lookup identical to the RPC handler
+                    // above (same drift-sentinel guard).
+                    const auto session_idx = session_index_for_instance(server_instance);
+                    if (session_idx == N_SESSIONS) {
+                        SCE_LOG_ERROR(
+                            "SOME/IP FireForget handler: instance {} not in declared pool (drift); dropping",
+                            server_instance);
+                        return;
+                    }
                     auto pl = msg->get_payload();
                     if (!pl) return;
                     SCE::Mesh::MeshEnvelope env;
                     if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
                     // SCE_MESH.md §10.5: same server-side dedup gate as the
                     // RPC handler above.
-                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
+                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env", "session_idx") }};
                 });
 {% endfor %}
 {% for fa in server.field_access_pairs if fa.method_id %}
@@ -1561,8 +1684,17 @@ struct TransportRouter {
             server_app_->register_message_handler(
                 SOMEIP_SERVER_SERVICE, server_instance,
                 SOMEIP_SERVER_{{ fa.kind | upper }}_{{ fa.event_const }},
-                [this](const std::shared_ptr<vsomeip::message>& msg) {
+                [this, server_instance](const std::shared_ptr<vsomeip::message>& msg) {
                     if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                    // §14.4: session lookup identical to the RPC / FireForget
+                    // handlers above (same drift-sentinel guard).
+                    const auto session_idx = session_index_for_instance(server_instance);
+                    if (session_idx == N_SESSIONS) {
+                        SCE_LOG_ERROR(
+                            "SOME/IP FieldAccess handler: instance {} not in declared pool (drift); dropping",
+                            server_instance);
+                        return;
+                    }
                     auto pl = msg->get_payload();
                     if (!pl) return;
                     SCE::Mesh::MeshEnvelope env;
@@ -1580,7 +1712,7 @@ struct TransportRouter {
                     env.correlation_id = cid;
                     // SCE_MESH.md §10.5: same server-side dedup gate as the
                     // RPC / FireForget handlers above.
-                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
+                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env", "session_idx") }};
                 });
 {% endfor %}
 {% for eg in server.eventgroup_events if eg.event_group_id %}
@@ -1646,7 +1778,12 @@ struct TransportRouter {
                 // retained so a future registry shift (e.g. Zenoh
                 // gaining a reliable-unicast profile that supplies
                 // dedup) lands correctly without template edits.
-                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
+                //
+                // session_idx is `0`: SCE_MESH.md §14.4 scopes the
+                // multi-instance server pool shape to SOME/IP only,
+                // so every Zenoh server router runs with N_SESSIONS
+                // == 1 and the queryable dispatches to sessions_[0].
+                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env", "0") }};
             },
             // Queryable on_drop: zenoh invokes this once when the
             // Queryable handle is destroyed (shutdown() resets
@@ -1661,7 +1798,7 @@ struct TransportRouter {
         // parallel subscriber is declared on the same server key. The
         // decoded envelope carries the real event name and pattern (the
         // client stamped env.pattern via resolvePattern); the subscriber
-        // forwards it to dispatchToSender unchanged.
+        // forwards it to dispatchToSession unchanged.
         zenoh_server_put_sub_.emplace(zenoh_session_->declare_subscriber(
             zenoh::KeyExpr(ZENOH_SERVER_KEY),
             [this](const zenoh::Sample& sample) {
@@ -1688,7 +1825,9 @@ struct TransportRouter {
                 if (env.routing_id.has_value() && *env.routing_id == routing_id_) return;
                 // SCE_MESH.md §10.5: Zenoh server put-subscriber gate —
                 // same `server_needs_dedup` flag as the queryable above.
-                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
+                // session_idx is `0`: Zenoh is excluded from the pool
+                // shape (SCE_MESH.md §14.4), so N_SESSIONS is 1.
+                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env", "0") }};
             },
             // Server put-subscriber on_drop: zenoh invokes this once
             // when the Subscriber handle is destroyed (shutdown() resets
@@ -1840,15 +1979,17 @@ struct TransportRouter {
     /// than the raw engine external queue. SCE_MESH.md §9.5: the caller
     /// router owns InvokeCorrelation for mesh-rpc; the callee router
     /// uses this hook to hand replies back through
-    /// caller.dispatchToSender(env), which consults the correlation
+    /// caller.dispatchToSession(env, 0), which consults the correlation
     /// table and raises done.invoke.<id> / error.invoke.<id> on the
-    /// caller engine.
+    /// caller engine. `0` is the sole session slot: cross-router linkTo
+    /// is single-session by construction (the SOME/IP server pool is
+    /// the only multi-session shape, §14.4, and it does not use linkTo).
     ///
     /// Typical wiring (both directions):
     ///   routerA.linkTo("#engineB",
-    ///       [&routerB](const auto& env){ return routerB.dispatchToSender(env); });
+    ///       [&routerB](const auto& env){ return routerB.dispatchToSession(env, 0); });
     ///   routerB.linkTo("#engineA",
-    ///       [&routerA](const auto& env){ return routerA.dispatchToSender(env); });
+    ///       [&routerA](const auto& env){ return routerA.dispatchToSession(env, 0); });
     ///
     /// Setup-only: MUST be called before init() and before any outbound
     /// mesh send. The map is read-only after that, so no mutex is held
@@ -1875,7 +2016,7 @@ struct TransportRouter {
 {% if target.state.kind == "local" %}
             // SCE_MESH.md §9.5: if another router has registered a link
             // for this target, route through its dispatcher — typically
-            // the peer's dispatchToSender, which consults its
+            // the peer's dispatchToSession, which consults its
             // InvokeCorrelation table before delivering to the engine.
             // Unlinked targets fall through to direct external-queue
             // enqueue so single-router fixtures keep working unchanged.
@@ -1960,17 +2101,27 @@ struct TransportRouter {
 {% endif %}
 
 {% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
-    /// Dispatch an incoming envelope to the sender engine via MeshDispatch.
+    /// Dispatch an incoming envelope to a specific session via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
     /// zenoh runtime threads) and by peer routers through linkTo closures
-    /// for cross-router local dispatch. Uses the bound `sender_` reference
-    /// — no type-erased std::function in the hot path. Policy is recovered
-    /// at the call site via `sender_.getPolicy()`, so the header stays
-    /// ignorant of the concrete policy type until instantiation.
+    /// for cross-router local dispatch. Uses the `sessions_[session_idx]`
+    /// pointer — no type-erased std::function in the hot path. Policy is
+    /// recovered at the call site via `sessions_[0]->getPolicy()`, so the
+    /// header stays ignorant of the concrete policy type until instantiation
+    /// (every session shares the same `SenderEngine` template parameter).
+    ///
+    /// `session_idx` is the sessions_ slot the envelope targets (SCE_MESH.md
+    /// §14.4). SOME/IP server-pool handlers pass
+    /// `session_index_for_instance(msg->get_instance())`; every other caller
+    /// passes `0` because its inbound path is not pool-dispatched. Values
+    /// outside `[0, N_SESSIONS)` are a caller bug — no runtime bounds
+    /// check (the upstream handler uses the `N_SESSIONS` sentinel + early
+    /// drop before ever reaching this method).
     ///
     /// @return true if MeshDispatch delivered the envelope
-    [[nodiscard]] bool dispatchToSender(const SCE::Mesh::MeshEnvelope& env) {
+    [[nodiscard]] bool dispatchToSession(const SCE::Mesh::MeshEnvelope& env,
+                                         std::size_t session_idx) {
 {% if has_mesh_rpc.v %}
         // SCE_MESH.md §9.5: RpcReply + invoke_id = mesh-rpc reply.
         // Consult the correlation table first — if the invoke_id owns
@@ -1982,6 +2133,11 @@ struct TransportRouter {
         // replies fall through to generic MeshDispatch — they may be
         // session-level RPCs routed through the SOME/IP pending_rpcs_
         // table, for example.
+        //
+        // invoke_correlation_ is router-scoped (not session-scoped) and
+        // has_mesh_rpc.v + SOME/IP server pool is rejected at codegen,
+        // so this branch only emits when N_SESSIONS == 1 and every
+        // session_idx is 0.
         if (env.pattern == SCE::Mesh::PatternKind::RpcReply && env.invoke_id) {
             const auto status = env.rpc_status.value_or(SCE::Mesh::RpcStatus::Ok);
             if (invoke_correlation_.handleReply(*env.invoke_id, status, env.data)) {
@@ -1990,8 +2146,8 @@ struct TransportRouter {
             }
         }
 {% endif %}
-        using SenderPolicy = std::decay_t<decltype(sender_.getPolicy())>;
-        return SCE::Mesh::dispatchEnvelope<SenderPolicy>(env, sender_);
+        using SenderPolicy = std::decay_t<decltype(sessions_[0]->getPolicy())>;
+        return SCE::Mesh::dispatchEnvelope<SenderPolicy>(env, *sessions_[session_idx]);
     }
 
 {% if has_undeduped_transport %}
@@ -2000,17 +2156,23 @@ struct TransportRouter {
     ///
     /// Keyed on `(env.source, env.id)`: envelopes whose id is already in
     /// the per-sender window are dropped silently (return false). Novel
-    /// ids are forwarded to `dispatchToSender`, which still performs the
-    /// mesh-rpc correlation lookup for RpcReply+invoke_id envelopes.
+    /// ids are forwarded to `dispatchToSession`, which still performs
+    /// the mesh-rpc correlation lookup for RpcReply+invoke_id envelopes.
     ///
     /// Called only on inbound paths from transports that declared
     /// `supplies_dedup: false` in transport.rs (Zenoh queryable, Zenoh
     /// put subscriber, Zenoh session.get reply closure, Zenoh subscribe
-    /// notify closure). SOME/IP-over-TCP, custom_tcp, shm, and local
-    /// inbound paths continue to call `dispatchToSender` directly —
-    /// their transport already guarantees at-most-once delivery.
+    /// notify closure, SOME/IP server handlers over UDP). SOME/IP-over-
+    /// TCP, custom_tcp, shm, and local inbound paths continue to call
+    /// `dispatchToSession` directly — their transport already guarantees
+    /// at-most-once delivery.
     ///
-    /// The `[[nodiscard]]` attribute mirrors `dispatchToSender`: the
+    /// `session_idx` carries the SCE_MESH.md §14.4 session routing
+    /// contract verbatim through the dedup layer to `dispatchToSession`
+    /// so a SOME/IP server-pool envelope lands on the session whose
+    /// offered instance received it.
+    ///
+    /// The `[[nodiscard]]` attribute mirrors `dispatchToSession`: the
     /// transport-callback call sites explicitly `(void)`-cast the
     /// return (there is no meaningful recovery action at that layer
     /// — the decoder has already committed to a dropped envelope),
@@ -2019,17 +2181,18 @@ struct TransportRouter {
     /// test regress to "admit returns are unchecked" silently.
     ///
     /// @return true iff the envelope was novel AND MeshDispatch accepted it
-    [[nodiscard]] bool admitInbound(const SCE::Mesh::MeshEnvelope& env) {
+    [[nodiscard]] bool admitInbound(const SCE::Mesh::MeshEnvelope& env,
+                                    std::size_t session_idx) {
         if (!dedup_.admit(env.source, env.id)) {
             return false;
         }
-        return dispatchToSender(env);
+        return dispatchToSession(env, session_idx);
     }
 {% endif %}
 
 {% if raises_communication_error %}
-    /// Raise an `error.communication` event on the bound sender engine
-    /// with the §10.7.1 / §16.7 `_event.data` shape encoded as JSON.
+    /// Raise an `error.communication` event on every hosted session with
+    /// the §10.7.1 / §16.7 `_event.data` shape encoded as JSON.
     ///
     /// Call sites:
     ///   * `admitOrdered` when an envelope arrives on an ordered route
@@ -2045,14 +2208,20 @@ struct TransportRouter {
     ///     raises `reason = "PEER_PARTITIONED"` with `target` and, when
     ///     a prior PUT was observed, `last_seen_ms_ago` (§16.7 row 9).
     ///
-    /// The event reaches the sender via `dispatchToSender`, the same
+    /// All three sites observe a condition at the transport layer, not
+    /// on a specific SCXML document instance. SCE_MESH.md §14.4: the
+    /// raise fans out to every sessions_[i] so each hosted document
+    /// reacts independently. Non-pool routers have N_SESSIONS == 1 and
+    /// the loop executes exactly once.
+    ///
+    /// The event reaches each session via `dispatchToSession`, the same
     /// path used for ordinary inbound envelopes. SCXML authors can
     /// guard with `<transition event="error.communication"
     /// cond="_event.data.reason == 'ORDERING_GAP'">` etc.; unhandled
     /// events are silently dropped per W3C SCXML 1.0 §3.12, which is
     /// the desired behaviour when the author did not opt in.
     ///
-    /// No cycling hazard: `dispatchToSender` goes straight to
+    /// No cycling hazard: `dispatchToSession` goes straight to
     /// `MeshDispatch`, never back through the transport callback or
     /// ordering admit layer, so the `error.communication` envelope
     /// cannot re-trigger another raise.
@@ -2065,7 +2234,9 @@ struct TransportRouter {
         evt.pattern = SCE::Mesh::PatternKind::FireForget;
         evt.datacontenttype = SCE::Mesh::PayloadCodec::Json;
         evt.data = err.toJsonBytes();
-        (void)dispatchToSender(evt);
+        for (std::size_t i = 0; i < N_SESSIONS; ++i) {
+            (void)dispatchToSession(evt, i);
+        }
     }
 {% endif %}
 
@@ -2111,7 +2282,12 @@ struct TransportRouter {
             // every registry transport today.
             if (!dedup_.admit(env.source, env.id)) continue;
 {% endif %}
-            if (dispatchToSender(env)) ++dispatched;
+            // session_idx is `0`: SCE_MESH.md §10.6 scopes
+            // `ordering: required` to client-target bindings, and the
+            // SOME/IP server pool (§14.4) does not participate in the
+            // ordering admit chain — so every router that emits
+            // driveOrderingTick runs with N_SESSIONS == 1.
+            if (dispatchToSession(env, 0)) ++dispatched;
         }
         return dispatched;
     }
@@ -2122,9 +2298,9 @@ struct TransportRouter {
     /// without depending on the thread's wakeup timing.
     ///
     /// The behaviour is identical to one iteration of the periodic
-    /// thread — `error.communication` events land on `sender_` via
-    /// `raiseCommunicationError`, observable through whatever capture
-    /// the test's sender-engine double provides.
+    /// thread — `error.communication` events land on every hosted
+    /// session via `raiseCommunicationError`, observable through
+    /// whatever capture the test's sender-engine double provides.
     ///
     /// @return total number of envelopes released during this tick.
     std::size_t tickOrdering() {
@@ -2157,7 +2333,7 @@ struct TransportRouter {
     /// Chains the three inbound layers the codegen composes for an
     /// ordered route: RpcReply/FieldNotify bypass → OrderingBuffer
     /// per-sender reorder → (optional) DedupRouter (source, id)
-    /// filter → `dispatchToSender`.
+    /// filter → `dispatchToSession`.
     ///
     /// Why RpcReply / FieldNotify bypass: both patterns carry a
     /// `correlation_id` and match pending requests by that field,
@@ -2172,6 +2348,13 @@ struct TransportRouter {
     /// an `error.communication` event with reason `MISSING_SEQUENCE`
     /// is raised so authors can surface the drift (§16.7 row 12).
     ///
+    /// `session_idx` carries the SCE_MESH.md §14.4 session routing
+    /// contract verbatim through the ordering layer to
+    /// `dispatchToSession`. §10.6 scopes `ordering: required` to
+    /// client-target bindings and the SOME/IP server pool (§14.4)
+    /// excludes ordering, so every router that emits `admitOrdered`
+    /// runs with N_SESSIONS == 1 in practice.
+    ///
     /// @return true iff at least one DATA envelope (from the
     ///         sequence-ordered stream) was released to the sender
     ///         engine during this admit call. Error.communication
@@ -2181,10 +2364,11 @@ struct TransportRouter {
     ///         Callers that need to detect a MISSING_SEQUENCE raise
     ///         should watch for `error.communication` on the sender,
     ///         not poll the return value.
-    [[nodiscard]] bool admitOrdered(const SCE::Mesh::MeshEnvelope& env) {
+    [[nodiscard]] bool admitOrdered(const SCE::Mesh::MeshEnvelope& env,
+                                    std::size_t session_idx) {
         using PK = SCE::Mesh::PatternKind;
         if (env.pattern == PK::RpcReply || env.pattern == PK::FieldNotify) {
-            return dispatchToSender(env);
+            return dispatchToSession(env, session_idx);
         }
         if (!env.sequence_no.has_value()) {
             // §10.6.3 drift: raise MISSING_SEQUENCE so the engine
@@ -2208,7 +2392,7 @@ struct TransportRouter {
                 continue;
             }
 {% endif %}
-            if (dispatchToSender(released_env)) {
+            if (dispatchToSession(released_env, session_idx)) {
                 dispatched = true;
             }
         }
@@ -2293,9 +2477,17 @@ struct TransportRouter {
     /// the transport's native pub/sub mechanism: SOME/IP `notify` to the
     /// offered eventgroup, or Zenoh `session.put` on the server key.
     ///
+    /// `session_idx` identifies the sessions_ slot whose document raised
+    /// the event. SCE_MESH.md §14.4: a pool server emits the notification
+    /// on that session's own offered vsomeip instance
+    /// (`SOMEIP_SERVER_INSTANCES[session_idx]`) so client-side
+    /// instance-filtered subscriptions observe the correct origin. Non-
+    /// pool routers run with N_SESSIONS == 1 and session_idx is always 0.
+    ///
     /// @return true if the event matched an eventgroup binding and was
     ///         published; false if no binding matched (event dropped).
-    [[nodiscard]] bool publishEventgroupNotify(const SCE::Mesh::MeshEnvelope& env) {
+    [[nodiscard]] bool publishEventgroupNotify(const SCE::Mesh::MeshEnvelope& env,
+                                               std::size_t session_idx) {
 {% if has_server_someip %}
 {% for eg in server.eventgroup_events if eg.event_id %}
         if (env.type == "{{ eg.event }}") {
@@ -2303,22 +2495,26 @@ struct TransportRouter {
             auto payload = vsomeip::runtime::get()->create_payload(
                 reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
                 static_cast<uint32_t>(buf.size()));
-            // SCE_MESH.md §14.4 (Gap 7): spontaneous notification
-            // emits on the first declared instance under coarse
-            // dispatch. The Gap 7 roadmap adds per-instance emission
-            // routing (from the session identity raising
-            // `field.notify.X` / `event.notification.X`) as a separate
-            // landing on top of this build-time shape.
-            server_app_->notify(SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCES[0],
+            // SCE_MESH.md §14.4: emit on the raising session's own
+            // offered instance so pool deployments preserve per-
+            // instance origin in spontaneous notifications. Client
+            // subscribers that pin on a specific instance observe
+            // only their bound session's events.
+            server_app_->notify(SOMEIP_SERVER_SERVICE,
+                                SOMEIP_SERVER_INSTANCES[session_idx],
                                 SOMEIP_SERVER_EVENT_{{ eg.event_const }}, payload);
             return true;
         }
 {% endfor %}
         return false;
 {% elif has_server_zenoh %}
-        // Zenoh pub/sub: session.put on the server key. Clients that called
-        // declare_subscriber on this key receive the event. The server's own
-        // put_sub filters self-published events by source name.
+        // Zenoh pub/sub: session.put on the server key. Clients that
+        // called declare_subscriber on this key receive the event. The
+        // server's own put_sub filters self-published events by
+        // routing_id. session_idx is unused — Zenoh is excluded from
+        // the pool shape (SCE_MESH.md §14.4), so N_SESSIONS is 1 and
+        // there is only one server-side instance axis to select.
+        (void)session_idx;
 {% for eg in server.eventgroup_events %}
         if (env.type == "{{ eg.event }}") {
             auto buf = SCE::Mesh::encodeEnvelope(env);
@@ -2341,9 +2537,14 @@ struct TransportRouter {
     /// the invoke site declared `_mesh_deadline_ms`, and routes the
     /// envelope to the target transport via `route_send`. The deliver
     /// callback captures only the SCXML invoke id and a pointer to
-    /// `sender_`, so it can raise `done.invoke.<id>` or
+    /// `sessions_[0]`, so it can raise `done.invoke.<id>` or
     /// `error.invoke.<id>` on the sender engine once the reply or
     /// deadline outcome resolves.
+    ///
+    /// Pool + mesh-rpc-client is rejected at codegen
+    /// (CodegenError::PoolWithMeshRpcClientUnsupported), so every
+    /// router that synthesizes this method runs with N_SESSIONS == 1
+    /// and `sessions_[0]` is the sole correlation target.
     ///
     /// @return true if the request was submitted to the transport;
     ///         false if (target, fieldSuffix) has no matching invoke
@@ -2389,10 +2590,12 @@ struct TransportRouter {
 
         // Register deliver callback BEFORE route_send so a synchronous
         // reply (local transport) cannot race with registration. The
-        // callback captures `&sender_` by raw pointer — TransportRouter
-        // outlives the sender engine per the ctor contract, so the
-        // pointer is stable until shutdown joins all callback threads.
-        SenderEngine* sender_ptr = &sender_;
+        // callback captures `sessions_[0]` by raw pointer —
+        // TransportRouter outlives every session per the ctor
+        // contract, so the pointer is stable until shutdown joins all
+        // callback threads. Pool + mesh-rpc-client is rejected at
+        // codegen, so `sessions_[0]` is the sole session here.
+        SenderEngine* sender_ptr = sessions_[0];
         std::string captured_invoke_id = invokeId;
         invoke_correlation_.registerInvoke(uuid,
             [sender_ptr, captured_invoke_id](
@@ -2729,8 +2932,8 @@ struct TransportRouter {
     /// Dispatch an incoming envelope to an arbitrary receiver engine.
     ///
     /// Generic fallback used by out-of-band callers (tests, special
-    /// wiring). Prefer `dispatchToSender` when the target is the
-    /// sender engine bound at construction.
+    /// wiring). Prefer `dispatchToSession` when the target is one of
+    /// the session engines bound at construction.
     ///
     /// @tparam Policy Receiver's StatePolicy (generated struct)
     /// @tparam Engine StaticExecutionEngine<Policy>
@@ -2770,18 +2973,23 @@ struct TransportRouter {
     /// chain (ordering → dedup → direct) for exactly that binding.
     ///
     /// The switch is emitted with one arm per Zenoh target on this
-    /// machine. Unknown-target fallback calls `dispatchToSender`
+    /// machine. Unknown-target fallback calls `dispatchToSession`
     /// directly — reachable only if a future refactor introduces a
     /// Zenoh inbound envelope that does not originate from a declared
     /// binding, which would also violate the registry invariants.
+    ///
+    /// session_idx is always `0` for the callers emitted today: Zenoh
+    /// is excluded from the SOME/IP server pool shape (SCE_MESH.md
+    /// §14.4), so every router on the Zenoh client path has
+    /// N_SESSIONS == 1.
     [[nodiscard]] bool admitZenohInbound(const std::string& target,
                                          const SCE::Mesh::MeshEnvelope& env) {
 {% for t in targets if t.state.kind == "zenoh" %}
         if (target == "{{ t.target }}") {
-            return this->{{ admit_or_dispatch(t.needs_ordering, t.needs_dedup, "env") }};
+            return this->{{ admit_or_dispatch(t.needs_ordering, t.needs_dedup, "env", "0") }};
         }
 {% endfor %}
-        return this->dispatchToSender(env);
+        return this->dispatchToSession(env, 0);
     }
 
     [[nodiscard]] bool send_zenoh(const SCE::Mesh::MeshEnvelope& env,
@@ -2804,7 +3012,7 @@ struct TransportRouter {
             // on_reply closure runs on a zenoh runtime thread; it decodes the
             // reply envelope, rewrites type/pattern to the sender's
             // expectations, and dispatches to the sender engine through
-            // `this->dispatchToSender`. Capturing `this` (rather than a
+            // `this->dispatchToSession`. Capturing `this` (rather than a
             // std::function copy) removes one layer of type erasure and
             // relies on the same lifetime contract the rest of the router
             // does — TransportRouter must outlive in-flight operations.

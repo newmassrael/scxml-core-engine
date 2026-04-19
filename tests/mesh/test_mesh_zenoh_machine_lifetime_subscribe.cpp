@@ -58,7 +58,7 @@ int run_test() {
     using RouterT = brake_gen::TransportRouter<TestSenderEngine>;
 
     TestSenderEngine sender;
-    RouterT router(sender);
+    RouterT router({&sender});
 
     // Bring up the listener first so brake's connect succeeds.
     auto motor_session = open_peer(/*connect=*/"", /*listen=*/kListen);

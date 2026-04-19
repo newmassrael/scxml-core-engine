@@ -121,7 +121,7 @@ int run_test() {
     Client client;
     client.initialize();
 
-    ClientRouterT client_router(client);
+    ClientRouterT client_router({&client});
     MESH_TEST_REQUIRE(client_router.init(), "client_router.init() failed");
 
     // Peer handshake. Must come before raising the event so the

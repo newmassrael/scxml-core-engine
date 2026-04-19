@@ -36,7 +36,7 @@
 int main() {
     SCE::Generated::pool_client::pool_client pool_client;
     using Router = SCE::Generated::pool_client::TransportRouter<decltype(pool_client)>;
-    Router router(pool_client);
+    Router router({&pool_client});
 
     // Force overload resolution on the two mesh-rpc entry points so a
     // regression that drops the pool branch from the Jinja2 template

@@ -15,7 +15,7 @@
 //   brake route_send (env.invoke_id stamped, simulating mesh-rpc invoker)
 //     → vsomeip request → motor register_message_handler
 //         → stashes vsomeip message keyed by env.invoke_id
-//         → dispatchToSender → motor.raiseExternal(EventWithMetadata)
+//         → dispatchToSession → motor.raiseExternal(EventWithMetadata)
 //             → meta.invokeId = env.invoke_id
 //     → driver thread motor.step()
 //         → external queue dequeue sets currentEventInvokeId_
@@ -28,7 +28,7 @@
 //             → env.invoke_id = parsed(currentEventInvokeId_)
 //             → env.correlation_id = env.invoke_id
 //             → handleServerResponse → create_response → vsomeip send
-//   → brake response handler → dispatchToSender → brake_engine observes
+//   → brake response handler → dispatchToSession → brake_engine observes
 //
 // Brake stays as TestSenderEngine: it is the test harness, not the
 // system-under-test. The real SM is motor — if ANY link in the motor-side
@@ -82,11 +82,11 @@ int run_test() {
     // engine that has not executed initial-state entry actions.
     Motor motor;
     motor.initialize();
-    MotorRouterT motor_router(motor);
+    MotorRouterT motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor router init failed");
 
     TestSenderEngine brake_engine;
-    BrakeRouterT brake_router(brake_engine);
+    BrakeRouterT brake_router({&brake_engine});
     MESH_TEST_REQUIRE(brake_router.init(), "brake router init failed");
 
     // RAII-scoped engine pump. See test_mesh_zenoh_rpc_engine_driven.cpp

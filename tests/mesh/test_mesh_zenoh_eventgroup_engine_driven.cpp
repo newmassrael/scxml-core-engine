@@ -58,7 +58,7 @@ int run_test() {
     Motor motor;
     motor.initialize();
 
-    MotorRouterT motor_router(motor);
+    MotorRouterT motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed");
 
     // RAII-scoped engine pump (Session I pattern).
@@ -122,7 +122,7 @@ int run_test() {
         trigger.type = "sensor.update";
         trigger.pattern = PK::FireForget;
         trigger.datacontenttype = SCE::Mesh::PayloadCodec::None;
-        (void)motor_router.dispatchToSender(trigger);
+        (void)motor_router.dispatchToSession(trigger, 0);
     }
 
     MESH_TEST_REQUIRE(notify_events.wait_for([](const auto& v) {

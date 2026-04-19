@@ -30,7 +30,7 @@ int main() {
 
     using Router = SCE::Generated::brake_invoke::TransportRouter<
         decltype(brake), decltype(motor)>;
-    Router router(brake, motor);
+    Router router({&brake}, motor);
 
     // Force overload resolution on the two methods so a regression that
     // drops them from the template surfaces as "no member named

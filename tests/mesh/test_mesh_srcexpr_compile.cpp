@@ -44,7 +44,7 @@ int main() {
 
     using Router = SCE::Generated::srcexpr_client::TransportRouter<
         decltype(client), decltype(motor)>;
-    Router router(client, motor);
+    Router router({&client}, motor);
 
     // Force overload resolution on the router's mesh-rpc method
     // pointers. `invokeMeshRpc` / `cancelMeshRpc` are template-free

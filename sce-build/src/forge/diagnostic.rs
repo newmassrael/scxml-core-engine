@@ -478,6 +478,8 @@ pub enum DiagnosticCode {
     MeshCodegenTemplateRender,
     #[serde(rename = "mesh/codegen-event-name-collision")]
     MeshCodegenEventNameCollision,
+    #[serde(rename = "mesh/codegen-pool-with-mesh-rpc-client-unsupported")]
+    MeshCodegenPoolWithMeshRpcClientUnsupported,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -622,6 +624,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenTemplateRead,
         MeshCodegenTemplateRender,
         MeshCodegenEventNameCollision,
+        MeshCodegenPoolWithMeshRpcClientUnsupported,
         // Mesh Io
         MeshIo,
     ]
@@ -811,6 +814,7 @@ impl DiagnosticCode {
             | MeshCodegenTemplateRead
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
+            | MeshCodegenPoolWithMeshRpcClientUnsupported
             | MeshIo => None,
         }
     }
@@ -920,6 +924,7 @@ impl DiagnosticCode {
             MeshCodegenTemplateRead => "mesh/codegen-template-read",
             MeshCodegenTemplateRender => "mesh/codegen-template-render",
             MeshCodegenEventNameCollision => "mesh/codegen-event-name-collision",
+            MeshCodegenPoolWithMeshRpcClientUnsupported => "mesh/codegen-pool-with-mesh-rpc-client-unsupported",
             MeshIo => "mesh/io",
         }
     }
@@ -2683,6 +2688,17 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:97c61b17b678ca97","code":"mesh/codegen-event-name-collision","stage":"mesh-codegen","message":"target '#motor': SCXML events [\"service.request.x\", \"service-request-x\"] both map to the same C++ constant suffix 'SERVICE_REQUEST_X'. Rename one of the events (or use a per-event explicit mapping) so generated constants are unique.","actual":"SERVICE_REQUEST_X"}"#,
             ),
             (
+                "mesh/codegen-pool-with-mesh-rpc-client-unsupported",
+                CodegenError::PoolWithMeshRpcClientUnsupported {
+                    machine: "motor_pool".into(),
+                }
+                .into(),
+                // Hash placeholder — the byte-stability assertion replaces
+                // it with the runtime-observed value on first failure.
+                // Shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:45478062959fac54","code":"mesh/codegen-pool-with-mesh-rpc-client-unsupported","stage":"mesh-codegen","message":"machine 'motor_pool': SOME/IP server pool (`server.instances: [...]` with more than one entry) cannot be combined with `<invoke type=\"sce:mesh-rpc\">` in the same router. Mesh-rpc correlation is router-scoped today; hosting multiple SCXML sessions on one router would alias their invoke_id tables. Either remove the mesh-rpc invoke site(s) from this machine or reduce `server.instances:` to a single instance. See SCE_MESH.md §14.4.","actual":"motor_pool"}"#,
+            ),
+            (
                 "mesh/io",
                 MeshError::Io {
                     path: std::path::PathBuf::from("/tmp/mesh.log"),
@@ -3071,6 +3087,7 @@ mod tests {
             | MeshCodegenTemplateRead
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
+            | MeshCodegenPoolWithMeshRpcClientUnsupported
             | MeshIo => NeutralOrDeterministic,
         }
     }
@@ -3339,6 +3356,7 @@ mod tests {
                 | MeshCodegenUnsupportedLanguage
                 | MeshCodegenUnsupportedTransport | MeshCodegenTemplateRead
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
+                | MeshCodegenPoolWithMeshRpcClientUnsupported
                 | MeshIo => true,
             }
         }
@@ -3351,9 +3369,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            101,
+            102,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 101 distinct variants to match the DiagnosticCode \
+             expected 102 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

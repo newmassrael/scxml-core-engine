@@ -70,7 +70,7 @@ constexpr auto kPeerStabilization = std::chrono::milliseconds(200);
 // ── §1 Leak closure ─────────────────────────────────────────────────
 int scenario_timeout_closes_leak() {
     TestSenderEngine motor_engine;
-    MotorRouterT motor_router(motor_engine);
+    MotorRouterT motor_router({&motor_engine});
     MESH_TEST_REQUIRE(motor_router.init(),
                       "motor_router.init() failed — zenoh listen unavailable");
 
@@ -120,7 +120,7 @@ int scenario_timeout_closes_leak() {
 // ── §2 Happy-path cancel ────────────────────────────────────────────
 int scenario_happy_path_cancels_deadline() {
     TestSenderEngine motor_engine;
-    MotorRouterT motor_router(motor_engine);
+    MotorRouterT motor_router({&motor_engine});
     MESH_TEST_REQUIRE(motor_router.init(),
                       "motor_router.init() failed — zenoh listen unavailable");
 
@@ -217,7 +217,7 @@ int scenario_happy_path_cancels_deadline() {
 // ── §3 Shutdown while query in flight ───────────────────────────────
 int scenario_shutdown_with_pending_query() {
     TestSenderEngine motor_engine;
-    MotorRouterT motor_router(motor_engine);
+    MotorRouterT motor_router({&motor_engine});
     MESH_TEST_REQUIRE(motor_router.init(),
                       "motor_router.init() failed — zenoh listen unavailable");
 

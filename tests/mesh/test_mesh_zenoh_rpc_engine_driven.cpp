@@ -78,7 +78,7 @@ int run_test() {
     Motor motor;
     motor.initialize();
 
-    MotorRouterT motor_router(motor);
+    MotorRouterT motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed");
 
     // Driver thread pumps the engine's external queue. The queryable

@@ -26,17 +26,17 @@ int main() {
     SCE::Generated::motor_invoke::motor_invoke motor;
 
     SCE::Generated::brake_invoke::TransportRouter<decltype(brake), decltype(motor)>
-        brake_router(brake, motor);
+        brake_router({&brake}, motor);
     SCE::Generated::motor_invoke::TransportRouter<decltype(motor), decltype(brake)>
-        motor_router(motor, brake);
+        motor_router({&motor}, brake);
 
     brake_router.linkTo("#motor_invoke",
                         [&motor_router](const SCE::Mesh::MeshEnvelope& env) {
-                            return motor_router.dispatchToSender(env);
+                            return motor_router.dispatchToSession(env, 0);
                         });
     motor_router.linkTo("#brake_invoke",
                         [&brake_router](const SCE::Mesh::MeshEnvelope& env) {
-                            return brake_router.dispatchToSender(env);
+                            return brake_router.dispatchToSession(env, 0);
                         });
 
     brake.initialize();
@@ -61,7 +61,7 @@ int main() {
     }
 
     // Late reply: motor processes the RpcRequest and sends the
-    // response. It routes through linkTo → brake_router.dispatchToSender.
+    // response. It routes through linkTo → brake_router.dispatchToSession.
     // Since the correlation entry was cancelled, handleReply returns
     // false and the envelope falls through to dispatchEnvelope — but
     // brake is in the Aborted final state and ignores unknown events.

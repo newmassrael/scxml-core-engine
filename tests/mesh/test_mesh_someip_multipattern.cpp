@@ -73,11 +73,11 @@ int main() {
     // types. If the template is malformed for a given dispatch branch,
     // the take-address expression triggers the error at build time.
     BrakeEngine brake;
-    RouterT router(brake);
+    RouterT router({&brake});
     (void)&RouterT::route_send;
     (void)&RouterT::resolvePattern;
     (void)&RouterT::resolveReplyEvent;
-    (void)&RouterT::dispatchToSender;
+    (void)&RouterT::dispatchToSession;
 
     // Pattern resolution: each event must map to the PatternKind dictated
     // by reserved-prefix detection in sce-build/src/mesh/pattern.rs.

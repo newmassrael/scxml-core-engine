@@ -63,11 +63,11 @@ int run_test() {
     // two-device transports block in deploy_zenoh_multi.yaml. Bring up
     // the listener first so the endpoint is accepting before brake dials.
     TestSenderEngine motor_engine;
-    MotorRouterT motor_router(motor_engine);
+    MotorRouterT motor_router({&motor_engine});
     MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed");
 
     TestSenderEngine brake_engine;
-    BrakeRouterT brake_router(brake_engine);
+    BrakeRouterT brake_router({&brake_engine});
     MESH_TEST_REQUIRE(brake_router.init(), "brake_router.init() failed");
 
     // Deterministic convergence barrier. Both routers are generated

@@ -73,7 +73,7 @@ constexpr const char* kMotorKey = "sce/brake_on_drop/motor/compute_force";
 // immediately; empirically well under 10 ms on commodity hardware.
 int scenario_no_peer() {
     BrakeSm brake;
-    RouterT brake_router(brake);
+    RouterT brake_router({&brake});
 
     if (!brake_router.init()) {
         std::fprintf(stderr,
@@ -123,7 +123,7 @@ int scenario_no_peer() {
 // never reach brake's routing table before Go is dispatched.
 int scenario_peer_silent() {
     BrakeSm brake;
-    RouterT brake_router(brake);
+    RouterT brake_router({&brake});
 
     if (!brake_router.init()) {
         std::fprintf(stderr,

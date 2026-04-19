@@ -41,7 +41,7 @@ int run_test() {
     using RouterT = brake_gen::TransportRouter<TestSenderEngine>;
 
     TestSenderEngine sender;
-    RouterT router(sender);
+    RouterT router({&sender});
 
     // Raw receiver up first so the endpoint is accepting before brake dials.
     auto motor_session = open_peer(/*connect=*/"", /*listen=*/kListen);

@@ -18,7 +18,7 @@
 // `sce/include/mesh/DedupRouter.h::DedupRouter::admit` to always
 // return `true` (or replace the generated-router wrapper
 // `admitInbound` in `tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2`
-// so it unconditionally calls `dispatchToSender`) — either mutation
+// so it unconditionally calls `dispatchToSession`) — either mutation
 // must break the "duplicate envelope must be dropped" assertion below
 // and the `DuplicateFromSameSenderIsDropped` unit test in
 // `DedupRouterTest.cpp`. Revert after verification.
@@ -40,7 +40,7 @@ namespace PK = SCE::Mesh;
 int run_test() {
     using RouterT = TransportRouter<TestSenderEngine>;
     TestSenderEngine sender;
-    RouterT router(sender);
+    RouterT router({&sender});
 
     // ── 1. First inject of a fresh envelope ────────────────────────────
     SCE::Mesh::MeshEnvelope env;
@@ -49,7 +49,7 @@ int run_test() {
     env.type = "brake.activate";
     env.pattern = PK::PatternKind::FireForget;
 
-    MESH_TEST_REQUIRE(router.admitInbound(env),
+    MESH_TEST_REQUIRE(router.admitInbound(env, 0),
         "first inject of a novel envelope must reach the engine");
     {
         std::lock_guard<std::mutex> lk(sender.received_.m);
@@ -59,8 +59,8 @@ int run_test() {
 
     // ── 2. Second inject of the same envelope is the duplicate case ──
     // §10.5: `admit()` returns false on a repeat (source, id); the
-    // envelope never reaches dispatchToSender.
-    MESH_TEST_REQUIRE(!router.admitInbound(env),
+    // envelope never reaches dispatchToSession.
+    MESH_TEST_REQUIRE(!router.admitInbound(env, 0),
         "duplicate envelope (same source+id) must be dropped by DedupRouter");
     {
         std::lock_guard<std::mutex> lk(sender.received_.m);
@@ -70,7 +70,7 @@ int run_test() {
 
     // ── 3. A fresh id from the same source is admitted again ────────
     env.id = SCE::uuid::v7();
-    MESH_TEST_REQUIRE(router.admitInbound(env),
+    MESH_TEST_REQUIRE(router.admitInbound(env, 0),
         "novel id from the same source must be admitted");
     {
         std::lock_guard<std::mutex> lk(sender.received_.m);
@@ -82,7 +82,7 @@ int run_test() {
     // DedupRouter keys on (source, id), so the cross-source case must
     // not collide even when the ids happen to match.
     env.source = "telemetry";
-    MESH_TEST_REQUIRE(router.admitInbound(env),
+    MESH_TEST_REQUIRE(router.admitInbound(env, 0),
         "per-sender window must isolate identical ids across sources");
 
     std::printf("SCE Mesh dedup injection regression: PASS\n");

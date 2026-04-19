@@ -16,7 +16,7 @@
 //   - FieldRead:        send_zenoh → session.get       → raw queryable   replies (FieldNotify)
 //
 // The receive path on the sender side is driven by the TransportRouter's
-// `dispatchToSender` helper, which calls MeshDispatch::dispatchEnvelope
+// `dispatchToSession` helper, which calls MeshDispatch::dispatchEnvelope
 // against the sender engine that was bound in the router ctor. For this
 // test we stand up a minimal TestSenderEngine that records every envelope
 // it is asked to dispatch — that replaces the earlier pattern of reaching
@@ -49,7 +49,7 @@ int run_test() {
 
     // ── Sender side: TestSenderEngine + generated TransportRouter ──────
     TestSenderEngine sender;
-    RouterT router(sender);
+    RouterT router({&sender});
 
     // ── Order matters: bring up the listener first, then the connector,
     //    so the TCP endpoint is accepting before the peer dials. ──────

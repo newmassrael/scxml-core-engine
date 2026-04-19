@@ -63,12 +63,12 @@ int run_test() {
 
     // ── Motor (server) must init first — it is the routing manager. ──
     TestSenderEngine motor_engine;
-    MotorRouterT motor_router(motor_engine);
+    MotorRouterT motor_router({&motor_engine});
     MESH_TEST_REQUIRE(motor_router.init(), "motor router init failed");
 
     // ── Brake (client) connects to motor. ──
     TestSenderEngine brake_engine;
-    BrakeRouterT brake_router(brake_engine);
+    BrakeRouterT brake_router({&brake_engine});
     MESH_TEST_REQUIRE(brake_router.init(), "brake router init failed");
 
     // Instead of sleeping, wait for vsomeip to announce motor's service

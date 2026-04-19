@@ -111,7 +111,7 @@ int run_test() {
     // that the admit method compiles.
     {
         TestSenderEngine sender;
-        RouterT router(sender);
+        RouterT router({&sender});
 
         // Inject seq=[1, 3, 2, 4]. Contract: sender engine sees
         // [1, 2, 3, 4] — the 3,2 reshuffle is absorbed by
@@ -150,7 +150,7 @@ int run_test() {
     // lost_seq_lo/hi pinning the missing range.
     {
         TestSenderEngine sender;
-        RouterT router(sender);
+        RouterT router({&sender});
 
         MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", make_ordered_env("motor", 1)),
             "seq=1 released");
@@ -188,7 +188,7 @@ int run_test() {
     // bypass branch is the code actually exercised.
     {
         TestSenderEngine sender;
-        RouterT router(sender);
+        RouterT router({&sender});
 
         SCE::Mesh::MeshEnvelope reply;
         reply.id = SCE::uuid::v7();
@@ -215,7 +215,7 @@ int run_test() {
     // succeeded.
     {
         TestSenderEngine sender;
-        RouterT router(sender);
+        RouterT router({&sender});
 
         SCE::Mesh::MeshEnvelope unstamped;
         unstamped.id = SCE::uuid::v7();
@@ -264,7 +264,7 @@ int run_test() {
     // regression, not an environment skip.
     {
         TestSenderEngine sender;
-        RouterT router(sender);
+        RouterT router({&sender});
         MESH_TEST_REQUIRE(router.init(),
             "router.init() must succeed — ordering tick thread start is inside init");
 

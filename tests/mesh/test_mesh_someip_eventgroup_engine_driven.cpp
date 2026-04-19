@@ -62,11 +62,11 @@ int run_test() {
     // Motor (server + routing manager) must initialize first.
     Motor motor;
     motor.initialize();
-    MotorRouterT motor_router(motor);
+    MotorRouterT motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor router init failed");
 
     TestSenderEngine brake_engine;
-    BrakeRouterT brake_router(brake_engine);
+    BrakeRouterT brake_router({&brake_engine});
     MESH_TEST_REQUIRE(brake_router.init(), "brake router init failed");
 
     // RAII-scoped engine pump (Session I pattern).
@@ -159,7 +159,7 @@ int run_test() {
         trigger.type = "sensor.update";
         trigger.pattern = PK::FireForget;
         trigger.datacontenttype = SCE::Mesh::PayloadCodec::None;
-        (void)motor_router.dispatchToSender(trigger);
+        (void)motor_router.dispatchToSession(trigger, 0);
 
         MESH_TEST_REQUIRE(notify_events.wait_for([](const auto& v) {
                     return !v.empty() &&

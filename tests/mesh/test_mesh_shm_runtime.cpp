@@ -96,9 +96,10 @@ int main() {
     SCE::Generated::brake::brake brake;
     brake.initialize();
 
-    // Sender-first ctor injection: brake (sender) is bound at construction.
+    // Session-first ctor injection: brake (hosted session 0) is bound
+    // at construction.
     using BrakeEngine = SCE::Generated::brake::brake;
-    SCE::Generated::brake::TransportRouter<BrakeEngine> router(brake);
+    SCE::Generated::brake::TransportRouter<BrakeEngine> router({&brake});
 
     // Give the receiver a brief window to reach its drain loop before we
     // publish the event. Not required for correctness (the receiver

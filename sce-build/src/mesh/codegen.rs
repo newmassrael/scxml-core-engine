@@ -1120,6 +1120,34 @@ fn generate_cpp_mesh(
         });
     }
 
+    // SCE_MESH.md §14.4: session count hosted by this router.
+    // A SOME/IP server pool with N declared instances backs N
+    // independent SCXML document sessions (one per offered
+    // vsomeip instance). Every other router shape runs exactly
+    // one session, so the template's sessions_ array collapses
+    // to a 1-element brace-init for non-pool deployments.
+    let n_sessions: usize = server_context
+        .as_ref()
+        .and_then(|sc| sc.instance_pool.as_ref())
+        .map(|p| p.len())
+        .filter(|&len| len > 0)
+        .unwrap_or(1);
+
+    // SCE_MESH.md §14.4: pool + mesh-rpc client cannot share a router.
+    // `invoke_correlation_` and `active_invokes_` are router-scoped
+    // (one table per TransportRouter), so two hosted sessions would
+    // alias each other's UUID entries. The §9.5 invariant "each
+    // invoke has exactly one live correlation entry" would not
+    // hold under pool+client. Reject at codegen so the deployment
+    // cannot reach a silently-miscorrelated runtime.
+    let has_pool = n_sessions > 1;
+    let has_mesh_rpc_client = targets.iter().any(|t| !t.invoke_sites.is_empty());
+    if has_pool && has_mesh_rpc_client {
+        return Err(CodegenError::PoolWithMeshRpcClientUnsupported {
+            machine: machine_name.to_string(),
+        });
+    }
+
     // A device-level custom_tcp listen endpoint emits a server even when no
     // client binding on this machine selected `transport: custom_tcp`. Add
     // the variant to `transport_types` so the template's `{% if "custom_tcp"
@@ -1253,6 +1281,7 @@ fn generate_cpp_mesh(
         custom_tcp_transport => custom_tcp_transport,
         machine_subscriptions => subscriptions,
         server => server_context,
+        n_sessions => n_sessions,
     };
 
     let code = tmpl

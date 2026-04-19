@@ -633,6 +633,27 @@ pub enum CodegenError {
         suffix: String,
         events: Vec<String>,
     },
+
+    /// A machine combines a multi-instance SOME/IP server pool
+    /// (`server.instances: [N > 1]`) with at least one
+    /// `<invoke type="sce:mesh-rpc">` site (SCE Mesh §9.5 + §14.4).
+    /// `invoke_correlation_` and `active_invokes_` in the generated
+    /// router are router-scoped, not session-scoped, so a deliver
+    /// callback or `<cancel>` issued by one hosted session could
+    /// clobber a peer session's mesh-rpc entry. Rejected at codegen
+    /// so the deployment cannot silently mis-route correlations.
+    /// Two equally-valid repairs (drop the mesh-rpc invoke or switch
+    /// to a single-instance server) — the diagnostic keeps both
+    /// arms to let the author pick.
+    #[error("machine '{machine}': SOME/IP server pool (`server.instances: [...]` with more than \
+             one entry) cannot be combined with `<invoke type=\"sce:mesh-rpc\">` in the same \
+             router. Mesh-rpc correlation is router-scoped today; hosting multiple SCXML \
+             sessions on one router would alias their invoke_id tables. Either remove the \
+             mesh-rpc invoke site(s) from this machine or reduce `server.instances:` to a \
+             single instance. See SCE_MESH.md §14.4.")]
+    PoolWithMeshRpcClientUnsupported {
+        machine: String,
+    },
 }
 
 /// CLI exit code by error category.
@@ -1190,6 +1211,19 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
                 k.extend(events.iter().cloned());
                 k
             },
+        },
+        CodegenError::PoolWithMeshRpcClientUnsupported { machine } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenPoolWithMeshRpcClientUnsupported,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // Two equally-valid repairs (drop the mesh-rpc invoke OR
+            // reduce `server.instances:` to a single entry). Neither
+            // is mechanically derivable from this diagnostic alone —
+            // the author's intent decides. Same shape as
+            // `MeshTopologyOrderingCannotBeGuaranteed`.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone()],
         },
     }
 }

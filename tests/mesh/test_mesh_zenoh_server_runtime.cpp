@@ -62,7 +62,7 @@ int run_test() {
     // dispatches them to motor_engine. Both pieces come from the
     // generated ecu_motor device block in deploy_zenoh_multi.yaml.
     TestSenderEngine motor_engine;
-    MotorRouterT motor_router(motor_engine);
+    MotorRouterT motor_router({&motor_engine});
     MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed");
 
     // ── Client side: raw zenoh session ──

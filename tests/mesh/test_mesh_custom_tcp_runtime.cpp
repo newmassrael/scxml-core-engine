@@ -125,8 +125,8 @@ int main() {
 
         using BrakeRouter = SCE::Generated::brake::TransportRouter<SCE::Generated::brake::brake>;
         using MotorRouter = SCE::Generated::motor::TransportRouter<SCE::Generated::motor::motor>;
-        BrakeRouter brake_router(brake);
-        MotorRouter motor_router(motor);
+        BrakeRouter brake_router({&brake});
+        MotorRouter motor_router({&motor});
 
         if (!motor_router.init()) {
             std::fprintf(stderr, "FAIL: motor router init() returned false (listen bind failed?)\n");
@@ -145,7 +145,7 @@ int main() {
 
         // brake_press → onentry → <send target="#motor" event="brake.activate"/>
         // → router send_to_motor → custom_tcp client.send → TCP write
-        // → motor server reader thread → decodeEnvelope → dispatchToSender
+        // → motor server reader thread → decodeEnvelope → dispatchToSession
         // → motor.raiseExternal(brake.activate)
         brake.processEvent(SCE::Generated::brake::Event::Brake_press);
 

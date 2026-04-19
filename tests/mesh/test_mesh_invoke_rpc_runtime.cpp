@@ -7,16 +7,16 @@
 // brake enters `computing` on Go, whose <invoke type="sce:mesh-rpc">
 // registers a correlation and emits service.request.compute_force.
 // The forward envelope flows through brake_router.route_send →
-// motor_router.dispatchToSender (linkTo) → motor's external queue.
+// motor_router.dispatchToSession (linkTo) → motor's external queue.
 // motor.step() transitions Ready → Replying, whose onentry emits
 // service.response.compute_force; the reply routes back through
-// motor_router.route_send → brake_router.dispatchToSender (linkTo),
+// motor_router.route_send → brake_router.dispatchToSession (linkTo),
 // whose InvokeCorrelation table fires the done.invoke deliver callback
 // and raises done.invoke.<id> on brake. A second brake.step() consumes
 // that event and drives Computing → Ok.
 //
 // Any link in the chain regressing — linkTo not plumbed into
-// route_send, dispatchToSender missing the correlation branch, the
+// route_send, dispatchToSession missing the correlation branch, the
 // auto-propagation of _event.invokeid dropping the UUID, or the
 // Invoke pattern inference misclassifying service.response.* — surfaces
 // here as brake stuck outside State::Ok.
@@ -33,20 +33,20 @@ int main() {
     SCE::Generated::motor_invoke::motor_invoke motor;
 
     SCE::Generated::brake_invoke::TransportRouter<decltype(brake), decltype(motor)>
-        brake_router(brake, motor);
+        brake_router({&brake}, motor);
     SCE::Generated::motor_invoke::TransportRouter<decltype(motor), decltype(brake)>
-        motor_router(motor, brake);
+        motor_router({&motor}, brake);
 
     // Cross-link: each router hands inbound envelopes to its peer's
-    // dispatchToSender so brake_router's InvokeCorrelation sees the
-    // reply and motor_router's sender_ receives the request.
+    // dispatchToSession so brake_router's InvokeCorrelation sees the
+    // reply and motor_router's hosted session receives the request.
     brake_router.linkTo("#motor_invoke",
                         [&motor_router](const SCE::Mesh::MeshEnvelope& env) {
-                            return motor_router.dispatchToSender(env);
+                            return motor_router.dispatchToSession(env, 0);
                         });
     motor_router.linkTo("#brake_invoke",
                         [&brake_router](const SCE::Mesh::MeshEnvelope& env) {
-                            return brake_router.dispatchToSender(env);
+                            return brake_router.dispatchToSession(env, 0);
                         });
 
     brake.initialize();
@@ -75,7 +75,7 @@ int main() {
 
     // Macrostep motor: consumes the RpcRequest, enters Replying, whose
     // onentry emits the response. The response routes through
-    // motor_router → linkTo → brake_router.dispatchToSender →
+    // motor_router → linkTo → brake_router.dispatchToSession →
     // InvokeCorrelation → done.invoke raised on brake's external queue.
     motor.step();
 

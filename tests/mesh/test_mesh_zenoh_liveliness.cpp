@@ -46,7 +46,7 @@ int run_test() {
     using RouterT = brake_gen::TransportRouter<TestSenderEngine>;
 
     TestSenderEngine sender;
-    RouterT brake_router(sender);
+    RouterT brake_router({&sender});
 
     // Bring up motor's raw peer first so brake's connect succeeds.
     // Motor declares only the liveliness token — no publisher, no
