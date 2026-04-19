@@ -433,6 +433,8 @@ pub enum DiagnosticCode {
     MeshDeployPartitionUncoveredUnit,
     #[serde(rename = "mesh/deploy-partition-partial-coverage-requires-default")]
     MeshDeployPartitionPartialCoverageRequiresDefault,
+    #[serde(rename = "mesh/deploy-partition-pool-machine")]
+    MeshDeployPartitionPoolMachine,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -620,6 +622,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPartitionSynthInfixCollision,
         MeshDeployPartitionUncoveredUnit,
         MeshDeployPartitionPartialCoverageRequiresDefault,
+        MeshDeployPartitionPoolMachine,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -790,7 +793,8 @@ impl DiagnosticCode {
             | MeshDeployPartitionEmpty
             | MeshDeployPartitionSynthInfixCollision
             | MeshDeployPartitionUncoveredUnit
-            | MeshDeployPartitionPartialCoverageRequiresDefault => Some("SCE Mesh §14"),
+            | MeshDeployPartitionPartialCoverageRequiresDefault
+            | MeshDeployPartitionPoolMachine => Some("SCE Mesh §14"),
 
             // ── No authoritative citation ────────────────────────
             //
@@ -947,6 +951,7 @@ impl DiagnosticCode {
             MeshDeployPartitionSynthInfixCollision => "mesh/deploy-partition-synth-infix-collision",
             MeshDeployPartitionUncoveredUnit => "mesh/deploy-partition-uncovered-unit",
             MeshDeployPartitionPartialCoverageRequiresDefault => "mesh/deploy-partition-partial-coverage-requires-default",
+            MeshDeployPartitionPoolMachine => "mesh/deploy-partition-pool-machine",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2519,6 +2524,17 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:f4c724f239f9f76f","code":"mesh/deploy-partition-partial-coverage-requires-default","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'brake' has partitions declared, but the following orthogonal units are unassigned:\n              - parallel_region:brake/monitoring\n              - invoke:brake/compute_force_inv\n            Either add them to an existing partition under `machines: [brake]`, or declare a 'brake_default' partition with `contains:` entries for each (SCE_MESH.md §14 rule 2).","actual":"brake"}"#,
             ),
             (
+                "mesh/deploy-partition-pool-machine",
+                DeployError::PartitionPoolMachine {
+                    machine: "motor".into(),
+                    partition: "motor_region_a".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:02f99e5ae78bf9e8","code":"mesh/deploy-partition-pool-machine","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'motor' declares `server.instances:` (SCE Mesh §14.4 SOME/IP server pool) but partition 'motor_region_a' lists it under `machines:`. A pool is one router hosting N SOME/IP sessions on a single process; a partition splits a machine across M OS processes (SCE_MESH.md §14). deploy.yaml does not define the combined meaning — either remove 'motor' from partition 'motor_region_a' `machines:` (keep the pool as one monolithic process), or drop `server.instances:` from the machine and run N processes each hosting a single-instance server.","actual":"motor"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -3236,6 +3252,7 @@ mod tests {
             | MeshDeployPartitionSynthInfixCollision
             | MeshDeployPartitionUncoveredUnit
             | MeshDeployPartitionPartialCoverageRequiresDefault
+            | MeshDeployPartitionPoolMachine
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3520,6 +3537,7 @@ mod tests {
                 | MeshDeployPartitionSynthInfixCollision
                 | MeshDeployPartitionUncoveredUnit
                 | MeshDeployPartitionPartialCoverageRequiresDefault
+                | MeshDeployPartitionPoolMachine
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3554,9 +3572,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            112,
+            113,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 112 distinct variants to match the DiagnosticCode \
+             expected 113 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

@@ -338,6 +338,28 @@ pub enum DeployError {
         machine: String,
         missing: Vec<String>,
     },
+
+    /// A machine that declares a SOME/IP server pool (`server.instances:`,
+    /// SCE_MESH.md §14.4) is listed under some partition's `machines:`
+    /// block. The two grammars describe orthogonal axes: a pool is one
+    /// router offering N SOME/IP sessions on a single process, while a
+    /// partition splits a machine across M OS processes (SCE_MESH.md
+    /// §14). deploy.yaml does not define a combined meaning today, so
+    /// the combination is rejected at parse time instead of silently
+    /// accepted. Authors drop the pool to partition the machine, or
+    /// drop the partition listing to keep the pool.
+    #[error("machine '{machine}' declares `server.instances:` (SCE Mesh §14.4 SOME/IP \
+             server pool) but partition '{partition}' lists it under `machines:`. A pool \
+             is one router hosting N SOME/IP sessions on a single process; a partition \
+             splits a machine across M OS processes (SCE_MESH.md §14). deploy.yaml does \
+             not define the combined meaning — either remove '{machine}' from \
+             partition '{partition}' `machines:` (keep the pool as one monolithic \
+             process), or drop `server.instances:` from the machine and run N processes \
+             each hosting a single-instance server.")]
+    PartitionPoolMachine {
+        machine: String,
+        partition: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -1127,6 +1149,17 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 },
             }
         }
+        DeployError::PartitionPoolMachine { machine, partition } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionPoolMachine,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            // Two equally-valid repairs (remove the machine from the
+            // partition's `machines:` list OR drop `server.instances:`);
+            // the spec prose names both and author intent decides.
+            fix: None,
+            key_fragments: vec![machine.clone(), partition.clone()],
+        },
     }
 }
 

@@ -1079,6 +1079,27 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
         }
     }
 
+    // SCE_MESH.md §14.4 × §14 — SOME/IP server pool machines cannot be
+    // partitioned. Pool semantics scope one router to N SOME/IP sessions
+    // on a single process; partition semantics split one machine across
+    // M OS processes. deploy.yaml defines neither a pool-of-partitions
+    // nor a partition-of-pools, so the parser rejects the combination
+    // at the machine-listing site instead of accepting a shape whose
+    // runtime behaviour is undefined. Pre-build the pool-machine set so
+    // the per-partition loop below is one BTreeSet::contains per listed
+    // machine rather than a nested topology walk.
+    let pool_machines: std::collections::BTreeSet<&str> = cfg
+        .topology
+        .values()
+        .flat_map(|device| device.machines.iter())
+        .filter_map(|(name, m)| {
+            m.server
+                .as_ref()
+                .and_then(|s| s.instances.as_ref())
+                .map(|_| name.as_str())
+        })
+        .collect();
+
     // Rules 7, 9, 10 operate per-partition. Collect the (unit, partition)
     // pairs for rule 8 across all partitions so two partitions claiming
     // the same unit produce one diagnostic with both partition names.
@@ -1091,6 +1112,22 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
             return Err(DeployError::PartitionEmpty {
                 partition: partition_name.clone(),
             });
+        }
+
+        // §14.4 × §14 pool-in-partition guard — reject before rule 7
+        // so a pool machine listed across multiple devices surfaces the
+        // spec-linked message instead of the generic multi-device one.
+        // Iteration follows `machines:` author order, matching rule 7's
+        // existing walk; a partition that lists multiple pool machines
+        // names the first in source order, which is stable across
+        // repeat parses of the same file.
+        for machine in &decl.machines {
+            if pool_machines.contains(machine.as_str()) {
+                return Err(DeployError::PartitionPoolMachine {
+                    machine: machine.clone(),
+                    partition: partition_name.clone(),
+                });
+            }
         }
 
         // Rule 7 — single device per partition. Resolve every machine in
@@ -3213,6 +3250,115 @@ partitions:
             }
             other => panic!("expected PartitionEmpty, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn reject_pool_machine_listed_in_partition() {
+        // SCE_MESH.md §14.4 × §14 — a SOME/IP pool machine declares
+        // `server.instances:` (pool = one router, N sessions, one
+        // process). The moment any partition's `machines:` lists the
+        // pool, the author is requesting a per-partition split that
+        // deploy.yaml does not define. The fixture pairs a pooled
+        // `motor` (instances: [1, 2]) with a partition that both
+        // lists and owns a unit from it; the parser must reject.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+    machines:
+      motor:
+        source: motor.scxml
+        bindings: {}
+        server:
+          transport: someip
+          service: motor_svc
+          instances: [1, 2]
+
+partitions:
+  motor_region_a:
+    device: ecu1
+    machines: [motor]
+    contains:
+      parallel_regions:
+        - { machine: motor, region: drive }
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionPoolMachine { machine, partition }) => {
+                assert_eq!(machine, "motor");
+                assert_eq!(partition, "motor_region_a");
+            }
+            other => panic!("expected PartitionPoolMachine, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_machine_without_partition_listing_passes() {
+        // Regression guard — a SOME/IP pool machine that appears in no
+        // partition must parse (§14.4 pool + absent partitioning is
+        // the canonical single-process pool shape).
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+    machines:
+      motor:
+        source: motor.scxml
+        bindings: {}
+        server:
+          transport: someip
+          service: motor_svc
+          instances: [1, 2]
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_default:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: monitor }
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        assert!(cfg.partitions.is_some());
+        let motor = &cfg.topology["ecu1"].machines["motor"];
+        assert!(
+            motor.server.as_ref().and_then(|s| s.instances.as_ref()).is_some(),
+            "motor must retain its pool declaration",
+        );
+    }
+
+    #[test]
+    fn non_pool_machine_in_partition_passes() {
+        // Regression guard — a non-pool machine listed in a partition
+        // must parse under the Phase A/A' rules alone; the Gap I
+        // check is load-bearing only for pool machines.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_part:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: monitor }
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        assert!(cfg.partitions.is_some());
     }
 
     #[test]
