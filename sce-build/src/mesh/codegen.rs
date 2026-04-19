@@ -546,6 +546,20 @@ struct ServerContext {
     /// scheduler entry at every `pending_server_queries_` insert.
     #[serde(skip_serializing_if = "Option::is_none")]
     query_timeout_ms: Option<u64>,
+    /// SCE_MESH.md §14.4 (Gap 7): multi-instance
+    /// server pool member list. Propagated from
+    /// [`crate::mesh::topology::ServerBinding::instance_pool`]. When
+    /// present, the template renders `SOMEIP_SERVER_INSTANCES` as the
+    /// declared `std::array` so init() can offer each instance and
+    /// register per-(instance, method) handlers. Absent ⇒ non-pool
+    /// server; template degenerates to a 1-element array whose sole
+    /// entry is the binding-default instance id.
+    ///
+    /// Zenoh's registry flag `supports_multi_instance_server` is
+    /// `false`, so `ServerBinding::instance_pool` is always `None`
+    /// for Zenoh servers; this field is SOME/IP-only in practice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instance_pool: Option<Vec<u16>>,
 }
 
 /// Per-RPC-pair context for server-side codegen.
@@ -769,6 +783,7 @@ fn build_server_context(
         eventgroup_events,
         has_eventgroup,
         query_timeout_ms: binding.query_timeout_ms,
+        instance_pool: binding.instance_pool.clone(),
     }
 }
 

@@ -209,6 +209,38 @@ pub struct TransportDescriptor {
     /// binding transport has this set to `false` is rejected with
     /// `mesh/topology-machine-lifetime-subscription-unsupported`.
     pub supports_machine_lifetime_subscribe: bool,
+    /// Can this transport host an SCE machine as a multi-instance
+    /// server? (SCE_MESH.md §14.4 multi-instance server pool, Gap 7.)
+    ///
+    /// `true` for transports whose native routing layer delivers an
+    /// inbound message tagged with a peer-identifying instance
+    /// dimension, so the generated TransportRouter can dispatch to
+    /// per-instance SCXML sessions:
+    ///   - SOME/IP: `msg->get_instance()` returns the `instance_id`
+    ///     vsomeip assigned to the inbound request; one
+    ///     `offer_service(SERVICE, i)` per declared instance + one
+    ///     `register_message_handler` per (instance, method) pair
+    ///     realises the pool end-to-end.
+    ///
+    /// `false` for transports without a peer-level inbound
+    /// distinguisher:
+    ///   - Zenoh: a KeyExpr identifies a *subject* not a *peer*; there
+    ///     is no server-side inbound attribute that distinguishes one
+    ///     hosted instance from another. SCE_MESH.md §14.4
+    ///     multi-instance scope deliberately excludes Zenoh server
+    ///     pools.
+    ///   - local / shm / custom_tcp: endpoints are compile-time process
+    ///     addresses; a single process cannot semantically back N
+    ///     independent peer identities on the same in-process channel.
+    ///   - dds / can: unimplemented; flag stays `false` for
+    ///     consistency — the runtime has no session-pool scaffolding
+    ///     for broadcast-bus shapes regardless.
+    ///
+    /// Consumed by `deploy::validate_server_pool_rejection`: a machine
+    /// declaring `server.instances:` on a transport whose flag is
+    /// `false` is rejected at parse time with the transport name in
+    /// the diagnostic (`DeployError::ServerPoolNotSupported`).
+    pub supports_multi_instance_server: bool,
 }
 
 // ── Single registry ─────────────────────────────────────────
@@ -240,6 +272,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_pool: false,
         // No pub/sub capability at all — machine-lifetime is moot.
         supports_machine_lifetime_subscribe: false,
+        // In-process direct dispatch: one process hosts one identity
+        // per machine; a second instance would be a second process.
+        supports_multi_instance_server: false,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -257,6 +292,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_pool: false,
         // No pub/sub capability; machine-lifetime path does not apply.
         supports_machine_lifetime_subscribe: false,
+        // SHM channels are pre-declared and addressed by compile-time
+        // names — no peer-identity inbound distinguisher.
+        supports_multi_instance_server: false,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -302,6 +340,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // arm and drop. Gap tracked under
         // `mesh_someip_sd_gaps_roadmap.md`.
         supports_machine_lifetime_subscribe: false,
+        // SOME/IP's routing_manager tracks per-(service, instance) state
+        // independently: `offer_service(SERVICE, i)` advertises one
+        // instance, `register_message_handler(SERVICE, i, METHOD, ...)`
+        // binds inbound to that instance, and `msg->get_instance()`
+        // exposes the instance on dispatch. This is the sole registry
+        // entry with `true` today (Gap 7).
+        supports_multi_instance_server: true,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: false, has_shared_session: true },
@@ -328,6 +373,12 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // external resolution needed for subscribe. SCE_MESH.md §13
         // machine-lifetime path is fully wired end-to-end.
         supports_machine_lifetime_subscribe: true,
+        // Zenoh KeyExpr identifies a subject, not a peer. There is no
+        // server-side inbound distinguisher between two instances of
+        // the same hosted machine (a subscriber/queryable on the same
+        // key receives every request identically). SCE_MESH.md §14.4
+        // multi-instance exclusion clause codifies this.
+        supports_multi_instance_server: false,
     };
     // SCE Mesh §16.8.3 reference transport: TCP loopback, length-prefixed
     // CBOR envelope framing, zero external dependencies. Each binding has a
@@ -355,6 +406,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // No pub/sub capability in this session — machine-lifetime is
         // moot. Dedup + duplex correlation for FireForget-only today.
         supports_machine_lifetime_subscribe: false,
+        // Single static client→server TCP endpoint — no peer-identity
+        // dimension on the inbound side.
+        supports_multi_instance_server: false,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -379,6 +433,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // flag is ever consulted. Consistent `false` keeps the
         // registry shape uniform.
         supports_machine_lifetime_subscribe: false,
+        // DCPS participant discovery exists but the runtime has no
+        // server-pool scaffolding; `implemented: false` gates this
+        // before the flag is consulted.
+        supports_multi_instance_server: false,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape { has_per_target_field: true, has_shared_session: false },
@@ -402,6 +460,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Unimplemented + broadcast bus; machine-lifetime subscribe
         // semantic does not apply.
         supports_machine_lifetime_subscribe: false,
+        // Broadcast bus — every frame reaches every participant; the
+        // concept of a per-peer server instance does not map.
+        supports_multi_instance_server: false,
     };
 
     match transport {
@@ -676,6 +737,24 @@ mod tests {
             .filter(|n| !lookup(n).unwrap().ordering_representable)
             .collect();
         assert_eq!(nonrepresentable, vec!["can"]);
+    }
+
+    #[test]
+    fn only_someip_supports_multi_instance_server() {
+        // SCE_MESH.md §14.4 / Gap 7: SOME/IP is the sole transport
+        // whose native routing layer exposes a peer-level inbound
+        // distinguisher (`msg->get_instance()`). Every other
+        // transport — implemented or not — stays at `false` until a
+        // new transport with an equivalent distinguisher arrives.
+        // A future addition must update this regression guard in the
+        // same commit that flips the flag, so the transport registry
+        // and the parse-time reject stay synchronised.
+        let multi_instance_true: Vec<&str> = ["local", "shm", "someip", "zenoh", "custom_tcp", "dds", "can"]
+            .iter()
+            .copied()
+            .filter(|n| lookup(n).unwrap().supports_multi_instance_server)
+            .collect();
+        assert_eq!(multi_instance_true, vec!["someip"]);
     }
 
     #[test]

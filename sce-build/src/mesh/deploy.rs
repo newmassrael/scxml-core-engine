@@ -463,18 +463,18 @@ pub struct ServerConfig {
     /// Zenoh key expression for queryable registration.
     #[serde(default)]
     pub key: Option<String>,
-    /// SCE Mesh §14.4 — server-side multi-instance pool is **not**
-    /// supported: a single SCXML session cannot semantically back N
-    /// independent service instances (the W3C SCXML execution model
-    /// ties one document to one state machine to one identity).
-    /// Declaring this field is a build-time hard error
-    /// ([`DeployError::ServerPoolNotSupported`]) so the silently-broken
-    /// alternative — the field sinking into `extra` and vanishing — is
-    /// impossible. Multi-session server pools require per-instance
-    /// SCXML sessions, which is a separate spec track; the pre-release
-    /// stance (§0) means no deprecation shim is carried between phases.
-    /// Until then, deploy "N independent instances of service S" as N
-    /// processes each hosting a single-instance server.
+    /// SCE Mesh §14.4 — server-side multi-instance pool.
+    ///
+    /// Accepted on transports whose registry entry sets
+    /// [`crate::mesh::transport::TransportDescriptor::supports_multi_instance_server`]
+    /// to `true` (SOME/IP today). For accepted transports the generated
+    /// TransportRouter offers one instance per listed ID at `init()`
+    /// and registers per-instance message handlers so inbound requests
+    /// carry a peer-identifying `instance_id` at dispatch time. For
+    /// non-supporting transports, declaring this field is a build-time
+    /// hard error ([`DeployError::ServerPoolNotSupported`]); the
+    /// silently-broken alternative — the field sinking into `extra`
+    /// and vanishing — is impossible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instances: Option<Vec<u16>>,
 
@@ -907,15 +907,17 @@ fn binding_placeholder_names(
     Ok(names)
 }
 
-/// SCE_MESH.md §14.4 — multi-instance *server* pool is **not**
-/// supported. A single SCXML session cannot semantically back N
-/// independent service instances (the W3C SCXML execution model ties
-/// one document to one state machine to one identity). Rejecting the
-/// `server.instances:` field at parse time — rather than letting it
-/// sink silently into `ServerConfig` and vanish — is the
-/// foundation-before-features guard. Multi-session server pools live
-/// on a separate spec track; the pre-release stance (§0) means no
-/// deprecation shim is needed when that track opens the field.
+/// SCE_MESH.md §14.4 — server-side multi-instance pool gating.
+///
+/// A machine declaring `server.instances:` is accepted iff its server
+/// transport's registry flag `supports_multi_instance_server` is `true`
+/// (SOME/IP today; see transport.rs for the exhaustive list). Any
+/// other transport's entry rejects at parse time with the transport
+/// name in the diagnostic, so an author who picks the wrong transport
+/// for a pooled server learns at `deploy.yaml` parse rather than via a
+/// silent codegen divergence. Unknown transports fall through to the
+/// reject branch — an unregistered transport cannot promise the
+/// peer-identity semantic the pool relies on.
 fn validate_server_pool_rejection(cfg: &DeployConfig) -> Result<(), DeployError> {
     use std::collections::BTreeMap;
     // Deterministic sorted scan so the first reported violation is stable
@@ -929,9 +931,16 @@ fn validate_server_pool_rejection(cfg: &DeployConfig) -> Result<(), DeployError>
         }
     }
     for (machine_name, server) in by_machine {
-        if server.instances.is_some() {
+        if server.instances.is_none() {
+            continue;
+        }
+        let supported = super::transport::lookup(&server.transport)
+            .map(|d| d.supports_multi_instance_server)
+            .unwrap_or(false);
+        if !supported {
             return Err(DeployError::ServerPoolNotSupported {
                 machine: machine_name.to_string(),
+                transport: server.transport.clone(),
             });
         }
     }
@@ -2239,28 +2248,67 @@ topology:
     }
 
     #[test]
-    fn server_pool_instances_rejected() {
-        // `server.instances:` asks for multi-instance server hosting,
-        // which needs per-instance SCXML sessions. The current topology
-        // rejects at parse time so the field cannot sink silently into
-        // server state.
+    fn server_pool_accepted_on_someip() {
+        // SCE_MESH.md §14.4 (Gap 7): SOME/IP is the
+        // sole transport whose native routing distinguishes inbound by
+        // peer identity (instance_id in vsomeip's message header), so
+        // it is the only transport for which multi-instance server pool
+        // has a well-defined inbound dispatch shape. The parse layer
+        // accepts `server.instances:` when the registry flag
+        // `supports_multi_instance_server` is `true`; downstream stages
+        // (topology carry + codegen per-instance emit) consume the list.
         let yaml = r##"
 version: "1.0"
 topology:
   ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+        application_name: motor_app
     machines:
       motor:
         source: motor.scxml
         server:
           transport: someip
           service: motor_service
-          instances: [1, 2, 3]
+          instances: [1, 2]
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let server = cfg.topology["ecu1"].machines["motor"]
+            .server
+            .as_ref()
+            .expect("server");
+        assert_eq!(server.instances.as_ref().map(|v| v.len()), Some(2));
+    }
+
+    #[test]
+    fn server_pool_rejected_on_zenoh() {
+        // `supports_multi_instance_server` is `false` for Zenoh — a
+        // KeyExpr is not a peer identity, so multi-instance server
+        // hosting has no transport-layer distinguisher. Diagnostic
+        // names the offending transport so authors can read the
+        // per-transport policy without consulting the spec.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: zenoh
+          key: "sce/motor"
+          instances: [1, 2]
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::ServerPoolNotSupported { machine }) => {
+            Err(DeployError::ServerPoolNotSupported { machine, transport }) => {
                 assert_eq!(machine, "motor");
+                assert_eq!(transport, "zenoh");
             }
-            other => panic!("expected ServerPoolNotSupported, got {other:?}"),
+            other => panic!("expected ServerPoolNotSupported with transport=zenoh, got {other:?}"),
         }
     }
 

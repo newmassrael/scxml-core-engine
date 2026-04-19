@@ -120,7 +120,13 @@ int main() {
     // Server-side SOME/IP constants
     static_assert(motor_gen::SOMEIP_SERVER_SERVICE == 0x2000,
                   "Server service ID must match vsomeip_motor_multi.json");
-    static_assert(motor_gen::SOMEIP_SERVER_INSTANCE == 0x0001,
+    // SCE_MESH.md §14.4: SOMEIP_SERVER_INSTANCES is an array so
+    // multi-instance pools can be offered. Non-pool servers degenerate
+    // to a 1-element array whose sole entry is the binding-default
+    // instance id.
+    static_assert(motor_gen::SOMEIP_SERVER_INSTANCES.size() == 1,
+                  "Non-pool server offers exactly one instance");
+    static_assert(motor_gen::SOMEIP_SERVER_INSTANCES[0] == 0x0001,
                   "Server instance ID must match vsomeip_motor_multi.json");
     static_assert(motor_gen::SOMEIP_SERVER_METHOD_SERVICE_REQUEST_COMPUTE_FORCE == 0x0101,
                   "Server method ID must match vsomeip.json compute_force");

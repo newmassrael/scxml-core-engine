@@ -3272,6 +3272,73 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         message(STATUS "vsomeip3 / zenohcxx not both found — skipping mesh_pool_compile_test")
     endif()
 
+    # ── SCE_MESH.md §14.4 server-pool compile verification ──
+    # motor_pool exercises the SERVER-side multi-instance branch of
+    # mesh_transport.h.jinja2 (Gap 7):
+    #   * deploy.yaml `server.instances: [1, 2]` accepted at parse
+    #     (transport registry flag supports_multi_instance_server=true)
+    #   * ServerBinding.instance_pool carries the list through topology
+    #   * template emits SOMEIP_SERVER_INSTANCES std::array and init()
+    #     iterates it (one offer_service + one register_message_handler
+    #     per (instance, method))
+    # Compilation + static_assert are the test; runtime per-instance
+    # dispatch (msg->get_instance() → per-session SCXMLSession) is
+    # tracked separately under the Gap 7 roadmap. SOME/IP-only —
+    # Zenoh's registry flag stays false (KeyExpr is not a peer
+    # identity), so no Zenoh counterpart exists.
+    if(vsomeip3_FOUND)
+        set(MESH_SERVER_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_server_pool_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SERVER_POOL_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_pool.scxml" -l cpp -o "${MESH_SERVER_POOL_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/motor_pool.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh server pool: Generating motor_pool_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_pool.scxml" -l cpp -o "${MESH_SERVER_POOL_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_pool_server.yaml"
+            DEPENDS "${MESH_TEST_DIR}/motor_pool.scxml" "${MESH_TEST_DIR}/deploy_someip_pool_server.yaml"
+                    "${MESH_TEST_DIR}/vsomeip_motor_pool.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
+            COMMENT "Mesh server pool: Generating motor_pool_transport.h (§14.4)"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_server_pool_compile_test
+            mesh/test_mesh_someip_server_pool_compile.cpp
+            "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
+            "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h"
+        )
+
+        target_include_directories(mesh_someip_server_pool_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SERVER_POOL_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_someip_server_pool_compile_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_server_pool_compile_test PRIVATE cxx_std_17)
+
+        apply_sce_test_policies(mesh_someip_server_pool_compile_test)
+
+        add_test(NAME mesh_someip_server_pool_compile
+                 COMMAND mesh_someip_server_pool_compile_test)
+    else()
+        message(STATUS "vsomeip3 not found — skipping mesh_someip_server_pool_compile_test")
+    endif()
+
     # ── SCE_MESH.md §14.4 Zenoh pool runtime verification ──────────
     # Compile-only pool_client verifies the generated pool branches
     # instantiate; this test drives the Zenoh pool path end-to-end:

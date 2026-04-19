@@ -628,6 +628,15 @@ pub struct ServerBinding {
     /// `mesh_someip_sd_gaps_roadmap.md` and will land under their
     /// own knob rather than overloading this one.
     pub query_timeout_ms: Option<u64>,
+    /// SCE_MESH.md §14.4 — multi-instance server pool member
+    /// list. Propagated verbatim from
+    /// [`super::deploy::ServerConfig::instances`] once the parse-time
+    /// validator has confirmed the transport supports it. Codegen
+    /// iterates the list to emit one `offer_service` /
+    /// `register_message_handler` / `offer_event` per declared
+    /// instance at `init()`. `None` ⇒ single-instance server (the
+    /// transport's default instance, resolved via `state`).
+    pub instance_pool: Option<Vec<u16>>,
 }
 
 /// Detect server RPC pairs from an SCXML model.
@@ -1186,6 +1195,7 @@ pub fn resolve_server_binding(
         state,
         event_patterns,
         query_timeout_ms: server_cfg.query_timeout_ms,
+        instance_pool: server_cfg.instances.clone(),
     })
 }
 

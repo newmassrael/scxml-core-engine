@@ -2356,9 +2356,10 @@ mod tests {
                 "mesh/deploy-server-pool-not-supported",
                 DeployError::ServerPoolNotSupported {
                     machine: "motor".into(),
+                    transport: "zenoh".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f636ea6e6bff0317","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported — a single SCXML session cannot host N independent SOME/IP instances (multi-session territory). Drop `instances:` from the server section (exposing exactly one instance), or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
+                r#"{"v":1,"id":"fnv1a:5f473bdda8049652","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported on transport 'zenoh' — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can host a multi-instance server pool. Drop `instances:` from the server section, switch the server transport to one that supports pools, or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
             ),
             (
                 "mesh/external-read",

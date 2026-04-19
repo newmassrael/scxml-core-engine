@@ -167,21 +167,23 @@ pub enum DeployError {
     },
 
     /// A machine's `server:` section declared `instances: [...]` — a
-    /// server-side pool that SCE currently does not support. A single
-    /// SCXML session cannot semantically back N independent service
-    /// instances (the W3C SCXML execution model ties one document to
-    /// one state machine to one identity). Multi-instance server
-    /// support requires per-instance SCXML sessions, which is a
-    /// separate spec track; until it lands, deploy "N independent
-    /// instances of the same service" as N processes each hosting a
-    /// single instance. See SCE_MESH.md §14.4.
-    #[error("machine '{machine}': `server.instances:` is not supported — a single SCXML \
-             session cannot host N independent SOME/IP instances (multi-session \
-             territory). Drop `instances:` from the server section (exposing exactly one \
-             instance), or run N processes each hosting a single-instance server. \
-             See SCE_MESH.md §14.4.")]
+    /// server-side pool on a transport whose native routing has no
+    /// peer-identifying inbound distinguisher. Today only SOME/IP
+    /// exposes `msg->get_instance()` at dispatch time, so it is the
+    /// sole transport whose registry entry sets
+    /// `supports_multi_instance_server: true`. Other transports reject
+    /// `server.instances:` at parse time; the `transport` field lets
+    /// the author see which transport the deploy.yaml declared so the
+    /// diagnostic distinguishes the per-transport policy from the
+    /// machine-level one. See SCE_MESH.md §14.4.
+    #[error("machine '{machine}': `server.instances:` is not supported on transport '{transport}' \
+             — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can \
+             host a multi-instance server pool. Drop `instances:` from the server section, switch \
+             the server transport to one that supports pools, or run N processes each hosting a \
+             single-instance server. See SCE_MESH.md §14.4.")]
     ServerPoolNotSupported {
         machine: String,
+        transport: String,
     },
 }
 
@@ -772,20 +774,22 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), binding.clone(), reason.clone()],
         },
-        DeployError::ServerPoolNotSupported { machine } => DiagnosticPayload {
+        DeployError::ServerPoolNotSupported { machine, transport } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployServerPoolNotSupported,
             stage: Stage::MeshDeploy,
             actual: Some(machine.clone()),
-            // Single deterministic repair: remove `instances:` from the
-            // server section. The alternative shape ("run N processes")
-            // is deployment-topology advice, not a field-level edit, so
-            // it stays in the prose rather than `fix`.
+            // The deterministic repair remains "remove `instances:`";
+            // the alternative ("switch transport" / "run N processes")
+            // is deployment-topology advice, not a field-level edit,
+            // so it stays in the error prose. `key_fragments` carries
+            // the transport so duplicate-deploy aggregation groups
+            // rejections by (machine, transport).
             expected: None,
             fix: Some(Fix::RemoveFields {
                 location: format!("topology.*.machines.{machine}.server"),
                 fields: vec!["instances".to_string()],
             }),
-            key_fragments: vec![machine.clone()],
+            key_fragments: vec![machine.clone(), transport.clone()],
         },
     }
 }

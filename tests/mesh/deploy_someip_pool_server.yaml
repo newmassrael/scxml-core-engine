@@ -1,0 +1,34 @@
+# SCE_MESH.md §14.4 (Gap 7) server-side multi-instance pool compile
+# verification.
+#
+# motor is a SOME/IP server that hosts two independent instances (1, 2)
+# of motor_service. The template renders SOMEIP_SERVER_INSTANCES as a
+# 2-element std::array, init() iterates it to issue one offer_service
+# per member and one register_message_handler per (instance, method)
+# pair, and the parse-time validator (validate_server_pool_rejection)
+# accepts the list because SOME/IP's registry flag
+# supports_multi_instance_server is true.
+#
+# Under this commit the server's inbound dispatch stays coarse — both
+# instances' handlers admit envelopes through the same this->dispatch
+# path; per-instance SCXMLSession routing lands as a separate Gap 7
+# step via msg->get_instance(). The compile gate asserts the
+# build-time contract so a regression that silently emits singular
+# offer_service surfaces at the generated header's static_assert.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_motor_pool.json
+        application_name: motor_pool_client
+    machines:
+      motor_pool:
+        source: motor_pool.scxml
+        server:
+          transport: someip
+          service: motor_service
+          instances: [1, 2]
+          events:
+            "service.request.compute":
+              method: compute

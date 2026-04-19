@@ -212,6 +212,20 @@ dispatchToSender({{ env_name }})
 {% set has_server_someip = has_server and server.transport_kind == "someip" %}
 {% set has_server_zenoh = has_server and server.transport_kind == "zenoh" %}
 
+{# SCE_MESH.md §14.4 (Gap 7): multi-instance server pool.
+   `server.instance_pool` carries the Option<Vec<u16>> declared in
+   deploy.yaml; the parse-time validator has already enforced that the
+   list is only present on transports whose registry flag
+   `supports_multi_instance_server` is true (SOME/IP today). When the
+   list is absent, the singular `server.state.service.instance_id` is
+   the sole offered instance, and `someip_server_instances` degenerates
+   to a 1-element list so every server-side call site iterates the same
+   shape regardless of pool arity. #}
+{% set has_server_someip_pool = has_server_someip and server.instance_pool %}
+{% if has_server_someip %}
+{% set someip_server_instances = server.instance_pool if has_server_someip_pool else [server.state.service.instance_id] %}
+{% endif %}
+
 {# SCE Mesh §9.5 gap Z2: per-server Zenoh queryable response deadline.
    Gate requires BOTH a zenoh server AND the deploy.yaml knob being set.
    Absent knob ⇒ gate false ⇒ zero lines of Z2 code — matches the
@@ -434,7 +448,15 @@ static constexpr const char* ZENOH_CONNECT_ENDPOINTS[] = {
 {% if server.transport_kind == "someip" %}
 // Server-side SOME/IP identity (offer_service + register_message_handler)
 static constexpr vsomeip::service_t SOMEIP_SERVER_SERVICE = {{ server.state.service.service_id }};
-static constexpr vsomeip::instance_t SOMEIP_SERVER_INSTANCE = {{ server.state.service.instance_id }};
+// SCE_MESH.md §14.4 — instances this machine offers. Non-pool
+// deployments degenerate to a 1-element array whose sole entry matches
+// the transport's binding-default instance_id. Pool deployments (Gap 7)
+// emit the full declared list so `init()` can offer each member.
+static constexpr std::array<vsomeip::instance_t, {{ someip_server_instances | length }}> SOMEIP_SERVER_INSTANCES = {
+{% for instance_id in someip_server_instances %}
+    static_cast<vsomeip::instance_t>({{ instance_id }}),
+{% endfor %}
+};
 {% for pair in server.rpc_pairs if pair.method_id %}
 static constexpr vsomeip::method_t SOMEIP_SERVER_METHOD_{{ pair.event_const }} = {{ pair.method_id }};
 {% endfor %}
@@ -1458,106 +1480,119 @@ struct TransportRouter {
 {% if has_server_someip %}
         // Server SOME/IP: offer service + register request handlers.
         // offer_service MUST precede start() (vsomeip requirement).
+        //
+        // SCE_MESH.md §14.4 (Gap 7): each declared instance is
+        // offered + has its own message handlers registered so vsomeip
+        // tracks per-(service, instance) state independently. Non-pool
+        // deployments run this loop once (1-element
+        // `SOMEIP_SERVER_INSTANCES`). Inbound routing is currently
+        // coarse — every instance's handler dispatches through the
+        // same `this->admitInbound` / `this->dispatchEnvelope`; the
+        // Gap 7 roadmap refines per-instance session lookup via
+        // `msg->get_instance()` as a separate landing on top of this
+        // build-time shape.
         if (!server_app_ || !server_app_->init()) {
             shutdown();
             return false;
         }
-        server_app_->offer_service(SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE);
+        for (auto server_instance : SOMEIP_SERVER_INSTANCES) {
+            server_app_->offer_service(SOMEIP_SERVER_SERVICE, server_instance);
 {% for pair in server.rpc_pairs if pair.method_id %}
-        server_app_->register_message_handler(
-            SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
-            SOMEIP_SERVER_METHOD_{{ pair.event_const }},
-            [this](const std::shared_ptr<vsomeip::message>& msg) {
-                if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
-                auto pl = msg->get_payload();
-                if (!pl) return;
-                SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
-                // Stash original request for create_response() when the
-                // engine sends service.response.X. Key by invoke_id when
-                // available (mesh-rpc path) for correlation bridge symmetry
-                // with the Zenoh queryable handler. env.type / env.pattern
-                // are trusted from the decoded envelope — the client
-                // encoded them via resolvePattern before send.
-                auto cid = env.invoke_id.value_or(
-                    env.correlation_id.value_or(SCE::uuid::v7()));
-                {
-                    std::lock_guard<std::mutex> lock(server_pending_mutex_);
-                    pending_server_requests_[CorrelationKey{cid}] = msg;
-                }
-                env.correlation_id = cid;
-                // SCE_MESH.md §10.5: server-side dedup gate. Today the
-                // deploy schema has no server-side `protocol: tcp` knob,
-                // so SOME/IP server sockets ride the vsomeip.json-defined
-                // endpoint (UDP-default) and `server_needs_dedup` is
-                // true. pending_server_requests_ stashing happens BEFORE
-                // admit; on a duplicate, the next insert overwrites with
-                // the same correlation_id and handleServerResponse
-                // still finds a valid entry when the engine replies.
-                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
-            });
+            server_app_->register_message_handler(
+                SOMEIP_SERVER_SERVICE, server_instance,
+                SOMEIP_SERVER_METHOD_{{ pair.event_const }},
+                [this](const std::shared_ptr<vsomeip::message>& msg) {
+                    if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                    auto pl = msg->get_payload();
+                    if (!pl) return;
+                    SCE::Mesh::MeshEnvelope env;
+                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                    // Stash original request for create_response() when the
+                    // engine sends service.response.X. Key by invoke_id when
+                    // available (mesh-rpc path) for correlation bridge symmetry
+                    // with the Zenoh queryable handler. env.type / env.pattern
+                    // are trusted from the decoded envelope — the client
+                    // encoded them via resolvePattern before send.
+                    auto cid = env.invoke_id.value_or(
+                        env.correlation_id.value_or(SCE::uuid::v7()));
+                    {
+                        std::lock_guard<std::mutex> lock(server_pending_mutex_);
+                        pending_server_requests_[CorrelationKey{cid}] = msg;
+                    }
+                    env.correlation_id = cid;
+                    // SCE_MESH.md §10.5: server-side dedup gate. Today the
+                    // deploy schema has no server-side `protocol: tcp` knob,
+                    // so SOME/IP server sockets ride the vsomeip.json-defined
+                    // endpoint (UDP-default) and `server_needs_dedup` is
+                    // true. pending_server_requests_ stashing happens BEFORE
+                    // admit; on a duplicate, the next insert overwrites with
+                    // the same correlation_id and handleServerResponse
+                    // still finds a valid entry when the engine replies.
+                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
+                });
 {% endfor %}
 {% for ff in server.fire_forget_events if ff.method_id %}
-        // FireForget inbound handler (SCE_MESH.md §8.3): one-way, no
-        // response. Accepts MT_REQUEST, dispatches the envelope, and
-        // returns — no create_response call and no pending_server_requests
-        // stash because there is nothing to correlate. env.type /
-        // env.pattern are trusted from the decoded envelope.
-        server_app_->register_message_handler(
-            SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
-            SOMEIP_SERVER_FIRE_FORGET_{{ ff.event_const }},
-            [this](const std::shared_ptr<vsomeip::message>& msg) {
-                if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
-                auto pl = msg->get_payload();
-                if (!pl) return;
-                SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
-                // SCE_MESH.md §10.5: same server-side dedup gate as the
-                // RPC handler above.
-                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
-            });
+            // FireForget inbound handler (SCE_MESH.md §8.3): one-way, no
+            // response. Accepts MT_REQUEST, dispatches the envelope, and
+            // returns — no create_response call and no pending_server_requests
+            // stash because there is nothing to correlate. env.type /
+            // env.pattern are trusted from the decoded envelope.
+            server_app_->register_message_handler(
+                SOMEIP_SERVER_SERVICE, server_instance,
+                SOMEIP_SERVER_FIRE_FORGET_{{ ff.event_const }},
+                [this](const std::shared_ptr<vsomeip::message>& msg) {
+                    if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                    auto pl = msg->get_payload();
+                    if (!pl) return;
+                    SCE::Mesh::MeshEnvelope env;
+                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                    // SCE_MESH.md §10.5: same server-side dedup gate as the
+                    // RPC handler above.
+                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
+                });
 {% endfor %}
 {% for fa in server.field_access_pairs if fa.method_id %}
-        // FieldAccess inbound handler (SCE_MESH.md §8.3): getter/setter
-        // requests share the RPC response path — the engine raises
-        // `field.notify.X`, inject_server_response_sends appends a
-        // synthetic <send>, and handleServerResponse routes it via
-        // `create_response` on the original request. env.type /
-        // env.pattern are trusted from the decoded envelope.
-        server_app_->register_message_handler(
-            SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
-            SOMEIP_SERVER_{{ fa.kind | upper }}_{{ fa.event_const }},
-            [this](const std::shared_ptr<vsomeip::message>& msg) {
-                if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
-                auto pl = msg->get_payload();
-                if (!pl) return;
-                SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
-                // Stash original request (key symmetry with the RPC
-                // handler: invoke_id first, correlation_id fallback,
-                // fresh UUID last). handleServerResponse looks the
-                // message back up and calls create_response on it.
-                auto cid = env.invoke_id.value_or(
-                    env.correlation_id.value_or(SCE::uuid::v7()));
-                {
-                    std::lock_guard<std::mutex> lock(server_pending_mutex_);
-                    pending_server_requests_[CorrelationKey{cid}] = msg;
-                }
-                env.correlation_id = cid;
-                // SCE_MESH.md §10.5: same server-side dedup gate as the
-                // RPC / FireForget handlers above.
-                (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
-            });
+            // FieldAccess inbound handler (SCE_MESH.md §8.3): getter/setter
+            // requests share the RPC response path — the engine raises
+            // `field.notify.X`, inject_server_response_sends appends a
+            // synthetic <send>, and handleServerResponse routes it via
+            // `create_response` on the original request. env.type /
+            // env.pattern are trusted from the decoded envelope.
+            server_app_->register_message_handler(
+                SOMEIP_SERVER_SERVICE, server_instance,
+                SOMEIP_SERVER_{{ fa.kind | upper }}_{{ fa.event_const }},
+                [this](const std::shared_ptr<vsomeip::message>& msg) {
+                    if (msg->get_message_type() != vsomeip::message_type_e::MT_REQUEST) return;
+                    auto pl = msg->get_payload();
+                    if (!pl) return;
+                    SCE::Mesh::MeshEnvelope env;
+                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                    // Stash original request (key symmetry with the RPC
+                    // handler: invoke_id first, correlation_id fallback,
+                    // fresh UUID last). handleServerResponse looks the
+                    // message back up and calls create_response on it.
+                    auto cid = env.invoke_id.value_or(
+                        env.correlation_id.value_or(SCE::uuid::v7()));
+                    {
+                        std::lock_guard<std::mutex> lock(server_pending_mutex_);
+                        pending_server_requests_[CorrelationKey{cid}] = msg;
+                    }
+                    env.correlation_id = cid;
+                    // SCE_MESH.md §10.5: same server-side dedup gate as the
+                    // RPC / FireForget handlers above.
+                    (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env") }};
+                });
 {% endfor %}
 {% for eg in server.eventgroup_events if eg.event_group_id %}
-        // Eventgroup notification (SCE_MESH.md §8.1): offer the event so
-        // clients that subscribe to this eventgroup receive notify messages
-        // via vsomeip multicast. offer_event MUST precede start().
-        server_app_->offer_event(
-            SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
-            SOMEIP_SERVER_EVENT_{{ eg.event_const }},
-            {SOMEIP_SERVER_EVENTGROUP_{{ eg.event_const }}});
+            // Eventgroup notification (SCE_MESH.md §8.1): offer the event so
+            // clients that subscribe to this eventgroup receive notify messages
+            // via vsomeip multicast. offer_event MUST precede start().
+            server_app_->offer_event(
+                SOMEIP_SERVER_SERVICE, server_instance,
+                SOMEIP_SERVER_EVENT_{{ eg.event_const }},
+                {SOMEIP_SERVER_EVENTGROUP_{{ eg.event_const }}});
 {% endfor %}
+        }
         server_thread_ = std::thread([this]{ server_app_->start(); });
 {% endif %}
 {% if has_server_zenoh %}
@@ -2268,7 +2303,13 @@ struct TransportRouter {
             auto payload = vsomeip::runtime::get()->create_payload(
                 reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
                 static_cast<uint32_t>(buf.size()));
-            server_app_->notify(SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCE,
+            // SCE_MESH.md §14.4 (Gap 7): spontaneous notification
+            // emits on the first declared instance under coarse
+            // dispatch. The Gap 7 roadmap adds per-instance emission
+            // routing (from the session identity raising
+            // `field.notify.X` / `event.notification.X`) as a separate
+            // landing on top of this build-time shape.
+            server_app_->notify(SOMEIP_SERVER_SERVICE, SOMEIP_SERVER_INSTANCES[0],
                                 SOMEIP_SERVER_EVENT_{{ eg.event_const }}, payload);
             return true;
         }

@@ -1,0 +1,15 @@
+{
+  "applications": [
+    { "name": "motor_pool_server" }
+  ],
+  "services": [
+    {
+      "name": "motor_service",
+      "service": "0x3000",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "compute", "method": "0x0101" }
+      ]
+    }
+  ]
+}
