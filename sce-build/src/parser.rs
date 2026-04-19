@@ -5,7 +5,7 @@
 // Parses W3C SCXML files into SCXMLModel for code generation.
 
 use crate::model::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -15,6 +15,12 @@ pub struct SCXMLParser {
     hybrid_invoke_counter: u32,
     inline_child_counter: u32,
     send_counter: u32,
+    /// W3C SCXML §3.14: every `<invoke>` id must be document-unique.
+    /// Both author-supplied and auto-generated ids feed this set so
+    /// the author-shadows-auto-counter case (e.g. `<invoke id="_invoke_0">`
+    /// followed by an idless invoke whose auto counter hits 0) is
+    /// caught alongside plain author duplicates.
+    invoke_ids_seen: BTreeSet<String>,
 }
 
 impl SCXMLParser {
@@ -25,6 +31,7 @@ impl SCXMLParser {
             hybrid_invoke_counter: 0,
             inline_child_counter: 0,
             send_counter: 0,
+            invoke_ids_seen: BTreeSet::new(),
         }
     }
 
@@ -1247,6 +1254,29 @@ impl SCXMLParser {
             self.invoke_counter += 1;
         }
         let field_suffix = invoke_id.trim_start_matches('_').to_string();
+
+        // W3C SCXML §3.14: `<invoke>` id must be document-unique. Downstream
+        // identity axes — AOT `done.invoke.<id>` / `error.invoke.<id>` event
+        // matching, `idlocation` datamodel assignment (§6.4.2), mesh
+        // `active_invokes_` keying — all assume this; a silent duplicate
+        // collapses lifecycle event delivery and mis-cancels in-flight work.
+        // Author-supplied ids and auto-counter ids share one set so the
+        // shadow case (`<invoke id="_invoke_0">` racing a later auto-gen)
+        // is caught alongside plain duplicates.
+        if !self.invoke_ids_seen.insert(invoke_id.clone()) {
+            let pos = elem.document().text_pos_at(elem.range().start);
+            return Err(crate::forge::error::Located::new(
+                crate::forge::error::ValidationError::DuplicateId {
+                    kind: crate::forge::model::ForgeKind::Statechart,
+                    what: "<invoke id>".into(),
+                    id: invoke_id,
+                }
+                .into(),
+                source_name,
+                Some(pos.row),
+                Some(pos.col),
+            ));
+        }
 
         let invoke_type = elem.attribute("type").unwrap_or("").to_string();
         let src = elem.attribute("src").unwrap_or("").to_string();
@@ -3798,6 +3828,97 @@ mod tests {
         let (invoke_id, field_suffix) = first_invoke_ids(scxml);
         assert_eq!(invoke_id, "invokedChild");
         assert_eq!(field_suffix, "invokedChild");
+    }
+
+    // ── W3C SCXML §3.14 invoke-id uniqueness ─────────────────────────
+
+    #[test]
+    fn invoke_id_duplicate_author_rejected() {
+        // Two parallel regions with the same author-supplied <invoke id>.
+        // W3C §3.14 forbids duplicate ids; the parser must surface this as
+        // ValidationError::DuplicateId rather than let the collision reach
+        // AOT event matching or the mesh active_invokes_ map.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p">
+            <parallel id="p">
+                <state id="a">
+                    <invoke id="motor_call" type="scxml" src="child.scxml"/>
+                </state>
+                <state id="b">
+                    <invoke id="motor_call" type="scxml" src="child.scxml"/>
+                </state>
+            </parallel>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let err = parser
+            .parse_string(scxml, "test")
+            .expect_err("duplicate <invoke id> must reject");
+        use crate::forge::error::{ForgeError, ValidationError};
+        match err.error {
+            ForgeError::Validation(ValidationError::DuplicateId { what, id, .. }) => {
+                assert_eq!(what, "<invoke id>");
+                assert_eq!(id, "motor_call");
+            }
+            other => panic!("expected DuplicateId for <invoke id>, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn invoke_id_auto_counter_parallel_regions_unique() {
+        // Two parallel regions, both with idless <invoke>. Auto-counter
+        // yields `_invoke_0` and `_invoke_1` — no collision, parses clean.
+        // Guards against over-rejection once duplicate detection landed.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p">
+            <parallel id="p">
+                <state id="a">
+                    <invoke type="scxml" src="child.scxml"/>
+                </state>
+                <state id="b">
+                    <invoke type="scxml" src="child.scxml"/>
+                </state>
+            </parallel>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let model = parser
+            .parse_string(scxml, "test")
+            .expect("auto-id parallel invokes must parse clean");
+        // Two distinct invoke ids collected across the parallel's children.
+        let ids: Vec<String> = model
+            .states
+            .values()
+            .flat_map(|s| s.invokes.iter())
+            .map(|i| match i {
+                Invoke::Scxml(info) => info.common.base.invoke_id.clone(),
+                Invoke::Hybrid(info) => info.common.base.invoke_id.clone(),
+                Invoke::MeshRpc(info) => info.base.invoke_id.clone(),
+            })
+            .collect();
+        assert_eq!(ids.len(), 2);
+        assert_ne!(ids[0], ids[1], "auto-counter must yield distinct ids");
+    }
+
+    #[test]
+    fn invoke_id_author_shadows_auto_counter_rejected() {
+        // Author picks `_invoke_0` explicitly; a subsequent idless invoke
+        // would take counter=0 and land on the same id. Must reject so the
+        // shadow case cannot slip past the uniqueness gate.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke id="_invoke_0" type="scxml" src="a.scxml"/>
+                <invoke type="scxml" src="b.scxml"/>
+            </state>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let err = parser
+            .parse_string(scxml, "test")
+            .expect_err("author-shadows-auto-counter must reject");
+        use crate::forge::error::{ForgeError, ValidationError};
+        match err.error {
+            ForgeError::Validation(ValidationError::DuplicateId { what, id, .. }) => {
+                assert_eq!(what, "<invoke id>");
+                assert_eq!(id, "_invoke_0");
+            }
+            other => panic!("expected DuplicateId for <invoke id>, got: {other:?}"),
+        }
     }
 
     // ── <invoke type="sce:mesh-rpc"> reserved-param rules (§9.5) ────
