@@ -3,9 +3,10 @@
 //
 // SCE Mesh PatternKind — wire-stable communication pattern discriminator.
 //
-// Values are IMMUTABLE once shipped. Range 1-9 is in use; 10-15 is reserved
-// for future Stream patterns (Unary/ServerStream/ClientStream/Bidi) per
-// SCE_MESH.md Section 13 Phase 3.5. Adding a variant requires a new wire
+// Values are IMMUTABLE once shipped. Range 1-9 is in use; 10-13 is reserved
+// for future Stream patterns — wire-layer optimizations on EventSubscribe /
+// EventNotification that pair an initial state snapshot with delta-encoded
+// change events (SCE_MESH.md §8.1). Adding a variant requires a new wire
 // value — never reuse. Serialized into MeshEnvelope key 3 as CBOR uint16.
 
 #pragma once
@@ -24,7 +25,7 @@ enum class PatternKind : uint16_t {
     FieldRead          = 7,
     FieldWrite         = 8,
     FieldNotify        = 9,
-    // 10-15 RESERVED for Stream* variants (Phase 4). Do not assign.
+    // 10-13 RESERVED for Stream* variants (snapshot + delta wire-layer optimization, SCE_MESH.md §8.1). Do not assign.
 };
 
 /// Wire-value guards. Any reorder or renumber breaks cross-machine

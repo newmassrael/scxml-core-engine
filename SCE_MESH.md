@@ -2124,11 +2124,11 @@ CloudEvents-aligned field names. Wire form is canonical CBOR (RFC 8949 §4.2.1) 
 namespace SCE::Mesh {
 
 /// Wire-stable pattern discriminator. Values are immutable once shipped.
-/// Range 1-9 base patterns; 10-13 reserved for future Stream patterns;
-/// 14-20 full remote invoke lifecycle (§9.6.2); 21 distributed
-/// parallel-final barrier (§16.5).
-/// (Unary/ServerStream/ClientStream/Bidi). Adding a variant requires
-/// a new wire value, never reuse.
+/// Range 1-9 base patterns; 10-13 reserved for future Stream patterns
+/// (wire-layer snapshot + delta optimization on EventSubscribe /
+/// EventNotification, §8.1); 14-20 full remote invoke lifecycle
+/// (§9.6.2); 21 distributed parallel-final barrier (§16.5).
+/// Adding a variant requires a new wire value, never reuse.
 enum class PatternKind : uint16_t {
     FireForget         = 1,
     RpcRequest         = 2,
@@ -2139,7 +2139,7 @@ enum class PatternKind : uint16_t {
     FieldRead          = 7,
     FieldWrite         = 8,
     FieldNotify        = 9,
-    // 10-13 RESERVED for Stream* (Phase 4) — DO NOT REASSIGN
+    // 10-13 RESERVED for Stream* (wire-layer snapshot+delta optimization, §8.1) — DO NOT REASSIGN
     // 14-20 RESERVED for full remote invoke lifecycle (§9.6.2, Session F).
     //       Enum variants are declared NOW (Session E1) so wire values are
     //       pinned before any Session E-or-later session can accidentally
@@ -2540,7 +2540,7 @@ Sessions B-E execute the design above. Each session is a working unit; estimates
 #### Out of Phase 3.5 scope
 
 - Additional transports (DDS, gRPC, MQTT, UDP) — Phase 4
-- Stream patterns (Unary/Server/Client/Bidi streaming) — Phase 4 (wire values 10-13 reserved)
+- Stream patterns (wire-layer snapshot+delta optimization on EventSubscribe/EventNotification per §8.1; wire values 10-13 reserved)
 - Performance optimizations (drain allocation, Lua compile bypass, double serialization) — re-evaluated after envelope settles
 - Middleware-level service discovery (SCE-maintained peer tables, IDiscovery trait, `runtime_targets_` map) — rejected; transport-native routing is not reimplemented (§3.3 invariant)
 - Cross-transport automatic bridging codegen — rejected; bridging is explicit SCXML responsibility (§14.5)
