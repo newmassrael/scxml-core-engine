@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    SCE Mesh §14 — first-party partitions: ctest fixture.
+
+    Two orthogonal regions (left, right) under <parallel id="root">.
+    Each region holds two leaf states with self-internal transitions
+    only; the SCXML is intentionally clean against the four R1-R4
+    distributability axes the §16.3 analyzer scope describes:
+
+      - R1 (ancestor-scope <data> writes): no <data> declarations.
+      - R2 (cross-region transitions):     every transition stays
+                                            within its own region.
+      - R3 (ancestor-scope reads):         no <script>, no datamodel
+                                            access of any kind.
+      - R4 (<script> usage):               none.
+
+    Cleanliness on all four axes is the deliberate property: the
+    fixture exercises §14 (parse + cross-reference) without depending
+    on R1-R4 enforcement. §16.3's current status banner records the
+    analyzer as a separate concern from §14 partition resolution.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="motor_partition" initial="root">
+    <parallel id="root">
+        <state id="left" initial="left_idle">
+            <state id="left_idle">
+                <transition event="ping_left" target="left_active"/>
+            </state>
+            <state id="left_active">
+                <transition event="reset_left" target="left_idle"/>
+            </state>
+        </state>
+        <state id="right" initial="right_idle">
+            <state id="right_idle">
+                <transition event="ping_right" target="right_active"/>
+            </state>
+            <state id="right_active">
+                <transition event="reset_right" target="right_idle"/>
+            </state>
+        </state>
+    </parallel>
+</scxml>

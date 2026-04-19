@@ -1460,6 +1460,59 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_compile_verification COMMAND mesh_compile_test)
 
+    # ── SCE_MESH §14: first-party `partitions:` end-to-end fixture ──
+    # Drives a deploy.yaml whose `partitions:` block fully covers the
+    # two `<parallel>` regions of motor_partition.scxml through the
+    # full sce-build pipeline:
+    #   parse_deploy → validate_partitions_schema (rules 6-10)
+    #                → validate_partitions_against_scxml (rules 1/2/11)
+    #                → compile_mesh_transport
+    # Every §14 rule was covered only by Rust unit tests until this
+    # fixture; the C++ build never exercised the CLI path. A regression
+    # that bypassed `validate_partitions_against_scxml` from sce-codegen
+    # would have shipped silently. Build success here proves the chain.
+    #
+    # The machine declares no bindings, so compile_mesh_transport's
+    # `lib.rs:1092` early-return fires after validation succeeds and no
+    # transport.h is emitted — this fixture's job is the §14 path, not
+    # another transport-router compile.
+    set(MESH_PARTITIONS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_partitions_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_PARTITIONS_OUTPUT_DIR}/motor_partition_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_PARTITIONS_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
+                -l cpp -o "${MESH_PARTITIONS_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
+        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
+                "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                "${SCE_CODEGEN}"
+        COMMENT "Mesh partitions: Generating motor_partition_sm.h via §14 deploy validation"
+        VERBATIM
+    )
+
+    add_executable(mesh_partitions_test
+        mesh/test_mesh_partitions.cpp
+        "${MESH_PARTITIONS_OUTPUT_DIR}/motor_partition_sm.h"
+    )
+
+    target_include_directories(mesh_partitions_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_PARTITIONS_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_partitions_test
+        PRIVATE
+            sce_base
+    )
+
+    target_compile_features(mesh_partitions_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_partitions_test)
+
+    add_test(NAME mesh_partitions_verification COMMAND mesh_partitions_test)
+
     # ── SCE_MESH §9.5: <invoke type="sce:mesh-rpc"> plumbing verification ──
     # Byte-golden regression for `invoke_sites` threading from analyzer
     # through codegen::TargetContext into the transport template. A drop of

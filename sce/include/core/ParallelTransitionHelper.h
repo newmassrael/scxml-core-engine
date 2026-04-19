@@ -18,6 +18,7 @@
 
 #include "core/HierarchicalStateHelper.h"
 #include "core/StatePolicyConcepts.h"
+#include <functional>
 #include <optional>
 #include <unordered_set>
 #include <vector>

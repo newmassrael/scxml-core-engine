@@ -1,0 +1,33 @@
+# SCE Mesh §14 — first-party partitions: ctest fixture.
+#
+# Exercises the full sce-build mesh pipeline against a deploy.yaml that
+# declares a `partitions:` block:
+#
+#   parse_deploy            → typed serde + rule 6 dup-name detection
+#   validate_partitions_schema → rules 7, 8, 9, 10 (deploy.rs)
+#   validate_partitions_against_scxml → rules 1, 2, 11 (partitions.rs)
+#   compile_mesh_transport  → no bindings ⇒ L1092 early-return after
+#                              validation passes (no transport.h emitted)
+#
+# Single-device single-machine. Coverage is complete (both `left` and
+# `right` regions are explicitly assigned), so rule 2's `_default`
+# escape hatch is intentionally NOT triggered — that variant is
+# covered by the deploy.rs and partitions.rs unit suites.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+  motor_right:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }
