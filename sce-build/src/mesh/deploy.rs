@@ -49,6 +49,169 @@ pub struct DeployConfig {
     /// transport-level peer discovery configure external OEM config
     /// (zenoh.json5 scouting, vsomeip.json service-discovery).
     pub discovery: Option<serde_yaml_ng::Value>,
+    /// Aggressive-distribution partition declarations (SCE_MESH.md §14
+    /// "Partition resolution rules" + §16). A machine whose name does
+    /// not appear in any partition's `contains:` runs monolithically on
+    /// its device — the absence of a `partitions:` block is the normal
+    /// single-process case. Absent ⇒ `None`; present ⇒ `Some(map)` with
+    /// per-partition validation applied by [`parse_deploy_str`].
+    ///
+    /// The map type is [`PartitionMap`] rather than a raw `BTreeMap`
+    /// because `serde_yaml_ng`'s typed map parse silently dedupes
+    /// duplicate YAML keys (last-wins). `PartitionMap` installs a
+    /// custom [`serde::Deserialize`] that rejects redeclarations via a
+    /// sentinel-tagged error message — parse_deploy_str intercepts the
+    /// sentinel and surfaces it as
+    /// [`DeployError::PartitionDuplicateName`] (§14 rule 6).
+    #[serde(default)]
+    pub partitions: Option<PartitionMap>,
+}
+
+// SCE_MESH.md §14 rules 6-10 — partitions schema.
+//
+// The typed parse of a YAML mapping into `BTreeMap<String, T>` silently
+// drops duplicate keys (last-wins). Rule 6 (partition names globally
+// unique) therefore needs a dedicated detector; the other rules operate
+// on the parsed [`PartitionDecl`] graph and live in their own
+// validators below.
+
+/// Sentinel token embedded in the custom serde error when
+/// [`PartitionMap::deserialize`] observes a redeclaration. The token is
+/// chosen to be unlikely to appear in authored text yet still visible
+/// in the wrapped YAML error string, so [`parse_deploy_str`] can
+/// promote the generic parse failure into the structured
+/// [`DeployError::PartitionDuplicateName`] diagnostic.
+const PARTITION_DUP_SENTINEL: &str = "__sce_partition_duplicate_name__";
+
+/// Deserializer-backed `partitions:` map. Wraps a [`BTreeMap`] so
+/// downstream validators can walk the entries in a deterministic order
+/// (BTree ordering matches the source-free expectation of
+/// CI-reproducible diagnostics).
+#[derive(Debug, Clone, Default)]
+pub struct PartitionMap(BTreeMap<String, PartitionDecl>);
+
+impl PartitionMap {
+    /// Iterate partitions in BTreeMap (lexicographic) order.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &PartitionDecl)> {
+        self.0.iter()
+    }
+
+    /// Lookup a partition by name.
+    pub fn get(&self, name: &str) -> Option<&PartitionDecl> {
+        self.0.get(name)
+    }
+
+    /// True iff there are no partitions declared.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Partition count.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PartitionMap {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct MapVisitor;
+        impl<'de> serde::de::Visitor<'de> for MapVisitor {
+            type Value = PartitionMap;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a mapping of partition name to PartitionDecl")
+            }
+            fn visit_map<A>(self, mut map: A) -> Result<PartitionMap, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut out: BTreeMap<String, PartitionDecl> = BTreeMap::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    let value: PartitionDecl = map.next_value()?;
+                    if out.insert(key.clone(), value).is_some() {
+                        // Encode the collision as a serde custom error
+                        // whose message embeds both the sentinel and the
+                        // offending key. `parse_deploy_str` scans the
+                        // wrapped YAML error for the sentinel and
+                        // recovers the key verbatim.
+                        return Err(<A::Error as serde::de::Error>::custom(format!(
+                            "{PARTITION_DUP_SENTINEL}{key}"
+                        )));
+                    }
+                }
+                Ok(PartitionMap(out))
+            }
+        }
+        deserializer.deserialize_map(MapVisitor)
+    }
+}
+
+/// One partition entry under `partitions:`. A partition is the unit of
+/// single-process execution for a machine's parallel regions and/or
+/// invokes (SCE_MESH.md §14).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartitionDecl {
+    /// Host device. Omitted ⇒ defaults to the first device declared in
+    /// `topology:` at runtime resolution time (rule 7 still constrains
+    /// the partition to one device).
+    #[serde(default)]
+    pub device: Option<String>,
+    /// Machines whose pieces this partition hosts. Rule 9 requires
+    /// every `contains:` entry to reference a machine in this list.
+    pub machines: Vec<String>,
+    /// Orthogonal units this partition runs.
+    pub contains: PartitionContains,
+    /// Transport used for inter-partition traffic within the same
+    /// machine. Defaults handled at codegen time per SCE_MESH.md §14
+    /// rule 4 (shm for single-device, custom_tcp otherwise).
+    #[serde(default)]
+    pub transport_binding: Option<String>,
+    /// Per-partition parallel-final barrier timeout (SCE_MESH.md
+    /// §16.5). `None` means "use the W3C normative default"
+    /// (infinity). Only meaningful on partitions hosting the root of
+    /// a `<parallel>`.
+    #[serde(default)]
+    pub barrier_timeout_ms: Option<u32>,
+}
+
+/// Orthogonal units assigned to a partition — parallel regions and
+/// invokes, both of which are distribution axes per §16.3 + §14.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartitionContains {
+    /// Child `<state>` IDs directly under a `<parallel>`.
+    #[serde(default)]
+    pub parallel_regions: Vec<PartitionUnitRef>,
+    /// `<invoke>` IDs (including synthesized `__sce_synth_invoke__*`
+    /// machines from §9.6.6).
+    #[serde(default)]
+    pub invokes: Vec<PartitionInvokeRef>,
+}
+
+/// A parallel-region unit reference — the (machine, region) pair is
+/// the §14 rule 8 uniqueness key.
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
+#[serde(deny_unknown_fields)]
+pub struct PartitionUnitRef {
+    /// SCXML machine name (deploy.yaml `machines.<name>` key).
+    pub machine: String,
+    /// `<state id>` of the region (direct child of `<parallel>`).
+    pub region: String,
+}
+
+/// An invoke unit reference — the (machine, invoke) pair is the §14
+/// rule 8 uniqueness key.
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
+#[serde(deny_unknown_fields)]
+pub struct PartitionInvokeRef {
+    /// SCXML machine name hosting the invoke site.
+    pub machine: String,
+    /// `<invoke id>` of the invoke. May be a synthesized
+    /// `<parent>__sce_synth_invoke__<id>` identifier per §9.6.6.
+    pub invoke: String,
 }
 
 /// Scheduler configuration stub (future expansion).
@@ -821,8 +984,26 @@ pub fn parse_deploy(path: &Path) -> Result<DeployConfig, DeployError> {
 
 /// Parse deploy.yaml from a string (filesystem-free, testable).
 pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
-    let cfg: DeployConfig =
-        serde_yaml_ng::from_str(content).map_err(|e| DeployError::Yaml(e.to_string()))?;
+    let cfg: DeployConfig = serde_yaml_ng::from_str(content).map_err(|e| {
+        let msg = e.to_string();
+        // Promote the sentinel-tagged custom error emitted by
+        // `PartitionMap::deserialize` into a structured diagnostic.
+        // serde_yaml_ng wraps our `custom(...)` message with a YAML
+        // location prefix, so the sentinel survives as a substring.
+        if let Some(start) = msg.find(PARTITION_DUP_SENTINEL) {
+            let after = &msg[start + PARTITION_DUP_SENTINEL.len()..];
+            // Extract the key verbatim: YAML keys are arbitrary strings
+            // but our sentinel was emitted at the tail of the message,
+            // so read until the first whitespace, quote, or message
+            // punctuation inserted by serde_yaml's wrapping layer.
+            let name: String = after
+                .chars()
+                .take_while(|c| !c.is_whitespace() && *c != '"' && *c != ',')
+                .collect();
+            return DeployError::PartitionDuplicateName { name };
+        }
+        DeployError::Yaml(msg)
+    })?;
 
     if let Some(v) = &cfg.version {
         if !SUPPORTED_VERSIONS.contains(&v.as_str()) {
@@ -841,8 +1022,114 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_pool_capability(&cfg)?;
     validate_outbound_buffer(&cfg)?;
     validate_discovery_not_supported(&cfg)?;
+    validate_partitions_schema(&cfg)?;
 
     Ok(cfg)
+}
+
+/// SCE_MESH.md §14 rules 7-10 — structural checks on `partitions:`
+/// that do not require SCXML cross-reference. Rule 6 (duplicate
+/// partition names) is enforced at deserialization time via the
+/// custom [`PartitionMap`] visitor; rules 1, 2, 5, 11 (coverage,
+/// default-partition discipline, synthesized-invoke infix collision,
+/// nested-parallel partitioning) require SCXML inspection and land
+/// in a later phase. This validator is a no-op when `partitions:` is
+/// absent.
+fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
+    let Some(partitions) = &cfg.partitions else {
+        return Ok(());
+    };
+
+    // Build a device lookup: machine_name → device_name. Device names
+    // themselves live as HashMap keys in cfg.topology; the lookup is
+    // only needed for rule 7 (multi-device detection).
+    let mut machine_device: BTreeMap<&str, &str> = BTreeMap::new();
+    for (device_name, device) in &cfg.topology {
+        for machine_name in device.machines.keys() {
+            machine_device.insert(machine_name.as_str(), device_name.as_str());
+        }
+    }
+
+    // Rules 7, 9, 10 operate per-partition. Collect the (unit, partition)
+    // pairs for rule 8 across all partitions so two partitions claiming
+    // the same unit produce one diagnostic with both partition names.
+    let mut unit_owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    for (partition_name, decl) in partitions.iter() {
+        // Rule 10 — empty partition. Checked first so it pre-empts the
+        // rule-9 check (which would read no entries and pass vacuously).
+        if decl.contains.parallel_regions.is_empty() && decl.contains.invokes.is_empty() {
+            return Err(DeployError::PartitionEmpty {
+                partition: partition_name.clone(),
+            });
+        }
+
+        // Rule 7 — single device per partition. Resolve every machine in
+        // `machines:` to its host device; if the set has cardinality > 1
+        // the partition would span devices. Unknown machines are not
+        // rejected here — topology-stage validation catches those with
+        // a more precise diagnostic.
+        let mut devices: BTreeMap<&str, ()> = BTreeMap::new();
+        for machine in &decl.machines {
+            if let Some(device) = machine_device.get(machine.as_str()) {
+                devices.insert(*device, ());
+            }
+        }
+        if devices.len() > 1 {
+            let device_list: Vec<String> = devices.keys().map(|s| s.to_string()).collect();
+            return Err(DeployError::PartitionMultiDevice {
+                partition: partition_name.clone(),
+                devices: device_list,
+            });
+        }
+
+        // Rule 9 — every `contains:` entry must reference a machine in
+        // the partition's own `machines:` list. Using a BTreeSet so
+        // membership checks are O(log n) without allocation per
+        // contained entry.
+        let listed: std::collections::BTreeSet<&str> =
+            decl.machines.iter().map(|s| s.as_str()).collect();
+        for region in &decl.contains.parallel_regions {
+            if !listed.contains(region.machine.as_str()) {
+                return Err(DeployError::PartitionMachineNotListed {
+                    partition: partition_name.clone(),
+                    machine: region.machine.clone(),
+                });
+            }
+            let key = format!("parallel_region:{}/{}", region.machine, region.region);
+            unit_owners
+                .entry(key)
+                .or_default()
+                .push(partition_name.clone());
+        }
+        for invoke in &decl.contains.invokes {
+            if !listed.contains(invoke.machine.as_str()) {
+                return Err(DeployError::PartitionMachineNotListed {
+                    partition: partition_name.clone(),
+                    machine: invoke.machine.clone(),
+                });
+            }
+            let key = format!("invoke:{}/{}", invoke.machine, invoke.invoke);
+            unit_owners
+                .entry(key)
+                .or_default()
+                .push(partition_name.clone());
+        }
+    }
+
+    // Rule 8 — each unit belongs to exactly one partition. Report the
+    // first unit observed in more than one partition with all owners
+    // named so authors fix the collision in one edit.
+    for (unit, owners) in &unit_owners {
+        if owners.len() > 1 {
+            return Err(DeployError::PartitionUnitDuplicate {
+                unit: unit.clone(),
+                partitions: owners.clone(),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Reject any `discovery:` top-level block (SCE Mesh §3.3 + §2572 +
@@ -2678,5 +2965,242 @@ topology:
             key: "sce/motor"
 "##;
         parse_deploy_str(yaml).expect("parse");
+    }
+
+    // SCE_MESH.md §14 rules 6-10 — partitions schema coverage. Each
+    // test pins one rejection shape via its structured DeployError
+    // variant so golden snapshots do not drift on message tweaks.
+
+    #[test]
+    fn partitions_happy_path_two_regions_one_device() {
+        // Positive fixture: one machine, two parallel regions, two
+        // partitions. No SCXML is consulted — rules 7-10 operate on
+        // the deploy.yaml structure alone, so this exercises the happy
+        // path for the schema without requiring an analyzer phase.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+  brake_worker:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: executor }
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let parts = cfg.partitions.expect("partitions present");
+        assert_eq!(parts.len(), 2);
+        assert!(parts.get("brake_main").is_some());
+        assert!(parts.get("brake_worker").is_some());
+    }
+
+    #[test]
+    fn reject_duplicate_partition_name_rule6() {
+        // Rule 6 — two `partitions.<name>:` entries with the same
+        // name. BTreeMap typed parse would silently dedupe; the
+        // custom PartitionMap visitor rejects via a sentinel-tagged
+        // error that parse_deploy_str lifts to a structured diagnostic.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: executor }
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionDuplicateName { name }) => {
+                assert_eq!(name, "brake_main");
+            }
+            other => panic!("expected PartitionDuplicateName, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_multi_device_partition_rule7() {
+        // Rule 7 — the partition's `machines:` list spans more than
+        // one device. A partition is one process on one device.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu_a:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+  ecu_b:
+    machines:
+      motor:
+        source: motor.scxml
+        bindings: {}
+
+partitions:
+  cross_part:
+    machines: [brake, motor]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+        - { machine: motor, region: drive }
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionMultiDevice { partition, devices }) => {
+                assert_eq!(partition, "cross_part");
+                let mut ds = devices;
+                ds.sort();
+                assert_eq!(ds, vec!["ecu_a".to_string(), "ecu_b".to_string()]);
+            }
+            other => panic!("expected PartitionMultiDevice, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_unit_in_two_partitions_rule8() {
+        // Rule 8 — one `(machine, region)` unit listed under two
+        // partitions. Each orthogonal unit belongs to exactly one
+        // partition; analyzer never silently picks.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  part_a:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: shared }
+  part_b:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: shared }
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionUnitDuplicate { unit, partitions }) => {
+                assert_eq!(unit, "parallel_region:brake/shared");
+                let mut ps = partitions;
+                ps.sort();
+                assert_eq!(ps, vec!["part_a".to_string(), "part_b".to_string()]);
+            }
+            other => panic!("expected PartitionUnitDuplicate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_contains_references_unlisted_machine_rule9() {
+        // Rule 9 — `contains:` entry references a machine that the
+        // partition's `machines:` does not list. A partition cannot
+        // reach into another partition's address space.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+      motor:
+        source: motor.scxml
+        bindings: {}
+
+partitions:
+  brake_only:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: motor, region: drive }
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionMachineNotListed {
+                partition,
+                machine,
+            }) => {
+                assert_eq!(partition, "brake_only");
+                assert_eq!(machine, "motor");
+            }
+            other => panic!("expected PartitionMachineNotListed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_empty_partition_rule10() {
+        // Rule 10 — empty `contains:` block. An empty partition has
+        // no runtime purpose and usually indicates a copy-paste error.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  empty_part:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions: []
+      invokes: []
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionEmpty { partition }) => {
+                assert_eq!(partition, "empty_part");
+            }
+            other => panic!("expected PartitionEmpty, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn partitions_absent_is_normal_monolith() {
+        // Regression guard — the absence of `partitions:` must parse
+        // identically to every in-tree deploy.yaml. No validator is
+        // allowed to fire on `None`.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        assert!(cfg.partitions.is_none());
     }
 }

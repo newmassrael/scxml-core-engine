@@ -218,6 +218,70 @@ pub enum DeployError {
         machine: String,
         transport: String,
     },
+
+    /// Two entries under `partitions:` declare the same partition name
+    /// (SCE_MESH.md §14 rule 6). Partition names are process identities
+    /// at runtime and double as log-correlation tags; aliased entries
+    /// would silently mask the earlier one under standard YAML map
+    /// semantics, so the parser detects the collision via a custom
+    /// [`crate::mesh::deploy::PartitionMap`] deserializer and surfaces
+    /// it here before the downstream validators run on a truncated map.
+    #[error("partition name '{name}' is declared more than once under `partitions:`. \
+             Partition names are globally unique process identities (SCE_MESH.md §14 rule 6). \
+             Rename one of the entries or delete the duplicate.")]
+    PartitionDuplicateName { name: String },
+
+    /// A partition's `contains:` references machines hosted on more
+    /// than one device (SCE_MESH.md §14 rule 7). A partition occupies
+    /// exactly one process on one device; spanning multiple devices
+    /// would require cross-device transport for the partition's
+    /// internal membership, contradicting the single-process
+    /// abstraction. Split the partition into one-per-device entries.
+    #[error("partition '{partition}': its `machines:` list spans more than one device ({devices}). \
+             A partition is one process on one device (SCE_MESH.md §14 rule 7). Split the \
+             partition into one entry per device, or narrow `machines:` to a single-device set.",
+             devices = .devices.join(", "))]
+    PartitionMultiDevice {
+        partition: String,
+        devices: Vec<String>,
+    },
+
+    /// A single orthogonal unit (parallel region or invoke) appears in
+    /// more than one partition's `contains:` block (SCE_MESH.md §14
+    /// rule 8). The unit would have no well-defined host process; the
+    /// analyzer never silently picks one. Remove the unit from every
+    /// partition except the intended one.
+    #[error("unit '{unit}' appears in more than one partition ({partitions}). Each \
+             orthogonal unit belongs to exactly one partition (SCE_MESH.md §14 rule 8). \
+             Remove the entry from every partition except the intended one.",
+             partitions = .partitions.join(", "))]
+    PartitionUnitDuplicate {
+        unit: String,
+        partitions: Vec<String>,
+    },
+
+    /// A partition's `contains:` entry references a machine that is
+    /// not listed in the same partition's `machines:` field
+    /// (SCE_MESH.md §14 rule 9). A partition cannot reach into
+    /// another partition's address space; the membership declaration
+    /// and the `contains:` entries must agree.
+    #[error("partition '{partition}': `contains:` entry references machine '{machine}', \
+             but '{machine}' is not listed under the partition's `machines:` field. \
+             Add '{machine}' to `machines:` or remove the stray entry (SCE_MESH.md §14 rule 9).")]
+    PartitionMachineNotListed {
+        partition: String,
+        machine: String,
+    },
+
+    /// A partition has no `contains:` entries at all — no parallel
+    /// regions and no invokes (SCE_MESH.md §14 rule 10). An empty
+    /// partition has no runtime purpose and usually indicates a
+    /// copy-paste error. Authors who want a reserved entry must
+    /// declare the units they plan to host.
+    #[error("partition '{partition}' is empty (no `contains.parallel_regions:` and no \
+             `contains.invokes:`). Empty partitions have no runtime purpose (SCE_MESH.md \
+             §14 rule 10); either add the units this partition hosts or delete the entry.")]
+    PartitionEmpty { partition: String },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -906,6 +970,63 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 fields: vec!["instances".to_string()],
             }),
             key_fragments: vec![machine.clone(), transport.clone()],
+        },
+        DeployError::PartitionDuplicateName { name } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionDuplicateName,
+            stage: Stage::MeshDeploy,
+            actual: Some(name.clone()),
+            expected: None,
+            // The author decides which of the two aliased entries to
+            // rename; no mechanical repair exists.
+            fix: None,
+            key_fragments: vec![name.clone()],
+        },
+        DeployError::PartitionMultiDevice { partition, devices } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionMultiDevice,
+            stage: Stage::MeshDeploy,
+            actual: Some(partition.clone()),
+            expected: None,
+            // Two equally-valid repairs (split the partition per device
+            // OR narrow `machines:`); author intent decides.
+            fix: None,
+            key_fragments: {
+                let mut k = vec![partition.clone()];
+                k.extend(devices.iter().cloned());
+                k
+            },
+        },
+        DeployError::PartitionUnitDuplicate { unit, partitions } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionUnitDuplicate,
+            stage: Stage::MeshDeploy,
+            actual: Some(unit.clone()),
+            expected: None,
+            // Author picks which partition keeps the unit; the other
+            // entry must be removed by hand.
+            fix: None,
+            key_fragments: {
+                let mut k = vec![unit.clone()];
+                k.extend(partitions.iter().cloned());
+                k
+            },
+        },
+        DeployError::PartitionMachineNotListed { partition, machine } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionMachineNotListed,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            // Two equally-valid repairs (add the machine to the
+            // partition's `machines:` list OR remove the stray
+            // `contains:` entry); author intent decides.
+            fix: None,
+            key_fragments: vec![partition.clone(), machine.clone()],
+        },
+        DeployError::PartitionEmpty { partition } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionEmpty,
+            stage: Stage::MeshDeploy,
+            actual: Some(partition.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![partition.clone()],
         },
     }
 }

@@ -417,6 +417,16 @@ pub enum DiagnosticCode {
     MeshDeployPoolInvalidPlaceholder,
     #[serde(rename = "mesh/deploy-server-pool-not-supported")]
     MeshDeployServerPoolNotSupported,
+    #[serde(rename = "mesh/deploy-partition-duplicate-name")]
+    MeshDeployPartitionDuplicateName,
+    #[serde(rename = "mesh/deploy-partition-multi-device")]
+    MeshDeployPartitionMultiDevice,
+    #[serde(rename = "mesh/deploy-partition-unit-duplicate")]
+    MeshDeployPartitionUnitDuplicate,
+    #[serde(rename = "mesh/deploy-partition-machine-not-listed")]
+    MeshDeployPartitionMachineNotListed,
+    #[serde(rename = "mesh/deploy-partition-empty")]
+    MeshDeployPartitionEmpty,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -596,6 +606,11 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPoolEmptyInstanceList,
         MeshDeployPoolInvalidPlaceholder,
         MeshDeployServerPoolNotSupported,
+        MeshDeployPartitionDuplicateName,
+        MeshDeployPartitionMultiDevice,
+        MeshDeployPartitionUnitDuplicate,
+        MeshDeployPartitionMachineNotListed,
+        MeshDeployPartitionEmpty,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -758,6 +773,13 @@ impl DiagnosticCode {
             | MeshDeployServerPoolNotSupported
             | MeshTopologyPoolParamNameMissing => Some("SCE Mesh §14.4"),
 
+            // ── Mesh partitions schema (SCE_MESH.md §14 rules 6-10) ──
+            MeshDeployPartitionDuplicateName
+            | MeshDeployPartitionMultiDevice
+            | MeshDeployPartitionUnitDuplicate
+            | MeshDeployPartitionMachineNotListed
+            | MeshDeployPartitionEmpty => Some("SCE Mesh §14"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -905,6 +927,11 @@ impl DiagnosticCode {
             MeshDeployPoolEmptyInstanceList => "mesh/deploy-pool-empty-instance-list",
             MeshDeployPoolInvalidPlaceholder => "mesh/deploy-pool-invalid-placeholder",
             MeshDeployServerPoolNotSupported => "mesh/deploy-server-pool-not-supported",
+            MeshDeployPartitionDuplicateName => "mesh/deploy-partition-duplicate-name",
+            MeshDeployPartitionMultiDevice => "mesh/deploy-partition-multi-device",
+            MeshDeployPartitionUnitDuplicate => "mesh/deploy-partition-unit-duplicate",
+            MeshDeployPartitionMachineNotListed => "mesh/deploy-partition-machine-not-listed",
+            MeshDeployPartitionEmpty => "mesh/deploy-partition-empty",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2398,6 +2425,49 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5f473bdda8049652","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported on transport 'zenoh' — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can host a multi-instance server pool. Drop `instances:` from the server section, switch the server transport to one that supports pools, or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
             ),
             (
+                "mesh/deploy-partition-duplicate-name",
+                DeployError::PartitionDuplicateName {
+                    name: "brake_main".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b397cf843f9bb794","code":"mesh/deploy-partition-duplicate-name","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition name 'brake_main' is declared more than once under `partitions:`. Partition names are globally unique process identities (SCE_MESH.md §14 rule 6). Rename one of the entries or delete the duplicate.","actual":"brake_main"}"#,
+            ),
+            (
+                "mesh/deploy-partition-multi-device",
+                DeployError::PartitionMultiDevice {
+                    partition: "cross_part".into(),
+                    devices: vec!["ecu_a".into(), "ecu_b".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:aade5f5b0da2ca31","code":"mesh/deploy-partition-multi-device","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'cross_part': its `machines:` list spans more than one device (ecu_a, ecu_b). A partition is one process on one device (SCE_MESH.md §14 rule 7). Split the partition into one entry per device, or narrow `machines:` to a single-device set.","actual":"cross_part"}"#,
+            ),
+            (
+                "mesh/deploy-partition-unit-duplicate",
+                DeployError::PartitionUnitDuplicate {
+                    unit: "parallel_region:brake/shared".into(),
+                    partitions: vec!["part_a".into(), "part_b".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6bb09cb8cb802106","code":"mesh/deploy-partition-unit-duplicate","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"unit 'parallel_region:brake/shared' appears in more than one partition (part_a, part_b). Each orthogonal unit belongs to exactly one partition (SCE_MESH.md §14 rule 8). Remove the entry from every partition except the intended one.","actual":"parallel_region:brake/shared"}"#,
+            ),
+            (
+                "mesh/deploy-partition-machine-not-listed",
+                DeployError::PartitionMachineNotListed {
+                    partition: "brake_only".into(),
+                    machine: "motor".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:71de62a977d18b9f","code":"mesh/deploy-partition-machine-not-listed","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'brake_only': `contains:` entry references machine 'motor', but 'motor' is not listed under the partition's `machines:` field. Add 'motor' to `machines:` or remove the stray entry (SCE_MESH.md §14 rule 9).","actual":"motor"}"#,
+            ),
+            (
+                "mesh/deploy-partition-empty",
+                DeployError::PartitionEmpty {
+                    partition: "empty_part".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5c3f22193c998160","code":"mesh/deploy-partition-empty","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'empty_part' is empty (no `contains.parallel_regions:` and no `contains.invokes:`). Empty partitions have no runtime purpose (SCE_MESH.md §14 rule 10); either add the units this partition hosts or delete the entry.","actual":"empty_part"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -3107,6 +3177,11 @@ mod tests {
             | MeshDeployPoolEmptyInstanceList
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
+            | MeshDeployPartitionDuplicateName
+            | MeshDeployPartitionMultiDevice
+            | MeshDeployPartitionUnitDuplicate
+            | MeshDeployPartitionMachineNotListed
+            | MeshDeployPartitionEmpty
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3383,6 +3458,11 @@ mod tests {
                 | MeshDeployPoolEmptyInstanceList
                 | MeshDeployPoolInvalidPlaceholder
                 | MeshDeployServerPoolNotSupported
+                | MeshDeployPartitionDuplicateName
+                | MeshDeployPartitionMultiDevice
+                | MeshDeployPartitionUnitDuplicate
+                | MeshDeployPartitionMachineNotListed
+                | MeshDeployPartitionEmpty
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3417,9 +3497,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            104,
+            109,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 104 distinct variants to match the DiagnosticCode \
+             expected 109 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }
