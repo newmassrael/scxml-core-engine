@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §10.7 publisher-first fixture: motor placeholder.
+
+     The deploy.yaml topology requires motor to be a declared machine,
+     but the runtime test uses a raw `zenoh::Session` + ad-hoc
+     `declare_subscriber` as the receiving peer — not this machine's
+     generated router. The SCXML body is intentionally empty (single
+     idle state). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="motor_zenoh_publisher_first" initial="ready">
+    <state id="ready">
+        <!-- Event coverage: brake sends `warmup.tick` (FireForget) and
+             the topology analyzer requires each sent event to have a
+             matching transition in the receiver. Runtime behaviour in
+             this fixture is observed on the raw zenoh peer, not on
+             motor's engine — the transition's sole purpose is to
+             satisfy build-time coverage. -->
+        <transition event="warmup.tick" target="ready"/>
+    </state>
+</scxml>

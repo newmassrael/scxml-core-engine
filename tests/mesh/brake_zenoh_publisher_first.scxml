@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §10.7 OutboundBuffer runtime E2E — Zenoh publisher-first (brake side).
+
+     Minimal FireForget sender. The runtime test drives route_send
+     directly with a hand-built envelope, so the single <send> is
+     authored solely to pin `warmup.tick` into the codegen pattern
+     table as FireForget — `resolvePattern` consults the table when
+     `inject_server_response_sends` (which the test bypasses) would
+     otherwise need to stamp `env.pattern`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_zenoh_publisher_first" initial="idle">
+    <state id="idle">
+        <onentry>
+            <send target="#motor" event="warmup.tick"/>
+        </onentry>
+    </state>
+</scxml>

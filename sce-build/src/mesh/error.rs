@@ -114,6 +114,20 @@ pub enum DeployError {
         reason: String,
     },
 
+    /// A machine declared an `outbound_buffer:` section whose
+    /// `max_pending_per_target` violates the minimum constraint
+    /// (SCE Mesh §10.10; see `MIN_OUTBOUND_BUFFER_MAX_PENDING` in
+    /// deploy.rs). Rejected at parse time so a zero-capacity buffer —
+    /// semantically equivalent to no buffer — cannot reach the
+    /// generated router under the guise of opting into §10.10
+    /// readiness gating.
+    #[error("machine '{machine}': invalid `outbound_buffer:` section in deploy.yaml — {reason}. \
+             Either fix the value or omit the section entirely to opt out of §10.10 buffering.")]
+    InvalidOutboundBuffer {
+        machine: String,
+        reason: String,
+    },
+
     /// A binding carries a `{name}` placeholder value but the binding's
     /// transport declares `supports_pool: false` in the registry
     /// (SCE Mesh §14.4). Transports without a native routing layer
@@ -751,6 +765,16 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             actual: Some(machine.clone()),
             // Same author-intent shape as InvalidLiveliness: either fix
             // the explicit value or omit the knob.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::InvalidOutboundBuffer { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidOutboundBuffer,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // Same author-intent shape as InvalidServerQueryTimeout:
+            // either fix the explicit value or omit the section.
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],

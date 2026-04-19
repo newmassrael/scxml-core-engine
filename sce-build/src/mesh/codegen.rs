@@ -809,6 +809,7 @@ pub fn generate_mesh(
     subscriptions: &[super::deploy::SubscriptionConfig],
     machine_ordering: OrderingTimings,
     machine_liveliness: Option<LivelinessConfig>,
+    machine_outbound_buffer: Option<super::deploy::OutboundBufferConfig>,
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -839,6 +840,7 @@ pub fn generate_mesh(
             subscriptions,
             machine_ordering,
             machine_liveliness,
+            machine_outbound_buffer,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -930,6 +932,7 @@ fn generate_cpp_mesh(
     subscriptions: &[super::deploy::SubscriptionConfig],
     machine_ordering: OrderingTimings,
     machine_liveliness: Option<LivelinessConfig>,
+    machine_outbound_buffer: Option<super::deploy::OutboundBufferConfig>,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -1263,6 +1266,19 @@ fn generate_cpp_mesh(
         None => serde_json::Value::Null,
     };
 
+    // SCE Mesh §10.10 (OutboundBuffer): per-machine readiness-gated
+    // buffering opt-in. `null` when the deploy.yaml author declared no
+    // `outbound_buffer:` section — template reads as a falsy gate and
+    // emits zero buffer code. Present value carries the deploy-
+    // validated `max_pending_per_target` (floor enforced by
+    // `OutboundBufferConfig::validation_error`).
+    let machine_outbound_buffer_ctx = match machine_outbound_buffer {
+        Some(b) => serde_json::json!({
+            "max_pending_per_target": b.max_pending_per_target,
+        }),
+        None => serde_json::Value::Null,
+    };
+
     let ctx = minijinja::context! {
         machine_name => machine_name,
         machine_pascal => machine_pascal,
@@ -1273,6 +1289,7 @@ fn generate_cpp_mesh(
         has_ordered_binding => has_ordered_binding,
         machine_ordering => machine_ordering_ctx,
         machine_liveliness => machine_liveliness_ctx,
+        machine_outbound_buffer => machine_outbound_buffer_ctx,
         zenoh_session_json5 => zenoh_session_json5,
         zenoh_session_json5_present => zenoh_session_json5_present,
         zenoh_listen_endpoints => zenoh_listen_endpoints,

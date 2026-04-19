@@ -1883,6 +1883,44 @@ Mesh distinguishes **document identity** from **session identity** on every enve
 
 **Wire compatibility**: `routing_id` is an optional CBOR key. Decoders MUST skip unknown keys (per §13 canonical CBOR contract), so a sender backend that has not yet been migrated emits envelopes without key 15 and peers decode correctly. The self-filter invariant above ensures that during per-backend rollout, cross-backend echo paths remain functional — unmigrated peers' envelopes are correctly passed through.
 
+### 10.10 `OutboundBuffer` — readiness-gated outbound admit
+
+Sibling of §10.5 `DedupRouter` and §10.6 `OrderingBuffer`. Both of those layers sit on the **inbound** path (duplicate suppression, sequence reorder); `OutboundBuffer` sits on the **outbound** path and addresses a distinct failure mode: transports whose peer may not yet be ready when `route_send` runs drop the payload silently.
+
+**The silent-drop surface**:
+- **SOME/IP**: vsomeip `app.send()` on a NOT_AVAILABLE service returns `true` and drops the payload. Pre-§10.10 the first `<send target="#peer">` on a service that has not yet been `offer_service`'d by the server is lost with **no `error.communication`** raised. The harness-level workaround (`test_mesh_someip_runtime.cpp` manually blocks on `register_availability_handler` before sending) does not generalise to production code that cannot predict peer boot order.
+- **Zenoh (PUT-style only — FireForget, FieldWrite)**: `session.put` to a keyexpr with no matching subscriber is lost. Zenoh's default delivery model has no retention for publisher-first samples — a subscriber that declares after the put never observes it. GET-style patterns (RpcRequest, FieldRead) and subscribe patterns (EventSubscribe) are structurally resilient to this (GETs surface late peers via `on_drop` → §9.5 gap Z3 `RpcStatus::Unavailable`; subscribers get future samples by construction).
+
+**The §10.10 primitive**: per-target `OutboundBuffer` instance (`sce/include/mesh/OutboundBuffer.h`), constructed by the generated `TransportRouter` with three inputs: the target identifier (for `BACKPRESSURE_DROP` event data), a dispatch closure bound to the transport-specific send function, and a capacity bound (`max_pending_per_target` from deploy.yaml). `admit(env)` is the single entry from `route_send`:
+
+- **Fast path** (ready && queue empty): dispatch immediately.
+- **Enqueue** (not ready, or queue non-empty mid-drain): push to FIFO queue up to `max_pending_per_target`.
+- **Overflow** (queue at capacity, not ready): raise `error.communication` with reason `BACKPRESSURE_DROP` (§16.7 row 10) and drop the newest envelope.
+
+Transport readiness primitives call `markReady()` / `markNotReady()`:
+- SOME/IP: `app.register_availability_handler` — installed in `init()` before `start()` so the initial NOT_AVAILABLE→AVAILABLE edge is observed. Availability is service-level, so the buffer gates **all** outbound patterns on this target.
+- Zenoh: `Publisher::declare_matching_listener` on a declared publisher — observes subscribers appearing and disappearing on the publisher's keyexpr. `get_matching_status()` seeds the initial state at `init()` time. Gates **FireForget and FieldWrite only**; GET / Subscribe paths stay on the existing `send_zenoh` branch.
+
+**FIFO guarantees**: `admit` holds the buffer mutex for the fast-path dispatch so a concurrent `markReady` drain cannot interleave with a direct-dispatch envelope. Per-target `seq_counter_{target}_` (§10.6) is stamped in the mesh-send-callback **before** `route_send` is called, so sequence numbers reflect call order regardless of whether a given envelope takes the fast path, the enqueue path, or the drain path — all three preserve per-target call-order monotonicity.
+
+**Scope (what `OutboundBuffer` is NOT)**:
+- **Not a retry layer**. A dispatcher return of `false` (transport-native send failure after readiness) is not re-enqueued. Existing error surfaces (§16.7 row 2 `SEND_FAILED`, row 3 `DELIVERY_EXHAUSTED`) cover that axis and are raised by call-sites that already exist before admit.
+- **Not an age-based drop policy**. Overflow policy is fixed at `BACKPRESSURE_DROP` + drop-newest. `max_age_ms` and `overflow: drop_oldest` are additive grammar extensions gated on a future consumer.
+- **Not a retention store**. The buffer is router-scoped (destroyed with the `TransportRouter`); envelopes in the queue at `shutdown()` are discarded silently.
+- **Not applicable to local / shm / custom_tcp targets**. Local is in-process (no readiness concern); shm pairs at ctor time; `CustomTcp::Client` has its own connect-retry semantics. The template only emits `OutboundBuffer` members for `target.state.kind in ("someip", "zenoh")`.
+
+**Opt-in gate**: absent `outbound_buffer:` section on the machine ⇒ zero buffer code emitted, `route_send` arms keep the pre-§10.10 direct-dispatch shape. See §14 grammar below.
+
+**Configuration** (per-machine, single knob):
+```yaml
+machines:
+  brake:
+    outbound_buffer:
+      max_pending_per_target: 64
+```
+
+`max_pending_per_target` must be `>= MIN_OUTBOUND_BUFFER_MAX_PENDING` (1) per the `sce-build/src/mesh/deploy.rs` validation floor. Zero is rejected at parse time with `mesh/deploy-invalid-outbound-buffer` because a zero-capacity buffer is semantically indistinguishable from opting out.
+
 ---
 
 ## 11. Performance Characteristics
@@ -3421,7 +3459,7 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 | 7 | Parallel barrier timeout (§16.5) | `PARALLEL_BARRIER_TIMEOUT` | `parallel_id: string`, `missing_regions: [string]`, `timeout_ms: int` |
 | 8 | Envelope dedup window overflow (sustained rate exceeds window capacity) | `DEDUP_WINDOW_OVERFLOW` | `source: string`, `window_size: int` |
 | 9 | Network partition detected (peer heartbeat or liveness probe fail) | `PEER_PARTITIONED` | `target: string`, `last_seen_ms_ago: int` |
-| 10 | Transport backpressure queue full, outbound envelope dropped | `BACKPRESSURE_DROP` | `transport: string`, `target: string`, `queue_depth: int` |
+| 10 | Transport backpressure queue full, outbound envelope dropped (§10.10 `OutboundBuffer` at `max_pending_per_target`) | `BACKPRESSURE_DROP` | `transport: string`, `target: string`, `queue_depth: int` |
 | 11 | Peer rejected envelope due to authorization failure | `UNAUTHORIZED` | `target: string`, `transport_status?: string` |
 | 12 | Inbound envelope reached an active `OrderingBuffer` without `sequence_no` (§10.6.3) | `MISSING_SEQUENCE` | *(baseline only — `source`, `envelope_id` carry the diagnosis)* |
 | 13 | `OrderingBuffer` fast-forwarded past a missing sequence range after `gap_timeout` expired (§10.6.4) | `ORDERING_GAP` | `lost_seq_lo: uint64`, `lost_seq_hi: uint64` (inclusive range of skipped sequence numbers) |

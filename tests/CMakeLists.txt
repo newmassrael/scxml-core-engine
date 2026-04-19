@@ -1318,7 +1318,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_ordering_buffer_verification COMMAND mesh_ordering_buffer_test)
 
-    # ── CommunicationError unit tests (SCE_MESH.md §10.7.1 + §16.7) ─
+    # ── CommunicationError unit tests (SCE_MESH.md §10.10.1 + §16.7) ─
     # Pins the JSON render shape of `_event.data` for `error.communication`
     # events raised by the mesh runtime (MISSING_SEQUENCE + ORDERING_GAP
     # catalogue rows landed in Session E2-gap-recovery). Byte-compare on
@@ -2218,6 +2218,89 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             RESOURCE_LOCK vsomeip_routing_socket
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
+        # ── SCE Mesh §10.10 Gap 5 (i): SOME/IP late-boot OutboundBuffer ──
+        # Re-runs sce-codegen on the same brake_someip_multi /
+        # motor_someip_multi SCXML files but with a different deploy.yaml
+        # (`deploy_someip_late_boot.yaml`) so the generated TransportRouter
+        # picks up `outbound_buffer: max_pending_per_target: 8` on brake.
+        # Outputs land in a separate directory so the same _transport.h
+        # name does not collide with the `MESH_SOMEIP_MULTI_OUTPUT_DIR`
+        # variant that the happy-path fixtures consume.
+        set(MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_late_boot_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh someip late-boot (§10.10): Generating brake_someip_multi_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh someip late-boot (§10.10): Generating motor_someip_multi_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
+                    "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            COMMENT "Mesh someip late-boot (§10.10): Generating brake_someip_multi_transport.h with outbound_buffer"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
+            DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
+                    "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            COMMENT "Mesh someip late-boot (§10.10): Generating motor_someip_multi_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_late_boot_test
+            mesh/test_mesh_someip_late_boot.cpp
+            "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h"
+            "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h"
+        )
+
+        target_include_directories(mesh_someip_late_boot_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_late_boot_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_late_boot_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_late_boot_test)
+        add_test(NAME mesh_someip_late_boot
+                 COMMAND mesh_someip_late_boot_test)
+        set_tests_properties(mesh_someip_late_boot PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK vsomeip_routing_socket
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_someip_late_boot.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
         # Session J: SOME/IP eventgroup notification (server-initiated push).
         # Motor raises field.notify.vehicle_speed spontaneously (no preceding
         # getter/setter) → offer_event + notify path.
@@ -2646,6 +2729,77 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         set_tests_properties(mesh_zenoh_subscription_clobber_verification PROPERTIES
             TIMEOUT 30
             RESOURCE_LOCK zenoh_subscription_clobber_port_17454
+        )
+
+        # ── SCE Mesh §10.10 Gap 5 (iii): Zenoh publisher-first OutboundBuffer ─
+        # Closes the silent-drop on PUT-style patterns (FireForget,
+        # FieldWrite) when the publisher declares before any subscriber.
+        # Pre-§10.10 the `session.put` reached zenoh but was dropped (no
+        # retention on a publisher-first sample). Post-§10.10 the
+        # generated router declares a `zenoh::Publisher` + a
+        # `MatchingListener` at init(), seeds readiness from
+        # `get_matching_status`, and routes FireForget / FieldWrite
+        # sends through `OutboundBuffer::admit`. When a subscriber
+        # finally appears, `declare_matching_listener` fires →
+        # `markReady` drains the buffer via publisher.put → subscriber
+        # observes the previously-buffered envelope.
+        #
+        # Port 17455 is distinct from 17447–17454; RESOURCE_LOCK
+        # `zenoh_publisher_first_port_17455` serialises this fixture.
+        set(MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_publisher_first_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
+                    -l cpp -o "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml" "${SCE_CODEGEN}"
+            COMMENT "Mesh zenoh publisher-first (§10.10): Generating brake_zenoh_publisher_first_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
+                    -l cpp -o "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_publisher_first.yaml"
+            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
+                    "${MESH_TEST_DIR}/motor_zenoh_publisher_first.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_publisher_first.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h"
+            COMMENT "Mesh zenoh publisher-first (§10.10): Generating brake_zenoh_publisher_first_transport.h with outbound_buffer"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_publisher_first_test
+            mesh/test_mesh_zenoh_publisher_first.cpp
+            "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h"
+            "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_publisher_first_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_publisher_first_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_publisher_first_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_publisher_first_test)
+        add_test(NAME mesh_zenoh_publisher_first_verification
+                 COMMAND mesh_zenoh_publisher_first_test)
+        set_tests_properties(mesh_zenoh_publisher_first_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_publisher_first_port_17455
         )
 
         # ── Session Z1: Zenoh liveliness PEER_PARTITIONED E2E (§16.7) ─

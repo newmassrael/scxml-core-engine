@@ -325,6 +325,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-ordering-timings` | Mesh Deploy |
 | `mesh/deploy-invalid-liveliness` | Mesh Deploy |
 | `mesh/deploy-invalid-server-query-timeout` | Mesh Deploy |
+| `mesh/deploy-invalid-outbound-buffer` | Mesh Deploy |
 | `mesh/deploy-pool-not-supported-by-transport` | Mesh Deploy |
 | `mesh/deploy-pool-missing-instance-list` | Mesh Deploy |
 | `mesh/deploy-pool-empty-instance-list` | Mesh Deploy |

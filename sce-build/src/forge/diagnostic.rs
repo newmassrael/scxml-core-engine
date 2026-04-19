@@ -403,6 +403,8 @@ pub enum DiagnosticCode {
     MeshDeployInvalidLiveliness,
     #[serde(rename = "mesh/deploy-invalid-server-query-timeout")]
     MeshDeployInvalidServerQueryTimeout,
+    #[serde(rename = "mesh/deploy-invalid-outbound-buffer")]
+    MeshDeployInvalidOutboundBuffer,
     #[serde(rename = "mesh/deploy-pool-not-supported-by-transport")]
     MeshDeployPoolNotSupportedByTransport,
     #[serde(rename = "mesh/deploy-pool-missing-instance-list")]
@@ -585,6 +587,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidOrderingTimings,
         MeshDeployInvalidLiveliness,
         MeshDeployInvalidServerQueryTimeout,
+        MeshDeployInvalidOutboundBuffer,
         MeshDeployPoolNotSupportedByTransport,
         MeshDeployPoolMissingInstanceList,
         MeshDeployPoolEmptyInstanceList,
@@ -739,6 +742,7 @@ impl DiagnosticCode {
 
             // ── Mesh server-side lifecycle (SCE_MESH.md §9.5) ────
             MeshDeployInvalidServerQueryTimeout => Some("SCE Mesh §9.5"),
+            MeshDeployInvalidOutboundBuffer => Some("SCE Mesh §10.10"),
 
             // ── Mesh binding placeholder + server pool (SCE_MESH.md §14.4) ──
             MeshDeployPoolNotSupportedByTransport
@@ -888,6 +892,7 @@ impl DiagnosticCode {
             MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
             MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
             MeshDeployInvalidServerQueryTimeout => "mesh/deploy-invalid-server-query-timeout",
+            MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
             MeshDeployPoolNotSupportedByTransport => "mesh/deploy-pool-not-supported-by-transport",
             MeshDeployPoolMissingInstanceList => "mesh/deploy-pool-missing-instance-list",
             MeshDeployPoolEmptyInstanceList => "mesh/deploy-pool-empty-instance-list",
@@ -2319,6 +2324,16 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:f3bf5c36574e7396","code":"mesh/deploy-invalid-server-query-timeout","stage":"mesh-deploy","spec":"SCE Mesh §9.5","message":"machine 'motor': invalid `server.query_timeout_ms` in deploy.yaml — query_timeout_ms (5) must be >= 10 ms — values below this floor race typical engine macrostep latency and would cause every inbound query to time out before the engine can respond. Either fix the value or omit the knob entirely to disable the server deadline.","actual":"motor"}"#,
             ),
             (
+                "mesh/deploy-invalid-outbound-buffer",
+                DeployError::InvalidOutboundBuffer {
+                    machine: "brake".into(),
+                    reason: "max_pending_per_target (0) must be >= 1 — a zero-capacity buffer cannot hold any envelope, which is indistinguishable from the pre-§10.10 silent-drop behaviour; omit the section entirely to opt out of buffering instead".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:a62483a5bfc65457","code":"mesh/deploy-invalid-outbound-buffer","stage":"mesh-deploy","spec":"SCE Mesh §10.10","message":"machine 'brake': invalid `outbound_buffer:` section in deploy.yaml — max_pending_per_target (0) must be >= 1 — a zero-capacity buffer cannot hold any envelope, which is indistinguishable from the pre-§10.10 silent-drop behaviour; omit the section entirely to opt out of buffering instead. Either fix the value or omit the section entirely to opt out of §10.10 buffering.","actual":"brake"}"#,
+            ),
+            (
                 "mesh/deploy-pool-not-supported-by-transport",
                 DeployError::PoolNotSupportedByTransport {
                     machine: "brake".into(),
@@ -3056,6 +3071,7 @@ mod tests {
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidLiveliness
             | MeshDeployInvalidServerQueryTimeout
+            | MeshDeployInvalidOutboundBuffer
             | MeshDeployPoolNotSupportedByTransport
             | MeshDeployPoolMissingInstanceList
             | MeshDeployPoolEmptyInstanceList
@@ -3330,6 +3346,7 @@ mod tests {
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidLiveliness
                 | MeshDeployInvalidServerQueryTimeout
+                | MeshDeployInvalidOutboundBuffer
                 | MeshDeployPoolNotSupportedByTransport
                 | MeshDeployPoolMissingInstanceList
                 | MeshDeployPoolEmptyInstanceList
@@ -3369,9 +3386,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            102,
+            103,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 102 distinct variants to match the DiagnosticCode \
+             expected 103 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

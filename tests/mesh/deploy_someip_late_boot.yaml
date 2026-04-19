@@ -1,0 +1,66 @@
+# SCE Mesh §10.10 OutboundBuffer runtime E2E — SOME/IP late-boot.
+#
+# Gap 5 Acceptance Fixture (i): brake boots and issues a
+# <send target="#motor"> BEFORE motor has offered the service. Before
+# §10.10 the first envelope was silently lost (vsomeip `send()` on a
+# NOT_AVAILABLE service returns true and drops the payload). With
+# §10.10 the generated router's OutboundBuffer captures the envelope,
+# vsomeip's availability handler fires once motor offers the service,
+# markReady drains the buffer in FIFO order, and motor's engine
+# observes the previously-deferred event.
+#
+# Routing manager role flipped vs deploy_someip_multi.yaml: brake owns
+# the vsomeip routing socket so it can boot first. The `service-discovery:
+# disable` flag (runtime config) means vsomeip relies on the routing
+# manager's offer table for availability — brake's request_service sits
+# at NOT_AVAILABLE until motor calls offer_service at its own init().
+#
+# SCXML reuse: brake_someip_multi.scxml + motor_someip_multi.scxml.
+# The test calls route_send directly with a FireForget envelope, so the
+# specific SCXML contents matter only for codegen's pattern table — the
+# existing fixtures already declare the FireForget event the test uses.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_motor_multi.json
+        application_name: brake_someip_multi_app
+    machines:
+      brake_someip_multi:
+        source: brake_someip_multi.scxml
+        outbound_buffer:
+          max_pending_per_target: 8
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              "service.fire_forget.activate":
+                method: activate
+              "service.request.compute_force":
+                method: compute_force
+              "event.subscribe.status":
+                event_group: status_group
+              "event.subscribe.speed":
+                event_group: speed_group
+              "field.get.vehicle_speed":
+                getter: get_vehicle_speed
+              "field.set.target_speed":
+                setter: set_target_speed
+      motor:
+        source: motor_someip_multi.scxml
+        server:
+          transport: someip
+          service: motor_control
+          events:
+            "service.request.compute_force":
+              method: compute_force
+            "service.fire_forget.activate":
+              method: activate
+            "field.get.vehicle_speed":
+              getter: get_vehicle_speed
+            "field.set.target_speed":
+              setter: set_target_speed
+            "field.notify.vehicle_speed":
+              event_group: speed_group

@@ -84,6 +84,18 @@ struct CommunicationError {
     /// sites populate it only when a PUT has been observed.
     std::optional<std::int64_t> last_seen_ms_ago;
 
+    /// §16.7 row 10 (BACKPRESSURE_DROP) and other transport-keyed rows
+    /// (1 TRANSPORT_UNAVAILABLE, 2 SEND_FAILED, 3 DELIVERY_EXHAUSTED,
+    /// 4 ENVELOPE_CORRUPT): the transport kind ("someip", "zenoh",
+    /// etc.) whose plumbing observed the condition. The target-keyed
+    /// extra reuses the `target` member above.
+    std::optional<std::string> transport;
+
+    /// §16.7 row 10 (BACKPRESSURE_DROP): outbound buffer depth at the
+    /// moment the overflow was observed. Signed for symmetry with
+    /// `last_seen_ms_ago`; depth is never negative in practice.
+    std::optional<std::int64_t> queue_depth;
+
     /// §16.7 row 13 (ORDERING_GAP): inclusive low end of the fast-
     /// forwarded sequence range.
     std::optional<std::uint64_t> lost_seq_lo;
@@ -119,6 +131,12 @@ struct CommunicationError {
         }
         if (last_seen_ms_ago) {
             j["last_seen_ms_ago"] = *last_seen_ms_ago;
+        }
+        if (transport) {
+            j["transport"] = *transport;
+        }
+        if (queue_depth) {
+            j["queue_depth"] = *queue_depth;
         }
         if (lost_seq_lo) {
             j["lost_seq_lo"] = *lost_seq_lo;

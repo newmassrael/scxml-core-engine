@@ -283,12 +283,14 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% set has_zenoh_mesh_rpc = ("zenoh" in transport_types) and has_mesh_rpc.v %}
 
 {# Joint emission gate for the `raiseCommunicationError` helper
-   (SCE_MESH.md §10.7.1). Either ordering-path raises (MISSING_SEQUENCE /
-   ORDERING_GAP via the ordering tick) or liveliness-path raises
-   (PEER_PARTITIONED via the liveliness subscriber) need it, so the
-   helper and its include live behind this shared flag rather than each
-   caller gate. Keeps `raiseCommunicationError` a single definition. #}
-{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness %}
+   (SCE_MESH.md §10.10.1). Ordering-path raises (MISSING_SEQUENCE /
+   ORDERING_GAP via the ordering tick), liveliness-path raises
+   (PEER_PARTITIONED via the liveliness subscriber), and §10.10
+   OutboundBuffer-path raises (BACKPRESSURE_DROP via admit overflow)
+   all share this helper, so it and its include live behind a single
+   flag rather than each caller gate. Keeps `raiseCommunicationError`
+   a single definition regardless of which callers fire. #}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer %}
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
@@ -384,13 +386,24 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <thread>
 {% endif %}
 {% if raises_communication_error %}
-// SCE_MESH.md §10.7.1 + §16.7: `_event.data` builder for the
+// SCE_MESH.md §10.10.1 + §16.7: `_event.data` builder for the
 // error.communication reason codes raised from the ordering admit path
 // (MISSING_SEQUENCE / ORDERING_GAP), the periodic ordering tick, and
 // the Zenoh liveliness subscriber (PEER_PARTITIONED).
 #include "mesh/CommunicationError.h"
 #include <chrono>
 #include <mutex>
+{% endif %}
+{% if machine_outbound_buffer %}
+// SCE Mesh §10.10: per-target readiness-gated outbound admit layer for
+// transports whose peer may not yet be ready when route_send runs
+// (SOME/IP before `offer_service`, Zenoh before any subscriber
+// declares on a PUT-style keyexpr). Third generic SCE mesh runtime
+// primitive alongside §10.5 DedupRouter and §10.6 OrderingBuffer.
+// Emitted only when the deploy.yaml author declared an
+// `outbound_buffer:` section on this machine; absent section ⇒ zero
+// buffer code, route_send paths unchanged.
+#include "mesh/OutboundBuffer.h"
 {% endif %}
 {% if has_zenoh_mesh_rpc or has_server_query_timeout %}
 // SCE Mesh gap Z3 (`has_zenoh_mesh_rpc`): shared "reply observed" flag
@@ -824,6 +837,33 @@ struct TransportRouter {
     std::uint64_t seq_counter_{{ target.target_snake }}_ = 0;
 {% endfor %}
 
+{# ── (D1c) SCE Mesh §10.10 per-target outbound buffers ──────────────
+   Per-target readiness-gated admit layer. Emitted only when the
+   deploy.yaml author declared `outbound_buffer:` on this machine
+   AND the target transport has a readiness primitive — SOME/IP's
+   `register_availability_handler` and Zenoh's
+   `Publisher::declare_matching_listener`. Local/shm/custom_tcp
+   targets do not need buffering (in-process or TCP-connected at ctor
+   time) so the loop skips them.
+
+   For Zenoh opt-in targets we additionally declare the Publisher
+   handle and MatchingListener<void> handle used to feed
+   markReady / markNotReady. Optional-wrapped because the zenoh
+   session is opened in init(), not in the ctor — the ctor leaves
+   them empty and init() populates them once the session is live.
+
+   Ordering note: declared after seq_counter_ so the ctor initializer
+   list below honours member declaration order (-Wreorder safe). #}
+{% if machine_outbound_buffer %}
+{% for target in targets if target.state.kind in ("someip", "zenoh") %}
+    SCE::Mesh::OutboundBuffer {{ target.target_snake }}_outbound_;
+{% if target.state.kind == "zenoh" %}
+    std::optional<zenoh::Publisher> {{ target.target_snake }}_publisher_;
+    std::optional<zenoh::MatchingListener<void>> {{ target.target_snake }}_matching_listener_;
+{% endif %}
+{% endfor %}
+{% endif %}
+
 {# ── (D2b-pre) Server SOME/IP application — declared BEFORE sessions_
    so the initializer-list order (server_app_ then sessions_) matches
    C++ member declaration order. ── #}
@@ -1150,6 +1190,29 @@ struct TransportRouter {
 {%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.state.connect ~ ", [this](const SCE::Mesh::MeshEnvelope& env){ (void)this->dispatchToSession(env, 0); })"] %}
 {%-   endif %}
 {%- endfor %}
+{#- SCE Mesh §10.10 per-target OutboundBuffer initializers. Declaration
+    order in the private: block is: per-target fields (shm / _app_ /
+    custom_tcp) → ordering_buffer_ → seq_counter_{target}_ →
+    OutboundBuffer → server_app_ → sessions_ → routing_id_. -Wreorder
+    requires ctor init order to match, so OutboundBuffer inits land
+    AFTER the per-target field loop but BEFORE the server_app_ /
+    sessions_ / routing_id_ entries appended below. The dispatch
+    closure captures `this`; the router owns the buffer by value so
+    the lifetime contract is identical to every other generated
+    runtime primitive. #}
+{%- if machine_outbound_buffer %}
+{%-   for target in targets if target.state.kind in ("someip", "zenoh") %}
+{%-     if target.state.kind == "someip" %}
+{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> bool { if (!" ~ target.target_snake ~ "_app_) return false; return send_to_" ~ target.target_snake ~ "(*" ~ target.target_snake ~ "_app_, env); }" %}
+{%-       set transport_literal = "\"someip\"" %}
+{%-     else %}
+{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> bool { if (!" ~ target.target_snake ~ "_publisher_) return false; " ~ target.target_snake ~ "_publisher_->put(zenoh::Bytes(SCE::Mesh::encodeEnvelope(env))); return true; }" %}
+{%-       set transport_literal = "\"zenoh\"" %}
+{%-     endif %}
+{%-     set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", " ~ transport_literal ~ ", " ~ dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
+{%-     set ns.parts = ns.parts + [init] %}
+{%-   endfor %}
+{%- endif %}
 {#- Server SOME/IP app init: must appear in declaration order (before sessions_).
     The device-level `transports.someip.application_name` identifies the
     CLIENT app on this device. The server role belongs to a different
@@ -1446,6 +1509,23 @@ struct TransportRouter {
 {{ someip_receive_handler(target, "SOMEIP_SETTER_" + (target.target_snake | upper) + "_" + ep.event_const, "SCE::Mesh::PatternKind::FieldNotify", "field") }}
 {% endif %}
 {% endfor %}
+{% if machine_outbound_buffer %}
+        // SCE Mesh §10.10: feed the per-target OutboundBuffer's readiness
+        // state from vsomeip's availability handler. Registered BEFORE
+        // start() so the initial NOT_AVAILABLE → AVAILABLE transition is
+        // observed — vsomeip only fires the callback on state changes,
+        // so a handler installed after start() would miss the anchor
+        // edge and the buffer would never drain. Availability is
+        // service-level (one bool per (service, instance) pair), so the
+        // buffer gates ALL outbound patterns on this SOME/IP target.
+        {{ target.target_snake }}_app_->register_availability_handler(
+            SOMEIP_SERVICE_{{ target.target_snake | upper }},
+            SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+            [this](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
+                if (is_available) {{ target.target_snake }}_outbound_.markReady();
+                else              {{ target.target_snake }}_outbound_.markNotReady();
+            });
+{% endif %}
         {{ target.target_snake }}_thread_ = std::thread([this]{ {{ target.target_snake }}_app_->start(); });
 {% endfor %}
 {% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
@@ -1496,6 +1576,46 @@ struct TransportRouter {
             shutdown();
             return false;
         }
+{% if machine_outbound_buffer %}
+{% for target in targets if target.state.kind == "zenoh" %}
+        // SCE Mesh §10.10: declare a Publisher on this target's keyexpr
+        // so we can observe subscriber-matching transitions via
+        // `declare_matching_listener`. Publisher-side put (as opposed
+        // to `session.put`) also gives the generated buffer's dispatch
+        // closure a stable handle it can forward to. `get_matching_status`
+        // seeds the initial readiness state: a subscriber that declared
+        // before this router came up is a legitimate pre-matched peer,
+        // and `declare_matching_listener` only fires on subsequent
+        // transitions — reading the status directly covers that anchor.
+        try {
+            {{ target.target_snake }}_publisher_.emplace(
+                zenoh_session_->declare_publisher(
+                    zenoh::KeyExpr(ZENOH_KEY_{{ target.target_snake | upper }})));
+            {{ target.target_snake }}_matching_listener_.emplace(
+                {{ target.target_snake }}_publisher_->declare_matching_listener(
+                    [this](const zenoh::MatchingStatus& status) {
+                        if (status.matching) {{ target.target_snake }}_outbound_.markReady();
+                        else                 {{ target.target_snake }}_outbound_.markNotReady();
+                    },
+                    // MatchingListener on_drop: zenoh invokes this once
+                    // when the listener handle is destroyed (shutdown
+                    // resets the optional). No per-sample state to
+                    // unwind and markNotReady during teardown would
+                    // race the buffer's own destructor.
+                    []() noexcept {}));
+            if ({{ target.target_snake }}_publisher_->get_matching_status().matching) {
+                {{ target.target_snake }}_outbound_.markReady();
+            }
+        } catch (const zenoh::ZException&) {
+            // Publisher / matching-listener declaration failed — the
+            // session is open but the readiness observer is gone.
+            // Fail init so the caller sees a clean teardown rather
+            // than a half-configured router. `shutdown()` is idempotent.
+            shutdown();
+            return false;
+        }
+{% endfor %}
+{% endif %}
 {% if has_zenoh_liveliness %}
         // SCE Mesh §16.7 row 9: declare the self-token first so a peer
         // who subscribes with `history=true` sees us, then subscribe to
@@ -2031,16 +2151,49 @@ struct TransportRouter {
 {% elif target.state.kind == "shm" %}
             return send_to_{{ target.target_snake }}({{ target.target_snake }}_, env);
 {% elif target.state.kind == "someip" %}
+{% if machine_outbound_buffer %}
+            // SCE Mesh §10.10: availability-gated buffering. The admit
+            // closure invokes `send_to_{{ target.target_snake }}` when
+            // ready (vsomeip availability callback flipped the buffer's
+            // markReady state), otherwise enqueues up to
+            // `max_pending_per_target`; overflow raises
+            // `error.communication` with reason BACKPRESSURE_DROP
+            // (§16.7 row 10). The buffer owns the app-pointer null check
+            // identically to the pre-§10.10 direct path.
+            return {{ target.target_snake }}_outbound_.admit(env);
+{% else %}
             if ({{ target.target_snake }}_app_) {
                 return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, env);
             }
             return false;
+{% endif %}
 {% elif target.state.kind == "zenoh" %}
+{% if machine_outbound_buffer %}
+            // SCE Mesh §10.10: subscriber-matching-gated buffering for
+            // PUT-style patterns (FireForget, FieldWrite). GET-style
+            // patterns (RpcRequest, FieldRead), EventSubscribe and
+            // EventUnsubscribe bypass the buffer — Zenoh's `session.get`
+            // surfaces a late-subscriber via its own `on_drop` path
+            // (gap Z3: `RpcStatus::Unavailable`) and
+            // `declare_subscriber` is resilient to subscriber-first
+            // ordering by construction. Only the put path has the
+            // publisher-first-lost failure mode the buffer addresses.
+            using PK = SCE::Mesh::PatternKind;
+            if (env.pattern == PK::FireForget || env.pattern == PK::FieldWrite) {
+                return {{ target.target_snake }}_outbound_.admit(env);
+            }
             if (zenoh_session_) {
                 return send_zenoh(env,
                                   ZENOH_KEY_{{ target.target_snake | upper }},
                                   "{{ target.target }}");
             }
+{% else %}
+            if (zenoh_session_) {
+                return send_zenoh(env,
+                                  ZENOH_KEY_{{ target.target_snake | upper }},
+                                  "{{ target.target }}");
+            }
+{% endif %}
             return false;
 {% elif target.state.kind == "custom_tcp" %}
             return send_to_{{ target.target_snake }}({{ target.target_snake }}_, env);
@@ -2192,7 +2345,7 @@ struct TransportRouter {
 
 {% if raises_communication_error %}
     /// Raise an `error.communication` event on every hosted session with
-    /// the §10.7.1 / §16.7 `_event.data` shape encoded as JSON.
+    /// the §10.10.1 / §16.7 `_event.data` shape encoded as JSON.
     ///
     /// Call sites:
     ///   * `admitOrdered` when an envelope arrives on an ordered route

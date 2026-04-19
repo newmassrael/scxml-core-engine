@@ -1,0 +1,40 @@
+# SCE Mesh §10.10 OutboundBuffer runtime E2E — Zenoh publisher-first.
+#
+# Gap 5 Acceptance Fixture (iii): brake publishes BEFORE any subscriber
+# declares on the matching keyexpr. Pre-§10.10 the `session.put` was
+# silently lost (Zenoh has no retention by default — publisher-first
+# samples never reach a later-declared subscriber). With §10.10 the
+# generated router declares a `zenoh::Publisher` + `MatchingListener`
+# at init(), observes `MatchingStatus::matching == false`, and the
+# first route_send enqueues into the OutboundBuffer. When a subscriber
+# later appears, the matching listener fires → markReady → FIFO drain
+# → subscriber receives the previously-buffered envelope.
+#
+# Port 17455 is distinct from the 17447/17448/17449/17450/17451/17452/17453
+# ports already used by other zenoh runtime tests. ctest
+# RESOURCE_LOCK `zenoh_publisher_first_port_17455` serialises this
+# fixture against any future test that reuses the port.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/127.0.0.1:17455"]
+    machines:
+      brake_zenoh_publisher_first:
+        source: brake_zenoh_publisher_first.scxml
+        outbound_buffer:
+          max_pending_per_target: 8
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake_pub_first/motor/cmd"
+  ecu_motor:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17455"]
+    machines:
+      motor:
+        source: motor_zenoh_publisher_first.scxml

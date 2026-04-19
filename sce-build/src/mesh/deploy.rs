@@ -330,6 +330,63 @@ impl LivelinessConfig {
     }
 }
 
+/// Minimum `max_pending_per_target` accepted in an `outbound_buffer:`
+/// section.
+///
+/// SCE Mesh §10.10 (`OutboundBuffer`): a buffer with capacity zero is
+/// semantically equivalent to the pre-§10.10 "silently drop if not
+/// ready" behaviour — it cannot hold anything. Rejecting zero at parse
+/// time surfaces the mistake at the offending deploy.yaml line rather
+/// than generating a router that compiles but cannot honour the §10.7
+/// contract. Values of one or above are accepted regardless of
+/// perceived "too small" judgement: a single-slot buffer is a
+/// legitimate test-harness shape (one in-flight envelope during
+/// readiness gating).
+pub const MIN_OUTBOUND_BUFFER_MAX_PENDING: u32 = 1;
+
+/// Per-machine outbound readiness-gated buffer (SCE Mesh §10.10).
+///
+/// Opt-in: absent section ⇒ no buffer emitted; every outbound send
+/// goes straight to the transport and any pre-readiness send is
+/// silently lost per the pre-§10.10 behaviour. Section present ⇒ the
+/// generated router declares an [`OutboundBuffer`] per opt-in target
+/// (SOME/IP targets and Zenoh PUT-pattern targets), wires the
+/// transport's readiness callback, and drains buffered envelopes on
+/// the 0→1 ready transition.
+///
+/// One knob today: `max_pending_per_target`. Other overflow policies
+/// (`drop_oldest`, `max_age_ms`) are deferred — no consumer has
+/// requested them yet (`feedback_verify_before_ship.md`). Validation
+/// rejects `max_pending_per_target == 0` at parse time; see
+/// [`MIN_OUTBOUND_BUFFER_MAX_PENDING`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutboundBufferConfig {
+    /// Maximum number of envelopes buffered per opt-in target before
+    /// overflow raises `error.communication` with reason
+    /// `BACKPRESSURE_DROP` (§16.7 row 10) and drops the newest. Must
+    /// be `>= MIN_OUTBOUND_BUFFER_MAX_PENDING`.
+    pub max_pending_per_target: u32,
+}
+
+impl OutboundBufferConfig {
+    /// Validate the constraint. Returns the rejection reason without
+    /// the machine name — the caller wraps this into
+    /// [`DeployError::InvalidOutboundBuffer`].
+    fn validation_error(&self) -> Option<String> {
+        if self.max_pending_per_target < MIN_OUTBOUND_BUFFER_MAX_PENDING {
+            return Some(format!(
+                "max_pending_per_target ({}) must be >= {} — a zero-capacity \
+                 buffer cannot hold any envelope, which is indistinguishable \
+                 from the pre-§10.10 silent-drop behaviour; omit the section \
+                 entirely to opt out of buffering instead",
+                self.max_pending_per_target, MIN_OUTBOUND_BUFFER_MAX_PENDING,
+            ));
+        }
+        None
+    }
+}
+
 /// Zenoh session mode.
 ///
 /// Typed at parse time so an invalid value (typo, wrong case) fails the
@@ -427,6 +484,17 @@ pub struct MachineConfig {
     /// time. Opt-in by design — see [`LivelinessConfig`].
     #[serde(default)]
     pub liveliness: Option<LivelinessConfig>,
+    /// Per-machine outbound buffer for readiness-gated send paths
+    /// (SCE Mesh §10.10). Absent section ⇒ no buffer emitted; outbound
+    /// sends go straight to the transport and any pre-readiness send
+    /// is silently lost (SOME/IP before `offer_service`, Zenoh PUT
+    /// before any subscriber declares). Section present ⇒ opt-in
+    /// targets route through `OutboundBuffer::admit`, the transport's
+    /// native readiness primitive feeds `markReady` / `markNotReady`,
+    /// and overflow raises `error.communication` with reason
+    /// `BACKPRESSURE_DROP` (§16.7 row 10). See [`OutboundBufferConfig`].
+    #[serde(default)]
+    pub outbound_buffer: Option<OutboundBufferConfig>,
 }
 
 impl MachineConfig {
@@ -762,6 +830,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_server_query_timeout(&cfg)?;
     validate_server_pool_rejection(&cfg)?;
     validate_pool_capability(&cfg)?;
+    validate_outbound_buffer(&cfg)?;
 
     Ok(cfg)
 }
@@ -1094,6 +1163,32 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
                     Some(_) => {}
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// Walk every machine that declared an explicit `outbound_buffer:`
+/// section and reject capacity-zero values (SCE Mesh §10.10). Runs at
+/// parse time so the diagnostic surfaces the offending deploy.yaml
+/// line rather than generating a router whose buffer behaves
+/// identically to the opt-out path.
+fn validate_outbound_buffer(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let mut by_machine: BTreeMap<&str, &OutboundBufferConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            if let Some(b) = &machine.outbound_buffer {
+                by_machine.insert(machine_name.as_str(), b);
+            }
+        }
+    }
+    for (machine, buffer) in by_machine {
+        if let Some(reason) = buffer.validation_error() {
+            return Err(DeployError::InvalidOutboundBuffer {
+                machine: machine.to_string(),
+                reason,
+            });
         }
     }
     Ok(())
@@ -1918,6 +2013,90 @@ topology:
         source: brake.scxml
         liveliness:
           leese_ms: 2000
+"#;
+        let err = parse_deploy_str(yaml).unwrap_err();
+        assert!(matches!(err, DeployError::Yaml(_)));
+    }
+
+    #[test]
+    fn outbound_buffer_section_absent_is_default_none() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        assert!(
+            machine.outbound_buffer.is_none(),
+            "absent section must deserialize as None (opt-in gate — §10.10)"
+        );
+    }
+
+    #[test]
+    fn outbound_buffer_section_present_parses() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        outbound_buffer:
+          max_pending_per_target: 64
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        assert_eq!(
+            machine.outbound_buffer.unwrap().max_pending_per_target,
+            64,
+            "explicit section must propagate the max_pending_per_target value"
+        );
+    }
+
+    #[test]
+    fn outbound_buffer_zero_capacity_rejected() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        outbound_buffer:
+          max_pending_per_target: 0
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidOutboundBuffer { machine, reason }) => {
+                assert_eq!(machine, "brake");
+                assert!(
+                    reason.contains("max_pending_per_target"),
+                    "reason: {reason}",
+                );
+                assert!(
+                    reason.contains("1"),
+                    "reason must cite the floor MIN_OUTBOUND_BUFFER_MAX_PENDING = 1: {reason}",
+                );
+            }
+            other => panic!("expected InvalidOutboundBuffer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn outbound_buffer_unknown_field_rejected() {
+        // Typo: `max_pendng_per_target` — deny_unknown_fields must fire.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        outbound_buffer:
+          max_pendng_per_target: 64
 "#;
         let err = parse_deploy_str(yaml).unwrap_err();
         assert!(matches!(err, DeployError::Yaml(_)));

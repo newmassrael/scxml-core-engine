@@ -1148,6 +1148,14 @@ pub fn compile_mesh_transport(
     let machine_liveliness = device
         .and_then(|d| d.machines.get(&effective_machine_name))
         .and_then(|m| m.liveliness);
+    // SCE Mesh §10.10: opt-in per-machine outbound buffer. Absent
+    // section ⇒ `None`, and the template emits zero buffer code for
+    // that machine. `OutboundBufferConfig` is `Copy`, so we flatten
+    // with `copied()`-equivalent (`and_then(|m| m.outbound_buffer)`
+    // already produces an owned value).
+    let machine_outbound_buffer = device
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .and_then(|m| m.outbound_buffer);
     let template_base = find_template_base();
     let output = mesh::codegen::generate_mesh(
         &model.name,
@@ -1159,6 +1167,7 @@ pub fn compile_mesh_transport(
         machine_subscriptions,
         machine_ordering,
         machine_liveliness,
+        machine_outbound_buffer,
         language,
         &template_base,
     )?;
