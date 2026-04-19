@@ -2683,6 +2683,35 @@ struct TransportRouter {
 {% endif %}
 
 {% if has_mesh_rpc.v %}
+    /// Erase bookkeeping for an invoke that registered its correlation
+    /// entry but abandoned the send before the envelope reached the
+    /// wire — the `<invoke type="sce:mesh-rpc">` pre-envelope setup-fault
+    /// class (SCE_MESH.md §9.5 three-tier error table): SOME/IP pool
+    /// instance out-of-set, Zenoh key-substitution miss, malformed pool
+    /// payload, unknown method on target, zenoh::ZException thrown
+    /// while constructing the KeyExpr. Per §10.7.1 the caller raises
+    /// error.execution with reason=INVOKE_SRC_NOT_FOUND; this helper
+    /// drops the three router-scoped registrations (correlation entry,
+    /// deadline, active_invokes site) so a later reply or state-exit
+    /// cancel finds no stale state.
+    ///
+    /// handleCancel erases without firing the deliver callback, which
+    /// is what we want — the pre-§9.5-realignment template called
+    /// handleReply(Unavailable, {}) here, synthesizing a fake wire
+    /// reply that fired error.invoke.<id> and collided with the
+    /// caller's error.execution raise at the invoke site. Cleanup
+    /// semantics are now single-source.
+    void cleanupAbandonedMeshInvoke(const std::array<std::uint8_t, 16>& uuid,
+                                    const std::string& target,
+                                    const std::string& fieldSuffix) {
+        invoke_correlation_.handleCancel(uuid);
+        (void)deadline_scheduler_.cancelDeadline(uuid);
+        {
+            std::lock_guard<std::mutex> lock(active_invokes_mutex_);
+            active_invokes_.erase(InvokeSiteKey{target, fieldSuffix});
+        }
+    }
+
     /// Dispatch a `<invoke type="sce:mesh-rpc">` request (SCE_MESH.md §9.5).
     ///
     /// Generates a UUID v7 as the wire-level `invoke_id`, registers a
@@ -2784,18 +2813,18 @@ struct TransportRouter {
             std::string pool_json(env.data.begin(), env.data.end());
             auto pool_parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
             if (!pool_parsed) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             auto* pool_obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*pool_parsed);
             if (!pool_obj_sp || !*pool_obj_sp) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             auto& pool_obj = **pool_obj_sp;
             auto inst_it = pool_obj.properties.find("{{ target.pool_plan.instance_from }}");
             if (inst_it == pool_obj.properties.end()) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             std::string inst_str = ::SCE::EventDataHelper::scriptValueToJsonString(inst_it->second);
@@ -2807,7 +2836,7 @@ struct TransportRouter {
             const char* inst_end = inst_begin + inst_str.size();
             auto parse = std::from_chars(inst_begin, inst_end, inst_ul);
             if (parse.ec != std::errc() || parse.ptr != inst_end || inst_ul > 0xFFFFu) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             vsomeip::instance_t runtime_instance = static_cast<vsomeip::instance_t>(inst_ul);
@@ -2818,7 +2847,7 @@ struct TransportRouter {
             if (std::find(std::begin(pool_instances_{{ target.target_snake }}),
                           std::end(pool_instances_{{ target.target_snake }}),
                           runtime_instance) == std::end(pool_instances_{{ target.target_snake }})) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             vsomeip::method_t method_id = 0;
@@ -2830,7 +2859,7 @@ struct TransportRouter {
             }
 {% endfor %}
             if (!method_set) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             auto request = vsomeip::runtime::get()->create_request(
@@ -2859,18 +2888,18 @@ struct TransportRouter {
         // branch — semantics must stay in sync).
         if (target == "{{ target.target }}") {
             if (!zenoh_session_) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             std::string pool_json(env.data.begin(), env.data.end());
             auto pool_parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
             if (!pool_parsed) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             auto* pool_obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*pool_parsed);
             if (!pool_obj_sp || !*pool_obj_sp) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
             auto& pool_obj = **pool_obj_sp;
@@ -2879,7 +2908,7 @@ struct TransportRouter {
             {
                 auto it = pool_obj.properties.find("{{ ph }}");
                 if (it == pool_obj.properties.end()) {
-                    invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                    cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                     return false;
                 }
                 // scriptValueToJsonString wraps strings in quotes; strip
@@ -2891,7 +2920,7 @@ struct TransportRouter {
                 const std::string token = "{{ '{' }}{{ ph }}{{ '}' }}";
                 auto pos = pool_key.find(token);
                 if (pos == std::string::npos) {
-                    invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                    cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                     return false;
                 }
                 pool_key.replace(pos, token.size(), pv);
@@ -2929,7 +2958,7 @@ struct TransportRouter {
                     std::move(opts));
                 return true;
             } catch (const zenoh::ZException&) {
-                invoke_correlation_.handleReply(uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
                 return false;
             }
         }
