@@ -515,3 +515,4 @@ sce-go-tests        W3C conformance (202/202)
 5. **Zero Duplication**: AOT and Interpreter share core W3C logic through Helper functions
 6. **You Don't Pay for What You Don't Use**: 4-tier library structure — link only what you need
 7. **Multi-Backend Parity**: Same SCXML sources, same codegen pipeline, same W3C compliance across C++/Rust/Kotlin/Go/Python
+8. **Parity Scope**: Multi-backend parity covers W3C SCXML codegen. Mesh (the SCE-specific distributed capability) is implemented in C++ alone — `tools/codegen/templates/mesh/` contains only `cpp/`, and no other backend carries `MeshEnvelope` or `mesh_transport` code. Per-backend mesh expansion is case-by-case, gated on explicit demand, not an implicit parity obligation. `SCE_MESH.md` stays agnostic to implementation count; the scope rule lives at the architecture layer.
