@@ -112,6 +112,53 @@ fn reject_mesh_rpc_in_unsupported_lang(
     )))
 }
 
+// ── §16.5 L3500 barrier-timeout observability gate ────────────────
+//
+// A deploy.yaml `barrier_timeout_ms:` on a Root partition is a signal
+// that the author wants to **observe** the `error.communication`
+// (reason `PARALLEL_BARRIER_TIMEOUT`) raise when regions fail to
+// converge in time. If the author's SCXML carries no transition for
+// `error.communication`, the raised event falls into the default
+// microstep path and is silently discarded — the knob is set but has
+// no observable consequence, the `feedback_silently_broken_hooks`
+// anti-pattern verbatim. Refuse at codegen instead so the gap
+// surfaces with the SCXML in hand rather than as a post-deploy
+// observation that "the timeout does nothing".
+//
+// The check is local to the machine currently being codegen'd. A
+// distributed `<parallel>` whose Root lives in a different machine
+// has `partition_barrier_timeouts` empty here (only Root-owning
+// machines carry an entry); NonRoot machines never reach this gate.
+fn reject_barrier_timeout_without_handler(
+    model: &SCXMLModel,
+) -> Result<(), GenerateError> {
+    if model.partition_barrier_timeouts.is_empty() {
+        return Ok(());
+    }
+    if model.events.contains("error.communication") {
+        return Ok(());
+    }
+    let parallels: Vec<String> = model
+        .partition_barrier_timeouts
+        .keys()
+        .cloned()
+        .collect();
+    Err(GenerateError::UnsupportedFeature(format!(
+        "machine '{}' declares `barrier_timeout_ms:` on a Root partition \
+         for <parallel id=\"{}\"> but the SCXML has no transition for \
+         event `error.communication`. SCE_MESH.md §16.5 L3500 raises \
+         `error.communication` (reason PARALLEL_BARRIER_TIMEOUT) when \
+         the barrier elapses — without a transition the raise is \
+         silently discarded and the timeout has no observable effect. \
+         Add a `<transition event=\"error.communication\">` handler \
+         (optionally guarded on `_event.data.reason == \
+         'PARALLEL_BARRIER_TIMEOUT'`) or drop `barrier_timeout_ms:` \
+         from the partition declaration.",
+        model.name,
+        parallels.join(", ")
+    )))
+}
+
 // ── Rust generator ───────────────────────────────────────────────
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
@@ -195,6 +242,7 @@ fn render_cpp(
     model: &SCXMLModel,
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
+    reject_barrier_timeout_without_handler(model)?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -868,6 +916,59 @@ mod tests {
             .join("\n")
     }
 
+    /// Variant of [`PARALLEL_FINAL_SCXML`] that adds an
+    /// `error.communication` handler so the §16.5 L3500 barrier-
+    /// timeout runtime can emit without tripping
+    /// [`reject_barrier_timeout_without_handler`]. The transition
+    /// target (`timeout_failed`) is a dedicated final state so the
+    /// raise path is authoring-observable in E2E tests too.
+    const PARALLEL_FINAL_WITH_TIMEOUT_HANDLER_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="pf_fixture" initial="root">
+  <parallel id="root">
+    <state id="left" initial="left_run">
+      <state id="left_run">
+        <transition event="finish_left" target="left_done"/>
+      </state>
+      <final id="left_done"/>
+    </state>
+    <state id="right" initial="right_run">
+      <state id="right_run">
+        <transition event="finish_right" target="right_done"/>
+      </state>
+      <final id="right_done"/>
+    </state>
+    <transition event="error.communication" target="timeout_failed"/>
+  </parallel>
+  <final id="timeout_failed"/>
+</scxml>"##;
+
+    fn render_root_with_barrier_timeout(timeout_ms: Option<u32>) -> String {
+        let mut model = parse(PARALLEL_FINAL_WITH_TIMEOUT_HANDLER_SCXML);
+        crate::analyzer::analyze(&mut model, "pf_fixture.scxml");
+        model.partition_context_present = true;
+        model
+            .partition_parallel_roles
+            .insert("root".to_string(), crate::model::PartitionRole::Root);
+        if let Some(ms) = timeout_ms {
+            model
+                .partition_barrier_timeouts
+                .insert("root".to_string(), ms);
+        }
+        let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("tools")
+            .join("codegen")
+            .join("templates");
+        let out = generate_cpp(&model, &template_dir, "pf_fixture").expect("render");
+        out.files
+            .into_iter()
+            .map(|(_, body)| body)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
     fn partition_role_root_emits_tracker_and_handlers() {
         let body = render_with_role(Some(crate::model::PartitionRole::Root));
@@ -1005,6 +1106,110 @@ mod tests {
             !body.contains("tracker_root_"),
             "SinglePartition role must not emit mesh tracker members"
         );
+    }
+
+    // ── §16.5 L3500 barrier-timeout shape + observability gate ───
+
+    #[test]
+    fn partition_barrier_timeout_absent_emits_no_timer_machinery() {
+        // Root role without `partition_barrier_timeouts` ⇒ W3C
+        // normative infinity ⇒ no TimerHooks, no scheduler call,
+        // no `PARALLEL_BARRIER_TIMEOUT` string.
+        let body = render_root_with_barrier_timeout(None);
+        assert!(
+            body.contains("tracker_root_"),
+            "Root role must still emit the tracker member"
+        );
+        assert!(
+            !body.contains("TimerHooks"),
+            "infinity (no barrier_timeout_ms) must not emit `TimerHooks`; body was:\n{body}"
+        );
+        assert!(
+            !body.contains("PARALLEL_BARRIER_TIMEOUT"),
+            "infinity must not emit the §16.7 row 6 reason string"
+        );
+        assert!(
+            !body.contains("__sce_barrier_timeout_"),
+            "infinity must not emit the deterministic timer send-id constant"
+        );
+    }
+
+    #[test]
+    fn partition_barrier_timeout_present_emits_timer_hooks_and_raise() {
+        // Root role with a finite `barrier_timeout_ms` ⇒ TimerHooks
+        // block populated, arm/cancel call through `scheduleEvent` /
+        // `cancelEvent` with the deterministic send-id, payload shaped
+        // by `CommunicationError::toJsonBytes`.
+        let body = render_root_with_barrier_timeout(Some(3500));
+        assert!(
+            body.contains("ParallelCompletionTracker::TimerHooks"),
+            "finite barrier_timeout_ms must emit the TimerHooks aggregate; body was:\n{body}"
+        );
+        assert!(
+            body.contains("PARALLEL_BARRIER_TIMEOUT"),
+            "finite barrier_timeout_ms must pin the §16.7 row 6 reason string"
+        );
+        assert!(
+            body.contains("__sce_barrier_timeout_root"),
+            "arm/cancel must route through a deterministic per-parallel send-id"
+        );
+        assert!(
+            body.contains("CommunicationError"),
+            "JSON payload must be shaped via CommunicationError::toJsonBytes"
+        );
+        assert!(
+            body.contains("PolicyType::Event::Error_communication"),
+            "timer-fire event must be the W3C-bridged Event::Error_communication"
+        );
+        assert!(
+            body.contains("Error_communication") && body.contains("scheduleEvent"),
+            "arm callback must call the base engine's scheduleEvent with the error event"
+        );
+        assert!(
+            body.contains("3500"),
+            "timeout_ms must be baked in verbatim from deploy.yaml"
+        );
+    }
+
+    #[test]
+    fn partition_barrier_timeout_without_error_handler_rejects() {
+        // Same fixture but WITHOUT the `error.communication` transition
+        // — codegen must refuse so the silent-broken observability
+        // gap (`feedback_silently_broken_hooks`) is closed at build
+        // time instead of as a mysterious no-op at runtime.
+        let mut model = parse(PARALLEL_FINAL_SCXML);
+        crate::analyzer::analyze(&mut model, "pf_fixture.scxml");
+        model.partition_context_present = true;
+        model
+            .partition_parallel_roles
+            .insert("root".to_string(), crate::model::PartitionRole::Root);
+        model
+            .partition_barrier_timeouts
+            .insert("root".to_string(), 1000);
+        let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("tools")
+            .join("codegen")
+            .join("templates");
+        let res = generate_cpp(&model, &template_dir, "pf_fixture");
+        let err = match res {
+            Ok(_) => panic!("barrier_timeout_ms without error.communication handler must reject"),
+            Err(e) => e,
+        };
+        match err {
+            GenerateError::UnsupportedFeature(msg) => {
+                assert!(msg.contains("barrier_timeout_ms"), "msg cites the knob: {msg}");
+                assert!(msg.contains("error.communication"), "msg names the missing handler: {msg}");
+                assert!(msg.contains("PARALLEL_BARRIER_TIMEOUT"), "msg names §16.7 row 6 reason: {msg}");
+                // Machine name is whatever the test parser assigned via
+                // `parse_string(..., "brake")`; the assertion only cares
+                // that SOME machine identifier is surfaced.
+                assert!(msg.contains("machine"), "msg names the compiled machine: {msg}");
+                assert!(msg.contains("root"), "msg names the parallel id: {msg}");
+            }
+            other => panic!("expected UnsupportedFeature, got {other:?}"),
+        }
     }
 
     /// Models without mesh-rpc invokes must NOT be rejected — the gate

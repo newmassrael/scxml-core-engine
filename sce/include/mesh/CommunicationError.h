@@ -14,12 +14,13 @@
 //
 // Field set covers the baseline (errorName, reason, detail, source,
 // envelope_id), the §16.7 row-8 `PEER_PARTITIONED` extras
-// (target / last_seen_ms_ago), and the §16.7 row-12 `ORDERING_GAP`
-// extras (lost_seq_lo / lost_seq_hi). Other §16.7 rows add their own
-// extras (transport, invoke_id, etc.) — those grow here when a raise
-// site needs them. Each raise site populates only the extras named in
-// its row of the catalog; the remainder stay empty and are skipped on
-// render.
+// (target / last_seen_ms_ago), the §16.7 row-12 `ORDERING_GAP`
+// extras (lost_seq_lo / lost_seq_hi), and the §16.7 row-6
+// `PARALLEL_BARRIER_TIMEOUT` extras (parallel_id / missing_regions /
+// timeout_ms). Other §16.7 rows add their own extras (transport,
+// invoke_id, etc.) — those grow here when a raise site needs them.
+// Each raise site populates only the extras named in its row of the
+// catalog; the remainder stay empty and are skipped on render.
 //
 // Design notes:
 //   * Pure header; the canonical JSON render uses
@@ -104,6 +105,29 @@ struct CommunicationError {
     /// forwarded sequence range.
     std::optional<std::uint64_t> lost_seq_hi;
 
+    /// §16.7 row 6 (PARALLEL_BARRIER_TIMEOUT): author-declared id of
+    /// the `<parallel>` whose §16.5 completion barrier fired. Always
+    /// populated by the barrier-timeout raise site; absent for every
+    /// other row. Authors branch on the combination of
+    /// `reason == 'PARALLEL_BARRIER_TIMEOUT'` and
+    /// `_event.data.parallel_id == '<id>'` to react to a specific
+    /// barrier.
+    std::optional<std::string> parallel_id;
+
+    /// §16.7 row 6 (PARALLEL_BARRIER_TIMEOUT): sorted list of region
+    /// ids that had not reported completion when the barrier fired.
+    /// Sender contract: non-empty — at least one region must be
+    /// missing when the timer wins the race against the completion
+    /// threshold. An empty vector indicates a raise-site contract
+    /// violation. Rendered as a JSON array of strings.
+    std::optional<std::vector<std::string>> missing_regions;
+
+    /// §16.7 row 6 (PARALLEL_BARRIER_TIMEOUT): the deploy-declared
+    /// `barrier_timeout_ms:` value in force when the timer armed.
+    /// Serialized as an unsigned milliseconds count to match the
+    /// shape §14 accepts at parse time.
+    std::optional<std::uint64_t> timeout_ms;
+
     /// Render to canonical JSON bytes for `MeshEnvelope::data`.
     ///
     /// Uses `nlohmann::ordered_json` so the wire field order matches
@@ -143,6 +167,15 @@ struct CommunicationError {
         }
         if (lost_seq_hi) {
             j["lost_seq_hi"] = *lost_seq_hi;
+        }
+        if (parallel_id) {
+            j["parallel_id"] = *parallel_id;
+        }
+        if (missing_regions) {
+            j["missing_regions"] = *missing_regions;
+        }
+        if (timeout_ms) {
+            j["timeout_ms"] = *timeout_ms;
         }
         const std::string out = j.dump();
         return std::vector<std::uint8_t>(out.begin(), out.end());

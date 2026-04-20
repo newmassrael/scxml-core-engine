@@ -899,6 +899,7 @@ pub fn inject_partition_context_for(
     model.partition_wire21_outbound_routes.clear();
     model.partition_wire21_inbound_sources.clear();
     model.partition_self_name = None;
+    model.partition_barrier_timeouts.clear();
 
     if let Some(partition_name) = for_partition {
         if let Some(partitions) = &deploy_cfg.partitions {
@@ -1017,6 +1018,27 @@ pub fn inject_partition_context_for(
                 model
                     .partition_parallel_roles
                     .insert(parallel_id.clone(), role);
+
+                // SCE_MESH.md §16.5 L3500 barrier-timeout plumbing.
+                // Rule 12 pins exactly one claimant per distributed
+                // parallel, and `barrier_timeout_ms:` on a non-
+                // root-claiming partition is rejected at deploy time
+                // (`partition-barrier-timeout-without-root`). So the
+                // finite value, if any, lives on the partition we
+                // matched as Root above — look it up once and stamp
+                // the per-parallel map. SinglePartition parallels use
+                // the legacy inline helper and never need a timer;
+                // NonRoot partitions hold no tracker. A Root role
+                // whose partition set None (W3C normative infinity)
+                // leaves the map entry absent, which the jinja2
+                // template interprets as "no TimerHooks emitted".
+                if role == model::PartitionRole::Root {
+                    if let Some(timeout_ms) = decl.barrier_timeout_ms {
+                        model
+                            .partition_barrier_timeouts
+                            .insert(parallel_id.clone(), timeout_ms);
+                    }
+                }
             }
 
             model.partition_wire21_inbound_sources = wire21_inbound.into_iter().collect();

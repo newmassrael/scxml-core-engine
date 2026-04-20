@@ -748,13 +748,15 @@ protected:
                           static_cast<int>(currentState_));
 
                 // W3C SCXML 5.4.1: Stop processing events if TOP-LEVEL final state reached
+                // (Zero Duplication: same top-level-final predicate as tick() — encapsulated
+                // in isGlobalFinalState() to keep regional `<final>` inside a `<parallel>`
+                // from mis-terminating the queue drain.)
+                if (isGlobalFinalState()) {
+                    SCE_LOG_DEBUG("AOT processEventQueues: Top-level final state {} reached, stopping event processing",
+                              static_cast<int>(currentState_));
+                    return false;
+                }
                 if (StatePolicy::isFinalState(currentState_)) {
-                    auto parent = StatePolicy::getParent(currentState_);
-                    if (!parent.has_value()) {
-                        SCE_LOG_DEBUG("AOT processEventQueues: Top-level final state {} reached, stopping event processing",
-                                  static_cast<int>(currentState_));
-                        return false;
-                    }
                     SCE_LOG_DEBUG("AOT processEventQueues: Non-top-level final state {} (inside parallel/compound), "
                               "continue processing done.state events",
                               static_cast<int>(currentState_));
@@ -1054,10 +1056,43 @@ public:
 
     /**
      * @brief Check if in a final state (W3C SCXML 3.3)
-     * @return true if current state is final
+     *
+     * Leaf semantics: returns true for **any** `<final>`, including a
+     * region-level `<final>` nested inside a `<parallel>` whose sibling
+     * regions are still running. Callers that need W3C §6.4 "machine
+     * has terminated" semantics (global-done detection, tick
+     * short-circuit, external `done.invoke` propagation) must use
+     * `isGlobalFinalState()` instead.
+     *
+     * @return true if `currentState_` is any final state (leaf or root)
      */
     bool isInFinalState() const {
         return StatePolicy::isFinalState(currentState_);
+    }
+
+    /**
+     * @brief Check if the state machine has reached its **top-level**
+     *        final (W3C SCXML §3.7 / §6.4)
+     *
+     * Parallel-aware counterpart to `isInFinalState()`: returns true
+     * only when `currentState_` is a final state **and** has no parent
+     * (i.e. it is the machine's globally-terminating state, not a
+     * region-level `<final>` inside a `<parallel>`). This is the
+     * predicate that guards "machine is done" decisions — scheduler
+     * short-circuit in `tick()`, queue-processing bail-out in
+     * `processEventQueues()`, external `done.invoke` notification.
+     *
+     * See SCE_MESH.md §16.5 L3500 for the concrete case that motivated
+     * the split: a `<parallel>` whose local region has reached its
+     * regional `<final>` ahead of a remote sibling's wire-21 arrival
+     * still needs the scheduler pumped so the barrier-timeout event
+     * can fire.
+     *
+     * @return true if `currentState_` is a top-level `<final>`
+     */
+    bool isGlobalFinalState() const {
+        return StatePolicy::isFinalState(currentState_) &&
+               !StatePolicy::getParent(currentState_).has_value();
     }
 
     /**
@@ -1076,6 +1111,37 @@ public:
     }
 
     /**
+     * @brief Drain the delayed-send scheduler onto the external queue
+     *        (W3C SCXML §6.2).
+     *
+     * Pops every scheduled event whose delay has elapsed (wall-clock)
+     * and raises it onto the external queue via `raiseExternal`. Does
+     * **not** run `step()` afterwards — the caller is expected to
+     * follow up with `step()` when it wants the raised events to
+     * drive transitions.
+     *
+     * **Canonical polling API is `tick()`** — it is parallel-aware
+     * (short-circuits on `isGlobalFinalState()`, not the leaf-level
+     * `isInFinalState()`), calls this method internally, and then
+     * performs a full macrostep. Normal polling loops should call
+     * `tick()`.
+     *
+     * `pumpScheduledEvents()` is retained as a public hook for
+     * fine-grained callers that need the scheduler drained *without*
+     * a follow-up microstep — e.g. harnesses that interleave
+     * scheduler-only pulses with explicit `processEvent()` /
+     * `step()` sequencing to exercise a specific ordering. If you
+     * are writing a plain tick loop, prefer `tick()`.
+     */
+    void pumpScheduledEvents() {
+        std::string eventData;
+        Event event;
+        while (scheduler_.popReadyEvent(event, eventData)) {
+            raiseExternal(event, eventData);
+        }
+    }
+
+    /**
      * @brief Tick scheduler and process ready internal events (W3C SCXML 6.2)
      *
      * For single-threaded AOT engines with delayed send support.
@@ -1091,8 +1157,14 @@ public:
             return;
         }
 
-        // W3C SCXML 6.4: If already in final state, notify parent and return
-        if (isInFinalState()) {
+        // W3C SCXML §6.4 — top-level final only: a regional `<final>`
+        // inside a `<parallel>` is *not* a terminator for the machine
+        // as a whole, so we must not short-circuit the scheduler pump
+        // when only a region has completed. `isGlobalFinalState()`
+        // encodes the parent-presence check that `isInFinalState()`
+        // (leaf semantics) deliberately omits; see SCE_MESH.md §16.5
+        // L3500 for the barrier-timeout case that surfaces this.
+        if (isGlobalFinalState()) {
             if (completionCallback_) {
                 SCE_LOG_DEBUG("AOT tick: Invoking completion callback for already-final state");
                 completionCallback_();
@@ -1101,11 +1173,7 @@ public:
         }
 
         // W3C SCXML 6.2: Check for ready scheduled events and raise them
-        std::string eventData;
-        Event event;
-        while (scheduler_.popReadyEvent(event, eventData)) {
-            raiseExternal(event, eventData);
-        }
+        pumpScheduledEvents();
 
         // W3C SCXML 6.4: Tick child state machines to process their events
         // Children need to run independently during parent's event loop

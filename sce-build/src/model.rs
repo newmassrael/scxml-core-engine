@@ -699,6 +699,22 @@ pub struct SCXMLModel {
     /// and destination partition names).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partition_self_name: Option<String>,
+
+    /// SCE_MESH.md §16.5 L3500 barrier-timeout runtime. Maps each
+    /// `<parallel>` id **Rooted by the current partition** to the
+    /// deploy-declared `partitions.<root>.barrier_timeout_ms:` value.
+    /// An entry absent from the map is the W3C normative infinity
+    /// (no finite timer armed at first region completion); an entry
+    /// present ⇒ the generated Root SM installs `TimerHooks` on the
+    /// matching `ParallelCompletionTracker`.
+    ///
+    /// Populated by [`crate::inject_partition_context_for`] whenever
+    /// the selected partition declares `barrier_timeout_ms:` AND
+    /// claims at least one root here. NonRoot partitions never see an
+    /// entry (they hold no tracker). Empty in every non-partitioned
+    /// build.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub partition_barrier_timeouts: std::collections::BTreeMap<String, u32>,
 }
 
 /// SCE_MESH.md §14 rule 12 — partition's role for a specific

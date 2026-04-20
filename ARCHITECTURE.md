@@ -250,6 +250,19 @@ Generated state machine policies come in two modes:
 **Detection**: Code generator automatically detects ECMAScript features:
 - `typeof` operator, `_event` system variable, `In()` predicate → triggers hybrid generation
 
+### AOT Polling Semantics — `tick()` vs `isInFinalState` / `isGlobalFinalState`
+
+`StaticExecutionEngine` exposes two distinct "final" predicates that encode different W3C SCXML concepts; `tick()` (the canonical polling API) is parallel-aware because of the split.
+
+| Predicate | Returns true when... | W3C reference | Used by |
+|-----------|---------------------|---------------|---------|
+| `isInFinalState()` | `currentState_` is **any** `<final>` element — including a region-level `<final>` nested inside a `<parallel>` | §3.7 leaf semantics | External SCXML-level queries (tests, examples asking "did a final fire?") |
+| `isGlobalFinalState()` | `currentState_` is a `<final>` **and** has no parent (top-level terminator) | §3.7 / §6.4 "machine has terminated" | `tick()` short-circuit, `processEventQueues()` drain bail-out, `done.invoke` propagation |
+
+**Why the split is load-bearing.** When a `<parallel>` region reaches its regional `<final>` ahead of its siblings, `currentState_` transitions to that regional-final leaf while the `<parallel>` itself is still awaiting completion of other regions. A polling guard keyed on leaf semantics (`isInFinalState()`) would misread this as "machine done" and skip the scheduler pump — starving any `<send delay="…">` scheduled elsewhere in the still-running configuration, including the §16.5 L3500 barrier timer that arms on **first** region completion. `isGlobalFinalState()` adds the parent-presence check so the guard fires only at the true machine terminator.
+
+**Zero Duplication consequence.** Both `tick()` and the internal `processEventQueues()` top-level-final drain bail-out go through the same `isGlobalFinalState()` helper — the inline `isFinalState && !parent.has_value()` pattern that used to live in two places is encapsulated once.
+
 ### Static History States
 
 W3C SCXML 3.11 history states implemented as hybrid: static structure with runtime history variables.

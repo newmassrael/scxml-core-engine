@@ -1,0 +1,43 @@
+# SCE Mesh §16.5 L3500 — barrier-timeout runtime E2E fixture.
+#
+# Mirrors `deploy_partitions.yaml` but squeezes `barrier_timeout_ms`
+# down to a CI-friendly 150 ms so the §16.5 fires / cancels E2E pair
+# completes well under 1 second each. The 5000 ms value in the
+# sibling fixture is deliberate for the rule 12 wire-21 happy-path
+# test — it proves convergence wins a generous race; the short value
+# here proves the **timer fires** under author-facing conditions.
+#
+# Semantics shared with deploy_partitions.yaml:
+#   motor_left  — Root partition, hosts the parallel root claim, owns
+#                 the `ParallelCompletionTracker` with TimerHooks.
+#   motor_right — NonRoot partition, emits wire-21 ParallelRegionDone.
+#
+# 150 ms is chosen to be:
+#   * well above the ~50 ms startup race window the harness already
+#     sleeps through (see `test_mesh_partition_rule12_e2e.cpp` L96-99),
+#   * well below the 500 ms CI polling budget each E2E driver carries,
+#   * and large enough that the cancel path has real work to do
+#     (the completing-right variant sends wire-21 within a few ms,
+#     comfortably winning the race against the timer).
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+    transport_binding: shm
+    hosts_parallel_roots:
+      - { machine: motor_partition, parallel: root }
+    barrier_timeout_ms: 150
+  motor_right:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }

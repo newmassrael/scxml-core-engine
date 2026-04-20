@@ -26,21 +26,37 @@
 // "Re-entry of the parallel via history or new enter-set computation
 // resets the tracker and starts a fresh activation."
 //
+// Barrier-timeout (§16.5 L3500):
+//   When the owning partition declares `barrier_timeout_ms:` in
+//   deploy.yaml, the generated SM ctor populates [`TimerHooks`] so the
+//   tracker can arm a finite timer at the first region completion of
+//   each activation. Re-arms on every subsequent completion so that
+//   [`TimerHooks::arm`] receives an up-to-date `missing_regions` vector
+//   (the wire-21 `_event.data` payload is captured at arm time; stale
+//   payload on partial progress is the failure mode this re-arm
+//   forestalls). Cancels at threshold so the done.state raise wins the
+//   race. Fires `TimerHooks::onTimeout` (installed closure) when the
+//   timer elapses before threshold — that closure then raises
+//   `error.communication` (reason `PARALLEL_BARRIER_TIMEOUT`, §16.7
+//   row 6) via the SM's PullScheduler. Absent `TimerHooks` (W3C
+//   normative infinity) the tracker never arms a timer.
+//
 // Scope (what this class is NOT):
-//   * No barrier timeout firing. §16.5 L3500 specifies that an
-//     author-configured finite timeout raises `error.communication`
-//     with `reason=PARALLEL_BARRIER_TIMEOUT` when regions remain silent.
-//     That is a scheduler-driven concern (timer fire → engine.raise) and
-//     the atomic rule-12 bundle covers only the configuration-level
-//     validator gate (`mesh/partition-barrier-timeout-without-root`).
-//     Runtime timer integration follows independently and is tracked in
-//     the §16.5 spec without pinning a timeline here.
+//   * No direct coupling to the SM's scheduler. [`TimerHooks`] carries
+//     the arm / cancel / onTimeout callbacks installed by the SM ctor;
+//     the tracker stays header-only and non-template even though the
+//     scheduler itself is `PullScheduler<Event>` (per-SM Event enum).
 //   * No envelope encoding/decoding. The tracker sees only `region_id`
 //     strings; envelope construction lives in codegen-emitted send sites
 //     and envelope decoding lives in `MeshDispatch::dispatchEnvelope`.
+//     `missing_regions` is surfaced as a `std::vector<std::string>` to
+//     the arm callback, which formats the `_event.data` JSON via
+//     `SCE::Mesh::CommunicationError::toJsonBytes`.
 //   * Not thread-safe. Generated SM has a single event loop; all tracker
 //     calls run on that thread. Transport inbound callbacks must hop
-//     onto the SM thread before invoking `onRemoteRegionComplete`.
+//     onto the SM thread before invoking `onRemoteRegionComplete`. The
+//     `PullScheduler` is likewise pulled from the SM step — timer fire
+//     never races threshold cancellation on the same thread.
 //   * Single-shot per region activation (§16.5 L3498): a duplicate
 //     region id is silently ignored so that at-least-once transport
 //     redelivery does not over-count completions.
@@ -52,10 +68,13 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace SCE::Mesh {
 
@@ -64,41 +83,108 @@ class ParallelCompletionTracker {
 public:
     using OnCompleteCallback = std::function<void()>;
 
-    /// Construct a tracker for a `<parallel>` with `expected_region_count`
-    /// regions total. `on_complete` fires exactly once per activation
-    /// when every region has reported.
+    /// Invoked on every completion *before threshold* to (re-)arm the
+    /// §16.5 barrier timer. Receives the author-declared timeout and a
+    /// freshly-computed `missing_regions` vector so the captured
+    /// `_event.data.missing_regions` matches the tracker's current
+    /// state. Implementation routes to the SM's `PullScheduler`.
+    using ArmTimerCallback =
+        std::function<void(std::uint64_t timeout_ms,
+                           std::vector<std::string> missing_regions)>;
+
+    /// Invoked at threshold and at `reset()` to cancel any pending
+    /// §16.5 barrier timer. Safe to call when no timer is armed (the
+    /// scheduler's `cancelEvent` returns false for unknown send ids).
+    using CancelTimerCallback = std::function<void()>;
+
+    /// Hook bundle for the §16.5 barrier-timeout runtime (L3500).
+    /// Default-constructed instance disables the timer entirely — the
+    /// tracker behaves exactly like the pre-L3500 threshold-only
+    /// primitive. Emitted only when deploy.yaml declares
+    /// `barrier_timeout_ms:` on the root-claiming partition; absent
+    /// declaration ⇒ W3C normative infinity ⇒ no TimerHooks.
+    struct TimerHooks {
+        /// Author-declared finite timeout (ms). The arm callback
+        /// receives this verbatim.
+        std::uint64_t timeout_ms{0};
+        /// Author-declared region id roster. `missing_regions` is
+        /// computed as `expected_region_ids - completed_` on every
+        /// (re-)arm. Sorted on insertion so the arm callback sees a
+        /// deterministic order.
+        std::set<std::string> expected_region_ids;
+        ArmTimerCallback arm;
+        CancelTimerCallback cancel;
+
+        // Explicit constructors keep the type default- AND aggregate-
+        // initializable under C++17, where the `enabled()` method
+        // disqualifies the class from aggregate init (C++20 relaxes
+        // this, but SCE's public headers target C++17).
+        TimerHooks() = default;
+        TimerHooks(std::uint64_t timeout,
+                   std::set<std::string> region_ids,
+                   ArmTimerCallback arm_fn,
+                   CancelTimerCallback cancel_fn)
+            : timeout_ms(timeout),
+              expected_region_ids(std::move(region_ids)),
+              arm(std::move(arm_fn)),
+              cancel(std::move(cancel_fn)) {}
+
+        [[nodiscard]] bool enabled() const noexcept {
+            return arm != nullptr && cancel != nullptr;
+        }
+    };
+
+    /// Construct a threshold-only tracker — no barrier-timeout timer
+    /// (W3C normative infinity). Matches the pre-§16.5-L3500 primitive
+    /// that every existing unit test and every partition without
+    /// `barrier_timeout_ms:` relies on.
     ///
     /// `expected_region_count == 0` is degenerate (a `<parallel>` with
     /// no regions is not a valid SCXML construct) — the tracker fires
-    /// immediately on first call to `maybeFire()`, which codegen does
-    /// at `<parallel>` entry as a correctness guard for the pathological
-    /// input. Passing a no-op callback is legal for tests.
+    /// immediately on the first call to either `onLocalRegionComplete`
+    /// or `onRemoteRegionComplete`, which codegen does at `<parallel>`
+    /// entry as a correctness guard for the pathological input. Passing
+    /// a no-op callback is legal for tests.
     ParallelCompletionTracker(std::size_t expected_region_count,
                               OnCompleteCallback on_complete)
         : expected_count_(expected_region_count),
           on_complete_(std::move(on_complete)),
-          fired_(false) {}
+          timer_hooks_(),
+          fired_(false),
+          timer_armed_(false) {}
+
+    /// Construct a tracker with §16.5 L3500 barrier-timeout hooks. The
+    /// SM ctor passes a populated [`TimerHooks`] when deploy.yaml
+    /// declares `barrier_timeout_ms:` on the root-claiming partition.
+    ParallelCompletionTracker(std::size_t expected_region_count,
+                              OnCompleteCallback on_complete,
+                              TimerHooks timer_hooks)
+        : expected_count_(expected_region_count),
+          on_complete_(std::move(on_complete)),
+          timer_hooks_(std::move(timer_hooks)),
+          fired_(false),
+          timer_armed_(false) {}
 
     /// Mark a region that lives in the root partition's own address
     /// space as complete. Called from the generated SM's region-final
     /// entry branch.
     void onLocalRegionComplete(const std::string &region_id) {
-        completed_.insert(region_id);
-        maybeFire();
+        onRegionComplete(region_id);
     }
 
     /// Mark a region hosted in a sibling (non-root) partition as
     /// complete. Called from `MeshDispatch::dispatchEnvelope` on
     /// wire-21 `ParallelRegionDone` envelopes.
     void onRemoteRegionComplete(const std::string &region_id) {
-        completed_.insert(region_id);
-        maybeFire();
+        onRegionComplete(region_id);
     }
 
     /// Reset for a fresh `<parallel>` activation (§16.5 L3498). Called
     /// from the generated SM's `<parallel>` entry branch before any
-    /// region can report completion.
+    /// region can report completion. Cancels any barrier timer still
+    /// armed from a prior activation.
     void reset() {
+        cancelBarrierTimerIfArmed();
         completed_.clear();
         fired_ = false;
     }
@@ -108,8 +194,34 @@ public:
     std::size_t completedCount() const { return completed_.size(); }
     std::size_t expectedCount() const { return expected_count_; }
     bool hasFired() const { return fired_; }
+    bool barrierTimerArmed() const { return timer_armed_; }
 
 private:
+    /// Single internal path reached from both local and remote
+    /// completion notifications. Threshold wins the race: on the step
+    /// that reaches `expected_count_`, the barrier timer is cancelled
+    /// *before* `on_complete_` fires, so the `done.state.<parallel>`
+    /// raise always precedes any timer-driven `error.communication`.
+    /// The degenerate `expected_count_ == 0` input is preserved from
+    /// the pre-§16.5-L3500 primitive — any completion call immediately
+    /// satisfies the threshold and fires `on_complete_`.
+    void onRegionComplete(const std::string &region_id) {
+        // §16.5 L3498 single-shot: duplicate inserts are a no-op.
+        completed_.insert(region_id);
+
+        if (completed_.size() >= expected_count_) {
+            cancelBarrierTimerIfArmed();
+            maybeFire();
+            return;
+        }
+
+        // Not yet threshold. Re-arm the barrier timer with a fresh
+        // `missing_regions` so the eventual fire carries an accurate
+        // `_event.data`. Cheap: a single re-arm per completion, and
+        // `<parallel>` width is typically small.
+        rearmBarrierTimer();
+    }
+
     /// Fire the callback if the completion threshold has been reached.
     /// Single-shot: subsequent calls are no-ops within one activation.
     void maybeFire() {
@@ -119,10 +231,46 @@ private:
         if (on_complete_) on_complete_();
     }
 
+    /// Compute the set difference `expected_region_ids - completed_`.
+    /// Returned as a sorted `std::vector` (deterministic iteration via
+    /// `std::set`) so the arm callback's captured JSON payload is
+    /// byte-stable across parses.
+    std::vector<std::string> computeMissingRegions() const {
+        std::vector<std::string> missing;
+        if (!timer_hooks_.enabled()) return missing;
+        for (const auto &id : timer_hooks_.expected_region_ids) {
+            if (completed_.find(id) == completed_.end()) {
+                missing.push_back(id);
+            }
+        }
+        return missing;
+    }
+
+    /// Cancel + re-arm with fresh `missing_regions`. No-op when
+    /// `TimerHooks` is disabled (infinity timeout) or when the
+    /// degenerate `expected_count_ == 0` `<parallel>` would never
+    /// accumulate anything for the timer to guard.
+    void rearmBarrierTimer() {
+        if (!timer_hooks_.enabled()) return;
+        if (expected_count_ == 0) return;
+        cancelBarrierTimerIfArmed();
+        auto missing = computeMissingRegions();
+        timer_hooks_.arm(timer_hooks_.timeout_ms, std::move(missing));
+        timer_armed_ = true;
+    }
+
+    void cancelBarrierTimerIfArmed() {
+        if (!timer_armed_) return;
+        if (timer_hooks_.cancel) timer_hooks_.cancel();
+        timer_armed_ = false;
+    }
+
     std::size_t expected_count_;
     OnCompleteCallback on_complete_;
+    TimerHooks timer_hooks_;
     std::set<std::string> completed_;
     bool fired_;
+    bool timer_armed_;
 };
 
 }  // namespace SCE::Mesh

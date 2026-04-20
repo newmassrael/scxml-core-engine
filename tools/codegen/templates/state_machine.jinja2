@@ -73,6 +73,15 @@
 #include <functional>
 #include <stdexcept>
 #include <utility>
+{% if model.partition_barrier_timeouts %}
+// SCE_MESH.md §16.5 L3500 — barrier-timeout runtime surfaces
+// `error.communication` (reason `PARALLEL_BARRIER_TIMEOUT`) through
+// the PullScheduler-driven external queue.
+#include "mesh/CommunicationError.h"
+#include <chrono>
+#include <cstdint>
+#include <vector>
+{% endif %}
 {% endif %}
 {% endif %}
 #include "common/EventDataHelper.h"
@@ -619,6 +628,46 @@ public:
             using EngineBase = ::SCE::Static::StaticExecutionEngine<PolicyType>;
             this->raise(typename EngineBase::EventWithMetadata(PolicyType::Event::Done_state_{{ _pid }}));
         }
+{% if _pid in model.partition_barrier_timeouts %}
+        ,
+        // SCE_MESH.md §16.5 L3500 barrier-timeout runtime for
+        // <parallel id="{{ _pid }}">. `timeout_ms` and the region
+        // roster are baked in from deploy.yaml + SCXML at codegen
+        // time. The arm callback schedules a one-shot
+        // `Event::Error_communication` through the base engine's
+        // PullScheduler; the cancel callback tears the scheduled
+        // entry down by its deterministic send-id. At fire time the
+        // scheduler pops the event onto the external queue, where
+        // the author's `<transition event="error.communication"
+        // cond="_event.data.reason == 'PARALLEL_BARRIER_TIMEOUT'">`
+        // picks it up. §16.7 row 6 pins the `_event.data` shape —
+        // `CommunicationError::toJsonBytes()` is the single-source
+        // JSON renderer.
+        ::SCE::Mesh::ParallelCompletionTracker::TimerHooks{
+            /* timeout_ms */ static_cast<std::uint64_t>({{ model.partition_barrier_timeouts[_pid] }}u),
+            /* expected_region_ids */ {
+{% for _region in model.parallel_regions[_pid] %}
+                std::string("{{ _region }}"){% if not loop.last %},{% endif %}
+{% endfor %}
+            },
+            /* arm */ [this](std::uint64_t timeout_ms, std::vector<std::string> missing_regions) {
+                ::SCE::Mesh::CommunicationError err;
+                err.reason = "PARALLEL_BARRIER_TIMEOUT";
+                err.parallel_id = std::string("{{ _pid }}");
+                err.missing_regions = std::move(missing_regions);
+                err.timeout_ms = timeout_ms;
+                const auto json_bytes = err.toJsonBytes();
+                this->scheduleEvent(
+                    PolicyType::Event::Error_communication,
+                    std::chrono::milliseconds(timeout_ms),
+                    /* sendId */ "__sce_barrier_timeout_{{ _pid }}",
+                    std::string(json_bytes.begin(), json_bytes.end()));
+            },
+            /* cancel */ [this]() {
+                this->cancelEvent("__sce_barrier_timeout_{{ _pid }}");
+            }
+        }
+{% endif %}
     };
 {% endif %}
 {% endfor %}
