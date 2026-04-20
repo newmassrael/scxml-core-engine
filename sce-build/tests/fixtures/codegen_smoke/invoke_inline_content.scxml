@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: parent machine invoking an inline <content>
+  child SCXML.
+
+  Exercises the <invoke> AOT codegen path: the parent emits an
+  invoke-manager adapter plus child-machine plumbing, and the inline
+  <content> child itself is generated as a statically-compiled sibling
+  state machine. Distinct from the plain-final and history fixtures
+  because invoke adds its own file artefacts and template branches
+  around child-machine lifecycle (defer/start/cancel).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="invoke_inline_content" initial="parent">
+  <state id="parent">
+    <invoke type="scxml">
+      <content>
+        <!--
+          No name= attribute on the inline child: sce-codegen derives
+          both the extracted filename and the Kotlin package slug from
+          the parent plus a _childN suffix, and an explicit name= on
+          the inline child breaks that derivation (cf. test187's inline
+          invoke layout).
+        -->
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               initial="leaf">
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

@@ -37,6 +37,8 @@ const FIXTURES: &[&str] = &[
     "final_top_expr",
     "final_top_literal",
     "final_top_params",
+    "history_deep_shallow",
+    "invoke_inline_content",
     "parallel_final",
 ];
 
@@ -89,10 +91,22 @@ fn resolve_tool(name: &str) -> Option<PathBuf> {
 /// Run `sce-codegen generate -l <lang> -o <out> <fixture>.scxml`.
 /// Panics with both stdout and stderr on non-zero exit so failures in
 /// the generator (rather than the checker) are diagnosable from the
-/// test log alone.
+/// test log alone. After the parent generates, any `.scxml` files
+/// emitted alongside it (inline `<invoke><content>…</content></invoke>`
+/// children are extracted as sibling .scxml artefacts by sce-codegen)
+/// are regenerated with `--as-child` so the parent's `#include`/`use`/
+/// `import` of the child SM type resolves during syntax check.
+///
+/// The fixture is copied into `out_dir` before generation because
+/// sce-codegen's parser writes extracted inline `<content>` children
+/// to the source SCXML's *containing directory* (not `-o`). Generating
+/// from a scratch-local copy keeps `tests/fixtures/codegen_smoke/`
+/// clean of derived artefacts.
 fn run_generate(lang: &str, out_dir: &Path, fixture: &str) {
-    let fx_path = fixtures_dir().join(format!("{fixture}.scxml"));
     std::fs::create_dir_all(out_dir).expect("create out dir");
+    let fx_src = fixtures_dir().join(format!("{fixture}.scxml"));
+    let fx_path = out_dir.join(format!("{fixture}.scxml"));
+    std::fs::copy(&fx_src, &fx_path).expect("copy fixture into scratch");
 
     let output = Command::new(sce_codegen_bin())
         .args(["generate", "-l", lang, "-o"])
@@ -108,6 +122,39 @@ fn run_generate(lang: &str, out_dir: &Path, fixture: &str) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
+
+    // Extracted inline-child SCXMLs need a second generate pass with
+    // `--as-child`. Corpus depth is one level (parent → child); if a
+    // future fixture nests deeper this loop would miss grandchildren,
+    // but the fixture contract (minimal SCXML, one specific template
+    // path per fixture) discourages that.
+    //
+    // `--parent-stem` pins the child's Kotlin/Go package to the
+    // parent's, matching the layout `generate-w3c`'s process_child
+    // produces. Without it the parent's unqualified reference to the
+    // child `StateMachine` class fails to resolve under kotlinc.
+    //
+    // The parent fixture itself now lives in `out_dir` (copied above)
+    // so exclude its stem from the child-regen loop; only truly-
+    // extracted children feed `--as-child`.
+    for child_scxml in find_by_ext(out_dir, "scxml") {
+        if child_scxml.file_stem().and_then(|s| s.to_str()) == Some(fixture) {
+            continue;
+        }
+        let child_out = Command::new(sce_codegen_bin())
+            .args(["generate", "--as-child", "--parent-stem", fixture, "-l", lang, "-o"])
+            .arg(out_dir)
+            .arg(&child_scxml)
+            .output()
+            .expect("spawn sce-codegen for extracted child");
+        assert!(
+            child_out.status.success(),
+            "sce-codegen generate --as-child -l {lang} for {child_scxml:?} failed (exit {:?})\nstdout: {}\nstderr: {}",
+            child_out.status.code(),
+            String::from_utf8_lossy(&child_out.stdout),
+            String::from_utf8_lossy(&child_out.stderr),
+        );
+    }
 }
 
 /// Return paths in `dir` with the given extension, non-recursive.

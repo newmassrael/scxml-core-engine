@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: compound state with both deep and shallow
+  <history> children.
+
+  Exercises the history-state codegen path — distinct from plain
+  state-entry/exit because history requires a restoration table,
+  default-transition plumbing, and per-history-kind branching
+  (shallow restores only the immediate child, deep restores the full
+  configuration).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="history_deep_shallow" initial="compound">
+  <state id="compound" initial="inner">
+    <history type="shallow" id="h_shallow">
+      <transition target="inner"/>
+    </history>
+    <history type="deep" id="h_deep">
+      <transition target="inner"/>
+    </history>
+    <state id="inner"/>
+    <transition event="leave" target="other"/>
+  </state>
+  <state id="other">
+    <transition event="restore_shallow" target="h_shallow"/>
+    <transition event="restore_deep" target="h_deep"/>
+  </state>
+</scxml>

@@ -301,6 +301,20 @@ enum Commands {
         /// Generate as child state machine (C++ invoke support)
         #[arg(long)]
         as_child: bool,
+        /// Parent machine stem for Kotlin/Go child emission. When supplied
+        /// with `--as-child`, the child's `package com.sce.generated.<child>`
+        /// (Kotlin) or `package <child>` (Go) header is rewritten to the
+        /// parent's package, matching the layout `generate-w3c` produces
+        /// via its internal `process_child` hook. Without this flag a
+        /// single-file `--as-child` invocation leaves the child in its
+        /// own derived package and the parent's unqualified reference to
+        /// the child `StateMachine` class fails to resolve.
+        ///
+        /// C++ and Rust children already compile cleanly without the flag
+        /// (C++ resolves via `-I`, Rust via the parent's `mod.rs`) — the
+        /// flag is a no-op for those languages.
+        #[arg(long)]
+        parent_stem: Option<String>,
         /// Write CMake DEPFILE for incremental builds
         #[arg(long)]
         write_deps: Option<String>,
@@ -421,6 +435,7 @@ fn main() {
             language,
             output_dir,
             as_child,
+            parent_stem,
             write_deps,
             go_module_prefix,
             format_style,
@@ -432,6 +447,7 @@ fn main() {
             &language,
             &output_dir,
             as_child,
+            parent_stem.as_deref(),
             write_deps.as_deref(),
             go_module_prefix.as_deref(),
             format_style.as_deref(),
@@ -478,6 +494,7 @@ fn cmd_generate(
     language: &str,
     output_dir: &str,
     as_child: bool,
+    parent_stem: Option<&str>,
     depfile_path: Option<&str>,
     go_module_prefix: Option<&str>,
     format_style: Option<&str>,
@@ -721,15 +738,39 @@ fn cmd_generate(
         Language::Cpp => sce_build::generator::generate_cpp(&model, &template_dir, input_stem)
             .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
         Language::Kotlin => {
-            let code = sce_build::generator::generate_kotlin(&model, &template_dir)
+            let mut code = sce_build::generator::generate_kotlin(&model, &template_dir)
                 .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+            // Mirror `generate-w3c`'s KotlinBackend::process_child: the
+            // child's self-derived package (`com.sce.generated.{child}`)
+            // is rewritten to the parent's package so the parent's
+            // unqualified reference to the child `StateMachine` class
+            // resolves within one compilation unit.
+            if as_child {
+                if let Some(parent) = parent_stem {
+                    let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
+                    code = code.replace(
+                        &format!("package com.sce.generated.{child_pkg}"),
+                        &format!("package com.sce.generated.{parent}"),
+                    );
+                }
+            }
             GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
             }
         }
         Language::Go => {
-            let code = sce_build::generator::generate_go(&model, &template_dir)
+            let mut code = sce_build::generator::generate_go(&model, &template_dir)
                 .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+            // Same rewrite as Kotlin, for the Go `package <child>` header.
+            if as_child {
+                if let Some(parent) = parent_stem {
+                    let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
+                    code = code.replace(
+                        &format!("package {child_pkg}"),
+                        &format!("package {parent}"),
+                    );
+                }
+            }
             GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
             }
