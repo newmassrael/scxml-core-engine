@@ -2549,7 +2549,9 @@ mod tests {
                 DeployError::PartitionTransportBindingUnsupported {
                     partition: "motor_left".into(),
                     transport: "zenoh".into(),
-                    reason: "transport 'zenoh' does not carry inter-partition IPC (supports_inter_partition_ipc = false)".into(),
+                    failure: crate::mesh::error::PartitionTransportBindingFailure::Incapable {
+                        transport: "zenoh".into(),
+                    },
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion

@@ -18,7 +18,7 @@
 // settings pass through to Jinja2 templates without the parser needing
 // to know every key.
 
-use crate::mesh::error::DeployError;
+use crate::mesh::error::{DeployError, PartitionTransportBindingFailure};
 use crate::mesh::target::TargetId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -1124,24 +1124,25 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
         if let Some(transport_name) = decl.transport_binding.as_deref() {
             match crate::mesh::transport::lookup(transport_name) {
                 None => {
-                    let known: Vec<&str> = crate::mesh::transport::implemented_names().to_vec();
+                    let known_names: Vec<String> = crate::mesh::transport::implemented_names()
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect();
                     return Err(DeployError::PartitionTransportBindingUnsupported {
                         partition: partition_name.clone(),
                         transport: transport_name.to_string(),
-                        reason: format!(
-                            "unknown transport name (known implemented transports: {})",
-                            known.join(", ")
-                        ),
+                        failure: crate::mesh::error::PartitionTransportBindingFailure::Unknown {
+                            known_names,
+                        },
                     });
                 }
                 Some(desc) if !desc.supports_inter_partition_ipc => {
                     return Err(DeployError::PartitionTransportBindingUnsupported {
                         partition: partition_name.clone(),
                         transport: transport_name.to_string(),
-                        reason: format!(
-                            "transport '{transport_name}' does not carry inter-partition IPC \
-                             (supports_inter_partition_ipc = false)"
-                        ),
+                        failure: crate::mesh::error::PartitionTransportBindingFailure::Incapable {
+                            transport: transport_name.to_string(),
+                        },
                     });
                 }
                 Some(_) => {}
@@ -3513,14 +3514,24 @@ partitions:
             Err(DeployError::PartitionTransportBindingUnsupported {
                 partition,
                 transport,
-                reason,
+                failure,
             }) => {
                 assert_eq!(partition, "brake_main");
                 assert_eq!(transport, "iceoryx2");
-                assert!(
-                    reason.contains("unknown transport name"),
-                    "unknown name must surface as the reason (got: {reason})"
-                );
+                // Structural assertion: the unknown-name path must
+                // carry the registry list so the message template can
+                // interpolate it without a back-reference.
+                match failure {
+                    PartitionTransportBindingFailure::Unknown { known_names } => {
+                        assert!(
+                            !known_names.is_empty(),
+                            "known_names must carry the registry list"
+                        );
+                    }
+                    PartitionTransportBindingFailure::Incapable { .. } => {
+                        panic!("unknown transport must take the Unknown arm, not Incapable");
+                    }
+                }
             }
             other => panic!("expected PartitionTransportBindingUnsupported, got {other:?}"),
         }
@@ -3553,14 +3564,21 @@ partitions:
             Err(DeployError::PartitionTransportBindingUnsupported {
                 partition,
                 transport,
-                reason,
+                failure,
             }) => {
                 assert_eq!(partition, "brake_main");
                 assert_eq!(transport, "local");
-                assert!(
-                    reason.contains("supports_inter_partition_ipc = false"),
-                    "incapable-transport reason must surface the flag (got: {reason})"
-                );
+                // Structural assertion: the incapable-transport path
+                // carries the same transport name the outer variant
+                // holds, kept for Display byte-equivalence.
+                match failure {
+                    PartitionTransportBindingFailure::Incapable { transport: t } => {
+                        assert_eq!(t, "local");
+                    }
+                    PartitionTransportBindingFailure::Unknown { .. } => {
+                        panic!("registered-but-incapable transport must take the Incapable arm");
+                    }
+                }
             }
             other => panic!("expected PartitionTransportBindingUnsupported, got {other:?}"),
         }

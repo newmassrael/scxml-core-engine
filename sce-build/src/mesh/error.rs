@@ -40,6 +40,48 @@ pub enum MeshError {
 
 // ── Stage 1: deploy.yaml parsing ─────────────────────────────
 
+/// Why a `transport_binding:` value was rejected by
+/// [`DeployError::PartitionTransportBindingUnsupported`]. Two shapes
+/// share one diagnostic code (§14 L2729-2730); this enum keeps them
+/// structurally distinguishable without forcing consumers to
+/// substring-grep the prose.
+///
+/// The `Display` impl emits the exact phrases the §14 diagnostic
+/// template splices via `{failure}`, so the generated JSON payload is
+/// byte-identical to the pre-typed `reason: String` shape — the goal
+/// of this refactor is drift-trap closure, not message change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PartitionTransportBindingFailure {
+    /// The transport name is not in the implemented registry. The
+    /// known set is carried so the diagnostic can list valid names
+    /// without the enum needing a back-reference to
+    /// [`crate::mesh::transport`]; callers pass
+    /// `implemented_names()` at construction time.
+    Unknown { known_names: Vec<String> },
+    /// The transport is registered but its
+    /// [`crate::mesh::transport::TransportDescriptor::supports_inter_partition_ipc`]
+    /// flag is `false`. Carries the transport name for the message
+    /// template, quoted identically to the previous `format!(...)` output.
+    Incapable { transport: String },
+}
+
+impl std::fmt::Display for PartitionTransportBindingFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unknown { known_names } => write!(
+                f,
+                "unknown transport name (known implemented transports: {})",
+                known_names.join(", ")
+            ),
+            Self::Incapable { transport } => write!(
+                f,
+                "transport '{transport}' does not carry inter-partition IPC \
+                 (supports_inter_partition_ipc = false)"
+            ),
+        }
+    }
+}
+
 /// Errors from deploy.yaml deserialization.
 #[derive(Debug, thiserror::Error)]
 pub enum DeployError {
@@ -367,21 +409,22 @@ pub enum DeployError {
     /// "kind tcp/shm"; today `shm` and `custom_tcp` qualify. A
     /// transport the registry does not recognise, or a recognised
     /// transport whose `supports_inter_partition_ipc` is `false`,
-    /// both fall here — `reason` discriminates the two shapes so the
-    /// author sees why the value was rejected. Partition IPC carried
-    /// over `local` cannot cross process boundaries; carrying it
-    /// over `someip` / `zenoh` / `dds` / `can` routes through a
-    /// middleware daemon or broadcast fabric instead of the direct
-    /// channel §14 intends.
+    /// both fall here — [`PartitionTransportBindingFailure`]
+    /// discriminates the two shapes so the author sees why the value
+    /// was rejected and downstream consumers can match structurally
+    /// without parsing the prose. Partition IPC carried over `local`
+    /// cannot cross process boundaries; carrying it over `someip` /
+    /// `zenoh` / `dds` / `can` routes through a middleware daemon or
+    /// broadcast fabric instead of the direct channel §14 intends.
     #[error("partition '{partition}': `transport_binding: {transport}` is not a valid \
-             inter-partition IPC transport — {reason}. SCE Mesh §14 requires a transport \
+             inter-partition IPC transport — {failure}. SCE Mesh §14 requires a transport \
              whose primary purpose is same-machine IPC (today: shm, custom_tcp). Switch to \
              one of those or omit `transport_binding:` to accept the default (§14 L2730 \
              \"kind tcp/shm\").")]
     PartitionTransportBindingUnsupported {
         partition: String,
         transport: String,
-        reason: String,
+        failure: PartitionTransportBindingFailure,
     },
 
     /// A partition declared `barrier_timeout_ms:` with a value that
@@ -1212,7 +1255,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
         DeployError::PartitionTransportBindingUnsupported {
             partition,
             transport,
-            reason,
+            failure,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployPartitionTransportBindingUnsupported,
             stage: Stage::MeshDeploy,
@@ -1222,7 +1265,12 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // OR drop the key entirely to accept §14 L2730 defaults.
             // Author intent decides — no mechanical one.
             fix: None,
-            key_fragments: vec![partition.clone(), transport.clone(), reason.clone()],
+            // key_fragments feed the fnv1a id hash; formatting `failure`
+            // via Display yields the same bytes the pre-typed
+            // `reason: String` produced, preserving the diagnostic id
+            // across this refactor (see
+            // `forge/diagnostic.rs::mesh_golden_entries`).
+            key_fragments: vec![partition.clone(), transport.clone(), failure.to_string()],
         },
         DeployError::PartitionBarrierTimeoutInvalid {
             partition,
