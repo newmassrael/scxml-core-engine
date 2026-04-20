@@ -12,6 +12,31 @@
 
 use crate::helpers::event_data;
 
+/// W3C SCXML 5.5: Emit an inline `<content>` literal as `_event.data`.
+///
+/// 1:1 port of C++ `SCE::DoneDataHelper::emitContentLiteral`
+/// (`sce/include/common/DoneDataHelper.h`). When `<content>` has no `expr`
+/// attribute the spec says "the children are used as the content value" —
+/// no evaluation happens and no script engine is required. The literal
+/// text **is** the value.
+///
+/// This is the SSoT consumed by the `literal` branch of the Rust AOT
+/// codegen (`tools/codegen/templates/rust/entry_exit_actions.rs.jinja2`),
+/// matching the C++ `emitContentLiteral` / Go `EmitContentLiteral` /
+/// Kotlin `emitContentLiteral` helpers so all four backends share one
+/// semantic definition.
+///
+/// # Arguments
+///
+/// * `literal` - Inline text content from `<content>literal</content>`
+///
+/// # Returns
+///
+/// The literal as `_event.data` (raw string — no JSON quoting).
+pub fn emit_content_literal(literal: &str) -> String {
+    literal.to_string()
+}
+
 /// W3C SCXML 5.5: Build JSON string from param name/value pairs.
 ///
 /// Used when `<donedata>` contains `<param>` elements. Each param produces a

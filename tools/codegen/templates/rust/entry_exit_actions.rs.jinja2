@@ -180,7 +180,10 @@
                 {
                     // W3C SCXML 5.5: inline text children are used **as the content
                     // value** — no evaluation, no script engine required.
-                    done_event_data = String::from("{{ state.donedata.content.text | escape_rust }}");
+                    // Delegates to the SSoT helper shared with C++/Go/Kotlin backends.
+                    done_event_data = sce_rust_runtime::helpers::done_data::emit_content_literal(
+                        "{{ state.donedata.content.text | escape_rust }}",
+                    );
                 }
 {% endif %}
 {% endif %}

@@ -112,7 +112,8 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		{
 			// W3C SCXML 5.5: inline text children are used **as the content
 			// value** — no evaluation, no script engine required.
-			doneEventData = `{{ state.donedata.content.text | escape_go }}`
+			// Delegates to the SSoT helper shared with C++/Rust/Kotlin backends.
+			doneEventData = sce.EmitContentLiteral(`{{ state.donedata.content.text | escape_go }}`)
 		}
 {% endif %}
 		_ = doneEventData

@@ -386,6 +386,10 @@
 {% endif %}
 
                     AOT_DEBUG("Final state {{ state_id }} reached with event data: {}", eventData);
+{% if not state.parent %}
+                }  // W3C SCXML 5.5: close donedata scope for top-level final
+                   // (no `done.state.<parent>` emission follows to consume eventData/typedData).
+{% endif %}
 {% endif %}
 {% if state.is_final and state.parent %}
                 // W3C SCXML 3.7: Generate done.state.{parentId} event for compound state completion

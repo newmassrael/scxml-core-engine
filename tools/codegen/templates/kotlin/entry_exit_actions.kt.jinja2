@@ -171,8 +171,9 @@
 {% if has_done_event %}
 {% if state.donedata and state.donedata.content.kind == "literal" and not state.donedata.params %}
                 // W3C SCXML 5.5: inline <content> text is the value itself — no script engine needed.
+                // Delegates to the SSoT helper shared with C++/Rust/Go backends.
                 run {
-                    val doneEventData = "{{ state.donedata.content.text | escape_kotlin }}"
+                    val doneEventData = emitContentLiteral("{{ state.donedata.content.text | escape_kotlin }}")
                     raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }}, EventMetadata.platform(doneEventData))
                 }
 {% elif state.donedata and model.needs_script_engine %}
@@ -193,7 +194,8 @@
                     }
 {% elif state.donedata.content.kind == "literal" %}
                     // W3C SCXML 5.5: inline text is the content value (literal path alongside params).
-                    doneEventData = "{{ state.donedata.content.text | escape_kotlin }}"
+                    // Delegates to the SSoT helper shared with C++/Rust/Go backends.
+                    doneEventData = emitContentLiteral("{{ state.donedata.content.text | escape_kotlin }}")
 {% elif state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
