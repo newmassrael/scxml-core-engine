@@ -530,6 +530,13 @@ public:
     // W3C SCXML: Policy type alias for test infrastructure
     using PolicyType = {{ _pol_inst }};
 
+    // Hoist `EventWithMetadata` from the base engine so lambda bodies
+    // nested in this class (trackers, invoke-completion closures, mesh
+    // dispatch hooks) can write `EventWithMetadata(...)` directly
+    // without a local `using EngineBase = ...;` dependent-name dance.
+    using EventWithMetadata =
+        typename ::SCE::Static::StaticExecutionEngine<{{ _pol_inst }}>::EventWithMetadata;
+
 {% if model.context_objects or model.has_parent_communication %}
     explicit {{ model.name }}(
         {%- for ctx in model.context_objects %}{% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}& {{ ctx.id }}{{ ', ' if not loop.last or model.has_parent_communication }}{% endfor %}
@@ -617,16 +624,15 @@ public:
     // Expected region count is a compile-time constant baked in from
     // `model.parallel_regions`.
     //
-    // `EventWithMetadata` is defined on the base
-    // `::SCE::Static::StaticExecutionEngine<PolicyType>` (not on
-    // `PolicyType` itself); the explicit qualified name avoids
-    // dependent-name lookup pitfalls in the lambda body.
+    // `EventWithMetadata` is hoisted at the SM class scope above
+    // (class-level `using` re-export); the lambda body below uses the
+    // unqualified name directly, avoiding the prior local
+    // `using EngineBase = ...;` dependent-name dance.
     ::SCE::Mesh::ParallelCompletionTracker tracker_{{ _pid }}_ {
         {{ model.parallel_regions[_pid] | length }},
         [this]() {
             AOT_DEBUG("§16.5 tracker fired for <parallel id=\"{{ _pid }}\">, raising done.state.{{ _pid }}");
-            using EngineBase = ::SCE::Static::StaticExecutionEngine<PolicyType>;
-            this->raise(typename EngineBase::EventWithMetadata(PolicyType::Event::Done_state_{{ _pid }}));
+            this->raise(EventWithMetadata(PolicyType::Event::Done_state_{{ _pid }}));
         }
 {% if _pid in model.partition_barrier_timeouts %}
         ,
