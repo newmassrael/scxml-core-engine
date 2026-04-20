@@ -65,10 +65,13 @@ find_dependency(Threads)
 
 # Paths resolved by configure_package_config_file (differ between trees).
 set_and_check(SCE_INCLUDE_DIR "@PACKAGE_INCLUDE_INSTALL_DIR@")
-set_and_check(SCE_CODEGEN_DIR "@PACKAGE_CODEGEN_INSTALL_DIR@")
-# sce-codegen binary directory — plain set() (not set_and_check): the path
-# may not exist in a build tree if `cargo build --bin sce-codegen` hasn't
-# been run. SCECodegen.cmake FATAL_ERRORs if the binary is actually needed.
+
+# Code-generation directories ride with the CMakeModule component. A Core-only
+# install lacks the templates tree and the sce-codegen binary, so the paths
+# are plain set() (not set_and_check) and stay unset when the component is
+# absent — SCECodegen.cmake's own FATAL_ERROR surfaces the problem only if
+# the consumer actually drives sce_add_state_machine().
+set(SCE_CODEGEN_DIR "@PACKAGE_CODEGEN_INSTALL_DIR@")
 set(SCE_CODEGEN_BIN_DIR "@PACKAGE_CODEGEN_BIN_DIR@")
 
 # Locate sce-codegen: explicit bin dir first, then system PATH.
@@ -81,7 +84,9 @@ if(NOT SCE_CODEGEN)
 endif()
 
 # Template dir for sce-codegen (passed via env to add_custom_command).
-set(SCE_TEMPLATE_DIR "${SCE_CODEGEN_DIR}/templates")
+if(SCE_CODEGEN_DIR)
+    set(SCE_TEMPLATE_DIR "${SCE_CODEGEN_DIR}/templates")
+endif()
 
 # ─── Tier target loading (ordered by dependency) ──────────────────────────
 # Each tier has its own Targets file; missing tiers (e.g. Scripting disabled
@@ -172,8 +177,13 @@ if(_sce_load_runtime)
     set(SCE_runtime_FOUND TRUE)
 endif()
 
-# Include code generation utilities.
-include("${CMAKE_CURRENT_LIST_DIR}/SCECodegen.cmake")
+# Include code generation utilities when the CMakeModule component was
+# installed (sce_add_state_machine and friends live in SCECodegen.cmake).
+# Consumers that skip --component CMakeModule get the tier libraries but
+# must drive code generation themselves.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/SCECodegen.cmake")
+    include("${CMAKE_CURRENT_LIST_DIR}/SCECodegen.cmake")
+endif()
 
 # Verify required components.
 check_required_components(SCE)

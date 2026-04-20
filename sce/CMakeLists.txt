@@ -32,8 +32,8 @@ if(SCE_ENABLE_QUICKJS)
     # sets, and the duplicate ARCHIVE/LIBRARY destinations are idempotent.
     include(GNUInstallDirs)
     install(TARGETS qjs EXPORT SCE_ScriptingTargets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Scripting
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Scripting
     )
 endif()
 

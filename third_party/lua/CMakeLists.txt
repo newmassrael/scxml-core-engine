@@ -77,10 +77,11 @@ message(STATUS "Lua 5.4.6: Building from source (static library)")
 # against a library shipped by SCE itself — no system Lua dependency.
 include(GNUInstallDirs)
 install(TARGETS lua54 EXPORT SCE_ScriptingTargets
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Scripting
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Scripting
 )
 install(DIRECTORY src/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/lua
+    COMPONENT Scripting
     FILES_MATCHING PATTERN "*.h"
 )

@@ -309,12 +309,22 @@ endif()
 set(SCE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SCE")
 set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
 
+# Install components mirror the 4-tier export sets so `cmake --install
+# --component <Tier>` ships exactly the artifacts for that tier:
+#   Core        — sce_core + sce_base + public headers + SCEConfig entry
+#   Scripting   — sce_scripting + qjs + lua54 (+ lua headers)
+#   Runtime     — sce_runtime + txml-converter
+#   CMakeModule — SCECodegen/SCEClangFormat + sce-codegen binary + templates
+# CMakeModule stays separate because it is independent of tier selection —
+# any consumer (base/scripting/runtime) that uses sce_add_state_machine()
+# relies on the same codegen binary + Jinja2 templates.
+
 # Core tier: sce_core (header-only) + sce_base (pure static AOT utilities)
 install(TARGETS sce_core sce_base
     EXPORT SCE_CoreTargets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Core
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
@@ -322,36 +332,40 @@ install(TARGETS sce_core sce_base
 if(SCE_HAS_SCRIPTING)
     install(TARGETS sce_scripting
         EXPORT SCE_ScriptingTargets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Scripting
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Scripting
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Scripting
     )
 endif()
 
 # Runtime tier: sce_runtime (full interpreter, PUBLIC-links httplib)
 install(TARGETS sce_runtime
     EXPORT SCE_RuntimeTargets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime
 )
 
 # Install txml-converter (Native builds only)
 if(NOT EMSCRIPTEN)
     install(TARGETS txml-converter
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
     )
 endif()
 
-# Install headers
+# Install headers — shipped with the Core component. Every tier's public API
+# lives under sce/include so splitting by sub-directory would force consumers
+# to request multiple components just to compile a generated state machine.
 install(DIRECTORY sce/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    COMPONENT Core
     FILES_MATCHING PATTERN "*.h"
 )
 
 # Install Jinja2 templates (used by sce-codegen at runtime via SCE_TEMPLATE_DIR)
 install(DIRECTORY tools/codegen/templates
     DESTINATION ${SCE_INSTALL_CODEGENDIR}
+    COMPONENT CMakeModule
     FILES_MATCHING PATTERN "*.jinja2"
 )
 
@@ -365,6 +379,7 @@ find_program(_SCE_CODEGEN_BIN sce-codegen
 if(_SCE_CODEGEN_BIN)
     install(PROGRAMS "${_SCE_CODEGEN_BIN}"
         DESTINATION ${CMAKE_INSTALL_BINDIR}
+        COMPONENT CMakeModule
     )
 else()
     message(STATUS "SCE: sce-codegen not found in target/ -- skipping binary install")
@@ -494,26 +509,39 @@ install(EXPORT SCE_CoreTargets
     FILE SCE_CoreTargets.cmake
     NAMESPACE SCE::
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
+    COMPONENT Core
 )
 if(SCE_HAS_SCRIPTING)
     install(EXPORT SCE_ScriptingTargets
         FILE SCE_ScriptingTargets.cmake
         NAMESPACE SCE::
         DESTINATION ${SCE_INSTALL_CMAKEDIR}
+        COMPONENT Scripting
     )
 endif()
 install(EXPORT SCE_RuntimeTargets
     FILE SCE_RuntimeTargets.cmake
     NAMESPACE SCE::
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
+    COMPONENT Runtime
 )
 
+# SCEConfig.cmake is the entry point for every tier (it parses COMPONENTS and
+# decides which target files to include), so it must ship with the Core
+# component so `--component Core` alone yields a usable find_package(SCE).
+# SCECodegen / SCEClangFormat are tool-independent utilities and ride with
+# the CMakeModule component alongside the sce-codegen binary + templates.
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/_install/SCEConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/SCEConfigVersion.cmake"
+    DESTINATION ${SCE_INSTALL_CMAKEDIR}
+    COMPONENT Core
+)
+install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEClangFormat.cmake"
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
+    COMPONENT CMakeModule
 )
 
 # =============================================================================
