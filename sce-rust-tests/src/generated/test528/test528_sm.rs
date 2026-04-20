@@ -453,6 +453,7 @@ impl StatePolicy for Test528Policy {
                 let mut done_event_data = String::new();
                 let mut done_data_ok = true;
                 {
+                    // W3C SCXML 5.5: <content expr="..."/> MUST be evaluated against the datamodel.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = sce_rust_runtime::ScriptEngineProvider::get();
