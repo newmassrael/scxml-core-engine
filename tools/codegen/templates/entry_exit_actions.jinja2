@@ -497,7 +497,14 @@
     }
 
     template <typename Engine>
-{% if not model.needs_script_engine and not model.invokes | scxml and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{# W3C SCXML 3.11: history recording mutates the non-static history_{id}   #}
+{# members declared in the Policy class, so executeExitActions must be an  #}
+{# instance method whenever any <history> child exists. Every W3C history  #}
+{# test happens to declare a datamodel, so needs_script_engine already     #}
+{# lands them on the non-static branch — but a datamodel-less history      #}
+{# cross-product would fall through every other flag and select static,    #}
+{# triggering "invalid use of non-static member" at instance-write sites.  #}
+{% if not model.needs_script_engine and not model.invokes | scxml and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects and not model.has_history_states %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 
