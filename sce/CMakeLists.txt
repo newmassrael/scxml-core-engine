@@ -199,10 +199,16 @@ endif()
 # part of the installed tree.
 target_compile_definitions(sce_base PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
 
-# Force include DisableStdOut.h for sce_base source files only
+# Force include DisableStdOut.h for sce_base source files only.
+# ExternTemplates.h suppresses implicit std::basic_string<char>
+# instantiation so consumers don't drag sce_base archive members via
+# std::string weak-symbol resolution — see header for details.
+# SHELL: wrapper keeps -include + its argument as two separate tokens
+# (target_compile_options otherwise deduplicates the repeated -include).
 target_compile_options(sce_base
     PRIVATE
-        -include common/DisableStdOut.h
+        "SHELL:-include common/ExternTemplates.h"
+        "SHELL:-include common/DisableStdOut.h"
 )
 
 target_compile_features(sce_base PUBLIC cxx_std_17)
