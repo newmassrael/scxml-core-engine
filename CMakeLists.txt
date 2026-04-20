@@ -314,8 +314,8 @@ set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
 #   Core        — sce_core + sce_base + public headers + SCEConfig entry
 #   Scripting   — sce_scripting + qjs + lua54 (+ lua headers)
 #   Runtime     — sce_runtime + txml-converter
-#   CMakeModule — SCECodegen/SCEClangFormat + sce-codegen binary + templates
-# CMakeModule stays separate because it is independent of tier selection —
+#   Codegen — SCECodegen/SCEClangFormat + sce-codegen binary + templates
+# Codegen stays separate because it is independent of tier selection —
 # any consumer (base/scripting/runtime) that uses sce_add_state_machine()
 # relies on the same codegen binary + Jinja2 templates.
 
@@ -365,7 +365,7 @@ install(DIRECTORY sce/include/
 # Install Jinja2 templates (used by sce-codegen at runtime via SCE_TEMPLATE_DIR)
 install(DIRECTORY tools/codegen/templates
     DESTINATION ${SCE_INSTALL_CODEGENDIR}
-    COMPONENT CMakeModule
+    COMPONENT Codegen
     FILES_MATCHING PATTERN "*.jinja2"
 )
 
@@ -379,7 +379,7 @@ find_program(_SCE_CODEGEN_BIN sce-codegen
 if(_SCE_CODEGEN_BIN)
     install(PROGRAMS "${_SCE_CODEGEN_BIN}"
         DESTINATION ${CMAKE_INSTALL_BINDIR}
-        COMPONENT CMakeModule
+        COMPONENT Codegen
     )
 else()
     message(STATUS "SCE: sce-codegen not found in target/ -- skipping binary install")
@@ -530,7 +530,7 @@ install(EXPORT SCE_RuntimeTargets
 # decides which target files to include), so it must ship with the Core
 # component so `--component Core` alone yields a usable find_package(SCE).
 # SCECodegen / SCEClangFormat are tool-independent utilities and ride with
-# the CMakeModule component alongside the sce-codegen binary + templates.
+# the Codegen component alongside the sce-codegen binary + templates.
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/_install/SCEConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/SCEConfigVersion.cmake"
@@ -541,5 +541,5 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEClangFormat.cmake"
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
-    COMPONENT CMakeModule
+    COMPONENT Codegen
 )
