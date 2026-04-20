@@ -107,7 +107,8 @@ public:
     DoneData &getDoneData() override;
 
     // Additional IStateNode methods
-    void setDoneDataContent(const std::string &content) override;
+    void setDoneDataContentExpression(const std::string &expr) override;
+    void setDoneDataContentLiteral(const std::string &literal) override;
     void addDoneDataParam(const std::string &name, const std::string &value) override;
     void clearDoneDataParams() override;
     std::shared_ptr<ITransitionNode> getInitialTransition() const override;

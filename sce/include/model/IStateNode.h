@@ -88,10 +88,21 @@ public:
     virtual DoneData &getDoneData() = 0;
 
     /**
-     * @brief Set <content> element of <donedata>
-     * @param content Content string
+     * @brief Set `<donedata><content expr="X"/>` (W3C §5.5 evaluated path)
+     *
+     * X will be evaluated against the active datamodel at runtime. Pass
+     * an empty string to clear any previously-set content (used by the
+     * XOR-with-params resolution in `DoneDataParser`).
      */
-    virtual void setDoneDataContent(const std::string &content) = 0;
+    virtual void setDoneDataContentExpression(const std::string &expr) = 0;
+
+    /**
+     * @brief Set `<donedata><content>inline text</content>` (W3C §5.5 literal path)
+     *
+     * Per W3C §5.5 the children of `<content>` are used **as the content
+     * value** — no evaluation, no script engine required.
+     */
+    virtual void setDoneDataContentLiteral(const std::string &literal) = 0;
 
     /**
      * @brief Add <param> element to <donedata>

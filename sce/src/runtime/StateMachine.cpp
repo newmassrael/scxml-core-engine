@@ -4139,9 +4139,12 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
 
     const auto &doneData = finalState->getDoneData();
 
-    // W3C SCXML 5.5: Evaluate content using shared DoneDataHelper (Zero Duplication)
-    if (!doneData.getContent().empty()) {
-        SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating donedata content: '{}'", doneData.getContent());
+    // W3C SCXML 5.5 — route through DoneDataHelper (Zero Duplication SSoT):
+    //   Expression => evaluate against the datamodel.
+    //   Literal    => children used as the content value, no evaluation.
+    switch (doneData.getContentKind()) {
+    case DoneData::ContentKind::Expression:
+        SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating donedata <content expr>: '{}'", doneData.getContent());
         return DoneDataHelper::evaluateContent(
             scriptEngine_, sessionId_, doneData.getContent(), outEventData,
             [this](const std::string &msg) {
@@ -4151,6 +4154,12 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
                 }
             },
             &outTypedData);
+    case DoneData::ContentKind::Literal:
+        SCE_LOG_DEBUG("W3C SCXML 5.5: Emitting donedata literal content: '{}'", doneData.getContent());
+        DoneDataHelper::emitContentLiteral(doneData.getContent(), outEventData, &outTypedData);
+        return true;
+    case DoneData::ContentKind::None:
+        break;
     }
 
     // W3C SCXML 5.5: Evaluate params using shared DoneDataHelper (Zero Duplication)

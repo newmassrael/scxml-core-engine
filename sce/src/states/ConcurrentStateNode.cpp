@@ -187,9 +187,22 @@ DoneData &ConcurrentStateNode::getDoneData() {
     return *doneData_;
 }
 
-void ConcurrentStateNode::setDoneDataContent(const std::string &content) {
-    SCE_LOG_DEBUG("Setting done data content for {}", id_);
-    doneData_->setContent(content);
+void ConcurrentStateNode::setDoneDataContentExpression(const std::string &expr) {
+    SCE_LOG_DEBUG("Setting done data <content expr> for {}: {}", id_, expr);
+    if (expr.empty()) {
+        doneData_->clearContent();
+    } else {
+        doneData_->setContentExpression(expr);
+    }
+}
+
+void ConcurrentStateNode::setDoneDataContentLiteral(const std::string &literal) {
+    SCE_LOG_DEBUG("Setting done data <content> literal for {}", id_);
+    if (literal.empty()) {
+        doneData_->clearContent();
+    } else {
+        doneData_->setContentLiteral(literal);
+    }
 }
 
 void ConcurrentStateNode::addDoneDataParam(const std::string &name, const std::string &value) {

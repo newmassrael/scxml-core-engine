@@ -124,9 +124,22 @@ SCE::DoneData &SCE::StateNode::getDoneData() {
     return doneData_;
 }
 
-void SCE::StateNode::setDoneDataContent(const std::string &content) {
-    SCE_LOG_DEBUG("Setting donedata content for {}", id_);
-    doneData_.setContent(content);
+void SCE::StateNode::setDoneDataContentExpression(const std::string &expr) {
+    SCE_LOG_DEBUG("Setting donedata <content expr> for {}: {}", id_, expr);
+    if (expr.empty()) {
+        doneData_.clearContent();
+    } else {
+        doneData_.setContentExpression(expr);
+    }
+}
+
+void SCE::StateNode::setDoneDataContentLiteral(const std::string &literal) {
+    SCE_LOG_DEBUG("Setting donedata <content> literal for {}", id_);
+    if (literal.empty()) {
+        doneData_.clearContent();
+    } else {
+        doneData_.setContentLiteral(literal);
+    }
 }
 
 void SCE::StateNode::addDoneDataParam(const std::string &name, const std::string &location) {

@@ -205,11 +205,8 @@ public:
      */
     DoneData &getDoneData() override;
 
-    /**
-     * @brief Set <content> element of <donedata>
-     * @param content Content string
-     */
-    void setDoneDataContent(const std::string &content) override;
+    void setDoneDataContentExpression(const std::string &expr) override;
+    void setDoneDataContentLiteral(const std::string &literal) override;
 
     /**
      * @brief Add <param> element to <donedata>

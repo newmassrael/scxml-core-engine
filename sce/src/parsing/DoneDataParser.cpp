@@ -48,7 +48,7 @@ bool SCE::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &done
             hasParam = false;
         } else {
             // Keep param, remove content
-            stateNode->setDoneDataContent("");
+            stateNode->setDoneDataContentLiteral("");
             hasContent = false;
         }
 
@@ -85,17 +85,28 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
         return false;
     }
 
-    // Set expr or content
+    // W3C SCXML 5.5 + 5.6 + Appendix B.2.2:
+    //   - `expr` attribute => Expression (evaluated against the datamodel).
+    //   - Text body with ECMAScript datamodel => Expression (Appendix B.2.2:
+    //     inline text is parsed as JSON; SCE delegates that parsing to the
+    //     script engine so `<content>21</content>` yields number 21 for
+    //     `_event.data == 21` style guards).
+    //   - Text body with the "null" datamodel => Literal (children used
+    //     **as the content value** verbatim — no script engine needed).
     if (!exprValue.empty()) {
-        stateNode->setDoneDataContent(exprValue);
+        stateNode->setDoneDataContentExpression(exprValue);
         return true;
     } else if (!textContent.empty()) {
-        stateNode->setDoneDataContent(textContent);
+        if (datamodelType_ == "null") {
+            stateNode->setDoneDataContentLiteral(textContent);
+        } else {
+            stateNode->setDoneDataContentExpression(textContent);
+        }
         return true;
     }
 
-    // Handle empty content
-    stateNode->setDoneDataContent("");
+    // Empty <content/> — treat as literal empty value.
+    stateNode->setDoneDataContentLiteral("");
     return true;
 }
 

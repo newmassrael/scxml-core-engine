@@ -33,6 +33,19 @@ public:
     ~DoneDataParser() = default;
 
     /**
+     * @brief Set active datamodel type for subsequent `parseDoneData` calls.
+     *
+     * W3C §5.5 + ECMAScript Appendix B.2.2: the semantics of inline
+     * `<content>text</content>` depend on the datamodel — ECMAScript parses
+     * it as JSON (routed through the script engine), `null` uses it as the
+     * content value verbatim. Must be set by `SCXMLParser` from the root
+     * `datamodel` attribute before state parsing begins.
+     */
+    void setDatamodelType(const std::string &datamodel) {
+        datamodelType_ = datamodel;
+    }
+
+    /**
      * @brief Parse <donedata> element
      * @param doneDataElement <donedata> XML element
      * @param stateNode Target state node
@@ -58,6 +71,7 @@ private:
     bool parseParam(const std::shared_ptr<IXMLElement> &paramElement, IStateNode *stateNode);
 
     std::shared_ptr<NodeFactory> factory_;  // Node creation factory
+    std::string datamodelType_ = "ecmascript";  // W3C §3.2 default (SCE-specific)
 };
 
 }  // namespace SCE

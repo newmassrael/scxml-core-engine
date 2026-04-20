@@ -68,6 +68,31 @@ public:
      *     [&engine](const std::string& msg) { engine.raise(Event::Error_execution); });
      * ```
      */
+    /**
+     * @brief Emit a literal `<content>` body as _event.data (W3C SCXML 5.5)
+     *
+     * W3C SCXML 5.5 specifies that when the `<content>` element has no
+     * `expr` attribute, "the children are used as the content value".
+     * No evaluation happens — the inline text is the value itself.
+     *
+     * This path is script-engine-free: it is linkable against `sce_base`
+     * and is the SSoT consumed by both the interpreter engine and the
+     * static code generator's literal branch (Zero Duplication).
+     *
+     * @param literal Inline text content from `<content>literal</content>`
+     * @param outEventData _event.data output (raw string)
+     * @param outTypedData Optional typed pipeline — a `ScriptValue(string)`
+     *                     is stored so downstream consumers that inspect
+     *                     `typedData` observe a string-kind value.
+     */
+    static void emitContentLiteral(const std::string &literal, std::string &outEventData,
+                                   std::optional<ScriptValue> *outTypedData = nullptr) {
+        outEventData = literal;
+        if (outTypedData) {
+            *outTypedData = ScriptValue(literal);
+        }
+    }
+
     static bool evaluateContent(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &contentExpr,
                                 std::string &outEventData, std::function<void(const std::string &)> onError = nullptr,
                                 std::optional<ScriptValue> *outTypedData = nullptr) {

@@ -5,7 +5,7 @@
 
 #include <memory>
 #include <string>
-#include <utility>  // for std::pair
+#include <utility>
 #include <vector>
 
 namespace SCE {
@@ -13,71 +13,70 @@ namespace SCE {
 class IDataModelItem;
 
 /**
- * @brief Class storing information for <donedata> element
+ * @brief Class storing information for <donedata> element (W3C SCXML 5.5).
  *
- * This class stores SCXML <donedata> element information.
- * <donedata> contains data to be returned when entering <final> state.
+ * Represents the inline `<content>` semantic as a kind-tagged value:
+ *
+ *   - None       — `<content>` absent.
+ *   - Expression — `<content expr="X"/>`; X MUST be evaluated against the
+ *                  datamodel at runtime (requires a script engine).
+ *   - Literal    — `<content>inline text</content>`; per W3C §5.5 the
+ *                  children are used **as the content value** — no
+ *                  evaluation, no script engine required.
+ *
+ * Collapsing the two into a single string was a spec misreading: the
+ * literal path was silently routed through `evaluateExpression` which
+ * forced a script engine even when the document only needed to emit a
+ * fixed verdict payload.
  */
 class DoneData {
 public:
-    /**
-     * @brief Default constructor
-     */
-    DoneData() = default;
+    enum class ContentKind { None, Expression, Literal };
 
-    /**
-     * @brief Destructor
-     */
+    DoneData() = default;
     ~DoneData() = default;
 
-    /**
-     * @brief Set content of <content> element
-     * @param content Content string
-     */
-    void setContent(const std::string &content) {
-        content_ = content;
-        hasContent_ = true;
+    /// W3C §5.5: `<content expr="X"/>` — evaluate X against the datamodel.
+    void setContentExpression(const std::string &expr) {
+        content_ = expr;
+        contentKind_ = ContentKind::Expression;
     }
 
-    /**
-     * @brief Return <content> element content
-     * @return Content string
-     */
+    /// W3C §5.5: `<content>inline text</content>` — children are the value.
+    void setContentLiteral(const std::string &literal) {
+        content_ = literal;
+        contentKind_ = ContentKind::Literal;
+    }
+
+    /// Clear content (used by XOR-resolution in `DoneDataParser`).
+    void clearContent() {
+        content_.clear();
+        contentKind_ = ContentKind::None;
+    }
+
+    /// Raw payload (expression source or literal text, depending on kind).
     const std::string &getContent() const {
         return content_;
     }
 
-    /**
-     * @brief Add <param> element
-     * @param name Parameter name
-     * @param location Data model location path
-     */
+    ContentKind getContentKind() const {
+        return contentKind_;
+    }
+
+    bool hasContent() const {
+        return contentKind_ != ContentKind::None;
+    }
+
     void addParam(const std::string &name, const std::string &location) {
         params_.push_back(std::make_pair(name, location));
     }
 
-    /**
-     * @brief Return <param> element list
-     * @return List of parameter names and locations
-     */
     const std::vector<std::pair<std::string, std::string>> &getParams() const {
         return params_;
     }
 
-    /**
-     * @brief Check if <donedata> element is empty
-     * @return true if empty, false otherwise
-     */
     bool isEmpty() const {
-        return !hasContent_ && params_.empty();
-    }
-
-    /**
-     * @brief Check if <content> element exists
-     * @return true if <content> element exists, false otherwise
-     */
-    bool hasContent() const {
-        return hasContent_;
+        return contentKind_ == ContentKind::None && params_.empty();
     }
 
     void clearParams() {
@@ -85,9 +84,9 @@ public:
     }
 
 private:
-    std::string content_;                                      // Content of <content> element
-    std::vector<std::pair<std::string, std::string>> params_;  // <param> element list (name, location)
-    bool hasContent_ = false;                                  // Whether <content> element exists
+    std::string content_;
+    std::vector<std::pair<std::string, std::string>> params_;
+    ContentKind contentKind_ = ContentKind::None;
 };
 
 }  // namespace SCE

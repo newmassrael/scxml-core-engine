@@ -152,8 +152,20 @@ public:
         return doneData_;
     }
 
-    void setDoneDataContent(const std::string &content) override {
-        doneData_.setContent(content);
+    void setDoneDataContentExpression(const std::string &expr) override {
+        if (expr.empty()) {
+            doneData_.clearContent();
+        } else {
+            doneData_.setContentExpression(expr);
+        }
+    }
+
+    void setDoneDataContentLiteral(const std::string &literal) override {
+        if (literal.empty()) {
+            doneData_.clearContent();
+        } else {
+            doneData_.setContentLiteral(literal);
+        }
     }
 
     void addDoneDataParam(const std::string &name, const std::string &location) override {
