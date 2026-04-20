@@ -341,6 +341,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-partition-uncovered-unit` | Mesh Deploy |
 | `mesh/deploy-partition-partial-coverage-requires-default` | Mesh Deploy |
 | `mesh/deploy-partition-pool-machine` | Mesh Deploy |
+| `mesh/deploy-partition-transport-binding-unsupported` | Mesh Deploy |
+| `mesh/deploy-partition-barrier-timeout-invalid` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

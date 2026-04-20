@@ -360,6 +360,55 @@ pub enum DeployError {
         machine: String,
         partition: String,
     },
+
+    /// A partition declared `transport_binding:` naming a transport
+    /// that does not carry inter-partition IPC within a single
+    /// machine (SCE_MESH.md §14 L2729-2730). The spec default is
+    /// "kind tcp/shm"; today `shm` and `custom_tcp` qualify. A
+    /// transport the registry does not recognise, or a recognised
+    /// transport whose `supports_inter_partition_ipc` is `false`,
+    /// both fall here — `reason` discriminates the two shapes so the
+    /// author sees why the value was rejected. Partition IPC carried
+    /// over `local` cannot cross process boundaries; carrying it
+    /// over `someip` / `zenoh` / `dds` / `can` routes through a
+    /// middleware daemon or broadcast fabric instead of the direct
+    /// channel §14 intends.
+    #[error("partition '{partition}': `transport_binding: {transport}` is not a valid \
+             inter-partition IPC transport — {reason}. SCE Mesh §14 requires a transport \
+             whose primary purpose is same-machine IPC (today: shm, custom_tcp). Switch to \
+             one of those or omit `transport_binding:` to accept the default (§14 L2730 \
+             \"kind tcp/shm\").")]
+    PartitionTransportBindingUnsupported {
+        partition: String,
+        transport: String,
+        reason: String,
+    },
+
+    /// A partition declared `barrier_timeout_ms:` with a value that
+    /// makes the distributed parallel-final barrier (SCE_MESH.md
+    /// §16.5) meaningless. Today the sole rejected value is `0`: a
+    /// zero-millisecond timer would fire before the first region can
+    /// report `ParallelRegionDone`, raising
+    /// `error.communication / PARALLEL_BARRIER_TIMEOUT` on every
+    /// `<parallel>` activation irrespective of region progress — the
+    /// knob exists to bound authentic hangs, not to unconditionally
+    /// convert barriers into errors. Authors who genuinely want "do
+    /// not wait" should omit the knob and let the W3C normative
+    /// default (infinity, per spec L2732) apply, then handle
+    /// non-completion through standard SCXML transitions. Range-only
+    /// at parse time; the deeper rule that `barrier_timeout_ms:`
+    /// applies only on partitions hosting a `<parallel>` root is a
+    /// SCXML cross-reference rule (SCE_MESH.md §16.5) — its runtime
+    /// consumer is the §16.5 scope, not this validator.
+    #[error("partition '{partition}': `barrier_timeout_ms: {value}` is invalid — {reason}. \
+             SCE Mesh §14 L2731-2732 pins the W3C normative default as infinity (null / \
+             field omitted); finite values must be >= 1 ms. Either fix the value or drop \
+             the key to accept the default.")]
+    PartitionBarrierTimeoutInvalid {
+        partition: String,
+        value: u32,
+        reason: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -1159,6 +1208,36 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // the spec prose names both and author intent decides.
             fix: None,
             key_fragments: vec![machine.clone(), partition.clone()],
+        },
+        DeployError::PartitionTransportBindingUnsupported {
+            partition,
+            transport,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionTransportBindingUnsupported,
+            stage: Stage::MeshDeploy,
+            actual: Some(partition.clone()),
+            expected: None,
+            // Two equally-valid repairs: switch to a supported transport
+            // OR drop the key entirely to accept §14 L2730 defaults.
+            // Author intent decides — no mechanical one.
+            fix: None,
+            key_fragments: vec![partition.clone(), transport.clone(), reason.clone()],
+        },
+        DeployError::PartitionBarrierTimeoutInvalid {
+            partition,
+            value,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionBarrierTimeoutInvalid,
+            stage: Stage::MeshDeploy,
+            actual: Some(partition.clone()),
+            expected: None,
+            // Same author-intent shape as the `Invalid*Timings` family:
+            // either fix the value or omit the knob to accept the
+            // W3C normative default (infinity).
+            fix: None,
+            key_fragments: vec![partition.clone(), value.to_string(), reason.clone()],
         },
     }
 }

@@ -26,6 +26,15 @@ partitions:
     contains:
       parallel_regions:
         - { machine: motor_partition, region: left }
+    # §14 L2729-2730: shm is one of the two canonical same-machine
+    # IPC transports (`kind tcp/shm`). Proves the parse-time schema
+    # accepts the field end-to-end; the codegen consumer is still
+    # the §14 L2730 default-resolution scope.
+    transport_binding: shm
+    # §14 L2731-2732: finite positive values are accepted; None /
+    # absent keeps the W3C normative default (infinity). The §16.5
+    # runtime consumer is out of scope for this fixture.
+    barrier_timeout_ms: 5000
   motor_right:
     machines: [motor_partition]
     contains:

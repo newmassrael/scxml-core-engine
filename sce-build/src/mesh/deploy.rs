@@ -1114,6 +1114,64 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
             });
         }
 
+        // §14 L2729-2730 — `transport_binding:` must name a transport
+        // whose primary purpose is same-machine IPC. Unknown names and
+        // known-but-incapable transports both fall here, with `reason`
+        // telling the two shapes apart so the diagnostic is self-
+        // explaining without the reader needing to cross-reference the
+        // registry. Absent ⇒ skip (§14 L2730 defaults apply at codegen
+        // time).
+        if let Some(transport_name) = decl.transport_binding.as_deref() {
+            match crate::mesh::transport::lookup(transport_name) {
+                None => {
+                    let known: Vec<&str> = crate::mesh::transport::implemented_names().to_vec();
+                    return Err(DeployError::PartitionTransportBindingUnsupported {
+                        partition: partition_name.clone(),
+                        transport: transport_name.to_string(),
+                        reason: format!(
+                            "unknown transport name (known implemented transports: {})",
+                            known.join(", ")
+                        ),
+                    });
+                }
+                Some(desc) if !desc.supports_inter_partition_ipc => {
+                    return Err(DeployError::PartitionTransportBindingUnsupported {
+                        partition: partition_name.clone(),
+                        transport: transport_name.to_string(),
+                        reason: format!(
+                            "transport '{transport_name}' does not carry inter-partition IPC \
+                             (supports_inter_partition_ipc = false)"
+                        ),
+                    });
+                }
+                Some(_) => {}
+            }
+        }
+
+        // §14 L2731-2732 — `barrier_timeout_ms:` is Option<u32>; `None`
+        // / absent selects the W3C normative default of infinity. A
+        // finite value of `0` would fire the §16.5 barrier before any
+        // region can report `ParallelRegionDone`, unconditionally
+        // raising `error.communication / PARALLEL_BARRIER_TIMEOUT` on
+        // every `<parallel>` activation — the knob exists to bound
+        // authentic hangs, not to convert barriers into errors. Authors
+        // wanting "do not wait" must omit the key and rely on standard
+        // SCXML transitions. Root-hosting-only semantics (spec
+        // L2733-2735 "applies only to partitions hosting the root of a
+        // `<parallel>`") is SCXML cross-reference scope (§16.5 runtime)
+        // and is not enforced here — schema accept + range check only.
+        if let Some(value) = decl.barrier_timeout_ms {
+            if value == 0 {
+                return Err(DeployError::PartitionBarrierTimeoutInvalid {
+                    partition: partition_name.clone(),
+                    value,
+                    reason: "barrier_timeout_ms (0) would fire the §16.5 parallel-final \
+                             barrier before any region can report ParallelRegionDone"
+                        .to_string(),
+                });
+            }
+        }
+
         // §14.4 × §14 pool-in-partition guard — reject before rule 7
         // so a pool machine listed across multiple devices surfaces the
         // spec-linked message instead of the generic multi-device one.
@@ -3359,6 +3417,321 @@ partitions:
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         assert!(cfg.partitions.is_some());
+    }
+
+    #[test]
+    fn accept_partition_transport_binding_shm() {
+        // §14 L2729-2730 — `shm` is the canonical same-machine IPC
+        // transport. Schema must accept it end-to-end without
+        // diagnostic noise.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+    transport_binding: shm
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let part = cfg.partitions.expect("partitions present");
+        assert_eq!(
+            part.get("brake_main")
+                .unwrap()
+                .transport_binding
+                .as_deref(),
+            Some("shm")
+        );
+    }
+
+    #[test]
+    fn accept_partition_transport_binding_custom_tcp() {
+        // §14 L2730 "kind tcp/shm" — the `tcp` half is `custom_tcp`
+        // (§16.8.3 reference transport).
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+    transport_binding: custom_tcp
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let part = cfg.partitions.expect("partitions present");
+        assert_eq!(
+            part.get("brake_main")
+                .unwrap()
+                .transport_binding
+                .as_deref(),
+            Some("custom_tcp")
+        );
+    }
+
+    #[test]
+    fn reject_partition_transport_binding_unknown() {
+        // Unknown transport name — `iceoryx2` is not in the registry.
+        // §14 L2729-2730 accepts only registry-known transports whose
+        // `supports_inter_partition_ipc` is true.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+    transport_binding: iceoryx2
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionTransportBindingUnsupported {
+                partition,
+                transport,
+                reason,
+            }) => {
+                assert_eq!(partition, "brake_main");
+                assert_eq!(transport, "iceoryx2");
+                assert!(
+                    reason.contains("unknown transport name"),
+                    "unknown name must surface as the reason (got: {reason})"
+                );
+            }
+            other => panic!("expected PartitionTransportBindingUnsupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_partition_transport_binding_local() {
+        // `local` is intra-process direct dispatch; it cannot cross
+        // the OS process boundary `partitions:` defines. §14 L2729
+        // requires same-machine IPC, not intra-process dispatch.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+    transport_binding: local
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionTransportBindingUnsupported {
+                partition,
+                transport,
+                reason,
+            }) => {
+                assert_eq!(partition, "brake_main");
+                assert_eq!(transport, "local");
+                assert!(
+                    reason.contains("supports_inter_partition_ipc = false"),
+                    "incapable-transport reason must surface the flag (got: {reason})"
+                );
+            }
+            other => panic!("expected PartitionTransportBindingUnsupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_partition_transport_binding_someip() {
+        // SOME/IP is inter-machine middleware routed through the
+        // vsomeip daemon; not the direct same-machine IPC channel
+        // §14 L2729 intends.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+    transport_binding: someip
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionTransportBindingUnsupported {
+                partition,
+                transport,
+                ..
+            }) => {
+                assert_eq!(partition, "brake_main");
+                assert_eq!(transport, "someip");
+            }
+            other => panic!("expected PartitionTransportBindingUnsupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_partition_transport_binding_zenoh() {
+        // Zenoh is an inter-machine routing fabric; not the direct
+        // same-machine IPC channel §14 L2729 intends.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+    transport_binding: zenoh
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionTransportBindingUnsupported {
+                partition,
+                transport,
+                ..
+            }) => {
+                assert_eq!(partition, "brake_main");
+                assert_eq!(transport, "zenoh");
+            }
+            other => panic!("expected PartitionTransportBindingUnsupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accept_partition_barrier_timeout_positive() {
+        // §14 L2731-2732 — finite positive values are accepted; the
+        // runtime consumer (§16.5) interprets them against the
+        // partition's <parallel> root hosting status.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+    barrier_timeout_ms: 5000
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let part = cfg.partitions.expect("partitions present");
+        assert_eq!(
+            part.get("brake_main").unwrap().barrier_timeout_ms,
+            Some(5000)
+        );
+    }
+
+    #[test]
+    fn accept_partition_barrier_timeout_absent_is_infinity() {
+        // Field omission ⇒ None ⇒ W3C normative default (infinity)
+        // per §14 L2732. Regression guard: the knob must stay
+        // optional, and absent must deserialize as None (not 0).
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let part = cfg.partitions.expect("partitions present");
+        assert_eq!(part.get("brake_main").unwrap().barrier_timeout_ms, None);
+    }
+
+    #[test]
+    fn reject_partition_barrier_timeout_zero() {
+        // §16.5 barrier timeout: zero would fire before the first
+        // region can report `ParallelRegionDone`, unconditionally
+        // raising `error.communication / PARALLEL_BARRIER_TIMEOUT`.
+        // The knob exists to bound hangs, not to convert every
+        // barrier into an error.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings: {}
+
+partitions:
+  brake_main:
+    device: ecu1
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: watchdog }
+    barrier_timeout_ms: 0
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PartitionBarrierTimeoutInvalid {
+                partition,
+                value,
+                reason,
+            }) => {
+                assert_eq!(partition, "brake_main");
+                assert_eq!(value, 0);
+                assert!(reason.contains("§16.5"));
+            }
+            other => panic!("expected PartitionBarrierTimeoutInvalid, got {other:?}"),
+        }
     }
 
     #[test]

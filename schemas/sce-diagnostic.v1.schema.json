@@ -102,6 +102,8 @@
         "mesh/deploy-partition-uncovered-unit",
         "mesh/deploy-partition-partial-coverage-requires-default",
         "mesh/deploy-partition-pool-machine",
+        "mesh/deploy-partition-transport-binding-unsupported",
+        "mesh/deploy-partition-barrier-timeout-invalid",
         "mesh/external-read",
         "mesh/external-parse",
         "mesh/external-unresolved-names",

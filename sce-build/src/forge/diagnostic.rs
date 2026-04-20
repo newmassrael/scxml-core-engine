@@ -435,6 +435,10 @@ pub enum DiagnosticCode {
     MeshDeployPartitionPartialCoverageRequiresDefault,
     #[serde(rename = "mesh/deploy-partition-pool-machine")]
     MeshDeployPartitionPoolMachine,
+    #[serde(rename = "mesh/deploy-partition-transport-binding-unsupported")]
+    MeshDeployPartitionTransportBindingUnsupported,
+    #[serde(rename = "mesh/deploy-partition-barrier-timeout-invalid")]
+    MeshDeployPartitionBarrierTimeoutInvalid,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -623,6 +627,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPartitionUncoveredUnit,
         MeshDeployPartitionPartialCoverageRequiresDefault,
         MeshDeployPartitionPoolMachine,
+        MeshDeployPartitionTransportBindingUnsupported,
+        MeshDeployPartitionBarrierTimeoutInvalid,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -794,7 +800,9 @@ impl DiagnosticCode {
             | MeshDeployPartitionSynthInfixCollision
             | MeshDeployPartitionUncoveredUnit
             | MeshDeployPartitionPartialCoverageRequiresDefault
-            | MeshDeployPartitionPoolMachine => Some("SCE Mesh §14"),
+            | MeshDeployPartitionPoolMachine
+            | MeshDeployPartitionTransportBindingUnsupported
+            | MeshDeployPartitionBarrierTimeoutInvalid => Some("SCE Mesh §14"),
 
             // ── No authoritative citation ────────────────────────
             //
@@ -952,6 +960,8 @@ impl DiagnosticCode {
             MeshDeployPartitionUncoveredUnit => "mesh/deploy-partition-uncovered-unit",
             MeshDeployPartitionPartialCoverageRequiresDefault => "mesh/deploy-partition-partial-coverage-requires-default",
             MeshDeployPartitionPoolMachine => "mesh/deploy-partition-pool-machine",
+            MeshDeployPartitionTransportBindingUnsupported => "mesh/deploy-partition-transport-binding-unsupported",
+            MeshDeployPartitionBarrierTimeoutInvalid => "mesh/deploy-partition-barrier-timeout-invalid",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2535,6 +2545,30 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:02f99e5ae78bf9e8","code":"mesh/deploy-partition-pool-machine","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'motor' declares `server.instances:` (SCE Mesh §14.4 SOME/IP server pool) but partition 'motor_region_a' lists it under `machines:`. A pool is one router hosting N SOME/IP sessions on a single process; a partition splits a machine across M OS processes (SCE_MESH.md §14). deploy.yaml does not define the combined meaning — either remove 'motor' from partition 'motor_region_a' `machines:` (keep the pool as one monolithic process), or drop `server.instances:` from the machine and run N processes each hosting a single-instance server.","actual":"motor"}"#,
             ),
             (
+                "mesh/deploy-partition-transport-binding-unsupported",
+                DeployError::PartitionTransportBindingUnsupported {
+                    partition: "motor_left".into(),
+                    transport: "zenoh".into(),
+                    reason: "transport 'zenoh' does not carry inter-partition IPC (supports_inter_partition_ipc = false)".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:1e038670d04a2bdb","code":"mesh/deploy-partition-transport-binding-unsupported","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'motor_left': `transport_binding: zenoh` is not a valid inter-partition IPC transport — transport 'zenoh' does not carry inter-partition IPC (supports_inter_partition_ipc = false). SCE Mesh §14 requires a transport whose primary purpose is same-machine IPC (today: shm, custom_tcp). Switch to one of those or omit `transport_binding:` to accept the default (§14 L2730 \"kind tcp/shm\").","actual":"motor_left"}"#,
+            ),
+            (
+                "mesh/deploy-partition-barrier-timeout-invalid",
+                DeployError::PartitionBarrierTimeoutInvalid {
+                    partition: "motor_left".into(),
+                    value: 0,
+                    reason: "barrier_timeout_ms (0) would fire the §16.5 parallel-final barrier before any region can report ParallelRegionDone".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:2b289d036acef025","code":"mesh/deploy-partition-barrier-timeout-invalid","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'motor_left': `barrier_timeout_ms: 0` is invalid — barrier_timeout_ms (0) would fire the §16.5 parallel-final barrier before any region can report ParallelRegionDone. SCE Mesh §14 L2731-2732 pins the W3C normative default as infinity (null / field omitted); finite values must be >= 1 ms. Either fix the value or drop the key to accept the default.","actual":"motor_left"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -3253,6 +3287,8 @@ mod tests {
             | MeshDeployPartitionUncoveredUnit
             | MeshDeployPartitionPartialCoverageRequiresDefault
             | MeshDeployPartitionPoolMachine
+            | MeshDeployPartitionTransportBindingUnsupported
+            | MeshDeployPartitionBarrierTimeoutInvalid
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3538,6 +3574,8 @@ mod tests {
                 | MeshDeployPartitionUncoveredUnit
                 | MeshDeployPartitionPartialCoverageRequiresDefault
                 | MeshDeployPartitionPoolMachine
+                | MeshDeployPartitionTransportBindingUnsupported
+                | MeshDeployPartitionBarrierTimeoutInvalid
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3572,9 +3610,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            113,
+            115,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 113 distinct variants to match the DiagnosticCode \
+             expected 115 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }
