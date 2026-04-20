@@ -470,6 +470,11 @@ target_sources(sce_runtime PRIVATE
 # Runtime-specific include directories for short (unqualified) includes
 # sce_base already provides common/ and scripting/ flat paths.
 # sce_runtime adds remaining subdirectory flat paths for cross-directory short includes.
+# Flat paths stay available post-install so a find_package(SCE) consumer
+# hits the same unqualified-include surface as an in-tree build (e.g.
+# factory/NodeFactory.h does `#include "DataModelItem.h"`). Without the
+# INSTALL_INTERFACE entries the consumer only sees ${prefix}/include and
+# the short-name resolution breaks.
 target_include_directories(sce_runtime
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/model>
@@ -480,6 +485,14 @@ target_include_directories(sce_runtime
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/events>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/states>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/dispatchers>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/model>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/runtime>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/factory>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/parsing>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/actions>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/events>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/states>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/dispatchers>
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>

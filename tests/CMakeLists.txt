@@ -4201,3 +4201,33 @@ if(EMSCRIPTEN)
     message(STATUS "   - SCXML loading: Dynamic fetch (no embedding)")
     message(STATUS "   - JavaScript API: createVisualizer() module")
 endif()
+
+# ----------------------------------------------------------------------------
+# Install-tree consumer smoke test (opt-in).
+#
+# Not part of the regular ctest run — it performs an `install` to a scratch
+# prefix and then configures/builds three standalone probe projects against
+# that prefix via find_package(SCE COMPONENTS base|scripting|runtime). Opt
+# in with `-DSCE_BUILD_INSTALL_CONSUMER_TEST=ON`, then
+# `ctest -L install-consumer` runs the end-to-end flow. Keeping it gated
+# avoids running the heavy install pipeline on every developer ctest.
+# ----------------------------------------------------------------------------
+option(SCE_BUILD_INSTALL_CONSUMER_TEST
+    "Add tests/install_tree_consumer smoke test (ctest label install-consumer)"
+    OFF)
+
+if(SCE_BUILD_INSTALL_CONSUMER_TEST)
+    add_test(
+        NAME install_tree_consumer
+        COMMAND
+            "${CMAKE_CURRENT_SOURCE_DIR}/install_tree_consumer/run.sh"
+            "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(install_tree_consumer PROPERTIES
+        LABELS "install-consumer"
+        # Install produces a scratch prefix under $TMPDIR; run.sh cleans up
+        # via `trap`, but avoid interleaving with other tests writing to /tmp.
+        RUN_SERIAL TRUE
+    )
+endif()
