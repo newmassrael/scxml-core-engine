@@ -1,0 +1,32 @@
+# SCE Mesh §14 rule 9 — `contains:` references a machine absent from
+# the partition's own `machines:` list.
+#
+# Expected diagnostic: mesh/deploy-partition-machine-not-listed
+# Fires from: sce-build/src/mesh/deploy.rs
+#             validate_partitions_schema line 1218
+#
+# A partition cannot reach into another partition's address space.
+# `motor_only` declares `machines: [motor_partition]` but its
+# `contains:` block names region `right` on machine `brake` — an
+# identifier the partition never admitted to owning. The parser must
+# refuse before any transport topology is derived from the stale
+# reference.
+#
+# `brake` intentionally does not appear in `topology:` — rule 9's
+# check only inspects the per-partition `machines:` set (not the global
+# topology), so a stray reference surfaces the same diagnostic whether
+# or not the foreign machine is otherwise declared. Keeping brake out
+# of topology proves that invariant end-to-end through the CLI.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_only:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: right }

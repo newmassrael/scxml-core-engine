@@ -1,0 +1,34 @@
+# SCE Mesh §14 rule 6 — duplicate partition name.
+#
+# Expected diagnostic: mesh/deploy-partition-duplicate-name
+# Fires from: sce-build/src/mesh/deploy.rs
+#             custom PartitionMap serde visitor, line 1003
+#
+# Partition names are globally unique process identities. The custom
+# `PartitionMap` deserializer rejects the second occurrence before
+# serde_yaml's last-key-wins semantics can silently collapse the two
+# entries — otherwise a typo like this would drop one of the author's
+# partitions with no signal.
+#
+# Both entries cover the same region purely to stop rule 8 (unit
+# duplicate) from racing ahead if the deserializer ever stopped
+# rejecting and the second key won under last-key-wins: the rule under
+# test is the parse-time uniqueness check, not unit ownership.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_partition_main:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+  motor_partition_main:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }

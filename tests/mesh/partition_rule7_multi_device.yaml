@@ -1,0 +1,35 @@
+# SCE Mesh §14 rule 7 — partition spans more than one device.
+#
+# Expected diagnostic: mesh/deploy-partition-multi-device
+# Fires from: sce-build/src/mesh/deploy.rs
+#             validate_partitions_schema line 1204
+#
+# A partition is one process on one device. `cross_part` lists
+# `motor_partition` (on ecu_a) alongside `peer_partition` (on ecu_b),
+# so the partition would span devices — no single OS process can host
+# both sides, and the spec rejects the shape at parse time before any
+# transport code is emitted.
+#
+# The second machine reuses motor_partition.scxml as its `source:` —
+# validate_partitions_schema never touches the filesystem, so the path
+# needs only to be well-formed YAML. This keeps the fixture single-
+# file and avoids introducing a throwaway second SCXML with no
+# semantic value.
+version: "1.0"
+topology:
+  ecu_a:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+  ecu_b:
+    machines:
+      peer_partition:
+        source: motor_partition.scxml
+
+partitions:
+  cross_part:
+    machines: [motor_partition, peer_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+        - { machine: peer_partition, region: right }

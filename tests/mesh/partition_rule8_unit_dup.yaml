@@ -1,0 +1,30 @@
+# SCE Mesh §14 rule 8 — one unit listed under two partitions.
+#
+# Expected diagnostic: mesh/deploy-partition-unit-duplicate
+# Fires from: sce-build/src/mesh/deploy.rs
+#             validate_partitions_schema line 1249
+#
+# Each `(machine, region)` unit must belong to exactly one partition.
+# Both `part_a` and `part_b` here claim `parallel_region:motor_partition
+# /left`, so the parser must refuse and name both owning partitions —
+# the analyzer never silently picks a winner. unit_owners aggregation
+# across all partitions is what lets the diagnostic carry both names
+# in a single report.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  part_a:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+  part_b:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }

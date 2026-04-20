@@ -3776,6 +3776,63 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 "${MESH_PATTERN_NEG_OUTPUT_DIR}"
     )
 
+    # ── SCE_MESH §14 partition rule mutation matrix ─────────────────────
+    # The deploy.rs (rules 6-10) and partitions.rs (rules 1, 2, 11) unit
+    # suites in sce-build cover each rule's Rust-level semantics. These
+    # ctests lift that coverage to the CLI + filesystem + JSON-diagnostic
+    # layer: each fixture triggers one specific partition rule, and the
+    # wrapper asserts a non-zero exit AND an NDJSON record whose `code`
+    # field matches the expected slash path. A future regression that
+    # silently disables a validator, or that re-routes the diagnostic
+    # through a different code, falls out at ctest time.
+    #
+    # Entries: rule_id | diagnostic slash path | SCXML fixture.
+    # The diagnostic codes mirror sce-build/src/forge/diagnostic.rs
+    # `as_str` (authoritative) — drift is caught by the wrapper's grep
+    # on the exact code string. Rule 11 shares a code with rule 2 by
+    # design (same author-facing mistake via a different enumeration
+    # path); its regression value comes from the nested-parallel SCXML
+    # fixture, which fails back to an exit-zero run if enumerate_units
+    # ever stopped recursing past the first `<parallel>`.
+    set(MESH_PARTITION_NEG_MATRIX
+        "1|mesh/deploy-partition-uncovered-unit|motor_partition_nested.scxml"
+        "2|mesh/deploy-partition-partial-coverage-requires-default|motor_partition.scxml"
+        "6|mesh/deploy-partition-duplicate-name|motor_partition.scxml"
+        "7|mesh/deploy-partition-multi-device|motor_partition.scxml"
+        "8|mesh/deploy-partition-unit-duplicate|motor_partition.scxml"
+        "9|mesh/deploy-partition-machine-not-listed|motor_partition.scxml"
+        "10|mesh/deploy-partition-empty|motor_partition.scxml"
+        "11|mesh/deploy-partition-partial-coverage-requires-default|motor_partition_nested.scxml"
+    )
+    foreach(_entry IN LISTS MESH_PARTITION_NEG_MATRIX)
+        string(REPLACE "|" ";" _parts "${_entry}")
+        list(GET _parts 0 _rule_id)
+        list(GET _parts 1 _expected_code)
+        list(GET _parts 2 _scxml)
+        file(GLOB _yaml_glob
+            "${MESH_TEST_DIR}/partition_rule${_rule_id}_*.yaml"
+        )
+        list(LENGTH _yaml_glob _yaml_count)
+        if(NOT _yaml_count EQUAL 1)
+            message(FATAL_ERROR
+                "Mesh §14 partition matrix: expected exactly one "
+                "partition_rule${_rule_id}_*.yaml fixture, found ${_yaml_count} "
+                "(${_yaml_glob}). The wrapper invocation below pairs a rule ID "
+                "with a single fixture; rename stale files so the glob resolves."
+            )
+        endif()
+        list(GET _yaml_glob 0 _yaml)
+        add_test(
+            NAME mesh_partition_rule${_rule_id}_rejection
+            COMMAND "${MESH_TEST_DIR}/expect_partition_failure.sh"
+                    "${SCE_CODEGEN}"
+                    "${MESH_TEST_DIR}/${_scxml}"
+                    "${_yaml}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/mesh_partition_rule${_rule_id}_generated"
+                    "${_expected_code}"
+        )
+    endforeach()
+
     # ── Phase 3 entry #5: deploy.yaml-only middleware switch demo ──────
     # Proves that the SAME brake.scxml compiles against four different
     # transports with zero source changes — only the deploy.yaml differs.

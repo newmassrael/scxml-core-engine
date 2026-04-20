@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    SCE Mesh §14 rule 11 + rule 1 — nested-parallel partition fixture.
+
+    Enumerate-units semantics under `<parallel>` nesting (partitions.rs
+    `enumerate_units`): every `<parallel>`'s direct child states count
+    as one orthogonal unit, at every depth. This machine declares four
+    units in total:
+
+        parallel_region:motor_partition/outer_r
+        parallel_region:motor_partition/outer_r2
+        parallel_region:motor_partition/inner_r
+        parallel_region:motor_partition/inner_r2
+
+    The outer `<parallel id="root">` contributes outer_r + outer_r2; the
+    inner `<parallel id="inner">` sitting under outer_r contributes
+    inner_r + inner_r2. Leaving any subset uncovered exercises rule 1
+    (when a `<machine>_default:` partition is present) or rule 11 / 2
+    (when it is not). Rule 11's regression value comes precisely from
+    the nested `<parallel>`: a silent regression in enumerate_units
+    that stopped recursing through nested parallels would return only
+    two units, make full coverage trivially pass, and this fixture
+    would exit zero — failing the ctest.
+
+    Mirrors the shape of the `NESTED_PARALLEL` constant in
+    sce-build/src/mesh/partitions.rs tests, kept deliberately simple
+    (no transitions, no datamodel) so the §16.3 R1-R4 cleanliness
+    property continues to hold alongside the sibling
+    motor_partition.scxml.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="motor_partition" initial="root">
+    <parallel id="root">
+        <state id="outer_r">
+            <parallel id="inner">
+                <state id="inner_r"/>
+                <state id="inner_r2"/>
+            </parallel>
+        </state>
+        <state id="outer_r2"/>
+    </parallel>
+</scxml>

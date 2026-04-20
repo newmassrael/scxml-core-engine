@@ -1,0 +1,41 @@
+# SCE Mesh §14 rule 11 — nested `<parallel>` leaves inner regions
+# uncovered.
+#
+# Expected diagnostic: mesh/deploy-partition-partial-coverage-requires-default
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_partitions_against_models line 190
+#
+# Rule 11 shares a diagnostic code with rule 2 by design — both describe
+# the same author-facing mistake (uncovered units + no `_default`),
+# but arrive through different enumeration paths. Rule 2 exercises the
+# base case (two-region `<parallel>`); rule 11 exercises the nested
+# case where enumerate_units must recurse into every `<parallel>` at
+# every depth.
+#
+# motor_partition_nested.scxml declares four units:
+#
+#     parallel_region:motor_partition/outer_r
+#     parallel_region:motor_partition/outer_r2
+#     parallel_region:motor_partition/inner_r
+#     parallel_region:motor_partition/inner_r2
+#
+# `motor_partition_main` covers only the outer two. If a future
+# regression stopped recursing into nested `<parallel>` blocks,
+# enumerate_units would report two units (not four), full coverage
+# would be trivially satisfied, and this test would exit zero instead
+# of raising the expected diagnostic — the ctest catches the
+# regression in place of a dedicated diagnostic code.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition_nested.scxml
+
+partitions:
+  motor_partition_main:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: outer_r }
+        - { machine: motor_partition, region: outer_r2 }

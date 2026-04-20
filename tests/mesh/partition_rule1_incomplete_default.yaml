@@ -1,0 +1,35 @@
+# SCE Mesh §14 rule 1 — incomplete coverage with `<machine>_default:`
+# partition present.
+#
+# Expected diagnostic: mesh/deploy-partition-uncovered-unit
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_partitions_against_models line 185
+#
+# Four units live in motor_partition_nested.scxml:
+#   outer_r, outer_r2, inner_r, inner_r2.
+# `motor_partition_main` covers {outer_r, outer_r2}; the presence of
+# `motor_partition_default` signals the author wants a catch-all, yet
+# the default's `contains:` only holds `inner_r`. `inner_r2` is still
+# uncovered. Per §14 rule 1, once `_default` exists the diagnostic must
+# name the leftovers instead of demanding a default (that's rule 2 /
+# mesh/deploy-partition-partial-coverage-requires-default — the
+# no-`_default` sibling case).
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition_nested.scxml
+
+partitions:
+  motor_partition_main:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: outer_r }
+        - { machine: motor_partition, region: outer_r2 }
+  motor_partition_default:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: inner_r }

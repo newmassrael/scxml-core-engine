@@ -1,0 +1,28 @@
+# SCE Mesh §14 rule 2 — partial coverage without `<machine>_default:`.
+#
+# Expected diagnostic: mesh/deploy-partition-partial-coverage-requires-default
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_partitions_against_models line 190
+#
+# motor_partition.scxml declares two orthogonal regions under its
+# root `<parallel>`: `left` and `right`. This deploy covers only `left`
+# and defines no `motor_partition_default:` partition, so the parser
+# must steer the author toward the default-partition escape hatch
+# rather than silently placing `right` nowhere.
+#
+# Sibling of rule 1: same mismatch, different presence of `_default`.
+# Rule 11 emits the same diagnostic code but arrives there through the
+# nested-parallel enumeration path (partition_rule11_nested_uncovered.yaml).
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_partition_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }

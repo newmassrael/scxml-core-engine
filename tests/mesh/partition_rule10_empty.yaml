@@ -1,0 +1,25 @@
+# SCE Mesh §14 rule 10 — empty partition declaration.
+#
+# Expected diagnostic: mesh/deploy-partition-empty
+# Fires from: sce-build/src/mesh/deploy.rs
+#             validate_partitions_schema line 1112
+#
+# An empty `contains:` block (no `parallel_regions:` and no `invokes:`)
+# has no runtime purpose — it usually indicates a copy-paste error
+# mid-edit. The parser rejects at parse time before rule 9 / 8 run
+# (rule 10 is checked first per the validator's top-of-loop guard),
+# so the author sees the empty-shell diagnostic instead of a
+# downstream check that would read zero entries and silently pass.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  empty_part:
+    machines: [motor_partition]
+    contains:
+      parallel_regions: []
+      invokes: []
