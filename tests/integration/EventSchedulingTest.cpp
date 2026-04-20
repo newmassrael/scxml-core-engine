@@ -10,8 +10,9 @@
 
 #include "actions/CancelAction.h"
 #include "actions/SendAction.h"
-#include "core/LogMacros.h"
+#include "common/Logger.h"
 #include "common/TestUtils.h"
+#include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"

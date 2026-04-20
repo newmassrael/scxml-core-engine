@@ -3,6 +3,7 @@
 
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineBindObject.h"  // Engine-agnostic bindObject with GenericClassBinder
+#include "common/Logger.h"
 #include "core/LogMacros.h"
 #include "runtime/StateMachineFactory.h"
 #include "scripting/JSEngine.h"

@@ -17,6 +17,7 @@
 #include <sstream>
 #include <thread>
 
+#include "common/Logger.h"
 #include "core/LogMacros.h"
 
 namespace SCE {

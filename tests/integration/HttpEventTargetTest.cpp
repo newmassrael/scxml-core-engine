@@ -9,8 +9,9 @@
 
 #include "SimpleMockHttpServer.h"
 #include "actions/SendAction.h"
-#include "core/LogMacros.h"
+#include "common/Logger.h"
 #include "common/TestUtils.h"
+#include "core/LogMacros.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "events/HttpEventTarget.h"
 #include "mocks/MockEventRaiser.h"

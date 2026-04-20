@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "factory/NodeFactory.h"
+#include "common/Logger.h"
 #include "core/LogMacros.h"
 #include "parsing/SCXMLParser.h"
 #include "runtime/ActionExecutorImpl.h"

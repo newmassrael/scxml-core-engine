@@ -33,13 +33,10 @@
  * @endcode
  */
 
-// Logger declaration is always visible: callers that invoke SCE::Logger
-// directly (setLevel, setBackend, etc.) only need to pull in LogMacros.h.
-// Logger.h has no spdlog dependency and is cheap to include.
-#include "common/Logger.h"
-#include "common/SourceLocation.h"
-
 #ifdef SCE_ENABLE_RUNTIME_LOGGING
+  #include "common/Logger.h"
+  #include "common/SourceLocation.h"
+
   // Format string handling: prefer std::format (C++20), fall back to fmt (spdlog bundled)
   #if __cpp_lib_format >= 201907L
     #include <format>

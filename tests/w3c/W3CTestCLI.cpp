@@ -3,6 +3,7 @@
 
 #include "W3CTestRegistry.h"
 #include "W3CTestRunner.h"
+#include "common/Logger.h"
 #include "core/LogMacros.h"
 #include "TestSummaryHelper.h"
 #include "scripting/ScriptEngineProvider.h"
