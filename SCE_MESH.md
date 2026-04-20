@@ -2726,13 +2726,22 @@ partitions:
       invokes:                           # <invoke> ids (including synthesized
         - machine: <machine_id>          # <parent>__sce_synth_invoke__<id> from §9.6.6
           invoke: <invoke_id>
+    hosts_parallel_roots:                # <parallel>s this partition is the root for.
+                                         # Required on exactly one partition per distributed
+                                         # <parallel> (rule 12). Implicit for a <parallel>
+                                         # whose regions all live in one partition; may be
+                                         # omitted in that degenerate case.
+      - machine: <machine_id>
+        parallel: <parallel_state_id>    # id of <parallel> element in the named machine
     transport_binding: <transport_name>  # inter-partition traffic within same machine
                                          # (defaults to device-shared transport of kind tcp/shm)
     barrier_timeout_ms: <integer|null>   # per-partition parallel-final barrier timeout
                                          # (§16.5). null = infinity (W3C normative default).
-                                         # Applies only to partitions hosting the "root"
-                                         # of a <parallel> (the partition that will raise
-                                         # done.state.PARALLEL_ID).
+                                         # Applies only to partitions that claim at least one
+                                         # <parallel>'s root via hosts_parallel_roots: above;
+                                         # a value on a partition with no claim is a rule 12
+                                         # configuration error (see §16.5 for the runtime
+                                         # consumer that this field gates).
 
 events: <path to events.yaml>          # Event payload type definitions
 ```
@@ -2824,6 +2833,15 @@ When `partitions:` is present:
 10. **Empty partitions**: A partition with `contains:` omitted or fully empty is a hard build error. Empty partitions have no runtime purpose and usually indicate a copy-paste error. Authors who want a reserved partition with no initial units must add a placeholder comment and a dummy unit (which itself must exist).
 
 11. **Nested parallel partitioning**: Inner-region units of a nested `<parallel>` (§16.3) follow the same partition rules independently. An outer region assigned to partition `P_outer` may contain an inner region assigned to `P_inner`; the inner region then runs in `P_inner`'s process, while `P_outer` retains the outer region's non-inner-parallel states. The two partitions communicate via `transport_binding`.
+
+12. **Parallel root partition designation**: Every distributed `<parallel>` — a `<parallel>` whose regions span two or more partitions — must have exactly one partition claiming that `<parallel>`'s root via `partitions.<name>.hosts_parallel_roots: [{machine, parallel}]`. The root partition owns the `ParallelCompletionTracker` (§16.5) and is the site where `done.state.<parallel_id>` is raised into the local external queue. A `<parallel>` whose regions live entirely in a single partition has that partition as implicit root; the field may be omitted in that case. Rule 8's unit enumeration is unchanged — a `<parallel>` container id is **not** an orthogonal unit (the container runs wherever any of its regions run); rule 12 is a layered, orthogonal obligation on top of rules 1/8. A claimant partition must co-host at least one region of the claimed parallel: the tracker aggregates local region completions plus inter-partition `ParallelRegionDone` envelopes (§16.5 wire 21), and a root that co-hosts no region would force gratuitous inter-partition traffic for its own region updates. Violations:
+    - Zero claimants on a distributed `<parallel>`: `mesh/partition-parallel-root-undesignated`.
+    - Two or more claimants on the same `(machine, parallel)` pair: `mesh/partition-parallel-root-ambiguous`.
+    - `hosts_parallel_roots[*].machine: X` while `machines: [Y]` (rule 9 shape applied to root entries): `mesh/partition-parallel-root-not-in-machines`.
+    - A claimant that co-hosts no region of the claimed parallel: `mesh/partition-parallel-root-non-host`.
+    - `barrier_timeout_ms:` set on a partition with no `hosts_parallel_roots:` entries: `mesh/partition-barrier-timeout-without-root` (the timeout has no tracker to gate; §14 grammar L2731+).
+
+    **Status (2026-04-20)**: the `hosts_parallel_roots:` serde field and the rule 12 validator are **not yet implemented**. `sce-build` parses `partitions:` per rules 1-11; a deploy.yaml including `hosts_parallel_roots:` today is rejected by `PartitionDecl`'s `deny_unknown_fields`, and the runtime root selection has no consumer — no `ParallelCompletionTracker` exists (§16.5 runtime is also pending). Rule 12 enforcement lands atomically with the §16.5 `ParallelCompletionTracker` runtime: the field designates a runtime owner, so a validator without the tracker would accept well-formed designations that no code reads, and a tracker without the validator would silently pick a root by whatever convention the runtime happened to implement — either half alone creates the "built but unconsumed" or "silent selection" anti-patterns. Until both land, `barrier_timeout_ms:` is accepted as a non-zero range check only (`sce-build/src/mesh/deploy.rs` L1164), its root-hosting-only semantics stated at §14 L2731+ as cross-reference without parse-time enforcement.
 
 ### Pattern override grammar
 
@@ -3473,7 +3491,7 @@ Repeat until fixed point. Result is a **minimum-merge partition plan** that sati
 
 W3C §3.7: when every child region of a `<parallel>` reaches `<final>`, the enclosing session raises `done.state.<PARALLEL_ID>` with optional donedata. Distribution requires a **convergence barrier** across partitions:
 
-1. A designated **root partition** of each machine owns a `ParallelCompletionTracker` per `<parallel>` in that machine.
+1. The **root partition** for each `<parallel>` is designated at deploy time via `partitions.<name>.hosts_parallel_roots: [{machine, parallel}]` (§14 rule 12) and owns a `ParallelCompletionTracker` for that `<parallel>`. A `<parallel>` whose regions live entirely in a single partition has that partition as implicit root; a `<parallel>` whose regions span two or more partitions requires exactly one explicit claimant. One partition may claim multiple parallels' roots (collapsing tracker ownership into a single per-machine process) or different partitions may each claim a subset of parallels (distributing tracker ownership) — rule 12 constrains per-`<parallel>` uniqueness of claimants, not per-machine cardinality of root-hosting partitions.
 2. **Emission timing**: when the region's `<final>` `<onentry>` executable content completes — i.e., after the final microstep of the macrostep that transitioned into `<final>`, and **before** the region's scheduler yields control — the region partition emits a `ParallelRegionDone` control envelope (wire value 21, dedicated pattern — **not** an overload of another wire value) with:
    - `subject` = `<parallel_id>/<region_id>` (purely advisory; dispatcher routes on `pattern` alone)
    - `data` = donedata payload computed from the region's `<final>` `<donedata>` (absent if none declared)
