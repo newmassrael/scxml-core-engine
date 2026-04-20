@@ -39,6 +39,24 @@
 #   add_executable(my_app main.cpp)
 #   sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
 #   target_link_libraries(my_app PRIVATE SCE::sce_base)  # pick one tier
+#
+# ─── COMPONENTS (tier gating) ──────────────────────────────────────────────
+# Pure static AOT consumers can opt out of loading the scripting / runtime
+# tiers to avoid their transitive find_dependency chain (httplib, OpenSSL,
+# ZLIB, Brotli, ...). Valid components, with nested inclusion:
+#
+#   base      → sce_core + sce_base
+#   scripting → base + sce_scripting (+ qjs / lua54)
+#   runtime   → scripting + sce_runtime (+ httplib when SCE_ENABLE_HTTP)
+#
+# Examples:
+#   find_package(SCE REQUIRED COMPONENTS base)        # minimal pure-static
+#   find_package(SCE REQUIRED COMPONENTS scripting)   # hybrid AOT
+#   find_package(SCE REQUIRED COMPONENTS runtime)     # full interpreter
+#   find_package(SCE REQUIRED)                        # all tiers (default)
+#
+# No COMPONENTS clause keeps the historical eager-load behaviour so existing
+# consumers remain unchanged.
 
 include(CMakeFindDependencyMacro)
 
@@ -68,53 +86,91 @@ set(SCE_TEMPLATE_DIR "${SCE_CODEGEN_DIR}/templates")
 # ─── Tier target loading (ordered by dependency) ──────────────────────────
 # Each tier has its own Targets file; missing tiers (e.g. Scripting disabled
 # at SCE configure time) are simply skipped, leaving only lower tiers usable.
+#
+# COMPONENTS gating: SCE_FIND_COMPONENTS is populated by find_package() when
+# the caller passes COMPONENTS. With no COMPONENTS clause we load all tiers
+# (back-compat). Otherwise we load only the requested tiers plus their lower
+# dependencies. Unknown components leave their SCE_<comp>_FOUND unset, which
+# check_required_components() flags when the component was REQUIRED.
+if(SCE_FIND_COMPONENTS)
+    set(_sce_load_base     FALSE)
+    set(_sce_load_scripting FALSE)
+    set(_sce_load_runtime  FALSE)
+    foreach(_sce_comp IN LISTS SCE_FIND_COMPONENTS)
+        if(_sce_comp STREQUAL "base")
+            set(_sce_load_base TRUE)
+        elseif(_sce_comp STREQUAL "scripting")
+            set(_sce_load_base TRUE)
+            set(_sce_load_scripting TRUE)
+        elseif(_sce_comp STREQUAL "runtime")
+            set(_sce_load_base TRUE)
+            set(_sce_load_scripting TRUE)
+            set(_sce_load_runtime TRUE)
+        endif()
+    endforeach()
+    unset(_sce_comp)
+else()
+    set(_sce_load_base     TRUE)
+    set(_sce_load_scripting TRUE)
+    set(_sce_load_runtime  TRUE)
+endif()
 
-# Core tier — always present.
-include("${CMAKE_CURRENT_LIST_DIR}/SCE_CoreTargets.cmake")
+# Core tier (sce_core + sce_base) — required foundation for every higher tier.
+if(_sce_load_base)
+    include("${CMAKE_CURRENT_LIST_DIR}/SCE_CoreTargets.cmake")
+    set(SCE_base_FOUND TRUE)
+endif()
 
 # Scripting tier — loaded if installed. Includes qjs / lua54 as members.
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/SCE_ScriptingTargets.cmake")
-    include("${CMAKE_CURRENT_LIST_DIR}/SCE_ScriptingTargets.cmake")
-endif()
-
-# Runtime tier — always present. sce_runtime PUBLIC-links httplib::httplib
-# when SCE_ENABLE_HTTP was on at SCE configure time; resolve that dependency
-# right here, scoped to Runtime so pure-static (sce_base) consumers never
-# trigger httplib lookups.
-set(SCE_ENABLE_HTTP @SCE_ENABLE_HTTP@)
-if(SCE_ENABLE_HTTP)
-    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
-        # Build-tree branch. cpp-httplib's own build-tree Config is unusable
-        # here (same PACKAGE_PREFIX_DIR bug SCE just fixed), so we replay
-        # httplib's find_dependency chain ourselves based on which transitive
-        # deps were actually detected at SCE configure time.
-        set(_sce_httplib_find_modules_dir "@SCE_HTTPLIB_FIND_MODULES_DIR@")
-        if(_sce_httplib_find_modules_dir)
-            list(APPEND CMAKE_MODULE_PATH "${_sce_httplib_find_modules_dir}")
-        endif()
-        if(@SCE_HTTPLIB_NEEDS_OPENSSL@)
-            find_dependency(OpenSSL)
-        endif()
-        if(@SCE_HTTPLIB_NEEDS_ZLIB@)
-            find_dependency(ZLIB)
-        endif()
-        if(@SCE_HTTPLIB_NEEDS_BROTLI@)
-            find_dependency(Brotli COMPONENTS common encoder decoder)
-        endif()
-        if(@SCE_HTTPLIB_NEEDS_ZSTD@)
-            find_dependency(zstd)
-        endif()
-        if(_sce_httplib_find_modules_dir)
-            list(REMOVE_ITEM CMAKE_MODULE_PATH "${_sce_httplib_find_modules_dir}")
-        endif()
-        unset(_sce_httplib_find_modules_dir)
-        include("${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
+if(_sce_load_scripting)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/SCE_ScriptingTargets.cmake")
+        include("${CMAKE_CURRENT_LIST_DIR}/SCE_ScriptingTargets.cmake")
+        set(SCE_scripting_FOUND TRUE)
     else()
-        # Install-tree branch: httplib's own installed Config handles the chain.
-        find_dependency(httplib)
+        set(SCE_scripting_FOUND FALSE)
     endif()
 endif()
-include("${CMAKE_CURRENT_LIST_DIR}/SCE_RuntimeTargets.cmake")
+
+# Runtime tier. sce_runtime PUBLIC-links httplib::httplib when SCE_ENABLE_HTTP
+# was on at SCE configure time; resolve that dependency right here, scoped to
+# Runtime so pure-static (sce_base) consumers never trigger httplib lookups.
+set(SCE_ENABLE_HTTP @SCE_ENABLE_HTTP@)
+if(_sce_load_runtime)
+    if(SCE_ENABLE_HTTP)
+        if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
+            # Build-tree branch. cpp-httplib's own build-tree Config is unusable
+            # here (same PACKAGE_PREFIX_DIR bug SCE just fixed), so we replay
+            # httplib's find_dependency chain ourselves based on which transitive
+            # deps were actually detected at SCE configure time.
+            set(_sce_httplib_find_modules_dir "@SCE_HTTPLIB_FIND_MODULES_DIR@")
+            if(_sce_httplib_find_modules_dir)
+                list(APPEND CMAKE_MODULE_PATH "${_sce_httplib_find_modules_dir}")
+            endif()
+            if(@SCE_HTTPLIB_NEEDS_OPENSSL@)
+                find_dependency(OpenSSL)
+            endif()
+            if(@SCE_HTTPLIB_NEEDS_ZLIB@)
+                find_dependency(ZLIB)
+            endif()
+            if(@SCE_HTTPLIB_NEEDS_BROTLI@)
+                find_dependency(Brotli COMPONENTS common encoder decoder)
+            endif()
+            if(@SCE_HTTPLIB_NEEDS_ZSTD@)
+                find_dependency(zstd)
+            endif()
+            if(_sce_httplib_find_modules_dir)
+                list(REMOVE_ITEM CMAKE_MODULE_PATH "${_sce_httplib_find_modules_dir}")
+            endif()
+            unset(_sce_httplib_find_modules_dir)
+            include("${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
+        else()
+            # Install-tree branch: httplib's own installed Config handles the chain.
+            find_dependency(httplib)
+        endif()
+    endif()
+    include("${CMAKE_CURRENT_LIST_DIR}/SCE_RuntimeTargets.cmake")
+    set(SCE_runtime_FOUND TRUE)
+endif()
 
 # Include code generation utilities.
 include("${CMAKE_CURRENT_LIST_DIR}/SCECodegen.cmake")
