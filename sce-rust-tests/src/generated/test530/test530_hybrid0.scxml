@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" name="test530_hybrid0" initial="final" version="1.0">
+  <final id="final"/>
+</scxml>

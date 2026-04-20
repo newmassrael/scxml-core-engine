@@ -71,9 +71,6 @@ _deps/
 *.out
 *.app
 
-# Generated code
-generated/
-
 # Generated state machine code from examples (created by sce_add_state_machine)
 examples/**/*_sm.h
 
@@ -138,12 +135,22 @@ local.properties
 .cxx/
 .kotlin/
 
-# Kotlin generated W3C test code (regenerate via: sce-codegen generate-w3c --language kotlin)
-sce-kotlin-tests/src/main/kotlin/com/sce/generated/
-sce-kotlin-tests/src/test/kotlin/com/sce/w3c/Test[0-9]*.kt
-# Rust generated W3C test code (regenerate via build.rs / sce-codegen)
-sce-rust-tests/src/generated/test[0-9]*/
-sce-rust-tests/tests/test_[0-9]*.rs
+# Go W3C test code regenerates at test time via sce-codegen and is
+# deliberately not tracked. The Kotlin + Rust counterparts are tracked
+# (see sce-kotlin-tests/build.gradle.kts: "Generated files are kept in
+# git so builds work without sce-codegen") so they are intentionally
+# absent from this ignore list. Drift against the templates is caught
+# by running `sce-codegen generate-w3c` and inspecting `git status`.
+sce-go-tests/generated/
+
+# sce-codegen orphan: test216's srcexpr invoke triggers a scan of
+# resources/216/ that finds test216sub1.scxml and generates a
+# corresponding test216sub1_sm.rs, but the parent's mod.rs never
+# declares it — the file is dead code from Rust's perspective. The
+# correct fix is in sce-codegen (suppress the emit when the sibling
+# is not going to be referenced); this narrow ignore keeps `git
+# status` clean until that lands, without tracking an unused file.
+sce-rust-tests/src/generated/test216/test216sub1_sm.rs
 build_debug_qjs/
 
 # Bazel
