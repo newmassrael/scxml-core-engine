@@ -8,7 +8,8 @@
  * This example demonstrates the recommended way to use SCE in production:
  *   1. find_package(SCE) to locate the installed library
  *   2. sce_add_state_machine() to generate C++ code from SCXML
- *   3. SCE::sce target to link with the library
+ *   3. Link against the appropriate SCE tier (SCE::sce_scripting here —
+ *      traffic_light.scxml uses <log expr=…/> which requires JSEngine)
  */
 
 #include <iostream>

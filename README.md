@@ -252,8 +252,13 @@ sce_add_state_machine(
     SCXML_FILE traffic_light.scxml
 )
 
-# Link SCE library (SCE::sce is the exported target)
-target_link_libraries(my_app PRIVATE SCE::sce)
+# Link the SCE tier that matches your SCXML feature set (ARCHITECTURE.md §4-Tier):
+#   SCE::sce_base      — pure static (no scripting)
+#   SCE::sce_scripting — static hybrid with JSEngine (QuickJS/Lua for <cond>/<expr>)
+#   SCE::sce_runtime   — full interpreter + parser + HTTP
+# Pick the lightest tier that compiles your SCXML (check `needs_script_engine`
+# in sce-codegen JSON output).
+target_link_libraries(my_app PRIVATE SCE::sce_scripting)
 ```
 
 **Installation**:
@@ -359,9 +364,10 @@ sce_create_state_machine_library(
     SCXML_FILE player.scxml    # SCXML file path
 )
 
-# Use in multiple targets
-target_link_libraries(game PRIVATE player_sm SCE::sce)
-target_link_libraries(editor PRIVATE player_sm SCE::sce)
+# Use in multiple targets. Pick the tier matching the generated SM's needs
+# (ARCHITECTURE.md §4-Tier) — sce_base for pure static, sce_scripting for hybrid.
+target_link_libraries(game PRIVATE player_sm SCE::sce_scripting)
+target_link_libraries(editor PRIVATE player_sm SCE::sce_scripting)
 ```
 
 ---
@@ -387,7 +393,8 @@ SCE provides seven examples with progressive complexity for learning the framewo
 find_package(SCE REQUIRED)
 add_executable(my_app main.cpp)
 sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
-target_link_libraries(my_app PRIVATE SCE::sce)
+# Pick the SCE tier for the generated SM (see ARCHITECTURE.md §4-Tier).
+target_link_libraries(my_app PRIVATE SCE::sce_scripting)
 ```
 
 #### 1. [traffic_light](examples/traffic_light/) - SCXML Basics

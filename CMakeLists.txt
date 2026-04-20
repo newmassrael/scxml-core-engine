@@ -293,39 +293,47 @@ else()
 endif()
 
 # =============================================================================
-# Export Configuration for find_package(SCE)
-# =============================================================================
-# Creates SCE::sce alias for external usage
-
-# Create alias target for external usage (SCE::sce)
-add_library(SCE::sce ALIAS sce_runtime)
-
-# =============================================================================
 # Installation Configuration
 # =============================================================================
+# Tier-scoped export sets (ARCHITECTURE.md §4-Tier):
+#   SCE_CoreTargets       — sce_core + sce_base        (pure static AOT)
+#   SCE_ScriptingTargets  — sce_scripting + qjs/lua54  (static hybrid AOT)
+#   SCE_RuntimeTargets    — sce_runtime                (full interpreter)
+# Each set lands in its own SCE_XxxTargets.cmake. SCEConfig.cmake includes
+# them in dependency order; consumers link whichever tier they need, and the
+# unused tiers are simply not linked — "you don't pay for what you don't use".
+# qjs / lua54 register themselves into SCE_ScriptingTargets from their own
+# CMakeLists (sce/CMakeLists.txt and third_party/lua/CMakeLists.txt).
 
 # Define installation directories
 set(SCE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SCE")
 set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
 
-# Install all library tiers with export.
-# Note: qjs / lua54 are PUBLIC link deps of sce_scripting but are NOT part of
-# this export set — third_party/lua/CMakeLists.txt uses an absolute-source
-# INTERFACE_INCLUDE_DIRECTORIES that install(EXPORT) rejects, and we don't
-# patch third_party. Build-tree find_package(SCE) handles them via a separate
-# export(TARGETS qjs lua54 FILE SCEScriptTargets.cmake) below; install-tree
-# consumers rely on qjs's own qjsConfig package and on lua54 being available
-# through system linker search (this is a pre-existing gap for lua54).
-set(_SCE_INSTALL_TARGETS sce_runtime sce_base sce_core)
-if(SCE_HAS_SCRIPTING)
-    list(APPEND _SCE_INSTALL_TARGETS sce_scripting)
-endif()
-install(TARGETS ${_SCE_INSTALL_TARGETS}
-    EXPORT SCETargets
+# Core tier: sce_core (header-only) + sce_base (pure static AOT utilities)
+install(TARGETS sce_core sce_base
+    EXPORT SCE_CoreTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# Scripting tier: sce_scripting (qjs/lua54 register themselves here)
+if(SCE_HAS_SCRIPTING)
+    install(TARGETS sce_scripting
+        EXPORT SCE_ScriptingTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+endif()
+
+# Runtime tier: sce_runtime (full interpreter, PUBLIC-links httplib)
+install(TARGETS sce_runtime
+    EXPORT SCE_RuntimeTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 # Install txml-converter (Native builds only)
@@ -427,32 +435,28 @@ configure_package_config_file(
     PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR CODEGEN_BIN_DIR
 )
 
-# Build-tree target export (counterpart to install(EXPORT) below)
+# Build-tree target exports (one file per tier, mirrors install(EXPORT) below).
+# httplib is a PUBLIC link dep of sce_runtime only, so its build-tree export
+# sits alongside SCE_RuntimeTargets and is loaded by SCEConfig only when the
+# Runtime tier is present.
+export(EXPORT SCE_CoreTargets
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/SCE_CoreTargets.cmake"
+    NAMESPACE SCE::
+)
+if(SCE_HAS_SCRIPTING)
+    export(EXPORT SCE_ScriptingTargets
+        FILE "${CMAKE_CURRENT_BINARY_DIR}/SCE_ScriptingTargets.cmake"
+        NAMESPACE SCE::
+    )
+endif()
+export(EXPORT SCE_RuntimeTargets
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/SCE_RuntimeTargets.cmake"
+    NAMESPACE SCE::
+)
 if(SCE_ENABLE_HTTP AND NOT EMSCRIPTEN AND TARGET httplib)
     export(EXPORT httplibTargets
         FILE "${CMAKE_CURRENT_BINARY_DIR}/httplibTargets.cmake"
         NAMESPACE httplib::
-    )
-endif()
-export(EXPORT SCETargets
-    FILE "${CMAKE_CURRENT_BINARY_DIR}/SCETargets.cmake"
-    NAMESPACE SCE::
-)
-
-# Build-tree-only export of script-engine targets. sce_scripting links these
-# via generator-expression-gated bare names (sce/CMakeLists.txt:254-255), so
-# consumers need the qjs / lua54 targets defined before they link SCE::sce.
-# Install-tree cannot include these (see comment at _SCE_INSTALL_TARGETS).
-set(_SCE_SCRIPT_TARGETS "")
-if(TARGET qjs)
-    list(APPEND _SCE_SCRIPT_TARGETS qjs)
-endif()
-if(TARGET lua54)
-    list(APPEND _SCE_SCRIPT_TARGETS lua54)
-endif()
-if(_SCE_SCRIPT_TARGETS)
-    export(TARGETS ${_SCE_SCRIPT_TARGETS}
-        FILE "${CMAKE_CURRENT_BINARY_DIR}/SCEScriptTargets.cmake"
     )
 endif()
 
@@ -486,8 +490,20 @@ configure_package_config_file(
     PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR CODEGEN_BIN_DIR
 )
 
-install(EXPORT SCETargets
-    FILE SCETargets.cmake
+install(EXPORT SCE_CoreTargets
+    FILE SCE_CoreTargets.cmake
+    NAMESPACE SCE::
+    DESTINATION ${SCE_INSTALL_CMAKEDIR}
+)
+if(SCE_HAS_SCRIPTING)
+    install(EXPORT SCE_ScriptingTargets
+        FILE SCE_ScriptingTargets.cmake
+        NAMESPACE SCE::
+        DESTINATION ${SCE_INSTALL_CMAKEDIR}
+    )
+endif()
+install(EXPORT SCE_RuntimeTargets
+    FILE SCE_RuntimeTargets.cmake
     NAMESPACE SCE::
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
 )

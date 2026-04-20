@@ -70,9 +70,16 @@ sce_add_state_machine(
     SCXML_FILE my_state_machine.scxml
 )
 
-# Link with SCE library
-target_link_libraries(my_app PRIVATE SCE::sce)
+# Link the tier that matches your SCXML feature set (ARCHITECTURE.md §4-Tier)
+#   SCE::sce_base       — pure static AOT (no <cond>/<expr>/<assign location>)
+#   SCE::sce_scripting  — static hybrid AOT with JSEngine  ← this example
+#   SCE::sce_runtime    — full interpreter + parser + HTTP
+target_link_libraries(my_app PRIVATE SCE::sce_scripting)
 ```
+
+> **Checking which tier your SCXML needs**: run `sce-codegen generate … -l cpp`
+> and inspect the `needs_script_engine` field in the JSON output —
+> `false` → `sce_base`, `true` → `sce_scripting`.
 
 ## Available CMake Functions
 
@@ -110,7 +117,7 @@ sce_create_state_machine_library(
     SCXML_FILE player.scxml # SCXML file path
 )
 
-target_link_libraries(my_app PRIVATE player_sm SCE::sce)
+target_link_libraries(my_app PRIVATE player_sm SCE::sce_scripting)
 ```
 
 ## Generated Code

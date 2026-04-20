@@ -39,9 +39,14 @@ set(LUA_SOURCES
 
 add_library(lua54 STATIC ${LUA_SOURCES})
 
+# BUILD_INTERFACE / INSTALL_INTERFACE split — install(EXPORT) rejects bare
+# ${CMAKE_CURRENT_SOURCE_DIR}/src because it is an absolute build-time path
+# that must not leak into exported install-tree targets. Headers go under
+# include/lua at install time to avoid collision with system Lua installs.
 target_include_directories(lua54
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/lua>
 )
 
 # Platform-specific definitions
@@ -66,3 +71,16 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 message(STATUS "Lua 5.4.6: Building from source (static library)")
+
+# Install rules. lua54 joins SCE_ScriptingTargets (tier-scoped export) so that
+# find_package(SCE) consumers linking SCE::sce_scripting resolve -llua54
+# against a library shipped by SCE itself — no system Lua dependency.
+include(GNUInstallDirs)
+install(TARGETS lua54 EXPORT SCE_ScriptingTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(DIRECTORY src/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/lua
+    FILES_MATCHING PATTERN "*.h"
+)

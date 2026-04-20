@@ -26,11 +26,21 @@ if(SCE_ENABLE_QUICKJS)
         message(STATUS "WASM build: QuickJS stack checking disabled (__wasi__)")
     endif()
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURRENT_BINARY_DIR}/quickjs)
+    # qjs is a PUBLIC link dep of sce_scripting, so it belongs in the same
+    # tier-scoped export set. quickjs already has its own install(TARGETS qjs
+    # EXPORT qjsConfig); CMake permits a target to belong to multiple export
+    # sets, and the duplicate ARCHIVE/LIBRARY destinations are idempotent.
+    include(GNUInstallDirs)
+    install(TARGETS qjs EXPORT SCE_ScriptingTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
 endif()
 
 # Add Lua 5.4 subdirectory (conditional)
 if(SCE_ENABLE_LUA)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lua ${CMAKE_CURRENT_BINARY_DIR}/lua)
+    # lua54's own CMakeLists.txt registers it into SCE_ScriptingTargets.
 endif()
 
 # Determine if any script engine is available (propagate to parent scope)
@@ -248,12 +258,20 @@ if(SCE_HAS_SCRIPTING)
             -include common/DisableStdOut.h
     )
 
-    target_link_libraries(sce_scripting
-        PUBLIC
-            sce_base
-            $<$<BOOL:${SCE_ENABLE_QUICKJS}>:qjs>
-            $<$<BOOL:${SCE_ENABLE_LUA}>:lua54>
-    )
+    # Plain target references (no generator-expression wrapper): CMake's
+    # install(EXPORT) only rewrites bare targets to their namespaced form
+    # (qjs → SCE::qjs) when they appear unwrapped in INTERFACE_LINK_LIBRARIES.
+    # A gen-expr such as `$<$<BOOL:ON>:qjs>` is treated as an opaque string
+    # and leaks to consumers as `-lqjs`, which their linker then fails to
+    # resolve. Splitting into conditional target_link_libraries() calls
+    # preserves the same semantics while keeping the export rewrite intact.
+    target_link_libraries(sce_scripting PUBLIC sce_base)
+    if(SCE_ENABLE_QUICKJS)
+        target_link_libraries(sce_scripting PUBLIC qjs)
+    endif()
+    if(SCE_ENABLE_LUA)
+        target_link_libraries(sce_scripting PUBLIC lua54)
+    endif()
 
     # Compile-time script engine selection for ScriptEngineProvider
     set(SCE_SCRIPT_ENGINE "lua" CACHE STRING "Script engine for ScriptEngineProvider")

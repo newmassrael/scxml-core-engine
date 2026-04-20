@@ -51,8 +51,11 @@ Arguments:
 Example:
   add_executable(my_app main.cpp)
   sce_add_state_machine(TARGET my_app SCXML_FILE player.scxml)
-  sce_add_state_machine(TARGET my_app SCXML_FILE player.scxml LANGUAGE kotlin)
-  target_link_libraries(my_app PRIVATE SCE::sce)
+  # Link the tier matching the SCXML feature set (ARCHITECTURE.md §4-Tier):
+  #   SCE::sce_base      — pure static (no <cond>/<expr>/<assign location>)
+  #   SCE::sce_scripting — static hybrid (needs_script_engine=true)
+  #   SCE::sce_runtime   — full interpreter (dynamic SCXML loading)
+  target_link_libraries(my_app PRIVATE SCE::sce_base)
 #]=============================================================================]
 function(sce_add_state_machine)
     cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE" "" ${ARGN})
@@ -224,7 +227,8 @@ Arguments:
 
 Example:
   sce_create_state_machine_library(NAME player_sm SCXML_FILE player.scxml)
-  target_link_libraries(my_app PRIVATE player_sm SCE::sce)
+  # Pick the SCE tier matching the SCXML feature set — see ARCHITECTURE.md §4-Tier.
+  target_link_libraries(my_app PRIVATE player_sm SCE::sce_base)
 #]=============================================================================]
 function(sce_create_state_machine_library)
     cmake_parse_arguments(SCE "" "NAME;SCXML_FILE;OUTPUT_DIR" "" ${ARGN})

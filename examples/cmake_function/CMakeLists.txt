@@ -34,10 +34,14 @@ sce_add_state_machine(
     # OUTPUT_DIR is optional, defaults to ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
-# Link with SCE library
-# In-tree: use sce_runtime directly
-# Installed: use SCE::sce (available after find_package(SCE))
-target_link_libraries(light_example PRIVATE sce_runtime)
+# Link with the pure-static tier.
+# simple_light.scxml has no <cond>/<expr>/<assign location> — sce-codegen
+# reports needs_script_engine=false, so the generated state machine links
+# against sce_base without pulling in QuickJS or Lua.
+#
+# In-tree:   link sce_base directly (this file is add_subdirectory'd by SCE)
+# Installed: same binary works with SCE::sce_base after find_package(SCE).
+target_link_libraries(light_example PRIVATE sce_base)
 
 # Add SCE include directories (in-tree usage)
 target_include_directories(light_example PRIVATE

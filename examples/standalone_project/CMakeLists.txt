@@ -31,11 +31,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # =============================================================================
 # Find SCE Package
 # =============================================================================
-# find_package(SCE) provides:
-#   - SCE::sce target (main library)
-#   - sce_add_state_machine() function
-#   - sce_add_state_machines_from_dir() function
-#   - sce_create_state_machine_library() function
+# find_package(SCE) provides four tier targets (ARCHITECTURE.md §4-Tier):
+#   - SCE::sce_core       — header-only (minimal embed)
+#   - SCE::sce_base       — pure static AOT (no scripting)
+#   - SCE::sce_scripting  — static hybrid AOT with JSEngine  ← this example
+#   - SCE::sce_runtime    — full interpreter + parser + HTTP
+# Plus CMake functions:
+#   - sce_add_state_machine(), sce_add_state_machines_from_dir(),
+#     sce_create_state_machine_library()
 
 find_package(SCE REQUIRED)
 
@@ -60,11 +63,14 @@ sce_add_state_machine(
 )
 
 # =============================================================================
-# Link with SCE Library
+# Link with the Scripting Tier
 # =============================================================================
-# SCE::sce is the main library target providing:
-#   - StaticExecutionEngine for AOT state machines
-#   - InterpreterEngine for dynamic SCXML loading
-#   - Event dispatcher interfaces
+# traffic_light.scxml uses <log expr="..."/> — sce-codegen reports
+# needs_script_engine=true, so the generated header expects JSEngine to
+# evaluate expressions at runtime. Link SCE::sce_scripting (static hybrid AOT).
+#
+# If this example were pure static (no <cond>/<expr>/<assign location=…>),
+# SCE::sce_base would suffice and the compiled binary would have zero
+# dependency on QuickJS or Lua.
 
-target_link_libraries(traffic_light PRIVATE SCE::sce)
+target_link_libraries(traffic_light PRIVATE SCE::sce_scripting)
