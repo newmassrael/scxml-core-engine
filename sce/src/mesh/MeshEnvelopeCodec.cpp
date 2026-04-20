@@ -176,7 +176,11 @@ bool readU64(CborValue *it, uint64_t &out) {
 // ── Enum range validators ───────────────────────────────────────────────
 
 bool isValidPatternKind(uint64_t v) {
-    return v >= 1 && v <= 9;
+    // 1-9 in-use; 21 is ParallelRegionDone (SCE_MESH.md §16.5). Values
+    // 10-13 remain reserved for Stream; 14-20 for Session F invoke
+    // lifecycle — neither has enum variants yet, so unknown-pattern on
+    // the wire drops silently at dispatch until its consumer lands.
+    return (v >= 1 && v <= 9) || v == 21;
 }
 
 bool isValidPayloadCodec(uint64_t v) {

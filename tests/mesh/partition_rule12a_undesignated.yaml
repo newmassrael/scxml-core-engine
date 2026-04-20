@@ -1,0 +1,29 @@
+# SCE Mesh §14 rule 12 — distributed parallel with no root claimant.
+#
+# Expected diagnostic: mesh/partition-parallel-root-undesignated
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_parallel_root_designation — Pass 2b
+#
+# <parallel id="root">'s regions `left` and `right` live in two
+# separate partitions (motor_left, motor_right). Spec §14 rule 12
+# requires exactly one partition to claim root via
+# `hosts_parallel_roots:`; omitting the claim on both partitions fires
+# this diagnostic.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+  motor_right:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }

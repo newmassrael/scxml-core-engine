@@ -1,0 +1,32 @@
+# SCE Mesh §14 rule 12 — two partitions claim the same <parallel> root.
+#
+# Expected diagnostic: mesh/partition-parallel-root-ambiguous
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_parallel_root_designation — Pass 2a
+#
+# Both motor_left and motor_right claim <parallel id="root">. Tracker
+# ownership is per-<parallel>-unique; two claimants would produce two
+# `done.state.root` raises (one per §16.5 tracker), corrupting W3C
+# §3.7 semantics. Spec §14 rule 12 L2839.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+    hosts_parallel_roots:
+      - { machine: motor_partition, parallel: root }
+  motor_right:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }
+    hosts_parallel_roots:
+      - { machine: motor_partition, parallel: root }

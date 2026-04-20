@@ -811,23 +811,22 @@ mod tests {
         assert!(matches!(err, GenerateError::UnsupportedFeature(_)));
     }
 
-    /// SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844):
-    /// toggling `model.partition_context_present` must produce
-    /// byte-identical C++ codegen output today. The flag selects
-    /// between the inline `<parallel>`-final branch in
-    /// `entry_exit_actions.jinja2` and the delegate at
-    /// `mesh/cpp/parallel_final.jinja2`; until the atomic semantic
-    /// payload (validator + §16.5 `ParallelCompletionTracker` runtime
-    /// + partition-aware branch body) lands, the delegate's body is
-    /// a verbatim copy of the inline branch. Any drift between the
-    /// two is a textbook "built but unconsumed" anti-pattern — the
-    /// scaffolding would start emitting partition-shaped output
-    /// before any consumer can read it — and this test is the guard.
-    /// Fixture covers a parallel state whose regions contain final
-    /// states, so the delegated block actually renders.
-    #[test]
-    fn partition_context_present_is_byte_identical_at_p0() {
-        const PARALLEL_FINAL_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+    /// SCE_MESH.md §14 rule 12 / §16.5 shape assertion. With the
+    /// semantic payload landed, the C++ codegen output diverges by
+    /// role — Root emits a `ParallelCompletionTracker` member and
+    /// `onParallelRegionDone` dispatch method; NonRoot emits a
+    /// `sendParallelRegionDone` method with a wire-21 envelope
+    /// constructor; SinglePartition (empty role map or absent
+    /// partition_context) preserves the legacy
+    /// `ParallelCompletionHelper` path.
+    ///
+    /// The P0 byte-identical carve-out has retired — `partition_context_present`
+    /// alone (role map empty) still reproduces the pre-mesh output
+    /// because `parallel_final.jinja2` falls through to the
+    /// SinglePartition branch, but toggling a Role per-`<parallel>`
+    /// in `partition_parallel_roles` intentionally perturbs the
+    /// generated SM.
+    const PARALLEL_FINAL_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="null" name="pf_fixture" initial="root">
   <parallel id="root">
@@ -846,57 +845,108 @@ mod tests {
   </parallel>
 </scxml>"##;
 
-        let mut model_off = parse(PARALLEL_FINAL_SCXML);
-        crate::analyzer::analyze(&mut model_off, "pf_fixture.scxml");
-        model_off.partition_context_present = false;
-
-        let mut model_on = parse(PARALLEL_FINAL_SCXML);
-        crate::analyzer::analyze(&mut model_on, "pf_fixture.scxml");
-        model_on.partition_context_present = true;
-
+    fn render_with_role(role: Option<crate::model::PartitionRole>) -> String {
+        let mut model = parse(PARALLEL_FINAL_SCXML);
+        crate::analyzer::analyze(&mut model, "pf_fixture.scxml");
+        if let Some(role) = role {
+            model.partition_context_present = true;
+            model
+                .partition_parallel_roles
+                .insert("root".to_string(), role);
+        }
         let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("workspace root")
             .join("tools")
             .join("codegen")
             .join("templates");
+        let out = generate_cpp(&model, &template_dir, "pf_fixture").expect("render");
+        out.files
+            .into_iter()
+            .map(|(_, body)| body)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
-        let out_off =
-            generate_cpp(&model_off, &template_dir, "pf_fixture").expect("render off");
-        let out_on =
-            generate_cpp(&model_on, &template_dir, "pf_fixture").expect("render on");
-
-        assert_eq!(
-            out_off.files.len(),
-            out_on.files.len(),
-            "same file count regardless of partition flag"
+    #[test]
+    fn partition_role_root_emits_tracker_and_handlers() {
+        let body = render_with_role(Some(crate::model::PartitionRole::Root));
+        assert!(
+            body.contains("tracker_root_"),
+            "Root role must emit ParallelCompletionTracker member `tracker_root_`; body was:\n{body}"
         );
-        for ((name_off, body_off), (name_on, body_on)) in
-            out_off.files.iter().zip(out_on.files.iter())
-        {
-            assert_eq!(name_off, name_on, "filename stability");
-            if body_off != body_on {
-                let diff_start = body_off
-                    .char_indices()
-                    .zip(body_on.chars())
-                    .find(|((_, a), b)| a != b)
-                    .map(|((i, _), _)| i)
-                    .unwrap_or_else(|| body_off.len().min(body_on.len()));
-                let ctx_off = body_off[diff_start.saturating_sub(80)..(diff_start + 400).min(body_off.len())]
-                    .escape_debug()
-                    .collect::<String>();
-                let ctx_on = body_on[diff_start.saturating_sub(80)..(diff_start + 400).min(body_on.len())]
-                    .escape_debug()
-                    .collect::<String>();
-                panic!(
-                    "§14 rule 12 carve-out: partition_context_present must not perturb C++\n\
-                     codegen output until the atomic semantic payload lands.\n\
-                     File {name_off} diverged at byte {diff_start}.\n\
-                     ── OFF (partition_context_present=false) ──\n{ctx_off}\n\
-                     ── ON  (partition_context_present=true)  ──\n{ctx_on}\n"
-                );
-            }
-        }
+        assert!(
+            body.contains("onParallelRegionDone"),
+            "Root role must emit the `onParallelRegionDone` wire-21 receiver method"
+        );
+        assert!(
+            body.contains("onLocalRegionComplete(\"left\")"),
+            "Root region-final branch must call `tracker_root_.onLocalRegionComplete`"
+        );
+        assert!(
+            !body.contains("sendParallelRegionDone"),
+            "Root role must NOT emit the non-root sender hook — the region is local"
+        );
+    }
+
+    #[test]
+    fn partition_role_non_root_emits_wire21_sender_only() {
+        let body = render_with_role(Some(crate::model::PartitionRole::NonRoot));
+        assert!(
+            body.contains("sendParallelRegionDone"),
+            "NonRoot role must emit the `sendParallelRegionDone` wire-21 sender method"
+        );
+        assert!(
+            body.contains("PatternKind::ParallelRegionDone"),
+            "NonRoot sender body must construct the wire-21 envelope"
+        );
+        assert!(
+            !body.contains("tracker_root_"),
+            "NonRoot role must NOT emit a tracker — aggregation is the root's job"
+        );
+        assert!(
+            !body.contains("onParallelRegionDone"),
+            "NonRoot role must NOT emit the receiver hook — envelopes land on the root"
+        );
+        assert!(
+            !body.contains("ParallelCompletionHelper::areAllRegionsInFinal"),
+            "NonRoot must not fall back to single-partition legacy completion check"
+        );
+    }
+
+    #[test]
+    fn partition_context_absent_falls_back_to_single_partition() {
+        // `partition_context_present=false` → template's outer `{% if %}`
+        // does not include the delegate; single-partition AOT path is
+        // byte-identical to pre-mesh legacy.
+        let body = render_with_role(None);
+        assert!(
+            body.contains("ParallelCompletionHelper::areAllRegionsInFinal"),
+            "Default path must emit the legacy single-partition completion check"
+        );
+        assert!(
+            !body.contains("tracker_root_"),
+            "Default path must not emit mesh tracker members"
+        );
+        assert!(
+            !body.contains("sendParallelRegionDone"),
+            "Default path must not emit mesh sender hooks"
+        );
+    }
+
+    #[test]
+    fn partition_role_single_partition_preserves_legacy_path() {
+        // A partitioned machine whose `<parallel>` lives entirely in one
+        // partition (SinglePartition role) still uses the legacy helper.
+        let body = render_with_role(Some(crate::model::PartitionRole::SinglePartition));
+        assert!(
+            body.contains("ParallelCompletionHelper::areAllRegionsInFinal"),
+            "SinglePartition role must use the legacy completion helper"
+        );
+        assert!(
+            !body.contains("tracker_root_"),
+            "SinglePartition role must not emit mesh tracker members"
+        );
     }
 
     /// Models without mesh-rpc invokes must NOT be rejected — the gate

@@ -253,7 +253,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (86 codes)
+## Appendix — `DiagnosticCode` index (120 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -343,6 +343,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-partition-pool-machine` | Mesh Deploy |
 | `mesh/deploy-partition-transport-binding-unsupported` | Mesh Deploy |
 | `mesh/deploy-partition-barrier-timeout-invalid` | Mesh Deploy |
+| `mesh/partition-parallel-root-undesignated` | Mesh Deploy |
+| `mesh/partition-parallel-root-ambiguous` | Mesh Deploy |
+| `mesh/partition-parallel-root-not-in-machines` | Mesh Deploy |
+| `mesh/partition-parallel-root-non-host` | Mesh Deploy |
+| `mesh/partition-barrier-timeout-without-root` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

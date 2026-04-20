@@ -1,0 +1,44 @@
+# SCE Mesh §14 rule 12 — root claimant co-hosts no region.
+#
+# Expected diagnostic: mesh/partition-parallel-root-non-host
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_parallel_root_designation — Pass 1 non-host check
+#
+# Three partitions split motor_partition's two regions: motor_left
+# has `left`, motor_right has `right`, motor_extra claims root but
+# hosts NEITHER region (only a dummy second machine to satisfy rule
+# 10's non-empty-partition gate). Rule 12 L2841 rejects the shape
+# because a claimant that co-hosts no region would force every
+# region update to cross partitions as inter-partition traffic.
+#
+# The `other_machine` entry exists so `motor_extra` can carry a
+# non-empty `contains:` without actually hosting any region of
+# <parallel id="root"> — keeping rule 12 non-host as the sole red.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+      other_machine:
+        source: motor_partition.scxml
+
+partitions:
+  motor_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+  motor_right:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }
+  motor_extra:
+    machines: [motor_partition, other_machine]
+    contains:
+      parallel_regions:
+        - { machine: other_machine, region: left }
+        - { machine: other_machine, region: right }
+    hosts_parallel_roots:
+      - { machine: motor_partition, parallel: root }

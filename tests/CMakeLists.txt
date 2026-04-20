@@ -1401,6 +1401,33 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_dispatch_verification COMMAND mesh_dispatch_test)
 
+    # SCE_MESH.md §16.5: ParallelCompletionTracker — per-`<parallel>` root
+    # partition barrier primitive used by the rule-12 codegen branch in
+    # `mesh/cpp/parallel_final.jinja2`. Header-only; this suite exercises
+    # threshold / single-shot / reset semantics without runtime wiring.
+    add_executable(mesh_parallel_completion_tracker_test
+        mesh/ParallelCompletionTrackerTest.cpp
+    )
+
+    target_include_directories(mesh_parallel_completion_tracker_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_parallel_completion_tracker_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_parallel_completion_tracker_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_parallel_completion_tracker_test)
+
+    add_test(NAME mesh_parallel_completion_tracker_verification
+             COMMAND mesh_parallel_completion_tracker_test)
+
     # Generate brake_sm.h from brake.scxml
     add_custom_command(
         OUTPUT "${MESH_OUTPUT_DIR}/brake_sm.h"
@@ -3803,6 +3830,16 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         "9|mesh/deploy-partition-machine-not-listed|motor_partition.scxml"
         "10|mesh/deploy-partition-empty|motor_partition.scxml"
         "11|mesh/deploy-partition-partial-coverage-requires-default|motor_partition_nested.scxml"
+        # SCE_MESH.md §14 rule 12 — five rejection shapes. 12a/b/c/e use
+        # motor_partition.scxml (two regions, distributable). 12d uses
+        # the same fixture plus a second `other_machine` entry so the
+        # non-host claimant partition can carry a non-empty `contains:`
+        # without hosting any region of the claimed parallel.
+        "12a|mesh/partition-parallel-root-undesignated|motor_partition.scxml"
+        "12b|mesh/partition-parallel-root-ambiguous|motor_partition.scxml"
+        "12c|mesh/partition-parallel-root-not-in-machines|motor_partition.scxml"
+        "12d|mesh/partition-parallel-root-non-host|motor_partition.scxml"
+        "12e|mesh/partition-barrier-timeout-without-root|motor_partition.scxml"
     )
     foreach(_entry IN LISTS MESH_PARTITION_NEG_MATRIX)
         string(REPLACE "|" ";" _parts "${_entry}")

@@ -1,20 +1,39 @@
-{# SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844):          #}
-{# <parallel>-final completion emission delegated from              #}
-{# `entry_exit_actions.jinja2` when                                 #}
-{# `model.partition_context_present` is true. The P0 body below is  #}
-{# a verbatim copy of the inline branch — a single-process          #}
-{# partitioned machine therefore produces byte-identical code to a  #}
-{# non-partitioned one. The partition-aware rewrite (root emits the #}
-{# tracker + local done.state raise; non-root emits wire 21         #}
-{# `ParallelRegionDone` only) lands atomically with the §16.5       #}
-{# `ParallelCompletionTracker` runtime and the rule 12 validator,   #}
-{# as spelled out in the §14 L2844 status banner.                    #}
-{# Inherited context: `state`, `state_id`, `model`. Trailing blank  #}
-{# line at EOF is load-bearing: minijinja strips one newline from   #}
-{# the included content with `trim_blocks=true`, so without the     #}
-{# blank line the `}\n` terminator would collapse and merge onto    #}
-{# the caller's next line — breaking the byte-identical contract    #}
-{# with the inline branch in `entry_exit_actions.jinja2`.           #}
+{# SCE_MESH.md §14 rule 12 — per-`<parallel>` partition-role branch.  #}
+{# Inherited context: `state`, `state_id`, `model`.                   #}
+{# `model.partition_parallel_roles` maps `<parallel>` id → role       #}
+{# (Root / NonRoot / SinglePartition). Absent id ⇒ treat as           #}
+{# SinglePartition — byte-identical to pre-mesh AOT codegen.          #}
+{% set _parallel_id = model.states[state.parent].parent %}
+{% set _role = model.partition_parallel_roles.get(_parallel_id) if model.partition_parallel_roles else None %}
+{% if _role == 'Root' %}
+                // SCE_MESH.md §14 rule 12 / §16.5 Root branch: the
+                // root-hosting partition aggregates local region
+                // completions and remote `ParallelRegionDone` envelopes
+                // (wire 21) into the per-`<parallel>` tracker. Remote
+                // delivery lands via `engine.onParallelRegionDone(env)`
+                // (see `{{ model.name }}::onParallelRegionDone`);
+                // threshold raises `done.state.<parallel>` into the
+                // SM's local external queue via the tracker's callback.
+                engine.tracker_{{ _parallel_id }}_.onLocalRegionComplete("{{ state.parent }}");
+{% elif _role == 'NonRoot' %}
+                // SCE_MESH.md §14 rule 12 / §16.5 NonRoot branch: a
+                // partition hosting the region but not the
+                // `<parallel>` root emits wire 21 `ParallelRegionDone`
+                // with `subject = <parallel>/<region>` and does NOT
+                // raise `done.state.<parallel>` locally (the root will
+                // raise it on threshold). The actual inter-partition
+                // transport routing is delegated to
+                // `engine.sendParallelRegionDone` on the SM class.
+{% if state.donedata %}
+                engine.sendParallelRegionDone("{{ _parallel_id }}", "{{ state.parent }}", eventData);
+{% else %}
+                engine.sendParallelRegionDone("{{ _parallel_id }}", "{{ state.parent }}", std::string());
+{% endif %}
+{% else %}
+                // SCE_MESH.md §14 rule 12 SinglePartition fallback:
+                // all regions of `<parallel>` live in one partition —
+                // equivalent to monolithic execution — so the legacy
+                // `ParallelCompletionHelper` path applies unchanged.
                 // W3C SCXML 3.4: Check if parent's parent (parallel state) is complete
                 // W3C SCXML 3.7.1: Generate done.state event when all regions reach final states
                 // Uses ParallelCompletionHelper (Zero Duplication - shared with Interpreter)
@@ -31,4 +50,5 @@
                         engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ model.states[state.parent].parent }}));
                     }
                 }
+{% endif %}
 

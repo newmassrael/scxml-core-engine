@@ -37,9 +37,41 @@
 #include "mesh/MeshEnvelope.h"
 
 #include <string>
+#include <type_traits>
 #include <utility>
 
 namespace SCE::Mesh {
+
+namespace detail {
+
+/// SFINAE probe: does `Engine` expose
+/// `onParallelRegionDone(const MeshEnvelope&)`? Only generated SMs with
+/// distributed `<parallel>` trackers emit the method; monolithic machines
+/// don't, so the wire-21 arm falls through to "return false" (drop) for
+/// them — the envelope would have arrived in error anyway (no claimant
+/// partition configured).
+template <typename Engine, typename = void>
+struct HasParallelRegionDoneHook : std::false_type {};
+
+template <typename Engine>
+struct HasParallelRegionDoneHook<Engine, std::void_t<decltype(
+    std::declval<Engine&>().onParallelRegionDone(std::declval<const MeshEnvelope&>()))>>
+    : std::true_type {};
+
+template <typename Engine>
+bool tryDeliverParallelRegionDone(const MeshEnvelope& env, Engine& engine,
+                                  std::true_type /*has_hook*/) {
+    engine.onParallelRegionDone(env);
+    return true;
+}
+
+template <typename Engine>
+bool tryDeliverParallelRegionDone(const MeshEnvelope& /*env*/, Engine& /*engine*/,
+                                  std::false_type /*has_hook*/) {
+    return false;
+}
+
+}  // namespace detail
 
 /// Dispatch a MeshEnvelope to a state machine engine based on pattern kind.
 ///
@@ -49,11 +81,20 @@ namespace SCE::Mesh {
 /// guard). Returns false for an unresolved event name to signal the caller
 /// the envelope could not be delivered.
 ///
+/// SCE_MESH.md §16.5 `ParallelRegionDone` (wire 21): bypasses `raiseExternal`
+/// and routes to `engine.onParallelRegionDone(env)` when present. Machines
+/// without the hook drop the envelope — they could not have authored a
+/// distributed `<parallel>` root that expected one.
+///
 /// @tparam Policy  Receiver's generated StatePolicy (provides getEventFromName)
 /// @tparam Engine  StaticExecutionEngine<Policy>
 /// @return true if the event was dispatched to the engine
 template <typename Policy, typename Engine>
 bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
+    if (env.pattern == PatternKind::ParallelRegionDone) {
+        return detail::tryDeliverParallelRegionDone(
+            env, engine, detail::HasParallelRegionDoneHook<Engine>{});
+    }
     switch (env.pattern) {
     case PatternKind::FireForget:
     // Inbound notifications are unidirectional — same delivery as FireForget.
@@ -92,6 +133,11 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     // back our own sends — return false so caller can log or drop.
     case PatternKind::EventSubscribe:
     case PatternKind::EventUnsubscribe:
+        return false;
+    // ParallelRegionDone is handled by the pre-switch early-return above;
+    // listing it here keeps `-Wswitch-enum` exhaustive. Reaching this arm
+    // would be a compiler / codegen bug and we fail-closed with drop.
+    case PatternKind::ParallelRegionDone:
         return false;
     }
     return false;  // unknown pattern kind — forward compatibility

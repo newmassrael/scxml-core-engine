@@ -452,6 +452,99 @@ pub enum DeployError {
         value: u32,
         reason: String,
     },
+
+    /// A distributed `<parallel>` (regions span two or more partitions)
+    /// has no partition claiming its root via `hosts_parallel_roots:`
+    /// (SCE_MESH.md §14 rule 12, L2838). Without a claimant, the
+    /// §16.5 `ParallelCompletionTracker` has no unique owner and
+    /// `done.state.<parallel_id>` cannot be raised. The author repairs
+    /// by naming exactly one partition (of those hosting at least one
+    /// region of the parallel) as the root.
+    #[error("machine '{machine}': distributed `<parallel id=\"{parallel}\">` (regions span \
+             partitions {}) has no root claimant. SCE Mesh §14 rule 12 requires exactly \
+             one partition to declare `hosts_parallel_roots: [{{ machine: {machine}, \
+             parallel: {parallel} }}]`. Add the entry to one of the listed partitions — \
+             the root must co-host at least one region of the parallel.",
+             .hosting_partitions.iter().map(|p| format!("'{p}'"))
+                 .collect::<Vec<_>>().join(", "))]
+    PartitionParallelRootUndesignated {
+        machine: String,
+        parallel: String,
+        hosting_partitions: Vec<String>,
+    },
+
+    /// Two or more partitions claim the same `(machine, parallel)` pair
+    /// as their root (SCE_MESH.md §14 rule 12, L2839). Tracker
+    /// ownership is per-`<parallel>`-unique; ambiguous claims would
+    /// produce two `done.state.<parallel_id>` raises (one per root).
+    /// The author repairs by removing all but one claim.
+    #[error("machine '{machine}': `<parallel id=\"{parallel}\">` is claimed as root by \
+             multiple partitions: {}. SCE Mesh §14 rule 12 requires exactly one claimant \
+             per distributed parallel. Remove the entry from all but one partition's \
+             `hosts_parallel_roots:`.",
+             .claiming_partitions.iter().map(|p| format!("'{p}'"))
+                 .collect::<Vec<_>>().join(", "))]
+    PartitionParallelRootAmbiguous {
+        machine: String,
+        parallel: String,
+        claiming_partitions: Vec<String>,
+    },
+
+    /// A `hosts_parallel_roots[*].machine:` entry names a machine that
+    /// is not in the partition's `machines:` list (SCE_MESH.md §14 rule
+    /// 12, L2840 — rule 9 shape applied to root entries). One partition
+    /// cannot claim root for a parallel in another partition's
+    /// machine's document.
+    #[error("partition '{partition}': `hosts_parallel_roots:` entry claims machine \
+             '{claimed_machine}' but the partition's `machines:` list is [{}]. SCE Mesh \
+             §14 rule 12 applies rule 9 shape to root entries — the claimed machine must \
+             be one the partition already lists. Either add '{claimed_machine}' to \
+             `machines:` or move the `hosts_parallel_roots:` entry to a partition that \
+             already lists it.",
+             .partition_machines.iter().map(|m| format!("'{m}'"))
+                 .collect::<Vec<_>>().join(", "))]
+    PartitionParallelRootNotInMachines {
+        partition: String,
+        claimed_machine: String,
+        partition_machines: Vec<String>,
+    },
+
+    /// A partition claims `(machine, parallel)` as its root but hosts
+    /// no region of that `<parallel>` in its `contains.parallel_regions:`
+    /// (SCE_MESH.md §14 rule 12, L2841). A root that co-hosts no region
+    /// would force every region update to cross process boundaries as
+    /// inter-partition traffic — the spec rejects the shape to keep the
+    /// §16.5 tracker's aggregation path coherent.
+    #[error("partition '{partition}': claims root for machine '{machine}' \
+             `<parallel id=\"{parallel}\">` but hosts no region of that parallel in \
+             `contains.parallel_regions:`. SCE Mesh §14 rule 12 requires a root claimant \
+             to co-host at least one region — otherwise every region update crosses \
+             partitions as inter-partition traffic. Either add a region of the parallel \
+             to this partition's `contains:`, or move the `hosts_parallel_roots:` entry \
+             to a partition that already hosts one.")]
+    PartitionParallelRootNonHost {
+        partition: String,
+        machine: String,
+        parallel: String,
+    },
+
+    /// A partition declared `barrier_timeout_ms:` but did not claim
+    /// any `<parallel>` root via `hosts_parallel_roots:` (SCE_MESH.md
+    /// §14 rule 12, L2842). The timeout has no §16.5 tracker to gate
+    /// — it would silently do nothing. Distinct from
+    /// [`Self::PartitionBarrierTimeoutInvalid`] which is a value-range
+    /// check; this diagnostic catches the orthogonal configuration
+    /// error of setting a timeout on a partition that is not a root.
+    #[error("partition '{partition}': `barrier_timeout_ms: {value}` is set but the \
+             partition has no `hosts_parallel_roots:` entries. SCE Mesh §14 rule 12 \
+             (L2842) requires the timeout to gate a §16.5 `ParallelCompletionTracker`, \
+             and trackers only exist on root-hosting partitions. Either add a \
+             `hosts_parallel_roots:` entry (making this partition a root) or drop \
+             `barrier_timeout_ms:` (which has no consumer here).")]
+    PartitionBarrierTimeoutWithoutRoot {
+        partition: String,
+        value: u32,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -1287,6 +1380,76 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![partition.clone(), value.to_string(), reason.clone()],
         },
+        DeployError::PartitionParallelRootUndesignated {
+            machine,
+            parallel,
+            hosting_partitions,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshPartitionParallelRootUndesignated,
+            stage: Stage::MeshDeploy,
+            actual: Some(format!("{machine}/{parallel}")),
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut frags = vec![machine.clone(), parallel.clone()];
+                frags.extend(hosting_partitions.iter().cloned());
+                frags
+            },
+        },
+        DeployError::PartitionParallelRootAmbiguous {
+            machine,
+            parallel,
+            claiming_partitions,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshPartitionParallelRootAmbiguous,
+            stage: Stage::MeshDeploy,
+            actual: Some(format!("{machine}/{parallel}")),
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut frags = vec![machine.clone(), parallel.clone()];
+                frags.extend(claiming_partitions.iter().cloned());
+                frags
+            },
+        },
+        DeployError::PartitionParallelRootNotInMachines {
+            partition,
+            claimed_machine,
+            partition_machines,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshPartitionParallelRootNotInMachines,
+            stage: Stage::MeshDeploy,
+            actual: Some(partition.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut frags = vec![partition.clone(), claimed_machine.clone()];
+                frags.extend(partition_machines.iter().cloned());
+                frags
+            },
+        },
+        DeployError::PartitionParallelRootNonHost {
+            partition,
+            machine,
+            parallel,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshPartitionParallelRootNonHost,
+            stage: Stage::MeshDeploy,
+            actual: Some(partition.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![partition.clone(), machine.clone(), parallel.clone()],
+        },
+        DeployError::PartitionBarrierTimeoutWithoutRoot { partition, value } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::MeshPartitionBarrierTimeoutWithoutRoot,
+                stage: Stage::MeshDeploy,
+                actual: Some(partition.clone()),
+                expected: None,
+                fix: None,
+                key_fragments: vec![partition.clone(), value.to_string()],
+            }
+        }
     }
 }
 

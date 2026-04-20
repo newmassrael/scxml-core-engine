@@ -31,6 +31,14 @@ partitions:
     # accepts the field end-to-end; the codegen consumer is still
     # the §14 L2730 default-resolution scope.
     transport_binding: shm
+    # §14 rule 12: motor_left claims root for <parallel id="root">.
+    # The claim is load-bearing — without it the distributed parallel
+    # (regions left + right split across two partitions) would fire
+    # `mesh/partition-parallel-root-undesignated`, and the
+    # `barrier_timeout_ms:` below would fire
+    # `mesh/partition-barrier-timeout-without-root`.
+    hosts_parallel_roots:
+      - { machine: motor_partition, parallel: root }
     # §14 L2731-2732: finite positive values are accepted; None /
     # absent keeps the W3C normative default (infinity). The §16.5
     # runtime consumer is out of scope for this fixture.

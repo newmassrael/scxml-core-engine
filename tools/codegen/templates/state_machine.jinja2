@@ -64,6 +64,14 @@
 #include "core/HierarchicalStateHelper.h"
 #include "core/ConflictResolutionHelper.h"
 #include "core/ParallelCompletionHelper.h"
+{% if model.partition_parallel_roles %}
+// SCE_MESH.md §14 rule 12 / §16.5 — distributed `<parallel>` runtime.
+#include "mesh/MeshEnvelope.h"
+#include "mesh/ParallelCompletionTracker.h"
+#include "mesh/PatternKind.h"
+#include "mesh/PayloadCodec.h"
+#include <stdexcept>
+{% endif %}
 {% endif %}
 #include "common/EventDataHelper.h"
 {% if model.needs_donedata_helper %}
@@ -540,6 +548,89 @@ public:
     // W3C SCXML 6.4.1: Wrapper for setting invoke params (delegates to policy)
     void setParamInScriptEngine(const std::string& paramName, const std::string& paramExpr) {
         this->policy_.setParamInScriptEngine(paramName, paramExpr);
+    }
+{% endif %}
+
+{# ── SCE_MESH.md §14 rule 12 / §16.5 per-`<parallel>` role members ── #}
+{% set _role_stats = namespace(has_root=false, has_nonroot=false) %}
+{% if model.partition_parallel_roles %}
+{% for _pid, _role in model.partition_parallel_roles | items %}
+{% if _role == 'Root' %}{% set _role_stats.has_root = true %}{% endif %}
+{% if _role == 'NonRoot' %}{% set _role_stats.has_nonroot = true %}{% endif %}
+{% endfor %}
+{% endif %}
+{% if model.partition_parallel_roles %}
+{% for _pid, _role in model.partition_parallel_roles | items %}
+{% if _role == 'Root' %}
+    // SCE_MESH.md §14 rule 12 / §16.5 Root tracker for <parallel id="{{ _pid }}">.
+    // Public so executeEntryActions (Policy context) can call onLocalRegionComplete
+    // via `engine.tracker_{{ _pid }}_`. Expected region count is a compile-time
+    // constant baked in from `model.parallel_regions`.
+    ::SCE::Mesh::ParallelCompletionTracker tracker_{{ _pid }}_ {
+        {{ model.parallel_regions[_pid] | length }},
+        [this]() {
+            AOT_DEBUG("§16.5 tracker fired for <parallel id=\"{{ _pid }}\">, raising done.state.{{ _pid }}");
+            this->raise(typename PolicyType::EventWithMetadata(PolicyType::Event::Done_state_{{ _pid }}));
+        }
+    };
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if _role_stats.has_root %}
+    /// SCE_MESH.md §16.5 wire-21 receiver hook. `MeshDispatch::dispatchEnvelope`
+    /// probes this method via SFINAE — existence makes the SM eligible to
+    /// receive remote `ParallelRegionDone` envelopes into per-parallel
+    /// trackers. The envelope's `subject` is `<parallel_id>/<region_id>`;
+    /// we split on '/' and dispatch to the named tracker.
+    void onParallelRegionDone(const ::SCE::Mesh::MeshEnvelope& env) {
+        const auto& subject = env.subject;
+        auto slash = subject.find('/');
+        if (slash == std::string::npos) return;
+        const std::string parallel_id = subject.substr(0, slash);
+        const std::string region_id = subject.substr(slash + 1);
+{% if model.partition_parallel_roles %}
+{% for _pid, _role in model.partition_parallel_roles | items %}
+{% if _role == 'Root' %}
+        if (parallel_id == "{{ _pid }}") {
+            this->tracker_{{ _pid }}_.onRemoteRegionComplete(region_id);
+            return;
+        }
+{% endif %}
+{% endfor %}
+{% endif %}
+    }
+{% endif %}
+{% if _role_stats.has_nonroot %}
+    /// SCE_MESH.md §14 rule 12 / §16.5 wire-21 sender hook. Called from a
+    /// non-root partition's region-final entry when that region enters
+    /// its `<final>` child. Constructs the `ParallelRegionDone` envelope
+    /// and routes it to the root partition's transport.
+    ///
+    /// The inter-partition transport routing (selecting the
+    /// `transport_binding` of the partition graph and delivering the
+    /// envelope to the root partition) is a §16.5 runtime concern whose
+    /// full wiring lives alongside the partition-execution harness. This
+    /// codegen-emitted method constructs the envelope shape (correct
+    /// wire value, subject, codec) and hands it to the mesh runtime;
+    /// absent the §16.5 harness, it fails loudly so silent drops are
+    /// impossible.
+    void sendParallelRegionDone(const std::string& parallel_id,
+                                const std::string& region_id,
+                                const std::string& donedata) {
+        ::SCE::Mesh::MeshEnvelope env;
+        env.pattern = ::SCE::Mesh::PatternKind::ParallelRegionDone;
+        env.subject = parallel_id + "/" + region_id;
+        env.data.assign(donedata.begin(), donedata.end());
+        env.codec = ::SCE::Mesh::PayloadCodec::Json;
+        // §16.5 inter-partition transport_binding router is not yet
+        // wired in the generated SM layer — failing loudly here keeps
+        // silent drops impossible (SCE_MESH.md §14 L2844 rule 12
+        // bundle). Wiring lands with the partition-execution harness.
+        throw std::runtime_error(
+            "SCE Mesh §16.5: non-root partition emitted ParallelRegionDone "
+            "(subject=" + env.subject + ") but inter-partition transport is "
+            "not yet wired — complete the §16.5 harness before running "
+            "distributed fixtures that rely on non-root wire-21 delivery.");
     }
 {% endif %}
 };

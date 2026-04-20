@@ -851,24 +851,39 @@ pub struct MeshResult {
 /// here because unsubscribe events may lack Event enum variants in the
 /// SM — those sends are transport-level lifecycle actions that only the
 /// transport codegen needs to see.
-/// SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844): flip
-/// `model.partition_context_present` based on whether `model.name`
-/// (or its `source:`-aliased deploy-yaml name) appears under any
-/// `partitions.<name>.machines:` list.
+/// SCE_MESH.md §14 rule 12: populate partition-aware codegen context
+/// on `model`. Always sets `partition_context_present` based on whether
+/// `model.name` (or its `source:`-aliased deploy-yaml name) appears
+/// under any `partitions.<name>.machines:` list. When `for_partition`
+/// names a concrete partition, additionally populates
+/// `partition_parallel_roles` with per-`<parallel>` role assignments
+/// (Root / NonRoot / SinglePartition) for that partition's
+/// perspective.
 ///
 /// Must run BEFORE C++ SM code generation so the template dispatches
 /// between the inline `<parallel>`-final branch and the delegated
-/// `mesh/cpp/parallel_final.jinja2` include. Idempotent: the flag is
-/// a pure function of the deploy.yaml and the machine identifier, so
-/// re-running overwrites with the same value.
+/// `mesh/cpp/parallel_final.jinja2` include, and within the delegate
+/// between the three per-parallel role branches. Idempotent: the
+/// output is a pure function of the deploy.yaml, the machine
+/// identifier, and the partition identifier.
 ///
-/// Returns the resolved flag value so CLI / build.rs callers can log
-/// or test the decision without re-parsing the deploy config. No
-/// partition values are read — only set-membership — to stay within
-/// the scaffolding carve-out.
+/// Returns the resolved `partition_context_present` flag so CLI /
+/// build.rs callers can log or test the membership decision.
 pub fn inject_partition_context_flag(
     model: &mut SCXMLModel,
     deploy_path: &Path,
+) -> Result<bool, mesh::error::MeshError> {
+    inject_partition_context_for(model, deploy_path, None)
+}
+
+/// Partition-aware form of [`inject_partition_context_flag`]. Pass
+/// `Some(<partition_name>)` to fill the per-`<parallel>` role map for
+/// that partition's codegen build; pass `None` to keep the role map
+/// empty (matching the pre-rule-12 scaffolding behaviour).
+pub fn inject_partition_context_for(
+    model: &mut SCXMLModel,
+    deploy_path: &Path,
+    for_partition: Option<&str>,
 ) -> Result<bool, mesh::error::MeshError> {
     let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
     let resolved_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
@@ -880,6 +895,76 @@ pub fn inject_partition_context_flag(
     };
     let present = mesh::partitions::is_machine_partition_listed(&deploy_cfg, &resolved_name);
     model.partition_context_present = present;
+    model.partition_parallel_roles.clear();
+
+    if let Some(partition_name) = for_partition {
+        if let Some(partitions) = &deploy_cfg.partitions {
+            let Some(decl) = partitions.get(partition_name) else {
+                return Err(mesh::error::MeshError::Deploy(
+                    mesh::error::DeployError::PartitionParallelRootNotInMachines {
+                        partition: partition_name.to_string(),
+                        claimed_machine: resolved_name.clone(),
+                        partition_machines: vec![],
+                    },
+                ));
+            };
+
+            // Claims made by the selected partition — used to mark
+            // `<parallel>` ids where this partition is Root.
+            let claimed_roots: std::collections::BTreeSet<&String> = decl
+                .hosts_parallel_roots
+                .as_ref()
+                .map(|v| v.iter().filter(|e| e.machine == resolved_name).map(|e| &e.parallel).collect())
+                .unwrap_or_default();
+
+            // Regions of `resolved_name` hosted by ANY partition —
+            // used to detect whether a `<parallel>` is distributed.
+            let mut parallel_partitions: std::collections::BTreeMap<&String, std::collections::BTreeSet<&String>> =
+                std::collections::BTreeMap::new();
+            for (part_name, part_decl) in partitions.iter() {
+                for r in &part_decl.contains.parallel_regions {
+                    if r.machine != resolved_name {
+                        continue;
+                    }
+                    for (parallel_id, regions) in &model.parallel_regions {
+                        if regions.iter().any(|reg| reg == &r.region) {
+                            parallel_partitions
+                                .entry(parallel_id)
+                                .or_default()
+                                .insert(part_name);
+                        }
+                    }
+                }
+            }
+
+            for (parallel_id, _) in &model.parallel_regions {
+                let hosting = parallel_partitions
+                    .get(parallel_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let role = if hosting.len() < 2 {
+                    // Regions live in at most one partition — legacy
+                    // ParallelCompletionHelper path is correct.
+                    model::PartitionRole::SinglePartition
+                } else if claimed_roots.contains(parallel_id) {
+                    model::PartitionRole::Root
+                } else if hosting.contains(&partition_name.to_string()) {
+                    model::PartitionRole::NonRoot
+                } else {
+                    // This partition hosts no region of the
+                    // `<parallel>` — treat as SinglePartition (template
+                    // won't render the inline branch because
+                    // `entry_exit_actions.jinja2` only emits
+                    // `<parallel>`-final code for regions hosted here).
+                    model::PartitionRole::SinglePartition
+                };
+                model
+                    .partition_parallel_roles
+                    .insert(parallel_id.clone(), role);
+            }
+        }
+    }
+
     Ok(present)
 }
 

@@ -439,6 +439,16 @@ pub enum DiagnosticCode {
     MeshDeployPartitionTransportBindingUnsupported,
     #[serde(rename = "mesh/deploy-partition-barrier-timeout-invalid")]
     MeshDeployPartitionBarrierTimeoutInvalid,
+    #[serde(rename = "mesh/partition-parallel-root-undesignated")]
+    MeshPartitionParallelRootUndesignated,
+    #[serde(rename = "mesh/partition-parallel-root-ambiguous")]
+    MeshPartitionParallelRootAmbiguous,
+    #[serde(rename = "mesh/partition-parallel-root-not-in-machines")]
+    MeshPartitionParallelRootNotInMachines,
+    #[serde(rename = "mesh/partition-parallel-root-non-host")]
+    MeshPartitionParallelRootNonHost,
+    #[serde(rename = "mesh/partition-barrier-timeout-without-root")]
+    MeshPartitionBarrierTimeoutWithoutRoot,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -629,6 +639,11 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPartitionPoolMachine,
         MeshDeployPartitionTransportBindingUnsupported,
         MeshDeployPartitionBarrierTimeoutInvalid,
+        MeshPartitionParallelRootUndesignated,
+        MeshPartitionParallelRootAmbiguous,
+        MeshPartitionParallelRootNotInMachines,
+        MeshPartitionParallelRootNonHost,
+        MeshPartitionBarrierTimeoutWithoutRoot,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -804,6 +819,13 @@ impl DiagnosticCode {
             | MeshDeployPartitionTransportBindingUnsupported
             | MeshDeployPartitionBarrierTimeoutInvalid => Some("SCE Mesh §14"),
 
+            // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
+            MeshPartitionParallelRootUndesignated
+            | MeshPartitionParallelRootAmbiguous
+            | MeshPartitionParallelRootNotInMachines
+            | MeshPartitionParallelRootNonHost
+            | MeshPartitionBarrierTimeoutWithoutRoot => Some("SCE Mesh §14 rule 12"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -962,6 +984,11 @@ impl DiagnosticCode {
             MeshDeployPartitionPoolMachine => "mesh/deploy-partition-pool-machine",
             MeshDeployPartitionTransportBindingUnsupported => "mesh/deploy-partition-transport-binding-unsupported",
             MeshDeployPartitionBarrierTimeoutInvalid => "mesh/deploy-partition-barrier-timeout-invalid",
+            MeshPartitionParallelRootUndesignated => "mesh/partition-parallel-root-undesignated",
+            MeshPartitionParallelRootAmbiguous => "mesh/partition-parallel-root-ambiguous",
+            MeshPartitionParallelRootNotInMachines => "mesh/partition-parallel-root-not-in-machines",
+            MeshPartitionParallelRootNonHost => "mesh/partition-parallel-root-non-host",
+            MeshPartitionBarrierTimeoutWithoutRoot => "mesh/partition-barrier-timeout-without-root",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2571,6 +2598,57 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:2b289d036acef025","code":"mesh/deploy-partition-barrier-timeout-invalid","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'motor_left': `barrier_timeout_ms: 0` is invalid — barrier_timeout_ms (0) would fire the §16.5 parallel-final barrier before any region can report ParallelRegionDone. SCE Mesh §14 L2731-2732 pins the W3C normative default as infinity (null / field omitted); finite values must be >= 1 ms. Either fix the value or drop the key to accept the default.","actual":"motor_left"}"#,
             ),
             (
+                "mesh/partition-parallel-root-undesignated",
+                DeployError::PartitionParallelRootUndesignated {
+                    machine: "motor".into(),
+                    parallel: "root".into(),
+                    hosting_partitions: vec!["motor_left".into(), "motor_right".into()],
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:3e54ff7bc3314b81","code":"mesh/partition-parallel-root-undesignated","stage":"mesh-deploy","spec":"SCE Mesh §14 rule 12","message":"machine 'motor': distributed `<parallel id=\"root\">` (regions span partitions 'motor_left', 'motor_right') has no root claimant. SCE Mesh §14 rule 12 requires exactly one partition to declare `hosts_parallel_roots: [{ machine: motor, parallel: root }]`. Add the entry to one of the listed partitions — the root must co-host at least one region of the parallel.","actual":"motor/root"}"#,
+            ),
+            (
+                "mesh/partition-parallel-root-ambiguous",
+                DeployError::PartitionParallelRootAmbiguous {
+                    machine: "motor".into(),
+                    parallel: "root".into(),
+                    claiming_partitions: vec!["motor_left".into(), "motor_right".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:edd08e9e1ce92654","code":"mesh/partition-parallel-root-ambiguous","stage":"mesh-deploy","spec":"SCE Mesh §14 rule 12","message":"machine 'motor': `<parallel id=\"root\">` is claimed as root by multiple partitions: 'motor_left', 'motor_right'. SCE Mesh §14 rule 12 requires exactly one claimant per distributed parallel. Remove the entry from all but one partition's `hosts_parallel_roots:`.","actual":"motor/root"}"#,
+            ),
+            (
+                "mesh/partition-parallel-root-not-in-machines",
+                DeployError::PartitionParallelRootNotInMachines {
+                    partition: "motor_left".into(),
+                    claimed_machine: "brake".into(),
+                    partition_machines: vec!["motor".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2c9a433f272223bc","code":"mesh/partition-parallel-root-not-in-machines","stage":"mesh-deploy","spec":"SCE Mesh §14 rule 12","message":"partition 'motor_left': `hosts_parallel_roots:` entry claims machine 'brake' but the partition's `machines:` list is ['motor']. SCE Mesh §14 rule 12 applies rule 9 shape to root entries — the claimed machine must be one the partition already lists. Either add 'brake' to `machines:` or move the `hosts_parallel_roots:` entry to a partition that already lists it.","actual":"motor_left"}"#,
+            ),
+            (
+                "mesh/partition-parallel-root-non-host",
+                DeployError::PartitionParallelRootNonHost {
+                    partition: "motor_default".into(),
+                    machine: "motor".into(),
+                    parallel: "root".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:62c032a8a89709d9","code":"mesh/partition-parallel-root-non-host","stage":"mesh-deploy","spec":"SCE Mesh §14 rule 12","message":"partition 'motor_default': claims root for machine 'motor' `<parallel id=\"root\">` but hosts no region of that parallel in `contains.parallel_regions:`. SCE Mesh §14 rule 12 requires a root claimant to co-host at least one region — otherwise every region update crosses partitions as inter-partition traffic. Either add a region of the parallel to this partition's `contains:`, or move the `hosts_parallel_roots:` entry to a partition that already hosts one.","actual":"motor_default"}"#,
+            ),
+            (
+                "mesh/partition-barrier-timeout-without-root",
+                DeployError::PartitionBarrierTimeoutWithoutRoot {
+                    partition: "motor_right".into(),
+                    value: 5000,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2c7305b9bb84a6e1","code":"mesh/partition-barrier-timeout-without-root","stage":"mesh-deploy","spec":"SCE Mesh §14 rule 12","message":"partition 'motor_right': `barrier_timeout_ms: 5000` is set but the partition has no `hosts_parallel_roots:` entries. SCE Mesh §14 rule 12 (L2842) requires the timeout to gate a §16.5 `ParallelCompletionTracker`, and trackers only exist on root-hosting partitions. Either add a `hosts_parallel_roots:` entry (making this partition a root) or drop `barrier_timeout_ms:` (which has no consumer here).","actual":"motor_right"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -3291,6 +3369,11 @@ mod tests {
             | MeshDeployPartitionPoolMachine
             | MeshDeployPartitionTransportBindingUnsupported
             | MeshDeployPartitionBarrierTimeoutInvalid
+            | MeshPartitionParallelRootUndesignated
+            | MeshPartitionParallelRootAmbiguous
+            | MeshPartitionParallelRootNotInMachines
+            | MeshPartitionParallelRootNonHost
+            | MeshPartitionBarrierTimeoutWithoutRoot
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3578,6 +3661,11 @@ mod tests {
                 | MeshDeployPartitionPoolMachine
                 | MeshDeployPartitionTransportBindingUnsupported
                 | MeshDeployPartitionBarrierTimeoutInvalid
+                | MeshPartitionParallelRootUndesignated
+                | MeshPartitionParallelRootAmbiguous
+                | MeshPartitionParallelRootNotInMachines
+                | MeshPartitionParallelRootNonHost
+                | MeshPartitionBarrierTimeoutWithoutRoot
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3612,9 +3700,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            115,
+            120,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 115 distinct variants to match the DiagnosticCode \
+             expected 120 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

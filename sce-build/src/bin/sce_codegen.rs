@@ -323,6 +323,15 @@ enum Commands {
         /// the state machine code. SM output remains identical.
         #[arg(long)]
         deploy: Option<String>,
+        /// Partition identity for `<parallel>` rule-12 role assignment
+        /// (SCE_MESH.md §14 rule 12, §16.5). When supplied together
+        /// with `--deploy`, the generated SM code branches per
+        /// `<parallel>` on this partition's role (Root / NonRoot /
+        /// SinglePartition). Ignored without `--deploy`. Omitting the
+        /// flag preserves P0 behaviour — all parallels render via the
+        /// legacy single-partition path.
+        #[arg(long)]
+        partition: Option<String>,
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
@@ -417,6 +426,7 @@ fn main() {
             format_style,
             no_format,
             deploy,
+            partition,
         } => cmd_generate(
             &scxml,
             &language,
@@ -427,6 +437,7 @@ fn main() {
             format_style.as_deref(),
             no_format,
             deploy.as_deref(),
+            partition.as_deref(),
             error_format,
         ),
         Commands::GenerateW3c {
@@ -472,6 +483,7 @@ fn cmd_generate(
     format_style: Option<&str>,
     no_format: bool,
     deploy_path: Option<&str>,
+    for_partition: Option<&str>,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -680,15 +692,17 @@ fn cmd_generate(
         if let Err(e) = sce_build::inject_server_model_mutations(&mut model, Path::new(deploy_file)) {
             error_format.emit_and_exit(&e, "Server model injection error: ");
         }
-        // SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844):
-        // surface partition-membership existence to the C++ template
-        // so `<parallel>`-final emission can delegate to
-        // `mesh/cpp/parallel_final.jinja2`. The delegate's body is a
-        // byte-identical copy of the inline branch — the atomic
-        // semantic payload (validator + §16.5 `ParallelCompletionTracker`
-        // runtime + partition-aware branch body) is deliberately out
-        // of scope for this scaffold per the §14 L2844 banner.
-        if let Err(e) = sce_build::inject_partition_context_flag(&mut model, Path::new(deploy_file)) {
+        // SCE_MESH.md §14 rule 12: surface partition context. The
+        // `partition_context_present` flag toggles the template's
+        // delegation into `mesh/cpp/parallel_final.jinja2`; the
+        // per-`<parallel>` `partition_parallel_roles` map drives the
+        // delegate's Root / NonRoot / SinglePartition branch selection
+        // when `--partition` is supplied.
+        if let Err(e) = sce_build::inject_partition_context_for(
+            &mut model,
+            Path::new(deploy_file),
+            for_partition,
+        ) {
             error_format.emit_and_exit(&e, "Partition context injection error: ");
         }
     }

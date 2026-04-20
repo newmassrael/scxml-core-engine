@@ -30,7 +30,7 @@
 //! when a Rust `Option<x>` field in a non-wire-format file carries
 //! `skip_serializing_if = "Option::is_none"`.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::model::InlineKind;
@@ -640,23 +640,56 @@ pub struct SCXMLModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub needs_event_scheduler: Option<bool>,
 
-    /// SCE_MESH.md §14 rule 12 scaffolding carve-out: set to `true` when
-    /// this machine is listed under any `partitions.<name>.machines:`
-    /// entry in a `--deploy` deploy.yaml. A pure existence flag — the
-    /// partition graph's shape, the unit assignments, and the (still
-    /// rejected) `hosts_parallel_roots:` value are deliberately NOT
-    /// surfaced. The C++ `<parallel>`-final emission branches on this
-    /// boolean to delegate into `mesh/cpp/parallel_final.jinja2` when
-    /// true; the delegate's P0 body is a byte-identical copy of the
-    /// inline path so a partition-listed single-process machine
-    /// currently produces the same code as a non-partitioned one.
-    /// The atomic semantic payload (validator + `ParallelCompletionTracker`
-    /// runtime + partition-aware branch body) lands together — see the
-    /// §14 L2844 status banner — which is why this flag alone reads
-    /// nothing beyond existence: downgrading to "value read" would
-    /// re-introduce the "built but unconsumed" anti-pattern.
+    /// SCE_MESH.md §14 rule 12: set to `true` when this machine is
+    /// listed under any `partitions.<name>.machines:` entry in a
+    /// `--deploy` deploy.yaml. Gates the delegation from
+    /// `entry_exit_actions.jinja2`'s inline `<parallel>`-final branch
+    /// to `mesh/cpp/parallel_final.jinja2`. The delegate's body now
+    /// also inspects [`Self::partition_parallel_roles`] to select
+    /// between single-partition fallback, root-branch, and non-root
+    /// branch emission — so a partition-listed machine built without a
+    /// `--partition` argument still produces P0-compatible code
+    /// (role map empty ⇒ every parallel falls through to the
+    /// single-partition branch).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub partition_context_present: bool,
+
+    /// SCE_MESH.md §14 rule 12: per-`<parallel>` role assignment for
+    /// the partition currently being codegen'd, keyed by `<parallel>`
+    /// element id. Populated by
+    /// [`crate::inject_partition_context_flag`] **only** when a
+    /// `--partition <name>` argument is supplied — a partitioned
+    /// machine built without a partition argument keeps this map
+    /// empty, and the `mesh/cpp/parallel_final.jinja2` template falls
+    /// through to the single-partition branch (preserving P0 output
+    /// for fixtures that exercise the scaffolding hook alone). A
+    /// `<parallel>` id absent from the map renders as single-partition
+    /// regardless of whether other parallels in the same machine are
+    /// distributed.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub partition_parallel_roles: std::collections::BTreeMap<String, PartitionRole>,
+}
+
+/// SCE_MESH.md §14 rule 12 — partition's role for a specific
+/// `<parallel>`. A machine's partitions each hold one of these per
+/// `<parallel>` the machine declares. Only surfaced when codegen is
+/// invoked with `--partition <name>`; absent (map-missing) implies
+/// single-partition fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub enum PartitionRole {
+    /// This partition claims the `<parallel>` root via
+    /// `hosts_parallel_roots:`. Owns the §16.5
+    /// `ParallelCompletionTracker` and raises `done.state.<parallel_id>`
+    /// into the SM's local external queue on threshold.
+    Root,
+    /// This partition hosts one or more regions of the `<parallel>`
+    /// but is not the root. Emits wire-21 `ParallelRegionDone`
+    /// envelopes on local region-final entry; holds no tracker.
+    NonRoot,
+    /// All regions of this `<parallel>` live in this same partition —
+    /// equivalent to a single-process parallel. The template uses the
+    /// legacy `ParallelCompletionHelper` path (P0 body).
+    SinglePartition,
 }
 
 /// Maximum recursion depth for resolving nested initial states to leaf states.

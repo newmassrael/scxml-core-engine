@@ -156,9 +156,169 @@ fn partition_listed_machines(cfg: &DeployConfig) -> BTreeSet<String> {
     listed
 }
 
+/// SCE_MESH.md §14 rule 12 cross-reference validator. Every
+/// distributed `<parallel>` (regions span two or more partitions) must
+/// have exactly one partition claiming its root via
+/// `partitions.<name>.hosts_parallel_roots:`, and every such claim
+/// must satisfy the shape constraints in the spec (rule-9 machine
+/// membership, co-hosting at least one region of the claimed parallel).
+/// The five diagnostics at spec L2838-L2842 are spawned from this
+/// function: `undesignated`, `ambiguous`, `not-in-machines`, `non-host`,
+/// and `barrier-timeout-without-root`.
+///
+/// Single-partition `<parallel>`s (all regions live in one partition)
+/// have that partition as implicit root — the `hosts_parallel_roots:`
+/// entry may be omitted. Monolithic machines (absent from every
+/// partition's `machines:` list) never enter this check; their
+/// `<parallel>`s run single-process per spec L2791.
+///
+/// Called from [`validate_partitions_against_models`] after rule-1/2/11
+/// coverage validation has passed — rule 12 assumes every unit has a
+/// home and therefore every partition's `contains:` can be trusted as
+/// the authoritative region assignment.
+pub fn validate_parallel_root_designation(
+    cfg: &DeployConfig,
+    models: &BTreeMap<String, SCXMLModel>,
+) -> Result<(), DeployError> {
+    let Some(partitions) = &cfg.partitions else {
+        return Ok(());
+    };
+
+    // Pass 1 — per-entry shape + non-host checks, and aggregate
+    // (machine, parallel) → claimants for the ambiguity check.
+    let mut claims_by_parallel: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+
+    for (partition_name, decl) in partitions.iter() {
+        // §14 rule 12 L2842 — `barrier_timeout_ms:` without any
+        // `hosts_parallel_roots:` entry is a silent-broken knob (no
+        // §16.5 tracker exists on the partition to gate). Treat the
+        // `None` and `Some(vec![])` shapes identically — neither
+        // declares a root.
+        let declares_root = decl
+            .hosts_parallel_roots
+            .as_ref()
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
+
+        if let Some(value) = decl.barrier_timeout_ms {
+            if !declares_root {
+                return Err(DeployError::PartitionBarrierTimeoutWithoutRoot {
+                    partition: partition_name.clone(),
+                    value,
+                });
+            }
+        }
+
+        let Some(roots) = decl.hosts_parallel_roots.as_ref() else {
+            continue;
+        };
+
+        for root in roots {
+            // §14 rule 12 L2840 — rule-9 shape: the claimed machine
+            // must be one the partition already lists.
+            if !decl.machines.iter().any(|m| m == &root.machine) {
+                return Err(DeployError::PartitionParallelRootNotInMachines {
+                    partition: partition_name.clone(),
+                    claimed_machine: root.machine.clone(),
+                    partition_machines: decl.machines.clone(),
+                });
+            }
+
+            // §14 rule 12 L2841 — non-host: the partition must
+            // co-host at least one region of the claimed parallel.
+            // The claim is "a region of <parallel id=root.parallel>
+            // in machine=root.machine sits in this partition's
+            // `contains.parallel_regions:`".
+            let parallel_regions = models
+                .get(&root.machine)
+                .and_then(|m| m.parallel_regions.get(&root.parallel));
+
+            let co_hosts = match parallel_regions {
+                None => false,
+                Some(regions_of_parallel) => decl
+                    .contains
+                    .parallel_regions
+                    .iter()
+                    .any(|r| r.machine == root.machine && regions_of_parallel.contains(&r.region)),
+            };
+
+            if !co_hosts {
+                return Err(DeployError::PartitionParallelRootNonHost {
+                    partition: partition_name.clone(),
+                    machine: root.machine.clone(),
+                    parallel: root.parallel.clone(),
+                });
+            }
+
+            claims_by_parallel
+                .entry((root.machine.clone(), root.parallel.clone()))
+                .or_default()
+                .push(partition_name.clone());
+        }
+    }
+
+    // Pass 2a — ambiguous claimants on the same (machine, parallel)
+    // pair. Iteration is in `BTreeMap` key order, so the reported
+    // partition list is deterministic across parses.
+    for ((machine, parallel), claimants) in &claims_by_parallel {
+        if claimants.len() > 1 {
+            return Err(DeployError::PartitionParallelRootAmbiguous {
+                machine: machine.clone(),
+                parallel: parallel.clone(),
+                claiming_partitions: claimants.clone(),
+            });
+        }
+    }
+
+    // Pass 2b — every distributed `<parallel>` must have exactly one
+    // claimant. Walk the machines that appear under some partition's
+    // `machines:` list (monolithic machines are exempt per spec
+    // L2791). For each `<parallel>`, compute the set of partitions
+    // hosting any of its regions; if that set has cardinality ≥ 2 the
+    // parallel is distributed and needs a claim.
+    let listed = partition_listed_machines(cfg);
+    for machine in &listed {
+        let Some(model) = models.get(machine) else {
+            // Rule-1/2 would have fired earlier on a missing model;
+            // rule 12 silently skips so it never overshadows the
+            // earlier diagnostic.
+            continue;
+        };
+        for (parallel_id, regions_of_parallel) in &model.parallel_regions {
+            let hosting: BTreeSet<String> = partitions
+                .iter()
+                .filter(|(_, decl)| {
+                    decl.contains.parallel_regions.iter().any(|r| {
+                        r.machine == *machine && regions_of_parallel.contains(&r.region)
+                    })
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+
+            if hosting.len() < 2 {
+                // Single-partition (or unhosted, caught by rule 1)
+                // — no root designation required.
+                continue;
+            }
+
+            let claimed =
+                claims_by_parallel.contains_key(&(machine.clone(), parallel_id.clone()));
+            if !claimed {
+                return Err(DeployError::PartitionParallelRootUndesignated {
+                    machine: machine.clone(),
+                    parallel: parallel_id.clone(),
+                    hosting_partitions: hosting.into_iter().collect(),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Pure cross-reference validator: given a parsed
 /// [`DeployConfig`] and a model-per-machine map, apply SCE_MESH.md §14
-/// rules 1, 2, and 11.
+/// rules 1, 2, 11, and 12.
 ///
 /// The caller is responsible for having parsed every machine named in
 /// any partition's `machines:` list; a missing entry is itself treated
@@ -215,6 +375,13 @@ pub fn validate_partitions_against_models(
             missing: uncovered,
         });
     }
+
+    // §14 rule 12 — parallel root designation. Runs after rules
+    // 1/2/11 so a coverage failure surfaces the repair for the cheaper
+    // cause before the author is asked about distributed-parallel
+    // designation.
+    validate_parallel_root_designation(cfg, models)?;
+
     Ok(())
 }
 
@@ -338,6 +505,9 @@ mod tests {
 
     #[test]
     fn happy_path_full_coverage_passes() {
+        // Two regions split across two partitions. With rule 12 now
+        // enforcing root designation, a distributed parallel needs a
+        // claimant — brake_left volunteers.
         let deploy = r#"
 topology:
   ecu:
@@ -349,6 +519,8 @@ partitions:
     contains:
       parallel_regions:
         - { machine: brake, region: left }
+    hosts_parallel_roots:
+      - { machine: brake, parallel: root }
   brake_right:
     machines: [brake]
     contains:
@@ -539,5 +711,278 @@ topology:
         models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
         validate_partitions_against_models(&cfg, &models)
             .expect("absent partitions block must short-circuit to Ok");
+    }
+
+    // ── §14 rule 12 — parallel root designation ─────────────────
+
+    #[test]
+    fn rule12_distributed_parallel_without_root_fires_undesignated() {
+        // brake has two regions split across two partitions and no
+        // partition claims root — must surface undesignated.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_left:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+  brake_right:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: right }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        let err = validate_partitions_against_models(&cfg, &models)
+            .expect_err("distributed parallel with no claimant must fail");
+        match err {
+            DeployError::PartitionParallelRootUndesignated {
+                machine,
+                parallel,
+                hosting_partitions,
+            } => {
+                assert_eq!(machine, "brake");
+                assert_eq!(parallel, "root");
+                assert_eq!(hosting_partitions, vec!["brake_left", "brake_right"]);
+            }
+            other => panic!("expected PartitionParallelRootUndesignated, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rule12_single_partition_parallel_has_implicit_root() {
+        // All regions live in one partition — no claim needed, no error.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_all:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+        - { machine: brake, region: right }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        validate_partitions_against_models(&cfg, &models)
+            .expect("single-partition parallel has implicit root — no error");
+    }
+
+    #[test]
+    fn rule12_valid_root_claim_passes() {
+        // Distributed parallel with exactly one claimant that co-hosts
+        // one of the regions — rule 12 accepts.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_left:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+    hosts_parallel_roots:
+      - { machine: brake, parallel: root }
+  brake_right:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: right }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        validate_partitions_against_models(&cfg, &models)
+            .expect("well-formed distributed parallel with one root must pass");
+    }
+
+    #[test]
+    fn rule12_two_claimants_fire_ambiguous() {
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_left:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+    hosts_parallel_roots:
+      - { machine: brake, parallel: root }
+  brake_right:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: right }
+    hosts_parallel_roots:
+      - { machine: brake, parallel: root }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        let err = validate_partitions_against_models(&cfg, &models)
+            .expect_err("two claimants must fail");
+        match err {
+            DeployError::PartitionParallelRootAmbiguous {
+                machine,
+                parallel,
+                claiming_partitions,
+            } => {
+                assert_eq!(machine, "brake");
+                assert_eq!(parallel, "root");
+                assert_eq!(claiming_partitions, vec!["brake_left", "brake_right"]);
+            }
+            other => panic!("expected PartitionParallelRootAmbiguous, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rule12_claim_references_unlisted_machine_fires_not_in_machines() {
+        // Partition claims a parallel in a machine not in its
+        // `machines:` list — rule-9 shape applied to root entries.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+      motor: { source: motor.scxml }
+partitions:
+  brake_left:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+    hosts_parallel_roots:
+      - { machine: motor, parallel: root }
+  brake_right:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: right }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        // motor is untouched so the claim cannot resolve against any model.
+        models.insert(
+            "motor".to_string(),
+            parse_scxml(
+                "motor",
+                r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" name="motor" initial="idle" version="1.0">
+  <state id="idle"/>
+</scxml>
+"#,
+            ),
+        );
+        let err = validate_partitions_against_models(&cfg, &models)
+            .expect_err("claim against non-listed machine must fail");
+        match err {
+            DeployError::PartitionParallelRootNotInMachines {
+                partition,
+                claimed_machine,
+                partition_machines,
+            } => {
+                assert_eq!(partition, "brake_left");
+                assert_eq!(claimed_machine, "motor");
+                assert_eq!(partition_machines, vec!["brake"]);
+            }
+            other => panic!("expected PartitionParallelRootNotInMachines, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rule12_non_host_claimant_fires_non_host() {
+        // Author adds a brake_default partition with an invoke (so
+        // coverage passes) and tries to claim the parallel's root from
+        // there — but brake_default hosts no region of the parallel.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_left:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: monitoring }
+        - { machine: brake, region: control }
+  brake_default:
+    machines: [brake]
+    contains:
+      invokes:
+        - { machine: brake, invoke: compute_force_inv }
+    hosts_parallel_roots:
+      - { machine: brake, parallel: root }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", REGION_WITH_INVOKE));
+        let err = validate_partitions_against_models(&cfg, &models)
+            .expect_err("non-host claimant must fail");
+        match err {
+            DeployError::PartitionParallelRootNonHost {
+                partition,
+                machine,
+                parallel,
+            } => {
+                assert_eq!(partition, "brake_default");
+                assert_eq!(machine, "brake");
+                assert_eq!(parallel, "root");
+            }
+            other => panic!("expected PartitionParallelRootNonHost, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rule12_barrier_timeout_without_root_fires_without_root() {
+        // Partition has barrier_timeout_ms but no hosts_parallel_roots.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_left:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+    barrier_timeout_ms: 5000
+  brake_right:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: right }
+    hosts_parallel_roots:
+      - { machine: brake, parallel: root }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        let err = validate_partitions_against_models(&cfg, &models)
+            .expect_err("barrier_timeout without hosts_parallel_roots must fail");
+        match err {
+            DeployError::PartitionBarrierTimeoutWithoutRoot { partition, value } => {
+                assert_eq!(partition, "brake_left");
+                assert_eq!(value, 5000);
+            }
+            other => panic!("expected PartitionBarrierTimeoutWithoutRoot, got {other:?}"),
+        }
     }
 }

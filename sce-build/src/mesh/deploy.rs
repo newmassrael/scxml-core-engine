@@ -175,6 +175,37 @@ pub struct PartitionDecl {
     /// a `<parallel>`.
     #[serde(default)]
     pub barrier_timeout_ms: Option<u32>,
+    /// Distributed `<parallel>`s this partition claims as the root
+    /// (SCE_MESH.md §14 rule 12, L2729-2735). Each entry names a
+    /// `<parallel>` in one of the partition's listed machines; the
+    /// rule-12 cross-reference validator (see
+    /// [`crate::mesh::partitions::validate_parallel_root_designation`])
+    /// enforces per-`<parallel>` uniqueness of claimants, rule-9 shape
+    /// on `machine:`, and co-hosting of at least one region of the
+    /// claimed parallel. A `<parallel>` whose regions live entirely in
+    /// a single partition has that partition as implicit root; the
+    /// field may be omitted in that case. Absent ⇒ `None` (no claims);
+    /// empty list ⇒ `Some(vec![])` (treated identically to absent, but
+    /// the authors can keep the key visible in source-controlled
+    /// deploys if they prefer the explicit marker).
+    #[serde(default)]
+    pub hosts_parallel_roots: Option<Vec<HostsParallelRoot>>,
+}
+
+/// One entry under `partitions.<name>.hosts_parallel_roots:` — a
+/// `(machine, parallel)` pair naming the `<parallel>` this partition
+/// claims as the root (SCE_MESH.md §14 rule 12). `parallel` is the
+/// `<parallel>` element's `id` attribute as authored in the SCXML
+/// document for `machine`.
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
+#[serde(deny_unknown_fields)]
+pub struct HostsParallelRoot {
+    /// SCXML machine name (deploy.yaml `machines.<name>` key). Must be
+    /// one of the partition's `machines:` entries — rule 9 shape
+    /// enforced by [`crate::mesh::partitions::validate_parallel_root_designation`].
+    pub machine: String,
+    /// `<parallel id>` in the named machine's SCXML document.
+    pub parallel: String,
 }
 
 /// Orthogonal units assigned to a partition — parallel regions and
@@ -1131,16 +1162,14 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
                     return Err(DeployError::PartitionTransportBindingUnsupported {
                         partition: partition_name.clone(),
                         transport: transport_name.to_string(),
-                        failure: crate::mesh::error::PartitionTransportBindingFailure::Unknown {
-                            known_names,
-                        },
+                        failure: PartitionTransportBindingFailure::Unknown { known_names },
                     });
                 }
                 Some(desc) if !desc.supports_inter_partition_ipc => {
                     return Err(DeployError::PartitionTransportBindingUnsupported {
                         partition: partition_name.clone(),
                         transport: transport_name.to_string(),
-                        failure: crate::mesh::error::PartitionTransportBindingFailure::Incapable {
+                        failure: PartitionTransportBindingFailure::Incapable {
                             transport: transport_name.to_string(),
                         },
                     });

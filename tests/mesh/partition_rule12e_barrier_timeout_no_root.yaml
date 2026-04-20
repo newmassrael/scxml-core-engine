@@ -1,0 +1,32 @@
+# SCE Mesh §14 rule 12 — barrier_timeout_ms without hosts_parallel_roots.
+#
+# Expected diagnostic: mesh/partition-barrier-timeout-without-root
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_parallel_root_designation — Pass 1 barrier gate
+#
+# motor_left sets a finite barrier_timeout_ms but declares no
+# hosts_parallel_roots. The §16.5 tracker only exists on root-hosting
+# partitions; a timeout with no tracker to gate is silently broken.
+# Spec §14 rule 12 L2842 requires the knob to accompany an explicit
+# root claim (or to be dropped entirely).
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+    barrier_timeout_ms: 5000
+  motor_right:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }
+    hosts_parallel_roots:
+      - { machine: motor_partition, parallel: root }

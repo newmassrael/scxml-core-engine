@@ -1,0 +1,38 @@
+# SCE Mesh §14 rule 12 — hosts_parallel_roots claims a machine not
+# in the partition's `machines:` list.
+#
+# Expected diagnostic: mesh/partition-parallel-root-not-in-machines
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_parallel_root_designation — Pass 1 rule-9 shape
+#
+# Partition motor_left lists only [motor_partition] but claims a root
+# on machine `other` — rule 9 shape applied to root entries rejects
+# cross-machine claims. Spec §14 rule 12 L2840.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+      other:
+        source: motor_partition.scxml
+
+partitions:
+  motor_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+    hosts_parallel_roots:
+      - { machine: other, parallel: root }
+  motor_right:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }
+  other_all:
+    machines: [other]
+    contains:
+      parallel_regions:
+        - { machine: other, region: left }
+        - { machine: other, region: right }
