@@ -33,10 +33,13 @@
  * @endcode
  */
 
-#ifdef SCE_ENABLE_RUNTIME_LOGGING
-  #include "common/Logger.h"
-  #include "common/SourceLocation.h"
+// Logger declaration is always visible: callers that invoke SCE::Logger
+// directly (setLevel, setBackend, etc.) only need to pull in LogMacros.h.
+// Logger.h has no spdlog dependency and is cheap to include.
+#include "common/Logger.h"
+#include "common/SourceLocation.h"
 
+#ifdef SCE_ENABLE_RUNTIME_LOGGING
   // Format string handling: prefer std::format (C++20), fall back to fmt (spdlog bundled)
   #if __cpp_lib_format >= 201907L
     #include <format>
@@ -66,9 +69,16 @@
   #define SCE_LOG_ERROR(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Error)) \
       SCE::Logger::error(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
 #else
-  #define SCE_LOG_TRACE(...) ((void)0)
-  #define SCE_LOG_DEBUG(...) ((void)0)
-  #define SCE_LOG_INFO(...)  ((void)0)
-  #define SCE_LOG_WARN(...)  ((void)0)
-  #define SCE_LOG_ERROR(...) ((void)0)
+  // No-op branch. Arguments are forwarded to a variadic sink so callers do
+  // not trip -Wunused-parameter when a logged variable would otherwise be
+  // unreferenced. The compiler discards the call entirely at -O1+.
+  namespace SCE::detail {
+  template <typename... Args>
+  inline void log_noop(Args &&...) noexcept {}
+  }  // namespace SCE::detail
+  #define SCE_LOG_TRACE(...) ::SCE::detail::log_noop(__VA_ARGS__)
+  #define SCE_LOG_DEBUG(...) ::SCE::detail::log_noop(__VA_ARGS__)
+  #define SCE_LOG_INFO(...)  ::SCE::detail::log_noop(__VA_ARGS__)
+  #define SCE_LOG_WARN(...)  ::SCE::detail::log_noop(__VA_ARGS__)
+  #define SCE_LOG_ERROR(...) ::SCE::detail::log_noop(__VA_ARGS__)
 #endif

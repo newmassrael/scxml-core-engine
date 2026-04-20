@@ -191,8 +191,13 @@ if(SCE_USE_SPDLOG)
     target_compile_definitions(sce_base PUBLIC SCE_USE_SPDLOG)
 endif()
 
-# Enable runtime logging for sce_base and all consumers
-target_compile_definitions(sce_base PUBLIC SCE_ENABLE_RUNTIME_LOGGING)
+# Runtime logging: PRIVATE so the #ifdef SCE_ENABLE_RUNTIME_LOGGING branch in
+# include/core/LogMacros.h is only taken when compiling SCE's own libraries.
+# External consumers (AOT-generated or embedding code) fall through to the
+# no-op branch, avoiding spdlog include requirements at install-tree compile
+# time — the spdlog headers are exposed only via BUILD_INTERFACE and are not
+# part of the installed tree.
+target_compile_definitions(sce_base PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
 
 # Force include DisableStdOut.h for sce_base source files only
 target_compile_options(sce_base
@@ -306,6 +311,10 @@ if(SCE_HAS_SCRIPTING)
     endif()
 
     target_compile_features(sce_scripting PUBLIC cxx_std_20)
+
+    # sce_scripting .cpp files call SCE_LOG_* — add PRIVATE so the logging
+    # branch compiles here but does not propagate to external consumers.
+    target_compile_definitions(sce_scripting PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
 endif()
 
 # ============================================================================
@@ -521,3 +530,7 @@ if(SCE_ENABLE_HTTP)
 endif()
 
 target_compile_features(sce_runtime PUBLIC cxx_std_20)
+
+# sce_runtime .cpp files call SCE_LOG_* — add PRIVATE so the logging branch
+# compiles here but does not propagate to external consumers.
+target_compile_definitions(sce_runtime PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
