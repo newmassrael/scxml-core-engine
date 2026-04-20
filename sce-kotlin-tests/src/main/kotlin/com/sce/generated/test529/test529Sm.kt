@@ -288,9 +288,10 @@ class Test529StateMachine(
                     val engineDD = scriptEngine ?: return@run
                     val sidDD = scriptSessionId ?: return@run
                     var doneEventData = ""
-                    // W3C SCXML 5.5: Evaluate <content> inline text
+                    // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     try {
                         val contentResult = engineDD.evaluateExpr(sidDD, "21")
+                        // C++ DoneDataHelper::evaluateContent: convertScriptValueToJson
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
                         raiseInternal(Test529Event.Error.Execution, EventMetadata.platform())
