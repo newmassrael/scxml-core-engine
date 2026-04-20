@@ -2242,6 +2242,10 @@ CBOR map integer keys (wire-stable):
 | 11 | rpc_error_message | no | string |
 | 12 | deadline_unix_ms | no | uint64 |
 | 13 | qos | no | nested map |
+| 14 | sequence_no | no | uint64 — per-(source, target) monotonic; §10.6.3 |
+| 15 | routing_id | no | 16 bytes — per-session routing UUID v7; §10.9 |
+| 16 | parallel_id | no | string — §16.5 wire-21 region routing; set together with key 17 |
+| 17 | region_id | no | string — §16.5 wire-21 region routing; set together with key 16 |
 
 Unknown integer keys MUST be skipped by readers. New fields use unused integers; never reuse.
 
@@ -3493,7 +3497,7 @@ W3C §3.7: when every child region of a `<parallel>` reaches `<final>`, the encl
 
 1. The **root partition** for each `<parallel>` is designated at deploy time via `partitions.<name>.hosts_parallel_roots: [{machine, parallel}]` (§14 rule 12) and owns a `ParallelCompletionTracker` for that `<parallel>`. A `<parallel>` whose regions live entirely in a single partition has that partition as implicit root; a `<parallel>` whose regions span two or more partitions requires exactly one explicit claimant. One partition may claim multiple parallels' roots (collapsing tracker ownership into a single per-machine process) or different partitions may each claim a subset of parallels (distributing tracker ownership) — rule 12 constrains per-`<parallel>` uniqueness of claimants, not per-machine cardinality of root-hosting partitions.
 2. **Emission timing**: when the region's `<final>` `<onentry>` executable content completes — i.e., after the final microstep of the macrostep that transitioned into `<final>`, and **before** the region's scheduler yields control — the region partition emits a `ParallelRegionDone` control envelope (wire value 21, dedicated pattern — **not** an overload of another wire value) with:
-   - `subject` = `<parallel_id>/<region_id>` (purely advisory; dispatcher routes on `pattern` alone)
+   - `parallel_id` (CBOR key 16) and `region_id` (CBOR key 17) — typed string fields; senders MUST set BOTH on every wire-21 envelope, receivers silently drop any envelope missing either field (sender contract violation). Dispatcher routes on `pattern` + typed `parallel_id`, not on string-concat parsing of `subject`.
    - `data` = donedata payload computed from the region's `<final>` `<donedata>` (absent if none declared)
    Emission is single-shot per region activation: once a region has emitted, further microsteps within that activation do not re-emit. Re-entry of the parallel (via history or new enter-set computation) resets the tracker and starts a fresh activation.
 3. The root partition's tracker records the completion. When all regions of `<parallel_id>` have reported, the root partition raises `done.state.<PARALLEL_ID>` into its **own external queue** at its current macrostep boundary, so W3C §3.7 ordering (done.state raised at the next stable configuration after the final region completes) is preserved from the root's perspective.

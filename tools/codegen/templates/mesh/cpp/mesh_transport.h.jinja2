@@ -1461,24 +1461,19 @@ struct TransportRouter {
             });
 {% if partition_wire21_outbound_routes %}
             // SCE_MESH.md §16.5 wire-21: install the ParallelRegionDone
-            // callback. The closure dispatches on `env.subject`'s
-            // `<parallel_id>` prefix (subject = "parallel/region") to
-            // pick the matching outbound channel — multiple parallels
-            // sharing the same root partition share one channel, so
-            // the dispatch is on parallel_id, not on the channel name.
-            // Returning false propagates back through `sendParallelRegionDone`
-            // as `std::runtime_error` (fail-loud, see state_machine.jinja2).
+            // callback. The closure dispatches on the typed
+            // `env.parallel_id` (CBOR key 16) to pick the matching
+            // outbound channel — multiple parallels sharing the same
+            // root partition share one channel, so the dispatch is on
+            // parallel_id, not on the channel name. Returning false
+            // propagates back through `sendParallelRegionDone` as
+            // `std::runtime_error` (fail-loud, see state_machine.jinja2).
             sessions_[i]->setParallelRegionDoneCallback(
                 [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
-                    if (!env.subject.has_value()) {
+                    if (!env.parallel_id.has_value() || !env.region_id.has_value()) {
                         return false;  // sender contract violation
                     }
-                    const std::string& subject = *env.subject;
-                    auto slash = subject.find('/');
-                    if (slash == std::string::npos) {
-                        return false;
-                    }
-                    const std::string parallel_id = subject.substr(0, slash);
+                    const std::string& parallel_id = *env.parallel_id;
 {% for r in partition_wire21_outbound_routes %}
                     if (parallel_id == "{{ r.parallel_id }}") {
                         return wire21_to_{{ r.dst_partition_snake }}_.send(env);

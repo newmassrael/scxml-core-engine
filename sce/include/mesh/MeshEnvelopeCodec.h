@@ -37,6 +37,8 @@ inline constexpr int kEnvelopeKeyDeadlineUnixMs  = 12;
 inline constexpr int kEnvelopeKeyQos             = 13;
 inline constexpr int kEnvelopeKeySequenceNo      = 14;
 inline constexpr int kEnvelopeKeyRoutingId       = 15;
+inline constexpr int kEnvelopeKeyParallelId      = 16;  // SCE_MESH.md §16.5 wire-21 region routing
+inline constexpr int kEnvelopeKeyRegionId        = 17;  // SCE_MESH.md §16.5 wire-21 region routing
 
 /// Encode envelope into canonical CBOR bytes.
 ///

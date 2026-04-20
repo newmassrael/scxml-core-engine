@@ -81,6 +81,10 @@ CborError encodeBody(CborEncoder *m, const MeshEnvelope &env) {
         e = encodeUintKey(m, kEnvelopeKeySequenceNo, *env.sequence_no);
     if (e == CborNoError && env.routing_id)
         e = encodeBytes16Key(m, kEnvelopeKeyRoutingId, *env.routing_id);
+    if (e == CborNoError && env.parallel_id)
+        e = encodeStringKey(m, kEnvelopeKeyParallelId, *env.parallel_id);
+    if (e == CborNoError && env.region_id)
+        e = encodeStringKey(m, kEnvelopeKeyRegionId, *env.region_id);
 
     return e;
 }
@@ -97,6 +101,8 @@ size_t countEntries(const MeshEnvelope &env) {
     if (env.deadline_unix_ms)  ++n;
     if (env.sequence_no)       ++n;
     if (env.routing_id)        ++n;
+    if (env.parallel_id)       ++n;
+    if (env.region_id)         ++n;
     return n;
 }
 
@@ -331,6 +337,18 @@ bool decodeEnvelope(const uint8_t *raw, std::size_t len, MeshEnvelope &out) {
             std::array<uint8_t, 16> v{};
             if (!readBytes16(&it, v)) return false;
             out.routing_id = v;
+            break;
+        }
+        case kEnvelopeKeyParallelId: {
+            std::string s;
+            if (!readText(&it, s)) return false;
+            out.parallel_id = std::move(s);
+            break;
+        }
+        case kEnvelopeKeyRegionId: {
+            std::string s;
+            if (!readText(&it, s)) return false;
+            out.region_id = std::move(s);
             break;
         }
         default:

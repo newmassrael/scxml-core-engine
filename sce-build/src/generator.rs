@@ -879,6 +879,22 @@ mod tests {
             body.contains("onParallelRegionDone"),
             "Root role must emit the `onParallelRegionDone` wire-21 receiver method"
         );
+        // §16.5 wire-21 typed envelope — receiver dispatches on the typed
+        // `env.parallel_id` / `env.region_id` (CBOR keys 16/17) without
+        // string concat/split. The earlier `subject = "pid/rid"` +
+        // `subject.find('/')` + `substr` path is retired.
+        assert!(
+            body.contains("env.parallel_id.has_value()") && body.contains("env.region_id.has_value()"),
+            "Root wire-21 receiver must gate on both typed optional fields `parallel_id` and `region_id`; body was:\n{body}"
+        );
+        assert!(
+            !body.contains("env.subject.has_value()"),
+            "Root wire-21 receiver must not read `env.subject` — migrated to typed fields (§16.5)"
+        );
+        assert!(
+            !body.contains("subject.find('/')") && !body.contains("subject.substr"),
+            "Root wire-21 receiver must not string-parse a `subject` field — dispatch is on typed fields"
+        );
         // §16.5 dispatch path: `parallel_final.jinja2` calls
         // `engine.triggerParallelRegionLocalComplete(parallel_id, region_id)`
         // (a base StaticExecutionEngine method); the SM ctor's
@@ -913,6 +929,21 @@ mod tests {
         assert!(
             body.contains("PatternKind::ParallelRegionDone"),
             "NonRoot sender body must construct the wire-21 envelope"
+        );
+        // §16.5 wire-21 typed envelope — sender assigns BOTH typed fields
+        // (`env.parallel_id`, `env.region_id`) on every outbound, replacing
+        // the earlier `env.subject = parallel_id + "/" + region_id` concat.
+        assert!(
+            body.contains("env.parallel_id = parallel_id"),
+            "NonRoot sender must set typed `env.parallel_id` on the wire-21 envelope; body was:\n{body}"
+        );
+        assert!(
+            body.contains("env.region_id = region_id"),
+            "NonRoot sender must set typed `env.region_id` on the wire-21 envelope"
+        );
+        assert!(
+            !body.contains("env.subject = parallel_id"),
+            "NonRoot sender must not populate `env.subject` for wire-21 — migrated to typed fields (§16.5)"
         );
         // §16.5 dispatch path mirrors the Root assertions: the
         // `parallel_final.jinja2` body calls

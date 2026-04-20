@@ -627,20 +627,16 @@ public:
     /// SCE_MESH.md §16.5 wire-21 receiver hook. `MeshDispatch::dispatchEnvelope`
     /// probes this method via SFINAE — existence makes the SM eligible to
     /// receive remote `ParallelRegionDone` envelopes into per-parallel
-    /// trackers. The envelope's `subject` is `<parallel_id>/<region_id>`;
-    /// we split on '/' and dispatch to the named tracker.
+    /// trackers. Dispatch is on the typed `env.parallel_id` (CBOR key 16)
+    /// with `env.region_id` (CBOR key 17) forwarded to the tracker — no
+    /// string concat / substr parsing on the hot path.
     void onParallelRegionDone(const ::SCE::Mesh::MeshEnvelope& env) {
-        // `MeshEnvelope::subject` is std::optional<std::string> (CloudEvents
-        // 'subject' is optional in the wire schema); a wire-21 envelope
-        // without a subject violates the §16.5 sender contract and is
-        // dropped silently — paired with the sender's mandatory
-        // `subject = parallel_id + "/" + region_id` assignment below.
-        if (!env.subject.has_value()) return;
-        const std::string& subject = *env.subject;
-        auto slash = subject.find('/');
-        if (slash == std::string::npos) return;
-        const std::string parallel_id = subject.substr(0, slash);
-        const std::string region_id = subject.substr(slash + 1);
+        // §16.5 sender contract: both `parallel_id` and `region_id` are set
+        // on every wire-21 envelope. An envelope missing either field
+        // violates the contract and is dropped silently here.
+        if (!env.parallel_id.has_value() || !env.region_id.has_value()) return;
+        const std::string& parallel_id = *env.parallel_id;
+        const std::string& region_id = *env.region_id;
 {% if model.partition_parallel_roles %}
 {% for _pid, _role in model.partition_parallel_roles | items %}
 {% if _role == 'Root' %}
@@ -671,23 +667,27 @@ public:
                                 const std::string& donedata) {
         ::SCE::Mesh::MeshEnvelope env;
         env.pattern = ::SCE::Mesh::PatternKind::ParallelRegionDone;
-        env.subject = parallel_id + "/" + region_id;
+        // §16.5 sender contract — set BOTH typed fields. The root's
+        // inbound receiver silently drops any wire-21 envelope missing
+        // either field.
+        env.parallel_id = parallel_id;
+        env.region_id = region_id;
         env.data.assign(donedata.begin(), donedata.end());
         env.datacontenttype = ::SCE::Mesh::PayloadCodec::Json;
-        const std::string subject_text = env.subject.value_or(std::string());
+        const std::string route_text = parallel_id + "/" + region_id;
         if (parallel_region_done_callback_) {
             if (parallel_region_done_callback_(env)) {
                 return;
             }
             throw std::runtime_error(
                 "SCE Mesh §16.5: ParallelRegionDone callback rejected envelope "
-                "(subject=" + subject_text + "). The wire-21 transport "
+                "(parallel_id/region_id=" + route_text + "). The wire-21 transport "
                 "(typically a per-partition shm channel) returned send=false; "
                 "back-pressure or a closed peer is the most common cause.");
         }
         throw std::runtime_error(
             "SCE Mesh §16.5: non-root partition emitted ParallelRegionDone "
-            "(subject=" + subject_text + ") but no wire-21 callback was "
+            "(parallel_id/region_id=" + route_text + ") but no wire-21 callback was "
             "installed on the SM. Construct the generated TransportRouter "
             "for this partition before driving the SM into a region-final "
             "state; the router installs the callback in its ctor.");
@@ -695,10 +695,10 @@ public:
 
     /// SCE_MESH.md §16.5 wire-21 callback installer. The generated
     /// `TransportRouter` ctor calls this with a closure that picks the
-    /// outbound shm channel keyed on `env.subject`'s `<parallel_id>`
-    /// prefix. Re-installing replaces any prior callback (last write
-    /// wins) — the router lifecycle is a strict superset of the SM's,
-    /// so callers normally install once.
+    /// outbound shm channel keyed on `env.parallel_id` (CBOR key 16).
+    /// Re-installing replaces any prior callback (last write wins) — the
+    /// router lifecycle is a strict superset of the SM's, so callers
+    /// normally install once.
     void setParallelRegionDoneCallback(
         std::function<bool(const ::SCE::Mesh::MeshEnvelope&)> cb) {
         parallel_region_done_callback_ = std::move(cb);

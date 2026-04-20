@@ -67,6 +67,18 @@ struct MeshEnvelope {
     /// backward-compat shim).
     std::optional<std::uint64_t>           sequence_no;
 
+    /// SCE_MESH.md §16.5 wire-21 region routing — replaces the earlier
+    /// `subject = "parallel_id/region_id"` string-concat subject field.
+    /// The non-root partition's `sendParallelRegionDone` sets BOTH fields
+    /// on every wire-21 envelope; the root partition's `onParallelRegionDone`
+    /// dispatches by `parallel_id` to the matching `tracker_<pid>_` and
+    /// forwards `region_id` into `onRemoteRegionComplete`. Receiver MUST
+    /// check both `has_value()` and silently drop otherwise — a wire-21
+    /// envelope missing either field violates the sender contract.
+    /// CBOR integer keys 16 (parallel_id) and 17 (region_id).
+    std::optional<std::string>             parallel_id;
+    std::optional<std::string>             region_id;
+
     bool operator==(const MeshEnvelope &other) const noexcept {
         return id                == other.id
             && source            == other.source
@@ -83,7 +95,9 @@ struct MeshEnvelope {
             && deadline_unix_ms  == other.deadline_unix_ms
             && qos               == other.qos
             && sequence_no       == other.sequence_no
-            && routing_id        == other.routing_id;
+            && routing_id        == other.routing_id
+            && parallel_id       == other.parallel_id
+            && region_id         == other.region_id;
     }
 };
 

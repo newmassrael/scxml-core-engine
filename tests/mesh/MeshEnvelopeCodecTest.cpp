@@ -115,6 +115,8 @@ TEST(MeshEnvelopeCodecTest, OptionalsAbsentStayAbsent) {
     EXPECT_FALSE(decoded.deadline_unix_ms);
     EXPECT_FALSE(decoded.sequence_no);
     EXPECT_FALSE(decoded.routing_id);
+    EXPECT_FALSE(decoded.parallel_id);
+    EXPECT_FALSE(decoded.region_id);
 }
 
 TEST(MeshEnvelopeCodecTest, EmptyTextStringRoundTrip) {
@@ -329,6 +331,61 @@ TEST(MeshEnvelopeCodecTest, SequenceNoRoundTrip) {
     ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
     ASSERT_TRUE(decoded.sequence_no.has_value());
     EXPECT_EQ(*decoded.sequence_no, 123456789ULL);
+    EXPECT_EQ(env, decoded);
+}
+
+TEST(MeshEnvelopeCodecTest, Wire21TypedFieldsRoundTripBothSet) {
+    // §16.5 wire-21 envelope: non-root partition populates BOTH
+    // parallel_id (key 16) and region_id (key 17). Root partition
+    // dispatches on these typed fields — no string concat / split.
+    auto env = minimalEnvelope();
+    env.pattern = PatternKind::ParallelRegionDone;
+    env.parallel_id = "root";
+    env.region_id = "left";
+
+    auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty());
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    ASSERT_TRUE(decoded.parallel_id.has_value());
+    ASSERT_TRUE(decoded.region_id.has_value());
+    EXPECT_EQ(*decoded.parallel_id, "root");
+    EXPECT_EQ(*decoded.region_id, "left");
+    EXPECT_EQ(env, decoded);
+}
+
+TEST(MeshEnvelopeCodecTest, Wire21TypedFieldsRoundTripParallelOnly) {
+    // Malformed-by-contract but wire-round-trippable: a sender that sets
+    // only one side violates §16.5 contract; the codec itself is agnostic,
+    // so round-trip preserves the asymmetry. The receiver-side silent-drop
+    // is enforced in the generated `onParallelRegionDone` (state_machine.jinja2).
+    auto env = minimalEnvelope();
+    env.parallel_id = "root";
+
+    auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty());
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    ASSERT_TRUE(decoded.parallel_id.has_value());
+    EXPECT_EQ(*decoded.parallel_id, "root");
+    EXPECT_FALSE(decoded.region_id);
+    EXPECT_EQ(env, decoded);
+}
+
+TEST(MeshEnvelopeCodecTest, Wire21TypedFieldsRoundTripRegionOnly) {
+    auto env = minimalEnvelope();
+    env.region_id = "left";
+
+    auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty());
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    EXPECT_FALSE(decoded.parallel_id);
+    ASSERT_TRUE(decoded.region_id.has_value());
+    EXPECT_EQ(*decoded.region_id, "left");
     EXPECT_EQ(env, decoded);
 }
 
