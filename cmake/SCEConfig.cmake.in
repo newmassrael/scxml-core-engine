@@ -179,10 +179,28 @@ endif()
 
 # Include code generation utilities when the Codegen component was
 # installed (sce_add_state_machine and friends live in SCECodegen.cmake).
-# Consumers that skip --component Codegen get the tier libraries but
-# must drive code generation themselves.
+# Consumers that skip --component Codegen still get pointed diagnostics
+# via the stub functions below instead of CMake's generic
+# "Unknown CMake command".
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/SCECodegen.cmake")
     include("${CMAKE_CURRENT_LIST_DIR}/SCECodegen.cmake")
+else()
+    macro(_sce_codegen_missing_stub _fn)
+        message(FATAL_ERROR
+            "SCE: ${_fn}() requires the Codegen install component "
+            "(sce-codegen binary + Jinja2 templates). Reinstall SCE with "
+            "`cmake --install <build> --component Codegen` or request it "
+            "via find_package(SCE) alongside the tier component.")
+    endmacro()
+    function(sce_add_state_machine)
+        _sce_codegen_missing_stub("sce_add_state_machine")
+    endfunction()
+    function(sce_add_state_machines_from_dir)
+        _sce_codegen_missing_stub("sce_add_state_machines_from_dir")
+    endfunction()
+    function(sce_create_state_machine_library)
+        _sce_codegen_missing_stub("sce_create_state_machine_library")
+    endfunction()
 endif()
 
 # Verify required components.
