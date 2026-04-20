@@ -353,14 +353,61 @@ if(NOT EMSCRIPTEN)
     )
 endif()
 
-# Install headers — shipped with the Core component. Every tier's public API
-# lives under sce/include so splitting by sub-directory would force consumers
-# to request multiple components just to compile a generated state machine.
+# Install headers partitioned by tier. Each subdirectory below is installed
+# with the component that owns the code it declares, so a consumer requesting
+# `--component Core` does not end up with Runtime-only headers on disk.
+#
+# Top-level *.h files (types.h, SCXMLTypes.h, GuardUtils.h, SCXMLEngine.h,
+# ReadySCXMLEngine.h) stay with Core because lower-tier headers already
+# include them (core/EventMetadata.h → SCXMLTypes.h, common/*.h → types.h)
+# and shipping them conditionally would break Core-only compilation.
+
+# Core: sce_core (header-only) + sce_base + AOT-side helpers (wrappers,
+# dispatchers interface/impls) + optional mesh transport headers.
+foreach(_sce_core_dir core static common backends wrappers dispatchers mesh)
+    install(DIRECTORY sce/include/${_sce_core_dir}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        COMPONENT Core
+        FILES_MATCHING PATTERN "*.h"
+    )
+endforeach()
 install(DIRECTORY sce/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     COMPONENT Core
+    FILES_MATCHING
+        PATTERN "*.h"
+        PATTERN "actions"     EXCLUDE
+        PATTERN "backends"    EXCLUDE
+        PATTERN "common"      EXCLUDE
+        PATTERN "core"        EXCLUDE
+        PATTERN "dispatchers" EXCLUDE
+        PATTERN "events"      EXCLUDE
+        PATTERN "factory"     EXCLUDE
+        PATTERN "mesh"        EXCLUDE
+        PATTERN "model"       EXCLUDE
+        PATTERN "parsing"     EXCLUDE
+        PATTERN "runtime"     EXCLUDE
+        PATTERN "scripting"   EXCLUDE
+        PATTERN "states"      EXCLUDE
+        PATTERN "static"      EXCLUDE
+        PATTERN "wrappers"    EXCLUDE
+)
+
+# Scripting: JSEngine / LuaEngine / ScriptEngineProvider.
+install(DIRECTORY sce/include/scripting
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    COMPONENT Scripting
     FILES_MATCHING PATTERN "*.h"
 )
+
+# Runtime: Interpreter/state-machine/parser/events headers.
+foreach(_sce_runtime_dir model runtime actions events states parsing factory)
+    install(DIRECTORY sce/include/${_sce_runtime_dir}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        COMPONENT Runtime
+        FILES_MATCHING PATTERN "*.h"
+    )
+endforeach()
 
 # Install Jinja2 templates (used by sce-codegen at runtime via SCE_TEMPLATE_DIR)
 install(DIRECTORY tools/codegen/templates
