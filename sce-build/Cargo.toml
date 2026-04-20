@@ -86,6 +86,15 @@ name = "mesh_error_format_json"
 path = "tests/mesh_error_format_json.rs"
 required-features = ["cli"]
 
+# Structural smoke validator for all four codegen backends. Depends on
+# the `sce-codegen` binary, hence the `cli` gate shared with the other
+# end-to-end tests. See `tests/codegen_smoke.rs` for the rationale
+# (template brace-imbalance regression guard, not behavioural coverage).
+[[test]]
+name = "codegen_smoke"
+path = "tests/codegen_smoke.rs"
+required-features = ["cli"]
+
 
 
 [lints]

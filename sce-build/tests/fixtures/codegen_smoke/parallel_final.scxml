@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: <parallel> with regions reaching <final>.
+
+  Exercises the ParallelCompletionHelper branch (state.parent's parent
+  is parallel) and the multi-region done.state emission codegen. The
+  brace topology here is distinct from both the top-level and the
+  single-compound-parent cases.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="parallel_final" initial="p">
+  <parallel id="p">
+    <transition event="done.state.p" target="finished"/>
+    <state id="r1" initial="r1_done">
+      <final id="r1_done"/>
+    </state>
+    <state id="r2" initial="r2_done">
+      <final id="r2_done"/>
+    </state>
+  </parallel>
+  <final id="finished"/>
+</scxml>

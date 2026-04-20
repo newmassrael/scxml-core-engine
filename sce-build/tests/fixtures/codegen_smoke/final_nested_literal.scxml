@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: nested <final> + <donedata> literal.
+
+  Parent-state variant of final_top_literal. Exercises the
+  `done.state.<parent>` emission branch (state.parent is set) alongside
+  the literal content handling. Distinct from the top-level case
+  because the close braces diverge on `state.parent` presence.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="final_nested_literal" initial="compound">
+  <state id="compound" initial="leaf">
+    <transition event="done.state.compound" target="outcome"/>
+    <final id="leaf">
+      <donedata>
+        <content>nested payload</content>
+      </donedata>
+    </final>
+  </state>
+  <final id="outcome"/>
+</scxml>

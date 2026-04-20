@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: top-level <final> + <donedata> with
+  <content expr="..."> under the ecmascript datamodel.
+
+  Exercises the script-engine branch of the donedata content emit —
+  ensureScriptEngine() + DoneDataHelper::evaluateContent() — so the
+  two literal-vs-expression template arms both compile.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript"
+       name="final_top_expr" initial="done">
+  <datamodel>
+    <data id="payload" expr="42"/>
+  </datamodel>
+  <final id="done">
+    <donedata>
+      <content expr="payload"/>
+    </donedata>
+  </final>
+</scxml>

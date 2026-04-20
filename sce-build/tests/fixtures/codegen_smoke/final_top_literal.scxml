@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: top-level <final> + <donedata> with literal
+  <content> under the null datamodel.
+
+  Exercises the template path state.is_final && state.donedata &&
+  !state.parent && donedata.content.kind == "literal". Pre-commit
+  d6ca6b19 this cross-product produced a brace-imbalanced C++ header
+  because the `if not state.parent` close was missing. Compiling the
+  four generated artefacts is the regression guard.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="final_top_literal" initial="done">
+  <final id="done">
+    <donedata>
+      <content>inline payload</content>
+    </donedata>
+  </final>
+</scxml>

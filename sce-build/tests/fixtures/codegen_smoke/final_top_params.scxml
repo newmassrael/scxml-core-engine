@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: top-level <final> + <donedata> with
+  <param> children under the ecmascript datamodel.
+
+  Exercises the params branch (distinct from content literal/expr):
+  the template emits a `std::vector<std::pair<...>>` + evaluateParams()
+  call, which has its own scope/brace topology.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript"
+       name="final_top_params" initial="done">
+  <datamodel>
+    <data id="a" expr="1"/>
+    <data id="b" expr="2"/>
+  </datamodel>
+  <final id="done">
+    <donedata>
+      <param name="first" location="a"/>
+      <param name="second" expr="b"/>
+    </donedata>
+  </final>
+</scxml>

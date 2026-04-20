@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: degenerate single-state machine with no
+  entry/exit actions and no donedata.
+
+  Acts as the zero-point in the corpus: every conditional branch in
+  the entry/exit template is `false`, so the emitted switch must still
+  be well-formed (empty case bodies, terminating `break;`, matching
+  braces).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="degenerate_minimal" initial="s0">
+  <state id="s0">
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
