@@ -896,6 +896,9 @@ pub fn inject_partition_context_for(
     let present = mesh::partitions::is_machine_partition_listed(&deploy_cfg, &resolved_name);
     model.partition_context_present = present;
     model.partition_parallel_roles.clear();
+    model.partition_wire21_outbound_routes.clear();
+    model.partition_wire21_inbound_sources.clear();
+    model.partition_self_name = None;
 
     if let Some(partition_name) = for_partition {
         if let Some(partitions) = &deploy_cfg.partitions {
@@ -908,6 +911,8 @@ pub fn inject_partition_context_for(
                     },
                 ));
             };
+
+            model.partition_self_name = Some(partition_name.to_string());
 
             // Claims made by the selected partition — used to mark
             // `<parallel>` ids where this partition is Root.
@@ -937,6 +942,30 @@ pub fn inject_partition_context_for(
                 }
             }
 
+            // SCE_MESH.md §16.5 wire-21 routing: build a per-`<parallel>`
+            // map of (parallel_id → claimant partition name) by scanning
+            // every partition's `hosts_parallel_roots:` entries that
+            // reference `resolved_name`. Rule 12's per-`(machine, parallel)`
+            // uniqueness invariant guarantees at most one claimant per
+            // parallel, so the lookup table is a plain map (not a multi-
+            // map). Distributed parallels with no claimant cannot reach
+            // here — `validate_parallel_root_designation` rejects them
+            // before codegen runs.
+            let mut parallel_root_partition: std::collections::BTreeMap<&String, &String> =
+                std::collections::BTreeMap::new();
+            for (part_name, part_decl) in partitions.iter() {
+                if let Some(claims) = &part_decl.hosts_parallel_roots {
+                    for entry in claims {
+                        if entry.machine == resolved_name {
+                            parallel_root_partition.insert(&entry.parallel, part_name);
+                        }
+                    }
+                }
+            }
+
+            let mut wire21_inbound: std::collections::BTreeSet<String> =
+                std::collections::BTreeSet::new();
+
             for (parallel_id, _) in &model.parallel_regions {
                 let hosting = parallel_partitions
                     .get(parallel_id)
@@ -958,10 +987,39 @@ pub fn inject_partition_context_for(
                     // `<parallel>`-final code for regions hosted here).
                     model::PartitionRole::SinglePartition
                 };
+
+                // SCE_MESH.md §16.5: derive the wire-21 routes from the
+                // role assignment. NonRoot ⇒ outbound (one entry per
+                // hosted parallel, keyed by parallel_id, valued by the
+                // root partition name). Root ⇒ inbound (every other
+                // partition that hosts at least one region of this
+                // parallel becomes a wire-21 source). SinglePartition
+                // generates no wire-21 traffic by definition.
+                match role {
+                    model::PartitionRole::NonRoot => {
+                        if let Some(root_part) = parallel_root_partition.get(parallel_id) {
+                            model.partition_wire21_outbound_routes.insert(
+                                parallel_id.clone(),
+                                (*root_part).clone(),
+                            );
+                        }
+                    }
+                    model::PartitionRole::Root => {
+                        for src in &hosting {
+                            if src.as_str() != partition_name {
+                                wire21_inbound.insert((*src).clone());
+                            }
+                        }
+                    }
+                    model::PartitionRole::SinglePartition => {}
+                }
+
                 model
                     .partition_parallel_roles
                     .insert(parallel_id.clone(), role);
             }
+
+            model.partition_wire21_inbound_sources = wire21_inbound.into_iter().collect();
         }
     }
 
@@ -1206,7 +1264,17 @@ pub fn compile_mesh_transport(
         .and_then(|d| d.transports.custom_tcp.as_ref())
         .is_some_and(mesh::deploy::CustomTcpTransportConfig::hosts_server);
 
-    if resolved.is_empty() && server_binding.is_none() && !has_custom_tcp_listen {
+    // SCE_MESH.md §16.5 wire-21: a partition may produce no
+    // conventional `<send target="#X">` traffic and still need a
+    // transport.h that opens inter-partition shm channels for
+    // ParallelRegionDone forwarding. Detected purely from the wire-21
+    // routing fields populated by `inject_partition_context_for`; an
+    // unpartitioned codegen always sees both empty and falls through
+    // to the legacy early-return.
+    let has_wire21_routing = !model.partition_wire21_outbound_routes.is_empty()
+        || !model.partition_wire21_inbound_sources.is_empty();
+
+    if resolved.is_empty() && server_binding.is_none() && !has_custom_tcp_listen && !has_wire21_routing {
         let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
@@ -1283,6 +1351,13 @@ pub fn compile_mesh_transport(
         .and_then(|d| d.machines.get(&effective_machine_name))
         .and_then(|m| m.outbound_buffer);
     let template_base = find_template_base();
+    // SCE_MESH.md §16.5 wire-21 partition routes — threaded through to
+    // codegen so the per-partition shm channel constants and members
+    // can be emitted alongside the conventional per-`<send>` transport
+    // wiring. Empty maps are a no-op in the template.
+    let partition_self_name = model.partition_self_name.clone();
+    let partition_wire21_outbound = model.partition_wire21_outbound_routes.clone();
+    let partition_wire21_inbound = model.partition_wire21_inbound_sources.clone();
     let output = mesh::codegen::generate_mesh(
         &model.name,
         &resolved,
@@ -1294,6 +1369,9 @@ pub fn compile_mesh_transport(
         machine_ordering,
         machine_liveliness,
         machine_outbound_buffer,
+        partition_self_name.as_deref(),
+        &partition_wire21_outbound,
+        &partition_wire21_inbound,
         language,
         &template_base,
     )?;

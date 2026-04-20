@@ -879,9 +879,23 @@ mod tests {
             body.contains("onParallelRegionDone"),
             "Root role must emit the `onParallelRegionDone` wire-21 receiver method"
         );
+        // §16.5 dispatch path: `parallel_final.jinja2` calls
+        // `engine.triggerParallelRegionLocalComplete(parallel_id, region_id)`
+        // (a base StaticExecutionEngine method); the SM ctor's
+        // `setParallelRegionLocalCompleteCallback` closure routes that
+        // through `tracker_<pid>_.onLocalRegionComplete(region_id)`.
+        // Asserting both call sites pins the full dispatch path.
         assert!(
-            body.contains("onLocalRegionComplete(\"left\")"),
-            "Root region-final branch must call `tracker_root_.onLocalRegionComplete`"
+            body.contains("triggerParallelRegionLocalComplete(\"root\", \"left\")"),
+            "Root region-final branch must dispatch via `engine.triggerParallelRegionLocalComplete`; body was:\n{body}"
+        );
+        assert!(
+            body.contains("setParallelRegionLocalCompleteCallback"),
+            "Root SM ctor must install the local-complete callback on the base via `setParallelRegionLocalCompleteCallback`"
+        );
+        assert!(
+            body.contains("tracker_root_.onLocalRegionComplete(region_id)"),
+            "Root SM ctor closure must terminate the dispatch in `tracker_root_.onLocalRegionComplete(region_id)`"
         );
         assert!(
             !body.contains("sendParallelRegionDone"),
@@ -899,6 +913,19 @@ mod tests {
         assert!(
             body.contains("PatternKind::ParallelRegionDone"),
             "NonRoot sender body must construct the wire-21 envelope"
+        );
+        // §16.5 dispatch path mirrors the Root assertions: the
+        // `parallel_final.jinja2` body calls
+        // `engine.triggerParallelRegionRemoteSend(parallel_id, region_id, donedata)`,
+        // and the SM ctor's `setParallelRegionRemoteSendCallback`
+        // closure terminates the dispatch in `sendParallelRegionDone`.
+        assert!(
+            body.contains("triggerParallelRegionRemoteSend"),
+            "NonRoot region-final branch must dispatch via `engine.triggerParallelRegionRemoteSend`; body was:\n{body}"
+        );
+        assert!(
+            body.contains("setParallelRegionRemoteSendCallback"),
+            "NonRoot SM ctor must install the remote-send callback on the base via `setParallelRegionRemoteSendCallback`"
         );
         assert!(
             !body.contains("tracker_root_"),

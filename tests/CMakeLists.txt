@@ -1540,6 +1540,110 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_partitions_verification COMMAND mesh_partitions_test)
 
+    # ── SCE_MESH §14 rule 12 / §16.5: inter-partition wire-21 E2E ──
+    # End-to-end verification that a non-root partition's region-final
+    # entry actually delivers a `ParallelRegionDone` envelope to the
+    # root partition over the inter-partition shm channel — closing the
+    # rule-12 atomic bundle's "Open runtime gap" carve-out (SCE_MESH.md
+    # §14 L2844). Two partition-specific binaries are built from the
+    # same `motor_partition.scxml` with `--partition motor_left`
+    # (Root) and `--partition motor_right` (NonRoot); a driver fork+
+    # execs both and asserts both return 0.
+    #
+    # The Root binary's TransportRouter ctor opens
+    # `/sce_p21_motor_right_motor_left` in `Mode::Open`; the NonRoot
+    # binary's ctor creates the same shm name in `Mode::Create` and
+    # installs the wire-21 send callback on the SM via
+    # `setParallelRegionDoneCallback`. Until this fixture landed, the
+    # NonRoot's `sendParallelRegionDone` body was a fail-loud
+    # `throw std::runtime_error(...)` — the runtime side of rule 12
+    # had no end-to-end consumer (`feedback_built_but_unconsumed`).
+    set(MESH_PARTITION_RULE12_LEFT_DIR  "${CMAKE_CURRENT_BINARY_DIR}/mesh_partition_rule12_left_generated")
+    set(MESH_PARTITION_RULE12_RIGHT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_partition_rule12_right_generated")
+
+    add_custom_command(
+        OUTPUT  "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h"
+                "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_PARTITION_RULE12_LEFT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
+                -l cpp -o "${MESH_PARTITION_RULE12_LEFT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                --partition motor_left
+        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
+                "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        COMMENT "Mesh rule 12: Generating motor_partition (Root partition motor_left)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT  "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h"
+                "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_PARTITION_RULE12_RIGHT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
+                -l cpp -o "${MESH_PARTITION_RULE12_RIGHT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                --partition motor_right
+        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
+                "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        COMMENT "Mesh rule 12: Generating motor_partition (NonRoot partition motor_right)"
+        VERBATIM
+    )
+
+    add_executable(mesh_partition_rule12_left_proc
+        mesh/test_mesh_partition_rule12_left_proc.cpp
+        "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h"
+        "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h"
+    )
+    target_include_directories(mesh_partition_rule12_left_proc
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_PARTITION_RULE12_LEFT_DIR}
+    )
+    target_link_libraries(mesh_partition_rule12_left_proc
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+    target_compile_features(mesh_partition_rule12_left_proc PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_partition_rule12_left_proc)
+
+    add_executable(mesh_partition_rule12_right_proc
+        mesh/test_mesh_partition_rule12_right_proc.cpp
+        "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h"
+        "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h"
+    )
+    target_include_directories(mesh_partition_rule12_right_proc
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_PARTITION_RULE12_RIGHT_DIR}
+    )
+    target_link_libraries(mesh_partition_rule12_right_proc
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+    target_compile_features(mesh_partition_rule12_right_proc PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_partition_rule12_right_proc)
+
+    add_executable(mesh_partition_rule12_e2e
+        mesh/test_mesh_partition_rule12_e2e.cpp
+    )
+    target_compile_definitions(mesh_partition_rule12_e2e
+        PRIVATE
+            MESH_PARTITION_RULE12_LEFT_BIN="$<TARGET_FILE:mesh_partition_rule12_left_proc>"
+            MESH_PARTITION_RULE12_RIGHT_BIN="$<TARGET_FILE:mesh_partition_rule12_right_proc>"
+    )
+    add_dependencies(mesh_partition_rule12_e2e
+        mesh_partition_rule12_left_proc
+        mesh_partition_rule12_right_proc
+    )
+    target_compile_features(mesh_partition_rule12_e2e PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_partition_rule12_e2e)
+
+    add_test(NAME mesh_partition_rule12_e2e COMMAND mesh_partition_rule12_e2e)
+
     # ── SCE_MESH §9.5: <invoke type="sce:mesh-rpc"> plumbing verification ──
     # Byte-golden regression for `invoke_sites` threading from analyzer
     # through codegen::TargetContext into the transport template. A drop of

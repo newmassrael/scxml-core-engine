@@ -668,6 +668,37 @@ pub struct SCXMLModel {
     /// distributed.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub partition_parallel_roles: std::collections::BTreeMap<String, PartitionRole>,
+
+    /// SCE_MESH.md §16.5 wire-21 outbound routes for the partition
+    /// currently being codegen'd. Maps each `<parallel>` whose role
+    /// here is [`PartitionRole::NonRoot`] to the **destination
+    /// partition name** — the partition that claims the parallel's
+    /// root via `partitions.<root>.hosts_parallel_roots:`. Codegen
+    /// uses this to pick the outbound shm channel inside
+    /// `sendParallelRegionDone(parallel_id, ...)`. Empty when the
+    /// partition is pure-Root, has no NonRoot parallels, or codegen
+    /// runs without `--partition`.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub partition_wire21_outbound_routes: std::collections::BTreeMap<String, String>,
+
+    /// SCE_MESH.md §16.5 wire-21 inbound source partitions for the
+    /// partition currently being codegen'd. Sorted, deduplicated list
+    /// of NonRoot partitions whose region-final entries forward
+    /// `ParallelRegionDone` envelopes here (this partition Roots one
+    /// or more parallels they host). Codegen materializes one inbound
+    /// shm channel per source for [`crate::inject_partition_context_for`]
+    /// to thread through. Empty when this partition Roots no
+    /// distributed `<parallel>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub partition_wire21_inbound_sources: Vec<String>,
+
+    /// The current partition's name as supplied to `--partition`.
+    /// `None` when codegen runs without `--partition`. Codegen reads
+    /// this to disambiguate channel name constants for shared
+    /// templates (e.g. the wire-21 channel name encodes both source
+    /// and destination partition names).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_self_name: Option<String>,
 }
 
 /// SCE_MESH.md §14 rule 12 — partition's role for a specific

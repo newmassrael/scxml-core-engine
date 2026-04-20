@@ -324,7 +324,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% for target in targets if target.state.kind == "local" %}
 #include "{{ target.target_stem }}_sm.h"
 {% endfor %}
-{% if "shm" in transport_types %}
+{% if "shm" in transport_types or partition_wire21_outbound_unique_dests or partition_wire21_inbound_sources %}
 #include "mesh/ShmChannel.h"
 {% endif %}
 {% if "someip" in transport_types %}
@@ -484,6 +484,26 @@ static constexpr const char* ZENOH_CONNECT_ENDPOINTS[] = {
 {% for ep in zenoh_connect_endpoints %}    "{{ ep }}",
 {% endfor %}};
 {% endif %}
+
+{% endif %}
+{# ── (B3) SCE_MESH.md §16.5 wire-21 inter-partition constants ──
+   Channel name constants for the wire-21 ParallelRegionDone shm
+   segments. Naming is symmetric across the wire — both the
+   sender's `_TO_<dst>` and the receiver's `_FROM_<src>` reduce to
+   the same `/sce_p21_<src>_<dst>` POSIX shm name, so a fixture
+   that recompiles the deploy graph cannot drift the names apart.
+   Default arena/ring sizes (from `ShmChannel.h`) suffice for
+   wire-21 traffic — ParallelRegionDone payloads are bounded by
+   the donedata size, dominated by the few-byte CBOR header. #}
+{% if partition_wire21_outbound_unique_dests or partition_wire21_inbound_sources %}
+using PartitionWire21Channel = SCE::Mesh::ShmChannel<>;
+
+{% for r in partition_wire21_outbound_unique_dests %}
+static constexpr const char* PARTITION_WIRE21_TO_{{ r.dst_partition_snake | upper }} = "{{ r.channel_name }}";
+{% endfor %}
+{% for r in partition_wire21_inbound_sources %}
+static constexpr const char* PARTITION_WIRE21_FROM_{{ r.src_partition_snake | upper }} = "{{ r.channel_name }}";
+{% endfor %}
 
 {% endif %}
 {# ── (B2) Server-side constants (SCE_MESH.md §13 Session E) ── #}
@@ -683,6 +703,24 @@ struct TransportRouter {
 {% elif target.state.kind == "custom_tcp" %}
     SCE::Mesh::CustomTcp::Client {{ target.target_snake }}_;
 {% endif %}
+{% endfor %}
+
+{# ── (D1c) SCE_MESH.md §16.5 wire-21 inter-partition channels ──
+   Per-partition-pair shm channel for `ParallelRegionDone` envelopes.
+   NonRoot codegen emits one outbound member per unique destination
+   (root) partition; Root codegen emits one inbound member per source
+   (non-root) partition. Channel naming is symmetric — both sides
+   reference `/sce_p21_<src>_<dst>` keyed on the partition pair, so a
+   sender and receiver compiled from the same deploy.yaml agree on
+   the segment name without any runtime lookup. The sender uses
+   `Mode::Create`; the receiver opens with `Mode::Open` and may
+   reopen on `pumpWire21Inbound()` if the peer hadn't yet created at
+   ctor time (typical at startup race). #}
+{% for r in partition_wire21_outbound_unique_dests %}
+    PartitionWire21Channel wire21_to_{{ r.dst_partition_snake }}_;
+{% endfor %}
+{% for r in partition_wire21_inbound_sources %}
+    PartitionWire21Channel wire21_from_{{ r.src_partition_snake }}_;
 {% endfor %}
 
 {# ── (D1b) Cross-router link table (SCE_MESH.md §9.5) ──
@@ -1213,6 +1251,20 @@ struct TransportRouter {
 {%-     set ns.parts = ns.parts + [init] %}
 {%-   endfor %}
 {%- endif %}
+{#- SCE_MESH.md §16.5 wire-21 channels: declaration order in (D1c)
+    appends after the per-target shm/someip/custom_tcp fields, so
+    the ctor init order matches. -Wreorder requires init order to
+    follow declaration order: per-target → wire21 → OutboundBuffer →
+    server_app_ → sessions_ → routing_id_. Senders use Mode::Create
+    (writes READY_MAGIC); receivers use Mode::Open (which may yield
+    an invalid channel until the peer creates — `pumpWire21Inbound`
+    reopens lazily). #}
+{%- for r in partition_wire21_outbound_unique_dests %}
+{%-   set ns.parts = ns.parts + ["wire21_to_" ~ r.dst_partition_snake ~ "_(PARTITION_WIRE21_TO_" ~ (r.dst_partition_snake | upper) ~ ", PartitionWire21Channel::Mode::Create)"] %}
+{%- endfor %}
+{%- for r in partition_wire21_inbound_sources %}
+{%-   set ns.parts = ns.parts + ["wire21_from_" ~ r.src_partition_snake ~ "_(PARTITION_WIRE21_FROM_" ~ (r.src_partition_snake | upper) ~ ", PartitionWire21Channel::Mode::Open)"] %}
+{%- endfor %}
 {#- Server SOME/IP app init: must appear in declaration order (before sessions_).
     The device-level `transports.someip.application_name` identifies the
     CLIENT app on this device. The server role belongs to a different
@@ -1407,6 +1459,34 @@ struct TransportRouter {
 {% endfor %}
                 return route_send(target, env);
             });
+{% if partition_wire21_outbound_routes %}
+            // SCE_MESH.md §16.5 wire-21: install the ParallelRegionDone
+            // callback. The closure dispatches on `env.subject`'s
+            // `<parallel_id>` prefix (subject = "parallel/region") to
+            // pick the matching outbound channel — multiple parallels
+            // sharing the same root partition share one channel, so
+            // the dispatch is on parallel_id, not on the channel name.
+            // Returning false propagates back through `sendParallelRegionDone`
+            // as `std::runtime_error` (fail-loud, see state_machine.jinja2).
+            sessions_[i]->setParallelRegionDoneCallback(
+                [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
+                    if (!env.subject.has_value()) {
+                        return false;  // sender contract violation
+                    }
+                    const std::string& subject = *env.subject;
+                    auto slash = subject.find('/');
+                    if (slash == std::string::npos) {
+                        return false;
+                    }
+                    const std::string parallel_id = subject.substr(0, slash);
+{% for r in partition_wire21_outbound_routes %}
+                    if (parallel_id == "{{ r.parallel_id }}") {
+                        return wire21_to_{{ r.dst_partition_snake }}_.send(env);
+                    }
+{% endfor %}
+                    return false;  // unknown parallel_id — SM raises std::runtime_error
+                });
+{% endif %}
 {% if has_mesh_rpc.v %}
             // SCE_MESH.md §9.5: install the mesh-rpc invoke + cancel
             // hooks so generated onentry / onexit blocks can dispatch
@@ -1432,6 +1512,38 @@ struct TransportRouter {
 {% endif %}
         }
     }
+{% if partition_wire21_inbound_sources %}
+
+    /// SCE_MESH.md §16.5 wire-21 receiver pump. Drains every inbound
+    /// partition channel and dispatches each `ParallelRegionDone`
+    /// envelope into the SM via `dispatchEnvelope`, which routes
+    /// wire-21 to `engine.onParallelRegionDone` via SFINAE
+    /// (`MeshDispatch.h`). Reopens any inbound channel that has not
+    /// yet observed its peer creator — the typical startup race when
+    /// partitions launch independently. Returns the total number of
+    /// envelopes drained across all inbound channels in this call.
+    ///
+    /// Caller is responsible for invoking this from the Root
+    /// partition's main loop (typically alongside the SM step pump).
+    /// Each tracker fires `done.state.<parallel>` into the SM's local
+    /// external queue when the threshold count is reached, so a
+    /// subsequent `engine.step()` will observe the raise.
+    std::size_t pumpWire21Inbound() {
+        std::size_t total = 0;
+{% for r in partition_wire21_inbound_sources %}
+        if (!wire21_from_{{ r.src_partition_snake }}_.valid()) {
+            wire21_from_{{ r.src_partition_snake }}_ = PartitionWire21Channel(
+                PARTITION_WIRE21_FROM_{{ r.src_partition_snake | upper }},
+                PartitionWire21Channel::Mode::Open);
+        }
+        if (wire21_from_{{ r.src_partition_snake }}_.valid()) {
+            total += wire21_from_{{ r.src_partition_snake }}_
+                .template drain<typename SenderEngine::PolicyType>(*sessions_[0]);
+        }
+{% endfor %}
+        return total;
+    }
+{% endif %}
 {% if "someip" in transport_types or "zenoh" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
 
 {# ── (D4) init() / shutdown() — lifecycle for shared transport resources ── #}

@@ -14,7 +14,17 @@
                 // (see `{{ model.name }}::onParallelRegionDone`);
                 // threshold raises `done.state.<parallel>` into the
                 // SM's local external queue via the tracker's callback.
-                engine.tracker_{{ _parallel_id }}_.onLocalRegionComplete("{{ state.parent }}");
+                //
+                // The dispatch goes through `engine.triggerParallelRegionLocalComplete`
+                // (a base `StaticExecutionEngine` method) instead of a
+                // direct downcast. The derived SM ctor installs the
+                // closure via `setParallelRegionLocalCompleteCallback`,
+                // which is the `engine.tracker_<pid>_.onLocalRegionComplete`
+                // call site. Decoupling the policy from the derived SM
+                // type keeps the policy/SM include order valid: the
+                // `_sm.inl` is included while the SM forward
+                // declaration is still incomplete.
+                engine.triggerParallelRegionLocalComplete("{{ _parallel_id }}", "{{ state.parent }}");
 {% elif _role == 'NonRoot' %}
                 // SCE_MESH.md §14 rule 12 / §16.5 NonRoot branch: a
                 // partition hosting the region but not the
@@ -23,11 +33,13 @@
                 // raise `done.state.<parallel>` locally (the root will
                 // raise it on threshold). The actual inter-partition
                 // transport routing is delegated to
-                // `engine.sendParallelRegionDone` on the SM class.
+                // `{{ model.name }}::sendParallelRegionDone` via the
+                // base hook installed by the SM ctor — same decoupling
+                // rationale as the Root branch.
 {% if state.donedata %}
-                engine.sendParallelRegionDone("{{ _parallel_id }}", "{{ state.parent }}", eventData);
+                engine.triggerParallelRegionRemoteSend("{{ _parallel_id }}", "{{ state.parent }}", eventData);
 {% else %}
-                engine.sendParallelRegionDone("{{ _parallel_id }}", "{{ state.parent }}", std::string());
+                engine.triggerParallelRegionRemoteSend("{{ _parallel_id }}", "{{ state.parent }}", std::string());
 {% endif %}
 {% else %}
                 // SCE_MESH.md §14 rule 12 SinglePartition fallback:

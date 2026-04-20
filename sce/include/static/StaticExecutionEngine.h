@@ -447,6 +447,21 @@ private:
     MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §9.5: mesh-rpc exit / cancel hook
+    // SCE Mesh §16.5 (rule 12) — `<parallel>` partition role hooks. Set
+    // by the derived SM ctor when codegen materializes a Root or NonRoot
+    // tracker / sender for a hosted `<parallel>`. The Policy invokes
+    // them via `triggerParallelRegionLocalComplete` /
+    // `triggerParallelRegionRemoteSend` from the parallel-final
+    // dispatcher (`mesh/cpp/parallel_final.jinja2`); no-op when the
+    // SM was generated without partition context (single-partition
+    // builds leave both unset). Both take `string&` (not `string_view`)
+    // so the closure's `[this]` capture can stash the values into
+    // member containers without lifetime caveats.
+    std::function<void(const std::string& parallel_id, const std::string& region_id)>
+        onParallelRegionLocalComplete_;
+    std::function<void(const std::string& parallel_id, const std::string& region_id,
+                       const std::string& donedata)>
+        onParallelRegionRemoteSend_;
     std::string currentEventInvokeId_;  // SCE Mesh §9.5: invokeId of event being processed
     SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
@@ -1236,6 +1251,67 @@ public:
             return onMeshCancel_(target, fieldSuffix);
         }
         return false;
+    }
+
+    /**
+     * @brief Register the local-region completion callback (SCE_MESH.md §16.5).
+     *
+     * Installed by the derived SM ctor when the codegen materialized a Root
+     * tracker for a hosted `<parallel>`. The closure dispatches on `parallel_id`
+     * to the matching `ParallelCompletionTracker.onLocalRegionComplete(region)`
+     * member of the SM, which fires `done.state.<parallel>` on threshold.
+     * Applications do not call this directly — the SM ctor wires it.
+     */
+    void setParallelRegionLocalCompleteCallback(
+        std::function<void(const std::string&, const std::string&)> callback) {
+        onParallelRegionLocalComplete_ = std::move(callback);
+    }
+
+    /**
+     * @brief Invoke the local-region completion hook (SCE_MESH.md §16.5).
+     *
+     * Called from the generated `mesh/cpp/parallel_final.jinja2` Root branch
+     * when a region hosted in this partition enters its `<final>`. No-op when
+     * no callback is installed (single-partition or non-Root builds).
+     */
+    void triggerParallelRegionLocalComplete(const std::string& parallel_id,
+                                            const std::string& region_id) {
+        if (onParallelRegionLocalComplete_) {
+            onParallelRegionLocalComplete_(parallel_id, region_id);
+        }
+    }
+
+    /**
+     * @brief Register the remote-region wire-21 send callback (SCE_MESH.md §16.5).
+     *
+     * Installed by the derived SM ctor when the codegen materialized a NonRoot
+     * sender for a hosted `<parallel>`. The closure builds the
+     * `ParallelRegionDone` envelope (wire 21, `subject = parallel_id +
+     * "/" + region_id`) and routes it through the SM-side wire-21 callback
+     * registered by the generated TransportRouter ctor. Applications do not
+     * call this directly — the SM ctor wires it.
+     */
+    void setParallelRegionRemoteSendCallback(
+        std::function<void(const std::string&, const std::string&, const std::string&)>
+            callback) {
+        onParallelRegionRemoteSend_ = std::move(callback);
+    }
+
+    /**
+     * @brief Invoke the remote-region wire-21 send hook (SCE_MESH.md §16.5).
+     *
+     * Called from the generated `mesh/cpp/parallel_final.jinja2` NonRoot branch
+     * when a region hosted in this partition enters its `<final>`. The closure
+     * is responsible for failing loudly when no transport-side callback was
+     * installed by the TransportRouter — a missing wire-up must surface as a
+     * fatal exception rather than a silent drop (SCE_MESH.md §14 L2844).
+     */
+    void triggerParallelRegionRemoteSend(const std::string& parallel_id,
+                                         const std::string& region_id,
+                                         const std::string& donedata) {
+        if (onParallelRegionRemoteSend_) {
+            onParallelRegionRemoteSend_(parallel_id, region_id, donedata);
+        }
     }
 
     /**

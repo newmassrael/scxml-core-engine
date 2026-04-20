@@ -70,7 +70,9 @@
 #include "mesh/ParallelCompletionTracker.h"
 #include "mesh/PatternKind.h"
 #include "mesh/PayloadCodec.h"
+#include <functional>
 #include <stdexcept>
+#include <utility>
 {% endif %}
 {% endif %}
 #include "common/EventDataHelper.h"
@@ -536,9 +538,46 @@ public:
         this->policy_.self_ = this;
         {% endif %}
     }
-{% elif model.invokes | scxml or model.invokes | hybrid %}
+{% elif model.invokes | scxml or model.invokes | hybrid or model.partition_parallel_roles %}
     {{ model.name }}() {
+        {% if model.invokes | scxml or model.invokes | hybrid %}
         this->policy_.self_ = this;
+        {% endif %}
+{# SCE_MESH.md §16.5: install the parallel-final dispatch hooks on the
+   base StaticExecutionEngine so the Policy can fire local-region
+   completions and NonRoot wire-21 sends without downcasting `engine`
+   (which is base-typed when called from `Policy::executeEntryActions`).
+   Each closure captures `this` so the per-`<parallel>` tracker and the
+   SM-side wire-21 callback (set by `TransportRouter`) remain SM
+   members; the base sees only `std::function`. #}
+{% set _has_root_ctor = namespace(v=false) %}
+{% set _has_nonroot_ctor = namespace(v=false) %}
+{% if model.partition_parallel_roles %}
+{% for _pid, _role in model.partition_parallel_roles | items %}
+{% if _role == 'Root' %}{% set _has_root_ctor.v = true %}{% endif %}
+{% if _role == 'NonRoot' %}{% set _has_nonroot_ctor.v = true %}{% endif %}
+{% endfor %}
+{% endif %}
+{% if _has_root_ctor.v %}
+        this->setParallelRegionLocalCompleteCallback(
+            [this](const std::string& parallel_id, const std::string& region_id) {
+{% for _pid, _role in model.partition_parallel_roles | items %}
+{% if _role == 'Root' %}
+                if (parallel_id == "{{ _pid }}") {
+                    this->tracker_{{ _pid }}_.onLocalRegionComplete(region_id);
+                    return;
+                }
+{% endif %}
+{% endfor %}
+            });
+{% endif %}
+{% if _has_nonroot_ctor.v %}
+        this->setParallelRegionRemoteSendCallback(
+            [this](const std::string& parallel_id, const std::string& region_id,
+                   const std::string& donedata) {
+                this->sendParallelRegionDone(parallel_id, region_id, donedata);
+            });
+{% endif %}
     }
 {% else %}
     {{ model.name }}() = default;
@@ -563,14 +602,22 @@ public:
 {% for _pid, _role in model.partition_parallel_roles | items %}
 {% if _role == 'Root' %}
     // SCE_MESH.md §14 rule 12 / §16.5 Root tracker for <parallel id="{{ _pid }}">.
-    // Public so executeEntryActions (Policy context) can call onLocalRegionComplete
-    // via `engine.tracker_{{ _pid }}_`. Expected region count is a compile-time
-    // constant baked in from `model.parallel_regions`.
+    // Public so the SM ctor's `setParallelRegionLocalCompleteCallback`
+    // closure (and the inbound wire-21 path in `onParallelRegionDone`)
+    // can call `tracker_{{ _pid }}_.onLocalRegionComplete(region_id)`.
+    // Expected region count is a compile-time constant baked in from
+    // `model.parallel_regions`.
+    //
+    // `EventWithMetadata` is defined on the base
+    // `::SCE::Static::StaticExecutionEngine<PolicyType>` (not on
+    // `PolicyType` itself); the explicit qualified name avoids
+    // dependent-name lookup pitfalls in the lambda body.
     ::SCE::Mesh::ParallelCompletionTracker tracker_{{ _pid }}_ {
         {{ model.parallel_regions[_pid] | length }},
         [this]() {
             AOT_DEBUG("§16.5 tracker fired for <parallel id=\"{{ _pid }}\">, raising done.state.{{ _pid }}");
-            this->raise(typename PolicyType::EventWithMetadata(PolicyType::Event::Done_state_{{ _pid }}));
+            using EngineBase = ::SCE::Static::StaticExecutionEngine<PolicyType>;
+            this->raise(typename EngineBase::EventWithMetadata(PolicyType::Event::Done_state_{{ _pid }}));
         }
     };
 {% endif %}
@@ -583,7 +630,13 @@ public:
     /// trackers. The envelope's `subject` is `<parallel_id>/<region_id>`;
     /// we split on '/' and dispatch to the named tracker.
     void onParallelRegionDone(const ::SCE::Mesh::MeshEnvelope& env) {
-        const auto& subject = env.subject;
+        // `MeshEnvelope::subject` is std::optional<std::string> (CloudEvents
+        // 'subject' is optional in the wire schema); a wire-21 envelope
+        // without a subject violates the §16.5 sender contract and is
+        // dropped silently — paired with the sender's mandatory
+        // `subject = parallel_id + "/" + region_id` assignment below.
+        if (!env.subject.has_value()) return;
+        const std::string& subject = *env.subject;
         auto slash = subject.find('/');
         if (slash == std::string::npos) return;
         const std::string parallel_id = subject.substr(0, slash);
@@ -604,16 +657,15 @@ public:
     /// SCE_MESH.md §14 rule 12 / §16.5 wire-21 sender hook. Called from a
     /// non-root partition's region-final entry when that region enters
     /// its `<final>` child. Constructs the `ParallelRegionDone` envelope
-    /// and routes it to the root partition's transport.
+    /// and forwards it to the root partition through the wire-21
+    /// callback installed by the generated `TransportRouter`.
     ///
-    /// The inter-partition transport routing (selecting the
-    /// `transport_binding` of the partition graph and delivering the
-    /// envelope to the root partition) is a §16.5 runtime concern whose
-    /// full wiring lives alongside the partition-execution harness. This
-    /// codegen-emitted method constructs the envelope shape (correct
-    /// wire value, subject, codec) and hands it to the mesh runtime;
-    /// absent the §16.5 harness, it fails loudly so silent drops are
-    /// impossible.
+    /// The callback owns the inter-partition transport binding (shm
+    /// channel for same-device deployments, custom_tcp for cross-device
+    /// — see SCE_MESH.md §14 rule 4 default). When unset (no router
+    /// constructed), the SM fails loudly so silent drops cannot mask a
+    /// missing wire-up; this guard preserves the §14 rule 12 atomic
+    /// bundle's "fail-loud not silent" invariant.
     void sendParallelRegionDone(const std::string& parallel_id,
                                 const std::string& region_id,
                                 const std::string& donedata) {
@@ -621,17 +673,41 @@ public:
         env.pattern = ::SCE::Mesh::PatternKind::ParallelRegionDone;
         env.subject = parallel_id + "/" + region_id;
         env.data.assign(donedata.begin(), donedata.end());
-        env.codec = ::SCE::Mesh::PayloadCodec::Json;
-        // §16.5 inter-partition transport_binding router is not yet
-        // wired in the generated SM layer — failing loudly here keeps
-        // silent drops impossible (SCE_MESH.md §14 L2844 rule 12
-        // bundle). Wiring lands with the partition-execution harness.
+        env.datacontenttype = ::SCE::Mesh::PayloadCodec::Json;
+        const std::string subject_text = env.subject.value_or(std::string());
+        if (parallel_region_done_callback_) {
+            if (parallel_region_done_callback_(env)) {
+                return;
+            }
+            throw std::runtime_error(
+                "SCE Mesh §16.5: ParallelRegionDone callback rejected envelope "
+                "(subject=" + subject_text + "). The wire-21 transport "
+                "(typically a per-partition shm channel) returned send=false; "
+                "back-pressure or a closed peer is the most common cause.");
+        }
         throw std::runtime_error(
             "SCE Mesh §16.5: non-root partition emitted ParallelRegionDone "
-            "(subject=" + env.subject + ") but inter-partition transport is "
-            "not yet wired — complete the §16.5 harness before running "
-            "distributed fixtures that rely on non-root wire-21 delivery.");
+            "(subject=" + subject_text + ") but no wire-21 callback was "
+            "installed on the SM. Construct the generated TransportRouter "
+            "for this partition before driving the SM into a region-final "
+            "state; the router installs the callback in its ctor.");
     }
+
+    /// SCE_MESH.md §16.5 wire-21 callback installer. The generated
+    /// `TransportRouter` ctor calls this with a closure that picks the
+    /// outbound shm channel keyed on `env.subject`'s `<parallel_id>`
+    /// prefix. Re-installing replaces any prior callback (last write
+    /// wins) — the router lifecycle is a strict superset of the SM's,
+    /// so callers normally install once.
+    void setParallelRegionDoneCallback(
+        std::function<bool(const ::SCE::Mesh::MeshEnvelope&)> cb) {
+        parallel_region_done_callback_ = std::move(cb);
+    }
+
+private:
+    std::function<bool(const ::SCE::Mesh::MeshEnvelope&)>
+        parallel_region_done_callback_;
+public:
 {% endif %}
 };
 

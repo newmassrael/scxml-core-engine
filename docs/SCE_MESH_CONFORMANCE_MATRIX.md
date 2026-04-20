@@ -128,7 +128,7 @@ and delta"; `S` = spec-only, no runtime evidence.
 | §14 Pattern dispatch + pool + srcexpr | F | Multi-pattern runtime fixtures + `mesh_pool_zenoh_runtime_verification` + `mesh_srcexpr_compile_verification`. |
 | §14 `partitions:` schema (rules 1/2/5/6–12) | F | Rules 1/2/5–11 via `mesh_partition_rule{1,2,6,7,8,9,10,11}_rejection`; rule 12 (five violations) via `mesh_partition_rule12{a,b,c,d,e}_rejection`. Cross-reference enforced by `sce-build/src/mesh/partitions.rs::validate_parallel_root_designation`. |
 | §16.3 / §16.4 Distributability analyzer (R1–R4) | S | Session E2 scope. Zero fixtures. |
-| §16.5 Parallel `<final>` barrier + `ParallelRegionDone` wire value 21 | P | Tracker primitive at `sce/include/mesh/ParallelCompletionTracker.h` + `mesh_parallel_completion_tracker_verification`; wire-21 dispatch via `MeshDispatch::dispatchEnvelope`; codegen emits Root / NonRoot / SinglePartition branches via `parallel_final.jinja2`. Inter-partition transport delivery for NonRoot wire-21 sends is still a runtime follow-up (stub throws at call site until the §16.5 harness lands). |
+| §16.5 Parallel `<final>` barrier + `ParallelRegionDone` wire value 21 | F (shm) / P (custom_tcp) | Tracker primitive at `sce/include/mesh/ParallelCompletionTracker.h` + `mesh_parallel_completion_tracker_verification`; wire-21 dispatch via `MeshDispatch::dispatchEnvelope`; codegen emits Root / NonRoot / SinglePartition branches via `parallel_final.jinja2`. End-to-end inter-partition delivery (NonRoot send → Root tracker → `done.state.<parallel>`) for the `transport_binding: shm` path verified via `mesh_partition_rule12_e2e` (two OS processes, fork+exec). The `transport_binding: custom_tcp` codegen surface has no wire-21 emitter yet — a `custom_tcp` partition pair compiles but the SM throws at the missing-callback check inside `sendParallelRegionDone` (fail-loud, not silent). Finite `barrier_timeout_ms` runtime firing (§16.5 L3500 `PARALLEL_BARRIER_TIMEOUT`) is configured at deploy time but not yet scheduler-fired. |
 | §16.7 `error.communication` catalog | P | Row 8 (`PEER_PARTITIONED`) via `mesh_zenoh_liveliness_verification`. Rows 11 / 12 (`MISSING_SEQUENCE` / `ORDERING_GAP`) via `mesh_order_injection_verification`. Byte-shape pins in `mesh_communication_error_verification` cover those three rows; rows 1 / 2 / 3 / 4 / 5 / 6 / 7 / 9 / 10 have no end-to-end transport-fault fixture. |
 | §16.8 IRP distributed harness | S | Session E2 scope. Zero fixtures. See below. |
 
@@ -146,10 +146,12 @@ exist in the tree as of commit `1c414320`:
 - `tests/w3c/dist/run_distributed.py` — the harness driver.
 - The CTest label `w3c_distributed_conformance`.
 - The R1–R4 distributability analyzer in `sce-build` (§16.3).
-- Inter-partition transport delivery of wire-21 `ParallelRegionDone`
-  envelopes from non-root partitions — the codegen emits the envelope
-  shape but the stub throws at runtime until the §16.5 harness wires
-  `transport_binding` into the SM's sender hook.
+- (closed for `transport_binding: shm` as of `mesh_partition_rule12_e2e`)
+  Inter-partition transport delivery of wire-21 `ParallelRegionDone`
+  envelopes for the `custom_tcp` binding — the parser and partition
+  validator accept `custom_tcp` end-to-end but the wire-21 channel
+  emitter only materializes shm; a `custom_tcp` pair fails loudly via
+  the SM's missing-callback throw rather than emitting code.
 
 None of the 44 mesh ctest fixtures satisfy the §16.8 architecture, because
 none spawn per-partition OS processes and none cross-compare a distributed

@@ -810,6 +810,9 @@ pub fn generate_mesh(
     machine_ordering: OrderingTimings,
     machine_liveliness: Option<LivelinessConfig>,
     machine_outbound_buffer: Option<super::deploy::OutboundBufferConfig>,
+    partition_self_name: Option<&str>,
+    partition_wire21_outbound: &BTreeMap<String, String>,
+    partition_wire21_inbound: &[String],
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -821,10 +824,18 @@ pub fn generate_mesh(
     // SSoT: `CustomTcpTransportConfig::hosts_server` (see deploy.rs).
     let needs_custom_tcp_server =
         custom_tcp_config.is_some_and(CustomTcpTransportConfig::hosts_server);
+    // SCE_MESH.md §16.5 wire-21: a partition with non-empty wire-21
+    // routes still needs `<machine>_transport.h` even when no
+    // conventional `<send>`-driven targets, server, subscriptions, or
+    // custom_tcp listen exist (rule 12 fixture). Mirrors the same
+    // predicate threaded through `compile_mesh_transport`.
+    let has_wire21_routing =
+        !partition_wire21_outbound.is_empty() || !partition_wire21_inbound.is_empty();
     if targets.is_empty()
         && subscriptions.is_empty()
         && server.is_none()
         && !needs_custom_tcp_server
+        && !has_wire21_routing
     {
         return Ok(GeneratedOutput { files: vec![] });
     }
@@ -841,6 +852,9 @@ pub fn generate_mesh(
             machine_ordering,
             machine_liveliness,
             machine_outbound_buffer,
+            partition_self_name,
+            partition_wire21_outbound,
+            partition_wire21_inbound,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -968,6 +982,9 @@ fn generate_cpp_mesh(
     machine_ordering: OrderingTimings,
     machine_liveliness: Option<LivelinessConfig>,
     machine_outbound_buffer: Option<super::deploy::OutboundBufferConfig>,
+    partition_self_name: Option<&str>,
+    partition_wire21_outbound: &BTreeMap<String, String>,
+    partition_wire21_inbound: &[String],
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -1314,6 +1331,53 @@ fn generate_cpp_mesh(
         None => serde_json::Value::Null,
     };
 
+    // SCE_MESH.md §16.5 wire-21: materialize partition routing context
+    // for the template. Outbound entries are keyed by parallel_id with
+    // the root partition as value; dedup across parallels sharing the
+    // same root so the template emits exactly one shm channel per
+    // unique (src_partition, dst_partition) pair. Inbound sources are
+    // already sorted + deduplicated by `inject_partition_context_for`.
+    // Channel naming mirrors the per-machine shm convention
+    // (`/sce_p21_<src>_<dst>`) — one name string per direction, same
+    // name on both sides of the wire.
+    let wire21_self = partition_self_name.unwrap_or("").to_string();
+    let wire21_outbound_routes: Vec<serde_json::Value> = partition_wire21_outbound
+        .iter()
+        .map(|(parallel_id, dst_partition)| {
+            serde_json::json!({
+                "parallel_id": parallel_id,
+                "dst_partition": dst_partition,
+                "channel_name": format!("/sce_p21_{}_{}", wire21_self, dst_partition),
+                "dst_partition_snake": filters::to_snake_case(dst_partition.clone()),
+            })
+        })
+        .collect();
+    let mut wire21_outbound_unique_dests_map: BTreeMap<String, serde_json::Value> =
+        BTreeMap::new();
+    for (_parallel_id, dst_partition) in partition_wire21_outbound {
+        wire21_outbound_unique_dests_map
+            .entry(dst_partition.clone())
+            .or_insert_with(|| {
+                serde_json::json!({
+                    "dst_partition": dst_partition,
+                    "dst_partition_snake": filters::to_snake_case(dst_partition.clone()),
+                    "channel_name": format!("/sce_p21_{}_{}", wire21_self, dst_partition),
+                })
+            });
+    }
+    let wire21_outbound_unique_dests: Vec<serde_json::Value> =
+        wire21_outbound_unique_dests_map.into_values().collect();
+    let wire21_inbound_sources: Vec<serde_json::Value> = partition_wire21_inbound
+        .iter()
+        .map(|src_partition| {
+            serde_json::json!({
+                "src_partition": src_partition,
+                "src_partition_snake": filters::to_snake_case(src_partition.clone()),
+                "channel_name": format!("/sce_p21_{}_{}", src_partition, wire21_self),
+            })
+        })
+        .collect();
+
     let ctx = minijinja::context! {
         machine_name => machine_name,
         machine_pascal => machine_pascal,
@@ -1334,6 +1398,10 @@ fn generate_cpp_mesh(
         machine_subscriptions => subscriptions,
         server => server_context,
         n_sessions => n_sessions,
+        partition_wire21_self => wire21_self,
+        partition_wire21_outbound_routes => wire21_outbound_routes,
+        partition_wire21_outbound_unique_dests => wire21_outbound_unique_dests,
+        partition_wire21_inbound_sources => wire21_inbound_sources,
     };
 
     let code = tmpl
