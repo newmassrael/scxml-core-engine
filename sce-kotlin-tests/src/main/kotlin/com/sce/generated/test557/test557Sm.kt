@@ -82,6 +82,12 @@ class Test557StateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test557Event): String? = when (event) {
         is Test557Event.Error.Execution -> "error.execution"
+        // Kotlin `when` expression exhaustiveness: a child machine that
+        // inherits the override (has_parent_communication path) but
+        // declares no events of its own produces an empty sealed
+        // hierarchy, and `when (event)` without `else` fails to compile.
+        // The branch is redundant on non-empty hierarchies but harmless.
+        else -> null
     }
 
 

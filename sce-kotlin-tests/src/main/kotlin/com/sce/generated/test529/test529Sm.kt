@@ -103,6 +103,12 @@ class Test529StateMachine(
     override fun eventNameOf(event: Test529Event): String? = when (event) {
         is Test529Event.Done.State.S0 -> "done.state.s0"
         is Test529Event.Error.Execution -> "error.execution"
+        // Kotlin `when` expression exhaustiveness: a child machine that
+        // inherits the override (has_parent_communication path) but
+        // declares no events of its own produces an empty sealed
+        // hierarchy, and `when (event)` without `else` fails to compile.
+        // The branch is redundant on non-empty hierarchies but harmless.
+        else -> null
     }
 
 
