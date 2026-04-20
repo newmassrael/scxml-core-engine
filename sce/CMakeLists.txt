@@ -175,6 +175,13 @@ add_library(sce_base
 target_include_directories(sce_base
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/common>
+    # include/scripting is PRIVATE here (sce_base's own .cpp files compile
+    # XMLDOMWrapper/SessionRegistry/ScriptResultUtils/EcmaScriptToLuaTransformer
+    # whose headers use unqualified includes). It is re-exposed PUBLIC on
+    # sce_scripting below so tier-respecting consumers pick it up only when
+    # they actually link the scripting tier.
+    PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
 )
 
@@ -256,6 +263,12 @@ if(SCE_HAS_SCRIPTING)
     add_dependencies(sce_scripting json_builtins_header)
 
     target_include_directories(sce_scripting
+        PUBLIC
+            # Scripting flat path — moved here from sce_base so only the
+            # scripting tier exposes scripting/* short-name headers
+            # (unqualified #include "IScriptEngine.h" etc.).
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/scripting>
         PRIVATE
             # Implementation headers (Impl classes in src/)
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
