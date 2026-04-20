@@ -430,8 +430,12 @@ private:
                 executeOnEntry(currentState_);
             },
             [this] { processEventQueues(); });
-        // W3C SCXML 6.4: Notify parent if reached final state after macrostep
-        if (stateChanged && isInFinalState() && completionCallback_) {
+        // W3C SCXML 6.4: Notify parent only when the machine has globally
+        // terminated. `isGlobalFinalState()` (parent-presence check on top
+        // of the leaf `isFinalState`) excludes regional `<final>` inside a
+        // `<parallel>`, whose sibling regions may still be running — the
+        // done.invoke contract in §6.4 fires at top-level-final only.
+        if (stateChanged && isGlobalFinalState() && completionCallback_) {
             completionCallback_();
         }
     }
@@ -943,11 +947,13 @@ public:
             checkEventlessTransitions();
         }
 
-        // W3C SCXML 6.4: Invoke completion callback if in final state after initialization
-        // Child state machines may reach final state immediately (e.g., initial="subFinal")
-        // and must notify parent to generate done.invoke event
-        if (isInFinalState() && completionCallback_) {
-            SCE_LOG_DEBUG("AOT initialize: Reached final state during initialization, invoking completion callback");
+        // W3C SCXML 6.4: Invoke completion callback if top-level final after initialization.
+        // Child state machines may reach the machine-done state immediately (e.g.,
+        // initial="subFinal") and must notify parent. Regional `<final>` inside a
+        // `<parallel>` is excluded by `isGlobalFinalState()` because the machine as a
+        // whole is still running while sibling regions are active.
+        if (isGlobalFinalState() && completionCallback_) {
+            SCE_LOG_DEBUG("AOT initialize: Reached top-level final state during initialization, invoking completion callback");
             // W3C SCXML 3.8: Execute onexit actions for final state before notifying parent
             std::vector<State> activeStates = getActiveStates();
             executeOnExit(currentState_, activeStates);
@@ -967,8 +973,11 @@ public:
         processEventQueues();
         checkEventlessTransitions();
 
-        // W3C SCXML 6.4: Invoke completion callback if in final state
-        if (isInFinalState() && completionCallback_) {
+        // W3C SCXML 6.4: Invoke completion callback only at top-level final.
+        // Leaf `isInFinalState()` would mis-fire on a regional `<final>` inside
+        // a `<parallel>`; `isGlobalFinalState()` enforces the parent-presence
+        // check that distinguishes "machine done" from "one region done".
+        if (isGlobalFinalState() && completionCallback_) {
             SCE_LOG_DEBUG("AOT step: Invoking completion callback for done.invoke");
             completionCallback_();
         }
