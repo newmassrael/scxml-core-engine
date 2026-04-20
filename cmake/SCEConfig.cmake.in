@@ -10,7 +10,11 @@
 #   target_link_libraries(my_app PRIVATE SCE::sce)
 #
 # Provided targets:
-#   SCE::sce          - Main SCE library (alias for sce_unified)
+#   SCE::sce            - Main umbrella library (forwards to SCE::sce_runtime)
+#   SCE::sce_runtime    - Runtime tier (full SCXML engine)
+#   SCE::sce_base       - Base tier
+#   SCE::sce_core       - Core tier (interfaces only)
+#   SCE::sce_scripting  - Optional scripting tier (when SCE_HAS_SCRIPTING)
 #
 # Provided functions:
 #   sce_add_state_machine()            - Generate state machine from single SCXML
@@ -18,9 +22,11 @@
 #   sce_create_state_machine_library() - Create standalone library from SCXML
 #
 # Finding SCE:
-#   Option 1: Install SCE and use default paths
-#   Option 2: cmake -DCMAKE_PREFIX_PATH=/path/to/sce/build
-#   Option 3: cmake -DSCE_ROOT=/path/to/sce/source
+#   Option 1 (recommended): Install SCE via `cmake --install`, then find_package(SCE)
+#   Option 2 (build-tree):  find_package(SCE PATHS /path/to/sce/build NO_DEFAULT_PATH)
+#                           — requires `cmake -S . -B build` to have been run first;
+#                             both install and build trees produce their own
+#                             SCEConfig.cmake with paths resolved for that tree.
 #
 # Example:
 #   find_package(SCE REQUIRED)
@@ -33,14 +39,62 @@ include(CMakeFindDependencyMacro)
 # Find required dependencies
 find_dependency(Threads)
 
-# Set paths from package configuration
+# HTTP support: sce_runtime PUBLIC-links httplib::httplib when SCE_ENABLE_HTTP
+# was enabled at SCE configure time (sce/CMakeLists.txt:501).
+#
+# Install-tree consumers load httplib via its own installed package config,
+# which has correct find_dependency(...) chains.
+#
+# Build-tree consumers load the sibling httplibTargets.cmake we export from
+# the SCE build tree (cpp-httplib's own build-tree Config is unusable — it
+# computes PACKAGE_PREFIX_DIR incorrectly for the uninstalled layout). Since
+# that bare targets file omits find_dependency calls, we replicate them here
+# using flags detected by the top-level CMakeLists.txt from httplib's
+# INTERFACE_LINK_LIBRARIES.
+set(SCE_ENABLE_HTTP @SCE_ENABLE_HTTP@)
+if(SCE_ENABLE_HTTP)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
+        # cpp-httplib ships its own FindBrotli.cmake in third_party; expose
+        # it via CMAKE_MODULE_PATH so find_dependency(Brotli) resolves. We do
+        # this for the build tree only; install-tree falls through to
+        # find_dependency(httplib) which handles the module path itself.
+        set(_sce_httplib_find_modules_dir "@SCE_HTTPLIB_FIND_MODULES_DIR@")
+        if(_sce_httplib_find_modules_dir)
+            list(APPEND CMAKE_MODULE_PATH "${_sce_httplib_find_modules_dir}")
+        endif()
+        if(@SCE_HTTPLIB_NEEDS_OPENSSL@)
+            find_dependency(OpenSSL)
+        endif()
+        if(@SCE_HTTPLIB_NEEDS_ZLIB@)
+            find_dependency(ZLIB)
+        endif()
+        if(@SCE_HTTPLIB_NEEDS_BROTLI@)
+            find_dependency(Brotli COMPONENTS common encoder decoder)
+        endif()
+        if(@SCE_HTTPLIB_NEEDS_ZSTD@)
+            find_dependency(zstd)
+        endif()
+        if(_sce_httplib_find_modules_dir)
+            list(REMOVE_ITEM CMAKE_MODULE_PATH "${_sce_httplib_find_modules_dir}")
+        endif()
+        unset(_sce_httplib_find_modules_dir)
+        include("${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
+    else()
+        find_dependency(httplib)
+    endif()
+endif()
+
+# Paths resolved by configure_package_config_file (differ between install / build trees)
 set_and_check(SCE_INCLUDE_DIR "@PACKAGE_INCLUDE_INSTALL_DIR@")
 set_and_check(SCE_CODEGEN_DIR "@PACKAGE_CODEGEN_INSTALL_DIR@")
+# sce-codegen binary directory — plain set() (not set_and_check): directory may
+# not yet exist in build tree if `cargo build --bin sce-codegen` hasn't been run.
+# SCECodegen.cmake will FATAL_ERROR later if the binary is actually needed.
+set(SCE_CODEGEN_BIN_DIR "@PACKAGE_CODEGEN_BIN_DIR@")
 
-# Find sce-codegen binary for SCECodegen.cmake
-# Priority: installed location, then system PATH
+# Locate sce-codegen: explicit bin dir first, then system PATH
 find_program(SCE_CODEGEN sce-codegen
-    PATHS "${SCE_CODEGEN_DIR}" "${CMAKE_CURRENT_LIST_DIR}/../../../bin"
+    PATHS "${SCE_CODEGEN_BIN_DIR}"
     NO_DEFAULT_PATH
 )
 if(NOT SCE_CODEGEN)
@@ -50,8 +104,29 @@ endif()
 # Template dir for installed sce-codegen (passed via env to add_custom_command)
 set(SCE_TEMPLATE_DIR "${SCE_CODEGEN_DIR}/templates")
 
+# Build-tree only: qjs / lua54 are linked by sce_scripting via bare names but
+# are not installable (lua54's INTERFACE_INCLUDE_DIRECTORIES uses an absolute
+# source path). The sibling SCEScriptTargets.cmake exists only in the build
+# tree; install-tree consumers rely on qjs's own qjsConfig and on lua54 being
+# resolvable through the system linker's library search path.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/SCEScriptTargets.cmake")
+    include("${CMAKE_CURRENT_LIST_DIR}/SCEScriptTargets.cmake")
+endif()
+
 # Include the exported targets
 include("${CMAKE_CURRENT_LIST_DIR}/SCETargets.cmake")
+
+# Reconstruct the SCE::sce umbrella target. CMake ALIAS targets cannot be
+# exported via install(EXPORT), so the parent project's
+# `add_library(SCE::sce ALIAS sce_runtime)` does not survive find_package().
+# An INTERFACE IMPORTED target forwarding to SCE::sce_runtime is the canonical
+# replacement and is link-compatible with the original alias.
+if(NOT TARGET SCE::sce)
+    add_library(SCE::sce INTERFACE IMPORTED)
+    set_target_properties(SCE::sce PROPERTIES
+        INTERFACE_LINK_LIBRARIES SCE::sce_runtime
+    )
+endif()
 
 # Include code generation utilities
 include("${CMAKE_CURRENT_LIST_DIR}/SCECodegen.cmake")

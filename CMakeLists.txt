@@ -308,7 +308,14 @@ add_library(SCE::sce ALIAS sce_runtime)
 set(SCE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SCE")
 set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
 
-# Install all library tiers with export
+# Install all library tiers with export.
+# Note: qjs / lua54 are PUBLIC link deps of sce_scripting but are NOT part of
+# this export set — third_party/lua/CMakeLists.txt uses an absolute-source
+# INTERFACE_INCLUDE_DIRECTORIES that install(EXPORT) rejects, and we don't
+# patch third_party. Build-tree find_package(SCE) handles them via a separate
+# export(TARGETS qjs lua54 FILE SCEScriptTargets.cmake) below; install-tree
+# consumers rely on qjs's own qjsConfig package and on lua54 being available
+# through system linker search (this is a pre-existing gap for lua54).
 set(_SCE_INSTALL_TARGETS sce_runtime sce_base sce_core)
 if(SCE_HAS_SCRIPTING)
     list(APPEND _SCE_INSTALL_TARGETS sce_scripting)
@@ -358,39 +365,138 @@ endif()
 # =============================================================================
 # Package Configuration for find_package(SCE)
 # =============================================================================
+# Two consumer paths are supported:
+#   1. Install-tree:  cmake --install ...; find_package(SCE)
+#   2. Build-tree:    find_package(SCE PATHS /path/to/sce/build NO_DEFAULT_PATH)
+# Both generate their own SCEConfig.cmake with correctly resolved paths.
 include(CMakePackageConfigHelpers)
 
-# Generate version file
+# Version file (shared by both trees)
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/SCEConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 
-# Set variables for config file
-set(INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}")
-set(CODEGEN_INSTALL_DIR "${SCE_INSTALL_CODEGENDIR}")
+# httplib transitive-dep detection (used by both trees of SCEConfig.cmake).
+# sce_runtime publicly links httplib::httplib when SCE_ENABLE_HTTP is on
+# (sce/CMakeLists.txt:501). export() is strict about unresolved deps, so when
+# we emit httplibTargets below we must also replay httplib's
+# find_dependency(OpenSSL/ZLIB/Brotli/zstd) chain in SCEConfig — cpp-httplib's
+# own build-tree httplibConfig.cmake is unusable here because it computes
+# PACKAGE_PREFIX_DIR incorrectly for the uninstalled layout. We detect which
+# transitive deps are actually in play by scanning the target's link interface
+# for marker namespaces, and pass the flags to SCEConfig.cmake.in via
+# @SCE_HTTPLIB_NEEDS_*@ substitution.
+set(SCE_HTTPLIB_NEEDS_OPENSSL FALSE)
+set(SCE_HTTPLIB_NEEDS_ZLIB    FALSE)
+set(SCE_HTTPLIB_NEEDS_BROTLI  FALSE)
+set(SCE_HTTPLIB_NEEDS_ZSTD    FALSE)
+if(SCE_ENABLE_HTTP AND NOT EMSCRIPTEN AND TARGET httplib)
+    # Detect by matching the enabled generator-expression form
+    # $<$<BOOL:TRUE>:<namespace>::…>. The disabled form has $<BOOL:> (empty),
+    # which we must NOT pick up — hence the literal "TRUE>:" prefix.
+    get_target_property(_sce_httplib_iface httplib INTERFACE_LINK_LIBRARIES)
+    if(_sce_httplib_iface MATCHES "BOOL:TRUE>:OpenSSL::")
+        set(SCE_HTTPLIB_NEEDS_OPENSSL TRUE)
+    endif()
+    if(_sce_httplib_iface MATCHES "BOOL:TRUE>:ZLIB::")
+        set(SCE_HTTPLIB_NEEDS_ZLIB TRUE)
+    endif()
+    if(_sce_httplib_iface MATCHES "BOOL:TRUE>:Brotli::")
+        set(SCE_HTTPLIB_NEEDS_BROTLI TRUE)
+    endif()
+    if(_sce_httplib_iface MATCHES "BOOL:TRUE>:zstd::")
+        set(SCE_HTTPLIB_NEEDS_ZSTD TRUE)
+    endif()
+    unset(_sce_httplib_iface)
+endif()
 
-# Generate config file from template
+# ---------------------------------------------------------------------------
+# Build-tree package config (consumed directly from ${CMAKE_CURRENT_BINARY_DIR})
+# Paths are absolute source-tree paths; build tree is not relocatable.
+# ---------------------------------------------------------------------------
+set(INCLUDE_INSTALL_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/sce/include")
+set(CODEGEN_INSTALL_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen")
+set(CODEGEN_BIN_DIR      "${CMAKE_CURRENT_SOURCE_DIR}/target/release")
+set(SCE_HTTPLIB_FIND_MODULES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib/cmake")
 configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/SCEConfig.cmake"
-    INSTALL_DESTINATION ${SCE_INSTALL_CMAKEDIR}
-    PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR
+    INSTALL_DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+    PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR CODEGEN_BIN_DIR
 )
 
-# Export targets to file
+# Build-tree target export (counterpart to install(EXPORT) below)
+if(SCE_ENABLE_HTTP AND NOT EMSCRIPTEN AND TARGET httplib)
+    export(EXPORT httplibTargets
+        FILE "${CMAKE_CURRENT_BINARY_DIR}/httplibTargets.cmake"
+        NAMESPACE httplib::
+    )
+endif()
+export(EXPORT SCETargets
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/SCETargets.cmake"
+    NAMESPACE SCE::
+)
+
+# Build-tree-only export of script-engine targets. sce_scripting links these
+# via generator-expression-gated bare names (sce/CMakeLists.txt:254-255), so
+# consumers need the qjs / lua54 targets defined before they link SCE::sce.
+# Install-tree cannot include these (see comment at _SCE_INSTALL_TARGETS).
+set(_SCE_SCRIPT_TARGETS "")
+if(TARGET qjs)
+    list(APPEND _SCE_SCRIPT_TARGETS qjs)
+endif()
+if(TARGET lua54)
+    list(APPEND _SCE_SCRIPT_TARGETS lua54)
+endif()
+if(_SCE_SCRIPT_TARGETS)
+    export(TARGETS ${_SCE_SCRIPT_TARGETS}
+        FILE "${CMAKE_CURRENT_BINARY_DIR}/SCEScriptTargets.cmake"
+    )
+endif()
+
+# Stage SCECodegen.cmake into the build tree so find_package(SCE PATHS build)
+# can include() it from the same directory as SCEConfig.cmake
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/SCECodegen.cmake"
+    COPYONLY
+)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEClangFormat.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/SCEClangFormat.cmake"
+    COPYONLY
+)
+
+# ---------------------------------------------------------------------------
+# Install-tree package config (staged under _install/ to avoid overwriting
+# the build-tree SCEConfig.cmake above)
+# ---------------------------------------------------------------------------
+set(INCLUDE_INSTALL_DIR  "${CMAKE_INSTALL_INCLUDEDIR}")
+set(CODEGEN_INSTALL_DIR  "${SCE_INSTALL_CODEGENDIR}")
+set(CODEGEN_BIN_DIR      "${CMAKE_INSTALL_BINDIR}")
+# Install-tree takes the find_dependency(httplib) branch, which handles
+# transitive module paths itself — no build-tree FindBrotli fallback needed.
+set(SCE_HTTPLIB_FIND_MODULES_DIR "")
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/_install/SCEConfig.cmake"
+    INSTALL_DESTINATION ${SCE_INSTALL_CMAKEDIR}
+    PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR CODEGEN_BIN_DIR
+)
+
 install(EXPORT SCETargets
     FILE SCETargets.cmake
     NAMESPACE SCE::
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
 )
 
-# Install package configuration files
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/SCEConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/_install/SCEConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/SCEConfigVersion.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEClangFormat.cmake"
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
 )
 
