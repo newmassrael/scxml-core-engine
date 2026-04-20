@@ -210,15 +210,40 @@ pub struct HistoryInfo {
     pub default_actions: Vec<Action>,
 }
 
-/// W3C SCXML 5.7: Done data for final states
+/// W3C SCXML 5.7: Done data for final states.
+///
+/// `content` is a [`DoneDataContent`] sum so that the parser decision —
+/// `<content expr="...">` vs `<content>literal</content>` vs omitted — is
+/// encoded in the type and survives into templates as a `{kind, text}`
+/// object. Templates dispatch on `donedata.content.kind` rather than the
+/// legacy truthy-check on two parallel strings.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct DoneData {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<DoneDataParam>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub content: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub contentexpr: String,
+    pub content: DoneDataContent,
+}
+
+/// W3C SCXML 5.5: `<content>` body semantics.
+///
+/// - [`DoneDataContent::None`] — no `<content>` child (`{"kind":"none"}`).
+/// - [`DoneDataContent::Expression`] — `<content expr="X"/>`, MUST be
+///   evaluated against the active datamodel (`{"kind":"expression","text":"X"}`).
+/// - [`DoneDataContent::Literal`] — `<content>inline text</content>`; per
+///   W3C SCXML 5.5 the children are used **as the content value**, not
+///   re-evaluated as an expression. Literal means no script engine required
+///   at runtime (`{"kind":"literal","text":"..."}`).
+///
+/// Serialized via adjacent tagging (`tag = "kind", content = "text"`) so
+/// minijinja consumers match on `donedata.content.kind` and read the payload
+/// from `.text` when present.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(tag = "kind", content = "text", rename_all = "snake_case")]
+pub enum DoneDataContent {
+    #[default]
+    None,
+    Expression(String),
+    Literal(String),
 }
 
 /// W3C SCXML 5.7: Done data parameter.

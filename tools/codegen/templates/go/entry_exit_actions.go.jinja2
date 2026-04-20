@@ -93,12 +93,13 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 				}
 			}
 		}
-{% elif state.donedata.contentexpr %}
+{% elif state.donedata.content.kind == "expression" %}
 		{
+			// W3C SCXML 5.5: <content expr="..."/> MUST be evaluated against the datamodel.
 			p.ensureScriptEngine()
 			se := sce.GetScriptEngine()
 			if se != nil {
-				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.contentexpr | to_lua_expr | escape_go }}`); err == nil {
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.content.text | to_lua_expr | escape_go }}`); err == nil {
 					doneEventData = sce.ToLuaLiteral(val)
 				} else {
 {% if 'error.execution' in model.events %}
@@ -107,19 +108,11 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 				}
 			}
 		}
-{% elif state.donedata.content %}
+{% elif state.donedata.content.kind == "literal" %}
 		{
-			p.ensureScriptEngine()
-			se := sce.GetScriptEngine()
-			if se != nil {
-				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.content | to_lua_expr | escape_go }}`); err == nil {
-					doneEventData = sce.ToLuaLiteral(val)
-				} else {
-{% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
-{% endif %}
-				}
-			}
+			// W3C SCXML 5.5: inline text children are used **as the content
+			// value** — no evaluation, no script engine required.
+			doneEventData = `{{ state.donedata.content.text | escape_go }}`
 		}
 {% endif %}
 		_ = doneEventData

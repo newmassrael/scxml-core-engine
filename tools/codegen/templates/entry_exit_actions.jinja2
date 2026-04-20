@@ -360,14 +360,14 @@
                         AOT_DEBUG("Skipping done.state event due to structural donedata error");
                         break;
                     }
-{% elif state.donedata.contentexpr %}
-                    // W3C SCXML 5.5: Evaluate <content expr="..."/>
+{% elif state.donedata.content.kind == "expression" %}
+                    // W3C SCXML 5.5: Evaluate <content expr="..."/> against the datamodel.
                     this->ensureScriptEngine();
                     auto& scriptEngine = getScriptEngine();
                     ::SCE::DoneDataHelper::evaluateContent(
                         scriptEngine,
                         sessionId_.value(),
-                        "{{ state.donedata.contentexpr }}",
+                        "{{ state.donedata.content.text }}",
                         eventData,
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
@@ -375,19 +375,12 @@
                         },
                         &typedData
                     );
-{% elif state.donedata.content %}
-                    // W3C SCXML 5.5: Evaluate <content> expression
-                    this->ensureScriptEngine();
-                    auto& scriptEngine = getScriptEngine();
-                    ::SCE::DoneDataHelper::evaluateContent(
-                        scriptEngine,
-                        sessionId_.value(),
-                        "{{ state.donedata.content | escape_cpp }}",
+{% elif state.donedata.content.kind == "literal" %}
+                    // W3C SCXML 5.5: inline text children are used **as the content
+                    // value** — no evaluation, no script engine. Linkable against sce_base.
+                    ::SCE::DoneDataHelper::emitContentLiteral(
+                        "{{ state.donedata.content.text | escape_cpp }}",
                         eventData,
-                        [&engine](const std::string& msg) {
-                            SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-                        },
                         &typedData
                     );
 {% endif %}

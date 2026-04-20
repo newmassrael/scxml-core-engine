@@ -169,30 +169,31 @@
 {% endfor %}
 {% endif %}
 {% if has_done_event %}
-{% if state.donedata and model.needs_script_engine %}
+{% if state.donedata and state.donedata.content.kind == "literal" and not state.donedata.params %}
+                // W3C SCXML 5.5: inline <content> text is the value itself — no script engine needed.
+                run {
+                    val doneEventData = "{{ state.donedata.content.text | escape_kotlin }}"
+                    raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }}, EventMetadata.platform(doneEventData))
+                }
+{% elif state.donedata and model.needs_script_engine %}
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
                     val engineDD = scriptEngine ?: return@run
                     val sidDD = scriptSessionId ?: return@run
                     var doneEventData = ""
-{% if state.donedata.contentexpr %}
+{% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.contentexpr | escape_kotlin }}")
+                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.content.text | escape_kotlin }}")
                         // C++ DoneDataHelper::evaluateContent: convertScriptValueToJson
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
                         raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
                     }
-{% elif state.donedata.content %}
-                    // W3C SCXML 5.5: Evaluate <content> inline text
-                    try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.content | escape_kotlin }}")
-                        doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
-                    } catch (_: Exception) {
-                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
-                    }
+{% elif state.donedata.content.kind == "literal" %}
+                    // W3C SCXML 5.5: inline text is the content value (literal path alongside params).
+                    doneEventData = "{{ state.donedata.content.text | escape_kotlin }}"
 {% elif state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()

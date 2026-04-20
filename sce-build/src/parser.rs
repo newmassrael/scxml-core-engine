@@ -720,7 +720,7 @@ impl SCXMLParser {
 
             // Parse donedata
             if let Some(dd_elem) = scxml_child(&child, "donedata") {
-                state.donedata = Some(self.parse_donedata(&dd_elem));
+                state.donedata = Some(self.parse_donedata(&dd_elem, &model.datamodel_type));
             }
 
             model.states.insert(final_id, state);
@@ -1649,7 +1649,7 @@ impl SCXMLParser {
         })
     }
 
-    fn parse_donedata(&mut self, elem: &roxmltree::Node) -> DoneData {
+    fn parse_donedata(&mut self, elem: &roxmltree::Node, datamodel_type: &str) -> DoneData {
         let mut dd = DoneData::default();
 
         // W3C SCXML 5.7: Parse <param> elements.
@@ -1663,13 +1663,32 @@ impl SCXMLParser {
             });
         }
 
-        // W3C SCXML 5.5: Parse <content> element.
-        // [`NeedsScriptEngineCause::DonedataContent`] is derived post-parse
-        // by [`crate::script_engine_analyzer`] from `content`/`contentexpr`.
+        // W3C SCXML 5.5 + 5.6 + Appendix B.2.2:
+        //   - `<content expr="X"/>` → Expression (MUST be evaluated against
+        //     the datamodel at runtime — script engine required).
+        //   - `<content>text</content>` with ECMAScript datamodel → the
+        //     spec (Appendix B.2.2) says inline text is parsed as JSON; SCE
+        //     delegates that parsing to the script engine by emitting it as
+        //     an Expression (`evaluate("21")` yields number 21, `'foo'`
+        //     yields string "foo"). This preserves in-machine `_event.data`
+        //     semantics for W3C-conformant ECMAScript documents.
+        //   - `<content>text</content>` with the "null" datamodel → Literal:
+        //     the children are used **as the content value**, no evaluation,
+        //     no script engine required. This is the `sce_base`-linkable
+        //     path for native-only (`cpp:` / `kt:`) state machines.
+        //   - Omitted → None.
         if let Some(content_elem) = scxml_child(elem, "content") {
-            dd.contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
-            if let Some(text) = content_elem.text() {
-                dd.content = text.trim().to_string();
+            if let Some(expr) = content_elem.attribute("expr") {
+                dd.content = crate::model::DoneDataContent::Expression(expr.to_string());
+            } else if let Some(text) = content_elem.text() {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    dd.content = if datamodel_type == "null" {
+                        crate::model::DoneDataContent::Literal(trimmed.to_string())
+                    } else {
+                        crate::model::DoneDataContent::Expression(trimmed.to_string())
+                    };
+                }
             }
         }
 

@@ -22,7 +22,8 @@
 //! side effects.
 
 use crate::model::{
-    Action, DoneData, Invoke, InvokeSessionCommon, MeshRpcTarget, SCXMLModel, State, Variable,
+    Action, DoneData, DoneDataContent, Invoke, InvokeSessionCommon, MeshRpcTarget, SCXMLModel,
+    State, Variable,
 };
 
 /// One distinct reason a document needs a runtime script engine.
@@ -87,8 +88,11 @@ pub enum NeedsScriptEngineCause {
     /// W3C SCXML 5.7 — `<donedata>` carries at least one `<param>` whose
     /// value must be evaluated when the final state is entered.
     DonedataParam { state_id: String },
-    /// W3C SCXML 5.7 — `<donedata>` has `<content>` (inline text or `expr`)
-    /// to be evaluated before the `done.state` event is raised.
+    /// W3C SCXML 5.7 — `<donedata>` has `<content expr="...">` whose
+    /// expression must be evaluated before the `done.state` event is raised.
+    /// `<content>literal</content>` does **not** trigger this cause: per
+    /// W3C §5.5 the children are used as the value directly (see
+    /// [`DoneDataContent::Literal`]).
     DonedataContent { state_id: String },
     /// W3C SCXML 6.4 — a static `<invoke>` targets a child SCXML whose
     /// own analyzer output declared `needs_script_engine = true`; the
@@ -334,7 +338,11 @@ fn collect_donedata_causes(
             state_id: state_id.to_string(),
         });
     }
-    if !dd.content.is_empty() || !dd.contentexpr.is_empty() {
+    // Only `<content expr="...">` forces a script engine. Literal bodies
+    // are emitted as string constants by the codegen literal path and by
+    // the interpreter's `DoneDataHelper::emitContentLiteral`, so no
+    // evaluation is required.
+    if matches!(dd.content, DoneDataContent::Expression(_)) {
         out.push(NeedsScriptEngineCause::DonedataContent {
             state_id: state_id.to_string(),
         });
@@ -598,9 +606,50 @@ mod tests {
     }
 
     #[test]
-    fn donedata_content_triggers() {
+    fn donedata_content_expression_triggers() {
+        // W3C §5.5: `<content expr="...">` MUST be evaluated against the
+        // datamodel — so the script engine is required.
         let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s" initial="f"><final id="f"><donedata><content expr="1"/></donedata></final></state>
+        </scxml>"##;
+        contains_cause(scxml, |c| {
+            matches!(c, NeedsScriptEngineCause::DonedataContent { state_id } if state_id == "f")
+        });
+    }
+
+    #[test]
+    fn donedata_content_literal_null_datamodel_does_not_trigger() {
+        // W3C §5.5 + `datamodel="null"`: inline text is the content value
+        // verbatim — no evaluation, no script engine. This is the
+        // native-only path (`cpp:` / `kt:` documents, tc8-harness verdict
+        // payloads). The same XML under the ECMAScript datamodel would
+        // route through the Expression variant (Appendix B.2.2 JSON parse),
+        // exercised in `donedata_content_literal_ecmascript_triggers`.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="s">
+            <state id="s" initial="f">
+                <final id="f"><donedata><content>{"verdict":"pass"}</content></donedata></final>
+            </state>
+        </scxml>"##;
+        let model = parse(scxml);
+        let causes = analyze(&model);
+        assert!(
+            causes.is_empty(),
+            "literal <content> under null datamodel must not force a script engine, got {:?}",
+            causes,
+        );
+        assert!(!requires_script_engine(&model));
+    }
+
+    #[test]
+    fn donedata_content_literal_ecmascript_triggers() {
+        // W3C ECMAScript Appendix B.2.2: inline text is parsed as JSON by
+        // the datamodel — SCE routes that through the script engine by
+        // tagging the content as Expression. This pins the contract that
+        // ECMAScript-datamodel documents keep the evaluated path.
+        let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s">
+            <state id="s" initial="f">
+                <final id="f"><donedata><content>21</content></donedata></final>
+            </state>
         </scxml>"##;
         contains_cause(scxml, |c| {
             matches!(c, NeedsScriptEngineCause::DonedataContent { state_id } if state_id == "f")

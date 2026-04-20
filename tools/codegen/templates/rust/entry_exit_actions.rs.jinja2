@@ -160,12 +160,13 @@
                         done_event_data.push('}');
                     }
                 }
-{% elif state.donedata.contentexpr %}
+{% elif state.donedata.content.kind == "expression" %}
                 {
+                    // W3C SCXML 5.5: <content expr="..."/> MUST be evaluated against the datamodel.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = sce_rust_runtime::ScriptEngineProvider::get();
-                    match se.evaluate_expression(&sid, "{{ state.donedata.contentexpr | to_lua_expr | escape_rust }}") {
+                    match se.evaluate_expression(&sid, "{{ state.donedata.content.text | to_lua_expr | escape_rust }}") {
                         Ok(val) => { done_event_data = val.to_lua_literal(); }
                         Err(e) => {
                             log::error!("Donedata content expr eval failed: {}", e);
@@ -175,20 +176,11 @@
                         }
                     }
                 }
-{% elif state.donedata.content %}
+{% elif state.donedata.content.kind == "literal" %}
                 {
-                    self.ensure_script_engine();
-                    let sid = self.session_id.as_ref().unwrap().clone();
-                    let se = sce_rust_runtime::ScriptEngineProvider::get();
-                    match se.evaluate_expression(&sid, "{{ state.donedata.content | to_lua_expr | escape_rust }}") {
-                        Ok(val) => { done_event_data = val.to_lua_literal(); }
-                        Err(e) => {
-                            log::error!("Donedata content eval failed: {}", e);
-{% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-                        }
-                    }
+                    // W3C SCXML 5.5: inline text children are used **as the content
+                    // value** — no evaluation, no script engine required.
+                    done_event_data = String::from("{{ state.donedata.content.text | escape_rust }}");
                 }
 {% endif %}
 {% endif %}
