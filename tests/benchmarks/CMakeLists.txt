@@ -141,6 +141,22 @@ if(SCE_ENABLE_MESH)
     )
 endif()
 
+# StaticExecutionEngine footprint benchmark (next_session_mesh_aot_textbook_debt
+# item #3 — 5 mesh-facing std::function members carried unconditionally on
+# the base engine, measured here to justify or refute a CRTP/mixin split).
+# Runs in non-mesh builds too: this benchmark probes the base engine's
+# per-SM memory cost regardless of whether mesh codepaths are compiled in.
+add_executable(benchmark_static_execution_engine
+    StaticExecutionEngineBenchmark.cpp
+)
+target_link_libraries(benchmark_static_execution_engine
+    PRIVATE
+        sce_runtime
+        benchmark::benchmark
+        benchmark::benchmark_main
+        Threads::Threads
+)
+
 # ============================================================================
 # CTest Integration
 # ============================================================================
@@ -248,6 +264,20 @@ if(SCE_ENABLE_MESH)
     )
 endif()
 
+# StaticExecutionEngine footprint quick — sizeof + hook breakdown only
+# (skips the 10K-scale allocation which takes ~20 ms × min_time).
+add_test(
+    NAME benchmark_static_execution_engine_quick
+    COMMAND benchmark_static_execution_engine
+        --benchmark_min_time=0.1s
+        --benchmark_filter=Sizeof|HookSizes
+        --benchmark_format=console
+)
+add_test(
+    NAME benchmark_static_execution_engine_full
+    COMMAND benchmark_static_execution_engine
+)
+
 # Configure test properties
 # CTest executes tests with higher COST first, so quick (1000) runs before full (500)
 set_tests_properties(benchmark_event_scheduler_quick PROPERTIES
@@ -334,6 +364,18 @@ if(SCE_ENABLE_MESH)
         DISABLED TRUE
     )
 endif()
+
+set_tests_properties(benchmark_static_execution_engine_quick PROPERTIES
+    LABELS "benchmark;quick;performance;aot;engine;footprint"
+    TIMEOUT 300
+    COST 1000
+)
+set_tests_properties(benchmark_static_execution_engine_full PROPERTIES
+    LABELS "benchmark;full;performance;aot;engine;footprint;manual"
+    TIMEOUT 600
+    COST 500
+    DISABLED TRUE
+)
 
 # ============================================================================
 # Custom Benchmark Targets
