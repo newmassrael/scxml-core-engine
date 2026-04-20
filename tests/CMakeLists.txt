@@ -1433,7 +1433,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_OUTPUT_DIR}/brake_sm.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_OUTPUT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
+                --write-deps "${MESH_OUTPUT_DIR}/brake_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_OUTPUT_DIR}/brake_sm.h.d"
         COMMENT "Mesh: Generating brake_sm.h"
         VERBATIM
     )
@@ -1442,7 +1444,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_custom_command(
         OUTPUT "${MESH_OUTPUT_DIR}/motor_sm.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
+                --write-deps "${MESH_OUTPUT_DIR}/motor_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_OUTPUT_DIR}/motor_sm.h.d"
         COMMENT "Mesh: Generating motor_sm.h"
         VERBATIM
     )
@@ -1455,9 +1459,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_OUTPUT_DIR}/brake_transport.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy.yaml"
+                --write-deps "${MESH_OUTPUT_DIR}/brake_transport.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                 "${MESH_OUTPUT_DIR}/brake_sm.h"
+        DEPFILE "${MESH_OUTPUT_DIR}/brake_transport.h.d"
         COMMENT "Mesh: Generating brake_transport.h (local transport)"
         VERBATIM
     )
@@ -1511,9 +1517,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
                 -l cpp -o "${MESH_PARTITIONS_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                --write-deps "${MESH_PARTITIONS_OUTPUT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions.yaml"
                 "${SCE_CODEGEN}"
+        DEPFILE "${MESH_PARTITIONS_OUTPUT_DIR}/motor_partition_sm.h.d"
         COMMENT "Mesh partitions: Generating motor_partition_sm.h via §14 deploy validation"
         VERBATIM
     )
@@ -1569,9 +1577,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 -l cpp -o "${MESH_PARTITION_RULE12_LEFT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
                 --partition motor_left
+                --write-deps "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h.d"
         COMMENT "Mesh rule 12: Generating motor_partition (Root partition motor_left)"
         VERBATIM
     )
@@ -1584,9 +1594,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 -l cpp -o "${MESH_PARTITION_RULE12_RIGHT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
                 --partition motor_right
+                --write-deps "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h.d"
         COMMENT "Mesh rule 12: Generating motor_partition (NonRoot partition motor_right)"
         VERBATIM
     )
@@ -1671,9 +1683,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 -l cpp -o "${MESH_BARRIER_TIMEOUT_LEFT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
                 --partition motor_left
+                --write-deps "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h.d"
         COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition (Root motor_left, fast)"
         VERBATIM
     )
@@ -1686,9 +1700,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 -l cpp -o "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
                 --partition motor_right
+                --write-deps "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h.d"
         COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition (NonRoot motor_right, fast)"
         VERBATIM
     )
@@ -1774,7 +1790,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_INVOKE_OUTPUT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
+                --write-deps "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake_invoke.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h.d"
         COMMENT "Mesh: Generating brake_invoke_sm.h (§9.5 invoke)"
         VERBATIM
     )
@@ -1782,7 +1800,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_custom_command(
         OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
+                --write-deps "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_invoke.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h.d"
         COMMENT "Mesh: Generating motor_invoke_sm.h (§9.5 invoke receiver)"
         VERBATIM
     )
@@ -1791,10 +1811,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
+                --write-deps "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake_invoke.scxml" "${MESH_TEST_DIR}/deploy_invoke.yaml"
                 "${MESH_TEST_DIR}/motor_invoke.scxml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                 "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+        DEPFILE "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h.d"
         COMMENT "Mesh: Generating brake_invoke_transport.h (§9.5 invoke plumbing)"
         VERBATIM
     )
@@ -1808,10 +1830,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
+                --write-deps "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_invoke.scxml" "${MESH_TEST_DIR}/deploy_invoke.yaml"
                 "${MESH_TEST_DIR}/brake_invoke.scxml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                 "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+        DEPFILE "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h.d"
         COMMENT "Mesh: Generating motor_invoke_transport.h (§9.5 invoke reply path)"
         VERBATIM
     )
@@ -1857,7 +1881,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SRCEXPR_OUTPUT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_client.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
+                --write-deps "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/srcexpr_client.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h.d"
         COMMENT "Mesh srcexpr: Generating srcexpr_client_sm.h (§9.5 srcexpr runtime target)"
         VERBATIM
     )
@@ -1865,7 +1891,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_custom_command(
         OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_srcexpr.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
+                --write-deps "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_srcexpr.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h.d"
         COMMENT "Mesh srcexpr: Generating motor_srcexpr_sm.h (§9.5 srcexpr receiver)"
         VERBATIM
     )
@@ -1874,10 +1902,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_client.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_srcexpr.yaml"
+                --write-deps "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h.d"
         DEPENDS "${MESH_TEST_DIR}/srcexpr_client.scxml" "${MESH_TEST_DIR}/deploy_srcexpr.yaml"
                 "${MESH_TEST_DIR}/motor_srcexpr.scxml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                 "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h"
+        DEPFILE "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h.d"
         COMMENT "Mesh srcexpr: Generating srcexpr_client_transport.h (§9.5 srcexpr plumbing)"
         VERBATIM
     )
@@ -1938,7 +1968,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_miss.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
+                --write-deps "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/srcexpr_miss.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h.d"
         COMMENT "Mesh srcexpr miss: Generating srcexpr_miss_sm.h (§9.5 miss runtime SM)"
         VERBATIM
     )
@@ -1946,7 +1978,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_custom_command(
         OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_srcexpr.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
+                --write-deps "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_srcexpr.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h.d"
         COMMENT "Mesh srcexpr miss: Generating motor_srcexpr_sm.h (phantom binding stub)"
         VERBATIM
     )
@@ -1955,10 +1989,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_miss.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_srcexpr_miss.yaml"
+                --write-deps "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h.d"
         DEPENDS "${MESH_TEST_DIR}/srcexpr_miss.scxml" "${MESH_TEST_DIR}/deploy_srcexpr_miss.yaml"
                 "${MESH_TEST_DIR}/motor_srcexpr.scxml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                 "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h"
+        DEPFILE "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h.d"
         COMMENT "Mesh srcexpr miss: Generating srcexpr_miss_transport.h (§9.5 miss plumbing)"
         VERBATIM
     )
@@ -2088,7 +2124,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_OUTPUT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
+                --write-deps "${MESH_SHM_OUTPUT_DIR}/brake_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SHM_OUTPUT_DIR}/brake_sm.h.d"
         COMMENT "Mesh shm: Generating brake_sm.h"
         VERBATIM
     )
@@ -2096,7 +2134,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_custom_command(
         OUTPUT "${MESH_SHM_OUTPUT_DIR}/motor_sm.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
+                --write-deps "${MESH_SHM_OUTPUT_DIR}/motor_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SHM_OUTPUT_DIR}/motor_sm.h.d"
         COMMENT "Mesh shm: Generating motor_sm.h"
         VERBATIM
     )
@@ -2106,9 +2146,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         OUTPUT "${MESH_SHM_OUTPUT_DIR}/brake_transport.h"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_shm.yaml"
+                --write-deps "${MESH_SHM_OUTPUT_DIR}/brake_transport.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_shm.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                 "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
+        DEPFILE "${MESH_SHM_OUTPUT_DIR}/brake_transport.h.d"
         COMMENT "Mesh shm: Generating brake_transport.h (shm transport)"
         VERBATIM
     )
@@ -2243,10 +2285,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml"
                 -l cpp -o "${MESH_TCP_OUTPUT_DIR}"
                 --deploy "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
+                --write-deps "${MESH_TCP_OUTPUT_DIR}/brake_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake.scxml"
                 "${MESH_TEST_DIR}/motor.scxml"
                 "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_TCP_OUTPUT_DIR}/brake_sm.h.d"
         COMMENT "Mesh custom_tcp: Generating brake_sm.h + brake_transport.h"
         VERBATIM
     )
@@ -2258,10 +2302,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml"
                 -l cpp -o "${MESH_TCP_OUTPUT_DIR}"
                 --deploy "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
+                --write-deps "${MESH_TCP_OUTPUT_DIR}/motor_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake.scxml"
                 "${MESH_TEST_DIR}/motor.scxml"
                 "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_TCP_OUTPUT_DIR}/motor_sm.h.d"
         COMMENT "Mesh custom_tcp: Generating motor_sm.h + motor_transport.h"
         VERBATIM
     )
@@ -2314,7 +2360,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_payload.scxml"
                 -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
+                --write-deps "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake_payload.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h.d"
         COMMENT "Mesh shm payload: Generating brake_payload_sm.h"
         VERBATIM
     )
@@ -2324,7 +2372,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_payload.scxml"
                 -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
+                --write-deps "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/motor_payload_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_payload.scxml" "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/motor_payload_sm.h.d"
         COMMENT "Mesh shm payload: Generating motor_payload_sm.h"
         VERBATIM
     )
@@ -2334,11 +2384,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_payload.scxml"
                 -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
                 --deploy "${MESH_TEST_DIR}/deploy_shm_payload.yaml"
+                --write-deps "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_transport.h.d"
         DEPENDS "${MESH_TEST_DIR}/brake_payload.scxml"
                 "${MESH_TEST_DIR}/motor_payload.scxml"
                 "${MESH_TEST_DIR}/deploy_shm_payload.yaml"
                 "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                 "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h"
+        DEPFILE "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_transport.h.d"
         COMMENT "Mesh shm payload: Generating brake_payload_transport.h"
         VERBATIM
     )
@@ -2386,7 +2438,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h.d"
             COMMENT "Mesh someip: Generating brake_sm.h"
             VERBATIM
         )
@@ -2395,7 +2449,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h.d"
             COMMENT "Mesh someip: Generating motor_sm.h"
             VERBATIM
         )
@@ -2404,10 +2460,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_someip.yaml"
+                    --write-deps "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_someip.yaml"
                     "${MESH_TEST_DIR}/motor.scxml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
+            DEPFILE "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h.d"
             COMMENT "Mesh someip: Generating brake_transport.h (someip transport)"
             VERBATIM
         )
@@ -2448,7 +2506,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h.d"
             COMMENT "Mesh someip multi: Generating brake_someip_multi_sm.h"
             VERBATIM
         )
@@ -2457,7 +2517,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h.d"
             COMMENT "Mesh someip multi: Generating motor_someip_multi_sm.h"
             VERBATIM
         )
@@ -2466,10 +2528,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
+                    --write-deps "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
                     "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            DEPFILE "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h.d"
             COMMENT "Mesh someip multi: Generating brake_someip_multi_transport.h (multi-pattern)"
             VERBATIM
         )
@@ -2479,10 +2543,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
+                    --write-deps "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
                     "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            DEPFILE "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h.d"
             COMMENT "Mesh someip multi: Generating motor_someip_multi_transport.h (server-side Session E)"
             VERBATIM
         )
@@ -2606,7 +2672,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h.d"
             COMMENT "Mesh someip late-boot (§10.10): Generating brake_someip_multi_sm.h"
             VERBATIM
         )
@@ -2615,7 +2683,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h.d"
             COMMENT "Mesh someip late-boot (§10.10): Generating motor_someip_multi_sm.h"
             VERBATIM
         )
@@ -2624,10 +2694,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
+                    --write-deps "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
                     "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h"
+            DEPFILE "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h.d"
             COMMENT "Mesh someip late-boot (§10.10): Generating brake_someip_multi_transport.h with outbound_buffer"
             VERBATIM
         )
@@ -2636,10 +2708,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
+                    --write-deps "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
                     "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h"
+            DEPFILE "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h.d"
             COMMENT "Mesh someip late-boot (§10.10): Generating motor_someip_multi_transport.h"
             VERBATIM
         )
@@ -2722,7 +2796,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
                     -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_someip_unsub.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h.d"
             COMMENT "Mesh someip unsub: Generating brake_someip_unsub_sm.h"
             VERBATIM
         )
@@ -2732,7 +2808,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
                     -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_someip_unsub.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h.d"
             COMMENT "Mesh someip unsub: Generating motor_someip_unsub_sm.h"
             VERBATIM
         )
@@ -2742,12 +2820,14 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
                     -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
+                    --write-deps "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
                     "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
                     "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
                     "${MESH_TEST_DIR}/vsomeip_motor_unsub.json"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h"
+            DEPFILE "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_transport.h.d"
             COMMENT "Mesh someip unsub: Generating brake_someip_unsub_transport.h"
             VERBATIM
         )
@@ -2757,11 +2837,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
                     -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
+                    --write-deps "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
                     "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
                     "${MESH_TEST_DIR}/vsomeip_motor_unsub.json"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h"
+            DEPFILE "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_transport.h.d"
             COMMENT "Mesh someip unsub: Generating motor_someip_unsub_transport.h (server)"
             VERBATIM
         )
@@ -2815,7 +2897,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h.d"
             COMMENT "Mesh zenoh: Generating brake_sm.h"
             VERBATIM
         )
@@ -2824,7 +2908,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h.d"
             COMMENT "Mesh zenoh: Generating motor_sm.h"
             VERBATIM
         )
@@ -2833,10 +2919,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh.yaml"
+                    --write-deps "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_zenoh.yaml"
                     "${MESH_TEST_DIR}/motor.scxml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
+            DEPFILE "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h.d"
             COMMENT "Mesh zenoh: Generating brake_transport.h (zenoh transport)"
             VERBATIM
         )
@@ -2916,7 +3004,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
                     -l cpp -o "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h.d"
             COMMENT "Mesh zenoh base subscribe: Generating brake_zenoh_base_subscribe_sm.h"
             VERBATIM
         )
@@ -2926,11 +3016,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
                     -l cpp -o "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_base_subscribe.yaml"
+                    --write-deps "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
                     "${MESH_TEST_DIR}/motor_zenoh_base_subscribe.scxml"
                     "${MESH_TEST_DIR}/deploy_zenoh_base_subscribe.yaml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h"
+            DEPFILE "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_transport.h.d"
             COMMENT "Mesh zenoh base subscribe: Generating brake_zenoh_base_subscribe_transport.h"
             VERBATIM
         )
@@ -2986,7 +3078,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
                     -l cpp -o "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h.d"
             COMMENT "Mesh zenoh machine-lifetime subscribe: Generating brake_zenoh_machine_lifetime_subscribe_sm.h"
             VERBATIM
         )
@@ -2996,11 +3090,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
                     -l cpp -o "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_machine_lifetime_subscribe.yaml"
+                    --write-deps "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
                     "${MESH_TEST_DIR}/motor_zenoh_base_subscribe.scxml"
                     "${MESH_TEST_DIR}/deploy_zenoh_machine_lifetime_subscribe.yaml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h"
+            DEPFILE "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_transport.h.d"
             COMMENT "Mesh zenoh machine-lifetime subscribe: Generating brake_zenoh_machine_lifetime_subscribe_transport.h"
             VERBATIM
         )
@@ -3057,7 +3153,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
                     -l cpp -o "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h.d"
             COMMENT "Mesh zenoh subscription clobber: Generating brake_zenoh_subscription_clobber_sm.h"
             VERBATIM
         )
@@ -3067,11 +3165,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
                     -l cpp -o "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_subscription_clobber.yaml"
+                    --write-deps "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
                     "${MESH_TEST_DIR}/motor_zenoh_subscription_clobber.scxml"
                     "${MESH_TEST_DIR}/deploy_zenoh_subscription_clobber.yaml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h"
+            DEPFILE "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_transport.h.d"
             COMMENT "Mesh zenoh subscription clobber: Generating brake_zenoh_subscription_clobber_transport.h"
             VERBATIM
         )
@@ -3128,7 +3228,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
                     -l cpp -o "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h.d"
             COMMENT "Mesh zenoh publisher-first (§10.10): Generating brake_zenoh_publisher_first_sm.h"
             VERBATIM
         )
@@ -3138,11 +3240,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
                     -l cpp -o "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_publisher_first.yaml"
+                    --write-deps "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
                     "${MESH_TEST_DIR}/motor_zenoh_publisher_first.scxml"
                     "${MESH_TEST_DIR}/deploy_zenoh_publisher_first.yaml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h"
+            DEPFILE "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_transport.h.d"
             COMMENT "Mesh zenoh publisher-first (§10.10): Generating brake_zenoh_publisher_first_transport.h with outbound_buffer"
             VERBATIM
         )
@@ -3191,7 +3295,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
                     -l cpp -o "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h.d"
             COMMENT "Mesh zenoh liveliness: Generating brake_zenoh_liveliness_sm.h"
             VERBATIM
         )
@@ -3201,11 +3307,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
                     -l cpp -o "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_liveliness.yaml"
+                    --write-deps "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
                     "${MESH_TEST_DIR}/motor_zenoh_liveliness.scxml"
                     "${MESH_TEST_DIR}/deploy_zenoh_liveliness.yaml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h"
+            DEPFILE "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_transport.h.d"
             COMMENT "Mesh zenoh liveliness: Generating brake_zenoh_liveliness_transport.h"
             VERBATIM
         )
@@ -3262,7 +3370,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
                     -l cpp -o "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h.d"
             COMMENT "Mesh zenoh on_drop: Generating brake_zenoh_on_drop_sm.h"
             VERBATIM
         )
@@ -3272,11 +3382,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
                     -l cpp -o "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_on_drop.yaml"
+                    --write-deps "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
                     "${MESH_TEST_DIR}/motor_zenoh_on_drop.scxml"
                     "${MESH_TEST_DIR}/deploy_zenoh_on_drop.yaml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h"
+            DEPFILE "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_transport.h.d"
             COMMENT "Mesh zenoh on_drop: Generating brake_zenoh_on_drop_transport.h"
             VERBATIM
         )
@@ -3332,7 +3444,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
                     -l cpp -o "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h.d"
             COMMENT "Mesh zenoh server_timeout: Generating motor_zenoh_server_timeout_sm.h"
             VERBATIM
         )
@@ -3342,10 +3456,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
                     -l cpp -o "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_server_timeout.yaml"
+                    --write-deps "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
                     "${MESH_TEST_DIR}/deploy_zenoh_server_timeout.yaml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h"
+            DEPFILE "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_transport.h.d"
             COMMENT "Mesh zenoh server_timeout: Generating motor_zenoh_server_timeout_transport.h"
             VERBATIM
         )
@@ -3433,7 +3549,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ORDERED_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ORDERED_OUTPUT_DIR}"
+                    --write-deps "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h.d"
             COMMENT "Mesh ordered: Generating brake_sm.h"
             VERBATIM
         )
@@ -3442,10 +3560,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ORDERED_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_ordered.yaml"
+                    --write-deps "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_ordered.yaml"
                     "${MESH_TEST_DIR}/motor.scxml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
+            DEPFILE "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h.d"
             COMMENT "Mesh ordered: Generating brake_transport.h (zenoh + ordering:required)"
             VERBATIM
         )
@@ -3489,7 +3609,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h.d"
             COMMENT "Mesh zenoh multi: Generating brake_zenoh_multi_sm.h"
             VERBATIM
         )
@@ -3498,7 +3620,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h.d"
             COMMENT "Mesh zenoh multi: Generating motor_zenoh_multi_sm.h"
             VERBATIM
         )
@@ -3507,10 +3631,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
+                    --write-deps "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
                     "${MESH_TEST_DIR}/motor_zenoh_multi.scxml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
+            DEPFILE "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h.d"
             COMMENT "Mesh zenoh multi: Generating brake_zenoh_multi_transport.h (multi-pattern)"
             VERBATIM
         )
@@ -3520,9 +3646,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
+                    --write-deps "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
+            DEPFILE "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h.d"
             COMMENT "Mesh zenoh multi: Generating motor_zenoh_multi_transport.h (server-side Session E)"
             VERBATIM
         )
@@ -3754,7 +3882,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_POOL_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_client.scxml" -l cpp -o "${MESH_POOL_OUTPUT_DIR}"
+                    --write-deps "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/pool_client.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h.d"
             COMMENT "Mesh pool: Generating pool_client_sm.h"
             VERBATIM
         )
@@ -3763,10 +3893,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_client.scxml" -l cpp -o "${MESH_POOL_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_pool.yaml"
+                    --write-deps "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/pool_client.scxml" "${MESH_TEST_DIR}/deploy_pool.yaml"
                     "${MESH_TEST_DIR}/vsomeip_pool_controller.json"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
+            DEPFILE "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h.d"
             COMMENT "Mesh pool: Generating pool_client_transport.h (§14.4 pool dispatch)"
             VERBATIM
         )
@@ -3821,7 +3953,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SERVER_POOL_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_pool.scxml" -l cpp -o "${MESH_SERVER_POOL_OUTPUT_DIR}"
+                    --write-deps "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_pool.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h.d"
             COMMENT "Mesh server pool: Generating motor_pool_sm.h"
             VERBATIM
         )
@@ -3830,10 +3964,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_pool.scxml" -l cpp -o "${MESH_SERVER_POOL_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_someip_pool_server.yaml"
+                    --write-deps "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/motor_pool.scxml" "${MESH_TEST_DIR}/deploy_someip_pool_server.yaml"
                     "${MESH_TEST_DIR}/vsomeip_motor_pool.json"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
+            DEPFILE "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h.d"
             COMMENT "Mesh server pool: Generating motor_pool_transport.h (§14.4)"
             VERBATIM
         )
@@ -3933,7 +4069,9 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_POOL_ZENOH_OUTPUT_DIR}"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_zenoh_client.scxml" -l cpp -o "${MESH_POOL_ZENOH_OUTPUT_DIR}"
+                    --write-deps "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h.d"
             DEPENDS "${MESH_TEST_DIR}/pool_zenoh_client.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h.d"
             COMMENT "Mesh pool Zenoh: Generating pool_zenoh_client_sm.h"
             VERBATIM
         )
@@ -3942,10 +4080,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             OUTPUT "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h"
             COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_zenoh_client.scxml" -l cpp -o "${MESH_POOL_ZENOH_OUTPUT_DIR}"
                     --deploy "${MESH_TEST_DIR}/deploy_pool_zenoh.yaml"
+                    --write-deps "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/pool_zenoh_client.scxml" "${MESH_TEST_DIR}/deploy_pool_zenoh.yaml"
                     "${MESH_TEST_DIR}/gamer_pool.scxml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h"
+            DEPFILE "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h.d"
             COMMENT "Mesh pool Zenoh: Generating pool_zenoh_client_transport.h (§14.4 runtime)"
             VERBATIM
         )
