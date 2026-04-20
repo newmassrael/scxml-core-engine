@@ -1,0 +1,41 @@
+# SCE Mesh §16.5 wire-21 transport implementation gap.
+#
+# Expected diagnostic: mesh/partition-wire21-custom-tcp-unimplemented
+# Fires from: sce-build/src/mesh/partitions.rs
+#             validate_parallel_root_designation — Pass 2b wire-21
+#             transport_binding check (folded into the same loop that
+#             enforces undesignated-root rejection).
+#
+# motor_left declares `transport_binding: custom_tcp` and Roots the
+# distributed <parallel id="root"> whose other region (`right`) lives
+# in motor_right. The wire-21 channel emitter currently materializes
+# `PartitionWire21Channel = SCE::Mesh::ShmChannel<>` unconditionally —
+# accepting custom_tcp here would compile to a shm channel the runtime
+# never opens, surfacing at SM step time as a missing-callback throw
+# inside `sendParallelRegionDone`. Validator rejects at deploy time so
+# the configuration gap fails fast at build.
+#
+# Companion to the §14 L2844 carve-out: SCE_MESH.md banner + matrix
+# row §16.5 document the same shm-only scope. When the custom_tcp
+# wire-21 emitter lands, this fixture flips from rejection to accept.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition:
+        source: motor_partition.scxml
+
+partitions:
+  motor_left:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: left }
+    transport_binding: custom_tcp
+    hosts_parallel_roots:
+      - { machine: motor_partition, parallel: root }
+  motor_right:
+    machines: [motor_partition]
+    contains:
+      parallel_regions:
+        - { machine: motor_partition, region: right }

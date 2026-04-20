@@ -109,6 +109,7 @@
         "mesh/partition-parallel-root-not-in-machines",
         "mesh/partition-parallel-root-non-host",
         "mesh/partition-barrier-timeout-without-root",
+        "mesh/partition-wire21-custom-tcp-unimplemented",
         "mesh/external-read",
         "mesh/external-parse",
         "mesh/external-unresolved-names",

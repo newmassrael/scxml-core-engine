@@ -3944,6 +3944,11 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         "12c|mesh/partition-parallel-root-not-in-machines|motor_partition.scxml"
         "12d|mesh/partition-parallel-root-non-host|motor_partition.scxml"
         "12e|mesh/partition-barrier-timeout-without-root|motor_partition.scxml"
+        # §16.5 wire-21 transport implementation gap — custom_tcp
+        # transport_binding on a partition that participates in a
+        # distributed `<parallel>` route is rejected at deploy time
+        # because the wire-21 channel emitter is shm-only.
+        "12f|mesh/partition-wire21-custom-tcp-unimplemented|motor_partition.scxml"
     )
     foreach(_entry IN LISTS MESH_PARTITION_NEG_MATRIX)
         string(REPLACE "|" ";" _parts "${_entry}")

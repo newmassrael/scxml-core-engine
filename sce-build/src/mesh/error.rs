@@ -545,6 +545,31 @@ pub enum DeployError {
         partition: String,
         value: u32,
     },
+
+    /// A partition declared `transport_binding: custom_tcp` and
+    /// participates in a distributed `<parallel>` (§16.5) wire-21
+    /// route — but the wire-21 channel emitter currently materializes
+    /// `PartitionWire21Channel = SCE::Mesh::ShmChannel<>` unconditionally.
+    /// Compiling such a partition would produce a shm channel the
+    /// runtime never opens, which surfaces at SM step time as a
+    /// missing-callback throw inside `sendParallelRegionDone`.
+    /// Reject at deploy-validation time so the configuration gap
+    /// surfaces here instead of as a delayed runtime fault. Spec §14
+    /// rule 4 accepts custom_tcp; the gap is in the codegen surface
+    /// (SCE_MESH.md §16.5 banner + matrix carve-out).
+    #[error("partition '{partition}': `transport_binding: custom_tcp` is set, but the \
+             partition participates in distributed `<parallel id=\"{parallel}\">` \
+             (machine '{machine}') wire-21 routing. The §16.5 wire-21 channel emitter \
+             currently supports `transport_binding: shm` only — a `custom_tcp` channel \
+             is not yet generated for ParallelRegionDone forwarding. Either change this \
+             partition's `transport_binding:` to `shm` (same-device deployments), or \
+             remove the partition from any distributed `<parallel>` route until the \
+             custom_tcp wire-21 emitter lands.")]
+    PartitionWire21CustomTcpUnimplemented {
+        partition: String,
+        machine: String,
+        parallel: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -1450,6 +1475,21 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 key_fragments: vec![partition.clone(), value.to_string()],
             }
         }
+        DeployError::PartitionWire21CustomTcpUnimplemented {
+            partition,
+            machine,
+            parallel,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshPartitionWire21CustomTcpUnimplemented,
+            stage: Stage::MeshDeploy,
+            actual: Some("custom_tcp".to_string()),
+            // `expected` carries the supported binding so authors can
+            // copy-paste the repair without re-reading the message;
+            // mirrors the `PartitionTransportBindingUnsupported` shape.
+            expected: Some(vec!["shm".to_string()]),
+            fix: None,
+            key_fragments: vec![partition.clone(), machine.clone(), parallel.clone()],
+        },
     }
 }
 

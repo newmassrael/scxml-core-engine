@@ -348,6 +348,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/partition-parallel-root-not-in-machines` | Mesh Deploy |
 | `mesh/partition-parallel-root-non-host` | Mesh Deploy |
 | `mesh/partition-barrier-timeout-without-root` | Mesh Deploy |
+| `mesh/partition-wire21-custom-tcp-unimplemented` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

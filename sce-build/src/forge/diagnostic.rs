@@ -449,6 +449,8 @@ pub enum DiagnosticCode {
     MeshPartitionParallelRootNonHost,
     #[serde(rename = "mesh/partition-barrier-timeout-without-root")]
     MeshPartitionBarrierTimeoutWithoutRoot,
+    #[serde(rename = "mesh/partition-wire21-custom-tcp-unimplemented")]
+    MeshPartitionWire21CustomTcpUnimplemented,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -644,6 +646,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshPartitionParallelRootNotInMachines,
         MeshPartitionParallelRootNonHost,
         MeshPartitionBarrierTimeoutWithoutRoot,
+        MeshPartitionWire21CustomTcpUnimplemented,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -826,6 +829,15 @@ impl DiagnosticCode {
             | MeshPartitionParallelRootNonHost
             | MeshPartitionBarrierTimeoutWithoutRoot => Some("SCE Mesh §14 rule 12"),
 
+            // ── Mesh §16.5 wire-21 transport implementation gap ──
+            // The wire-21 channel emitter materializes shm only; an
+            // explicit `transport_binding: custom_tcp` on a partition
+            // that participates in a distributed `<parallel>` route
+            // would compile to a shm channel the runtime never opens.
+            // Spec accepts custom_tcp (§14 rule 4); the gap is in the
+            // codegen surface (§16.5).
+            MeshPartitionWire21CustomTcpUnimplemented => Some("SCE Mesh §16.5"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -989,6 +1001,7 @@ impl DiagnosticCode {
             MeshPartitionParallelRootNotInMachines => "mesh/partition-parallel-root-not-in-machines",
             MeshPartitionParallelRootNonHost => "mesh/partition-parallel-root-non-host",
             MeshPartitionBarrierTimeoutWithoutRoot => "mesh/partition-barrier-timeout-without-root",
+            MeshPartitionWire21CustomTcpUnimplemented => "mesh/partition-wire21-custom-tcp-unimplemented",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2649,6 +2662,16 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:2c7305b9bb84a6e1","code":"mesh/partition-barrier-timeout-without-root","stage":"mesh-deploy","spec":"SCE Mesh §14 rule 12","message":"partition 'motor_right': `barrier_timeout_ms: 5000` is set but the partition has no `hosts_parallel_roots:` entries. SCE Mesh §14 rule 12 (L2842) requires the timeout to gate a §16.5 `ParallelCompletionTracker`, and trackers only exist on root-hosting partitions. Either add a `hosts_parallel_roots:` entry (making this partition a root) or drop `barrier_timeout_ms:` (which has no consumer here).","actual":"motor_right"}"#,
             ),
             (
+                "mesh/partition-wire21-custom-tcp-unimplemented",
+                DeployError::PartitionWire21CustomTcpUnimplemented {
+                    partition: "motor_left".into(),
+                    machine: "motor".into(),
+                    parallel: "root".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:dae8841d93dfb4c6","code":"mesh/partition-wire21-custom-tcp-unimplemented","stage":"mesh-deploy","spec":"SCE Mesh §16.5","message":"partition 'motor_left': `transport_binding: custom_tcp` is set, but the partition participates in distributed `<parallel id=\"root\">` (machine 'motor') wire-21 routing. The §16.5 wire-21 channel emitter currently supports `transport_binding: shm` only — a `custom_tcp` channel is not yet generated for ParallelRegionDone forwarding. Either change this partition's `transport_binding:` to `shm` (same-device deployments), or remove the partition from any distributed `<parallel>` route until the custom_tcp wire-21 emitter lands.","expected":["shm"],"actual":"custom_tcp"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -3374,6 +3397,7 @@ mod tests {
             | MeshPartitionParallelRootNotInMachines
             | MeshPartitionParallelRootNonHost
             | MeshPartitionBarrierTimeoutWithoutRoot
+            | MeshPartitionWire21CustomTcpUnimplemented
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3666,6 +3690,7 @@ mod tests {
                 | MeshPartitionParallelRootNotInMachines
                 | MeshPartitionParallelRootNonHost
                 | MeshPartitionBarrierTimeoutWithoutRoot
+                | MeshPartitionWire21CustomTcpUnimplemented
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3700,9 +3725,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            120,
+            121,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 120 distinct variants to match the DiagnosticCode \
+             expected 121 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

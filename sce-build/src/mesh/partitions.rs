@@ -310,6 +310,32 @@ pub fn validate_parallel_root_designation(
                     hosting_partitions: hosting.into_iter().collect(),
                 });
             }
+
+            // §16.5 wire-21 transport implementation gap. The
+            // `mesh_transport.h.jinja2` channel emitter materializes
+            // `PartitionWire21Channel = SCE::Mesh::ShmChannel<>`
+            // unconditionally. An explicit `transport_binding:
+            // custom_tcp` on a partition that participates in this
+            // distributed parallel's wire-21 route would compile to a
+            // shm channel the runtime never opens — silent at compile
+            // time, fail-loud at SM step time. Reject here so the
+            // configuration gap surfaces at deploy validation. Pass 2b
+            // already proved hosting.len() ≥ 2 (distributed) above, so
+            // every partition in `hosting` carries wire-21 traffic.
+            // Iteration is in `BTreeSet` order for deterministic
+            // diagnostic output.
+            for part_name in &hosting {
+                let decl = partitions
+                    .get(part_name)
+                    .expect("hosting derived from partitions map");
+                if decl.transport_binding.as_deref() == Some("custom_tcp") {
+                    return Err(DeployError::PartitionWire21CustomTcpUnimplemented {
+                        partition: part_name.clone(),
+                        machine: machine.clone(),
+                        parallel: parallel_id.clone(),
+                    });
+                }
+            }
         }
     }
 
@@ -984,5 +1010,124 @@ partitions:
             }
             other => panic!("expected PartitionBarrierTimeoutWithoutRoot, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn rule12_wire21_custom_tcp_on_root_fires_unimplemented() {
+        // Distributed parallel where the Root partition declares
+        // `transport_binding: custom_tcp`. The §16.5 wire-21 emitter
+        // is shm-only — accepting custom_tcp here would compile to
+        // a shm channel the runtime never opens. Validator must
+        // reject at deploy time so the gap surfaces here instead of
+        // as a delayed missing-callback throw at SM step time.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_left:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+    transport_binding: custom_tcp
+    hosts_parallel_roots:
+      - { machine: brake, parallel: root }
+  brake_right:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: right }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        let err = validate_partitions_against_models(&cfg, &models)
+            .expect_err("custom_tcp on a wire-21 route must fail");
+        match err {
+            DeployError::PartitionWire21CustomTcpUnimplemented {
+                partition,
+                machine,
+                parallel,
+            } => {
+                assert_eq!(partition, "brake_left");
+                assert_eq!(machine, "brake");
+                assert_eq!(parallel, "root");
+            }
+            other => panic!("expected PartitionWire21CustomTcpUnimplemented, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rule12_wire21_custom_tcp_on_nonroot_fires_unimplemented() {
+        // Same gap on the NonRoot side. `BTreeSet` iteration over
+        // `hosting` is alphabetic, so `brake_left` (NonRoot, custom_tcp)
+        // is reported before `brake_right` (Root, default shm) —
+        // deterministic across parses regardless of yaml key order.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_left:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+    transport_binding: custom_tcp
+  brake_right:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: right }
+    hosts_parallel_roots:
+      - { machine: brake, parallel: root }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        let err = validate_partitions_against_models(&cfg, &models)
+            .expect_err("custom_tcp on a NonRoot wire-21 route must fail");
+        match err {
+            DeployError::PartitionWire21CustomTcpUnimplemented {
+                partition,
+                machine,
+                parallel,
+            } => {
+                assert_eq!(partition, "brake_left");
+                assert_eq!(machine, "brake");
+                assert_eq!(parallel, "root");
+            }
+            other => panic!("expected PartitionWire21CustomTcpUnimplemented, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rule12_wire21_custom_tcp_on_single_partition_passes() {
+        // SinglePartition parallel (all regions in one partition) has
+        // no wire-21 traffic — a `transport_binding: custom_tcp`
+        // setting on it must NOT trip the rejection. Validates the
+        // hosting.len() < 2 short-circuit.
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  brake_all:
+    machines: [brake]
+    contains:
+      parallel_regions:
+        - { machine: brake, region: left }
+        - { machine: brake, region: right }
+    transport_binding: custom_tcp
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let mut models = BTreeMap::new();
+        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        validate_partitions_against_models(&cfg, &models)
+            .expect("single-partition parallel with custom_tcp must pass — no wire-21 traffic");
     }
 }
