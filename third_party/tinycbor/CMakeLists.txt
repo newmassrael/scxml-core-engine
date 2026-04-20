@@ -17,7 +17,7 @@ add_library(tinycbor STATIC ${TINYCBOR_SOURCES})
 
 target_include_directories(tinycbor
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
 
 # tinycbor 0.6.0 omits the float/half-float APIs when this is set, matching

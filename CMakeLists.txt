@@ -328,6 +328,27 @@ install(TARGETS sce_core sce_base
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
+# Mesh transport (opt-in via SCE_ENABLE_MESH). sce_mesh_common is a
+# C++-first static library per mesh_cpp_first_policy; it ships with the
+# Core component so `--component Core` on a mesh-enabled build still gets
+# everything required to link AOT mesh machines. tinycbor is vendored
+# like lua54/qjs and must be installed alongside because sce_mesh_common
+# PRIVATE-links it — a static archive consumer still resolves CBOR
+# symbols at link time.
+if(SCE_ENABLE_MESH)
+    install(TARGETS sce_mesh_common tinycbor
+        EXPORT SCE_CoreTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+    install(DIRECTORY sce/include/mesh
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        COMPONENT Core
+        FILES_MATCHING PATTERN "*.h"
+    )
+endif()
+
 # Scripting tier: sce_scripting (qjs/lua54 register themselves here)
 if(SCE_HAS_SCRIPTING)
     install(TARGETS sce_scripting
@@ -363,8 +384,11 @@ endif()
 # and shipping them conditionally would break Core-only compilation.
 
 # Core: sce_core (header-only) + sce_base + AOT-side helpers (wrappers,
-# dispatchers interface/impls) + optional mesh transport headers.
-foreach(_sce_core_dir core static common backends wrappers dispatchers mesh)
+# dispatchers interface/impls). Mesh headers are gated separately because
+# sce_mesh_common only exists when SCE_ENABLE_MESH=ON; shipping the
+# headers unconditionally would leave stale mesh/*.h on disk without the
+# archive that defines their symbols.
+foreach(_sce_core_dir core static common backends wrappers dispatchers)
     install(DIRECTORY sce/include/${_sce_core_dir}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT Core
