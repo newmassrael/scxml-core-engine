@@ -85,8 +85,11 @@ cc_library(
 cc_library(
     name = "sce_base",
     srcs = {srcs},
-    copts = ["-include common/DisableStdOut.h"],
-    defines = ["SCE_ENABLE_RUNTIME_LOGGING"],
+    copts = [
+        "-include common/ExternTemplates.h",
+        "-include common/DisableStdOut.h",
+    ],
+    local_defines = ["SCE_ENABLE_RUNTIME_LOGGING"],
     deps = [":sce_core"],
     visibility = ["//visibility:public"],
 )

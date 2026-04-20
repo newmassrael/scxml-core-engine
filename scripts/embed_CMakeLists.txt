@@ -108,14 +108,23 @@ if(SCE_USE_SPDLOG)
     endif()
 endif()
 
-# Enable runtime logging for sce_base and all consumers
-target_compile_definitions(sce_base PUBLIC SCE_ENABLE_RUNTIME_LOGGING)
+# Runtime logging: PRIVATE so only sce_base TUs take the
+# SCE_ENABLE_RUNTIME_LOGGING branch. External consumers fall through to
+# the no-op branch in LogMacros.h and don't need spdlog at compile time.
+target_compile_definitions(sce_base PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
 
-# Force include DisableStdOut.h for sce_base source files only
+# Force include DisableStdOut.h for sce_base source files only.
+# ExternTemplates.h suppresses implicit std::basic_string<char>
+# instantiation so consumers linking libsce_base.a don't drag archive
+# members via std::string weak-symbol resolution. See the header for
+# details; mirrored from sce/CMakeLists.txt for parity with in-tree builds.
 if(MSVC)
-    target_compile_options(sce_base PRIVATE /FI"common/DisableStdOut.h")
+    target_compile_options(sce_base PRIVATE /FI"common/ExternTemplates.h" /FI"common/DisableStdOut.h")
 else()
-    target_compile_options(sce_base PRIVATE -include common/DisableStdOut.h)
+    target_compile_options(sce_base PRIVATE
+        "SHELL:-include common/ExternTemplates.h"
+        "SHELL:-include common/DisableStdOut.h"
+    )
 endif()
 
 target_compile_features(sce_base PUBLIC cxx_std_17)
