@@ -680,6 +680,17 @@ fn cmd_generate(
         if let Err(e) = sce_build::inject_server_model_mutations(&mut model, Path::new(deploy_file)) {
             error_format.emit_and_exit(&e, "Server model injection error: ");
         }
+        // SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844):
+        // surface partition-membership existence to the C++ template
+        // so `<parallel>`-final emission can delegate to
+        // `mesh/cpp/parallel_final.jinja2`. The delegate's body is a
+        // byte-identical copy of the inline branch — the atomic
+        // semantic payload (validator + §16.5 `ParallelCompletionTracker`
+        // runtime + partition-aware branch body) is deliberately out
+        // of scope for this scaffold per the §14 L2844 banner.
+        if let Err(e) = sce_build::inject_partition_context_flag(&mut model, Path::new(deploy_file)) {
+            error_format.emit_and_exit(&e, "Partition context injection error: ");
+        }
     }
 
     let locate_codegen = |e: sce_build::forge::error::GenerateError| -> Located<ForgeError> {

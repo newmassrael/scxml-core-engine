@@ -811,6 +811,94 @@ mod tests {
         assert!(matches!(err, GenerateError::UnsupportedFeature(_)));
     }
 
+    /// SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844):
+    /// toggling `model.partition_context_present` must produce
+    /// byte-identical C++ codegen output today. The flag selects
+    /// between the inline `<parallel>`-final branch in
+    /// `entry_exit_actions.jinja2` and the delegate at
+    /// `mesh/cpp/parallel_final.jinja2`; until the atomic semantic
+    /// payload (validator + §16.5 `ParallelCompletionTracker` runtime
+    /// + partition-aware branch body) lands, the delegate's body is
+    /// a verbatim copy of the inline branch. Any drift between the
+    /// two is a textbook "built but unconsumed" anti-pattern — the
+    /// scaffolding would start emitting partition-shaped output
+    /// before any consumer can read it — and this test is the guard.
+    /// Fixture covers a parallel state whose regions contain final
+    /// states, so the delegated block actually renders.
+    #[test]
+    fn partition_context_present_is_byte_identical_at_p0() {
+        const PARALLEL_FINAL_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="pf_fixture" initial="root">
+  <parallel id="root">
+    <state id="left" initial="left_run">
+      <state id="left_run">
+        <transition event="finish_left" target="left_done"/>
+      </state>
+      <final id="left_done"/>
+    </state>
+    <state id="right" initial="right_run">
+      <state id="right_run">
+        <transition event="finish_right" target="right_done"/>
+      </state>
+      <final id="right_done"/>
+    </state>
+  </parallel>
+</scxml>"##;
+
+        let mut model_off = parse(PARALLEL_FINAL_SCXML);
+        crate::analyzer::analyze(&mut model_off, "pf_fixture.scxml");
+        model_off.partition_context_present = false;
+
+        let mut model_on = parse(PARALLEL_FINAL_SCXML);
+        crate::analyzer::analyze(&mut model_on, "pf_fixture.scxml");
+        model_on.partition_context_present = true;
+
+        let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("tools")
+            .join("codegen")
+            .join("templates");
+
+        let out_off =
+            generate_cpp(&model_off, &template_dir, "pf_fixture").expect("render off");
+        let out_on =
+            generate_cpp(&model_on, &template_dir, "pf_fixture").expect("render on");
+
+        assert_eq!(
+            out_off.files.len(),
+            out_on.files.len(),
+            "same file count regardless of partition flag"
+        );
+        for ((name_off, body_off), (name_on, body_on)) in
+            out_off.files.iter().zip(out_on.files.iter())
+        {
+            assert_eq!(name_off, name_on, "filename stability");
+            if body_off != body_on {
+                let diff_start = body_off
+                    .char_indices()
+                    .zip(body_on.chars())
+                    .find(|((_, a), b)| a != b)
+                    .map(|((i, _), _)| i)
+                    .unwrap_or_else(|| body_off.len().min(body_on.len()));
+                let ctx_off = body_off[diff_start.saturating_sub(80)..(diff_start + 400).min(body_off.len())]
+                    .escape_debug()
+                    .collect::<String>();
+                let ctx_on = body_on[diff_start.saturating_sub(80)..(diff_start + 400).min(body_on.len())]
+                    .escape_debug()
+                    .collect::<String>();
+                panic!(
+                    "§14 rule 12 carve-out: partition_context_present must not perturb C++\n\
+                     codegen output until the atomic semantic payload lands.\n\
+                     File {name_off} diverged at byte {diff_start}.\n\
+                     ── OFF (partition_context_present=false) ──\n{ctx_off}\n\
+                     ── ON  (partition_context_present=true)  ──\n{ctx_on}\n"
+                );
+            }
+        }
+    }
+
     /// Models without mesh-rpc invokes must NOT be rejected — the gate
     /// is feature-specific, not a blanket non-C++ block.
     #[test]

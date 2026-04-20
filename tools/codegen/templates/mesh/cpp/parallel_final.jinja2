@@ -1,0 +1,34 @@
+{# SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844):          #}
+{# <parallel>-final completion emission delegated from              #}
+{# `entry_exit_actions.jinja2` when                                 #}
+{# `model.partition_context_present` is true. The P0 body below is  #}
+{# a verbatim copy of the inline branch — a single-process          #}
+{# partitioned machine therefore produces byte-identical code to a  #}
+{# non-partitioned one. The partition-aware rewrite (root emits the #}
+{# tracker + local done.state raise; non-root emits wire 21         #}
+{# `ParallelRegionDone` only) lands atomically with the §16.5       #}
+{# `ParallelCompletionTracker` runtime and the rule 12 validator,   #}
+{# as spelled out in the §14 L2844 status banner.                    #}
+{# Inherited context: `state`, `state_id`, `model`. Trailing blank  #}
+{# line at EOF is load-bearing: minijinja strips one newline from   #}
+{# the included content with `trim_blocks=true`, so without the     #}
+{# blank line the `}\n` terminator would collapse and merge onto    #}
+{# the caller's next line — breaking the byte-identical contract    #}
+{# with the inline branch in `entry_exit_actions.jinja2`.           #}
+                // W3C SCXML 3.4: Check if parent's parent (parallel state) is complete
+                // W3C SCXML 3.7.1: Generate done.state event when all regions reach final states
+                // Uses ParallelCompletionHelper (Zero Duplication - shared with Interpreter)
+                {
+                    const auto parallelState = State::{{ model.states[state.parent].parent | capitalize }};
+                    AOT_DEBUG("Checking parallel state {} completion after region {} final",
+                             static_cast<int>(parallelState), "{{ state.parent }}");
+
+                    // W3C SCXML 3.4: Use shared Helper (ARCHITECTURE.md Zero Duplication Principle)
+                    if (::SCE::Core::ParallelCompletionHelper::areAllRegionsInFinal<State, {{ model.name }}Policy>(
+                            parallelState, activeStates_)) {
+                        AOT_DEBUG("All regions of parallel state {} are complete, generating done.state event",
+                                 static_cast<int>(parallelState));
+                        engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ model.states[state.parent].parent }}));
+                    }
+                }
+

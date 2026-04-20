@@ -117,6 +117,29 @@ fn collect_covered_units(cfg: &DeployConfig) -> BTreeSet<String> {
     covered
 }
 
+/// SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844): does the
+/// machine appear under any partition's `machines:` list?
+///
+/// The predicate reads only existence — partition names, unit
+/// assignments, `transport_binding:`, and the still-rejected
+/// `hosts_parallel_roots:` value are all invisible here. The flag
+/// flows onto [`crate::model::SCXMLModel::partition_context_present`]
+/// to steer C++ `<parallel>`-final emission toward
+/// `mesh/cpp/parallel_final.jinja2`; its P0 body is a byte-identical
+/// copy of the inline path, so true/false produce the same code for a
+/// single-process machine. Widening the signal (reading partition
+/// values) would re-introduce the "built but unconsumed" anti-pattern
+/// the banner explicitly forbids until the §16.5 runtime and rule 12
+/// validator land atomically.
+pub fn is_machine_partition_listed(cfg: &DeployConfig, machine: &str) -> bool {
+    let Some(partitions) = &cfg.partitions else {
+        return false;
+    };
+    partitions
+        .iter()
+        .any(|(_, decl)| decl.machines.iter().any(|m| m == machine))
+}
+
 /// The set of machines that appear under any partition's `machines:`
 /// list. Rule 1 only applies to these — a machine absent from every
 /// partition runs monolithically per spec L2791 (no warning).

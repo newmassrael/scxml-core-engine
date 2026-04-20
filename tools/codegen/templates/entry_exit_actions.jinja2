@@ -410,6 +410,17 @@
                 }
 {% endif %}
 {% if model.states[state.parent].parent and model.states[model.states[state.parent].parent].is_parallel %}
+{# SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844):           #}
+{# delegate <parallel>-final completion emission to                 #}
+{# `mesh/cpp/parallel_final.jinja2` when the machine is listed in   #}
+{# any `partitions.<name>.machines:` entry. The delegate's P0 body  #}
+{# is byte-identical to the inline branch below; the partition-     #}
+{# aware rewrite lands atomically with §16.5 and the rule 12        #}
+{# validator. The guard is pure existence — no partition value is   #}
+{# read here — to stay within the carve-out.                         #}
+{% if model.partition_context_present %}
+{% include 'mesh/cpp/parallel_final.jinja2' %}
+{% else %}
                 // W3C SCXML 3.4: Check if parent's parent (parallel state) is complete
                 // W3C SCXML 3.7.1: Generate done.state event when all regions reach final states
                 // Uses ParallelCompletionHelper (Zero Duplication - shared with Interpreter)
@@ -426,6 +437,7 @@
                         engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ model.states[state.parent].parent }}));
                     }
                 }
+{% endif %}
 {% endif %}
 {% endif %}
                 }

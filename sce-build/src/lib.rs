@@ -851,6 +851,38 @@ pub struct MeshResult {
 /// here because unsubscribe events may lack Event enum variants in the
 /// SM — those sends are transport-level lifecycle actions that only the
 /// transport codegen needs to see.
+/// SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844): flip
+/// `model.partition_context_present` based on whether `model.name`
+/// (or its `source:`-aliased deploy-yaml name) appears under any
+/// `partitions.<name>.machines:` list.
+///
+/// Must run BEFORE C++ SM code generation so the template dispatches
+/// between the inline `<parallel>`-final branch and the delegated
+/// `mesh/cpp/parallel_final.jinja2` include. Idempotent: the flag is
+/// a pure function of the deploy.yaml and the machine identifier, so
+/// re-running overwrites with the same value.
+///
+/// Returns the resolved flag value so CLI / build.rs callers can log
+/// or test the decision without re-parsing the deploy config. No
+/// partition values are read — only set-membership — to stay within
+/// the scaffolding carve-out.
+pub fn inject_partition_context_flag(
+    model: &mut SCXMLModel,
+    deploy_path: &Path,
+) -> Result<bool, mesh::error::MeshError> {
+    let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+    let resolved_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
+        model.name.clone()
+    } else {
+        deploy_cfg
+            .find_machine_name_by_source(&model.name)
+            .unwrap_or_else(|| model.name.clone())
+    };
+    let present = mesh::partitions::is_machine_partition_listed(&deploy_cfg, &resolved_name);
+    model.partition_context_present = present;
+    Ok(present)
+}
+
 pub fn inject_server_model_mutations(
     model: &mut SCXMLModel,
     deploy_path: &Path,

@@ -639,6 +639,24 @@ pub struct SCXMLModel {
     pub needs_event_type_helper: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub needs_event_scheduler: Option<bool>,
+
+    /// SCE_MESH.md §14 rule 12 scaffolding carve-out: set to `true` when
+    /// this machine is listed under any `partitions.<name>.machines:`
+    /// entry in a `--deploy` deploy.yaml. A pure existence flag — the
+    /// partition graph's shape, the unit assignments, and the (still
+    /// rejected) `hosts_parallel_roots:` value are deliberately NOT
+    /// surfaced. The C++ `<parallel>`-final emission branches on this
+    /// boolean to delegate into `mesh/cpp/parallel_final.jinja2` when
+    /// true; the delegate's P0 body is a byte-identical copy of the
+    /// inline path so a partition-listed single-process machine
+    /// currently produces the same code as a non-partitioned one.
+    /// The atomic semantic payload (validator + `ParallelCompletionTracker`
+    /// runtime + partition-aware branch body) lands together — see the
+    /// §14 L2844 status banner — which is why this flag alone reads
+    /// nothing beyond existence: downgrading to "value read" would
+    /// re-introduce the "built but unconsumed" anti-pattern.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub partition_context_present: bool,
 }
 
 /// Maximum recursion depth for resolving nested initial states to leaf states.
