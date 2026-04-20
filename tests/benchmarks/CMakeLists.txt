@@ -125,6 +125,22 @@ target_link_libraries(benchmark_memory_footprint
         Threads::Threads
 )
 
+# ParallelCompletionTracker Benchmarks (SCE_MESH.md §16.5 std::function
+# footprint audit — justifies or refutes a CRTP/template refactor of
+# the tracker's callback members).
+if(SCE_ENABLE_MESH)
+    add_executable(benchmark_parallel_completion_tracker
+        ParallelCompletionTrackerBenchmark.cpp
+    )
+    target_link_libraries(benchmark_parallel_completion_tracker
+        PRIVATE
+            sce_mesh_common
+            benchmark::benchmark
+            benchmark::benchmark_main
+            Threads::Threads
+    )
+endif()
+
 # ============================================================================
 # CTest Integration
 # ============================================================================
@@ -215,6 +231,23 @@ add_test(
         --benchmark_format=console
 )
 
+# ParallelCompletionTracker quick benchmark test — exercises the
+# sizeof report + the narrowest width (2) of the timing paths so a
+# developer can sanity-check the numbers in under a second.
+if(SCE_ENABLE_MESH)
+    add_test(
+        NAME benchmark_parallel_completion_tracker_quick
+        COMMAND benchmark_parallel_completion_tracker
+            --benchmark_min_time=0.1s
+            --benchmark_filter=Sizeof|CaptureAudit|/2$
+            --benchmark_format=console
+    )
+    add_test(
+        NAME benchmark_parallel_completion_tracker_full
+        COMMAND benchmark_parallel_completion_tracker
+    )
+endif()
+
 # Configure test properties
 # CTest executes tests with higher COST first, so quick (1000) runs before full (500)
 set_tests_properties(benchmark_event_scheduler_quick PROPERTIES
@@ -287,6 +320,20 @@ set_tests_properties(benchmark_memory_footprint_quick PROPERTIES
     TIMEOUT 300
     COST 1000
 )
+
+if(SCE_ENABLE_MESH)
+    set_tests_properties(benchmark_parallel_completion_tracker_quick PROPERTIES
+        LABELS "benchmark;quick;performance;mesh;tracker"
+        TIMEOUT 300
+        COST 1000
+    )
+    set_tests_properties(benchmark_parallel_completion_tracker_full PROPERTIES
+        LABELS "benchmark;full;performance;mesh;tracker;manual"
+        TIMEOUT 600
+        COST 500
+        DISABLED TRUE
+    )
+endif()
 
 # ============================================================================
 # Custom Benchmark Targets
