@@ -1135,6 +1135,107 @@ fn forge_inline_mixed_go() {
     assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::Go);
 }
 
+// ── Named Context typedef emission ─────────────────────────────
+//
+// The C++ codegen exposes one `using {Id}Type` alias per
+// `<sce:context>` declaration, on both the Policy struct (source of
+// truth) and the user-facing SM class (re-export). Consumers (traits,
+// test harnesses) reference the alias instead of duplicating the
+// underlying type across SCXML and C++ — drift between the two is
+// then a compile error rather than a silent mismatch. The guard is a
+// closed reserved-id list in the parser (`RESERVED_CONTEXT_IDS`).
+
+fn compile_scxml_for_test(scxml: &str) -> String {
+    // `compile_scxml_lang` takes a filesystem path; serialise the inline
+    // SCXML to a unique temp file so parallel test runs cannot collide.
+    // Stdlib only — no `tempfile` dep pulled in for a single test helper.
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let path = std::env::temp_dir().join(format!("sce_ctx_test_{pid}_{id}.scxml"));
+    std::fs::write(&path, scxml).expect("write fixture");
+    let tdir = sce_build::find_template_dir_for(sce_build::generator::Language::Cpp);
+    let output = sce_build::compile_scxml_lang(
+        path.to_str().unwrap(),
+        &tdir,
+        sce_build::generator::Language::Cpp,
+    )
+    .expect("compile_scxml_lang");
+    let _ = std::fs::remove_file(&path);
+    // files[0] is the header by construction.
+    output.files[0].1.clone()
+}
+
+#[test]
+fn cpp_context_typedef_single_with_cpp_type() {
+    // `cpp:type` provided → typedef aliases the concrete type, on
+    // both the Policy struct and the user-facing class.
+    let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                    xmlns:sce="http://sce.dev/ext"
+                    xmlns:cpp="urn:sce:cpp"
+                    version="1.0" name="fixture" initial="s1">
+        <sce:context id="hw" cpp:type="Hardware" cpp:include="hardware.h"/>
+        <state id="s1"/>
+    </scxml>"#;
+    let header = compile_scxml_for_test(scxml);
+    assert!(
+        header.contains("using HwType = Hardware;"),
+        "Policy struct should expose `using HwType = Hardware;`\n{header}"
+    );
+    assert!(
+        header.contains("using HwType = typename PolicyType::HwType;"),
+        "User-facing class should re-export `using HwType = typename PolicyType::HwType;`\n{header}"
+    );
+}
+
+#[test]
+fn cpp_context_typedef_single_duck_typed() {
+    // No `cpp:type` → typedef aliases the template parameter, which
+    // preserves duck typing (consumers pick the concrete type at
+    // instantiation) while still exposing `FooType` on the class.
+    let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                    xmlns:sce="http://sce.dev/ext"
+                    version="1.0" name="fixture" initial="s1">
+        <sce:context id="enemy"/>
+        <state id="s1"/>
+    </scxml>"#;
+    let header = compile_scxml_for_test(scxml);
+    assert!(
+        header.contains("using EnemyType = EnemyT;"),
+        "Policy struct should alias the template parameter for duck typing\n{header}"
+    );
+    assert!(
+        header.contains("using EnemyType = typename PolicyType::EnemyType;"),
+        "User-facing class should re-export EnemyType\n{header}"
+    );
+}
+
+#[test]
+fn cpp_context_typedef_multi_mixed() {
+    // Two contexts, one concrete + one duck-typed. Verifies the
+    // per-id rule scales uniformly — no special cases for 1 vs N.
+    let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                    xmlns:sce="http://sce.dev/ext"
+                    xmlns:cpp="urn:sce:cpp"
+                    version="1.0" name="fixture" initial="s1">
+        <sce:context id="combo"/>
+        <sce:context id="berserk" cpp:type="doom::BerserkState" cpp:include="berserk.h"/>
+        <state id="s1"/>
+    </scxml>"#;
+    let header = compile_scxml_for_test(scxml);
+    for expected in [
+        "using ComboType = ComboT;",
+        "using BerserkType = doom::BerserkState;",
+        "using ComboType = typename PolicyType::ComboType;",
+        "using BerserkType = typename PolicyType::BerserkType;",
+    ] {
+        assert!(
+            header.contains(expected),
+            "Expected typedef `{expected}` not found in header\n{header}"
+        );
+    }
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Phase 3: Interpolation conformance ──────────────────────
 // ══════════════════════════════════════════════════════════════

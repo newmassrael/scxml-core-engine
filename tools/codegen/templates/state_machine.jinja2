@@ -242,6 +242,9 @@ template <{{ _tpl_params | join(', ') }}>
 struct {{ model.name }}Policy {
     using State = ::SCE::Generated::{{ model.name }}::State;
     using Event = ::SCE::Generated::{{ model.name }}::Event;
+{% for ctx in model.context_objects %}
+    using {{ ctx.id | capitalize }}Type = {{ ctx.cpp_type if ctx.cpp_type else (ctx.id | capitalize + 'T') }};
+{% endfor %}
 
     // W3C SCXML Appendix D: Flag indicating parallel state support
     static constexpr bool HAS_PARALLEL_STATES = {{ 'true' if model.has_parallel_states else 'false' }};
@@ -529,6 +532,9 @@ class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{{ _pol_ins
 public:
     // W3C SCXML: Policy type alias for test infrastructure
     using PolicyType = {{ _pol_inst }};
+{% for ctx in model.context_objects %}
+    using {{ ctx.id | capitalize }}Type = typename PolicyType::{{ ctx.id | capitalize }}Type;
+{% endfor %}
 
     // Hoist `EventWithMetadata` from the base engine so lambda bodies
     // nested in this class (trackers, invoke-completion closures, mesh
