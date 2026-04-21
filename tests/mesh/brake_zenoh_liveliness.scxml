@@ -5,7 +5,14 @@
      deploy.yaml `liveliness:` opt-in, the liveliness token + subscriber
      pair (SCE Mesh §16.7 row 8). The <send> itself is never actually
      exercised in the test — the test drives liveliness directly and
-     never walks brake's SCXML. -->
+     never walks brake's SCXML.
+
+     `<transition event="error.communication">` is required by
+     `reject_liveliness_without_handler`: a machine declaring
+     `liveliness:` without an observable handler is silently broken
+     (`feedback_silently_broken_hooks`). The handler routes to a
+     dedicated `<final id="peer_lost">` so authoring-visible E2E
+     observation is possible even though this test does not walk it. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="null" name="brake_zenoh_liveliness" initial="idle">
     <state id="idle">
@@ -13,6 +20,8 @@
             <send target="#motor" event="event.ping"/>
         </onentry>
         <transition event="event.ack" target="done"/>
+        <transition event="error.communication" target="peer_lost"/>
     </state>
     <state id="done"/>
+    <final id="peer_lost"/>
 </scxml>

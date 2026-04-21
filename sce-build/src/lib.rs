@@ -916,7 +916,21 @@ pub fn inject_partition_context_for(
     model.partition_wire21_inbound_sources.clear();
     model.partition_self_name = None;
     model.partition_barrier_timeouts.clear();
-    model.partition_region_liveliness_opt_in = false;
+
+    // SCE_MESH.md §16.4 / §16.7 liveness opt-in. Set whenever the
+    // machine declares `liveliness:` in deploy.yaml, regardless of
+    // partition context — the codegen gate
+    // `reject_liveliness_without_handler` is symmetric for row 8
+    // (`PEER_PARTITIONED`, any machine) and row 13
+    // (`REGION_PARTITIONED`, partitioned machine). Transport
+    // emission is keyed on `partition_self_name` (row 13 tokens)
+    // or the mesh transport codegen's direct deploy.yaml read
+    // (row 8 tokens); this flag only drives the SM-level gate.
+    model.machine_liveliness_opt_in = deploy_cfg
+        .device_for_machine(&resolved_name)
+        .and_then(|d| d.machines.get(&resolved_name))
+        .and_then(|m| m.liveliness)
+        .is_some();
 
     if let Some(partition_name) = for_partition {
         if let Some(partitions) = resolved.partitions() {
@@ -931,20 +945,6 @@ pub fn inject_partition_context_for(
             };
 
             model.partition_self_name = Some(partition_name.to_string());
-
-            // SCE_MESH.md §16.4 region-partition liveness: opt-in when
-            // this partitioned machine declares `liveliness:` in
-            // deploy.yaml. Drives Zenoh per-partition token emission
-            // and the `reject_region_liveliness_without_handler`
-            // codegen gate. Lookup reuses the machine name that
-            // `inject_partition_context_for` already resolved — no
-            // new deploy parse.
-            let machine_has_liveliness = deploy_cfg
-                .device_for_machine(&resolved_name)
-                .and_then(|d| d.machines.get(&resolved_name))
-                .and_then(|m| m.liveliness)
-                .is_some();
-            model.partition_region_liveliness_opt_in = machine_has_liveliness;
 
             // Claims made by the selected partition — used to mark
             // `<parallel>` ids where this partition is Root.

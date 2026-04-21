@@ -159,44 +159,44 @@ fn reject_barrier_timeout_without_handler(
     )))
 }
 
-// ── §16.4 region-partition liveness observability gate ───────────
+// ── §16.4 / §16.7 liveness observability gate ────────────────────
 //
 // Symmetric to `reject_barrier_timeout_without_handler` for the
-// §16.7 row 13 `REGION_PARTITIONED` raise path. Deploy.yaml
-// `liveliness:` under a partitioned machine means the author wants
-// to **observe** a sibling partition's liveliness drop as
-// `error.communication` (reason `REGION_PARTITIONED`); without a
-// transition matching that event, the raise sinks into the default
-// microstep path and is silently discarded (`feedback_silently_broken_hooks`).
-//
-// Asymmetry disclosure: the machine-identity row 8 `PEER_PARTITIONED`
-// raise (declared by `liveliness:` on a non-partitioned machine) is
-// currently un-gated — fixtures predating this memo rely on a
-// harness-observing sender and carry no in-SCXML handler. Row 13
-// introduces the gate at its own landing so partitioned authors
-// receive the silent-broken defense from day 0; retroactively lifting
-// row 8 to match is a separate atomic change because it invalidates
-// the existing `brake_zenoh_liveliness` fixture shape.
-fn reject_region_liveliness_without_handler(
+// liveness raise paths. `deploy.yaml`'s `liveliness:` block drives
+// two §16.7 rows that both surface as `error.communication`:
+//   - row 8 `PEER_PARTITIONED` — fires on DROP of a machine-level
+//     `sce/live/<machine>` token, i.e. on every machine that
+//     declares `liveliness:` regardless of partitioning.
+//   - row 13 `REGION_PARTITIONED` — fires on DROP of a partition
+//     token `sce/live/<machine>/<partition>` — partitioned machines
+//     only.
+// Without a matching `<transition event="error.communication">`
+// either raise sinks into the default microstep path and is
+// silently discarded, which is exactly the
+// `feedback_silently_broken_hooks` anti-pattern. A single gate
+// covers both rows because the model flag is set whenever the
+// machine declares `liveliness:` — there is no `liveliness:` shape
+// that produces row 13 without also authorizing row 8.
+fn reject_liveliness_without_handler(
     model: &SCXMLModel,
 ) -> Result<(), GenerateError> {
-    if !model.partition_region_liveliness_opt_in {
+    if !model.machine_liveliness_opt_in {
         return Ok(());
     }
     if model.events.contains("error.communication") {
         return Ok(());
     }
     Err(GenerateError::UnsupportedFeature(format!(
-        "machine '{}' declares `liveliness:` under a partitioned deploy \
-         but the SCXML has no transition for event `error.communication`. \
-         SCE_MESH.md §16.4 / §16.7 row 13 raise `error.communication` \
-         (reason REGION_PARTITIONED) when a sibling partition's Zenoh \
-         liveliness token drops — without a transition the raise is \
-         silently discarded and the signal has no observable effect. \
-         Add a `<transition event=\"error.communication\">` handler \
-         (optionally guarded on `_event.data.reason == \
-         'REGION_PARTITIONED'`) or drop `liveliness:` from the machine \
-         declaration.",
+        "machine '{}' declares `liveliness:` but the SCXML has no \
+         transition for event `error.communication`. SCE_MESH.md \
+         §16.4 / §16.7 rows 8 and 13 raise `error.communication` \
+         (reason PEER_PARTITIONED or REGION_PARTITIONED) when a \
+         peer's Zenoh liveliness token drops — without a transition \
+         the raise is silently discarded and the signal has no \
+         observable effect. Add a `<transition \
+         event=\"error.communication\">` handler (optionally guarded \
+         on `_event.data.reason`) or drop `liveliness:` from the \
+         machine declaration.",
         model.name
     )))
 }
@@ -285,7 +285,7 @@ fn render_cpp(
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_barrier_timeout_without_handler(model)?;
-    reject_region_liveliness_without_handler(model)?;
+    reject_liveliness_without_handler(model)?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -1256,55 +1256,71 @@ mod tests {
     }
 
     #[test]
-    fn partition_region_liveliness_without_error_handler_rejects() {
+    fn machine_liveliness_without_error_handler_rejects() {
         // Symmetric to `partition_barrier_timeout_without_error_handler_rejects`
-        // for the §16.4 / §16.7 row 13 `REGION_PARTITIONED` raise path.
-        // `partition_region_liveliness_opt_in=true` with no
-        // `<transition event="error.communication">` in the SCXML must
-        // be refused at codegen — the `feedback_silently_broken_hooks`
-        // gate the runtime commit (`6c59ca18`) introduced alongside
-        // the Zenoh row-13 implementation. Guarded directly at the
-        // unit layer so the gate is not a
-        // `feedback_built_but_unconsumed` dead branch reachable only
-        // through the `mesh_zenoh_region_liveness_verification` E2E.
-        let mut model = parse(PARALLEL_FINAL_SCXML);
-        crate::analyzer::analyze(&mut model, "pf_fixture.scxml");
-        model.partition_context_present = true;
-        model
-            .partition_parallel_roles
-            .insert("root".to_string(), crate::model::PartitionRole::Root);
-        model.partition_region_liveliness_opt_in = true;
-        let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("workspace root")
-            .join("tools")
-            .join("codegen")
-            .join("templates");
-        let res = generate_cpp(&model, &template_dir, "pf_fixture");
-        let err = match res {
-            Ok(_) => panic!(
-                "partition_region_liveliness_opt_in without error.communication handler must reject"
-            ),
-            Err(e) => e,
-        };
-        match err {
-            GenerateError::UnsupportedFeature(msg) => {
-                assert!(msg.contains("liveliness"), "msg cites the knob: {msg}");
-                assert!(
-                    msg.contains("error.communication"),
-                    "msg names the missing handler: {msg}"
-                );
-                assert!(
-                    msg.contains("REGION_PARTITIONED"),
-                    "msg names §16.7 row 13 reason: {msg}"
-                );
-                // Machine name is whatever `<scxml name=...>` carries in
-                // PARALLEL_FINAL_SCXML — the assertion only pins that
-                // SOME machine identifier is surfaced, not the exact
-                // string.
-                assert!(msg.contains("machine"), "msg names the compiled machine: {msg}");
+        // for the §16.4 / §16.7 liveness raise paths. `machine_liveliness_opt_in=true`
+        // with no `<transition event="error.communication">` in the SCXML
+        // must be refused at codegen — the `feedback_silently_broken_hooks`
+        // gate covers both row 8 (`PEER_PARTITIONED`, non-partitioned) and
+        // row 13 (`REGION_PARTITIONED`, partitioned) because both rows
+        // surface through `error.communication` and share the same
+        // silent-broken failure mode. Partitioned and non-partitioned
+        // fixtures both probed so the gate is never dead for either axis.
+        for &(context_present, label) in
+            &[(true, "partitioned"), (false, "non-partitioned")]
+        {
+            let mut model = parse(PARALLEL_FINAL_SCXML);
+            crate::analyzer::analyze(&mut model, "pf_fixture.scxml");
+            model.partition_context_present = context_present;
+            if context_present {
+                model
+                    .partition_parallel_roles
+                    .insert("root".to_string(), crate::model::PartitionRole::Root);
             }
-            other => panic!("expected UnsupportedFeature, got {other:?}"),
+            model.machine_liveliness_opt_in = true;
+            let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("workspace root")
+                .join("tools")
+                .join("codegen")
+                .join("templates");
+            let res = generate_cpp(&model, &template_dir, "pf_fixture");
+            let err = match res {
+                Ok(_) => panic!(
+                    "machine_liveliness_opt_in without error.communication handler must reject \
+                     ({label})"
+                ),
+                Err(e) => e,
+            };
+            match err {
+                GenerateError::UnsupportedFeature(msg) => {
+                    assert!(msg.contains("liveliness"), "{label}: msg cites the knob: {msg}");
+                    assert!(
+                        msg.contains("error.communication"),
+                        "{label}: msg names the missing handler: {msg}"
+                    );
+                    // Gate speaks for both rows; pin both reason codes so
+                    // a future narrowing (e.g. re-splitting the gate) has
+                    // to update the test intentionally rather than drift.
+                    assert!(
+                        msg.contains("PEER_PARTITIONED"),
+                        "{label}: msg names §16.7 row 8 reason: {msg}"
+                    );
+                    assert!(
+                        msg.contains("REGION_PARTITIONED"),
+                        "{label}: msg names §16.7 row 13 reason: {msg}"
+                    );
+                    // Machine name is whatever `<scxml name=...>` carries
+                    // in PARALLEL_FINAL_SCXML — the assertion only pins
+                    // that SOME machine identifier is surfaced, not the
+                    // exact string.
+                    assert!(
+                        msg.contains("machine"),
+                        "{label}: msg names the compiled machine: {msg}"
+                    );
+                }
+                other => panic!("{label}: expected UnsupportedFeature, got {other:?}"),
+            }
         }
     }
 

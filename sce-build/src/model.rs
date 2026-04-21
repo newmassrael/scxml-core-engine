@@ -741,27 +741,27 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub partition_barrier_timeouts: std::collections::BTreeMap<String, u32>,
 
-    /// SCE_MESH.md §16.4 region-partition liveness opt-in. `true` when
-    /// the current codegen is building a partition binary (i.e.
-    /// [`Self::partition_self_name`] is `Some(_)`) **and** the deploy
-    /// declares `liveliness:` on the same machine. The combination is
-    /// what drives the generated Zenoh router to emit a second token
-    /// under `sce/live/<machine>/<partition>` and to raise
-    /// `error.communication` with reason `REGION_PARTITIONED` (§16.7
-    /// row 13) on DELETE of a sibling partition's token.
+    /// SCE_MESH.md §16.4 / §16.7 liveness opt-in. `true` when the deploy
+    /// declares a `liveliness:` block on the machine being codegen'd,
+    /// regardless of whether this is a partition binary. Populated by
+    /// [`crate::inject_partition_context_for`] from `deploy.yaml`.
     ///
-    /// Populated by [`crate::inject_partition_context_for`]; the
-    /// generator-side gate
-    /// [`crate::generator::reject_region_liveliness_without_handler`]
-    /// enforces the `feedback_silently_broken_hooks` contract — a
-    /// partitioned liveliness emitter with no in-SCXML handler for
-    /// `error.communication` is rejected at codegen.
+    /// The flag drives only the codegen-side observability gate
+    /// [`crate::generator::reject_liveliness_without_handler`]
+    /// (`feedback_silently_broken_hooks`): a machine declaring
+    /// `liveliness:` without an `error.communication` handler in its
+    /// SCXML is rejected at codegen because the row 8 `PEER_PARTITIONED`
+    /// raise (on any machine with `liveliness:`) and the row 13
+    /// `REGION_PARTITIONED` raise (on a partitioned machine) both flow
+    /// through `error.communication` and would be silently discarded.
+    /// Transport emission is a different signal: per-partition row-13
+    /// token wiring is keyed on [`Self::partition_self_name`], and
+    /// machine-level row-8 token wiring lives in the mesh transport
+    /// codegen that reads `deploy.yaml`'s `liveliness:` directly.
     ///
-    /// `false` in every non-partitioned build and in every partition
-    /// build whose machine declares no `liveliness:` section; neither
-    /// shape emits row 13 code or engages the gate.
+    /// `false` when the machine declares no `liveliness:` section.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub partition_region_liveliness_opt_in: bool,
+    pub machine_liveliness_opt_in: bool,
 }
 
 /// SCE_MESH.md §14 rule 12 — partition's role for a specific
