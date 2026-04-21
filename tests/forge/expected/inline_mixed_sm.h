@@ -193,12 +193,20 @@ public:
     // W3C SCXML: Policy type alias for test infrastructure
     using PolicyType = inline_mixedPolicy;
 
+    // Hoist `EventWithMetadata` from the base engine so lambda bodies
+    // nested in this class (trackers, invoke-completion closures, mesh
+    // dispatch hooks) can write `EventWithMetadata(...)` directly
+    // without a local `using EngineBase = ...;` dependent-name dance.
+    using EventWithMetadata =
+        typename ::SCE::Static::StaticExecutionEngine<inline_mixedPolicy>::EventWithMetadata;
+
     inline_mixed() = default;
 
     // W3C SCXML 6.4.1: Wrapper for setting invoke params (delegates to policy)
     void setParamInScriptEngine(const std::string& paramName, const std::string& paramExpr) {
         this->policy_.setParamInScriptEngine(paramName, paramExpr);
     }
+
 };
 
 // W3C SCXML: Compile-time StatePolicy interface verification
