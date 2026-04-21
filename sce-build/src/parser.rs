@@ -5,6 +5,7 @@
 // Parses W3C SCXML files into SCXMLModel for code generation.
 
 use crate::model::*;
+use crate::DocumentLabel;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::LazyLock;
@@ -136,7 +137,14 @@ impl SCXMLParser {
             .unwrap_or(&name)
             .to_string();
         let base_dir = Path::new(scxml_path).parent().map(|p| p.to_path_buf());
-        self.parse_impl(&content, &name, &diag_label, base_dir.as_deref())
+        self.parse_impl(
+            &content,
+            DocumentLabel {
+                identifier: &name,
+                diagnostic_label: &diag_label,
+            },
+            base_dir.as_deref(),
+        )
     }
 
     /// Parse SCXML from a string (no filesystem access).
@@ -151,29 +159,26 @@ impl SCXMLParser {
         content: &str,
         name: &str,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        self.parse_impl(content, name, name, None)
+        self.parse_impl(content, DocumentLabel::symmetric(name), None)
     }
 
-    /// Two-role label contract (mirrors [`crate::DocumentLabel`]):
-    ///
-    /// * `name` — the pure identifier. Stored in [`SCXMLModel::name`] and
-    ///   flows from there into generated template symbols. Must be
-    ///   extension-free or generated code breaks (`_scxml` suffix in
-    ///   Go/C++/Kotlin symbol names).
-    /// * `diag_label` — the file label. Used by XSD
-    ///   `source_label`, every outer `Located::new(..., diag_label, ...)`
-    ///   raise-site, and every helper `source_name` parameter threaded
-    ///   downstream. Should carry the full basename so `location.file`
-    ///   on NDJSON records is enough for downstream tooling to open the
-    ///   source without guessing the suffix.
+    /// Two-role label contract — see [`DocumentLabel`]. `label.identifier`
+    /// is the pure identifier stored in [`SCXMLModel::name`] (flows into
+    /// template symbols, must be extension-free). `label.diagnostic_label`
+    /// is the file label used by XSD `source_label`, every outer
+    /// `Located::new(..., diagnostic_label, ...)` raise-site, and every
+    /// helper `source_name` parameter threaded downstream. Should carry
+    /// the full basename so `location.file` on NDJSON records is enough
+    /// for downstream tooling to open the source without guessing the
+    /// suffix.
     fn parse_impl(
         &mut self,
         content: &str,
-        name: &str,
-        diag_label: &str,
+        label: DocumentLabel<'_>,
         base_dir: Option<&Path>,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{ForgeError, Located, XmlError};
+        let DocumentLabel { identifier: name, diagnostic_label: diag_label } = label;
 
         // W3C SCXML + sce: namespace schema validation. Runs before any
         // structural parsing so malformed documents fail fast at the
