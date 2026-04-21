@@ -143,7 +143,7 @@ pub fn is_machine_partition_listed(cfg: &DeployConfig, machine: &str) -> bool {
 /// The set of machines that appear under any partition's `machines:`
 /// list. Rule 1 only applies to these — a machine absent from every
 /// partition runs monolithically per spec L2791 (no warning).
-fn partition_listed_machines(cfg: &DeployConfig) -> BTreeSet<String> {
+pub fn partition_listed_machines(cfg: &DeployConfig) -> BTreeSet<String> {
     let mut listed: BTreeSet<String> = BTreeSet::new();
     let Some(partitions) = &cfg.partitions else {
         return listed;
@@ -438,6 +438,25 @@ pub fn validate_partitions_against_scxml(
         return Ok(());
     }
 
+    let models = load_partition_machine_models(deploy_dir, cfg, &listed)?;
+    validate_partitions_against_models(cfg, &models)?;
+    Ok(())
+}
+
+/// Shared helper: parse every SCXML source referenced by a partition-
+/// listed machine in `cfg.topology`. Used by
+/// [`validate_partitions_against_scxml`] and the §16.3 distributability
+/// analyzer — both need the same model set to reason about partition
+/// coverage and region-level write/transition graphs.
+///
+/// Returns an empty map (Ok) when `cfg.partitions` is absent or no
+/// partition-listed machines resolve — matching the "zero cost for
+/// monolithic deployments" invariant.
+pub fn load_partition_machine_models(
+    deploy_dir: &Path,
+    cfg: &DeployConfig,
+    listed: &BTreeSet<String>,
+) -> Result<BTreeMap<String, SCXMLModel>, MeshError> {
     // Resolve each listed machine's SCXML path via the deploy.yaml
     // machine table. Partition machines that are not declared in
     // `topology:` would already have been rejected by Phase A rule 9
@@ -473,8 +492,7 @@ pub fn validate_partitions_against_scxml(
         models.insert(machine.clone(), model);
     }
 
-    validate_partitions_against_models(cfg, &models)?;
-    Ok(())
+    Ok(models)
 }
 
 #[cfg(test)]

@@ -807,6 +807,15 @@ pub struct MeshResult {
     /// auto-symmetry (nested in conditional, manual unsubscribe present,
     /// duplicate). Non-fatal informational output.
     pub subscription_lint_notices: Vec<mesh::topology::SubscriptionLintNotice>,
+    /// SCE_MESH.md §16.4 auto-merge notices — one per R1/R2
+    /// constraint the permissive-mode resolver collapsed into a
+    /// single partition. Empty in strict mode (strict never
+    /// merges — it errors).
+    pub distributability_merge_notices: Vec<mesh::distributability::MergeNotice>,
+    /// SCE_MESH.md §16.3 R3 snapshot-read notices — advisory only,
+    /// identifies sibling regions that read an ancestor data
+    /// location another region writes. Build never fails on R3.
+    pub distributability_snapshot_notices: Vec<mesh::distributability::SnapshotNotice>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -886,6 +895,12 @@ pub fn inject_partition_context_for(
     for_partition: Option<&str>,
 ) -> Result<bool, mesh::error::MeshError> {
     let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+    let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
+    // SCE_MESH.md §16.3: run the distributability analyzer before
+    // partition-context injection so wire-21 role assignment sees the
+    // post-merge plan instead of the author's (possibly violating)
+    // original.
+    let resolved = mesh::resolve_deploy_config(deploy_dir, &deploy_cfg)?;
     let resolved_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
         model.name.clone()
     } else {
@@ -902,7 +917,7 @@ pub fn inject_partition_context_for(
     model.partition_barrier_timeouts.clear();
 
     if let Some(partition_name) = for_partition {
-        if let Some(partitions) = &deploy_cfg.partitions {
+        if let Some(partitions) = resolved.partitions() {
             let Some(decl) = partitions.get(partition_name) else {
                 return Err(mesh::error::MeshError::Deploy(
                     mesh::error::DeployError::PartitionParallelRootNotInMachines {
@@ -1115,13 +1130,20 @@ pub fn compile_mesh_transport(
     // deploy config itself is treated read-only from here on.
     let deploy_dir = deploy_path.parent().unwrap_or(Path::new("."));
 
-    // SCE_MESH.md §14 rules 1, 2, 11 — cross-reference the declared
-    // partition coverage against each partition-listed machine's
-    // actual `<parallel>` / `<invoke>` inventory. Runs as a mesh-deploy
-    // stage diagnostic (errors wrap `DeployError`) but needs SCXML
-    // AST, so it lives after `parse_deploy` rather than inside
-    // `parse_deploy_str`. A no-op when `partitions:` is absent.
-    mesh::partitions::validate_partitions_against_scxml(deploy_dir, &deploy_cfg)?;
+    // SCE_MESH.md §14 rules 1, 2, 11 + §16.3/§16.4 distributability —
+    // resolve the partition plan against each partition-listed
+    // machine's `<parallel>`/`<invoke>` inventory, then run the
+    // R1-R4 analyzer (and §16.4 auto-merge under `distributability:
+    // permissive`). Errors wrap `DeployError`; a no-op when
+    // `partitions:` is absent. The resolved partition map itself is
+    // consumed by `inject_partition_context_for` (which holds the
+    // per-partition codegen state and re-runs the resolver on its
+    // own entry); the notice vectors below surface to the author
+    // through [`MeshResult`].
+    let resolved_deploy = mesh::resolve_deploy_config(deploy_dir, &deploy_cfg)?;
+    let distributability_merge_notices = resolved_deploy.plan.merge_notices.clone();
+    let distributability_snapshot_notices = resolved_deploy.plan.snapshot_notices.clone();
+    drop(resolved_deploy);
 
     let external_resolution =
         mesh::external::resolve_external_bindings(&deploy_cfg, deploy_dir)?;
@@ -1304,6 +1326,8 @@ pub fn compile_mesh_transport(
             deadline_override_notices,
             auto_subscriptions,
             subscription_lint_notices,
+            distributability_merge_notices,
+            distributability_snapshot_notices,
         });
     }
 
@@ -1403,6 +1427,8 @@ pub fn compile_mesh_transport(
         deadline_override_notices,
         auto_subscriptions,
         subscription_lint_notices,
+        distributability_merge_notices,
+        distributability_snapshot_notices,
     })
 }
 

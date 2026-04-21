@@ -570,6 +570,51 @@ pub enum DeployError {
         machine: String,
         parallel: String,
     },
+
+    /// SCE_MESH.md §16.3 R1 — two or more child regions of a
+    /// `<parallel>` write the same ancestor-scope data location.
+    /// Under `distributability: strict` this is a build failure;
+    /// `permissive` (the default) auto-merges the offending regions
+    /// per §16.4 and records a
+    /// [`crate::mesh::distributability::MergeNotice`] instead.
+    #[error("machine '{machine}', `<parallel id=\"{parallel}\">`: R1 shared-write — \
+             regions {} all assign to ancestor data '{location}'. \
+             SCE_MESH.md §16.3 R1 forbids this because distribution cannot preserve \
+             W3C sequential consistency on shared writable state without cross-process \
+             locks. Either place these regions in the same partition or move the \
+             shared variable into per-region datamodels. (Set `distributability: \
+             permissive` in deploy.yaml to auto-merge instead of failing the build.)",
+             .regions.iter().map(|r| format!("'{r}'"))
+                 .collect::<Vec<_>>().join(", "))]
+    DistributabilityR1SharedWrite {
+        machine: String,
+        parallel: String,
+        location: String,
+        regions: Vec<String>,
+    },
+
+    /// SCE_MESH.md §16.3 R2 — a `<transition target>` resolves to a
+    /// state inside a sibling region of the same `<parallel>`.
+    /// Cross-region transitions require macrostep atomicity across
+    /// the W3C exit-set/enter-set computation, which distribution
+    /// cannot supply. `strict` fails; `permissive` auto-merges via
+    /// §16.4.
+    #[error("machine '{machine}', `<parallel id=\"{parallel}\">`: R2 cross-region \
+             transition — regions {} are connected by a transition that crosses \
+             the region boundary. SCE_MESH.md §16.3 R2 forbids this because \
+             distribution cannot preserve the W3C exit-set/enter-set computation \
+             atomically across partitions. Either merge the regions into one \
+             partition, or refactor the transition target to an ancestor of the \
+             `<parallel>` (which exits it wholesale and is distribution-safe). \
+             (Set `distributability: permissive` in deploy.yaml to auto-merge \
+             instead of failing the build.)",
+             .regions.iter().map(|r| format!("'{r}'"))
+                 .collect::<Vec<_>>().join(", "))]
+    DistributabilityR2CrossRegionTransition {
+        machine: String,
+        parallel: String,
+        regions: Vec<String>,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -1489,6 +1534,39 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: Some(vec!["shm".to_string()]),
             fix: None,
             key_fragments: vec![partition.clone(), machine.clone(), parallel.clone()],
+        },
+        DeployError::DistributabilityR1SharedWrite {
+            machine,
+            parallel,
+            location,
+            regions,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDistributabilityR1SharedWrite,
+            stage: Stage::MeshDeploy,
+            actual: Some(location.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut k = vec![machine.clone(), parallel.clone(), location.clone()];
+                k.extend(regions.iter().cloned());
+                k
+            },
+        },
+        DeployError::DistributabilityR2CrossRegionTransition {
+            machine,
+            parallel,
+            regions,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDistributabilityR2CrossRegionTransition,
+            stage: Stage::MeshDeploy,
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut k = vec![machine.clone(), parallel.clone()];
+                k.extend(regions.iter().cloned());
+                k
+            },
         },
     }
 }

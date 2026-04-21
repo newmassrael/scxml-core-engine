@@ -65,6 +65,31 @@ pub struct DeployConfig {
     /// [`DeployError::PartitionDuplicateName`] (§14 rule 6).
     #[serde(default)]
     pub partitions: Option<PartitionMap>,
+    /// SCE_MESH.md §16.3 — strict vs permissive distributability
+    /// mode. `strict` fails the build on any R1/R2 violation;
+    /// `permissive` (the absent-value default) auto-merges offending
+    /// regions per §16.4 and records a [`crate::mesh::distributability::MergeNotice`].
+    /// The knob is meaningful only when `partitions:` is present; an
+    /// absent key means "permissive".
+    #[serde(default)]
+    pub distributability: Option<DistributabilityMode>,
+}
+
+/// SCE_MESH.md §16.3 strict/permissive toggle. Default is
+/// [`DistributabilityMode::Permissive`] so authors who author a
+/// partition plan that happens to violate R1/R2 still get a
+/// minimum-merge build rather than a hard failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DistributabilityMode {
+    Strict,
+    Permissive,
+}
+
+impl Default for DistributabilityMode {
+    fn default() -> Self {
+        DistributabilityMode::Permissive
+    }
 }
 
 // SCE_MESH.md §14 rules 6-10 — partitions schema.
@@ -109,6 +134,18 @@ impl PartitionMap {
     /// Partition count.
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Construct a [`PartitionMap`] from an already-validated
+    /// [`BTreeMap`]. Internal use only — the public deserialization
+    /// path goes through the custom
+    /// [`PartitionMap::deserialize`] visitor, which enforces rule-6
+    /// uniqueness. Callers that build a map from post-merge state
+    /// (§16.4 resolver) have already walked the original
+    /// [`PartitionMap`] and therefore carry the rule-6 guarantee by
+    /// construction; they merely rearrange entries.
+    pub(crate) fn from_map(map: BTreeMap<String, PartitionDecl>) -> Self {
+        PartitionMap(map)
     }
 }
 

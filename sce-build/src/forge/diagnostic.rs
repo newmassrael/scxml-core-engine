@@ -451,6 +451,11 @@ pub enum DiagnosticCode {
     MeshPartitionBarrierTimeoutWithoutRoot,
     #[serde(rename = "mesh/partition-wire21-custom-tcp-unimplemented")]
     MeshPartitionWire21CustomTcpUnimplemented,
+    // §16.3 / §16.4 distributability analyzer
+    #[serde(rename = "mesh/distributability-r1-shared-write")]
+    MeshDistributabilityR1SharedWrite,
+    #[serde(rename = "mesh/distributability-r2-cross-region-transition")]
+    MeshDistributabilityR2CrossRegionTransition,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -647,6 +652,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshPartitionParallelRootNonHost,
         MeshPartitionBarrierTimeoutWithoutRoot,
         MeshPartitionWire21CustomTcpUnimplemented,
+        MeshDistributabilityR1SharedWrite,
+        MeshDistributabilityR2CrossRegionTransition,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -838,6 +845,10 @@ impl DiagnosticCode {
             // codegen surface (§16.5).
             MeshPartitionWire21CustomTcpUnimplemented => Some("SCE Mesh §16.5"),
 
+            // ── Mesh §16.3 distributability analyzer ─────────────
+            MeshDistributabilityR1SharedWrite
+            | MeshDistributabilityR2CrossRegionTransition => Some("SCE Mesh §16.3"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -1002,6 +1013,8 @@ impl DiagnosticCode {
             MeshPartitionParallelRootNonHost => "mesh/partition-parallel-root-non-host",
             MeshPartitionBarrierTimeoutWithoutRoot => "mesh/partition-barrier-timeout-without-root",
             MeshPartitionWire21CustomTcpUnimplemented => "mesh/partition-wire21-custom-tcp-unimplemented",
+            MeshDistributabilityR1SharedWrite => "mesh/distributability-r1-shared-write",
+            MeshDistributabilityR2CrossRegionTransition => "mesh/distributability-r2-cross-region-transition",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -2672,6 +2685,27 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:dae8841d93dfb4c6","code":"mesh/partition-wire21-custom-tcp-unimplemented","stage":"mesh-deploy","spec":"SCE Mesh §16.5","message":"partition 'motor_left': `transport_binding: custom_tcp` is set, but the partition participates in distributed `<parallel id=\"root\">` (machine 'motor') wire-21 routing. The §16.5 wire-21 channel emitter currently supports `transport_binding: shm` only — a `custom_tcp` channel is not yet generated for ParallelRegionDone forwarding. Either change this partition's `transport_binding:` to `shm` (same-device deployments), or remove the partition from any distributed `<parallel>` route until the custom_tcp wire-21 emitter lands.","expected":["shm"],"actual":"custom_tcp"}"#,
             ),
             (
+                "mesh/distributability-r1-shared-write",
+                DeployError::DistributabilityR1SharedWrite {
+                    machine: "motor".into(),
+                    parallel: "root".into(),
+                    location: "shared".into(),
+                    regions: vec!["left".into(), "right".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2aeb9f32f5c45f20","code":"mesh/distributability-r1-shared-write","stage":"mesh-deploy","spec":"SCE Mesh §16.3","message":"machine 'motor', `<parallel id=\"root\">`: R1 shared-write — regions 'left', 'right' all assign to ancestor data 'shared'. SCE_MESH.md §16.3 R1 forbids this because distribution cannot preserve W3C sequential consistency on shared writable state without cross-process locks. Either place these regions in the same partition or move the shared variable into per-region datamodels. (Set `distributability: permissive` in deploy.yaml to auto-merge instead of failing the build.)","actual":"shared"}"#,
+            ),
+            (
+                "mesh/distributability-r2-cross-region-transition",
+                DeployError::DistributabilityR2CrossRegionTransition {
+                    machine: "motor".into(),
+                    parallel: "root".into(),
+                    regions: vec!["left".into(), "right".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2dcde5ac51ed902f","code":"mesh/distributability-r2-cross-region-transition","stage":"mesh-deploy","spec":"SCE Mesh §16.3","message":"machine 'motor', `<parallel id=\"root\">`: R2 cross-region transition — regions 'left', 'right' are connected by a transition that crosses the region boundary. SCE_MESH.md §16.3 R2 forbids this because distribution cannot preserve the W3C exit-set/enter-set computation atomically across partitions. Either merge the regions into one partition, or refactor the transition target to an ancestor of the `<parallel>` (which exits it wholesale and is distribution-safe). (Set `distributability: permissive` in deploy.yaml to auto-merge instead of failing the build.)"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -3398,6 +3432,8 @@ mod tests {
             | MeshPartitionParallelRootNonHost
             | MeshPartitionBarrierTimeoutWithoutRoot
             | MeshPartitionWire21CustomTcpUnimplemented
+            | MeshDistributabilityR1SharedWrite
+            | MeshDistributabilityR2CrossRegionTransition
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -3691,6 +3727,8 @@ mod tests {
                 | MeshPartitionParallelRootNonHost
                 | MeshPartitionBarrierTimeoutWithoutRoot
                 | MeshPartitionWire21CustomTcpUnimplemented
+                | MeshDistributabilityR1SharedWrite
+                | MeshDistributabilityR2CrossRegionTransition
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -3725,9 +3763,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            121,
+            123,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 121 distinct variants to match the DiagnosticCode \
+             expected 123 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

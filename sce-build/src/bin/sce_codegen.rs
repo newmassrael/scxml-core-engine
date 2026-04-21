@@ -836,6 +836,34 @@ fn cmd_generate(
                 for n in &result.subscription_lint_notices {
                     eprintln!("Lint: {n}");
                 }
+                // SCE_MESH.md §16.4 auto-merge notice stream: surfacing
+                // the merge events is what keeps permissive mode out of
+                // the silently-broken-hook pattern — an author who
+                // wrote a split partition plan must see that the
+                // analyzer collapsed it, otherwise the build behaves
+                // differently from what the author requested.
+                for n in &result.distributability_merge_notices {
+                    eprintln!(
+                        "Notice: machine '{}' <parallel id=\"{}\"> {:?} auto-merged — \
+                         partitions {:?} absorbed into '{}' (SCE_MESH.md §16.4).",
+                        n.machine, n.parallel_id, n.rule, n.absorbed, n.canonical,
+                    );
+                }
+                // SCE_MESH.md §16.3 R3 snapshot-read notices: advisory
+                // only; printed so authors see "entry-point sync
+                // required" cues without a build error.
+                for n in &result.distributability_snapshot_notices {
+                    eprintln!(
+                        "Notice: machine '{}' <parallel id=\"{}\"> region '{}' reads \
+                         ancestor data '{}' that sibling region '{}' writes — \
+                         snapshot captured at parallel entry (SCE_MESH.md §16.3 R3).",
+                        n.machine,
+                        n.parallel_id,
+                        n.reader_region,
+                        n.location,
+                        n.writer_region,
+                    );
+                }
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
                 for (filename, code) in &mesh_files {
                     let file_path = out_path.join(filename);

@@ -110,6 +110,8 @@
         "mesh/partition-parallel-root-non-host",
         "mesh/partition-barrier-timeout-without-root",
         "mesh/partition-wire21-custom-tcp-unimplemented",
+        "mesh/distributability-r1-shared-write",
+        "mesh/distributability-r2-cross-region-transition",
         "mesh/external-read",
         "mesh/external-parse",
         "mesh/external-unresolved-names",
