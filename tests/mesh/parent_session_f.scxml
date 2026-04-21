@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 Session F scaffold verification: parent declares
+     <invoke type="scxml" src="#worker_session_f">, a full remote SCXML
+     session whose wire runtime (patterns 14-20 per §9.6.2) is Session
+     F scope. Until F lands, codegen emits the §10.7.1 canonical
+     `SESSION_F_NOT_IMPLEMENTED` raise at state entry so authors have a
+     stable failure surface. The `<transition event="error.execution">`
+     here observes that raise and moves the machine to `pass`, proving
+     end-to-end that the silent-broken window (spec line 1396) is
+     closed. No wire traffic — the raise is local to the parent
+     session. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting" name="parent_session_f">
+    <state id="waiting">
+        <invoke type="scxml" src="#worker_session_f" id="remote_inv"/>
+        <transition event="error.execution" target="pass"/>
+    </state>
+    <final id="pass"/>
+</scxml>

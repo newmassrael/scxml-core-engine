@@ -74,7 +74,7 @@
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
         case State::{{ state_id | capitalize }}:
-{% if state.datamodel or state.on_entry_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
+{% if state.datamodel or state.on_entry_blocks or state.invokes | scxml or state.invokes | scxml_remote or state.invokes | hybrid or state.invokes | mesh_rpc or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
                 // ============================================================
@@ -113,6 +113,24 @@
                 ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
                     PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
                 AOT_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+{% endfor %}
+{% endif %}
+{% if state.invokes | scxml_remote %}
+                // ============================================================
+                // SCE_MESH.md §9.6 — remote <invoke type="scxml" src="#peer">
+                // Full remote-session runtime (wire patterns 14-20 per §9.6.2)
+                // is Session F scope. E1/E2 parse these invokes cleanly so
+                // authors can write foreign-processor-compatible documents
+                // (§9.6.7); until F lands, the parent raises error.execution
+                // per §10.7.1 canonical reason SESSION_F_NOT_IMPLEMENTED at
+                // the entry that would have started the remote session,
+                // giving a stable failure surface the SCXML can react to.
+                // No wire traffic — the raise is local to the parent.
+                // ============================================================
+{% for invoke_info in state.invokes | scxml_remote %}
+                engine.raise(typename Engine::EventWithMetadata(
+                    Event::Error_execution,
+                    "scxml invoke '{{ invoke_info.invoke_id }}' to '#{{ invoke_info.remote_mesh_target }}': SESSION_F_NOT_IMPLEMENTED per SCE_MESH.md §9.6/§10.7.1 — remote <invoke type=\"scxml\"> runtime (wire patterns 14-20) is not yet implemented"));
 {% endfor %}
 {% endif %}
 {% if state.invokes | mesh_rpc %}

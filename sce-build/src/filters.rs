@@ -260,9 +260,59 @@ fn filter_invokes_by_kind(value: Value, want_kind: &str) -> Result<Value, miniji
     Ok(Value::from(out))
 }
 
-/// Keep only `Invoke::Scxml` entries.
+/// Is the invoke a remote mesh `<invoke type="scxml" src="#peer">`?
+/// True when `remote_mesh_target` is set — i.e. the classifier in
+/// [`crate::inject_partition_context_for`] matched `src` to a distinct
+/// mesh machine declared in `deploy.yaml`. Used by `filter_scxml` and
+/// `filter_scxml_family` to exclude remote invokes from W3C local-session
+/// machinery (child session field, pending-invoke queue, finalize
+/// helper); `filter_scxml_remote` is the positive form used by the
+/// §10.7.1 `SESSION_F_NOT_IMPLEMENTED` raise site.
+fn invoke_is_remote_mesh(item: &Value) -> bool {
+    match item.get_attr("remote_mesh_target") {
+        Ok(v) => !v.is_none() && !v.is_undefined(),
+        Err(_) => false,
+    }
+}
+
+/// Keep only **local** `Invoke::Scxml` entries — remote mesh
+/// `<invoke type="scxml" src="#peer">` (SCE_MESH.md §9.6) are not W3C
+/// local-session invokes and are routed to `filter_scxml_remote`.
 fn filter_scxml(value: Value) -> Result<Value, minijinja::Error> {
-    filter_invokes_by_kind(value, "Scxml")
+    let mut out: Vec<Value> = Vec::new();
+    for item in value.try_iter()? {
+        let Ok(kind_val) = item.get_attr("kind") else { continue };
+        let Some(k) = kind_val.as_str() else { continue };
+        if k != "Scxml" {
+            continue;
+        }
+        if invoke_is_remote_mesh(&item) {
+            continue;
+        }
+        out.push(item.clone());
+    }
+    Ok(Value::from(out))
+}
+
+/// Keep only **remote mesh** `Invoke::Scxml` entries — i.e. `src="#peer"`
+/// referencing a distinct mesh machine per SCE_MESH.md §9.6. Consumed
+/// by the C++ entry-action template to emit the §10.7.1
+/// `SESSION_F_NOT_IMPLEMENTED` raise until Session F lands the wire
+/// patterns 14-20 runtime.
+fn filter_scxml_remote(value: Value) -> Result<Value, minijinja::Error> {
+    let mut out: Vec<Value> = Vec::new();
+    for item in value.try_iter()? {
+        let Ok(kind_val) = item.get_attr("kind") else { continue };
+        let Some(k) = kind_val.as_str() else { continue };
+        if k != "Scxml" {
+            continue;
+        }
+        if !invoke_is_remote_mesh(&item) {
+            continue;
+        }
+        out.push(item.clone());
+    }
+    Ok(Value::from(out))
 }
 
 /// Keep only `Invoke::Hybrid` entries.
@@ -270,15 +320,18 @@ fn filter_hybrid(value: Value) -> Result<Value, minijinja::Error> {
     filter_invokes_by_kind(value, "Hybrid")
 }
 
-/// Keep `Invoke::Scxml` and `Invoke::Hybrid` — the W3C SCXML-session kinds.
-/// Mirrors the legacy `static_invokes or hybrid_invokes` guard used throughout
-/// the codegen templates.
+/// Keep local `Invoke::Scxml` and `Invoke::Hybrid` — the W3C
+/// SCXML-session kinds. Remote mesh invokes are excluded for the same
+/// reason they are excluded from `filter_scxml`: they are not W3C
+/// local-session invokes and have no local child-session machinery.
 fn filter_scxml_family(value: Value) -> Result<Value, minijinja::Error> {
     let mut out: Vec<Value> = Vec::new();
     for item in value.try_iter()? {
         if let Ok(kind_val) = item.get_attr("kind") {
             if let Some(k) = kind_val.as_str() {
-                if k == "Scxml" || k == "Hybrid" {
+                if k == "Hybrid" {
+                    out.push(item.clone());
+                } else if k == "Scxml" && !invoke_is_remote_mesh(&item) {
                     out.push(item.clone());
                 }
             }
@@ -301,6 +354,7 @@ fn filter_mesh_rpc(value: Value) -> Result<Value, minijinja::Error> {
 /// filter names are available no matter which template engine is rendering.
 pub fn register_invoke_filters(env: &mut minijinja::Environment) {
     env.add_filter("scxml", filter_scxml);
+    env.add_filter("scxml_remote", filter_scxml_remote);
     env.add_filter("hybrid", filter_hybrid);
     env.add_filter("scxml_family", filter_scxml_family);
     env.add_filter("mesh_rpc", filter_mesh_rpc);

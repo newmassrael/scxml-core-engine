@@ -467,6 +467,17 @@ pub struct ScxmlInvokeInfo {
     pub finalize_content: String,
     pub src: String,
     pub namelist: String,
+    /// SCE_MESH.md §9.6 remote `<invoke type="scxml">`. When `src` is of the
+    /// form `#<name>` and `<name>` matches a distinct mesh machine declared
+    /// in `deploy.yaml`, this carries that machine name (without the leading
+    /// `#`). C++ codegen branches on this field to emit the §10.7.1
+    /// `SESSION_F_NOT_IMPLEMENTED` scaffold until Session F lands the
+    /// wire patterns 14-20 runtime. `None` for local W3C invokes (inline
+    /// `<content>` or file-relative `src`) and for non-mesh builds — those
+    /// flow through the existing local-invoke path unchanged. Populated
+    /// by [`crate::inject_partition_context_for`] from the deploy topology.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_mesh_target: Option<String>,
 }
 
 /// W3C SCXML 6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).

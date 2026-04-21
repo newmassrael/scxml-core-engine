@@ -1,0 +1,22 @@
+# SCE Mesh §9.6 Session F scaffold verification fixture.
+#
+# Declares `parent_session_f` and `worker_session_f` as distinct mesh
+# machines on a single device. `classify_remote_scxml_invokes` (called
+# from `inject_partition_context_for`) sees that the parent's
+# <invoke type="scxml" src="#worker_session_f"> references a declared
+# peer and sets `ScxmlInvokeInfo.remote_mesh_target = Some("worker_session_f")`;
+# C++ codegen emits the §10.7.1 SESSION_F_NOT_IMPLEMENTED raise.
+#
+# No transports/bindings are required: invoke is not a send target, and
+# the fixture never executes wire patterns 14-20 (Session F scope). The
+# worker's source: field satisfies deploy-schema requirements but the
+# worker binary is never compiled or run — the parent's raise happens
+# before any remote session would have been established.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_session_f:
+        source: parent_session_f.scxml
+      worker_session_f:
+        source: worker_session_f.scxml

@@ -1076,7 +1076,61 @@ pub fn inject_partition_context_for(
         }
     }
 
+    classify_remote_scxml_invokes(model, &deploy_cfg, &resolved_name);
+
     Ok(present)
+}
+
+/// SCE_MESH.md §9.6 — mark each `Invoke::Scxml` whose `src` is `#<name>`
+/// referencing a **distinct** mesh machine declared in `deploy.yaml` as a
+/// remote-mesh invoke. Sets
+/// [`model::ScxmlInvokeInfo::remote_mesh_target`]; consumed by C++ codegen
+/// to emit the §10.7.1 `SESSION_F_NOT_IMPLEMENTED` raise until the Session
+/// F wire runtime (patterns 14-20 per §9.6.2) lands.
+///
+/// Left `None` for:
+/// - Local W3C invokes with `src="file:..."` or `src="<relative>.scxml"`
+///   (parser resolves inline `<content>` into this shape — §9.6.6 mesh
+///   synthesis is still Session F scope).
+/// - Self-references (`#<own machine>`) — these would always fail at
+///   build time, but classification here is defensive against author typos.
+/// - Unknown `#<name>` that is not a deploy-declared machine — the build
+///   remains a local W3C invoke and the existing "child SCXML not found"
+///   path reports it.
+fn classify_remote_scxml_invokes(
+    model: &mut SCXMLModel,
+    deploy_cfg: &mesh::deploy::DeployConfig,
+    resolved_name: &str,
+) {
+    let mut mutated = false;
+    for state in model.states.values_mut() {
+        for invoke in state.invokes.iter_mut() {
+            if let model::Invoke::Scxml(info) = invoke {
+                let Some(target) = info.src.strip_prefix('#') else {
+                    continue;
+                };
+                if target == resolved_name {
+                    continue;
+                }
+                if deploy_cfg.device_for_machine(target).is_some() {
+                    info.remote_mesh_target = Some(target.to_string());
+                    mutated = true;
+                }
+            }
+        }
+    }
+    // [`SCXMLModel.invokes`] is a flat template-visible view built by
+    // [`SCXMLModel::refresh_invokes_view`] during parsing. Refresh it
+    // after classification so C++ class-level templates (`model.invokes
+    // | scxml`) see the same `remote_mesh_target` the per-state
+    // entry-action templates (`state.invokes | scxml`) do — otherwise
+    // the class emits local-child-session machinery (child_* member,
+    // pending-invoke queue) against a remote invoke whose `src` still
+    // carries the `#<peer>` prefix, producing invalid C++ identifiers
+    // like `SCE::Generated::#worker`.
+    if mutated {
+        model.refresh_invokes_view();
+    }
 }
 
 pub fn inject_server_model_mutations(
@@ -1565,10 +1619,10 @@ mod tests {
         use forge::error::{ForgeError, ValidationError};
         // `initial="nope"` names a non-existent state — analyzer
         // rejects with DynamicFeatures carrying the specific blocker.
-        let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="nope" name="typed_probe">
     <state id="s1"/>
-</scxml>"#;
+</scxml>"##;
         let err = compile_from_string_typed(scxml, "typed_probe", &[])
             .expect_err("initial points at undeclared state must reject");
         assert!(
@@ -1699,5 +1753,127 @@ topology:
         assert_eq!(transition.actions[1].target, "#motor");
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    // ── SCE_MESH.md §9.6 remote-invoke classifier ─────────────────────
+
+    /// The deploy config used by the remote-invoke classifier tests.
+    /// Declares `parent` and `worker` on the same device; the classifier
+    /// only cares about `device_for_machine()` membership, so a single
+    /// device with both machines is enough to pin the behaviour.
+    fn two_machine_deploy_cfg() -> mesh::deploy::DeployConfig {
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    platform: linux-x86_64
+    machines:
+      parent:
+        source: parent.scxml
+      worker:
+        source: worker.scxml
+"#;
+        mesh::deploy::parse_deploy_str(yaml).expect("parse deploy yaml")
+    }
+
+    fn parse_parent(scxml: &str) -> SCXMLModel {
+        parser::SCXMLParser::new()
+            .parse_string(scxml, "parent")
+            .expect("parse parent scxml")
+    }
+
+    /// Baseline: `<invoke type="scxml" src="#worker">` where `worker` is a
+    /// distinct declared machine must be flagged as remote so C++ codegen
+    /// emits the §10.7.1 `SESSION_F_NOT_IMPLEMENTED` raise.
+    #[test]
+    fn remote_mesh_invoke_flagged_when_src_references_declared_peer() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" src="#worker" id="inv0"/>
+  </state>
+</scxml>"##;
+        let mut model = parse_parent(scxml);
+        classify_remote_scxml_invokes(&mut model, &two_machine_deploy_cfg(), "parent");
+        let state = model.states.get("s1").expect("s1 present");
+        let info = match &state.invokes[0] {
+            model::Invoke::Scxml(i) => i,
+            other => panic!("expected Scxml invoke, got {other:?}"),
+        };
+        assert_eq!(info.remote_mesh_target.as_deref(), Some("worker"));
+    }
+
+    /// Local inline-content invoke resolves to a relative file path
+    /// (`parent_child0.scxml` per `extract_inline_child_name`), never a
+    /// `#<name>` form. Classifier must leave it alone so W3C test191/192/
+    /// 253 keep going through the local W3C invoke path.
+    #[test]
+    fn inline_content_invoke_left_unflagged() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" id="inv0">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c"><state id="c"/></scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"##;
+        let mut model = parse_parent(scxml);
+        classify_remote_scxml_invokes(&mut model, &two_machine_deploy_cfg(), "parent");
+        let state = model.states.get("s1").expect("s1 present");
+        let info = match &state.invokes[0] {
+            model::Invoke::Scxml(i) => i,
+            other => panic!("expected Scxml invoke, got {other:?}"),
+        };
+        assert!(
+            info.remote_mesh_target.is_none(),
+            "local inline-content invoke must not be flagged; got {:?}",
+            info.remote_mesh_target
+        );
+    }
+
+    /// Self-reference (`src="#parent"`) is almost certainly an author
+    /// mistake, but classification-wise it is not remote — the machine
+    /// cannot `<invoke>` itself as a peer. Leaving it unflagged preserves
+    /// the existing local-invoke error surface (unresolved child SCXML).
+    #[test]
+    fn self_reference_not_flagged_remote() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" src="#parent" id="inv0"/>
+  </state>
+</scxml>"##;
+        let mut model = parse_parent(scxml);
+        classify_remote_scxml_invokes(&mut model, &two_machine_deploy_cfg(), "parent");
+        let state = model.states.get("s1").expect("s1 present");
+        let info = match &state.invokes[0] {
+            model::Invoke::Scxml(i) => i,
+            other => panic!("expected Scxml invoke, got {other:?}"),
+        };
+        assert!(info.remote_mesh_target.is_none());
+    }
+
+    /// `#<name>` that does not match any declared machine — e.g., author
+    /// typo or a reference to something that was never registered —
+    /// stays unflagged. The local W3C invoke lookup path reports the
+    /// unresolved child with its existing diagnostic.
+    #[test]
+    fn unknown_peer_name_not_flagged_remote() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" src="#nonexistent" id="inv0"/>
+  </state>
+</scxml>"##;
+        let mut model = parse_parent(scxml);
+        classify_remote_scxml_invokes(&mut model, &two_machine_deploy_cfg(), "parent");
+        let state = model.states.get("s1").expect("s1 present");
+        let info = match &state.invokes[0] {
+            model::Invoke::Scxml(i) => i,
+            other => panic!("expected Scxml invoke, got {other:?}"),
+        };
+        assert!(info.remote_mesh_target.is_none());
     }
 }

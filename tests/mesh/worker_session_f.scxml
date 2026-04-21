@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 Session F scaffold verification — stub peer. Declared
+     in deploy_session_f.yaml so the topology cross-check in
+     `classify_remote_scxml_invokes` recognises `#worker_session_f` as a
+     distinct mesh machine and marks the parent's invoke remote. Never
+     instantiated by the test binary: the parent raises
+     SESSION_F_NOT_IMPLEMENTED before any wire pattern would reach this
+     peer. The body is deliberately minimal so future F-session
+     landings that start exercising the real wire patterns (14-20) can
+     grow this fixture without reshaping it. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="idle" name="worker_session_f">
+    <state id="idle"/>
+</scxml>

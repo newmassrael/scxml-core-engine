@@ -1865,6 +1865,59 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 
     add_test(NAME mesh_invoke_compile_verification COMMAND mesh_invoke_compile_test)
 
+    # ── SCE_MESH §9.6 Session F scaffold — SESSION_F_NOT_IMPLEMENTED ─
+    # Closes the silent-broken window declared in SCE_MESH.md §9.6
+    # line 1396: documents using `<invoke type="scxml" src="#peer">`
+    # parse cleanly; until Session F lands the wire runtime (patterns
+    # 14-20), the parent must raise `error.execution` with reason
+    # `SESSION_F_NOT_IMPLEMENTED` per §10.7.1. Exercises the full
+    # chain — classifier (`inject_partition_context_for` marks the
+    # invoke via `remote_mesh_target`), template filter
+    # (`scxml_remote` routes to the raise site), codegen emission
+    # (entry-action `engine.raise(Error_execution, ...)`), and the
+    # parent's runtime observation via a transition on
+    # `error.execution`. No transport — the raise is local.
+    set(MESH_SESSION_F_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_OUTPUT_DIR}/parent_session_f_sm.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f.scxml"
+                -l cpp -o "${MESH_SESSION_F_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f.yaml"
+                --write-deps "${MESH_SESSION_F_OUTPUT_DIR}/parent_session_f_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f.scxml"
+                "${MESH_TEST_DIR}/worker_session_f.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_OUTPUT_DIR}/parent_session_f_sm.h.d"
+        COMMENT "Mesh §9.6: Generating parent_session_f_sm.h (Session F scaffold)"
+        VERBATIM
+    )
+
+    add_executable(mesh_session_f_not_implemented_test
+        mesh/test_mesh_session_f_not_implemented.cpp
+        "${MESH_SESSION_F_OUTPUT_DIR}/parent_session_f_sm.h"
+    )
+
+    target_include_directories(mesh_session_f_not_implemented_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_session_f_not_implemented_test
+        PRIVATE
+            sce_runtime
+    )
+
+    target_compile_features(mesh_session_f_not_implemented_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_session_f_not_implemented_test)
+
+    add_test(NAME mesh_session_f_not_implemented_verification
+             COMMAND mesh_session_f_not_implemented_test)
+
     # ── SCE_MESH §9.5 srcexpr compile verification ──────────────
     # Forces the srcexpr `{% if invoke_info.srcexpr %}` branches in
     # entry_exit_actions.jinja2 + state_machine.jinja2 to render and
