@@ -4249,6 +4249,193 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 "someip:${MESH_TEST_DIR}/deploy_someip.yaml:vsomeip::application"
                 "zenoh:${MESH_TEST_DIR}/deploy_zenoh.yaml:zenoh::Session"
     )
+
+    # ── SCE Mesh §16.8 distributed conformance harness — seed ──────────
+    # §16.8.1 target shape: each W3C IRP test declared `yes` in
+    # `tests/w3c_distributed_manifest.yaml` spawns its partitions as OS
+    # processes and cross-compares the distributed verdict against the
+    # §16.2 weak-equivalence properties. The seed below covers exactly
+    # one test (test417 — `done.state.<parallel>` convergence on two
+    # orthogonal regions); S5+ sessions extend the macro call list.
+    #
+    # The macro is scoped to this mesh guard so it never fires in
+    # non-mesh builds and so the included CRTP headers can pull in the
+    # wire-21 transport + tracker types without adding a conditional
+    # compile path to sce_base.
+    set(W3C_DIST_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/w3c/dist")
+    set(W3C_DIST_OUT_ROOT "${CMAKE_CURRENT_BINARY_DIR}/w3c_dist_generated")
+
+    # sce_generate_distributed_w3c_test(TEST_NUM)
+    #
+    # Wires one §16.8 seed into the build + ctest graph:
+    #   1. Stage `resources/${TEST_NUM}/test${TEST_NUM}.txml` into the
+    #      build tree as `.../test${TEST_NUM}/test${TEST_NUM}.scxml`
+    #      and copy the seed's deploy.yaml alongside, so sce-codegen's
+    #      `source: test${TEST_NUM}.scxml` reference resolves without
+    #      an absolute path in the yaml.
+    #   2. Run sce-codegen twice with `--partition test${TEST_NUM}_main`
+    #      and `--partition test${TEST_NUM}_worker`, emitting per-
+    #      partition `test${TEST_NUM}_sm.h`/`_transport.h` into disjoint
+    #      subdirs (main/, worker/). Per-partition namespaces collide if
+    #      included in the same TU — §16.8 arch-debt #4 tracks the
+    #      per-partition namespace rename that would unlock a single
+    #      runner binary; until then the shm fork+exec shape below is
+    #      the rule-12 precedent.
+    #   3. Build one partition binary per partition from the shared
+    #      `w3c_dist_partition_runner.cpp` source with a per-target
+    #      `SCE_W3C_DIST_PARTITION_HEADER=` define that selects which
+    #      `Test${TEST_NUM}_{Main,Worker}.h` registers into the CRTP
+    #      `PartitionRegistry`. Each binary ends up with exactly one
+    #      entry in its registry.
+    #   4. Build one driver binary from `run_distributed.cpp` with
+    #      CMake-baked absolute paths to each partition binary +
+    #      deploy_dir + partition names. The driver fork+execs both,
+    #      waits, and turns per-partition verdicts into a ctest PASS/FAIL.
+    #   5. Register the driver as ctest `w3c_distributed_conformance_testN`
+    #      under the `w3c_distributed_conformance` label for S5+'s
+    #      `ctest -L w3c_distributed_conformance -j` acid-test sweep.
+    function(sce_generate_distributed_w3c_test TEST_NUM)
+        set(test_id "${TEST_NUM}")
+        set(test_src_dir "${W3C_DIST_SRC_DIR}/test${TEST_NUM}")
+        set(test_out_dir "${W3C_DIST_OUT_ROOT}/test${TEST_NUM}")
+        set(main_out "${test_out_dir}/main")
+        set(worker_out "${test_out_dir}/worker")
+        set(staged_scxml "${test_out_dir}/test${TEST_NUM}.scxml")
+        set(staged_deploy "${test_out_dir}/deploy.yaml")
+
+        # Stage SCXML into the build tree. The TXML source is the
+        # existing W3C IRP resource; no seed-specific SCXML lives in
+        # source — keeps the seed honest against the same TXML every
+        # other W3C pipeline consumes.
+        add_custom_command(
+            OUTPUT "${staged_scxml}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${test_out_dir}"
+            COMMAND txml-converter
+                    "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}/test${TEST_NUM}.txml"
+                    "${staged_scxml}"
+            DEPENDS txml-converter
+                    "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}/test${TEST_NUM}.txml"
+            COMMENT "§16.8 seed: staging test${TEST_NUM}.scxml into build tree"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${staged_deploy}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${test_out_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy
+                    "${test_src_dir}/deploy.yaml" "${staged_deploy}"
+            DEPENDS "${test_src_dir}/deploy.yaml"
+            COMMENT "§16.8 seed: staging test${TEST_NUM} deploy.yaml"
+            VERBATIM
+        )
+
+        # Per-partition codegen. Two invocations of sce-codegen produce
+        # the Root and NonRoot shapes from the same SCXML + deploy.yaml;
+        # the `--partition` flag switches `parallel_final.jinja2`
+        # between tracker-owning (Root) and remote-send-callback (NonRoot).
+        add_custom_command(
+            OUTPUT "${main_out}/test${TEST_NUM}_sm.h"
+                   "${main_out}/test${TEST_NUM}_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${main_out}"
+            COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
+                    -l cpp -o "${main_out}"
+                    --deploy "${staged_deploy}"
+                    --partition "test${TEST_NUM}_main"
+                    --write-deps "${main_out}/test${TEST_NUM}_sm.h.d"
+            DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
+            DEPFILE "${main_out}/test${TEST_NUM}_sm.h.d"
+            COMMENT "§16.8 seed: codegen test${TEST_NUM} main (Root) partition"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${worker_out}/test${TEST_NUM}_sm.h"
+                   "${worker_out}/test${TEST_NUM}_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${worker_out}"
+            COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
+                    -l cpp -o "${worker_out}"
+                    --deploy "${staged_deploy}"
+                    --partition "test${TEST_NUM}_worker"
+                    --write-deps "${worker_out}/test${TEST_NUM}_sm.h.d"
+            DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
+            DEPFILE "${worker_out}/test${TEST_NUM}_sm.h.d"
+            COMMENT "§16.8 seed: codegen test${TEST_NUM} worker (NonRoot) partition"
+            VERBATIM
+        )
+
+        # Partition binaries. Each shares `w3c_dist_partition_runner.cpp`
+        # but selects its CRTP header via preprocessor define so exactly
+        # one partition is registered per binary.
+        set(main_bin "w3c_dist_test${TEST_NUM}_main")
+        add_executable(${main_bin}
+            "${W3C_DIST_SRC_DIR}/w3c_dist_partition_runner.cpp"
+            "${main_out}/test${TEST_NUM}_sm.h"
+            "${main_out}/test${TEST_NUM}_transport.h"
+        )
+        target_include_directories(${main_bin}
+            PRIVATE
+                "${CMAKE_SOURCE_DIR}/sce/include"
+                "${W3C_DIST_SRC_DIR}"
+                "${main_out}"
+        )
+        target_compile_definitions(${main_bin}
+            PRIVATE
+                "SCE_W3C_DIST_PARTITION_HEADER=\"test${TEST_NUM}/Test${TEST_NUM}_Main.h\""
+        )
+        target_link_libraries(${main_bin} PRIVATE sce_base sce_mesh_common)
+        target_compile_features(${main_bin} PRIVATE cxx_std_17)
+        apply_sce_test_policies(${main_bin})
+
+        set(worker_bin "w3c_dist_test${TEST_NUM}_worker")
+        add_executable(${worker_bin}
+            "${W3C_DIST_SRC_DIR}/w3c_dist_partition_runner.cpp"
+            "${worker_out}/test${TEST_NUM}_sm.h"
+            "${worker_out}/test${TEST_NUM}_transport.h"
+        )
+        target_include_directories(${worker_bin}
+            PRIVATE
+                "${CMAKE_SOURCE_DIR}/sce/include"
+                "${W3C_DIST_SRC_DIR}"
+                "${worker_out}"
+        )
+        target_compile_definitions(${worker_bin}
+            PRIVATE
+                "SCE_W3C_DIST_PARTITION_HEADER=\"test${TEST_NUM}/Test${TEST_NUM}_Worker.h\""
+        )
+        target_link_libraries(${worker_bin} PRIVATE sce_base sce_mesh_common)
+        target_compile_features(${worker_bin} PRIVATE cxx_std_17)
+        apply_sce_test_policies(${worker_bin})
+
+        # Driver: per-test binary that fork+execs the partitions. Paths
+        # come from `$<TARGET_FILE:>` generator expressions so the
+        # driver is location-agnostic and survives `ctest
+        # --output-on-failure` from any cwd (matches rule-12 pattern).
+        set(driver_bin "w3c_dist_test${TEST_NUM}_driver")
+        add_executable(${driver_bin} "${W3C_DIST_SRC_DIR}/run_distributed.cpp")
+        target_compile_definitions(${driver_bin}
+            PRIVATE
+                "SCE_W3C_DIST_TEST_ID=\"${TEST_NUM}\""
+                "SCE_W3C_DIST_MAIN_BIN=\"$<TARGET_FILE:${main_bin}>\""
+                "SCE_W3C_DIST_MAIN_PARTITION=\"test${TEST_NUM}_main\""
+                "SCE_W3C_DIST_WORKER_BIN=\"$<TARGET_FILE:${worker_bin}>\""
+                "SCE_W3C_DIST_WORKER_PARTITION=\"test${TEST_NUM}_worker\""
+                "SCE_W3C_DIST_DEPLOY_DIR=\"${test_out_dir}\""
+        )
+        add_dependencies(${driver_bin} ${main_bin} ${worker_bin})
+        target_compile_features(${driver_bin} PRIVATE cxx_std_17)
+        apply_sce_test_policies(${driver_bin})
+
+        add_test(NAME w3c_distributed_conformance_test${TEST_NUM}
+                 COMMAND ${driver_bin})
+        set_tests_properties(w3c_distributed_conformance_test${TEST_NUM}
+            PROPERTIES LABELS "w3c_distributed_conformance")
+    endfunction()
+
+    # §16.8 S4 seed. Per-test-unique partition names (`test${TEST_NUM}_*`)
+    # baked into the codegen wire-21 shm channel keep the channel names
+    # disjoint across tests, so S5+ additions can run truly in parallel
+    # under `ctest -j` without a RESOURCE_LOCK family.
+    sce_generate_distributed_w3c_test(417)
 endif()
 
 # ============================================================================

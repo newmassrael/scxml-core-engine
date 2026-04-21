@@ -1,0 +1,64 @@
+# SCE Mesh §16.8 seed — W3C IRP test417 distributed deployment.
+#
+# test417 verifies `done.state.<parallel_id>` fires when every child
+# region of a <parallel> reaches a <final>. Structure:
+#
+#   <state id="s1" initial="s1p1">
+#     <parallel id="s1p1">
+#       <state id="s1p11"> ... <final id="s1p11final"/> </state>
+#       <state id="s1p12"> ... <final id="s1p12final"/> </state>
+#       <transition event="done.state.s1p1" target="pass"/>
+#     </parallel>
+#   </state>
+#
+# R1-R4 distributability status:
+#   R1 (ancestor-scope <data> writes): no <datamodel>/<data>.
+#   R2 (cross-region transitions):     every region-internal
+#                                      transition stays within its own
+#                                      region (<final> target is the
+#                                      region's own final).
+#   R3 (ancestor-scope reads):         none.
+#   R4 (<script> usage):               none.
+#
+# The two regions `s1p11` + `s1p12` are therefore cleanly distributable
+# across partitions. This deploy splits them across `test417_main`
+# (Root, hosts s1p11 and the §16.5 ParallelCompletionTracker for s1p1)
+# and `test417_worker` (NonRoot, hosts s1p12 and emits wire-21
+# ParallelRegionDone on its region's <final> entry).
+#
+# Partition names are test-prefixed (`test417_*`) so the codegen-baked
+# wire-21 shm channel (`/sce_p21_test417_worker_test417_main`) is
+# unique per test — required for true ctest -j parallelism without
+# RESOURCE_LOCK serialisation. Every seed added under §16.8 S5+ must
+# follow the same `<testid>_<role>` convention.
+#
+# transport_binding note: §16.8.3 designates custom_tcp as the
+# harness-default transport. The wire-21 emitter is currently shm-only
+# — partitions.rs `validate_parallel_root_designation` rejects
+# `transport_binding: custom_tcp` on a wire-21 route with the
+# `mesh/partition-wire21-custom-tcp-unimplemented` diagnostic (see
+# `tests/mesh/partition_rule12f_wire21_custom_tcp.yaml`). Until the
+# custom_tcp wire-21 emitter lands, the seed uses `shm` for the
+# inter-partition channel. The flip is a single-line deploy change
+# when the emitter arrives.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      test417:
+        source: test417.scxml
+
+partitions:
+  test417_main:
+    machines: [test417]
+    contains:
+      parallel_regions:
+        - { machine: test417, region: s1p11 }
+    transport_binding: shm
+    hosts_parallel_roots:
+      - { machine: test417, parallel: s1p1 }
+  test417_worker:
+    machines: [test417]
+    contains:
+      parallel_regions:
+        - { machine: test417, region: s1p12 }

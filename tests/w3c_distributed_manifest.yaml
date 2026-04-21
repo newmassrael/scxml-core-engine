@@ -1,0 +1,53 @@
+# SCE Mesh §16.8.2 — W3C IRP distributed conformance manifest.
+#
+# Classifies every W3C IRP test by its distribution axis so the
+# conformance harness (see SCE_MESH.md §16.8.1-16.8.4) knows which
+# tests to run through the per-partition fork+exec path vs the
+# single-process AOT reference path.
+#
+# The `distributable` field is a closed 4-value enum (no "conditional"
+# — §16.8.2 explicitly closes the set so the CI report never conflates
+# an analyzer-merged test with a genuinely distributed one):
+#
+#   yes                     : author partition plan produces 2+
+#                              effective partitions; runs N ≥ 2 OS
+#                              processes. Counts toward the
+#                              §16.8 acid-test bucket.
+#   merged_single_partition : analyzer ran (applied R1/R2) but the
+#                              result is 1 effective partition. Single
+#                              process; distributed mode has no new
+#                              signal. Reported separately as
+#                              "analyzer-exercised".
+#   no                      : no <parallel> and no <invoke> — no
+#                              orthogonal split axis exists. Single-
+#                              process only.
+#   forbidden               : author partition plan violates R1/R2
+#                              under strict mode. Does not compile with
+#                              distribution. CI fails if a `yes` test
+#                              regresses to `forbidden`.
+#
+# Seed (S4) — test417 only. The remaining 17 `<parallel>`-bearing
+# W3C tests land under S5+ once the harness scaffolding is proven on
+# the seed and the ctest matrix survives `-j --repeat-until-fail` on
+# a cold run.
+#
+# Parsed by `sce-build::w3c_dist_manifest` (cargo unit tests assert
+# every `yes` entry's `partitions:` map matches the seed's deploy.yaml
+# partition names). CMake integration consuming this file as a
+# single-source-of-truth for per-partition build wiring is the next
+# item after the seed lands; for S4 the manifest entry is
+# authoritative for the parser and the seed is CMake-wired by its
+# hand-rolled macro below.
+
+tests:
+  test417:
+    distributable: yes
+    partitions:
+      test417_main:
+        contains:
+          parallel_regions:
+            - { region: s1p11 }
+      test417_worker:
+        contains:
+          parallel_regions:
+            - { region: s1p12 }

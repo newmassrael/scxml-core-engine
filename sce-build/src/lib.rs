@@ -28,6 +28,7 @@ pub mod conformance;
 pub mod forge;
 pub mod mesh;
 pub mod cli_error;
+pub mod w3c_dist_manifest;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod formatter;
 #[cfg(feature = "wasm")]
