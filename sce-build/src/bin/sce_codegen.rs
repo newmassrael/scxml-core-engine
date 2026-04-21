@@ -902,12 +902,19 @@ fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir
 }
 
 /// W3C SCXML 6.4: Generate SCXML files for hybrid invoke children (srcexpr/contentexpr).
-/// For srcexpr: scan the SCXML source directory for a non-parent .scxml file.
-/// For contentexpr or no match: generate a trivial stub that immediately reaches final state.
-fn generate_hybrid_child_scxmls(model: &SCXMLModel, scxml_path: &Path, output_dir: &Path) {
-    let parent_dir = scxml_path.parent().unwrap_or(Path::new("."));
-    let parent_name = scxml_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-
+///
+/// Hybrid invokes resolve their target expression (`srcexpr` / `contentexpr`)
+/// at runtime — the AOT backends that consume this stub (`emits_hybrid_child_stub
+/// == true`: Rust/Go/C++) evaluate the expression purely for error classification
+/// and then instantiate a pre-generated `_hybrid{idx}` policy. That policy's
+/// compiled shape is the only runtime-observable contribution of this file, so
+/// a trivial immediate-final stub produces the W3C-correct `done.invoke`
+/// sequence regardless of what the original SCXML expression would have named.
+///
+/// The stub's `<scxml name=...>` is aligned with the synthesized child_name so
+/// the parser emits matching PascalCase symbols without needing a post-parse
+/// rename.
+fn generate_hybrid_child_scxmls(model: &SCXMLModel, _scxml_path: &Path, output_dir: &Path) {
     for invoke in model.iter_hybrid_invokes() {
         if invoke.child_name.is_empty() {
             continue;
@@ -915,43 +922,18 @@ fn generate_hybrid_child_scxmls(model: &SCXMLModel, scxml_path: &Path, output_di
         let child_name = &invoke.child_name;
         let dest = output_dir.join(format!("{child_name}.scxml"));
 
-        // Already exists (from a previous run or static child)
         if dest.exists() {
             continue;
         }
 
-        let srcexpr = invoke.srcexpr.as_str();
-
-        let mut found_child = false;
-        if !srcexpr.is_empty() {
-            // Scan resource directory for child SCXML (first non-parent .scxml file)
-            if let Ok(entries) = std::fs::read_dir(parent_dir) {
-                let mut candidates: Vec<_> = entries
-                    .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        let name = e.file_name().to_string_lossy().to_string();
-                        name.ends_with(".scxml") && name != parent_name
-                    })
-                    .collect();
-                candidates.sort_by_key(|e| e.file_name());
-                if let Some(child_entry) = candidates.first() {
-                    let _ = std::fs::copy(child_entry.path(), &dest);
-                    found_child = true;
-                }
-            }
-        }
-
-        if !found_child {
-            // Generate trivial stub that immediately reaches final state
-            let stub = format!(
-                "<?xml version=\"1.0\"?>\n\
-                 <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
-                 name=\"{child_name}\" initial=\"final\" version=\"1.0\">\n\
-                 \x20 <final id=\"final\"/>\n\
-                 </scxml>\n"
-            );
-            let _ = std::fs::write(&dest, stub);
-        }
+        let stub = format!(
+            "<?xml version=\"1.0\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
+             name=\"{child_name}\" initial=\"final\" version=\"1.0\">\n\
+             \x20 <final id=\"final\"/>\n\
+             </scxml>\n"
+        );
+        let _ = std::fs::write(&dest, stub);
     }
 }
 
@@ -1371,11 +1353,13 @@ fn generate_child_sms(
 
                 resolve_source_path(&mut child_model, &child_path);
 
-                // Hybrid stubs are copied from a sibling whose internal
-                // `<scxml name="...">` differs from the synthesized
-                // `test{NUM}_hybrid{idx}` filename. Templates derive the
-                // generated PascalCase symbols from `model.name`, so
-                // align it with the invoke's authoritative child_name.
+                // Templates derive generated PascalCase symbols from
+                // `model.name`; `generate_hybrid_child_scxmls` writes the
+                // synthesized `<scxml name="test{NUM}_hybrid{idx}">` so the
+                // parser already produces the matching name. The guard
+                // below is a defensive no-op for hybrid stubs and still
+                // covers static children whose source SCXML carries a
+                // different `<scxml name=...>` than the invoke `src=` stem.
                 if child_model.name != child_name {
                     child_model.name = child_name.to_string();
                 }
