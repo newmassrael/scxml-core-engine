@@ -206,6 +206,26 @@ public:
     /// @return Number of control entries drained
     template <typename Policy, typename Engine>
     std::size_t drain(Engine& engine) {
+        return drainWith([&engine](const MeshEnvelope& env) {
+            dispatchEnvelope<Policy>(env, engine);
+        });
+    }
+
+    /// SCE_MESH.md §9.6.2 wire-14/20 variant of `drain`: same CBOR decode
+    /// and arena-reclaim discipline, but routes each decoded envelope into
+    /// the caller-supplied handler instead of `dispatchEnvelope`. Used by
+    /// TransportRouter's invoke-lifecycle pumps, which need to observe
+    /// wire-14 (to answer with wire-20) or wire-20 (to dispatch without
+    /// SFINAE on a receiving engine type). The handler signature is
+    /// `void(const MeshEnvelope&)`; it MUST NOT throw (the arena slot is
+    /// reclaimed after the call regardless).
+    ///
+    /// Does NOT call `engine.step()` — macrostep timing is scheduler /
+    /// application responsibility (W3C SCXML 3.12).
+    ///
+    /// @return Number of control entries drained
+    template <typename Handler>
+    std::size_t drainWith(Handler&& handler) {
         if (!layout_) return 0;
 
         std::size_t count = 0;
@@ -220,10 +240,10 @@ public:
                 continue;
             }
 
-            dispatchEnvelope<Policy>(env, engine);
+            handler(env);
 
             // Advance tail unconditionally — arena slot is reclaimed
-            // whether or not the event name resolved.
+            // whether or not the handler took any action.
             layout_->tail_vc.fetch_add(slot.advance, std::memory_order_release);
             ++count;
         }

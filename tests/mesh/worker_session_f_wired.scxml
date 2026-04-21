@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 Session F wire round-trip verification — worker peer.
+     Declared in deploy_session_f_wired.yaml so the parent's
+     `<invoke src="#worker_session_f_wired">` resolves to a distinct
+     mesh machine. The SCXML body stays minimal: the worker's transport
+     router's `pumpScxmlInvokeRequests()` intercepts every inbound wire-14
+     `InvokeStart` and answers with a wire-20 `InvokeError` carrying
+     SESSION_F_NOT_IMPLEMENTED before any child-session runtime would be
+     spun up. Future F-session landings that introduce the real child-
+     session lifecycle grow this fixture; the current wire-14/20
+     round-trip needs no state-machine surface area on the worker side. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="idle" name="worker_session_f_wired">
+    <state id="idle"/>
+</scxml>

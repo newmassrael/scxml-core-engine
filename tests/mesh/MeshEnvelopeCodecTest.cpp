@@ -437,3 +437,93 @@ TEST(MeshEnvelopeCodecTest, GoldenBytesForFixedEnvelope) {
     auto bytes = SCE::Mesh::encodeEnvelope(env);
     EXPECT_EQ(bytes, expected);
 }
+
+TEST(MeshEnvelopeCodecTest, InvokeStartRoundTrip) {
+    // SCE_MESH.md §9.6.2 wire 14 (`InvokeStart`, Parent→Child): carries
+    // `invoke_id` (correlation UUID reused for the entire child-session
+    // lifecycle), `type` (SCXML invoke type URI, e.g. "scxml"), and `data`
+    // (opaque CBOR map of {src, params, content, namelist, autoforward}
+    // encoded by the parent's sender). The pattern enum value must
+    // round-trip as 14.
+    MeshEnvelope env = minimalEnvelope();
+    env.pattern = PatternKind::InvokeStart;
+    env.type = "scxml";
+    env.invoke_id = kSampleCorrelation;
+    env.data = {0x00, 0x01, 0x02, 0x03};  // opaque inner-CBOR stand-in
+
+    auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty());
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    EXPECT_EQ(decoded.pattern, PatternKind::InvokeStart);
+    EXPECT_EQ(static_cast<uint16_t>(decoded.pattern), 14u);
+    ASSERT_TRUE(decoded.invoke_id.has_value());
+    EXPECT_EQ(*decoded.invoke_id, kSampleCorrelation);
+    EXPECT_EQ(decoded.type, "scxml");
+    EXPECT_EQ(env, decoded);
+}
+
+TEST(MeshEnvelopeCodecTest, InvokeErrorReplyFromWorkerShapeEncodes) {
+    // Mirrors the exact envelope shape the TransportRouter's
+    // pumpScxmlInvokeRequests lambda constructs when answering a wire-14
+    // InvokeStart with a wire-20 InvokeError(SESSION_F_NOT_IMPLEMENTED).
+    // A prior debugging round found encodeEnvelope returning an empty
+    // buffer for this exact shape — guarding against regression.
+    MeshEnvelope env{};
+    env.id = kSampleId;
+    env.source = "worker_session_f_wired";
+    env.type = "error.invoke";
+    env.pattern = PatternKind::InvokeError;
+    env.invoke_id = kSampleCorrelation;
+    env.subject = "waiting.140000000000000.remote_inv";
+    env.correlation_id = kSampleCorrelation;
+    env.rpc_status = RpcStatus::Unimplemented;
+    env.rpc_error_message = std::string(
+        "scxml invoke from 'parent_session_f_wired' to 'worker_session_f_wired': "
+        "SESSION_F_NOT_IMPLEMENTED per SCE_MESH.md §9.6/§10.7.1 — remote "
+        "<invoke type=\"scxml\"> runtime (wire patterns 14-20) is not yet implemented");
+    env.routing_id = kSampleRoutingId;
+
+    auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty()) << "InvokeError reply envelope failed to encode";
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    EXPECT_EQ(decoded.pattern, PatternKind::InvokeError);
+    EXPECT_EQ(*decoded.rpc_status, RpcStatus::Unimplemented);
+    EXPECT_EQ(decoded.rpc_error_message->substr(0, 36),
+              "scxml invoke from 'parent_session_f_");
+}
+
+TEST(MeshEnvelopeCodecTest, InvokeErrorRoundTrip) {
+    // SCE_MESH.md §9.6.2 wire 20 (`InvokeError`, bidirectional): carries
+    // `invoke_id` for correlation, `rpc_status` (Unimplemented = 12 for the
+    // §9.6 line 1396 `SESSION_F_NOT_IMPLEMENTED` round-trip), and
+    // `rpc_error_message` carrying the reason text that the receiving
+    // parent's MeshDispatch translates into a local `error.execution`
+    // raise. The pattern enum value must round-trip as 20.
+    MeshEnvelope env = minimalEnvelope();
+    env.pattern = PatternKind::InvokeError;
+    env.type = "error.invoke";
+    env.invoke_id = kSampleCorrelation;
+    env.rpc_status = RpcStatus::Unimplemented;
+    env.rpc_error_message = "SESSION_F_NOT_IMPLEMENTED";
+    env.data.clear();
+    env.datacontenttype = PayloadCodec::None;
+
+    auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty());
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    EXPECT_EQ(decoded.pattern, PatternKind::InvokeError);
+    EXPECT_EQ(static_cast<uint16_t>(decoded.pattern), 20u);
+    ASSERT_TRUE(decoded.invoke_id.has_value());
+    EXPECT_EQ(*decoded.invoke_id, kSampleCorrelation);
+    ASSERT_TRUE(decoded.rpc_status.has_value());
+    EXPECT_EQ(*decoded.rpc_status, RpcStatus::Unimplemented);
+    ASSERT_TRUE(decoded.rpc_error_message.has_value());
+    EXPECT_EQ(*decoded.rpc_error_message, "SESSION_F_NOT_IMPLEMENTED");
+    EXPECT_EQ(env, decoded);
+}

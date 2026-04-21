@@ -916,6 +916,8 @@ pub fn inject_partition_context_for(
     model.partition_wire21_inbound_sources.clear();
     model.partition_self_name = None;
     model.partition_barrier_timeouts.clear();
+    model.scxml_remote_outbound_peers.clear();
+    model.scxml_remote_inbound_peers.clear();
 
     // SCE_MESH.md §16.4 / §16.7 liveness opt-in. Set whenever the
     // machine declares `liveliness:` in deploy.yaml, regardless of
@@ -1077,8 +1079,99 @@ pub fn inject_partition_context_for(
     }
 
     classify_remote_scxml_invokes(model, &deploy_cfg, &resolved_name);
+    collect_scxml_remote_peers(model, &deploy_cfg, &resolved_name, deploy_path);
 
     Ok(present)
+}
+
+/// SCE_MESH.md §9.6.2 wire-14/20 — build the two peer lists the transport
+/// router needs to provision `ScxmlInvokeChannel` pairs:
+///
+/// * `scxml_remote_outbound_peers` — peer machines this machine invokes
+///   (harvested directly from the just-classified `remote_mesh_target` field
+///   on each local `Invoke::Scxml`).
+/// * `scxml_remote_inbound_peers` — peer machines whose SCXML invokes this
+///   machine as `<invoke type="scxml" src="#<this>">`. Requires a scan of
+///   every sibling deploy.yaml machine's SCXML source. We use a focused
+///   regex over the file text rather than a full reparse: the contract is
+///   narrow (find `<invoke type="scxml" src="#<name>">`), the scan runs once
+///   per per-partition codegen invocation, and the same source files go
+///   through the full parser independently when their own codegen runs, so
+///   malformed XML surfaces there with full diagnostics. A scan error
+///   (missing file, unreadable) is treated as "no invokes into this
+///   machine" — the machine's codegen proceeds without an inbound channel,
+///   which is the safe default (transport-absent local raise still fires
+///   via the classifier's per-invoke `remote_mesh_target` on the caller
+///   side).
+fn collect_scxml_remote_peers(
+    model: &mut SCXMLModel,
+    deploy_cfg: &mesh::deploy::DeployConfig,
+    resolved_name: &str,
+    deploy_path: &Path,
+) {
+    // Outbound: walk the just-enriched local invokes.
+    let mut outbound: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for state in model.states.values() {
+        for invoke in &state.invokes {
+            if let model::Invoke::Scxml(info) = invoke {
+                if let Some(target) = &info.remote_mesh_target {
+                    outbound.insert(target.clone());
+                }
+            }
+        }
+    }
+    model.scxml_remote_outbound_peers = outbound.into_iter().collect();
+
+    // Inbound: scan every sibling machine's SCXML for
+    // `<invoke type="scxml" src="#<this>">`. The deploy.yaml `source:` field
+    // is relative to the deploy.yaml's own directory, per the existing
+    // machine-source resolution convention.
+    let deploy_dir = deploy_path.parent().unwrap_or_else(|| Path::new("."));
+    let self_marker = format!("#{resolved_name}");
+    let mut inbound: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+    // Regex matches a whole `<invoke ...>` / `<invoke .../>` open tag as one
+    // capture, then the same pattern's `src="#<name>"` capture locates the
+    // target machine name. We filter by checking the tag's `type=`
+    // attribute: absent, empty, "scxml", or the W3C default URI all pass;
+    // anything else (sce:mesh-rpc, custom URIs) is excluded. One regex
+    // traversal per file; no full XML parse.
+    let _ = self_marker;  // reserved for future diagnostics; fast-scan below handles the inclusion check
+    let invoke_tag_re = regex::Regex::new(r##"<invoke\b[^>]*>"##).expect("valid regex");
+    let src_attr_re = regex::Regex::new(r##"\bsrc="#([A-Za-z_][A-Za-z0-9_]*)""##).expect("valid regex");
+    let type_attr_re = regex::Regex::new(r##"\btype="([^"]*)""##).expect("valid regex");
+
+    for device in deploy_cfg.topology.values() {
+        for (peer_name, peer_cfg) in &device.machines {
+            if peer_name.as_str() == resolved_name {
+                continue;  // skip self — outbound list already covers it
+            }
+            let peer_scxml_path = deploy_dir.join(&peer_cfg.source);
+            let content = match std::fs::read_to_string(&peer_scxml_path) {
+                Ok(c) => c,
+                Err(_) => continue,  // unreadable — fail-silent (see header)
+            };
+            for tag in invoke_tag_re.find_iter(&content) {
+                let tag_text = tag.as_str();
+                let type_ok = match type_attr_re.captures(tag_text) {
+                    Some(c) => {
+                        let t = &c[1];
+                        t.is_empty() || t == "scxml" || t == "http://www.w3.org/TR/scxml/"
+                    }
+                    None => true,  // no type attr — W3C default "scxml"
+                };
+                if !type_ok {
+                    continue;
+                }
+                if let Some(cap) = src_attr_re.captures(tag_text) {
+                    if &cap[1] == resolved_name {
+                        inbound.insert(peer_name.clone());
+                    }
+                }
+            }
+        }
+    }
+    model.scxml_remote_inbound_peers = inbound.into_iter().collect();
 }
 
 /// SCE_MESH.md §9.6 — mark each `Invoke::Scxml` whose `src` is `#<name>`
@@ -1388,7 +1481,16 @@ pub fn compile_mesh_transport(
     let has_wire21_routing = !model.partition_wire21_outbound_routes.is_empty()
         || !model.partition_wire21_inbound_sources.is_empty();
 
-    if resolved.is_empty() && server_binding.is_none() && !has_custom_tcp_listen && !has_wire21_routing {
+    // SCE_MESH.md §9.6.2 wire 14/20 — a machine that issues a remote SCXML
+    // invoke (outbound peer) or is named as a remote invoke target by any
+    // sibling (inbound peer) needs `<machine>_transport.h` to open the
+    // ScxmlInvokeChannel pairs, even when no conventional bindings/
+    // subscriptions/server/custom_tcp-listen/wire-21-routing exists. Same
+    // shape as the wire-21 early-return guard above.
+    let has_scxml_remote_wire = !model.scxml_remote_outbound_peers.is_empty()
+        || !model.scxml_remote_inbound_peers.is_empty();
+
+    if resolved.is_empty() && server_binding.is_none() && !has_custom_tcp_listen && !has_wire21_routing && !has_scxml_remote_wire {
         let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
@@ -1474,6 +1576,8 @@ pub fn compile_mesh_transport(
     let partition_self_name = model.partition_self_name.clone();
     let partition_wire21_outbound = model.partition_wire21_outbound_routes.clone();
     let partition_wire21_inbound = model.partition_wire21_inbound_sources.clone();
+    let scxml_remote_outbound_peers = model.scxml_remote_outbound_peers.clone();
+    let scxml_remote_inbound_peers = model.scxml_remote_inbound_peers.clone();
     let output = mesh::codegen::generate_mesh(
         &model.name,
         &resolved,
@@ -1488,6 +1592,8 @@ pub fn compile_mesh_transport(
         partition_self_name.as_deref(),
         &partition_wire21_outbound,
         &partition_wire21_inbound,
+        &scxml_remote_outbound_peers,
+        &scxml_remote_inbound_peers,
         language,
         &template_base,
     )?;

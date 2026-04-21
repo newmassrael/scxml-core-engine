@@ -182,11 +182,13 @@ bool readU64(CborValue *it, uint64_t &out) {
 // ── Enum range validators ───────────────────────────────────────────────
 
 bool isValidPatternKind(uint64_t v) {
-    // 1-9 in-use; 21 is ParallelRegionDone (SCE_MESH.md §16.5). Values
-    // 10-13 remain reserved for Stream; 14-20 for Session F invoke
-    // lifecycle — neither has enum variants yet, so unknown-pattern on
-    // the wire drops silently at dispatch until its consumer lands.
-    return (v >= 1 && v <= 9) || v == 21;
+    // 1-9 in-use; 14 (InvokeStart) and 20 (InvokeError) are the first
+    // Session F pair that carry the §9.6 line 1396 `SESSION_F_NOT_IMPLEMENTED`
+    // round-trip; 21 is ParallelRegionDone (SCE_MESH.md §16.5). Values 10-13
+    // remain reserved for Stream; 15-19 for the rest of the Session F invoke
+    // lifecycle — those have no enum variants yet, so unknown-pattern on the
+    // wire drops silently at dispatch until each wire's consumer lands.
+    return (v >= 1 && v <= 9) || v == 14 || v == 20 || v == 21;
 }
 
 bool isValidPayloadCodec(uint64_t v) {
@@ -221,12 +223,30 @@ std::vector<uint8_t> encodeEnvelope(const MeshEnvelope &env) {
         return {};  // structural failure (e.g. bad string length)
     }
 
-    // Two-pass: heap buffer sized for the exact need.
-    std::vector<uint8_t> heap(kStackCap + extra);
-    e = tryEncode(env, heap.data(), heap.size(), used, extra);
-    if (e != CborNoError) return {};
-    heap.resize(used);
-    return heap;
+    // Two-pass: heap buffer sized for the exact need. tinycbor reports
+    // `extra_bytes_needed` based on whatever the encoder observed before
+    // giving up, which is not always the full tail — when a container
+    // header and its payload each overflow in turn, the reported delta
+    // can under-count. Grow in a bounded loop until the encoder either
+    // succeeds or returns a structural error. Cap by `kMaxEncodeSize`
+    // so a pathological envelope cannot loop forever.
+    constexpr size_t kMaxEncodeSize = 32 * 1024 * 1024;  // 32 MiB safety cap
+    size_t heap_cap = kStackCap + extra + kStackCap;
+    while (true) {
+        if (heap_cap > kMaxEncodeSize) return {};
+        std::vector<uint8_t> heap(heap_cap);
+        e = tryEncode(env, heap.data(), heap.size(), used, extra);
+        if (e == CborNoError) {
+            heap.resize(used);
+            return heap;
+        }
+        if (e != CborErrorOutOfMemory) return {};
+        // Still OOM — grow by the reported shortfall plus a fresh margin,
+        // or double if the shortfall is zero (rare but seen when the
+        // encoder bails mid-string).
+        size_t growth = extra > 0 ? (extra + kStackCap) : heap_cap;
+        heap_cap += growth;
+    }
 }
 
 bool decodeEnvelope(const uint8_t *raw, std::size_t len, MeshEnvelope &out) {

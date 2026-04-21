@@ -813,6 +813,8 @@ pub fn generate_mesh(
     partition_self_name: Option<&str>,
     partition_wire21_outbound: &BTreeMap<String, String>,
     partition_wire21_inbound: &[String],
+    scxml_remote_outbound_peers: &[String],
+    scxml_remote_inbound_peers: &[String],
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -831,11 +833,14 @@ pub fn generate_mesh(
     // predicate threaded through `compile_mesh_transport`.
     let has_wire21_routing =
         !partition_wire21_outbound.is_empty() || !partition_wire21_inbound.is_empty();
+    let has_scxml_remote_wire =
+        !scxml_remote_outbound_peers.is_empty() || !scxml_remote_inbound_peers.is_empty();
     if targets.is_empty()
         && subscriptions.is_empty()
         && server.is_none()
         && !needs_custom_tcp_server
         && !has_wire21_routing
+        && !has_scxml_remote_wire
     {
         return Ok(GeneratedOutput { files: vec![] });
     }
@@ -855,6 +860,8 @@ pub fn generate_mesh(
             partition_self_name,
             partition_wire21_outbound,
             partition_wire21_inbound,
+            scxml_remote_outbound_peers,
+            scxml_remote_inbound_peers,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -985,6 +992,8 @@ fn generate_cpp_mesh(
     partition_self_name: Option<&str>,
     partition_wire21_outbound: &BTreeMap<String, String>,
     partition_wire21_inbound: &[String],
+    scxml_remote_outbound_peers: &[String],
+    scxml_remote_inbound_peers: &[String],
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -1402,6 +1411,8 @@ fn generate_cpp_mesh(
         partition_wire21_outbound_routes => wire21_outbound_routes,
         partition_wire21_outbound_unique_dests => wire21_outbound_unique_dests,
         partition_wire21_inbound_sources => wire21_inbound_sources,
+        scxml_remote_outbound_peers => scxml_remote_outbound_peers,
+        scxml_remote_inbound_peers => scxml_remote_inbound_peers,
     };
 
     let code = tmpl

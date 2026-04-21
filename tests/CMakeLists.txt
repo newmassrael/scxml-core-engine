@@ -1918,6 +1918,81 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_test(NAME mesh_session_f_not_implemented_verification
              COMMAND mesh_session_f_not_implemented_test)
 
+    # ── SCE_MESH §9.6 Session F wire round-trip (sub-item 2) ──────
+    # Exercises the transport-present half of the §9.6 line 1396
+    # contract: parent emits wire-14 InvokeStart via shm, worker's
+    # `pumpScxmlInvokeRequests` answers with wire-20 InvokeError
+    # carrying SESSION_F_NOT_IMPLEMENTED, MeshDispatch translates the
+    # reply into `error.execution` on the parent engine, and the
+    # parent's transition observes it. Single-process test — both
+    # routers share the host process so the shm segments exchange
+    # data without fork. Same observable shape as the A0 scaffold
+    # above; this test proves the wire path when a matching peer
+    # binding exists in deploy.yaml.
+    set(MESH_SESSION_F_WIRED_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_wired_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_sm.h"
+               "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
+                -l cpp -o "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
+                --write-deps "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_sm.h.d"
+        COMMENT "Mesh §9.6: Generating parent_session_f_wired_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_sm.h"
+               "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
+                -l cpp -o "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
+                --write-deps "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_sm.h.d"
+        COMMENT "Mesh §9.6: Generating worker_session_f_wired_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_session_f_wire_roundtrip_test
+        mesh/test_mesh_session_f_wire_roundtrip.cpp
+        "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_sm.h"
+        "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_transport.h"
+        "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_sm.h"
+        "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_transport.h"
+    )
+
+    target_include_directories(mesh_session_f_wire_roundtrip_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_WIRED_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_session_f_wire_roundtrip_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_session_f_wire_roundtrip_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_session_f_wire_roundtrip_test)
+
+    add_test(NAME mesh_session_f_wire_roundtrip
+             COMMAND mesh_session_f_wire_roundtrip_test)
+
     # ── SCE_MESH §9.5 srcexpr compile verification ──────────────
     # Forces the srcexpr `{% if invoke_info.srcexpr %}` branches in
     # entry_exit_actions.jinja2 + state_machine.jinja2 to render and

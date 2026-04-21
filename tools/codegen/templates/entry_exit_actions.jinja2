@@ -118,19 +118,40 @@
 {% if state.invokes | scxml_remote %}
                 // ============================================================
                 // SCE_MESH.md §9.6 — remote <invoke type="scxml" src="#peer">
-                // Full remote-session runtime (wire patterns 14-20 per §9.6.2)
-                // is Session F scope. E1/E2 parse these invokes cleanly so
-                // authors can write foreign-processor-compatible documents
-                // (§9.6.7); until F lands, the parent raises error.execution
-                // per §10.7.1 canonical reason SESSION_F_NOT_IMPLEMENTED at
-                // the entry that would have started the remote session,
-                // giving a stable failure surface the SCXML can react to.
-                // No wire traffic — the raise is local to the parent.
+                // §9.6 line 1396 round-trip: when the parent has a configured
+                // mesh transport to the peer's device, `performScxmlInvokeStart`
+                // emits the wire-14 `InvokeStart` envelope and the child's
+                // transport answers with wire-20 `InvokeError` carrying
+                // SESSION_F_NOT_IMPLEMENTED; MeshDispatch translates that
+                // reply into an `error.execution` raise on the parent engine.
+                // Transport-absent deployments (no matching peer binding)
+                // take the local-raise path below with the same reason text
+                // and event name, so either path satisfies the §9.6 line 1396
+                // contract and the SCXML-level `<transition event="error.execution">`
+                // handler observes both deployment shapes identically.
                 // ============================================================
 {% for invoke_info in state.invokes | scxml_remote %}
-                engine.raise(typename Engine::EventWithMetadata(
-                    Event::Error_execution,
-                    "scxml invoke '{{ invoke_info.invoke_id }}' to '#{{ invoke_info.remote_mesh_target }}': SESSION_F_NOT_IMPLEMENTED per SCE_MESH.md §9.6/§10.7.1 — remote <invoke type=\"scxml\"> runtime (wire patterns 14-20) is not yet implemented"));
+                {
+                    // W3C SCXML 3.12.1: invoke id format `stateid.platformid.index`.
+                    std::string _scxml_remote_invoke_id_{{ invoke_info.invoke_id }} =
+                        "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+                    // Payload is currently empty — wires 15-19 populate the
+                    // §9.6.2 inner CBOR `{src, params, content, namelist,
+                    // autoforward}` once each wire's consumer lands.
+                    std::string _scxml_remote_data_{{ invoke_info.invoke_id }};
+                    if (!engine.performScxmlInvokeStart(
+                            "{{ invoke_info.remote_mesh_target }}",
+                            _scxml_remote_invoke_id_{{ invoke_info.invoke_id }},
+                            _scxml_remote_data_{{ invoke_info.invoke_id }})) {
+                        // Transport-absent deployment (no wire-14 callback
+                        // installed on this engine) — raise locally with the
+                        // canonical reason text so authors see the same
+                        // error.execution shape as the wire-20 path.
+                        engine.raise(typename Engine::EventWithMetadata(
+                            Event::Error_execution,
+                            "scxml invoke '{{ invoke_info.invoke_id }}' to '#{{ invoke_info.remote_mesh_target }}': SESSION_F_NOT_IMPLEMENTED per SCE_MESH.md §9.6/§10.7.1 — remote <invoke type=\"scxml\"> runtime (wire patterns 14-20) is not yet implemented"));
+                    }
+                }
 {% endfor %}
 {% endif %}
 {% if state.invokes | mesh_rpc %}

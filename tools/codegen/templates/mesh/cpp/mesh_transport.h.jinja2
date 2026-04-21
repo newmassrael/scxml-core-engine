@@ -324,7 +324,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% for target in targets if target.state.kind == "local" %}
 #include "{{ target.target_stem }}_sm.h"
 {% endfor %}
-{% if "shm" in transport_types or partition_wire21_outbound_unique_dests or partition_wire21_inbound_sources %}
+{% if "shm" in transport_types or partition_wire21_outbound_unique_dests or partition_wire21_inbound_sources or scxml_remote_outbound_peers or scxml_remote_inbound_peers %}
 #include "mesh/ShmChannel.h"
 {% endif %}
 {% if "someip" in transport_types %}
@@ -503,6 +503,29 @@ static constexpr const char* PARTITION_WIRE21_TO_{{ r.dst_partition_snake | uppe
 {% endfor %}
 {% for r in partition_wire21_inbound_sources %}
 static constexpr const char* PARTITION_WIRE21_FROM_{{ r.src_partition_snake | upper }} = "{{ r.channel_name }}";
+{% endfor %}
+
+{% endif %}
+{# ── (B3b) SCE_MESH.md §9.6.2 wire-14 / wire-20 channel constants ──
+   The Session F invoke round-trip uses a pair of single-direction shm
+   channels per (parent, worker) link: wire-14 `InvokeStart` flows on
+   `/sce_inv14_<parent>_<worker>` (parent creates, worker opens), wire-20
+   `InvokeError` reply flows on `/sce_inv20_<worker>_<parent>` (worker
+   creates, parent opens). Symmetric naming — each side derives the POSIX
+   shm name from the fixed `(source, destination)` ordering, so a fixture
+   that re-resolves the deploy graph cannot drift names apart.
+   Default arena/ring sizes (from `ShmChannel.h`) suffice: one wire-14 +
+   one wire-20 envelope per invoke round-trip, tiny CBOR payloads. #}
+{% if scxml_remote_outbound_peers or scxml_remote_inbound_peers %}
+using ScxmlInvokeChannel = SCE::Mesh::ShmChannel<>;
+
+{% for peer in scxml_remote_outbound_peers %}
+static constexpr const char* SCXML_INV14_TO_{{ peer | upper }} = "/sce_inv14_{{ machine_name }}_{{ peer }}";
+static constexpr const char* SCXML_INV20_FROM_{{ peer | upper }} = "/sce_inv20_{{ peer }}_{{ machine_name }}";
+{% endfor %}
+{% for peer in scxml_remote_inbound_peers %}
+static constexpr const char* SCXML_INV14_FROM_{{ peer | upper }} = "/sce_inv14_{{ peer }}_{{ machine_name }}";
+static constexpr const char* SCXML_INV20_TO_{{ peer | upper }} = "/sce_inv20_{{ machine_name }}_{{ peer }}";
 {% endfor %}
 
 {% endif %}
@@ -721,6 +744,24 @@ struct TransportRouter {
 {% endfor %}
 {% for r in partition_wire21_inbound_sources %}
     PartitionWire21Channel wire21_from_{{ r.src_partition_snake }}_;
+{% endfor %}
+
+{# ── (D1c') SCE_MESH.md §9.6.2 wire-14 / wire-20 invoke channels ──
+   Each outbound peer gets a `wire14_to_<peer>_` (`Mode::Create`) for
+   emitting `InvokeStart` and a `wire20_from_<peer>_` (`Mode::Open`) for
+   receiving the peer's `InvokeError` reply. Each inbound peer gets a
+   `wire14_from_<peer>_` (`Mode::Open`) for observing `InvokeStart` and a
+   `wire20_to_<peer>_` (`Mode::Create`) for answering with `InvokeError`.
+   The symmetric naming (see (B3b) above) means both sides compile
+   against the same `/sce_inv14_<src>_<dst>` / `/sce_inv20_<dst>_<src>`
+   POSIX identifiers with no runtime handshake. #}
+{% for peer in scxml_remote_outbound_peers %}
+    ScxmlInvokeChannel wire14_to_{{ peer }}_;
+    ScxmlInvokeChannel wire20_from_{{ peer }}_;
+{% endfor %}
+{% for peer in scxml_remote_inbound_peers %}
+    ScxmlInvokeChannel wire14_from_{{ peer }}_;
+    ScxmlInvokeChannel wire20_to_{{ peer }}_;
 {% endfor %}
 
 {# ── (D1b) Cross-router link table (SCE_MESH.md §9.5) ──
@@ -1289,6 +1330,21 @@ struct TransportRouter {
 {%- for r in partition_wire21_inbound_sources %}
 {%-   set ns.parts = ns.parts + ["wire21_from_" ~ r.src_partition_snake ~ "_(PARTITION_WIRE21_FROM_" ~ (r.src_partition_snake | upper) ~ ", PartitionWire21Channel::Mode::Open)"] %}
 {%- endfor %}
+{#- SCE_MESH.md §9.6.2 wire-14/20 ScxmlInvokeChannel pairs. Declaration
+    order in (D1c') puts outbound peers before inbound peers; the ctor
+    init list mirrors that. Outbound peer's `wire14_to_<peer>_` creates
+    its shm channel; the paired `wire20_from_<peer>_` opens lazily. The
+    inbound peer's `wire14_from_<peer>_` opens (may yield invalid until
+    the outbound peer launches); `wire20_to_<peer>_` creates so the
+    outbound peer can observe the reply. #}
+{%- for peer in scxml_remote_outbound_peers %}
+{%-   set ns.parts = ns.parts + ["wire14_to_" ~ peer ~ "_(SCXML_INV14_TO_" ~ (peer | upper) ~ ", ScxmlInvokeChannel::Mode::Create)"] %}
+{%-   set ns.parts = ns.parts + ["wire20_from_" ~ peer ~ "_(SCXML_INV20_FROM_" ~ (peer | upper) ~ ", ScxmlInvokeChannel::Mode::Open)"] %}
+{%- endfor %}
+{%- for peer in scxml_remote_inbound_peers %}
+{%-   set ns.parts = ns.parts + ["wire14_from_" ~ peer ~ "_(SCXML_INV14_FROM_" ~ (peer | upper) ~ ", ScxmlInvokeChannel::Mode::Open)"] %}
+{%-   set ns.parts = ns.parts + ["wire20_to_" ~ peer ~ "_(SCXML_INV20_TO_" ~ (peer | upper) ~ ", ScxmlInvokeChannel::Mode::Create)"] %}
+{%- endfor %}
 {#- Server SOME/IP app init: must appear in declaration order (before sessions_).
     The device-level `transports.someip.application_name` identifies the
     CLIENT app on this device. The server role belongs to a different
@@ -1529,6 +1585,39 @@ struct TransportRouter {
                     return this->cancelMeshRpc(target, fieldSuffix);
                 });
 {% endif %}
+{% if scxml_remote_outbound_peers %}
+            // SCE_MESH.md §9.6.2 wire-14 `InvokeStart` producer. Closure
+            // builds the envelope (UUID v7 correlation + `subject` carries
+            // the SCXML-side string invoke id so the wire-20 reply can
+            // surface `_event.invokeid` correctly) and routes on the
+            // peer-machine name into the matching `wire14_to_<peer>_`
+            // shm channel created in (D1c'). `has_scxml_remote_wire`
+            // gates the install so machines with no outbound remote
+            // SCXML invokes never try to register the callback.
+            sessions_[i]->setScxmlInvokeStartCallback(
+                [this](const std::string& target,
+                       const std::string& invokeIdString,
+                       const std::string& data) -> bool {
+                    SCE::Mesh::MeshEnvelope env{};
+                    env.id = SCE::uuid::v7();
+                    env.source = "{{ machine_name }}";
+                    env.type = "scxml";
+                    env.pattern = SCE::Mesh::PatternKind::InvokeStart;
+                    env.datacontenttype = data.empty()
+                        ? SCE::Mesh::PayloadCodec::None
+                        : SCE::Mesh::PayloadCodec::Json;
+                    env.data.assign(data.begin(), data.end());
+                    env.invoke_id = SCE::uuid::v7();
+                    env.subject = invokeIdString;
+                    env.routing_id = routing_id_;
+{% for peer in scxml_remote_outbound_peers %}
+                    if (target == "{{ peer }}") {
+                        return wire14_to_{{ peer }}_.send(env);
+                    }
+{% endfor %}
+                    return false;  // unknown peer — caller falls through to local raise
+                });
+{% endif %}
         }
     }
 {% if partition_wire21_inbound_sources %}
@@ -1557,6 +1646,76 @@ struct TransportRouter {
         }
         if (wire21_from_{{ r.src_partition_snake }}_.valid()) {
             total += wire21_from_{{ r.src_partition_snake }}_
+                .template drain<typename SenderEngine::PolicyType>(*sessions_[0]);
+        }
+{% endfor %}
+        return total;
+    }
+{% endif %}
+{% if scxml_remote_inbound_peers %}
+
+    /// SCE_MESH.md §9.6.2 wire-14 inbound pump — worker-side. Drains each
+    /// inbound `ScxmlInvokeChannel` and answers every `InvokeStart`
+    /// envelope with a `InvokeError` carrying `SESSION_F_NOT_IMPLEMENTED`
+    /// via the paired outbound channel. The child-session runtime itself
+    /// is still Session F scope; this pump keeps the §9.6 line 1396
+    /// round-trip contract honoured while the wire-15/17/18/19 consumers
+    /// are added in later Session F rounds.
+    ///
+    /// Lazy-reopens each inbound channel before draining — the outbound
+    /// peer may not have created its `wire14_to_<this>_` yet at our ctor
+    /// time (typical startup race).
+    std::size_t pumpScxmlInvokeRequests() {
+        std::size_t total = 0;
+{% for peer in scxml_remote_inbound_peers %}
+        if (!wire14_from_{{ peer }}_.valid()) {
+            wire14_from_{{ peer }}_ = ScxmlInvokeChannel(
+                SCXML_INV14_FROM_{{ peer | upper }},
+                ScxmlInvokeChannel::Mode::Open);
+        }
+        if (wire14_from_{{ peer }}_.valid()) {
+            total += wire14_from_{{ peer }}_.drainWith(
+                [this](const SCE::Mesh::MeshEnvelope& in) {
+                    if (in.pattern != SCE::Mesh::PatternKind::InvokeStart) return;
+                    SCE::Mesh::MeshEnvelope reply{};
+                    reply.id = SCE::uuid::v7();
+                    reply.source = "{{ machine_name }}";
+                    reply.type = "error.invoke";
+                    reply.pattern = SCE::Mesh::PatternKind::InvokeError;
+                    reply.invoke_id = in.invoke_id;
+                    reply.subject = in.subject;
+                    reply.correlation_id = in.invoke_id;
+                    reply.rpc_status = SCE::Mesh::RpcStatus::Unimplemented;
+                    reply.rpc_error_message = std::string(
+                        "scxml invoke from '") + in.source +
+                        "' to '{{ machine_name }}': SESSION_F_NOT_IMPLEMENTED "
+                        "per SCE_MESH.md §9.6/§10.7.1 — remote <invoke type=\"scxml\"> "
+                        "runtime (wire patterns 14-20) is not yet implemented";
+                    reply.routing_id = routing_id_;
+                    (void)wire20_to_{{ peer }}_.send(reply);
+                });
+        }
+{% endfor %}
+        return total;
+    }
+{% endif %}
+{% if scxml_remote_outbound_peers %}
+
+    /// SCE_MESH.md §9.6.2 wire-20 inbound pump — parent-side. Drains each
+    /// inbound `wire20_from_<peer>_` channel and dispatches every
+    /// `InvokeError` envelope through `dispatchEnvelope`, which raises
+    /// `error.execution` on the parent engine carrying the reason text
+    /// (MeshDispatch.h). Same lazy-reopen as `pumpScxmlInvokeRequests`.
+    std::size_t pumpScxmlInvokeReplies() {
+        std::size_t total = 0;
+{% for peer in scxml_remote_outbound_peers %}
+        if (!wire20_from_{{ peer }}_.valid()) {
+            wire20_from_{{ peer }}_ = ScxmlInvokeChannel(
+                SCXML_INV20_FROM_{{ peer | upper }},
+                ScxmlInvokeChannel::Mode::Open);
+        }
+        if (wire20_from_{{ peer }}_.valid()) {
+            total += wire20_from_{{ peer }}_
                 .template drain<typename SenderEngine::PolicyType>(*sessions_[0]);
         }
 {% endfor %}

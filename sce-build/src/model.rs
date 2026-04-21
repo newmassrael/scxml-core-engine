@@ -736,6 +736,29 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partition_self_name: Option<String>,
 
+    /// SCE_MESH.md §9.6.2 wire-14 outbound peers — deploy.yaml machine
+    /// names referenced by any `<invoke type="scxml" src="#peer">` in
+    /// this machine's SCXML that the classifier (`classify_remote_scxml_invokes`)
+    /// marked with `remote_mesh_target`. Sorted, deduplicated. Codegen
+    /// materializes one outbound `ScxmlInvokeChannel` (shm) per entry
+    /// for the §9.6.2 `InvokeStart` envelope, paired with an inbound
+    /// `ScxmlInvokeChannel` for the peer's wire-20 `InvokeError` reply.
+    /// Empty when the machine issues no remote SCXML invokes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scxml_remote_outbound_peers: Vec<String>,
+
+    /// SCE_MESH.md §9.6.2 wire-14 inbound peers — deploy.yaml machine
+    /// names of other machines whose SCXML issues a remote `<invoke
+    /// type="scxml" src="#<this>">`, with `<this>` equal to the machine
+    /// currently being codegen'd. Sorted, deduplicated. Codegen
+    /// materializes one inbound `ScxmlInvokeChannel` per entry for
+    /// receiving wire-14 `InvokeStart`, paired with an outbound
+    /// `ScxmlInvokeChannel` for answering with wire-20 `InvokeError`
+    /// carrying `SESSION_F_NOT_IMPLEMENTED` until the child-session
+    /// runtime lands. Empty when no peer invokes this machine.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scxml_remote_inbound_peers: Vec<String>,
+
     /// SCE_MESH.md §16.5 L3500 barrier-timeout runtime. Maps each
     /// `<parallel>` id **Rooted by the current partition** to the
     /// deploy-declared `partitions.<root>.barrier_timeout_ms:` value.

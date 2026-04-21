@@ -1,0 +1,20 @@
+# SCE Mesh §9.6 Session F wire round-trip fixture.
+#
+# Two machines on one device (same shape as deploy_session_f.yaml but with
+# wire-enabled naming). The classifier in `classify_remote_scxml_invokes`
+# sees the parent's `<invoke type="scxml" src="#worker_session_f_wired">`
+# point at a declared peer and marks it remote; because the peer exists on
+# the same device, codegen materialises matching ScxmlInvokeChannel pairs
+# in both machines' `*_transport.h`. No per-target `bindings:` entries are
+# declared here — the wire-14/20 channels are implied by the parent's
+# remote-invoke classification alone. The shm segment names derive from
+# the ordered machine-name pair via `SCXML_INV14_*` / `SCXML_INV20_*`
+# constants emitted by the transport template (SCE_MESH.md §9.6.2 (B3b)).
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_session_f_wired:
+        source: parent_session_f_wired.scxml
+      worker_session_f_wired:
+        source: worker_session_f_wired.scxml

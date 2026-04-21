@@ -6,12 +6,14 @@
 // Values are IMMUTABLE once shipped. Range 1-9 is in use; 10-13 is reserved
 // for future Stream patterns — wire-layer optimizations on EventSubscribe /
 // EventNotification that pair an initial state snapshot with delta-encoded
-// change events (SCE_MESH.md §8.1). 14-20 are reserved for the full remote
-// invoke lifecycle (§9.6.2, Session F); enum variants are deferred until
-// F lands so that wire traffic for values 14-20 parses as "unknown pattern"
-// and drops until consumers exist. 21 is `ParallelRegionDone` — the
-// distributed parallel-final barrier envelope (§16.5) whose consumer is the
-// `ParallelCompletionTracker` on the root partition. Adding a variant
+// change events (SCE_MESH.md §8.1). 14-20 cover the full remote invoke
+// lifecycle (§9.6.2, Session F); wire 14 (`InvokeStart`) and wire 20
+// (`InvokeError`) are active and carry the first Session F round's
+// `SESSION_F_NOT_IMPLEMENTED` round-trip (§9.6 line 1396), while 15-19
+// stay deferred so their envelopes parse as "unknown pattern" and drop
+// until each wire's consumer lands. 21 is `ParallelRegionDone` — the
+// distributed parallel-final barrier envelope (§16.5) whose consumer is
+// the `ParallelCompletionTracker` on the root partition. Adding a variant
 // requires a new wire value — never reuse. Serialized into MeshEnvelope
 // key 3 as CBOR uint16.
 
@@ -32,7 +34,13 @@ enum class PatternKind : uint16_t {
     FieldWrite         = 8,
     FieldNotify        = 9,
     // 10-13 RESERVED for Stream* variants (snapshot + delta wire-layer optimization, SCE_MESH.md §8.1). Do not assign.
-    // 14-20 RESERVED for the full remote invoke lifecycle (§9.6.2, Session F); variants deferred until F lands.
+    // SCE_MESH.md §9.6.2 — full remote invoke lifecycle (Session F). Wire 14
+    // (InvokeStart, Parent→Child) and wire 20 (InvokeError, bidirectional)
+    // are the first Session F pair; 15-19 stay deferred (envelopes parse as
+    // "unknown pattern" and drop) until each intermediate wire's consumer
+    // lands in a subsequent Session F round.
+    InvokeStart        = 14,
+    InvokeError        = 20,
     ParallelRegionDone = 21,  // SCE_MESH.md §16.5 — distributed parallel-final barrier envelope.
 };
 
@@ -48,6 +56,8 @@ static_assert(static_cast<uint16_t>(PatternKind::EventNotify)        == 6,  "Pat
 static_assert(static_cast<uint16_t>(PatternKind::FieldRead)          == 7,  "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::FieldWrite)         == 8,  "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::FieldNotify)        == 9,  "PatternKind wire value changed");
+static_assert(static_cast<uint16_t>(PatternKind::InvokeStart)        == 14, "PatternKind wire value changed");
+static_assert(static_cast<uint16_t>(PatternKind::InvokeError)        == 20, "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::ParallelRegionDone) == 21, "PatternKind wire value changed");
 
 }  // namespace SCE::Mesh

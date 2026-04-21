@@ -103,6 +103,27 @@ using MeshInvokeCallback = std::function<bool(const std::string& target,
 using MeshCancelCallback = std::function<bool(const std::string& target,
                                               const std::string& fieldSuffix)>;
 
+/// SCXML remote-invoke start callback signature: (target, invokeId, data) → accepted.
+///
+/// Fires from onentry when a state with `<invoke type="scxml" src="#peer">`
+/// is entered and the classifier marked it as remote-mesh (SCE_MESH.md §9.6).
+/// Returns true when the TransportRouter accepted the wire-14 `InvokeStart`
+/// envelope for outbound dispatch; false when no callback is installed
+/// (document rendered without TransportRouter wiring) so the generated code
+/// can fall through to the transport-absent local raise per §9.6 line 1396.
+/// * `target`         — deploy.yaml machine name (e.g. `"worker_session_f"`)
+/// * `invokeIdString` — SCXML-side invoke id (W3C 3.12.1 `stateid.ptr.index`),
+///                      preserved so the eventual `error.execution` raise
+///                      can surface it via `_event.invokeid` when wire-15
+///                      `InvokeStarted` / wire-20 `InvokeError` reply.
+/// * `data`           — opaque payload bytes the parent wants the child to
+///                      receive at session creation (reserved for the §9.6.2
+///                      inner `{src, params, content, namelist, autoforward}`
+///                      CBOR map once wires 15-19 activate consumers).
+using ScxmlInvokeStartCallback = std::function<bool(const std::string& target,
+                                                    const std::string& invokeIdString,
+                                                    const std::string& data)>;
+
 /**
  * @brief Template-based SCXML execution engine for static code generation
  *
@@ -451,6 +472,7 @@ private:
     MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §9.5: mesh-rpc exit / cancel hook
+    ScxmlInvokeStartCallback onScxmlInvokeStart_;  // SCE Mesh §9.6.2 wire-14: <invoke type="scxml" src="#peer"> entry hook
     // SCE Mesh §16.5 (rule 12) — `<parallel>` partition role hooks. Set
     // by the derived SM ctor when codegen materializes a Root or NonRoot
     // tracker / sender for a hosted `<parallel>`. The Policy invokes
@@ -1326,6 +1348,38 @@ public:
     bool performMeshCancel(const std::string& target, const std::string& fieldSuffix) {
         if (onMeshCancel_) {
             return onMeshCancel_(target, fieldSuffix);
+        }
+        return false;
+    }
+
+    /**
+     * @brief Register the SCXML remote-invoke start callback (SCE_MESH.md §9.6.2 wire 14)
+     *
+     * Installed by the generated TransportRouter ctor when any target machine
+     * has a distinct-peer `<invoke type="scxml" src="#peer">` entry classified
+     * by `classify_remote_scxml_invokes`. Applications typically do not call
+     * this directly.
+     */
+    void setScxmlInvokeStartCallback(ScxmlInvokeStartCallback callback) {
+        onScxmlInvokeStart_ = std::move(callback);
+    }
+
+    /**
+     * @brief Dispatch an SCXML remote-invoke start via the registered callback
+     *
+     * Emitted from the generated onentry block for states with
+     * `<invoke type="scxml" src="#peer">` whose `src` refers to a deploy.yaml
+     * peer. Returns false when no callback is installed — the document was
+     * rendered without TransportRouter wiring for the remote peer; the caller
+     * (codegen) falls through to the transport-absent local
+     * `error.execution` raise carrying SESSION_F_NOT_IMPLEMENTED per
+     * SCE_MESH.md §9.6 line 1396.
+     */
+    bool performScxmlInvokeStart(const std::string& target,
+                                 const std::string& invokeIdString,
+                                 const std::string& data) {
+        if (onScxmlInvokeStart_) {
+            return onScxmlInvokeStart_(target, invokeIdString, data);
         }
         return false;
     }

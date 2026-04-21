@@ -10,8 +10,21 @@
 //
 // Pattern dispatch:
 //   Inbound (enqueue to engine): FireForget, RpcRequest, RpcReply, EventNotify,
-//                                FieldNotify, FieldRead, FieldWrite
-//   Outbound-only (reject):      EventSubscribe, EventUnsubscribe
+//                                FieldNotify, FieldRead, FieldWrite, InvokeError
+//   Outbound-only (reject):      EventSubscribe, EventUnsubscribe, InvokeStart
+//
+// SCE_MESH.md §9.6.2 wire 14 (`InvokeStart`) is handled by TransportRouter's
+// inbound path before reaching this helper — the worker-side transport answers
+// with a wire-20 InvokeError inline without going through engine dispatch, so
+// a wire-14 envelope arriving here means the upstream branch did not catch it
+// and we drop fail-closed (same shape as the EventSubscribe echo guard).
+//
+// SCE_MESH.md §9.6.2 wire 20 (`InvokeError`): parent-side receiver. The
+// envelope carries `invoke_id`, `rpc_status`, and `rpc_error_message`; this
+// dispatch raises `error.execution` on the parent engine with the
+// `rpc_error_message` carried through `EventWithMetadata::data` so authors'
+// `<transition event="error.execution">` observes the same raise shape as the
+// transport-absent local fallback (SCE_MESH.md §9.6 line 1396).
 //
 // FieldRead/FieldWrite are inbound on the server role (SCE_MESH.md §8.3):
 // the server's queryable / `register_message_handler` receives the
@@ -128,6 +141,28 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
         engine.raiseExternal(std::move(meta));
         return true;
     }
+    // SCE_MESH.md §9.6.2 wire 20 (InvokeError): parent receives the child's
+    // "session F not implemented" (or any future invoke-lifecycle error) and
+    // translates it into a local `error.execution` raise. The reason text
+    // lives in `rpc_error_message`; we surface it via
+    // `EventWithMetadata::data` so authors read the same payload shape the
+    // transport-absent local raise produces (both paths currently embed the
+    // reason in text; the structured `_event.data.reason` JSON is a separate
+    // landing at §10.7.1 once an SCXML consumer exists).
+    case PatternKind::InvokeError: {
+        auto ev = Policy::getEventFromName("error.execution");
+        if (!ev) return false;
+        typename Engine::EventWithMetadata meta;
+        meta.event = *ev;
+        if (env.rpc_error_message) {
+            meta.data = *env.rpc_error_message;
+        }
+        if (env.invoke_id) {
+            meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
+        }
+        engine.raiseExternal(std::move(meta));
+        return true;
+    }
     // Outbound-only patterns: these are sent by the engine, not received.
     // If they arrive here it means a misconfigured transport is echoing
     // back our own sends — return false so caller can log or drop.
@@ -138,6 +173,13 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     // listing it here keeps `-Wswitch-enum` exhaustive. Reaching this arm
     // would be a compiler / codegen bug and we fail-closed with drop.
     case PatternKind::ParallelRegionDone:
+        return false;
+    // SCE_MESH.md §9.6.2 wire 14 (InvokeStart): caught upstream by
+    // TransportRouter's inbound branch (it emits the wire-20 InvokeError
+    // response inline). If a wire-14 envelope reaches dispatchEnvelope it
+    // means the upstream branch missed it — fail-closed drop, same shape as
+    // the EventSubscribe echo guard above.
+    case PatternKind::InvokeStart:
         return false;
     }
     return false;  // unknown pattern kind — forward compatibility

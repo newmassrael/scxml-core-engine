@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 Session F wire round-trip verification — parent.
+     Same shape as parent_session_f.scxml (the A0 local-raise fixture)
+     but declared in deploy_session_f_wired.yaml, which registers a
+     matching peer `worker_session_f_wired`. Because the classifier sees
+     the peer on the same device, the codegen materialises the
+     ScxmlInvokeChannel pair and the transport router installs
+     `setScxmlInvokeStartCallback`, so on state entry the parent
+     emits the wire-14 `InvokeStart` envelope over the `/sce_inv14_*`
+     shm channel instead of raising locally. The worker's transport
+     pump answers with wire-20 `InvokeError(SESSION_F_NOT_IMPLEMENTED)`;
+     MeshDispatch translates that back into `error.execution` here
+     and this transition observes it, matching the A0 scaffold's
+     observable shape with the wire path taken end-to-end. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting" name="parent_session_f_wired">
+    <state id="waiting">
+        <invoke type="scxml" src="#worker_session_f_wired" id="remote_inv"/>
+        <transition event="error.execution" target="pass"/>
+    </state>
+    <final id="pass"/>
+</scxml>

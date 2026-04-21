@@ -1393,7 +1393,7 @@ When `type="scxml"` (or the default, which equals `"http://www.w3.org/TR/scxml/"
 Implementation scope is **Session F**. Sessions E1 and E2 provide:
 - Wire format for full-session invoke (envelope schema below) — documented but not yet emitted.
 - Conformance guarantees this section makes — stated in spec, not yet verified by tests.
-- Static recognition in parser/model so documents using full remote invoke parse cleanly; at runtime they raise `error.execution` with `_event.data.reason == "SESSION_F_NOT_IMPLEMENTED"` (per the structured convention in §10.7.1) until Session F lands.
+- Static recognition in parser/model so documents using full remote invoke parse cleanly; at runtime they raise `error.execution` with `_event.data.reason == "SESSION_F_NOT_IMPLEMENTED"` (per the structured convention in §10.7.1) until Session F lands. When the parent has a configured mesh transport to the child's device (deploy.yaml binding present), the raise is delivered via the wire-14 `InvokeStart` / wire-20 `InvokeError` round-trip — the child's transport layer answers every wire-14 envelope with a wire-20 `InvokeError` carrying `rpc_error_message = "SESSION_F_NOT_IMPLEMENTED"` while the rest of the child-session runtime is incomplete; the parent translates the received wire-20 back into the `error.execution` raise above. Absent the transport binding the parent raises locally without wire traffic. Wire values 15-19 (the intermediate lifecycle patterns) activate as each Session F round adds the corresponding consumer.
 
 #### 9.6.1 Session establishment
 
