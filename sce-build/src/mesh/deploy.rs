@@ -540,6 +540,16 @@ pub const MIN_SERVER_QUERY_TIMEOUT_MS: u64 = 10;
 /// (`lease_ms >= MIN_LIVELINESS_LEASE_MS`) at parse time so a bad
 /// value cannot reach the generated router.
 ///
+/// **Transport compat**: the declaring machine must also carry at
+/// least one Zenoh binding or server; [`validate_liveliness`] enforces
+/// this at parse time. The codegen template emits liveliness
+/// primitives only when `"zenoh" in transport_types`, so a SomeIP-only
+/// (or binding-less) machine declaring `liveliness:` without that gate
+/// would compile but never raise the `error.communication` signal its
+/// required handler awaits (`feedback_silently_broken_hooks`). SomeIP
+/// per-partition liveness is tracked as a separate §16.9 E2/F
+/// sub-landing — see SCE_MESH.md §16.4 for the deferral rationale.
+///
 /// `lease_ms` is the keepalive cadence negotiated with the Zenoh
 /// router — the application-side bound on DELETE-sample latency
 /// when a peer drops. SCXML authors who need peer-failure detection
@@ -1397,28 +1407,65 @@ fn validate_ordering_timings(cfg: &DeployConfig) -> Result<(), DeployError> {
 }
 
 /// Walk every machine that declared an explicit `liveliness:` section
-/// and reject values below [`MIN_LIVELINESS_LEASE_MS`]. Runs at parse
-/// time so the diagnostic surfaces the offending deploy.yaml line
-/// rather than a deferred runtime misbehaviour.
+/// and reject (a) values below [`MIN_LIVELINESS_LEASE_MS`] and (b)
+/// machines whose transport set contains no Zenoh binding or server.
+/// Runs at parse time so the diagnostic surfaces the offending
+/// deploy.yaml line rather than a deferred runtime misbehaviour.
+///
+/// The transport-compat check closes the silent-broken window where a
+/// SomeIP-only (or binding-less) machine declared `liveliness:` and
+/// carried the `error.communication` handler required by
+/// [`sce-build/src/generator.rs::reject_liveliness_without_handler`] —
+/// the codegen template gates liveliness emission on
+/// `"zenoh" in transport_types`, so such a machine previously compiled
+/// with a handler that could never fire (`feedback_silently_broken_hooks`).
+/// SomeIP per-partition liveness is tracked as a separate landing
+/// (SCE_MESH.md §16.4 / §16.9 Session E2/F deferral) and requires a
+/// distinct design round — per-partition application names, OEM
+/// `vsomeip.json` coordination, and a §10.4 transport-contract
+/// micro-revision — that Zenoh did not need.
 fn validate_liveliness(cfg: &DeployConfig) -> Result<(), DeployError> {
     use std::collections::BTreeMap;
-    let mut by_machine: BTreeMap<&str, &LivelinessConfig> = BTreeMap::new();
+    let mut by_machine: BTreeMap<&str, (&LivelinessConfig, &MachineConfig)> = BTreeMap::new();
     for device in cfg.topology.values() {
         for (machine_name, machine) in &device.machines {
             if let Some(l) = &machine.liveliness {
-                by_machine.insert(machine_name.as_str(), l);
+                by_machine.insert(machine_name.as_str(), (l, machine));
             }
         }
     }
-    for (machine, liveliness) in by_machine {
+    for (machine_name, (liveliness, machine)) in by_machine {
         if let Some(reason) = liveliness.validation_error() {
             return Err(DeployError::InvalidLiveliness {
-                machine: machine.to_string(),
+                machine: machine_name.to_string(),
                 reason,
+            });
+        }
+        if !machine_uses_zenoh_transport(machine) {
+            return Err(DeployError::InvalidLiveliness {
+                machine: machine_name.to_string(),
+                reason: "machine has no Zenoh transport; `liveliness:` currently \
+                         requires at least one `transport: zenoh` binding or server \
+                         (SCE_MESH.md §16.4 / §16.7 rows 8 & 13). SomeIP per-partition \
+                         liveness is deferred to a separate landing — add a Zenoh \
+                         binding/server or drop `liveliness:`"
+                    .to_string(),
             });
         }
     }
     Ok(())
+}
+
+/// Returns true when at least one of the machine's bindings or its
+/// server declaration selects the Zenoh transport. Used by
+/// [`validate_liveliness`] to gate `liveliness:` on transport
+/// compatibility — see that function's doc comment for rationale.
+fn machine_uses_zenoh_transport(machine: &MachineConfig) -> bool {
+    machine.bindings.values().any(|b| b.transport == "zenoh")
+        || machine
+            .server
+            .as_ref()
+            .is_some_and(|s| s.transport == "zenoh")
 }
 
 // ── SCE Mesh §14.4 binding pool support ─────────────────────
@@ -2493,16 +2540,24 @@ topology:
 
     #[test]
     fn liveliness_section_present_parses() {
-        let yaml = r#"
+        // A Zenoh binding is required by `validate_liveliness` transport-
+        // compat check — the template emits liveliness code only when
+        // `"zenoh" in transport_types`, so a machine without any Zenoh
+        // binding/server cannot observe the signal it opts into.
+        let yaml = r##"
 version: "1.0"
 topology:
   ecu1:
     machines:
       brake:
         source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake/motor/ping"
         liveliness:
           lease_ms: 2000
-"#;
+"##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
         assert_eq!(
@@ -2510,6 +2565,110 @@ topology:
             2000,
             "explicit section must propagate the lease_ms value"
         );
+    }
+
+    #[test]
+    fn liveliness_someip_only_machine_rejected() {
+        // SomeIP-only machine + `liveliness:` is the silent-broken case
+        // that motivated this check: the codegen template gates
+        // liveliness emission on `"zenoh" in transport_types`, so the
+        // handler required by `reject_liveliness_without_handler` would
+        // compile but never fire. Must reject at parse time with a
+        // reason naming Zenoh specifically so the author can decide to
+        // either add a Zenoh binding or drop the section.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+        application_name: brake_app
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            method: activate
+        liveliness:
+          lease_ms: 200
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidLiveliness { machine, reason }) => {
+                assert_eq!(machine, "brake");
+                assert!(
+                    reason.contains("Zenoh"),
+                    "reason must name Zenoh specifically so the fix is discoverable: {reason}"
+                );
+                assert!(
+                    reason.contains("SomeIP") || reason.contains("deferred"),
+                    "reason should mention SomeIP deferral so authors know this is not a bug: {reason}"
+                );
+            }
+            other => panic!("expected InvalidLiveliness (transport-compat), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn liveliness_zenoh_server_accepted() {
+        // Server-side Zenoh registration satisfies the transport-compat
+        // check — the generated router hosts a liveliness token through
+        // the device's Zenoh session regardless of whether the binding
+        // axis (client) or the server axis selected Zenoh.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17460"]
+    machines:
+      brake:
+        source: brake.scxml
+        server:
+          transport: zenoh
+          key: "sce/brake/rpc"
+        liveliness:
+          lease_ms: 200
+"##;
+        let cfg = parse_deploy_str(yaml).expect("zenoh server must satisfy liveliness transport-compat");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        assert!(
+            machine.liveliness.is_some(),
+            "liveliness section must propagate when zenoh server is declared"
+        );
+    }
+
+    #[test]
+    fn liveliness_machine_without_bindings_rejected() {
+        // Edge case: a machine that declares `liveliness:` but has
+        // neither bindings nor a server has no transport surface at all,
+        // so the template emits zero liveliness code. The same
+        // silent-broken shape as SomeIP-only — reject with the same
+        // error variant to keep the diagnostic uniform.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        liveliness:
+          lease_ms: 200
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidLiveliness { machine, reason }) => {
+                assert_eq!(machine, "brake");
+                assert!(
+                    reason.contains("Zenoh"),
+                    "binding-less machine rejection must cite Zenoh requirement: {reason}"
+                );
+            }
+            other => panic!("expected InvalidLiveliness (no bindings), got {other:?}"),
+        }
     }
 
     #[test]
