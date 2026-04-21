@@ -814,7 +814,7 @@ fn cmd_generate(
     // parent. `process_static_invokes` extracts inline <scxml> content to
     // the *source* directory; the build system expects them in OUTPUT_DIR.
     copy_static_invoke_children(&model, Path::new(scxml_path), out_path);
-    generate_hybrid_child_scxmls(&model, Path::new(scxml_path), out_path);
+    generate_hybrid_child_scxmls(&model, out_path);
 
     // SCE Mesh: generate transport routing code when --deploy is provided.
     // Uses the public API (compile_mesh_transport) so CLI, tests, and build.rs
@@ -914,17 +914,19 @@ fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir
 /// The stub's `<scxml name=...>` is aligned with the synthesized child_name so
 /// the parser emits matching PascalCase symbols without needing a post-parse
 /// rename.
-fn generate_hybrid_child_scxmls(model: &SCXMLModel, _scxml_path: &Path, output_dir: &Path) {
+///
+/// The stub is rewritten unconditionally (via `write_if_changed`) — the file
+/// is codegen-owned, so keeping a stale copy on disk hides generator-logic
+/// changes from the next incremental build. `write_if_changed` skips the
+/// write when the bytes are identical, so CMake mtime-based dependency
+/// tracking stays quiet on no-op runs.
+fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) {
     for invoke in model.iter_hybrid_invokes() {
         if invoke.child_name.is_empty() {
             continue;
         }
         let child_name = &invoke.child_name;
         let dest = output_dir.join(format!("{child_name}.scxml"));
-
-        if dest.exists() {
-            continue;
-        }
 
         let stub = format!(
             "<?xml version=\"1.0\"?>\n\
@@ -933,7 +935,7 @@ fn generate_hybrid_child_scxmls(model: &SCXMLModel, _scxml_path: &Path, output_d
              \x20 <final id=\"final\"/>\n\
              </scxml>\n"
         );
-        let _ = std::fs::write(&dest, stub);
+        write_if_changed(&dest, &stub);
     }
 }
 
@@ -1480,7 +1482,7 @@ fn generate_w3c_unified(
                         // W3C SCXML 6.4: Generate hybrid SCXML stubs + child state machines
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
                         if backend.uses_per_test_subdirs() {
-                            generate_hybrid_child_scxmls(&model, &scxml_path, &test_mod_dir);
+                            generate_hybrid_child_scxmls(&model, &test_mod_dir);
                             generate_child_sms(backend, test_id, &model, &scxml_path, &test_mod_dir);
                         }
 
