@@ -1282,6 +1282,18 @@ trait W3cBackend {
     /// C++ writes to a flat output directory; others use subdirectories.
     fn uses_per_test_subdirs(&self) -> bool { true }
 
+    /// W3C SCXML 6.4: Whether this backend's parent template constructs a
+    /// generated child class for hybrid (`srcexpr` / `contentexpr`)
+    /// invokes. Rust / Go / C++ instantiate the stub by name
+    /// (`Test{N}Hybrid{M}Policy` etc.), so the child SM must be emitted.
+    /// Kotlin resolves hybrid invokes through `ScxmlRuntimeInterpreter`
+    /// at runtime and never imports the generated class, so emitting
+    /// the stub would be dead code — Kotlin overrides to `false`.
+    /// Static `src=` / inline `<content>` invokes always get a stub
+    /// because every backend's template references the child class
+    /// by name and there is no runtime fallback.
+    fn emits_hybrid_child_stub(&self) -> bool { true }
+
     /// Whether this backend generates test files alongside SM code.
     /// C++ test headers are managed by CMake, not by sce-codegen.
     fn generates_test_files(&self) -> bool { true }
@@ -1296,149 +1308,94 @@ trait W3cBackend {
     /// Returns number of stale entries removed. Default is no-op.
     fn clean_stale(&self, _valid_ids: &BTreeSet<String>) -> usize { 0 }
 
-    /// Child name matching for the standard naming convention.
-    /// Default checks: test{num_prefix}_, test{num_prefix}sub, test{test_id}_
-    fn child_name_matches(&self, child_name: &str, test_id: &str, num_prefix: &str) -> bool {
-        child_name.starts_with(&format!("test{num_prefix}_"))
-            || child_name.starts_with(&format!("test{num_prefix}sub"))
-            || child_name.starts_with(&format!("test{test_id}_"))
-    }
-
-    /// Check if parent code references this child. Default checks Policy, State, StateMachine.
-    fn parent_references_child(&self, parent_code: &str, child_machine: &str) -> bool {
-        parent_code.contains(&format!("{child_machine}Policy"))
-            || parent_code.contains(&format!("{child_machine}State"))
-            || parent_code.contains(&format!("{child_machine}StateMachine"))
-    }
 }
 
 // ── Shared Utilities for W3C Generation ────────────────────────
 
-/// Collect child SCXML files from both resource dir AND output dir (for hybrid stubs).
-/// Returns deduplicated, sorted paths.
-fn collect_child_scxml_entries(resource_dir: &Path, output_dir: &Path) -> Vec<PathBuf> {
-    let mut seen = BTreeSet::new();
-    let mut entries = Vec::new();
-    for dir in [resource_dir, output_dir] {
-        for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("scxml") {
-                let name = path.file_name().unwrap().to_string_lossy().to_string();
-                if seen.insert(name) {
-                    entries.push(path);
-                }
-            }
-        }
-    }
-    entries.sort();
-    entries
-}
-
 /// Unified child SM generation for all backends.
-/// Handles: child discovery (resource + output dir), filtering by naming convention,
-/// parent code reference check (direct or hybrid), parse + analyze + generate,
-/// and backend-specific post-processing.
+///
+/// Enumerates children directly from the parent model's invoke lists
+/// (`iter_scxml_invokes` + `iter_hybrid_invokes`). The parser
+/// authoritatively populates `child_name` for both kinds: static invokes
+/// resolve to the inline-extracted or `src=`-derived stem (parser §6.4),
+/// and hybrid invokes synthesize `{model.name}_hybrid{idx}` to match the
+/// stub written by `generate_hybrid_child_scxmls`. Static children live
+/// in the parent's source directory; hybrid stubs live in the
+/// per-test output directory. No filesystem scanning, no parent-code
+/// substring heuristics, and no naming-convention filtering — the
+/// backend trait carries no child-discovery hooks anymore.
 fn generate_child_sms(
     backend: &dyn W3cBackend,
     test_id: &str,
+    model: &SCXMLModel,
     scxml_path: &Path,
     test_mod_dir: &Path,
-    parent_code: &str,
 ) {
     let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
-    let parent_stem = scxml_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    let num_prefix = extract_num_prefix(test_id);
+    let mut seen = BTreeSet::new();
 
-    // Track used hybrid names to handle multiple hybrid children (hybrid0, hybrid1, etc.)
-    let mut used_hybrid_names = BTreeSet::new();
+    let scxml_children: Vec<(&str, &Path)> = model
+        .iter_scxml_invokes()
+        .map(|inv| (inv.child_name.as_str(), resource_dir))
+        .collect();
+    let hybrid_children: Vec<(&str, &Path)> = if backend.emits_hybrid_child_stub() {
+        model
+            .iter_hybrid_invokes()
+            .map(|inv| (inv.child_name.as_str(), test_mod_dir))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-    for path in collect_child_scxml_entries(resource_dir, test_mod_dir) {
-        let child_name = match path.file_stem().and_then(|s| s.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        if child_name == parent_stem {
+    for (child_name, source_dir) in scxml_children.iter().chain(hybrid_children.iter()).copied() {
+        if child_name.is_empty() || !seen.insert(child_name.to_string()) {
             continue;
         }
 
-        if !backend.child_name_matches(&child_name, test_id, &num_prefix) {
+        let child_path = source_dir.join(format!("{child_name}.scxml"));
+        if !child_path.exists() {
+            backend.process_child_failure(test_id, child_name, test_mod_dir);
             continue;
         }
 
-        // Determine effective name: direct reference or hybrid name mapping.
-        // Direct: parent code contains "{ChildMachine}Policy" or "{ChildMachine}StateMachine"
-        // Hybrid: parent code contains "Hybrid" and we find the next unused testNNN_hybridM name
-        let child_machine = to_pascal_case(&child_name);
-        let effective_name = if backend.parent_references_child(parent_code, &child_machine) {
-            child_name.clone()
-        } else {
-            match find_next_hybrid_name(parent_code, &num_prefix, &used_hybrid_names) {
-                Some(name) => {
-                    used_hybrid_names.insert(name.clone());
-                    name
-                }
-                None => continue,
-            }
-        };
-
-        // Parse + analyze + generate child SM
         let mut parser = SCXMLParser::new();
-        let child_str = path.to_str().unwrap_or("");
+        let child_str = child_path.to_str().unwrap_or("");
         match parser.parse_file(child_str) {
             Ok(mut child_model) => {
                 analyzer::analyze(&mut child_model, child_str);
 
                 if analyzer::can_generate_static(&child_model).is_err() {
-                    backend.process_child_failure(test_id, &effective_name, test_mod_dir);
+                    backend.process_child_failure(test_id, child_name, test_mod_dir);
                     continue;
                 }
 
-                resolve_source_path(&mut child_model, &path);
+                resolve_source_path(&mut child_model, &child_path);
 
-                // Override model name for hybrid children so generated types match parent
-                if effective_name != child_name {
-                    child_model.name = effective_name.clone();
+                // Hybrid stubs are copied from a sibling whose internal
+                // `<scxml name="...">` differs from the synthesized
+                // `test{NUM}_hybrid{idx}` filename. Templates derive the
+                // generated PascalCase symbols from `model.name`, so
+                // align it with the invoke's authoritative child_name.
+                if child_model.name != child_name {
+                    child_model.name = child_name.to_string();
                 }
 
-                match backend.generate_sm(&child_model, &effective_name) {
+                match backend.generate_sm(&child_model, child_name) {
                     Ok(files) => {
-                        // Child SM always produces a single file; use the code from the first entry
                         if let Some((_, code)) = files.into_iter().next() {
-                            backend.process_child(test_id, &effective_name, code, test_mod_dir);
+                            backend.process_child(test_id, child_name, code, test_mod_dir);
                         }
                     }
                     Err(_) => {
-                        backend.process_child_failure(test_id, &effective_name, test_mod_dir);
+                        backend.process_child_failure(test_id, child_name, test_mod_dir);
                     }
                 }
             }
             Err(_) => {
-                backend.process_child_failure(test_id, &effective_name, test_mod_dir);
+                backend.process_child_failure(test_id, child_name, test_mod_dir);
             }
         }
     }
-}
-
-/// Find the next unused hybrid invoke name (e.g. "test191_hybrid0") referenced by parent code.
-/// Scans for testNNN_hybrid0..testNNN_hybrid9, skipping names already in `used`.
-fn find_next_hybrid_name(parent_code: &str, num_prefix: &str, used: &BTreeSet<String>) -> Option<String> {
-    if !parent_code.contains("Hybrid") {
-        return None;
-    }
-    for i in 0..10 {
-        let hybrid_name = format!("test{num_prefix}_hybrid{i}");
-        if used.contains(&hybrid_name) {
-            continue;
-        }
-        let hybrid_machine = to_pascal_case(&hybrid_name);
-        if parent_code.contains(&format!("{hybrid_machine}Policy"))
-            || parent_code.contains(&format!("{hybrid_machine}StateMachine"))
-        {
-            return Some(hybrid_name);
-        }
-    }
-    None
 }
 
 /// The single unified W3C test generation loop shared by all backends.
@@ -1527,9 +1484,6 @@ fn generate_w3c_unified(
                             })
                         });
 
-                        // Collect parent code for child reference checking
-                        let parent_code: String = files.iter().map(|(_, c)| c.as_str()).collect::<Vec<_>>().join("\n");
-
                         // Write SM files
                         for (filename, code) in &files {
                             let file_path = test_mod_dir.join(filename);
@@ -1543,7 +1497,7 @@ fn generate_w3c_unified(
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
                         if backend.uses_per_test_subdirs() {
                             generate_hybrid_child_scxmls(&model, &scxml_path, &test_mod_dir);
-                            generate_child_sms(backend, test_id, &scxml_path, &test_mod_dir, &parent_code);
+                            generate_child_sms(backend, test_id, &model, &scxml_path, &test_mod_dir);
                         }
 
                         // Detect pass state and generate test file (if backend supports it)
@@ -1997,17 +1951,6 @@ impl W3cBackend for KotlinBackend {
         Ok(vec![(format!("{input_stem}Sm.kt"), code)])
     }
 
-    fn child_name_matches(&self, child_name: &str, _test_id: &str, num_prefix: &str) -> bool {
-        // Kotlin uses only num_prefix patterns (no test{test_id}_ pattern)
-        child_name.starts_with(&format!("test{num_prefix}_"))
-            || child_name.starts_with(&format!("test{num_prefix}sub"))
-    }
-
-    fn parent_references_child(&self, parent_code: &str, child_machine: &str) -> bool {
-        // Kotlin checks StateMachine only
-        parent_code.contains(&format!("{child_machine}StateMachine"))
-    }
-
     fn process_child(&self, test_id: &str, child_name: &str, code: String, test_mod_dir: &Path) {
         let parent_package = format!("test{test_id}");
         let child_package = child_name.to_lowercase();
@@ -2018,6 +1961,15 @@ impl W3cBackend for KotlinBackend {
         let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
         write_if_changed(&child_sm_file, &fixed_code);
     }
+
+    /// Kotlin's parent template handles hybrid invokes via
+    /// `ScxmlRuntimeInterpreter.fromFile/fromString` (see
+    /// `entry_exit_actions.kt.jinja2` `inv.is_hybrid` branch) and never
+    /// imports the generated `Test{N}Hybrid{M}StateMachine` class, so
+    /// emitting that stub would be dead code. Static `src=` / inline
+    /// `<content>` invokes still get a stub via the trait default
+    /// because the parent template instantiates them by name.
+    fn emits_hybrid_child_stub(&self) -> bool { false }
 
     fn process_child_failure(&self, test_id: &str, child_name: &str, test_mod_dir: &Path) {
         let parent_package = format!("test{test_id}");
