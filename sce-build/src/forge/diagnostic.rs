@@ -281,6 +281,8 @@ pub enum DiagnosticCode {
     ValidationDuplicateId,
     #[serde(rename = "validation/duplicate-context-object")]
     ValidationDuplicateContextObject,
+    #[serde(rename = "validation/reserved-context-id")]
+    ValidationReservedContextId,
     #[serde(rename = "validation/empty-collection")]
     ValidationEmptyCollection,
     #[serde(rename = "validation/count-mismatch")]
@@ -565,6 +567,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationUnsupportedKind,
         ValidationDuplicateId,
         ValidationDuplicateContextObject,
+        ValidationReservedContextId,
         ValidationEmptyCollection,
         ValidationCountMismatch,
         ValidationIncompatibleAttributes,
@@ -863,6 +866,7 @@ impl DiagnosticCode {
             | ValidationInvalidAttribute
             | ValidationDuplicateId
             | ValidationDuplicateContextObject
+            | ValidationReservedContextId
             | ValidationEmptyCollection
             | ValidationCountMismatch
             | ValidationIncompatibleAttributes
@@ -933,6 +937,7 @@ impl DiagnosticCode {
             ValidationUnsupportedKind => "validation/unsupported-kind",
             ValidationDuplicateId => "validation/duplicate-id",
             ValidationDuplicateContextObject => "validation/duplicate-context-object",
+            ValidationReservedContextId => "validation/reserved-context-id",
             ValidationEmptyCollection => "validation/empty-collection",
             ValidationCountMismatch => "validation/count-mismatch",
             ValidationIncompatibleAttributes => "validation/incompatible-attributes",
@@ -1310,6 +1315,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 what: "sce:context id".to_string(),
                 id: id.clone(),
             }),
+            key_fragments: vec![id.clone()],
+        },
+        ValidationError::ReservedContextId { id, reserved: _ } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationReservedContextId,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(id.clone()),
+            // The reserved list is closed, but the valid set is
+            // infinite (any identifier not in the list). No existing
+            // `Fix` variant fits "pick anything except this closed
+            // list" — the message carries the list, and the author
+            // picks a concrete replacement themselves. Consistent
+            // with `ValidationMissingContext`, which also leaves
+            // `fix: None` for an open-ended repair.
+            fix: None,
             key_fragments: vec![id.clone()],
         },
         ValidationError::EmptyCollection { kind, what } => DiagnosticPayload {
@@ -2083,6 +2103,15 @@ mod tests {
                 "forge/duplicate-context-object",
                 ValidationError::DuplicateContextObject { id: "ctx1".into() }.into(),
                 r#"{"v":1,"id":"fnv1a:5915eba3f66f34b0","code":"validation/duplicate-context-object","stage":"validation","message":"duplicate <sce:context id=\"ctx1\"> declaration","actual":"ctx1","fix":{"kind":"rename_duplicate","what":"sce:context id","id":"ctx1"}}"#,
+            ),
+            (
+                "forge/reserved-context-id",
+                ValidationError::ReservedContextId {
+                    id: "policy".into(),
+                    reserved: &["policy"],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:55056635542ce833","code":"validation/reserved-context-id","stage":"validation","message":"<sce:context id=\"policy\"> uses reserved name; rename to any identifier not in: policy","actual":"policy"}"#,
             ),
             (
                 "forge/empty-collection",
@@ -3359,6 +3388,7 @@ mod tests {
             | ValidationMissingAttribute
             | ValidationDuplicateId
             | ValidationDuplicateContextObject
+            | ValidationReservedContextId
             | ValidationEmptyCollection
             | ValidationCountMismatch
             | ValidationIncompatibleAttributes
@@ -3675,7 +3705,8 @@ mod tests {
                 XmlParse | XmlSchemaValidation | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationUnsupportedKind | ValidationDuplicateId
-                | ValidationDuplicateContextObject | ValidationEmptyCollection
+                | ValidationDuplicateContextObject | ValidationReservedContextId
+                | ValidationEmptyCollection
                 | ValidationCountMismatch | ValidationIncompatibleAttributes
                 | ValidationMissingContext | ValidationInvalidReference
                 | ValidationInvalidDirection | ValidationNumericParse
@@ -3763,9 +3794,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            123,
+            124,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 123 distinct variants to match the DiagnosticCode \
+             expected 124 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

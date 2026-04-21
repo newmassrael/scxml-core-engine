@@ -123,6 +123,16 @@ Per-kind context objects carrying stateful scratch data. Rules:
 
 - The `id` is unique across all context objects in the document
   (`validation/duplicate-context-object`).
+- The `id` does not collide with a type alias the C++ codegen emits
+  on the generated state-machine class. The closed reserved set is
+  currently `{ policy }` — comparison is case-insensitive because
+  Jinja2's `capitalize` filter maps `policy`, `Policy`, and `POLICY`
+  to the same `PolicyType` alias
+  (`validation/reserved-context-id`). The canonical list lives in
+  `RESERVED_CONTEXT_IDS` in `sce-build/src/parser.rs` and is kept
+  narrow: extend only when a concrete new alias is added to
+  `tools/codegen/templates/state_machine.jinja2` and the collision
+  can be demonstrated.
 - Kinds that require a context object (e.g. Validator for history
   tracking) reject documents that omit it
   (`validation/missing-context`).
@@ -283,6 +293,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/unsupported-kind` | Validation |
 | `validation/duplicate-id` | Validation |
 | `validation/duplicate-context-object` | Validation |
+| `validation/reserved-context-id` | Validation |
 | `validation/empty-collection` | Validation |
 | `validation/count-mismatch` | Validation |
 | `validation/incompatible-attributes` | Validation |

@@ -30,6 +30,7 @@
         "validation/unsupported-kind",
         "validation/duplicate-id",
         "validation/duplicate-context-object",
+        "validation/reserved-context-id",
         "validation/empty-collection",
         "validation/count-mismatch",
         "validation/incompatible-attributes",

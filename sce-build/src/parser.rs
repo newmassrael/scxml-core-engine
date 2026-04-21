@@ -9,6 +9,28 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
+/// Reserved `<sce:context id="...">` names.
+///
+/// The C++ codegen emits `using {Id}Type = ...;` on the generated
+/// state-machine class (see `tools/codegen/templates/state_machine.jinja2`).
+/// Identifiers whose `capitalize`-d form would collide with an alias
+/// the class already exposes — at HEAD that is only `PolicyType` from
+/// the `using PolicyType = {{ _pol_inst }};` line in the same class
+/// scope — must be rejected at parse time so the collision never
+/// reaches template rendering or C++ compilation.
+///
+/// Comparison is case-insensitive because Jinja2's `capitalize` filter
+/// lowercases every character after the first (`"POLICY".capitalize()
+/// == "Policy"`), so `policy`, `Policy`, and `POLICY` all generate the
+/// same `PolicyType` alias and therefore collide identically.
+///
+/// Kept narrow by audit: the open-source `doom_wasm` + `smart_light`
+/// corpus uses `hardware`, `enemy`, `aim`, `secret`, `player`, `combo`,
+/// `berserk`, `game`, `weapon` — none of which collide. Extend this
+/// list only when a concrete new alias is added to the template and
+/// the collision can be demonstrated, never speculatively.
+const RESERVED_CONTEXT_IDS: &[&str] = &["policy"];
+
 pub struct SCXMLParser {
     document_order_counter: u32,
     invoke_counter: u32,
@@ -2057,6 +2079,22 @@ impl SCXMLParser {
                     None,
                 ));
             }
+            let ctx_id_lower = ctx_id.to_ascii_lowercase();
+            if RESERVED_CONTEXT_IDS
+                .iter()
+                .any(|&r| r == ctx_id_lower)
+            {
+                return Err(Located::new(
+                    ValidationError::ReservedContextId {
+                        id: ctx_id,
+                        reserved: RESERVED_CONTEXT_IDS,
+                    }
+                    .into(),
+                    source_name,
+                    None,
+                    None,
+                ));
+            }
             let cpp_type = child
                 .attribute(("urn:sce:cpp", "type"))
                 .unwrap_or("")
@@ -3707,6 +3745,59 @@ mod tests {
                 ) if id == "hw",
             ),
             "expected ValidationError::DuplicateContextObject(id=\"hw\"), got: {:?}",
+            err.error,
+        );
+    }
+
+    #[test]
+    fn error_reserved_context_id_lowercase() {
+        use crate::forge::error::{ForgeError, ValidationError};
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                        xmlns:sce="http://sce.dev/ext"
+                        version="1.0" initial="s1">
+            <sce:context id="policy"/>
+            <state id="s1"/>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let err = parser
+            .parse_string(scxml, "test")
+            .expect_err("reserved <sce:context id=\"policy\"> must fail validation");
+        assert!(
+            matches!(
+                err.error,
+                ForgeError::Validation(
+                    ValidationError::ReservedContextId { ref id, .. },
+                ) if id == "policy",
+            ),
+            "expected ValidationError::ReservedContextId(id=\"policy\"), got: {:?}",
+            err.error,
+        );
+    }
+
+    #[test]
+    fn error_reserved_context_id_case_insensitive() {
+        // Jinja2 `capitalize` lowercases every char after the first,
+        // so `Policy` and `POLICY` both generate `PolicyType` — the
+        // guard must catch every case variant.
+        use crate::forge::error::{ForgeError, ValidationError};
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                        xmlns:sce="http://sce.dev/ext"
+                        version="1.0" initial="s1">
+            <sce:context id="POLICY"/>
+            <state id="s1"/>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let err = parser
+            .parse_string(scxml, "test")
+            .expect_err("case-variant reserved id must fail validation");
+        assert!(
+            matches!(
+                err.error,
+                ForgeError::Validation(
+                    ValidationError::ReservedContextId { ref id, .. },
+                ) if id == "POLICY",
+            ),
+            "expected ValidationError::ReservedContextId(id=\"POLICY\"), got: {:?}",
             err.error,
         );
     }

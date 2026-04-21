@@ -193,6 +193,23 @@ pub enum ValidationError {
     #[error("duplicate <sce:context id=\"{id}\"> declaration")]
     DuplicateContextObject { id: String },
 
+    /// `<sce:context id="...">` names an identifier that collides with
+    /// a type alias the C++ codegen emits on the generated state-machine
+    /// class — e.g. `id="policy"` would generate `using PolicyType = ...`
+    /// alongside the pre-existing `using PolicyType = <PolicyInstance>;`.
+    /// Rejected at parse time so the collision never reaches template
+    /// rendering or C++ compilation. `reserved` carries the closed list
+    /// of disallowed names so the message can quote it without
+    /// duplicating the source of truth.
+    #[error(
+        "<sce:context id=\"{id}\"> uses reserved name; rename to any identifier not in: {}",
+        reserved.join(", ")
+    )]
+    ReservedContextId {
+        id: String,
+        reserved: &'static [&'static str],
+    },
+
     /// A required collection (fields, entries, states, …) is empty.
     /// e.g. "Codec kind requires at least one field with byte layout"
     #[error("{kind} kind requires at least one {what}")]
