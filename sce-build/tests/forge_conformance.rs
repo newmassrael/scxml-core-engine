@@ -64,7 +64,7 @@ fn assert_standalone_forge_lang(
     let options = golden_options(language);
     let output = sce_build::compile_forge_with_imports(
         &content,
-        stem,
+        sce_build::DocumentLabel::symmetric(stem),
         language,
         base_dir,
         &options,
@@ -1506,7 +1506,7 @@ fn forge_generate_golden() {
         // Go
         let go_out = sce_build::compile_forge_from_string(
             &content,
-            name,
+            sce_build::DocumentLabel::symmetric(name),
             sce_build::generator::Language::Go,
         )
         .unwrap();
@@ -1518,7 +1518,7 @@ fn forge_generate_golden() {
         // Python
         let py_out = sce_build::compile_forge_from_string(
             &content,
-            name,
+            sce_build::DocumentLabel::symmetric(name),
             sce_build::generator::Language::Python,
         )
         .unwrap();
@@ -1555,7 +1555,7 @@ fn expect_go_crossfile_err(options: sce_build::ForgeCompileOptions, test_label: 
     let base_dir = scxml_path.parent().unwrap();
     match sce_build::compile_forge_with_imports(
         &content,
-        "crossfile_procedure_codec",
+        sce_build::DocumentLabel::symmetric("crossfile_procedure_codec"),
         sce_build::generator::Language::Go,
         base_dir,
         &options,
@@ -1639,7 +1639,7 @@ fn assert_crossfile_codegen_all_languages(scxml_name: &str) {
         let options = golden_options(*lang);
         let result = sce_build::compile_forge_with_imports(
             &content,
-            scxml_name,
+            sce_build::DocumentLabel::symmetric(scxml_name),
             *lang,
             base_dir,
             &options,

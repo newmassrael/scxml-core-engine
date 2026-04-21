@@ -8,9 +8,16 @@
 
 use crate::forge::error::{ForgeError, Located, ValidationError, XmlError};
 use crate::forge::model::*;
+use crate::DocumentLabel;
 
 /// Construct a [`Located<ForgeError>`] from a node + the enclosing
-/// document's filename.
+/// document's diagnostic label.
+///
+/// The `name` parameter here plays the `diagnostic_label` role of
+/// [`DocumentLabel`] — it ends up verbatim in `location.file` on the
+/// wire. Callers must never pass a pure identifier (model name / stem),
+/// or downstream tooling loses the `.scxml` suffix it needs to open
+/// the source.
 ///
 /// Uses `roxmltree::Document::text_pos_at` on the node's byte range
 /// start to recover the (line, col) from libxml2's point of view.
@@ -58,9 +65,9 @@ pub fn detect_kind(content: &str) -> Result<Option<ForgeKind>, ForgeError> {
 /// Returns `None` if the document is a statechart (no `sce:kind` or `sce:kind="statechart"`).
 pub fn parse_forge(
     content: &str,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<Option<ForgeDocument>, Located<ForgeError>> {
-    parse_forge_with_imports(content, name).map(|opt| opt.map(|pf| pf.document))
+    parse_forge_with_imports(content, label).map(|opt| opt.map(|pf| pf.document))
 }
 
 /// Single-parse entry point that also extracts `<sce:import>` declarations.
@@ -77,16 +84,21 @@ pub fn parse_forge(
 /// `xsd_validator::validate_or_skip` for the rationale.
 pub fn parse_forge_with_imports(
     content: &str,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<Option<ParsedForge>, Located<ForgeError>> {
-    // XSD validation carries its own per-violation line data inside
-    // `XsdErrors`; wrap with name here so the outer `Located` still
-    // names the file (and the emission path picks XsdErrors' lines).
-    crate::forge::xsd_validator::validate_or_skip(content, name)
-        .map_err(|e| Located::new(XmlError::SchemaValidation(e).into(), name, None, None))?;
+    // Diagnostic label surfaces in `XsdErrors.source_label` and every
+    // `Located<ForgeError>::file`. The identifier only kicks in when
+    // a kind-specific parser writes it into a model `name` field
+    // (e.g. `TransformModel.name`). Keeping the two roles separated
+    // from the top of the pipeline means downstream callers cannot
+    // accidentally fold a `.scxml` suffix into generated symbols or
+    // drop one from wire diagnostics.
+    let diag = label.diagnostic_label;
+    crate::forge::xsd_validator::validate_or_skip(content, diag)
+        .map_err(|e| Located::new(XmlError::SchemaValidation(e).into(), diag, None, None))?;
 
     let doc = roxmltree::Document::parse(content).map_err(|e| {
-        Located::new(XmlError::Parse(e.to_string()).into(), name, None, None)
+        Located::new(XmlError::Parse(e.to_string()).into(), diag, None, None)
     })?;
     let root = doc.root_element();
 
@@ -94,19 +106,19 @@ pub fn parse_forge_with_imports(
         Ok(None) => return Ok(None),
         Ok(Some(ForgeKind::Statechart)) => return Ok(None),
         Ok(Some(k)) => k,
-        Err(e) => return Err(located(&root, name, e)),
+        Err(e) => return Err(located(&root, diag, e)),
     };
 
     if !kind.is_supported() {
         return Err(located(
             &root,
-            name,
+            diag,
             ValidationError::UnsupportedKind(kind.to_string()),
         ));
     }
 
-    let imports = parse_imports(&root, name)?;
-    let document = parse_forge_from_node(&root, name, kind)?;
+    let imports = parse_imports(&root, diag)?;
+    let document = parse_forge_from_node(&root, label, kind)?;
     Ok(Some(ParsedForge { document, imports }))
 }
 
@@ -125,23 +137,23 @@ fn detect_kind_from_node(root: &roxmltree::Node) -> Result<Option<ForgeKind>, Va
 
 fn parse_forge_from_node(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
     kind: ForgeKind,
 ) -> Result<ForgeDocument, Located<ForgeError>> {
     match kind {
-        ForgeKind::Transform => parse_transform(root, name).map(ForgeDocument::Transform),
-        ForgeKind::Lookup => parse_lookup(root, name).map(ForgeDocument::Lookup),
-        ForgeKind::Condition => parse_condition(root, name).map(ForgeDocument::Condition),
-        ForgeKind::Codec => parse_codec(root, name).map(ForgeDocument::Codec),
-        ForgeKind::Validator => parse_validator(root, name).map(ForgeDocument::Validator),
-        ForgeKind::Procedure => parse_procedure(root, name).map(ForgeDocument::Procedure),
-        ForgeKind::Filter => parse_filter(root, name).map(ForgeDocument::Filter),
-        ForgeKind::Interpolation => parse_interpolation(root, name).map(ForgeDocument::Interpolation),
-        ForgeKind::Timer => parse_timer(root, name).map(ForgeDocument::Timer),
-        ForgeKind::Observer => parse_observer(root, name).map(ForgeDocument::Observer),
+        ForgeKind::Transform => parse_transform(root, label).map(ForgeDocument::Transform),
+        ForgeKind::Lookup => parse_lookup(root, label).map(ForgeDocument::Lookup),
+        ForgeKind::Condition => parse_condition(root, label).map(ForgeDocument::Condition),
+        ForgeKind::Codec => parse_codec(root, label).map(ForgeDocument::Codec),
+        ForgeKind::Validator => parse_validator(root, label).map(ForgeDocument::Validator),
+        ForgeKind::Procedure => parse_procedure(root, label).map(ForgeDocument::Procedure),
+        ForgeKind::Filter => parse_filter(root, label).map(ForgeDocument::Filter),
+        ForgeKind::Interpolation => parse_interpolation(root, label).map(ForgeDocument::Interpolation),
+        ForgeKind::Timer => parse_timer(root, label).map(ForgeDocument::Timer),
+        ForgeKind::Observer => parse_observer(root, label).map(ForgeDocument::Observer),
         ForgeKind::Statechart => Err(located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::WrongPipeline {
                 kind: ForgeKind::Statechart,
             },
@@ -159,15 +171,35 @@ fn parse_forge_from_node(
 // scope). Upstream agents branch on `stage + location` — so keeping
 // the line data tight to the offending element is the contract this
 // layer exists to serve.
+//
+// **Label contract** — each top-level kind parser takes `label:
+// DocumentLabel<'_>` and threads the two roles explicitly at every
+// use site:
+//
+//     fn parse_X(root, label: DocumentLabel<'_>) -> ... {
+//         let datamodel = find_child(root, "datamodel").ok_or_else(||
+//             located(root, label.diagnostic_label, …))?;
+//         // …
+//         Ok(XModel { name: label.identifier.to_string(), … })
+//     }
+//
+// No local alias. `label.diagnostic_label` goes into every `located()`
+// and helper that writes `location.file`; `label.identifier` is used
+// once at the model construction site. Mixing the two — threading
+// `label.diagnostic_label` into model `name` — would fold `.scxml`
+// into generated Go/C++/Kotlin symbols.
 
 
 
 
 // ── Transform parsing ──────────────────────────────────────────
 
-fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel, Located<ForgeError>> {
+fn parse_transform(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<TransformModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel")
-        .ok_or_else(|| located(root, name, ValidationError::MissingElement {
+        .ok_or_else(|| located(root, label.diagnostic_label, ValidationError::MissingElement {
             kind: ForgeKind::Transform,
             element: "datamodel".into(),
         }))?;
@@ -176,12 +208,12 @@ fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel,
     let mut outputs = Vec::new();
 
     for data in data_children(&datamodel) {
-        let field = parse_forge_field(&data, name)?;
+        let field = parse_forge_field(&data, label.diagnostic_label)?;
         match field.direction {
             Direction::In => inputs.push(field),
             Direction::Out => outputs.push(field),
             Direction::Internal => {
-                return Err(located(&data, name, ValidationError::InvalidDirection {
+                return Err(located(&data, label.diagnostic_label, ValidationError::InvalidDirection {
                     kind: ForgeKind::Transform,
                     direction: "internal".into(),
                     field: field.id,
@@ -191,13 +223,13 @@ fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel,
     }
 
     if inputs.is_empty() {
-        return Err(located(&datamodel, name, ValidationError::EmptyCollection {
+        return Err(located(&datamodel, label.diagnostic_label, ValidationError::EmptyCollection {
             kind: ForgeKind::Transform,
             what: "input field".into(),
         }));
     }
     if outputs.is_empty() {
-        return Err(located(&datamodel, name, ValidationError::EmptyCollection {
+        return Err(located(&datamodel, label.diagnostic_label, ValidationError::EmptyCollection {
             kind: ForgeKind::Transform,
             what: "output field".into(),
         }));
@@ -205,7 +237,7 @@ fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel,
 
     for out in &outputs {
         if out.expr.is_none() {
-            return Err(located(&datamodel, name, ValidationError::MissingAttribute {
+            return Err(located(&datamodel, label.diagnostic_label, ValidationError::MissingAttribute {
                 element: format!("Transform output field '{}'", out.id),
                 attr: "expr".into(),
             }));
@@ -213,7 +245,7 @@ fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel,
     }
 
     Ok(TransformModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         inputs,
         outputs,
     })
@@ -223,12 +255,12 @@ fn parse_transform(root: &roxmltree::Node, name: &str) -> Result<TransformModel,
 
 fn parse_lookup(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<LookupModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Lookup,
                 element: "datamodel".into(),
@@ -256,9 +288,9 @@ fn parse_lookup(
         let dir = sce_attr(&data, "direction");
 
         if dir.as_deref() == Some("in") {
-            input = Some(parse_forge_field(&data, name)?);
+            input = Some(parse_forge_field(&data, label.diagnostic_label)?);
         } else if dir.as_deref() == Some("out") {
-            output = Some(parse_forge_field(&data, name)?);
+            output = Some(parse_forge_field(&data, label.diagnostic_label)?);
         } else {
             if let Some(def) = sce_attr(&data, "default") {
                 explicit_default = Some(DataAttr { value: def, node: data });
@@ -266,14 +298,14 @@ fn parse_lookup(
             if let Some(oms) = sce_attr(&data, "on-miss") {
                 on_miss_attr = Some(DataAttr { value: oms, node: data });
             }
-            entries.extend(parse_sce_entries(&data, name)?);
+            entries.extend(parse_sce_entries(&data, label.diagnostic_label)?);
         }
     }
 
     let input = input.ok_or_else(|| {
         located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Lookup,
                 element: "input field (sce:direction=\"in\")".into(),
@@ -283,7 +315,7 @@ fn parse_lookup(
     let output = output.ok_or_else(|| {
         located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Lookup,
                 element: "output field (sce:direction=\"out\")".into(),
@@ -294,7 +326,7 @@ fn parse_lookup(
     if entries.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Lookup,
                 what: "<sce:entry>".into(),
@@ -318,7 +350,7 @@ fn parse_lookup(
                 // policy on the on-miss element).
                 return Err(located(
                     &def.node,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::IncompatibleAttributes {
                         element: "Lookup".into(),
                         detail: "sce:on-miss=\"error\" is incompatible with sce:default; \
@@ -347,7 +379,7 @@ fn parse_lookup(
             // Unknown value — anchor at the declaring `<data>`.
             return Err(located(
                 &oms.node,
-                name,
+                label.diagnostic_label,
                 ValidationError::InvalidAttribute {
                     element: "Lookup".into(),
                     attr: "sce:on-miss".into(),
@@ -359,7 +391,7 @@ fn parse_lookup(
     };
 
     Ok(LookupModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         input,
         output,
         entries,
@@ -371,12 +403,12 @@ fn parse_lookup(
 
 fn parse_condition(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<ConditionModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Condition,
                 element: "datamodel".into(),
@@ -388,7 +420,7 @@ fn parse_condition(
     let mut expr = String::new();
 
     for data in data_children(&datamodel) {
-        let field = parse_forge_field(&data, name)?;
+        let field = parse_forge_field(&data, label.diagnostic_label)?;
         match field.direction {
             Direction::In => inputs.push(field),
             Direction::Out => {
@@ -397,7 +429,7 @@ fn parse_condition(
                 } else {
                     return Err(located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::MissingAttribute {
                             element: "Condition output field".into(),
                             attr: "expr".into(),
@@ -408,7 +440,7 @@ fn parse_condition(
             Direction::Internal => {
                 return Err(located(
                     &data,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::InvalidDirection {
                         kind: ForgeKind::Condition,
                         direction: "internal".into(),
@@ -422,7 +454,7 @@ fn parse_condition(
     if inputs.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Condition,
                 what: "input field".into(),
@@ -432,7 +464,7 @@ fn parse_condition(
     if expr.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Condition,
                 element: "output field with an 'expr' attribute".into(),
@@ -441,7 +473,7 @@ fn parse_condition(
     }
 
     Ok(ConditionModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         inputs,
         expr,
     })
@@ -451,7 +483,7 @@ fn parse_condition(
 
 fn parse_codec(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<CodecModel, Located<ForgeError>> {
     let default_endian = sce_attr(root, "default-endian")
         .and_then(|s| Endian::from_attr(&s))
@@ -460,7 +492,7 @@ fn parse_codec(
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Codec,
                 element: "datamodel".into(),
@@ -479,7 +511,7 @@ fn parse_codec(
                 input_length = Some(parse_int(&len_str).ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::NumericParse {
                             element: "Codec input".into(),
                             attr: "sce:length".into(),
@@ -494,21 +526,21 @@ fn parse_codec(
 
         // Output fields with byte layout (on <data> elements).
         if sce_attr(&data, "byte").is_some() {
-            fields.push(parse_codec_field_from_node(&data, name)?);
+            fields.push(parse_codec_field_from_node(&data, label.diagnostic_label)?);
         }
     }
 
     // Also check for <sce:field> elements (used in both standalone and inline codec)
     for child in datamodel.children().filter(|n| n.is_element()) {
         if child.tag_name().name() == "field" && child.tag_name().namespace() == Some(SCE_NAMESPACE) {
-            fields.push(parse_codec_field_from_node(&child, name)?);
+            fields.push(parse_codec_field_from_node(&child, label.diagnostic_label)?);
         }
     }
 
     if fields.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Codec,
                 what: "field with byte layout".into(),
@@ -517,7 +549,7 @@ fn parse_codec(
     }
 
     Ok(CodecModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         default_endian,
         input_length,
         fields,
@@ -640,12 +672,12 @@ pub fn parse_codec_field_from_node(
 
 fn parse_validator(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<ValidatorModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Validator,
                 element: "datamodel".into(),
@@ -659,7 +691,7 @@ fn parse_validator(
     let mut plausibility: Option<String> = None;
 
     for data in data_children(&datamodel) {
-        let field = parse_forge_field(&data, name)?;
+        let field = parse_forge_field(&data, label.diagnostic_label)?;
         match field.direction {
             Direction::In => {
                 // Extract validator rules from sce: attributes on input <data> elements.
@@ -677,7 +709,7 @@ fn parse_validator(
                     let sample_interval_str = sce_attr(&data, "sample-interval")
                         .unwrap_or_else(|| "100ms".to_string());
                     let sample_interval_ms = parse_time_interval(&sample_interval_str)
-                        .map_err(|e| located(&data, name, e))?;
+                        .map_err(|e| located(&data, label.diagnostic_label, e))?;
                     rate_of_changes.push(RateOfChangeRule {
                         id: field.id.clone(),
                         max_delta,
@@ -693,7 +725,7 @@ fn parse_validator(
                     if plausibility.is_some() {
                         return Err(located(
                             &data,
-                            name,
+                            label.diagnostic_label,
                             ValidationError::SingletonViolation {
                                 kind: ForgeKind::Validator,
                                 attr: "sce:plausibility".into(),
@@ -706,7 +738,7 @@ fn parse_validator(
             Direction::Internal => {
                 return Err(located(
                     &data,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::InvalidDirection {
                         kind: ForgeKind::Validator,
                         direction: "internal".into(),
@@ -720,7 +752,7 @@ fn parse_validator(
     if inputs.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Validator,
                 what: "input field".into(),
@@ -731,7 +763,7 @@ fn parse_validator(
     if ranges.is_empty() && rate_of_changes.is_empty() && plausibility.is_none() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Validator,
                 what: "rule (sce:range-min/max, sce:max-delta, or sce:plausibility)".into(),
@@ -740,7 +772,7 @@ fn parse_validator(
     }
 
     Ok(ValidatorModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         inputs,
         rules: ValidatorRules {
             ranges,
@@ -754,14 +786,14 @@ fn parse_validator(
 
 fn parse_procedure(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<ProcedureModel, Located<ForgeError>> {
     let initial = root
         .attribute("initial")
         .ok_or_else(|| {
             located(
                 root,
-                name,
+                label.diagnostic_label,
                 ValidationError::MissingAttribute {
                     element: "Procedure <scxml>".into(),
                     attr: "initial".into(),
@@ -776,7 +808,7 @@ fn parse_procedure(
     let mut helpers = Vec::new();
     if let Some(datamodel) = find_child(root, "datamodel") {
         for data in data_children(&datamodel) {
-            let field = parse_forge_field(&data, name)?;
+            let field = parse_forge_field(&data, label.diagnostic_label)?;
             match field.direction {
                 Direction::In => inputs.push(field),
                 Direction::Internal => internals.push(field),
@@ -796,11 +828,11 @@ fn parse_procedure(
                 && n.tag_name().namespace() == Some(SCE_NAMESPACE)
                 && n.tag_name().name() == "helper"
         }) {
-            let helper = parse_procedure_helper(&child, name)?;
+            let helper = parse_procedure_helper(&child, label.diagnostic_label)?;
             if helpers.iter().any(|h: &ProcedureHelper| h.name == helper.name) {
                 return Err(located(
                     &child,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::DuplicateId {
                         kind: ForgeKind::Procedure,
                         what: "<sce:helper>".into(),
@@ -828,7 +860,7 @@ fn parse_procedure(
             .ok_or_else(|| {
                 located(
                     &child,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::MissingAttribute {
                         element: format!("<{tag}>"),
                         attr: "id".into(),
@@ -840,7 +872,7 @@ fn parse_procedure(
         if !state_ids.insert(id.clone()) {
             return Err(located(
                 &child,
-                name,
+                label.diagnostic_label,
                 ValidationError::DuplicateId {
                     kind: ForgeKind::Procedure,
                     what: "state id".into(),
@@ -852,15 +884,15 @@ fn parse_procedure(
         let transitions = if is_final {
             Vec::new()
         } else {
-            parse_procedure_transitions(&child, name)?
+            parse_procedure_transitions(&child, label.diagnostic_label)?
         };
 
         // Parse <onentry> → <send> actions
-        let on_entry_sends = parse_procedure_onentry(&child, name)?;
+        let on_entry_sends = parse_procedure_onentry(&child, label.diagnostic_label)?;
 
         // Parse <donedata> on <final> elements
         let done_params = if is_final {
-            parse_procedure_donedata(&child, name)?
+            parse_procedure_donedata(&child, label.diagnostic_label)?
         } else {
             Vec::new()
         };
@@ -879,7 +911,7 @@ fn parse_procedure(
     if states.is_empty() {
         return Err(located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Procedure,
                 what: "<state> or <final> element".into(),
@@ -891,7 +923,7 @@ fn parse_procedure(
     if !state_ids.contains(&initial) {
         return Err(located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::InvalidReference {
                 kind: ForgeKind::Procedure,
                 name: initial.clone(),
@@ -905,7 +937,7 @@ fn parse_procedure(
     if !states.iter().any(|s| s.is_final) {
         return Err(located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Procedure,
                 what: "<final> element".into(),
@@ -922,7 +954,7 @@ fn parse_procedure(
         for tr in &state.transitions {
             if !state_ids.contains(&tr.target) {
                 return Err(located_at_line(
-                    name,
+                    label.diagnostic_label,
                     tr.line,
                     ValidationError::InvalidReference {
                         kind: ForgeKind::Procedure,
@@ -941,7 +973,7 @@ fn parse_procedure(
     for state in &states {
         if !state.is_final && state.transitions.is_empty() {
             return Err(located_at_line(
-                name,
+                label.diagnostic_label,
                 state.line,
                 ValidationError::EmptyCollection {
                     kind: ForgeKind::Procedure,
@@ -952,7 +984,7 @@ fn parse_procedure(
     }
 
     Ok(ProcedureModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         inputs,
         internals,
         helpers,
@@ -1279,12 +1311,12 @@ fn parse_time_interval(s: &str) -> Result<u32, ValidationError> {
 
 fn parse_filter(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<FilterModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Filter,
                 element: "datamodel".into(),
@@ -1303,16 +1335,16 @@ fn parse_filter(
         let dir = sce_attr(&data, "direction");
         match dir.as_deref() {
             Some("in") => {
-                input = Some(parse_forge_field(&data, name)?);
+                input = Some(parse_forge_field(&data, label.diagnostic_label)?);
             }
             Some("out") => {
-                output = Some(parse_forge_field(&data, name)?);
+                output = Some(parse_forge_field(&data, label.diagnostic_label)?);
                 output_node = Some(data);
 
                 let ft_str = sce_attr(&data, "filter").ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::MissingAttribute {
                             element: "Filter output".into(),
                             attr: "sce:filter".into(),
@@ -1322,7 +1354,7 @@ fn parse_filter(
                 filter_type = Some(FilterType::from_attr(&ft_str).ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::InvalidAttribute {
                             element: "Filter output".into(),
                             attr: "sce:filter".into(),
@@ -1338,7 +1370,7 @@ fn parse_filter(
             _ => {
                 return Err(located(
                     &data,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::InvalidDirection {
                         kind: ForgeKind::Filter,
                         direction: dir.unwrap_or_default(),
@@ -1352,7 +1384,7 @@ fn parse_filter(
     let input = input.ok_or_else(|| {
         located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Filter,
                 element: "input field (sce:direction=\"in\")".into(),
@@ -1362,7 +1394,7 @@ fn parse_filter(
     let output = output.ok_or_else(|| {
         located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Filter,
                 element: "output field (sce:direction=\"out\")".into(),
@@ -1372,7 +1404,7 @@ fn parse_filter(
     let filter_type = filter_type.ok_or_else(|| {
         located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingAttribute {
                 element: "Filter output".into(),
                 attr: "sce:filter".into(),
@@ -1393,7 +1425,7 @@ fn parse_filter(
             if window.is_none() {
                 return Err(located(
                     param_anchor,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::MissingAttribute {
                         element: "Moving-average filter".into(),
                         attr: "sce:window".into(),
@@ -1405,7 +1437,7 @@ fn parse_filter(
             if alpha.is_none() {
                 return Err(located(
                     param_anchor,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::MissingAttribute {
                         element: "Low-pass filter".into(),
                         attr: "sce:alpha".into(),
@@ -1417,7 +1449,7 @@ fn parse_filter(
             if window.is_none() {
                 return Err(located(
                     param_anchor,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::MissingAttribute {
                         element: "Debounce filter".into(),
                         attr: "sce:window".into(),
@@ -1428,7 +1460,7 @@ fn parse_filter(
     }
 
     Ok(FilterModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         input,
         output,
         filter_type,
@@ -1441,12 +1473,12 @@ fn parse_filter(
 
 fn parse_interpolation(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<InterpolationModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Interpolation,
                 element: "datamodel".into(),
@@ -1465,15 +1497,15 @@ fn parse_interpolation(
         let dir = sce_attr(&data, "direction");
         match dir.as_deref() {
             Some("in") => {
-                inputs.push(parse_forge_field(&data, name)?);
+                inputs.push(parse_forge_field(&data, label.diagnostic_label)?);
             }
             Some("out") => {
-                output = Some(parse_forge_field(&data, name)?);
+                output = Some(parse_forge_field(&data, label.diagnostic_label)?);
 
                 let method_str = sce_attr(&data, "interpolation").ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::MissingAttribute {
                             element: "Interpolation output".into(),
                             attr: "sce:interpolation".into(),
@@ -1483,7 +1515,7 @@ fn parse_interpolation(
                 method = Some(InterpolationMethod::from_attr(&method_str).ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::InvalidAttribute {
                             element: "Interpolation output".into(),
                             attr: "sce:interpolation".into(),
@@ -1497,7 +1529,7 @@ fn parse_interpolation(
                     out_of_bounds = OutOfBounds::from_attr(&oob_str).ok_or_else(|| {
                         located(
                             &data,
-                            name,
+                            label.diagnostic_label,
                             ValidationError::InvalidAttribute {
                                 element: "Interpolation output".into(),
                                 attr: "sce:out-of-bounds".into(),
@@ -1519,7 +1551,7 @@ fn parse_interpolation(
                         let breakpoints = breakpoints.map_err(|e| {
                             located(
                                 &data,
-                                name,
+                                label.diagnostic_label,
                                 ValidationError::NumericParse {
                                     element: format!("Interpolation axis-{}", inp.id),
                                     attr: format!("sce:axis-{}", inp.id),
@@ -1545,7 +1577,7 @@ fn parse_interpolation(
                         .map_err(|e| {
                             located(
                                 &data,
-                                name,
+                                label.diagnostic_label,
                                 ValidationError::NumericParse {
                                     element: "Interpolation output".into(),
                                     attr: "table values".into(),
@@ -1559,7 +1591,7 @@ fn parse_interpolation(
             _ => {
                 return Err(located(
                     &data,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::InvalidDirection {
                         kind: ForgeKind::Interpolation,
                         direction: dir.unwrap_or_default(),
@@ -1573,7 +1605,7 @@ fn parse_interpolation(
     let output = output.ok_or_else(|| {
         located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Interpolation,
                 element: "output field (sce:direction=\"out\")".into(),
@@ -1583,7 +1615,7 @@ fn parse_interpolation(
     let method = method.ok_or_else(|| {
         located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingAttribute {
                 element: "Interpolation output".into(),
                 attr: "sce:interpolation".into(),
@@ -1594,7 +1626,7 @@ fn parse_interpolation(
     if inputs.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Interpolation,
                 what: "input field".into(),
@@ -1604,7 +1636,7 @@ fn parse_interpolation(
     if axes.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Interpolation,
                 what: "sce:axis-* attribute".into(),
@@ -1614,7 +1646,7 @@ fn parse_interpolation(
     if values.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Interpolation,
                 what: "table values in the output element text".into(),
@@ -1628,7 +1660,7 @@ fn parse_interpolation(
             if axes.len() != 1 {
                 return Err(located(
                     &datamodel,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::CountMismatch {
                         kind: ForgeKind::Interpolation,
                         detail: "linear: requires exactly 1 axis".into(),
@@ -1638,7 +1670,7 @@ fn parse_interpolation(
             if values.len() != axes[0].breakpoints.len() {
                 return Err(located(
                     &datamodel,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::CountMismatch {
                         kind: ForgeKind::Interpolation,
                         detail: format!(
@@ -1654,7 +1686,7 @@ fn parse_interpolation(
             if axes.len() != 2 {
                 return Err(located(
                     &datamodel,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::CountMismatch {
                         kind: ForgeKind::Interpolation,
                         detail: "bilinear: requires exactly 2 axes".into(),
@@ -1665,7 +1697,7 @@ fn parse_interpolation(
             if values.len() != expected {
                 return Err(located(
                     &datamodel,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::CountMismatch {
                         kind: ForgeKind::Interpolation,
                         detail: format!(
@@ -1682,7 +1714,7 @@ fn parse_interpolation(
     }
 
     Ok(InterpolationModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         inputs,
         output,
         method,
@@ -1696,12 +1728,12 @@ fn parse_interpolation(
 
 fn parse_timer(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<TimerModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Timer,
                 element: "datamodel".into(),
@@ -1722,7 +1754,7 @@ fn parse_timer(
             .ok_or_else(|| {
                 located(
                     &data,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::MissingAttribute {
                         element: "Timer <data>".into(),
                         attr: "id".into(),
@@ -1734,7 +1766,7 @@ fn parse_timer(
         let timer_type = TimerType::from_attr(&timer_str).ok_or_else(|| {
             located(
                 &data,
-                name,
+                label.diagnostic_label,
                 ValidationError::InvalidAttribute {
                     element: format!("Timer '{id}'"),
                     attr: "sce:timer".into(),
@@ -1749,7 +1781,7 @@ fn parse_timer(
                 let s = sce_attr(&data, "interval").ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::MissingAttribute {
                             element: format!("Periodic timer '{id}'"),
                             attr: "sce:interval".into(),
@@ -1759,7 +1791,7 @@ fn parse_timer(
                 s.parse::<u32>().map_err(|_| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::NumericParse {
                             element: format!("timer '{id}'"),
                             attr: "sce:interval".into(),
@@ -1773,7 +1805,7 @@ fn parse_timer(
                 let s = sce_attr(&data, "duration").ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::MissingAttribute {
                             element: format!("Timeout timer '{id}'"),
                             attr: "sce:duration".into(),
@@ -1783,7 +1815,7 @@ fn parse_timer(
                 s.parse::<u32>().map_err(|_| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::NumericParse {
                             element: format!("timer '{id}'"),
                             attr: "sce:duration".into(),
@@ -1797,7 +1829,7 @@ fn parse_timer(
                 let s = sce_attr(&data, "delay").ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::MissingAttribute {
                             element: format!("Delayed timer '{id}'"),
                             attr: "sce:delay".into(),
@@ -1807,7 +1839,7 @@ fn parse_timer(
                 s.parse::<u32>().map_err(|_| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::NumericParse {
                             element: format!("timer '{id}'"),
                             attr: "sce:delay".into(),
@@ -1825,7 +1857,7 @@ fn parse_timer(
         if event.is_none() && on_timeout.is_none() {
             return Err(located(
                 &data,
-                name,
+                label.diagnostic_label,
                 ValidationError::RequireEither {
                     element: format!("Timer '{id}'"),
                     alternatives: vec!["sce:event".into(), "sce:on-timeout".into()],
@@ -1845,7 +1877,7 @@ fn parse_timer(
     if timers.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Timer,
                 what: "<data> with 'sce:timer' attribute".into(),
@@ -1854,7 +1886,7 @@ fn parse_timer(
     }
 
     Ok(TimerModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         timers,
     })
 }
@@ -1863,12 +1895,12 @@ fn parse_timer(
 
 fn parse_observer(
     root: &roxmltree::Node,
-    name: &str,
+    label: DocumentLabel<'_>,
 ) -> Result<ObserverModel, Located<ForgeError>> {
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
-            name,
+            label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Observer,
                 element: "datamodel".into(),
@@ -1885,7 +1917,7 @@ fn parse_observer(
         let dir = sce_attr(&data, "direction");
 
         if dir.as_deref() == Some("in") {
-            inputs.push(parse_forge_field(&data, name)?);
+            inputs.push(parse_forge_field(&data, label.diagnostic_label)?);
             continue;
         }
 
@@ -1894,7 +1926,7 @@ fn parse_observer(
             if monitor_type != "threshold" {
                 return Err(located(
                     &data,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::InvalidAttribute {
                         element: "Observer monitor".into(),
                         attr: "sce:monitor".into(),
@@ -1909,7 +1941,7 @@ fn parse_observer(
                 .ok_or_else(|| {
                     located(
                         &data,
-                        name,
+                        label.diagnostic_label,
                         ValidationError::MissingAttribute {
                             element: "Observer monitor <data>".into(),
                             attr: "id".into(),
@@ -1921,7 +1953,7 @@ fn parse_observer(
             let enter_expr = sce_attr(&data, "enter").ok_or_else(|| {
                 located(
                     &data,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::MissingAttribute {
                         element: format!("Monitor '{id}'"),
                         attr: "sce:enter".into(),
@@ -1934,7 +1966,7 @@ fn parse_observer(
             let on_enter = sce_attr(&data, "on-enter").ok_or_else(|| {
                 located(
                     &data,
-                    name,
+                    label.diagnostic_label,
                     ValidationError::MissingAttribute {
                         element: format!("Monitor '{id}'"),
                         attr: "sce:on-enter".into(),
@@ -1957,7 +1989,7 @@ fn parse_observer(
     if inputs.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Observer,
                 what: "input field".into(),
@@ -1967,7 +1999,7 @@ fn parse_observer(
     if monitors.is_empty() {
         return Err(located(
             &datamodel,
-            name,
+            label.diagnostic_label,
             ValidationError::EmptyCollection {
                 kind: ForgeKind::Observer,
                 what: "monitor definition".into(),
@@ -1976,7 +2008,7 @@ fn parse_observer(
     }
 
     Ok(ObserverModel {
-        name: name.to_string(),
+        name: label.identifier.to_string(),
         inputs,
         monitors,
         event_domain,
@@ -2192,7 +2224,7 @@ fn parse_sce_entries(
 /// `doc_name` is threaded through so the helper can raise
 /// `Located<ForgeError>` itself — keeps the call-site wrap-plumbing
 /// uniform with every other kind parser instead of scattering
-/// `.map_err(|e| located(&data, name, e))?` across the module.
+/// `.map_err(|e| located(&data, label.diagnostic_label, e))?` across the module.
 fn parse_forge_field(
     data: &roxmltree::Node,
     doc_name: &str,

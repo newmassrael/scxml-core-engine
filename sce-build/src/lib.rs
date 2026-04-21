@@ -37,6 +37,39 @@ mod wasm;
 use model::SCXMLModel;
 use std::path::Path;
 
+/// Two-role document label for the forge pipeline.
+///
+/// The library needs the caller's view of "what this document is called"
+/// in two independent roles. Folding them back into one `&str` — as the
+/// pre-2026-04-14 API did — forces the caller to pick between a stem
+/// (safe for identifiers, loses the `.scxml` suffix in diagnostics) and
+/// a basename (clean diagnostics, corrupts generated symbols). Neither
+/// is correct for both consumers, so the type carries both explicitly.
+///
+/// `identifier` flows into [`forge::model`] `name` fields and from there
+/// into template symbol generation (Go package, C++ namespace, function
+/// name). It must be extension-free or generated code breaks.
+///
+/// `diagnostic_label` flows into [`forge::error::Located`] and XSD
+/// [`forge::xsd_validator::XsdErrors`]`::source_label`, surfacing as the
+/// `location.file` of every NDJSON record. Should carry the full
+/// basename (with extension) so downstream tooling opens the source
+/// without guessing the suffix.
+#[derive(Debug, Clone, Copy)]
+pub struct DocumentLabel<'a> {
+    pub identifier: &'a str,
+    pub diagnostic_label: &'a str,
+}
+
+impl<'a> DocumentLabel<'a> {
+    /// Both roles collapse to one label. For in-memory / WASM callers
+    /// with no filesystem path — there is nothing extension-worthy to
+    /// distinguish, so identifier and diagnostic label coincide.
+    pub fn symmetric(label: &'a str) -> Self {
+        Self { identifier: label, diagnostic_label: label }
+    }
+}
+
 /// Parse, analyze, and validate an SCXML file for static code generation.
 /// SCE Forge inline kinds are extracted during parsing (single XML pass).
 ///
@@ -327,23 +360,23 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
 /// Uses single-parse path: detects kind and parses model in one XML parse.
 ///
 /// The error type is [`Located<ForgeError>`]: location is part of the
-/// error contract — every failure ties back to the `name` the caller
+/// error contract — every failure ties back to the `label` the caller
 /// supplied, so downstream consumers (CLI diagnostics, build scripts,
 /// agents) never have to attach file context after the fact.
 pub fn compile_forge_from_string(
     content: &str,
-    name: &str,
+    label: DocumentLabel<'_>,
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
 
-    let doc = forge::parser::parse_forge(content, name)?
+    let doc = forge::parser::parse_forge(content, label)?
         .ok_or_else(|| Located::new(
             ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
             }
             .into(),
-            name,
+            label.diagnostic_label,
             None,
             None,
         ))?;
@@ -357,7 +390,7 @@ pub fn compile_forge_from_string(
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
     }
-    .map_err(|e| Located::new(e, name, None, None))?;
+    .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
 }
 
@@ -387,29 +420,35 @@ pub struct ForgeCompileOptions {
 /// all go through here.
 pub fn compile_forge_with_imports(
     content: &str,
-    name: &str,
+    label: DocumentLabel<'_>,
     language: generator::Language,
     base_dir: &Path,
     options: &ForgeCompileOptions,
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
 
-    let parsed = forge::parser::parse_forge_with_imports(content, name)?
+    let parsed = forge::parser::parse_forge_with_imports(content, label)?
         .ok_or_else(|| Located::new(
             ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
             }
             .into(),
-            name,
+            label.diagnostic_label,
             None,
             None,
         ))?;
 
     let template_base = find_template_base();
     let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
-        .map_err(|e| Located::new(e, name, None, None))?;
+        .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
 
-    validate_and_enrich_imports(&mut import_ctx, &parsed.imports, base_dir, &language, name)?;
+    validate_and_enrich_imports(
+        &mut import_ctx,
+        &parsed.imports,
+        base_dir,
+        &language,
+        label.diagnostic_label,
+    )?;
 
     let output = match language {
         generator::Language::Cpp => {
@@ -428,7 +467,7 @@ pub fn compile_forge_with_imports(
             forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx)
         }
     }
-    .map_err(|e| Located::new(e, name, None, None))?;
+    .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
 }
 
@@ -524,8 +563,16 @@ fn validate_and_enrich_imports(
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
+        let basename = src_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(stem);
+        let imported_label = DocumentLabel {
+            identifier: stem,
+            diagnostic_label: basename,
+        };
 
-        if let Some(doc) = forge::parser::parse_forge(&content, stem)? {
+        if let Some(doc) = forge::parser::parse_forge(&content, imported_label)? {
             if !ctx.is_stateful {
                 if let Some(name) = discover_primary_function(&doc, language) {
                     ctx.qualified_call = build_qualified_call(&name, &ctx.namespace, language);
@@ -1691,16 +1738,27 @@ pub fn find_template_base() -> std::path::PathBuf {
         }
         return p.to_path_buf();
     }
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let candidate = crate_dir.join("../tools/codegen/templates");
-    if candidate.exists() {
-        return candidate;
+    // Release builds refuse silent fallback: `CARGO_MANIFEST_DIR` is
+    // baked at compile time and may point at a stale source tree on
+    // install targets, producing silently-wrong output. Dev/test
+    // builds keep the fallback so `cargo test` and in-repo `cargo run`
+    // work without explicit setup.
+    #[cfg(debug_assertions)]
+    {
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let candidate = crate_dir.join("../tools/codegen/templates");
+        if candidate.exists() {
+            return candidate;
+        }
+        let candidate = Path::new("tools/codegen/templates");
+        if candidate.exists() {
+            return candidate.to_path_buf();
+        }
     }
-    let candidate = Path::new("tools/codegen/templates");
-    if candidate.exists() {
-        return candidate.to_path_buf();
-    }
-    panic!("Cannot find Jinja2 templates. Set SCE_TEMPLATE_DIR or run from project root.");
+    panic!(
+        "Cannot find Jinja2 templates. Set SCE_TEMPLATE_DIR to the installed \
+         templates directory (e.g. /usr/local/share/sce/codegen/templates)."
+    );
 }
 
 /// Locate the Rust Jinja2 template directory.

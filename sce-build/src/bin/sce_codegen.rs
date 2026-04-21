@@ -538,14 +538,19 @@ fn cmd_generate(
             //
             // `input_basename` is the diagnostic label — the filename
             // with extension, enough for downstream tooling to open
-            // the file without guessing the suffix. It replaces the
-            // parser-threaded `file` field on any error before emission
-            // via `Located::with_file`, keeping the two concerns
-            // separate across the library boundary.
+            // the file without guessing the suffix. Passed through the
+            // library as the `diagnostic_label` role of
+            // `DocumentLabel`, keeping the two concerns separate all
+            // the way down to XSD `source_label` and every
+            // `Located::file`.
             let input_basename = Path::new(scxml_path)
                 .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or(input_stem);
+            let doc_label = sce_build::DocumentLabel {
+                identifier: input_stem,
+                diagnostic_label: input_basename,
+            };
 
             let base_dir = Path::new(scxml_path)
                 .parent()
@@ -555,7 +560,7 @@ fn cmd_generate(
             };
             match sce_build::compile_forge_with_imports(
                 &scxml_content,
-                input_stem,
+                doc_label,
                 lang,
                 base_dir,
                 &forge_opts,
@@ -586,7 +591,7 @@ fn cmd_generate(
                     emit_generate_manifest(&report);
                     return;
                 }
-                Err(e) => error_format.emit_forge_and_exit(&e.with_file(input_basename)),
+                Err(e) => error_format.emit_forge_and_exit(&e),
             }
         }
         sce_build::Pipeline::Scxml => {}

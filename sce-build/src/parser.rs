@@ -130,24 +130,47 @@ impl SCXMLParser {
             .and_then(|s| s.to_str())
             .unwrap_or("unknown")
             .to_string();
+        let diag_label = Path::new(scxml_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&name)
+            .to_string();
         let base_dir = Path::new(scxml_path).parent().map(|p| p.to_path_buf());
-        self.parse_impl(&content, &name, base_dir.as_deref())
+        self.parse_impl(&content, &name, &diag_label, base_dir.as_deref())
     }
 
     /// Parse SCXML from a string (no filesystem access).
     /// Suitable for WASM and in-memory code generation.
+    ///
+    /// In-memory callers carry no filesystem extension to distinguish,
+    /// so `name` plays both roles of [`DocumentLabel`] — model identifier
+    /// (`SCXMLModel.name`) and diagnostic label (`location.file` on every
+    /// emitted record).
     pub fn parse_string(
         &mut self,
         content: &str,
         name: &str,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        self.parse_impl(content, name, None)
+        self.parse_impl(content, name, name, None)
     }
 
+    /// Two-role label contract (mirrors [`crate::DocumentLabel`]):
+    ///
+    /// * `name` — the pure identifier. Stored in [`SCXMLModel::name`] and
+    ///   flows from there into generated template symbols. Must be
+    ///   extension-free or generated code breaks (`_scxml` suffix in
+    ///   Go/C++/Kotlin symbol names).
+    /// * `diag_label` — the file label. Used by XSD
+    ///   `source_label`, every outer `Located::new(..., diag_label, ...)`
+    ///   raise-site, and every helper `source_name` parameter threaded
+    ///   downstream. Should carry the full basename so `location.file`
+    ///   on NDJSON records is enough for downstream tooling to open the
+    ///   source without guessing the suffix.
     fn parse_impl(
         &mut self,
         content: &str,
         name: &str,
+        diag_label: &str,
         base_dir: Option<&Path>,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{ForgeError, Located, XmlError};
@@ -162,10 +185,10 @@ impl SCXMLParser {
         // Silently skipped if the schemas/ directory is unreachable
         // (downstream vendoring without the schemas) — see
         // `forge::xsd_validator::validate_or_skip`.
-        crate::forge::xsd_validator::validate_or_skip(content, name).map_err(|errs| {
+        crate::forge::xsd_validator::validate_or_skip(content, diag_label).map_err(|errs| {
             Located::new(
                 ForgeError::Xml(XmlError::SchemaValidation(errs)),
-                name,
+                diag_label,
                 None,
                 None,
             )
@@ -178,7 +201,7 @@ impl SCXMLParser {
             let pos = e.pos();
             Located::new(
                 ForgeError::Xml(XmlError::Parse(e.to_string())),
-                name,
+                diag_label,
                 Some(pos.row),
                 Some(pos.col),
             )
@@ -209,22 +232,22 @@ impl SCXMLParser {
         };
 
         // Parse datamodel
-        self.parse_datamodel(&root, &mut model, name)?;
+        self.parse_datamodel(&root, &mut model, diag_label)?;
 
         // Parse global scripts
         self.parse_global_scripts(&root, &mut model, base_dir);
 
         // Parse Named Context declarations (must be before states for transforms)
-        self.parse_sce_contexts(&root, &mut model, name)?;
+        self.parse_sce_contexts(&root, &mut model, diag_label)?;
 
         // Parse states recursively
-        self.parse_states(&root, None, &mut model, base_dir, name)?;
+        self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
 
         // Feature detection
         self.detect_features(&mut model);
 
         // Named Context validation
-        self.validate_context_usage(&model, name)?;
+        self.validate_context_usage(&model, diag_label)?;
 
         // Resolve deep initial state
         self.resolve_deep_initial(&mut model);

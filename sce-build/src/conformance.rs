@@ -1160,7 +1160,7 @@ mod tests {
 
             let output = match crate::compile_forge_with_imports(
                 &content,
-                &fixture.name,
+                crate::DocumentLabel::symmetric(&fixture.name),
                 Language::Rust,
                 &resource_dir,
                 &options,
