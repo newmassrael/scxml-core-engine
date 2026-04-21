@@ -81,12 +81,6 @@ class Test207Child0StateMachine(
         is Test207Child0Event.Event2 -> "event2"
         is Test207Child0Event.Fail -> "fail"
         is Test207Child0Event.Pass -> "pass"
-        // Kotlin `when` expression exhaustiveness: a child machine that
-        // inherits the override (has_parent_communication path) but
-        // declares no events of its own produces an empty sealed
-        // hierarchy, and `when (event)` without `else` fails to compile.
-        // The branch is redundant on non-empty hierarchies but harmless.
-        else -> null
     }
 
 

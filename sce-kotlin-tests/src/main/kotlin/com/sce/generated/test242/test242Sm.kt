@@ -100,12 +100,6 @@ class Test242StateMachine(
         is Test242Event.Timeout1 -> "timeout1"
         is Test242Event.Timeout2 -> "timeout2"
         is Test242Event.Timeout3 -> "timeout3"
-        // Kotlin `when` expression exhaustiveness: a child machine that
-        // inherits the override (has_parent_communication path) but
-        // declares no events of its own produces an empty sealed
-        // hierarchy, and `when (event)` without `else` fails to compile.
-        // The branch is redundant on non-empty hierarchies but harmless.
-        else -> null
     }
 
 

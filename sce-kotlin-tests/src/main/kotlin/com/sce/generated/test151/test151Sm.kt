@@ -95,12 +95,6 @@ class Test151StateMachine(
         is Test151Event.Error.Self -> "error"
         is Test151Event.Error.Execution -> "error.execution"
         is Test151Event.Foo -> "foo"
-        // Kotlin `when` expression exhaustiveness: a child machine that
-        // inherits the override (has_parent_communication path) but
-        // declares no events of its own produces an empty sealed
-        // hierarchy, and `when (event)` without `else` fails to compile.
-        // The branch is redundant on non-empty hierarchies but harmless.
-        else -> null
     }
 
 

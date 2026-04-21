@@ -77,12 +77,6 @@ class Test226sub1StateMachine(
     override fun eventNameOf(event: Test226sub1Event): String? = when (event) {
         is Test226sub1Event.Error.Execution -> "error.execution"
         is Test226sub1Event.VarBound -> "varBound"
-        // Kotlin `when` expression exhaustiveness: a child machine that
-        // inherits the override (has_parent_communication path) but
-        // declares no events of its own produces an empty sealed
-        // hierarchy, and `when (event)` without `else` fails to compile.
-        // The branch is redundant on non-empty hierarchies but harmless.
-        else -> null
     }
 
 

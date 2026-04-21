@@ -103,12 +103,6 @@ class Test372StateMachine(
         is Test372Event.Done.State.S0 -> "done.state.s0"
         is Test372Event.Error.Execution -> "error.execution"
         is Test372Event.Timeout -> "timeout"
-        // Kotlin `when` expression exhaustiveness: a child machine that
-        // inherits the override (has_parent_communication path) but
-        // declares no events of its own produces an empty sealed
-        // hierarchy, and `when (event)` without `else` fails to compile.
-        // The branch is redundant on non-empty hierarchies but harmless.
-        else -> null
     }
 
 

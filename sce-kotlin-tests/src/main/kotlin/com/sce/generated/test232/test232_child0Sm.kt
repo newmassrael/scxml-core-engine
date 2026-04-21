@@ -68,12 +68,6 @@ class Test232Child0StateMachine(
         is Test232Child0Event.ChildToParent1 -> "childToParent1"
         is Test232Child0Event.ChildToParent2 -> "childToParent2"
         is Test232Child0Event.Error.Execution -> "error.execution"
-        // Kotlin `when` expression exhaustiveness: a child machine that
-        // inherits the override (has_parent_communication path) but
-        // declares no events of its own produces an empty sealed
-        // hierarchy, and `when (event)` without `else` fails to compile.
-        // The branch is redundant on non-empty hierarchies but harmless.
-        else -> null
     }
 
 
