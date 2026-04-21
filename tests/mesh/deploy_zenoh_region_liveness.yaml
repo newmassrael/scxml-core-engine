@@ -1,0 +1,62 @@
+# SCE Mesh §16.4 / §16.7 row 13 region-partition liveness E2E fixture.
+#
+# Opt-in `liveliness:` block on brake drives generation of the Zenoh
+# liveliness machinery. The `partitions:` block splits brake's two
+# <parallel> regions across `brake_left_part` + `brake_right_part`;
+# when codegen runs with `--partition brake_left_part`, the router
+# emits BOTH the machine-level token (`sce/live/brake_region_liveness`)
+# AND the partition-level token
+# (`sce/live/brake_region_liveness/brake_left_part`). The subscriber
+# observes `sce/live/**` and disambiguates 2-segment vs 3-segment
+# keys to raise PEER_PARTITIONED (row 8) vs REGION_PARTITIONED (row
+# 13) respectively.
+#
+# Port 17456 is distinct from 17447-17455 (used by existing zenoh
+# runtime fixtures) so liveliness state from the machine-identity
+# row 8 fixture (17448) cannot leak into this region-partition
+# observer. ctest RESOURCE_LOCK serializes the test on its own lock.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      zenoh:
+        config: zenoh_region_liveness_session.json5
+        mode: peer
+        connect: ["tcp/127.0.0.1:17456"]
+    machines:
+      brake_region_liveness:
+        source: brake_region_liveness.scxml
+        bindings:
+          "#peer":
+            transport: zenoh
+            key: "sce/brake_region_liveness/peer/ping"
+        liveliness:
+          lease_ms: 200
+  ecu_peer:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/127.0.0.1:17456"]
+    machines:
+      peer:
+        source: peer_region_liveness.scxml
+
+partitions:
+  brake_left_part:
+    machines: [brake_region_liveness]
+    contains:
+      parallel_regions:
+        - { machine: brake_region_liveness, region: left }
+    # §14 rule 12: exactly one claimant per distributed <parallel>.
+    # The test never walks the completion barrier (it drives liveliness
+    # directly), so `barrier_timeout_ms:` is deliberately absent — W3C
+    # normative infinity keeps the barrier silent and the reason code
+    # under observation is row 13 REGION_PARTITIONED, not row 6
+    # PARALLEL_BARRIER_TIMEOUT.
+    hosts_parallel_roots:
+      - { machine: brake_region_liveness, parallel: root }
+  brake_right_part:
+    machines: [brake_region_liveness]
+    contains:
+      parallel_regions:
+        - { machine: brake_region_liveness, region: right }

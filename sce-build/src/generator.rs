@@ -159,6 +159,48 @@ fn reject_barrier_timeout_without_handler(
     )))
 }
 
+// ── §16.4 region-partition liveness observability gate ───────────
+//
+// Symmetric to `reject_barrier_timeout_without_handler` for the
+// §16.7 row 13 `REGION_PARTITIONED` raise path. Deploy.yaml
+// `liveliness:` under a partitioned machine means the author wants
+// to **observe** a sibling partition's liveliness drop as
+// `error.communication` (reason `REGION_PARTITIONED`); without a
+// transition matching that event, the raise sinks into the default
+// microstep path and is silently discarded (`feedback_silently_broken_hooks`).
+//
+// Asymmetry disclosure: the machine-identity row 8 `PEER_PARTITIONED`
+// raise (declared by `liveliness:` on a non-partitioned machine) is
+// currently un-gated — fixtures predating this memo rely on a
+// harness-observing sender and carry no in-SCXML handler. Row 13
+// introduces the gate at its own landing so partitioned authors
+// receive the silent-broken defense from day 0; retroactively lifting
+// row 8 to match is a separate atomic change because it invalidates
+// the existing `brake_zenoh_liveliness` fixture shape.
+fn reject_region_liveliness_without_handler(
+    model: &SCXMLModel,
+) -> Result<(), GenerateError> {
+    if !model.partition_region_liveliness_opt_in {
+        return Ok(());
+    }
+    if model.events.contains("error.communication") {
+        return Ok(());
+    }
+    Err(GenerateError::UnsupportedFeature(format!(
+        "machine '{}' declares `liveliness:` under a partitioned deploy \
+         but the SCXML has no transition for event `error.communication`. \
+         SCE_MESH.md §16.4 / §16.7 row 13 raise `error.communication` \
+         (reason REGION_PARTITIONED) when a sibling partition's Zenoh \
+         liveliness token drops — without a transition the raise is \
+         silently discarded and the signal has no observable effect. \
+         Add a `<transition event=\"error.communication\">` handler \
+         (optionally guarded on `_event.data.reason == \
+         'REGION_PARTITIONED'`) or drop `liveliness:` from the machine \
+         declaration.",
+        model.name
+    )))
+}
+
 // ── Rust generator ───────────────────────────────────────────────
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
@@ -243,6 +285,7 @@ fn render_cpp(
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_barrier_timeout_without_handler(model)?;
+    reject_region_liveliness_without_handler(model)?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.

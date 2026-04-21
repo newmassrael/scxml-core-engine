@@ -740,6 +740,28 @@ pub struct SCXMLModel {
     /// build.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub partition_barrier_timeouts: std::collections::BTreeMap<String, u32>,
+
+    /// SCE_MESH.md §16.4 region-partition liveness opt-in. `true` when
+    /// the current codegen is building a partition binary (i.e.
+    /// [`Self::partition_self_name`] is `Some(_)`) **and** the deploy
+    /// declares `liveliness:` on the same machine. The combination is
+    /// what drives the generated Zenoh router to emit a second token
+    /// under `sce/live/<machine>/<partition>` and to raise
+    /// `error.communication` with reason `REGION_PARTITIONED` (§16.7
+    /// row 13) on DELETE of a sibling partition's token.
+    ///
+    /// Populated by [`crate::inject_partition_context_for`]; the
+    /// generator-side gate
+    /// [`crate::generator::reject_region_liveliness_without_handler`]
+    /// enforces the `feedback_silently_broken_hooks` contract — a
+    /// partitioned liveliness emitter with no in-SCXML handler for
+    /// `error.communication` is rejected at codegen.
+    ///
+    /// `false` in every non-partitioned build and in every partition
+    /// build whose machine declares no `liveliness:` section; neither
+    /// shape emits row 13 code or engages the gate.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub partition_region_liveliness_opt_in: bool,
 }
 
 /// SCE_MESH.md §14 rule 12 — partition's role for a specific

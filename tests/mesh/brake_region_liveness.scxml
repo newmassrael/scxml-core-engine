@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §16.4 / §16.7 row 13 (REGION_PARTITIONED) E2E fixture.
+     Intra-machine split across two partitions (brake_left_part +
+     brake_right_part); this binary compiles for brake_left_part and
+     observes brake_right_part's liveliness under the
+     `sce/live/brake_region_liveness/brake_right_part` key.
+
+     The `<parallel>` / two-region shape is load-bearing: it is what
+     makes the machine partitionable (§16.3 R1-R4 clean — no shared
+     <data>, no cross-region transitions, no <script>). Regions are
+     otherwise inert — the test drives liveliness directly through
+     zenoh and never walks brake's own state graph.
+
+     `<send target="#peer">` forces `"zenoh" in transport_types` so
+     the generated router emits the Zenoh session + liveliness token
+     + subscriber pair. The send is never actually exercised in the
+     test.
+
+     `<transition event="error.communication">` is required by
+     `reject_region_liveliness_without_handler`: a partitioned
+     machine declaring `liveliness:` without an observable handler
+     is silently broken (`feedback_silently_broken_hooks`). The
+     handler routes to a dedicated `<final id="partition_loss">`
+     so authoring-visible E2E observation is possible even when the
+     test does not walk it. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_region_liveness" initial="root">
+    <parallel id="root">
+        <state id="left" initial="left_idle">
+            <state id="left_idle">
+                <onentry>
+                    <send target="#peer" event="event.ping"/>
+                </onentry>
+            </state>
+        </state>
+        <state id="right" initial="right_idle">
+            <state id="right_idle"/>
+        </state>
+        <transition event="error.communication" target="partition_loss"/>
+    </parallel>
+    <final id="partition_loss"/>
+</scxml>

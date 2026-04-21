@@ -15,12 +15,14 @@
 // Field set covers the baseline (errorName, reason, detail, source,
 // envelope_id), the §16.7 row-8 `PEER_PARTITIONED` extras
 // (target / last_seen_ms_ago), the §16.7 row-12 `ORDERING_GAP`
-// extras (lost_seq_lo / lost_seq_hi), and the §16.7 row-6
+// extras (lost_seq_lo / lost_seq_hi), the §16.7 row-6
 // `PARALLEL_BARRIER_TIMEOUT` extras (parallel_id / missing_regions /
-// timeout_ms). Other §16.7 rows add their own extras (transport,
-// invoke_id, etc.) — those grow here when a raise site needs them.
-// Each raise site populates only the extras named in its row of the
-// catalog; the remainder stay empty and are skipped on render.
+// timeout_ms), and the §16.7 row-13 `REGION_PARTITIONED` extras
+// (machine / partition, reusing last_seen_ms_ago). Other §16.7 rows
+// add their own extras (transport, invoke_id, etc.) — those grow here
+// when a raise site needs them. Each raise site populates only the
+// extras named in its row of the catalog; the remainder stay empty
+// and are skipped on render.
 //
 // Design notes:
 //   * Pure header; the canonical JSON render uses
@@ -128,6 +130,22 @@ struct CommunicationError {
     /// shape §14 accepts at parse time.
     std::optional<std::uint64_t> timeout_ms;
 
+    /// §16.7 row 13 (REGION_PARTITIONED): deploy.yaml machine name of
+    /// the peer whose **partition** liveliness token transitioned to
+    /// DELETE. Orthogonal to `target` (row 8) — row 13 is a machine +
+    /// partition pair, row 8 is a machine identity. Authors branch on
+    /// `_event.data.reason == 'REGION_PARTITIONED' &&
+    ///  _event.data.machine == 'motor' &&
+    ///  _event.data.partition == 'motor_right'` to react to a specific
+    /// region going down within a sibling machine.
+    std::optional<std::string> machine;
+
+    /// §16.7 row 13 (REGION_PARTITIONED): deploy.yaml partition name
+    /// under the machine named in `machine`. Populated together with
+    /// `machine` by the per-partition liveliness subscriber when it
+    /// observes a DELETE on `sce/live/<machine>/<partition>`.
+    std::optional<std::string> partition;
+
     /// Render to canonical JSON bytes for `MeshEnvelope::data`.
     ///
     /// Uses `nlohmann::ordered_json` so the wire field order matches
@@ -176,6 +194,12 @@ struct CommunicationError {
         }
         if (timeout_ms) {
             j["timeout_ms"] = *timeout_ms;
+        }
+        if (machine) {
+            j["machine"] = *machine;
+        }
+        if (partition) {
+            j["partition"] = *partition;
         }
         const std::string out = j.dump();
         return std::vector<std::uint8_t>(out.begin(), out.end());

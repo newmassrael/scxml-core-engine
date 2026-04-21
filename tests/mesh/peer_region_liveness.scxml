@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §16.4 region-liveness E2E fixture — receiver stub.
+     Exists only so event coverage sees a receiver for brake's
+     `event.ping` <send>. The test never compiles this machine's
+     transport.h; the sibling partition is simulated inside the test
+     by a raw zenoh peer declaring a liveliness token under
+     `sce/live/brake_region_liveness/brake_right_part`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="peer_region_liveness" initial="idle">
+    <state id="idle">
+        <transition event="event.ping" target="idle"/>
+    </state>
+</scxml>

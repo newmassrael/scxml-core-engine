@@ -796,6 +796,30 @@ struct TransportRouter {
     std::optional<zenoh::Subscriber<void>> liveliness_subscriber_;
     std::mutex liveliness_mutex_;
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> peer_last_seen_;
+{% if partition_wire21_self %}
+    // SCE Mesh §16.4 / §16.7 row 13 (REGION_PARTITIONED). Per-partition
+    // liveliness token coexisting on the same subscriber as the
+    // machine-level token above. Emitted only when this binary
+    // represents a partition of a machine that declared
+    // `liveliness:` — the emission gate reuses
+    // `partition_wire21_self`, already truthy only when codegen
+    // ran with `--partition <name>`, so there is a single source
+    // of truth for "which partition am I".
+    //
+    // Key naming: `sce/live/<machine>/<partition>`, the keyspace
+    // pinned by SCE_MESH.md §16.4. Machine-level 2-segment tokens
+    // (row 8) and partition-level 3-segment tokens (row 13) flow
+    // through the same `sce/live/**` subscriber; the callback
+    // disambiguates on segment count, so the two axes stay
+    // orthogonal as §16.4 requires.
+    //
+    // `peer_partition_last_seen_` keys on "<machine>/<partition>"
+    // so a sibling machine's partitions and our own machine's
+    // partitions share the same last-seen map without key
+    // collision with row 8's machine-only entries.
+    std::optional<zenoh::LivelinessToken> region_liveliness_token_;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> peer_partition_last_seen_;
+{% endif %}
 {% endif %}
 {% if has_zenoh_mesh_rpc %}
     // SCE Mesh gap Z3: suppress mesh-rpc early-cancel raises during
@@ -1733,6 +1757,16 @@ struct TransportRouter {
         try {
             liveliness_token_.emplace(zenoh_session_->liveliness_declare_token(
                 zenoh::KeyExpr("sce/live/{{ machine_name }}")));
+{% if partition_wire21_self %}
+            // SCE Mesh §16.4 row 13: partition-level token co-declared
+            // with the machine token above. A sibling partition's
+            // subscriber on `sce/live/**` sees both tokens' PUTs and
+            // the DELETE of whichever one undeclares first. The 3-
+            // segment key is how §16.4 pinned the orthogonal axis;
+            // the callback below disambiguates on segment count.
+            region_liveliness_token_.emplace(zenoh_session_->liveliness_declare_token(
+                zenoh::KeyExpr("sce/live/{{ machine_name }}/{{ partition_wire21_self }}")));
+{% endif %}
             // `history = true`: receive PUT samples for tokens already
             // declared when this subscriber comes up, so late-joining
             // observers still get a `peer_last_seen_` anchor for
@@ -1746,16 +1780,45 @@ struct TransportRouter {
                 zenoh::KeyExpr("sce/live/**"),
                 [this](const zenoh::Sample& sample) {
                     auto key = std::string(sample.get_keyexpr().as_string_view());
-                    // Reserved namespace is `sce/live/<peer>` — skip
-                    // malformed samples and self-samples.
+                    // Reserved namespace is `sce/live/<peer>` (row 8)
+                    // or `sce/live/<peer_machine>/<peer_partition>`
+                    // (row 13). Skip malformed and self-samples.
                     constexpr std::string_view kPrefix = "sce/live/";
                     if (key.compare(0, kPrefix.size(), kPrefix) != 0) return;
                     if (key == "sce/live/{{ machine_name }}") return;
-                    std::string peer = key.substr(kPrefix.size());
+{% if partition_wire21_self %}
+                    if (key == "sce/live/{{ machine_name }}/{{ partition_wire21_self }}") return;
+{% endif %}
+                    std::string remainder = key.substr(kPrefix.size());
+
+{% if partition_wire21_self %}
+                    // §16.4 segment-count discrimination. 2-segment
+                    // (no internal '/') → machine-identity axis,
+                    // row 8 PEER_PARTITIONED. 3-segment (exactly one
+                    // '/') → region-partition axis, row 13
+                    // REGION_PARTITIONED. A 4+-segment key is
+                    // malformed per §16.4 and dropped. Branch only
+                    // emitted for partitioned binaries — row 8-only
+                    // machines keep the original single-branch shape
+                    // so they never touch `peer_partition_last_seen_`.
+                    const auto slash_pos = remainder.find('/');
+                    const bool is_region_level = (slash_pos != std::string::npos);
+                    if (is_region_level) {
+                        if (remainder.find('/', slash_pos + 1) != std::string::npos) {
+                            // Spec-illegal 4+-segment key — drop.
+                            return;
+                        }
+                    }
 
                     if (sample.get_kind() == ::Z_SAMPLE_KIND_PUT) {
                         std::lock_guard<std::mutex> lk(liveliness_mutex_);
-                        peer_last_seen_[peer] = std::chrono::steady_clock::now();
+                        if (is_region_level) {
+                            peer_partition_last_seen_[remainder] =
+                                std::chrono::steady_clock::now();
+                        } else {
+                            peer_last_seen_[remainder] =
+                                std::chrono::steady_clock::now();
+                        }
                         return;
                     }
 
@@ -1767,7 +1830,63 @@ struct TransportRouter {
                     std::optional<std::int64_t> last_seen_ms_ago;
                     {
                         std::lock_guard<std::mutex> lk(liveliness_mutex_);
-                        auto it = peer_last_seen_.find(peer);
+                        if (is_region_level) {
+                            auto it = peer_partition_last_seen_.find(remainder);
+                            if (it != peer_partition_last_seen_.end()) {
+                                const auto delta =
+                                    std::chrono::steady_clock::now() - it->second;
+                                last_seen_ms_ago =
+                                    std::chrono::duration_cast<std::chrono::milliseconds>(delta).count();
+                                peer_partition_last_seen_.erase(it);
+                            }
+                        } else {
+                            auto it = peer_last_seen_.find(remainder);
+                            if (it != peer_last_seen_.end()) {
+                                const auto delta =
+                                    std::chrono::steady_clock::now() - it->second;
+                                last_seen_ms_ago =
+                                    std::chrono::duration_cast<std::chrono::milliseconds>(delta).count();
+                                peer_last_seen_.erase(it);
+                            }
+                        }
+                    }
+                    SCE::Mesh::CommunicationError err;
+                    if (is_region_level) {
+                        // `remainder` is "<machine>/<partition>"; split
+                        // on the single internal '/' identified above.
+                        err.reason = "REGION_PARTITIONED";
+                        err.machine = remainder.substr(0, slash_pos);
+                        err.partition = remainder.substr(slash_pos + 1);
+                    } else {
+                        err.reason = "PEER_PARTITIONED";
+                        err.target = std::move(remainder);
+                    }
+                    if (last_seen_ms_ago) {
+                        err.last_seen_ms_ago = *last_seen_ms_ago;
+                    }
+                    raiseCommunicationError(std::move(err));
+{% else %}
+                    // Non-partitioned machines only emit row 8. A
+                    // 3-segment sample here would be a rogue token
+                    // from a partitioned peer we cannot describe
+                    // without the row-13 vocabulary; drop silently
+                    // so the PEER_PARTITIONED contract is honoured
+                    // for 2-segment keys alone.
+                    if (remainder.find('/') != std::string::npos) return;
+
+                    if (sample.get_kind() == ::Z_SAMPLE_KIND_PUT) {
+                        std::lock_guard<std::mutex> lk(liveliness_mutex_);
+                        peer_last_seen_[remainder] = std::chrono::steady_clock::now();
+                        return;
+                    }
+
+                    // DELETE: row 8 PEER_PARTITIONED. Capture last_seen
+                    // under lock, release, raise outside the mutex —
+                    // same mutex-hygiene rule as the row-13 branch.
+                    std::optional<std::int64_t> last_seen_ms_ago;
+                    {
+                        std::lock_guard<std::mutex> lk(liveliness_mutex_);
+                        auto it = peer_last_seen_.find(remainder);
                         if (it != peer_last_seen_.end()) {
                             const auto delta = std::chrono::steady_clock::now() - it->second;
                             last_seen_ms_ago =
@@ -1777,11 +1896,12 @@ struct TransportRouter {
                     }
                     SCE::Mesh::CommunicationError err;
                     err.reason = "PEER_PARTITIONED";
-                    err.target = std::move(peer);
+                    err.target = std::move(remainder);
                     if (last_seen_ms_ago) {
                         err.last_seen_ms_ago = *last_seen_ms_ago;
                     }
                     raiseCommunicationError(std::move(err));
+{% endif %}
                 },
                 // Liveliness subscriber on_drop: zenoh invokes this once
                 // when the Subscriber handle is destroyed (shutdown() or
@@ -2177,8 +2297,15 @@ struct TransportRouter {
         // session so the subscriber's ~Subscriber doesn't race the
         // session teardown, and the token's ~LivelinessToken emits its
         // final DELETE sample to the network. Reverse of init order —
-        // subscriber first, then token.
+        // subscriber first, then tokens.
         liveliness_subscriber_.reset();
+{% if partition_wire21_self %}
+        // §16.4 row 13: drop the partition token before the machine
+        // token so a peer observing our teardown sees the region
+        // DELETE before the machine DELETE — matches the declaration
+        // order (machine token emplaced first, region token second).
+        region_liveliness_token_.reset();
+{% endif %}
         liveliness_token_.reset();
 {% endif %}
         // Drop subscriber handles before closing session (RAII order matters:

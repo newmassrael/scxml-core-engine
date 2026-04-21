@@ -1,0 +1,17 @@
+// SCE Mesh §16.4 region-partition liveness E2E zenoh session config.
+//
+// `scouting/multicast/enabled: false` isolates this test from any
+// other zenoh peers on the same host — matches
+// `ZenohTestUtils::open_peer`. Without this, zenoh's UDP multicast
+// scouting discovers every other live zenoh session regardless of
+// TCP port choice, so a DELETE sample from e.g.
+// `mesh_zenoh_liveliness_verification` (port 17448) leaks into this
+// observer (port 17456) and surfaces as a stray PEER_PARTITIONED
+// raise before the test's own drop.
+{
+  scouting: {
+    multicast: {
+      enabled: false,
+    },
+  },
+}

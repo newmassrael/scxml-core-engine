@@ -3342,6 +3342,98 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
             RESOURCE_LOCK zenoh_liveliness_port_17448
         )
 
+        # ── §16.4 / §16.7 row 13 region-partition liveness E2E ───────
+        # Session json5 that disables zenoh's UDP-multicast scouting.
+        # Without it, the generated brake session discovers every other
+        # zenoh peer running on the host regardless of TCP port choice
+        # (zenoh's scouting is out-of-band and port-agnostic) — a
+        # DELETE sample from e.g. mesh_zenoh_liveliness_verification
+        # (port 17448) would leak into this observer and surface as a
+        # stray PEER_PARTITIONED raise before the test's own drop.
+        # Mirrors the isolation strategy used by the Z3 on_drop fixture.
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/mesh/zenoh_region_liveness_session.json5"
+            "${CMAKE_CURRENT_BINARY_DIR}/zenoh_region_liveness_session.json5"
+            COPYONLY
+        )
+
+        # Orthogonal counterpart to mesh_zenoh_liveliness_verification.
+        # brake_region_liveness is a two-region <parallel> machine
+        # split across `brake_left_part` / `brake_right_part`; this
+        # target compiles brake with `--partition brake_left_part`
+        # so the generated router emits both the machine-level token
+        # `sce/live/brake_region_liveness` and the partition-level
+        # token `sce/live/brake_region_liveness/brake_left_part`.
+        # A raw zenoh peer in the test declares the sibling partition
+        # token (`.../brake_right_part`) and drops it, exercising the
+        # row-13 REGION_PARTITIONED raise path. Port 17456 is
+        # distinct from 17447-17455 used by the other zenoh runtime
+        # fixtures; RESOURCE_LOCK isolates.
+        set(MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_region_liveness_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_region_liveness.scxml"
+                    -l cpp -o "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
+                    --partition brake_left_part
+                    --write-deps "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/brake_region_liveness.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
+                    "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h.d"
+            COMMENT "Mesh zenoh region liveness: Generating brake_region_liveness_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_region_liveness.scxml"
+                    -l cpp -o "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
+                    --partition brake_left_part
+                    --write-deps "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_transport.h.d"
+            DEPENDS "${MESH_TEST_DIR}/brake_region_liveness.scxml"
+                    "${MESH_TEST_DIR}/peer_region_liveness.scxml"
+                    "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h"
+            DEPFILE "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_transport.h.d"
+            COMMENT "Mesh zenoh region liveness: Generating brake_region_liveness_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_region_liveness_test
+            mesh/test_mesh_region_liveness_zenoh.cpp
+            "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h"
+            "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_region_liveness_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_region_liveness_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_region_liveness_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_region_liveness_test)
+        add_test(NAME mesh_zenoh_region_liveness_verification
+                 COMMAND mesh_zenoh_region_liveness_test)
+        set_tests_properties(mesh_zenoh_region_liveness_verification PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_region_liveness_port_17456
+        )
+
         # ── Gap Z3: Zenoh session.get on_drop early-cancel E2E ────────
         # Verifies the generated router translates zenoh's query-drop
         # signal into `error.invoke.<id>` on a mesh-rpc invoke whose
