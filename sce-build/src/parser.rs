@@ -29,7 +29,13 @@ use std::sync::LazyLock;
 /// `berserk`, `game`, `weapon` — none of which collide. Extend this
 /// list only when a concrete new alias is added to the template and
 /// the collision can be demonstrated, never speculatively.
-const RESERVED_CONTEXT_IDS: &[&str] = &["policy"];
+///
+/// Exposed `pub` so the integration-test drift guard
+/// (`cpp_reserved_ids_cover_all_sm_class_type_aliases` in
+/// `sce-build/tests/forge_conformance.rs`) can cross-check the
+/// rendered template output against this list. The list is canonical
+/// SOT; the `pub` is a deliberate API surface, not a leak.
+pub const RESERVED_CONTEXT_IDS: &[&str] = &["policy"];
 
 pub struct SCXMLParser {
     document_order_counter: u32,

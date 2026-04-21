@@ -1211,6 +1211,48 @@ fn cpp_context_typedef_single_duck_typed() {
 }
 
 #[test]
+fn cpp_reserved_ids_cover_all_sm_class_type_aliases() {
+    // Drift guard: the C++ codegen emits `using {Id}Type = ...` aliases
+    // on the generated SM class. Any such alias whose identifier is NOT
+    // derived from a `<sce:context id="...">` declaration originates
+    // from the template itself and must have its lowercased form listed
+    // in `parser::RESERVED_CONTEXT_IDS`, so user-supplied SCXML cannot
+    // declare a colliding context id that reaches the C++ compiler with
+    // a duplicate typedef.
+    //
+    // Rendering a context-less fixture pins "all matches come from the
+    // template". If this test fails, a new `using XxxType` alias was
+    // added to `state_machine.jinja2` without updating the reserved
+    // list. Either add the lowercased prefix to `RESERVED_CONTEXT_IDS`
+    // in `sce-build/src/parser.rs` (and to the enumeration in
+    // `docs/SCE_ACCEPTED_SUBSET.md` §2.3), or rename the alias to a
+    // non-`{Id}Type` pattern (see `EventWithMetadata` for prior art).
+    let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                    version="1.0" name="fixture" initial="s1">
+        <state id="s1"/>
+    </scxml>"#;
+    let header = compile_scxml_for_test(scxml);
+
+    let re = regex::Regex::new(r"using\s+([A-Z][A-Za-z0-9_]*)Type\s*=").unwrap();
+    let mut missing: Vec<String> = Vec::new();
+    for cap in re.captures_iter(&header) {
+        let prefix = &cap[1];
+        let lowered = prefix.to_ascii_lowercase();
+        if !sce_build::parser::RESERVED_CONTEXT_IDS.contains(&lowered.as_str()) {
+            missing.push(format!("`using {prefix}Type` → add {lowered:?} to RESERVED_CONTEXT_IDS"));
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "Template emits class-level typedef(s) absent from RESERVED_CONTEXT_IDS:\n  {}\n\
+         Update `RESERVED_CONTEXT_IDS` in sce-build/src/parser.rs and the enumeration in \
+         docs/SCE_ACCEPTED_SUBSET.md §2.3, or rename the alias away from the `{{Id}}Type` \
+         pattern.",
+        missing.join("\n  "),
+    );
+}
+
+#[test]
 fn cpp_context_typedef_multi_mixed() {
     // Two contexts, one concrete + one duck-typed. Verifies the
     // per-id rule scales uniformly — no special cases for 1 vs N.
