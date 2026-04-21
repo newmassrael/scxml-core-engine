@@ -7,15 +7,19 @@
 // for future Stream patterns — wire-layer optimizations on EventSubscribe /
 // EventNotification that pair an initial state snapshot with delta-encoded
 // change events (SCE_MESH.md §8.1). 14-20 cover the full remote invoke
-// lifecycle (§9.6.2, Session F); wire 14 (`InvokeStart`) and wire 20
-// (`InvokeError`) are active and carry the first Session F round's
-// `SESSION_F_NOT_IMPLEMENTED` round-trip (§9.6 line 1396), while 15-19
-// stay deferred so their envelopes parse as "unknown pattern" and drop
-// until each wire's consumer lands. 21 is `ParallelRegionDone` — the
-// distributed parallel-final barrier envelope (§16.5) whose consumer is
-// the `ParallelCompletionTracker` on the root partition. Adding a variant
-// requires a new wire value — never reuse. Serialized into MeshEnvelope
-// key 3 as CBOR uint16.
+// lifecycle (§9.6.2, Session F) — all seven wires are active and carry
+// the parent/child session lifecycle: wire 14 `InvokeStart` (P→C) starts
+// a child session, wire 15 `InvokeStarted` (C→P) stashes the child's
+// session endpoint, wire 16 `ChildEvent` (C→P) carries child→parent
+// events, wire 17 `ParentEvent` (P→C) carries parent→child autoforwarded
+// events, wire 18 `InvokeDone` (C→P) signals child final-state completion
+// with donedata, wire 19 `InvokeCancel` (P→C) terminates the child
+// session, and wire 20 `InvokeError` (bidirectional) reports instantiation
+// or transport-unavailable failures (SCE_MESH.md §9.6 L1396). 21 is
+// `ParallelRegionDone` — the distributed parallel-final barrier envelope
+// (§16.5) whose consumer is the `ParallelCompletionTracker` on the root
+// partition. Adding a variant requires a new wire value — never reuse.
+// Serialized into MeshEnvelope key 3 as CBOR uint16.
 
 #pragma once
 
@@ -34,12 +38,15 @@ enum class PatternKind : uint16_t {
     FieldWrite         = 8,
     FieldNotify        = 9,
     // 10-13 RESERVED for Stream* variants (snapshot + delta wire-layer optimization, SCE_MESH.md §8.1). Do not assign.
-    // SCE_MESH.md §9.6.2 — full remote invoke lifecycle (Session F). Wire 14
-    // (InvokeStart, Parent→Child) and wire 20 (InvokeError, bidirectional)
-    // are the first Session F pair; 15-19 stay deferred (envelopes parse as
-    // "unknown pattern" and drop) until each intermediate wire's consumer
-    // lands in a subsequent Session F round.
+    // SCE_MESH.md §9.6.2 — full remote invoke lifecycle (Session F). All
+    // seven wires (14-20) are active; each carries one edge of the W3C
+    // §6.4 parent/child session lifecycle over same-device shm.
     InvokeStart        = 14,
+    InvokeStarted      = 15,
+    ChildEvent         = 16,
+    ParentEvent        = 17,
+    InvokeDone         = 18,
+    InvokeCancel       = 19,
     InvokeError        = 20,
     ParallelRegionDone = 21,  // SCE_MESH.md §16.5 — distributed parallel-final barrier envelope.
 };
@@ -57,6 +64,11 @@ static_assert(static_cast<uint16_t>(PatternKind::FieldRead)          == 7,  "Pat
 static_assert(static_cast<uint16_t>(PatternKind::FieldWrite)         == 8,  "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::FieldNotify)        == 9,  "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::InvokeStart)        == 14, "PatternKind wire value changed");
+static_assert(static_cast<uint16_t>(PatternKind::InvokeStarted)      == 15, "PatternKind wire value changed");
+static_assert(static_cast<uint16_t>(PatternKind::ChildEvent)         == 16, "PatternKind wire value changed");
+static_assert(static_cast<uint16_t>(PatternKind::ParentEvent)        == 17, "PatternKind wire value changed");
+static_assert(static_cast<uint16_t>(PatternKind::InvokeDone)         == 18, "PatternKind wire value changed");
+static_assert(static_cast<uint16_t>(PatternKind::InvokeCancel)       == 19, "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::InvokeError)        == 20, "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::ParallelRegionDone) == 21, "PatternKind wire value changed");
 

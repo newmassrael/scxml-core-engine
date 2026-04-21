@@ -118,38 +118,59 @@
 {% if state.invokes | scxml_remote %}
                 // ============================================================
                 // SCE_MESH.md §9.6 — remote <invoke type="scxml" src="#peer">
-                // §9.6 line 1396 round-trip: when the parent has a configured
-                // mesh transport to the peer's device, `performScxmlInvokeStart`
-                // emits the wire-14 `InvokeStart` envelope and the child's
-                // transport answers with wire-20 `InvokeError` carrying
-                // SESSION_F_NOT_IMPLEMENTED; MeshDispatch translates that
-                // reply into an `error.execution` raise on the parent engine.
-                // Transport-absent deployments (no matching peer binding)
-                // take the local-raise path below with the same reason text
-                // and event name, so either path satisfies the §9.6 line 1396
-                // contract and the SCXML-level `<transition event="error.execution">`
-                // handler observes both deployment shapes identically.
+                // Emits wire-14 `InvokeStart`; the child's worker host
+                // answers with wire-15 `InvokeStarted` (→ onInvokeStarted
+                // stashes the session URI), events during the child's life
+                // arrive as wire-16 `ChildEvent` (→ raiseExternal with
+                // `_event.origin = child_session_id` per §9.6.3), and final
+                // completion returns via wire-18 `InvokeDone` (→ onInvokeDone
+                // raises `done.invoke.<id>`). Transport-absent deployments
+                // (no matching peer binding in deploy.yaml) fall through to
+                // the local raise path — `error.execution` with the
+                // §10.7.1 `SESSION_F_TRANSPORT_UNAVAILABLE` reason so the
+                // SCXML-level `<transition event="error.execution">` handler
+                // observes the degraded path identically to the A0 scaffold.
                 // ============================================================
 {% for invoke_info in state.invokes | scxml_remote %}
                 {
-                    // W3C SCXML 3.12.1: invoke id format `stateid.platformid.index`.
-                    std::string _scxml_remote_invoke_id_{{ invoke_info.invoke_id }} =
-                        "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
-                    // Payload is currently empty — wires 15-19 populate the
-                    // §9.6.2 inner CBOR `{src, params, content, namelist,
-                    // autoforward}` once each wire's consumer lands.
+                    {% if invoke_info.idlocation %}
+                    // W3C SCXML 6.4.1: idlocation — expose the static invoke
+                    // id to the parent datamodel so transitions can match on it.
+                    {
+                        ensureScriptEngine();
+                        auto& scriptEngine = getScriptEngine();
+                        scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", std::string("{{ invoke_info.invoke_id }}")).get();
+                    }
+                    {% endif %}
+                    // SCE_MESH.md §9.6.2 inner payload. Currently empty —
+                    // `<param>` / `<content>` / `<namelist>` serialization
+                    // into a CBOR map is a parallel landing shared with the
+                    // local-invoke path once a consumer lands.
                     std::string _scxml_remote_data_{{ invoke_info.invoke_id }};
-                    if (!engine.performScxmlInvokeStart(
+                    if (engine.performScxmlInvokeStart(
                             "{{ invoke_info.remote_mesh_target }}",
-                            _scxml_remote_invoke_id_{{ invoke_info.invoke_id }},
+                            "{{ invoke_info.invoke_id }}",
                             _scxml_remote_data_{{ invoke_info.invoke_id }})) {
-                        // Transport-absent deployment (no wire-14 callback
-                        // installed on this engine) — raise locally with the
-                        // canonical reason text so authors see the same
-                        // error.execution shape as the wire-20 path.
+                        // Transport accepted wire-14 — register activeInvokes_
+                        // entry so finalize / autoforward / cancel match the
+                        // child's events via the same sessionId the local
+                        // path uses. `sessionId` is filled by onInvokeStarted
+                        // when wire-15 arrives (§9.6.3 L1463).
+                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                            "",  // filled on wire-15 InvokeStarted
+                            "{{ invoke_info.invoke_id }}",
+                            sessionId_.has_value() ? sessionId_.value() : "",
+                            {{ 'true' if invoke_info.autoforward else 'false' }},
+                            "{{ invoke_info.finalize_content | replace('"', '\"') }}"
+                        };
+                        pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
+                    } else {
+                        // Transport-absent deployment — raise locally with
+                        // the canonical reason text so authors observe the
+                        // same `error.execution` shape as the wire-20 path.
                         engine.raise(typename Engine::EventWithMetadata(
                             Event::Error_execution,
-                            "scxml invoke '{{ invoke_info.invoke_id }}' to '#{{ invoke_info.remote_mesh_target }}': SESSION_F_NOT_IMPLEMENTED per SCE_MESH.md §9.6/§10.7.1 — remote <invoke type=\"scxml\"> runtime (wire patterns 14-20) is not yet implemented"));
+                            "scxml invoke '{{ invoke_info.invoke_id }}' to '#{{ invoke_info.remote_mesh_target }}': SESSION_F_TRANSPORT_UNAVAILABLE per SCE_MESH.md §9.6/§10.7.1 — no mesh transport binding to peer device"));
                     }
                 }
 {% endfor %}
@@ -620,10 +641,10 @@
 {% if model.has_exit_actions %}
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc %}
+{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | scxml_remote %}
         case State::{{ state_id | capitalize }}:
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
-{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc %}
+{% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | scxml_remote %}
                 {
 {% if state.invokes | scxml or state.invokes | hybrid %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (ARCHITECTURE.md Zero Duplication)
@@ -650,6 +671,23 @@
                 }
                 activeInvokes_.erase("{{ invoke_info.invoke_id }}");
 {% endfor %}
+{% endif %}
+{% if state.invokes | scxml_remote %}
+                // SCE_MESH.md §9.6.2 wire 19 — notify remote child session(s)
+                // that the parent is leaving the invoking state (W3C §6.4.5).
+                // `pendingDoneInvoke_..._` suppresses the cancel when the
+                // child has already signalled `done.invoke` (wire-18 arrived
+                // earlier this macrostep) — the session is gone on the
+                // worker side, sending a cancel would be a benign no-op but
+                // the transport send is skipped for cleanliness.
+                {% for invoke_info in state.invokes | scxml_remote %}
+                if (activeInvokes_.find("{{ invoke_info.invoke_id }}") != activeInvokes_.end() && !pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
+                    (void)engine.performScxmlInvokeCancel(
+                        "{{ invoke_info.remote_mesh_target }}",
+                        "{{ invoke_info.invoke_id }}");
+                }
+                activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+                {% endfor %}
 {% endif %}
 {% if state.invokes | mesh_rpc %}
                 // SCE_MESH.md §9.5: cancel pending mesh-rpc invokes on exit.

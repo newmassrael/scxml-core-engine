@@ -48,6 +48,10 @@ struct MockEngine {
         Event event{Event::dummy};
         std::string data;
         std::string invokeId;
+        std::string type;
+        std::string originType;
+        std::string origin;
+        std::string sendId;
     };
 
     Policy policy_;

@@ -85,6 +85,8 @@ CborError encodeBody(CborEncoder *m, const MeshEnvelope &env) {
         e = encodeStringKey(m, kEnvelopeKeyParallelId, *env.parallel_id);
     if (e == CborNoError && env.region_id)
         e = encodeStringKey(m, kEnvelopeKeyRegionId, *env.region_id);
+    if (e == CborNoError && env.child_session_id)
+        e = encodeStringKey(m, kEnvelopeKeyChildSessionId, *env.child_session_id);
 
     return e;
 }
@@ -103,6 +105,7 @@ size_t countEntries(const MeshEnvelope &env) {
     if (env.routing_id)        ++n;
     if (env.parallel_id)       ++n;
     if (env.region_id)         ++n;
+    if (env.child_session_id)  ++n;
     return n;
 }
 
@@ -182,13 +185,12 @@ bool readU64(CborValue *it, uint64_t &out) {
 // ── Enum range validators ───────────────────────────────────────────────
 
 bool isValidPatternKind(uint64_t v) {
-    // 1-9 in-use; 14 (InvokeStart) and 20 (InvokeError) are the first
-    // Session F pair that carry the §9.6 line 1396 `SESSION_F_NOT_IMPLEMENTED`
-    // round-trip; 21 is ParallelRegionDone (SCE_MESH.md §16.5). Values 10-13
-    // remain reserved for Stream; 15-19 for the rest of the Session F invoke
-    // lifecycle — those have no enum variants yet, so unknown-pattern on the
-    // wire drops silently at dispatch until each wire's consumer lands.
-    return (v >= 1 && v <= 9) || v == 14 || v == 20 || v == 21;
+    // 1-9 in-use; 14-20 are the full §9.6 remote-invoke lifecycle
+    // (SCE_MESH.md §9.6.2): InvokeStart, InvokeStarted, ChildEvent,
+    // ParentEvent, InvokeDone, InvokeCancel, InvokeError. 21 is
+    // ParallelRegionDone (SCE_MESH.md §16.5). Values 10-13 remain
+    // reserved for Stream wire-layer optimizations.
+    return (v >= 1 && v <= 9) || (v >= 14 && v <= 21);
 }
 
 bool isValidPayloadCodec(uint64_t v) {
@@ -369,6 +371,12 @@ bool decodeEnvelope(const uint8_t *raw, std::size_t len, MeshEnvelope &out) {
             std::string s;
             if (!readText(&it, s)) return false;
             out.region_id = std::move(s);
+            break;
+        }
+        case kEnvelopeKeyChildSessionId: {
+            std::string s;
+            if (!readText(&it, s)) return false;
+            out.child_session_id = std::move(s);
             break;
         }
         default:

@@ -81,6 +81,14 @@ struct TestSenderEngine {
         Event event;
         std::string data;
         std::string invokeId;
+        // Additional W3C SCXML 5.10.1 metadata fields consumed by
+        // MeshDispatch wire-16 (ChildEvent) path — kept as plain std::string
+        // so the test double accepts the same assignments the real
+        // StaticExecutionEngine::EventWithMetadata does.
+        std::string type;
+        std::string originType;
+        std::string origin;
+        std::string sendId;
     };
 
     Policy policy_;

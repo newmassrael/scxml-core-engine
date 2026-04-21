@@ -124,6 +124,36 @@ using ScxmlInvokeStartCallback = std::function<bool(const std::string& target,
                                                     const std::string& invokeIdString,
                                                     const std::string& data)>;
 
+/// SCXML remote-invoke parent-event callback signature: wire-17 `ParentEvent`
+/// per SCE_MESH.md §9.6.2. Fires from the parent engine's autoforward path
+/// (`forwardToAutoforwardChildren` in invoke_methods.jinja2) when an
+/// external event must be forwarded to an active remote invoke's child.
+/// Returns true when the TransportRouter accepted the wire-17 envelope for
+/// outbound dispatch; false when no callback is installed (no remote
+/// autoforward authored for this machine).
+///
+/// * `target`         — child's deploy.yaml machine name
+/// * `invokeIdString` — SCXML-side invoke id (identifies the child session)
+/// * `eventName`      — event being forwarded (per W3C §6.4.6 verbatim)
+/// * `data`           — event data payload (JSON-encoded when present)
+/// * `sendId`         — original sendId (preserved per §9.6.3); empty when
+///                      the forwarded event had no explicit sendid.
+using ScxmlInvokeParentEventCallback =
+    std::function<bool(const std::string& target,
+                       const std::string& invokeIdString,
+                       const std::string& eventName,
+                       const std::string& data,
+                       const std::string& sendId)>;
+
+/// SCXML remote-invoke cancel callback signature: wire-19 `InvokeCancel`
+/// per SCE_MESH.md §9.6.2. Fires when the parent exits the invoking state
+/// of a still-active remote invoke. Returns true when the TransportRouter
+/// accepted the wire-19 envelope for outbound dispatch; false when no
+/// callback is installed.
+using ScxmlInvokeCancelCallback =
+    std::function<bool(const std::string& target,
+                       const std::string& invokeIdString)>;
+
 /**
  * @brief Template-based SCXML execution engine for static code generation
  *
@@ -473,6 +503,8 @@ private:
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §9.5: mesh-rpc exit / cancel hook
     ScxmlInvokeStartCallback onScxmlInvokeStart_;  // SCE Mesh §9.6.2 wire-14: <invoke type="scxml" src="#peer"> entry hook
+    ScxmlInvokeParentEventCallback onScxmlInvokeParentEvent_;  // SCE Mesh §9.6.2 wire-17: autoforward outbound hook
+    ScxmlInvokeCancelCallback onScxmlInvokeCancel_;  // SCE Mesh §9.6.2 wire-19: remote invoke cancel hook
     // SCE Mesh §16.5 (rule 12) — `<parallel>` partition role hooks. Set
     // by the derived SM ctor when codegen materializes a Root or NonRoot
     // tracker / sender for a hosted `<parallel>`. The Policy invokes
@@ -1380,6 +1412,66 @@ public:
                                  const std::string& data) {
         if (onScxmlInvokeStart_) {
             return onScxmlInvokeStart_(target, invokeIdString, data);
+        }
+        return false;
+    }
+
+    /**
+     * @brief Register the SCXML remote-invoke parent-event callback
+     *        (SCE_MESH.md §9.6.2 wire 17, autoforward).
+     *
+     * Installed by the generated TransportRouter ctor when any target machine
+     * hosts a remote `<invoke autoforward="true">`. Applications typically
+     * do not call this directly.
+     */
+    void setScxmlInvokeParentEventCallback(ScxmlInvokeParentEventCallback callback) {
+        onScxmlInvokeParentEvent_ = std::move(callback);
+    }
+
+    /**
+     * @brief Dispatch an SCXML remote autoforward via the registered callback.
+     *
+     * Emitted from `forwardToAutoforwardChildren` (invoke_methods.jinja2)
+     * when the parent is autoforwarding an external event to a remote child
+     * session. Returns false when no callback is installed (authoring error
+     * — caller should log but not crash).
+     */
+    bool performScxmlInvokeParentEvent(const std::string& target,
+                                       const std::string& invokeIdString,
+                                       const std::string& eventName,
+                                       const std::string& data,
+                                       const std::string& sendId) {
+        if (onScxmlInvokeParentEvent_) {
+            return onScxmlInvokeParentEvent_(target, invokeIdString, eventName, data, sendId);
+        }
+        return false;
+    }
+
+    /**
+     * @brief Register the SCXML remote-invoke cancel callback
+     *        (SCE_MESH.md §9.6.2 wire 19).
+     *
+     * Installed by the generated TransportRouter ctor for every remote
+     * invoke target. Fires when the parent exits the invoking state before
+     * the child reaches `<final>`, so the worker can tear down the child
+     * session cleanly per W3C §6.4.5.
+     */
+    void setScxmlInvokeCancelCallback(ScxmlInvokeCancelCallback callback) {
+        onScxmlInvokeCancel_ = std::move(callback);
+    }
+
+    /**
+     * @brief Dispatch an SCXML remote invoke cancel via the registered callback.
+     *
+     * Returns false when no callback is installed (authoring error) or when
+     * the TransportRouter declined the cancel (no matching active invoke).
+     * Both cases are benign — the parent's `activeInvokes_` entry is cleared
+     * regardless.
+     */
+    bool performScxmlInvokeCancel(const std::string& target,
+                                  const std::string& invokeIdString) {
+        if (onScxmlInvokeCancel_) {
+            return onScxmlInvokeCancel_(target, invokeIdString);
         }
         return false;
     }

@@ -15,10 +15,16 @@
     - forwardToAutoforwardChildren()    — W3C SCXML 6.4.6 event forwarding
     - executeFinalizeForChildEvent()    — W3C SCXML 6.5 finalize execution
 #}
-{% if model.invokes | scxml_family %}
+{% if (model.invokes | scxml_family) or (model.invokes | scxml_remote) %}
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
-    // Uses InvokeHelper defer/cancel/execute pattern (ARCHITECTURE.md Zero Duplication)
+    // Uses InvokeHelper defer/cancel/execute pattern (ARCHITECTURE.md Zero Duplication).
+    // Remote `<invoke type="scxml">` (SCE_MESH.md §9.6) does not go through
+    // the defer queue — wire-14 `InvokeStart` is emitted eagerly from
+    // `entry_exit_actions.jinja2` onentry and the activeInvokes_ entry is
+    // registered synchronously. Only local scxml and hybrid invokes accumulate
+    // in `pendingInvokes_`, so this method still iterates `| scxml` (local) /
+    // `| hybrid` exclusively.
     template <typename Engine>
     void executePendingInvokes(Engine& engine) {
 
@@ -264,7 +270,10 @@
     }
 
     // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
-    // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent
+    // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent.
+    // Local invokes forward via `child_<suffix>_->raiseExternal`; remote
+    // scxml invokes (SCE_MESH.md §9.6) forward via wire-17 `ParentEvent`
+    // through the engine's registered callback.
     template <typename Engine>
     void forwardToAutoforwardChildren([[maybe_unused]] const std::string& eventName, [[maybe_unused]] Engine& engine) {
 
@@ -289,12 +298,38 @@
         }
         {% endfor %}
         {% endif %}
+        {% if state.invokes | scxml_remote %}
+        {% for invoke_info in state.invokes | scxml_remote %}
+        // SCE_MESH.md §9.6.2 wire 17 — remote autoforward. Gate on
+        // activeInvokes_ membership (wire-14 was accepted by the transport)
+        // AND autoforward=true in the authored attribute. Empty sessionId
+        // is tolerated here: wire-15 may not have landed yet when the first
+        // external event arrives — the child's worker host has the session
+        // ready to receive wire-17 either way because it was instantiated
+        // at wire-14 dispatch.
+        {
+            auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+            if (it != activeInvokes_.end() && it->second.autoforward) {
+                (void)engine.performScxmlInvokeParentEvent(
+                    "{{ invoke_info.remote_mesh_target }}",
+                    "{{ invoke_info.invoke_id }}",
+                    eventName,
+                    /*data*/ std::string(),
+                    /*sendId*/ std::string());
+            }
+        }
+        {% endfor %}
+        {% endif %}
         {% endfor %}
     }
 
-{% if model.invokes | scxml %}
+{% if (model.invokes | scxml) or (model.invokes | scxml_remote) %}
     // W3C SCXML 6.5: Execute finalize for events from invoked children
-    // Finalize runs BEFORE the event is processed, with _event set to child's event
+    // Finalize runs BEFORE the event is processed, with _event set to child's event.
+    // Matches local and remote (SCE_MESH.md §9.6) invokes uniformly — the
+    // parent's activeInvokes_[...].sessionId holds the child's session URI
+    // for remote invokes (stamped by onInvokeStarted when wire-15 arrives)
+    // and the local-parent-session-prefix.invokeId for local invokes.
     template <typename Engine>
     void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, [[maybe_unused]] Engine& engine) {
 
@@ -336,6 +371,60 @@
                 return;  // Found and executed
             }
         }
+    }
+{% endif %}
+
+{% if model.invokes | scxml_remote %}
+    // SCE_MESH.md §9.6.2 wire-15 consumer — parent stashes the child's
+    // session URI (§9.6.3 L1463 `_event.origin` source). Matched by
+    // env.subject against the compile-time invoke_id emitted at wire-14
+    // dispatch. Idempotent: a redundant wire-15 is silently replaced;
+    // matching against an unregistered invoke_id (e.g. a stale envelope
+    // arriving after onexit) is a no-op.
+    void onInvokeStarted(const ::SCE::Mesh::MeshEnvelope& env) {
+        if (!env.subject || !env.child_session_id) {
+            AOT_DEBUG("AOT onInvokeStarted: envelope missing subject/child_session_id — drop");
+            return;
+        }
+        auto it = activeInvokes_.find(*env.subject);
+        if (it == activeInvokes_.end()) {
+            AOT_DEBUG("AOT onInvokeStarted: no active invoke matching subject='{}' — drop", *env.subject);
+            return;
+        }
+        it->second.sessionId = *env.child_session_id;
+        AOT_DEBUG("AOT onInvokeStarted: bound invoke='{}' to child sessionId='{}'",
+                  *env.subject, *env.child_session_id);
+    }
+
+    // SCE_MESH.md §9.6.2 wire-18 consumer — child reached <final>. Raise
+    // the W3C `done.invoke.<id>` event and set the pending flag so the
+    // paired onexit cancel suppresses a redundant wire-19. Donedata
+    // surfacing is deferred to a later landing (IChildSession::getDonedata
+    // returns empty) — the envelope's `data` field is forwarded verbatim
+    // in the meantime.
+    template <typename Engine>
+    void onInvokeDone(const ::SCE::Mesh::MeshEnvelope& env, Engine& engine) {
+        if (!env.subject) {
+            AOT_DEBUG("AOT onInvokeDone: envelope missing subject — drop");
+            return;
+        }
+        const std::string& subject = *env.subject;
+        {% for invoke_info in model.invokes | scxml_remote %}
+        if (subject == "{{ invoke_info.invoke_id }}") {
+            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
+            std::string donedata(env.data.begin(), env.data.end());
+            engine.raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
+                typename Engine::Event, typename Engine::EventWithMetadata>(
+                {% if invoke_info.use_specific_event %}Engine::Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Engine::Event::Done_invoke{% endif %},
+                "{{ invoke_info.invoke_id }}"
+            ));
+            (void)donedata;  // donedata surfacing on done.invoke.data is a follow-up
+            activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+            AOT_DEBUG("AOT onInvokeDone: raised done.invoke for '{}'", subject);
+            return;
+        }
+        {% endfor %}
+        AOT_DEBUG("AOT onInvokeDone: no remote invoke matching subject='{}' — drop", subject);
     }
 {% endif %}
 

@@ -39,6 +39,7 @@ inline constexpr int kEnvelopeKeySequenceNo      = 14;
 inline constexpr int kEnvelopeKeyRoutingId       = 15;
 inline constexpr int kEnvelopeKeyParallelId      = 16;  // SCE_MESH.md §16.5 wire-21 region routing
 inline constexpr int kEnvelopeKeyRegionId        = 17;  // SCE_MESH.md §16.5 wire-21 region routing
+inline constexpr int kEnvelopeKeyChildSessionId  = 18;  // SCE_MESH.md §9.6.2 wire-15 child session URI
 
 /// Encode envelope into canonical CBOR bytes.
 ///

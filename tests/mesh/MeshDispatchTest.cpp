@@ -60,6 +60,11 @@ struct RecordingEngine {
         Event event{Event::Unknown};
         std::string data;
         std::string invokeId;
+        // Additional metadata accepted by MeshDispatch's ChildEvent path.
+        std::string type;
+        std::string originType;
+        std::string origin;
+        std::string sendId;
     };
 
     struct Raised {

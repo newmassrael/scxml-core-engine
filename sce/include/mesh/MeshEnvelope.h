@@ -79,6 +79,16 @@ struct MeshEnvelope {
     std::optional<std::string>             parallel_id;
     std::optional<std::string>             region_id;
 
+    /// SCE_MESH.md §9.6.2 wire-15 `InvokeStarted` — carries the child
+    /// session's URI endpoint back to the parent. Format per §9.6.1 L1410:
+    /// `<parent_device>:<parent_machine>:<invoke_id>`. The parent stashes
+    /// this string into `activeInvokes_[invoke_id].sessionId` so that
+    /// (a) subsequent wire-16 `ChildEvent` envelopes stamp `_event.origin`
+    /// with it (§9.6.3), and (b) finalize/autoforward matching against
+    /// the child's identity survives across process boundaries. Absent on
+    /// every other wire. CBOR integer key 18.
+    std::optional<std::string>             child_session_id;
+
     bool operator==(const MeshEnvelope &other) const noexcept {
         return id                == other.id
             && source            == other.source
@@ -97,7 +107,8 @@ struct MeshEnvelope {
             && sequence_no       == other.sequence_no
             && routing_id        == other.routing_id
             && parallel_id       == other.parallel_id
-            && region_id         == other.region_id;
+            && region_id         == other.region_id
+            && child_session_id  == other.child_session_id;
     }
 };
 

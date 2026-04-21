@@ -10,14 +10,40 @@
 //
 // Pattern dispatch:
 //   Inbound (enqueue to engine): FireForget, RpcRequest, RpcReply, EventNotify,
-//                                FieldNotify, FieldRead, FieldWrite, InvokeError
-//   Outbound-only (reject):      EventSubscribe, EventUnsubscribe, InvokeStart
+//                                FieldNotify, FieldRead, FieldWrite,
+//                                ChildEvent, InvokeError
+//   Lifecycle hook (engine-side): InvokeStarted (→onInvokeStarted),
+//                                 InvokeDone (→onInvokeDone)
+//   Outbound-only (reject):      EventSubscribe, EventUnsubscribe, InvokeStart,
+//                                ParentEvent, InvokeCancel
 //
-// SCE_MESH.md §9.6.2 wire 14 (`InvokeStart`) is handled by TransportRouter's
-// inbound path before reaching this helper — the worker-side transport answers
-// with a wire-20 InvokeError inline without going through engine dispatch, so
-// a wire-14 envelope arriving here means the upstream branch did not catch it
-// and we drop fail-closed (same shape as the EventSubscribe echo guard).
+// SCE_MESH.md §9.6.2 wire 14 (`InvokeStart`), wire 17 (`ParentEvent`), and
+// wire 19 (`InvokeCancel`) flow parent→child. They are consumed by the
+// worker's transport router's inbound path (via `WorkerSessionHost`) before
+// reaching this helper. If one arrives here it means the upstream branch
+// did not catch it and we drop fail-closed (same shape as the
+// EventSubscribe echo guard).
+//
+// SCE_MESH.md §9.6.2 wire 15 (`InvokeStarted`): parent-side receiver. The
+// envelope carries `invoke_id` and `child_session_id`. Dispatch invokes
+// `engine.onInvokeStarted(env)` (SFINAE-gated) which stamps the child
+// session URI into `activeInvokes_[invoke_id].sessionId` so subsequent
+// wire-16 ChildEvent envelopes match the child's identity for finalize
+// and autoforward routing.
+//
+// SCE_MESH.md §9.6.2 wire 16 (`ChildEvent`): parent-side receiver. Same
+// `raiseExternal` path as FireForget but additionally sets
+// `_event.origin = child_session_id`, `_event.invokeid = invoke_id`, and
+// `_event.origintype` to the W3C SCXML processor URI (§9.6.3 L1463-1466).
+// The parent engine's `<finalize>` matching (invoke_methods.jinja2)
+// compares `activeInvokes_[id].sessionId == meta.origin`, inherited
+// unchanged from the local-invoke path.
+//
+// SCE_MESH.md §9.6.2 wire 18 (`InvokeDone`): parent-side receiver. The
+// envelope carries `invoke_id` and donedata in `data`. Dispatch invokes
+// `engine.onInvokeDone(env)` (SFINAE-gated) which raises
+// `done.invoke.<id>` and releases `activeInvokes_[invoke_id]`. Machines
+// without authored invokes do not generate the hook; envelope is dropped.
 //
 // SCE_MESH.md §9.6.2 wire 20 (`InvokeError`): parent-side receiver. The
 // envelope carries `invoke_id`, `rpc_status`, and `rpc_error_message`; this
@@ -84,6 +110,54 @@ bool tryDeliverParallelRegionDone(const MeshEnvelope& /*env*/, Engine& /*engine*
     return false;
 }
 
+/// SFINAE probe: does `Engine` expose
+/// `onInvokeStarted(const MeshEnvelope&)`? Only parent engines that host at
+/// least one `<invoke type="scxml">` targeting a mesh peer emit the hook;
+/// machines without authored invokes drop the wire-15 envelope.
+template <typename Engine, typename = void>
+struct HasInvokeStartedHook : std::false_type {};
+
+template <typename Engine>
+struct HasInvokeStartedHook<Engine, std::void_t<decltype(
+    std::declval<Engine&>().onInvokeStarted(std::declval<const MeshEnvelope&>()))>>
+    : std::true_type {};
+
+template <typename Engine>
+bool tryDeliverInvokeStarted(const MeshEnvelope& env, Engine& engine,
+                             std::true_type /*has_hook*/) {
+    engine.onInvokeStarted(env);
+    return true;
+}
+
+template <typename Engine>
+bool tryDeliverInvokeStarted(const MeshEnvelope& /*env*/, Engine& /*engine*/,
+                             std::false_type /*has_hook*/) {
+    return false;
+}
+
+/// SFINAE probe: does `Engine` expose
+/// `onInvokeDone(const MeshEnvelope&)`? Symmetric to `HasInvokeStartedHook`.
+template <typename Engine, typename = void>
+struct HasInvokeDoneHook : std::false_type {};
+
+template <typename Engine>
+struct HasInvokeDoneHook<Engine, std::void_t<decltype(
+    std::declval<Engine&>().onInvokeDone(std::declval<const MeshEnvelope&>()))>>
+    : std::true_type {};
+
+template <typename Engine>
+bool tryDeliverInvokeDone(const MeshEnvelope& env, Engine& engine,
+                          std::true_type /*has_hook*/) {
+    engine.onInvokeDone(env);
+    return true;
+}
+
+template <typename Engine>
+bool tryDeliverInvokeDone(const MeshEnvelope& /*env*/, Engine& /*engine*/,
+                          std::false_type /*has_hook*/) {
+    return false;
+}
+
 }  // namespace detail
 
 /// Dispatch a MeshEnvelope to a state machine engine based on pattern kind.
@@ -107,6 +181,14 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     if (env.pattern == PatternKind::ParallelRegionDone) {
         return detail::tryDeliverParallelRegionDone(
             env, engine, detail::HasParallelRegionDoneHook<Engine>{});
+    }
+    if (env.pattern == PatternKind::InvokeStarted) {
+        return detail::tryDeliverInvokeStarted(
+            env, engine, detail::HasInvokeStartedHook<Engine>{});
+    }
+    if (env.pattern == PatternKind::InvokeDone) {
+        return detail::tryDeliverInvokeDone(
+            env, engine, detail::HasInvokeDoneHook<Engine>{});
     }
     switch (env.pattern) {
     case PatternKind::FireForget:
@@ -141,14 +223,45 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
         engine.raiseExternal(std::move(meta));
         return true;
     }
-    // SCE_MESH.md §9.6.2 wire 20 (InvokeError): parent receives the child's
-    // "session F not implemented" (or any future invoke-lifecycle error) and
-    // translates it into a local `error.execution` raise. The reason text
-    // lives in `rpc_error_message`; we surface it via
-    // `EventWithMetadata::data` so authors read the same payload shape the
-    // transport-absent local raise produces (both paths currently embed the
-    // reason in text; the structured `_event.data.reason` JSON is a separate
-    // landing at §10.7.1 once an SCXML consumer exists).
+    // SCE_MESH.md §9.6.2 wire 16 (ChildEvent): parent receives an event
+    // emitted by a remote child session via `<send target="#_parent">` or
+    // via W3C §5.10 auto-raise. Event name is `env.type`; metadata fields
+    // are wired per §9.6.3 L1463-1466:
+    //   _event.type        = "external"
+    //   _event.origin      = child's session URI (env.child_session_id)
+    //   _event.origintype  = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+    //   _event.invokeid    = env.invoke_id (same UUID the parent stored)
+    //   _event.sendid      = env.subject (child's sendid, transparent)
+    //   _event.data        = env.data payload
+    // This wiring keeps the parent's existing local-invoke finalize/autoforward
+    // code paths (`childSession.sessionId == meta.origin` match) unchanged.
+    case PatternKind::ChildEvent: {
+        auto ev = Policy::getEventFromName(env.type.c_str());
+        if (!ev) return false;
+        typename Engine::EventWithMetadata meta;
+        meta.event = *ev;
+        meta.data = std::string(env.data.begin(), env.data.end());
+        meta.type = "external";
+        meta.originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+        if (env.child_session_id) {
+            meta.origin = *env.child_session_id;
+        }
+        if (env.subject) {
+            meta.sendId = *env.subject;
+        }
+        if (env.invoke_id) {
+            meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
+        }
+        engine.raiseExternal(std::move(meta));
+        return true;
+    }
+    // SCE_MESH.md §9.6.2 wire 20 (InvokeError): parent receives a child-
+    // instantiation or transport-unavailable failure and translates it into
+    // a local `error.execution` raise. The reason text lives in
+    // `rpc_error_message`; we surface it via `EventWithMetadata::data` so
+    // authors read the same payload shape the transport-absent local raise
+    // produces. The structured `_event.data.reason` JSON is a separate
+    // landing at §10.7.1 once an SCXML consumer exists.
     case PatternKind::InvokeError: {
         auto ev = Policy::getEventFromName("error.execution");
         if (!ev) return false;
@@ -169,17 +282,21 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     case PatternKind::EventSubscribe:
     case PatternKind::EventUnsubscribe:
         return false;
-    // ParallelRegionDone is handled by the pre-switch early-return above;
-    // listing it here keeps `-Wswitch-enum` exhaustive. Reaching this arm
-    // would be a compiler / codegen bug and we fail-closed with drop.
+    // ParallelRegionDone / InvokeStarted / InvokeDone are handled by the
+    // pre-switch early-return above; listing them here keeps `-Wswitch-enum`
+    // exhaustive. Reaching these arms would be a compiler / codegen bug and
+    // we fail-closed with drop.
     case PatternKind::ParallelRegionDone:
+    case PatternKind::InvokeStarted:
+    case PatternKind::InvokeDone:
         return false;
-    // SCE_MESH.md §9.6.2 wire 14 (InvokeStart): caught upstream by
-    // TransportRouter's inbound branch (it emits the wire-20 InvokeError
-    // response inline). If a wire-14 envelope reaches dispatchEnvelope it
-    // means the upstream branch missed it — fail-closed drop, same shape as
-    // the EventSubscribe echo guard above.
+    // Parent→child wires: caught upstream by the worker's transport router
+    // inbound branch (WorkerSessionHost::onWireN). If one reaches
+    // dispatchEnvelope it means the upstream branch missed it — fail-closed
+    // drop, same shape as the EventSubscribe echo guard above.
     case PatternKind::InvokeStart:
+    case PatternKind::ParentEvent:
+    case PatternKind::InvokeCancel:
         return false;
     }
     return false;  // unknown pattern kind — forward compatibility

@@ -1390,10 +1390,7 @@ Rule: the `<param>` value, if present, **overrides** any deploy.yaml binding-lev
 
 When `type="scxml"` (or the default, which equals `"http://www.w3.org/TR/scxml/"`) is used with `src="#<machine_id>"` referring to a mesh-registered peer, SCE Mesh provides **full W3C SCXML 1.0 invoke semantics across a transport**. This is not an abbreviation — the parent/child session lifecycle and all its derived behaviors (`<finalize>`, `autoforward`, child→parent events, inline content) are preserved end-to-end.
 
-Implementation scope is **Session F**. Sessions E1 and E2 provide:
-- Wire format for full-session invoke (envelope schema below) — documented but not yet emitted.
-- Conformance guarantees this section makes — stated in spec, not yet verified by tests.
-- Static recognition in parser/model so documents using full remote invoke parse cleanly; at runtime they raise `error.execution` with `_event.data.reason == "SESSION_F_NOT_IMPLEMENTED"` (per the structured convention in §10.7.1) until Session F lands. When the parent has a configured mesh transport to the child's device (deploy.yaml binding present), the raise is delivered via the wire-14 `InvokeStart` / wire-20 `InvokeError` round-trip — the child's transport layer answers every wire-14 envelope with a wire-20 `InvokeError` carrying `rpc_error_message = "SESSION_F_NOT_IMPLEMENTED"` while the rest of the child-session runtime is incomplete; the parent translates the received wire-20 back into the `error.execution` raise above. Absent the transport binding the parent raises locally without wire traffic. Wire values 15-19 (the intermediate lifecycle patterns) activate as each Session F round adds the corresponding consumer.
+**Implementation status (Session F)**: the full lifecycle is active over same-device shm transport. Wires 14/15/16/17/18/19 carry the W3C §6.4 parent/child session edges (diagram below); wire 20 `InvokeError` remains for instantiation-failure and transport-unavailable paths. Parent-side `<invoke type="scxml" src="#peer">` emits wire-14 `InvokeStart` at state entry, registers a child-session record keyed on the compile-time invoke id, and expects wire-15 `InvokeStarted` (URI stash), zero or more wire-16 `ChildEvent` envelopes (delivered via `_event.origin = child_session_id` per §9.6.3), and terminating wire-18 `InvokeDone` (raises `done.invoke.<id>`) or wire-19 `InvokeCancel` (from onexit). Worker-side `WorkerSessionHost` instantiates the AOT-generated child engine on each wire-14 and ticks it at the worker's cadence, so W3C §6.4.1 ordering (child macrosteps observe as external events on the parent's next macrostep) holds by construction. Absent a deploy.yaml transport binding to the peer's device, the parent raises `error.execution` with `_event.data.reason == "SESSION_F_TRANSPORT_UNAVAILABLE"` (per the structured convention in §10.7.1) without wire traffic. Cross-device transports for scxml-remote invoke are scoped for a future Session F continuation; the design reserves wire values 14-20 so that extension to other §10.4 transports adds binding wiring only, not envelope changes.
 
 #### 9.6.1 Session establishment
 
@@ -1441,15 +1438,15 @@ Additional wire-stable pattern values (reserved in §13 CBOR key map):
 
 | Pattern | Wire value | Direction | Envelope content |
 |---|---|---|---|
-| `InvokeStart` | 14 | Parent → Child | `invoke_id`, `type`, `data` = CBOR map `{src, params, content, namelist, autoforward}` |
-| `InvokeStarted` | 15 | Child → Parent | `invoke_id`, optional `source` = child's session id string |
-| `ChildEvent` | 16 | Child → Parent | `invoke_id`, `type`=event name, `data`=payload, `subject`=sendid, codec tag |
-| `ParentEvent` | 17 | Parent → Child | `invoke_id`, `type`=event name, `data`=payload, `subject`=sendid |
-| `InvokeDone` | 18 | Child → Parent | `invoke_id`, `data`=donedata payload |
-| `InvokeCancel` | 19 | Parent → Child | `invoke_id`, empty `data` |
-| `InvokeError` | 20 | Child → Parent or Parent → Child | `invoke_id`, `rpc_status`, `rpc_error_message` |
+| `InvokeStart` | 14 | Parent → Child | `invoke_id` (correlation UUID v7), `subject`=compile-time invoke id, `data`=CBOR map `{src, params, content, namelist, autoforward}` |
+| `InvokeStarted` | 15 | Child → Parent | `invoke_id`, `subject`=compile-time invoke id, `child_session_id` (CBOR key 18, child session URI per §9.6.1 L1410) |
+| `ChildEvent` | 16 | Child → Parent | `invoke_id`, `subject`=sendid, `child_session_id`, `type`=event name, `data`=payload, codec tag |
+| `ParentEvent` | 17 | Parent → Child | `invoke_id`, `subject`=compile-time invoke id, `type`=event name, `data`=payload |
+| `InvokeDone` | 18 | Child → Parent | `invoke_id`, `subject`=compile-time invoke id, `child_session_id`, `data`=donedata payload |
+| `InvokeCancel` | 19 | Parent → Child | `invoke_id` omitted on cancel; `subject`=compile-time invoke id, empty `data` |
+| `InvokeError` | 20 | Child → Parent or Parent → Child | `invoke_id`, `subject`=compile-time invoke id, `rpc_status`, `rpc_error_message` |
 
-Wire values 10-13 remain reserved for Stream patterns (§13 Phase 4); 14-20 are reserved here for the full remote invoke lifecycle (Session F), declared now to pin assignments and prevent accidental reuse by E1/E2 sessions; 21 is `ParallelRegionDone` (Session E2). Future additions must use unused integers (22+). **No wire value may ever be reused or overloaded — see §13 "Adding a variant requires a new wire value, never reuse."**
+Wire values 10-13 remain reserved for Stream patterns (§13 Phase 4); 14-20 are assigned to the full remote invoke lifecycle (Session F) and all seven are active as of this landing; 21 is `ParallelRegionDone` (Session E2). Future additions must use unused integers (22+). **No wire value may ever be reused or overloaded — see §13 "Adding a variant requires a new wire value, never reuse."**
 
 #### 9.6.3 `_event` field wiring (W3C §5.10.2 compliance)
 
@@ -2246,6 +2243,7 @@ CBOR map integer keys (wire-stable):
 | 15 | routing_id | no | 16 bytes — per-session routing UUID v7; §10.9 |
 | 16 | parallel_id | no | string — §16.5 wire-21 region routing; set together with key 17 |
 | 17 | region_id | no | string — §16.5 wire-21 region routing; set together with key 16 |
+| 18 | child_session_id | no | string — §9.6.2 wire-15/16/18 child session URI (§9.6.1 L1410 `<D_P>:<P.machine>:<invoke_id>`) |
 
 Unknown integer keys MUST be skipped by readers. New fields use unused integers; never reuse.
 

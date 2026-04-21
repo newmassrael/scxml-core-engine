@@ -1,28 +1,22 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §9.6 Session F wire round-trip verification.
+// SCE Mesh §9.6 Session F full lifecycle verification.
 //
-// Closes the silent-broken window declared in SCE_MESH.md §9.6 line 1396,
-// but via the transport-present path added in Session F sub-item 2: the
-// parent's state-entry calls `engine.performScxmlInvokeStart(...)`, the
-// transport router emits a wire-14 `InvokeStart` envelope over the
-// `/sce_inv14_<parent>_<worker>` shm channel, the worker router's
-// `pumpScxmlInvokeRequests()` answers with wire-20 `InvokeError` carrying
-// reason `SESSION_F_NOT_IMPLEMENTED`, and MeshDispatch translates that
-// reply back into `error.execution` on the parent engine. The parent's
-// `<transition event="error.execution" target="pass"/>` observes the raise
-// and transitions to the final state — identical observable shape to the
-// A0 local-raise scaffold (`mesh_session_f_not_implemented_verification`)
-// but with the full wire path exercised end-to-end.
-//
-// Single-process test: parent and worker routers share the host process so
-// the shm segments exchange data without fork. Startup order matters —
-// worker's `wire20_to_parent_` is `Mode::Create`, parent's
-// `wire20_from_parent_` is `Mode::Open`, so the worker router must be
-// constructed before the parent's. The paired `wire14_*` directions use
-// the symmetric discipline (parent creates, worker opens lazily via
-// `pumpScxmlInvokeRequests`'s reopen branch).
+// The parent's state-entry emits wire-14 `InvokeStart` via the
+// `/sce_p2c_<parent>_<worker>` shm channel. The worker's
+// `pumpScxmlInvokeRequests()` routes the envelope to the
+// `WorkerSessionHost`, which instantiates an AOT child of
+// `worker_session_f_wired`. Because the child's initial state is a
+// `<final>`, `initialize()` immediately settles the child into final;
+// the host observes `isFinal()==true` and emits wire-15 `InvokeStarted`
+// followed by wire-18 `InvokeDone` on the `/sce_c2p_<worker>_<parent>`
+// channel. The parent's `pumpScxmlInvokeReplies()` dispatches wire-15
+// through `onInvokeStarted` (sessionId stash) and wire-18 through
+// `onInvokeDone` (raises `done.invoke.remote_inv`); the parent's
+// `<transition event="done.invoke.*" target="pass"/>` observes it and
+// the machine reaches `pass` — the shortest success path through the
+// §9.6 parent/child lifecycle exercised end-to-end.
 
 #include "parent_session_f_wired_sm.h"
 #include "parent_session_f_wired_transport.h"
@@ -34,10 +28,10 @@
 #include <thread>
 
 int main() {
-    // Worker first — its wire20_to_parent_ channel is Mode::Create, the
-    // parent opens it in its own ctor. wire14_from_parent_ stays invalid
-    // until the parent creates /sce_inv14_parent_worker; pumpScxmlInvokeRequests
-    // lazy-reopens on its first call so the race is benign.
+    // Worker first — its `c2p_to_parent_session_f_wired_` channel is
+    // Mode::Create; the parent opens that name in its own ctor. The
+    // paired `p2c_from_parent_session_f_wired_` uses lazy reopen so the
+    // startup race is benign.
     using WorkerEngine = SCE::Generated::worker_session_f_wired::worker_session_f_wired;
     WorkerEngine worker;
     worker.initialize();
@@ -47,36 +41,43 @@ int main() {
     ParentEngine parent;
     SCE::Generated::parent_session_f_wired::TransportRouter<ParentEngine> parent_router({&parent});
 
-    // Parent ctor installed the wire-14 send callback. `initialize()`
-    // enters `waiting`, the remote-invoke onentry block calls
-    // `engine.performScxmlInvokeStart("worker_session_f_wired", ...)`,
-    // which routes to `wire14_to_worker_session_f_wired_.send(env)`.
+    // Parent ctor installed the wire-14/17/19 send callbacks. `initialize()`
+    // enters `waiting`, the remote-invoke onentry calls
+    // `engine.performScxmlInvokeStart("worker_session_f_wired", ...)`
+    // which publishes wire-14 on the `p2c_to_worker_session_f_wired_` channel.
     parent.initialize();
 
     using State = SCE::Generated::parent_session_f_wired::State;
     using clock = std::chrono::steady_clock;
     const auto deadline = clock::now() + std::chrono::seconds(5);
     while (clock::now() < deadline) {
-        // Worker drains inbound wire 14 and posts wire 20 responses inline.
+        // Worker drains inbound wire-14/17/19. wire-14 spawns a child
+        // session; since the child reaches <final> during initialize(),
+        // the host publishes wire-15 + wire-18 on the same tick.
         worker_router.pumpScxmlInvokeRequests();
-        // Parent drains inbound wire 20; MeshDispatch translates each
-        // envelope into an `error.execution` raise on the parent engine.
+        // Parent drains inbound wire-15/16/18/20; MeshDispatch routes
+        // to onInvokeStarted / onInvokeDone / raiseExternal as needed.
         parent_router.pumpScxmlInvokeReplies();
-        // `step()` consumes the external queue we just populated so the
-        // `<transition event="error.execution" target="pass"/>` fires.
+        // Consume the parent's external queue — fires `done.invoke.*`.
         parent.step();
         if (parent.getCurrentState() == State::Pass) {
-            std::printf("SCE Mesh §9.6 wire-14/20 round-trip verification: PASS\n");
+            std::printf("SCE Mesh §9.6 full lifecycle verification: PASS\n");
             return 0;
+        }
+        if (parent.getCurrentState() == State::Fail) {
+            std::fprintf(stderr,
+                         "FAIL: parent observed error.execution instead of "
+                         "done.invoke — transport is wired but the wire-15/18 "
+                         "success path did not complete.\n");
+            return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     std::fprintf(stderr,
                  "FAIL: parent did not reach State::Pass within 5s. "
-                 "Expected wire 14 InvokeStart to be emitted, worker pump to answer "
-                 "with wire 20 InvokeError(SESSION_F_NOT_IMPLEMENTED), parent dispatch "
-                 "to raise error.execution, and transition to observe it. "
+                 "Expected wire-14 InvokeStart → wire-15 InvokeStarted + wire-18 "
+                 "InvokeDone → done.invoke.remote_inv raise → transition to pass. "
                  "Current parent state=%d\n",
                  static_cast<int>(parent.getCurrentState()));
     return 1;

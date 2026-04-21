@@ -36,8 +36,17 @@
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
 #include "core/InvokeHelper.h"
+{% endif %}
+{% if model.invokes | scxml or model.invokes | scxml_remote or model.invokes | hybrid %}
+#include "common/EventMetadataHelper.h"
+{% endif %}
+{% if model.invokes | scxml_remote %}
+// SCE_MESH.md §9.6 — remote `<invoke type="scxml">` lifecycle hooks
+// (onInvokeStarted / onInvokeDone) reference MeshEnvelope fields.
+#include "mesh/MeshEnvelope.h"
+#include "mesh/PatternKind.h"
 {% endif %}
 {% if model.needs_send_helper %}
 #include "common/SendHelper.h"
@@ -344,7 +353,9 @@ struct {{ model.name }}Policy {
     mutable bool nextEventIsExternal_ = false;
     {% endif %}
     {% if model.invokes | scxml or model.invokes | hybrid %}
-    // W3C SCXML 6.4: Self-pointer for child state machine creation (defer/cancel/execute pattern)
+    // W3C SCXML 6.4: Self-pointer for local child state machine creation
+    // (defer/cancel/execute pattern). Remote scxml invokes (§9.6) do not
+    // use this pointer — the child engine lives in the worker binary.
     mutable SelfType* self_ = nullptr;
 
     // W3C SCXML 5.10: Current event metadata (originSessionId for finalize)
@@ -356,7 +367,9 @@ struct {{ model.name }}Policy {
     {% for invoke_info in model.invokes | hybrid %}
     mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
     {% endfor %}
+    {% endif %}
 
+    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
     // W3C SCXML 6.4: Pending done.invoke flags for child completion
     {% for invoke_info in model.invokes | scxml %}
     mutable bool pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
@@ -364,10 +377,14 @@ struct {{ model.name }}Policy {
     {% for invoke_info in model.invokes | hybrid %}
     mutable bool pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
     {% endfor %}
+    {% for invoke_info in model.invokes | scxml_remote %}
+    mutable bool pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
+    {% endfor %}
 
-    // W3C SCXML 6.4: Child session tracking
+    // W3C SCXML 6.4: Child session tracking (shared across local, hybrid,
+    // and §9.6 remote scxml invokes)
     struct ChildSession {
-        std::string sessionId;           // Child's session ID
+        std::string sessionId;           // Child's session ID (local: parent.invokeId; remote: URI per §9.6.1 L1410)
         std::string invokeId;            // Invoke element ID
         std::string parentSessionId;     // Parent's session ID
         bool autoforward = false;        // W3C 6.4.1: Autoforward events to child
@@ -393,7 +410,7 @@ struct {{ model.name }}Policy {
     {% endfor %}
     {% endif %}
 
-    {% if model.invokes | scxml or model.invokes | hybrid %}
+    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
 
     // W3C SCXML 6.4: Pending invoke structure for defer/cancel/execute pattern
     // ARCHITECTURE.md Zero Duplication: Used with InvokeHelper (Single Source of Truth)
@@ -403,7 +420,10 @@ struct {{ model.name }}Policy {
         State state;           // State containing the invoke element
     };
 
-    // Active child sessions indexed by invokeId
+    // Active child sessions indexed by invokeId (shared across local, hybrid,
+    // and SCE_MESH.md §9.6 remote scxml invokes — finalize/autoforward/cancel
+    // match by compile-time invoke_id regardless of whether the child engine
+    // lives in-process or on a remote worker).
     mutable std::unordered_map<std::string, ChildSession> activeInvokes_;
     // W3C SCXML 6.4: Pending invokes (deferred until macrostep end)
     mutable std::vector<PendingInvoke> pendingInvokes_;
@@ -708,6 +728,23 @@ public:
 {% endif %}
 {% endfor %}
 {% endif %}
+    }
+{% endif %}
+{% if model.invokes | scxml_remote %}
+    /// SCE_MESH.md §9.6.2 wire-15 SM-side entry point. `MeshDispatch::dispatchEnvelope`
+    /// probes this method via SFINAE (`HasInvokeStartedHook`); its presence
+    /// makes the SM eligible to consume `InvokeStarted` envelopes from its
+    /// worker peer(s). Forwards to the Policy which holds the `activeInvokes_`
+    /// table used by finalize / autoforward / cancel.
+    void onInvokeStarted(const ::SCE::Mesh::MeshEnvelope& env) {
+        this->policy_.onInvokeStarted(env);
+    }
+
+    /// SCE_MESH.md §9.6.2 wire-18 SM-side entry point. Symmetric to the
+    /// wire-15 hook. Forwards to the Policy's `onInvokeDone(env, engine)`
+    /// which raises `done.invoke.<id>` and retires the activeInvokes_ entry.
+    void onInvokeDone(const ::SCE::Mesh::MeshEnvelope& env) {
+        this->policy_.onInvokeDone(env, *this);
     }
 {% endif %}
 {% if _role_stats.has_nonroot %}
