@@ -1,0 +1,15 @@
+# SCE Mesh §9.6.5 autoforward="true" verification fixture.
+#
+# The parent's `<invoke autoforward="true">` forwards every external event
+# onto the child via wire-17 ParentEvent. The worker is a remote inbound
+# peer so its `is_remote_invoke_target=true` codegen shape applies — the
+# child adapter's `raiseExternal(event_name, data, sendId)` entry point
+# delivers the forwarded event to the child engine's string-based queue.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_session_f_autoforward:
+        source: parent_session_f_autoforward.scxml
+      worker_session_f_autoforward:
+        source: worker_session_f_autoforward.scxml

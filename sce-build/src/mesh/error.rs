@@ -261,6 +261,37 @@ pub enum DeployError {
         transport: String,
     },
 
+    /// A single machine is used as both a remote `<invoke type="scxml"
+    /// src="#<M>">` target (mesh peer) and a local `<invoke src="<M's
+    /// source path>">` target (direct file reference) within the same
+    /// deployment (SCE_MESH.md §9.6). The two shapes require different
+    /// code-generation decisions on `<M>`: a mesh peer must emit a
+    /// non-templated, default-constructible engine for
+    /// `ChildSessionAdapter<Engine>` (§9.6 child session lifecycle),
+    /// while a local invoke target must emit the `ParentStateMachine`-
+    /// templated shape so the parent's `Event` enum is reachable at
+    /// `<send target="#_parent">` emission time. Supporting both
+    /// simultaneously would silently break one caller.
+    ///
+    /// Fix: either drop the local-path `<invoke src="...">` on the
+    /// named invoker and call the mesh peer through `#<M>`, or remove
+    /// `<M>` from the deploy.yaml topology so it ceases to be a mesh
+    /// peer.
+    #[error("machine '{machine}' is both a remote `<invoke type=\"scxml\" src=\"#{machine}\">` \
+             target (mesh peer, inbound from: {inbound_peers}) and a local-path invoke target of \
+             machine '{local_invoker}' (src=\"{local_src}\"). These two shapes cannot coexist: \
+             the mesh peer shape is default-constructible for SCE_MESH.md §9.6 \
+             `ChildSessionAdapter<Engine>`, while the local shape carries a `ParentStateMachine` \
+             template parameter. Fix: drop one — either change '{local_invoker}' to invoke \
+             '#{machine}' through mesh, or remove '{machine}' from deploy.yaml topology.",
+             inbound_peers = .inbound_peers.join(", "))]
+    ScxmlInvokeTargetConflict {
+        machine: String,
+        inbound_peers: Vec<String>,
+        local_invoker: String,
+        local_src: String,
+    },
+
     /// Two entries under `partitions:` declare the same partition name
     /// (SCE_MESH.md §14 rule 6). Partition names are process identities
     /// at runtime and double as log-correlation tags; aliased entries
@@ -1303,6 +1334,27 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 fields: vec!["instances".to_string()],
             }),
             key_fragments: vec![machine.clone(), transport.clone()],
+        },
+        DeployError::ScxmlInvokeTargetConflict {
+            machine,
+            inbound_peers,
+            local_invoker,
+            local_src,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployScxmlInvokeTargetConflict,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // Two equally-valid repairs — flip '{local_invoker}' to the
+            // `#<machine>` shape, OR remove '{machine}' from deploy.yaml
+            // topology. Author intent decides; no mechanical single-edit
+            // Fix applies. Same shape as PartitionMultiDevice above.
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut k = vec![machine.clone(), local_invoker.clone(), local_src.clone()];
+                k.extend(inbound_peers.iter().cloned());
+                k
+            },
         },
         DeployError::PartitionDuplicateName { name } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployPartitionDuplicateName,

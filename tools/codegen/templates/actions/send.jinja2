@@ -102,6 +102,67 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 }
 {% elif action.target %}
 {% if action.target == '#_parent' %}
+{% if model.is_remote_invoke_target %}
+{# SCE_MESH.md §9.6 remote invoke worker — `<send target="#_parent">` routes
+   through the mesh callback installed by `ChildSessionAdapter<Engine>`,
+   which intercepts the target and emits a wire-16 `ChildEvent` envelope.
+   The adapter owns the compile-time `invoke_id` / `child_session_id` and
+   stamps them onto the envelope; the child code only supplies event name,
+   data, and sendId. W3C §6.4.5 delayed-send-to-parent has no wire-level
+   mesh equivalent yet — reject at emit time rather than schedule into a
+   scheduler that never fires (avoids `feedback_silently_broken_hooks`). #}
+{% if action.delay or action.delayexpr %}
+// SCE_MESH.md §9.6 remote invoke worker: delayed `<send target="#_parent">`
+// has no wire-level mesh path (no envelope carries a deadline for the
+// parent's macrostep selection). Emit error.execution so authors notice
+// rather than silently dropping the delay.
+engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "", "", sendId));
+{% if in_entry_exit is defined and in_entry_exit %}
+return;
+{% endif %}
+{% else %}
+// W3C SCXML 6.2 + SCE_MESH.md §9.6.2 wire-16: Immediate send to parent via
+// mesh transport. The adapter's `setMeshSendCallback` (ChildSessionAdapter.h)
+// intercepts `target == "#_parent"` and publishes the ChildEvent envelope.
+{% if action.params %}
+{
+    std::map<std::string, std::vector<std::string>> params;
+    std::map<std::string, ScriptValue> typedParams;
+{% set needs_script_engine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
+{% if needs_script_engine %}
+    this->ensureScriptEngine();
+    auto& scriptEngine = getScriptEngine();
+{% endif %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+    params["{{ param.name }}"].push_back("{{ param.static_value }}");
+{% else %}
+    {
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+            params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+            typedParams["{{ param.name }}"] = paramResult.getInternalValue();
+        } else {
+            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+            params["{{ param.name }}"].push_back("");
+        }
+    }
+{% endif %}
+{% endfor %}
+    std::string eventData = ::SCE::EventDataHelper::buildEventDataJson(params, typedParams);
+    engine.performMeshSend("#_parent", "{{ action.event }}", eventData, sendId, "");
+}
+{% else %}
+engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
+{% endif %}
+{% endif %}
+{% else %}
+{# SCE_MESH.md §9.6 codegen-shape seam — local-invoke child path retains
+   the existing `ParentStateMachine`-templated shape (W3C test233/338).
+   The long-term unification converges both branches on performMeshSend
+   once local invokes install a mesh-callback shim on the child engine;
+   until then the two shapes remain divergent and the
+   `is_remote_invoke_target` classifier is the single seam. #}
 {% if action.delay or action.delayexpr %}
 // W3C SCXML 6.2/6.4.5: Delayed send to parent (stored in child, cancelled on termination)
 {
@@ -183,6 +244,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     engine.getPolicy().invokeId_,
     engine.getPolicy().childSessionId_
 );
+{% endif %}
 {% endif %}
 {% endif %}
 {% elif action.target == '#_child' %}

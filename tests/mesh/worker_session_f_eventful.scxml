@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.2 wire-16 ChildEvent emitter (worker-side fixture).
+
+     Hosted by `WorkerSessionHost` on the remote side. Because this
+     machine is a `scxml_remote_inbound_peer` in the deployment, its
+     codegen hits the §9.6 `is_remote_invoke_target` branch: no
+     `ParentStateMachine` template parameter, no `parent_` pointer field,
+     and `<send target="#_parent">` routes through
+     `engine.performMeshSend("#_parent", ...)` — which the adapter's
+     mesh callback intercepts into a wire-16 envelope. The eventless
+     transition lets the child settle into `done`, triggering wire-18
+     `InvokeDone` so the parent sees `done.invoke.remote_inv` after it
+     has (possibly) already transitioned on the earlier `ping`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="announce" name="worker_session_f_eventful">
+    <state id="announce">
+        <onentry>
+            <send target="#_parent" event="ping"/>
+        </onentry>
+        <transition target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>

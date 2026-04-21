@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.5 autoforward="true" worker. Stays in `await` until
+     a wire-17 ParentEvent carrying `trigger` arrives, then transitions
+     to `done`. The host detects `isFinal()` on its next tick and
+     emits wire-18 `InvokeDone`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="await" name="worker_session_f_autoforward">
+    <state id="await">
+        <transition event="trigger" target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>

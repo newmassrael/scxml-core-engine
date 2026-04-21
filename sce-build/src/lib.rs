@@ -1127,8 +1127,119 @@ pub fn inject_partition_context_for(
 
     classify_remote_scxml_invokes(model, &deploy_cfg, &resolved_name);
     collect_scxml_remote_peers(model, &deploy_cfg, &resolved_name, deploy_path);
+    validate_scxml_invoke_target_exclusivity(model, &deploy_cfg, &resolved_name, deploy_path)
+        .map_err(mesh::error::MeshError::Deploy)?;
 
     Ok(present)
+}
+
+/// SCE_MESH.md §9.6 — codegen-shape exclusivity. Reject any deployment
+/// where a single machine M is simultaneously (a) invoked by a sibling
+/// through the mesh shape `<invoke type="scxml" src="#M">` and (b)
+/// invoked through a local-path shape `<invoke src="<M's source file>">`.
+/// The two shapes demand different child SM code generation: the mesh
+/// shape is default-constructed by
+/// [`ChildSessionAdapter<Engine>`](../../sce/include/mesh/ChildSessionAdapter.h)
+/// (§9.6 child session lifecycle) and routes `<send target="#_parent">`
+/// through the mesh callback, while the local-path shape threads a
+/// `ParentStateMachine` template parameter and a `parent_` pointer
+/// through the ctor. Supporting both simultaneously would silently break
+/// one caller.
+///
+/// Activates only when this machine already has at least one inbound
+/// mesh peer (`scxml_remote_inbound_peers` non-empty) — otherwise no
+/// mesh-shape constraint applies and the author may use the local-path
+/// shape freely. The sibling scan reads each other machine's SCXML text
+/// and matches any `<invoke>` tag whose `src=` is a non-hash path that
+/// canonicalizes to this machine's own SCXML source.
+///
+/// File-read or canonicalize failures fall through silently — mirroring
+/// [`collect_scxml_remote_peers`], which cannot distinguish "file not
+/// on disk yet" from "file unreadable" and opts for the safer
+/// under-report than to surface an IO error from a mesh-inference path.
+fn validate_scxml_invoke_target_exclusivity(
+    model: &SCXMLModel,
+    deploy_cfg: &mesh::deploy::DeployConfig,
+    resolved_name: &str,
+    deploy_path: &Path,
+) -> Result<(), mesh::error::DeployError> {
+    if model.scxml_remote_inbound_peers.is_empty() {
+        return Ok(());
+    }
+
+    // Locate this machine's SCXML source path. Absent ⇒ upstream parser
+    // already rejected the deployment; stay silent to avoid piling a
+    // second error on top.
+    let Some(own_source) = deploy_cfg
+        .topology
+        .values()
+        .flat_map(|dev| dev.machines.iter())
+        .find(|(name, _)| name.as_str() == resolved_name)
+        .map(|(_, cfg)| cfg.source.clone())
+    else {
+        return Ok(());
+    };
+
+    let deploy_dir = deploy_path.parent().unwrap_or_else(|| Path::new("."));
+    let Ok(own_canonical) = deploy_dir.join(&own_source).canonicalize() else {
+        return Ok(());
+    };
+
+    // Same regex vocabulary as `collect_scxml_remote_peers`: tag open,
+    // src attr, type attr. The local-shape filter here is the negation
+    // of the mesh filter (`starts_with('#')` is the mesh shape).
+    let invoke_tag_re = regex::Regex::new(r##"<invoke\b[^>]*>"##).expect("valid regex");
+    let src_attr_re = regex::Regex::new(r##"\bsrc="([^"]*)""##).expect("valid regex");
+    let type_attr_re = regex::Regex::new(r##"\btype="([^"]*)""##).expect("valid regex");
+
+    for device in deploy_cfg.topology.values() {
+        for (peer_name, peer_cfg) in &device.machines {
+            if peer_name.as_str() == resolved_name {
+                continue;
+            }
+            let peer_scxml_path = deploy_dir.join(&peer_cfg.source);
+            let content = match std::fs::read_to_string(&peer_scxml_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            // Sibling SCXML's own directory — the URI base for any
+            // relative `src=` it carries (W3C §6.4.1).
+            let sibling_dir = peer_scxml_path.parent().unwrap_or_else(|| Path::new("."));
+            for tag in invoke_tag_re.find_iter(&content) {
+                let tag_text = tag.as_str();
+                let type_ok = match type_attr_re.captures(tag_text) {
+                    Some(c) => {
+                        let t = &c[1];
+                        t.is_empty() || t == "scxml" || t == "http://www.w3.org/TR/scxml/"
+                    }
+                    None => true,
+                };
+                if !type_ok {
+                    continue;
+                }
+                let Some(src_cap) = src_attr_re.captures(tag_text) else {
+                    continue;
+                };
+                let src_raw = &src_cap[1];
+                if src_raw.is_empty() || src_raw.starts_with('#') {
+                    continue;
+                }
+                let candidate = sibling_dir.join(src_raw);
+                let Ok(candidate_canonical) = candidate.canonicalize() else {
+                    continue;
+                };
+                if candidate_canonical == own_canonical {
+                    return Err(mesh::error::DeployError::ScxmlInvokeTargetConflict {
+                        machine: resolved_name.to_string(),
+                        inbound_peers: model.scxml_remote_inbound_peers.clone(),
+                        local_invoker: peer_name.clone(),
+                        local_src: src_raw.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// SCE_MESH.md §9.6.2 wire-14/20 — build the two peer lists the transport
@@ -1219,6 +1330,21 @@ fn collect_scxml_remote_peers(
         }
     }
     model.scxml_remote_inbound_peers = inbound.into_iter().collect();
+    // SCE_MESH.md §9.6 — codegen-shape seam. When at least one sibling
+    // invokes this machine remotely, the generated SM must be
+    // default-constructible for `ChildSessionAdapter<Engine>` to own it.
+    // The template swap reads this flag to decide whether to emit the
+    // `ParentStateMachine`-templated shape (local-invoke only) or the
+    // non-templated shape (`<send target="#_parent">` routes through
+    // `performMeshSend`).
+    model.is_remote_invoke_target = !model.scxml_remote_inbound_peers.is_empty();
+    // Recompute the derived flag now that `is_remote_invoke_target` is
+    // final. The analyzer set a provisional value earlier in the pipeline
+    // (deploy.yaml was not yet consulted); this override is the
+    // authoritative value for deploy-aware builds. Kept in sync with the
+    // formula in `analyzer::analyze`.
+    model.needs_parent_template =
+        model.has_parent_communication && !model.is_remote_invoke_target;
 }
 
 /// SCE_MESH.md §9.6 — mark each `Invoke::Scxml` whose `src` is `#<name>`
@@ -2017,6 +2143,149 @@ topology:
             other => panic!("expected Scxml invoke, got {other:?}"),
         };
         assert!(info.remote_mesh_target.is_none());
+    }
+
+    /// SCE_MESH.md §9.6 codegen-shape exclusivity. When the same machine
+    /// is both a mesh peer (inbound `<invoke src="#<this>">`) and a local
+    /// invoke target (inbound `<invoke src="<this>.scxml">`) within the
+    /// same deployment, the two child-SM shapes conflict and the build
+    /// must reject with `ScxmlInvokeTargetConflict`. Absence of either
+    /// shape passes through cleanly.
+    #[test]
+    fn scxml_invoke_target_conflict_rejected_when_both_shapes_present() {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_invoke_target_conflict_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    platform: linux-x86_64
+    machines:
+      parent_local:
+        source: parent_local.scxml
+      parent_mesh:
+        source: parent_mesh.scxml
+      worker:
+        source: worker.scxml
+"##;
+        // parent_local takes the W3C local-file shape: src resolves to
+        // worker.scxml via the sibling dir (same tempdir).
+        let parent_local_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent_local">
+  <state id="s1">
+    <invoke type="scxml" src="worker.scxml" id="inv0"/>
+  </state>
+</scxml>"##;
+        // parent_mesh takes the mesh shape: src starts with `#`.
+        let parent_mesh_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent_mesh">
+  <state id="s1">
+    <invoke type="scxml" src="#worker" id="inv0"/>
+  </state>
+</scxml>"##;
+        let worker_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="done" name="worker">
+  <final id="done"/>
+</scxml>"##;
+
+        fs::write(tmp.join("deploy.yaml"), deploy).unwrap();
+        fs::write(tmp.join("parent_local.scxml"), parent_local_scxml).unwrap();
+        fs::write(tmp.join("parent_mesh.scxml"), parent_mesh_scxml).unwrap();
+        fs::write(tmp.join("worker.scxml"), worker_scxml).unwrap();
+
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("worker.scxml").to_str().unwrap())
+            .expect("parse worker");
+
+        let err = inject_partition_context_for(&mut model, &tmp.join("deploy.yaml"), None)
+            .expect_err("must reject when worker is both mesh peer and local invoke target");
+        match err {
+            mesh::error::MeshError::Deploy(mesh::error::DeployError::ScxmlInvokeTargetConflict {
+                machine,
+                inbound_peers,
+                local_invoker,
+                local_src,
+            }) => {
+                assert_eq!(machine, "worker");
+                assert_eq!(inbound_peers, vec!["parent_mesh".to_string()]);
+                assert_eq!(local_invoker, "parent_local");
+                assert_eq!(local_src, "worker.scxml");
+            }
+            other => panic!("expected ScxmlInvokeTargetConflict, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// SCE_MESH.md §9.6 codegen-shape exclusivity — the absence path.
+    /// When only one shape is present (here: mesh-only), the validator
+    /// must accept cleanly so the round-trip W3C workers and pure mesh
+    /// topologies continue to build. Also pins `is_remote_invoke_target`
+    /// population through the same call path so downstream template
+    /// authors can rely on the flag's definition.
+    #[test]
+    fn scxml_invoke_target_mesh_only_accepted_and_flag_set() {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_invoke_target_mesh_only_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    platform: linux-x86_64
+    machines:
+      parent_mesh:
+        source: parent_mesh.scxml
+      worker:
+        source: worker.scxml
+"##;
+        let parent_mesh_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent_mesh">
+  <state id="s1">
+    <invoke type="scxml" src="#worker" id="inv0"/>
+  </state>
+</scxml>"##;
+        let worker_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="done" name="worker">
+  <final id="done"/>
+</scxml>"##;
+
+        fs::write(tmp.join("deploy.yaml"), deploy).unwrap();
+        fs::write(tmp.join("parent_mesh.scxml"), parent_mesh_scxml).unwrap();
+        fs::write(tmp.join("worker.scxml"), worker_scxml).unwrap();
+
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("worker.scxml").to_str().unwrap())
+            .expect("parse worker");
+
+        let ctx = inject_partition_context_for(&mut model, &tmp.join("deploy.yaml"), None)
+            .expect("mesh-only worker must accept");
+        // Partition context not required — single-device deploy.
+        assert!(!ctx);
+        assert_eq!(model.scxml_remote_inbound_peers, vec!["parent_mesh".to_string()]);
+        assert!(
+            model.is_remote_invoke_target,
+            "mesh-peer worker must have is_remote_invoke_target set for the codegen-shape seam"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     /// `#<name>` that does not match any declared machine — e.g., author

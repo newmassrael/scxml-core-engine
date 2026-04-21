@@ -419,6 +419,8 @@ pub enum DiagnosticCode {
     MeshDeployPoolInvalidPlaceholder,
     #[serde(rename = "mesh/deploy-server-pool-not-supported")]
     MeshDeployServerPoolNotSupported,
+    #[serde(rename = "mesh/deploy-scxml-invoke-target-conflict")]
+    MeshDeployScxmlInvokeTargetConflict,
     #[serde(rename = "mesh/deploy-partition-duplicate-name")]
     MeshDeployPartitionDuplicateName,
     #[serde(rename = "mesh/deploy-partition-multi-device")]
@@ -638,6 +640,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPoolEmptyInstanceList,
         MeshDeployPoolInvalidPlaceholder,
         MeshDeployServerPoolNotSupported,
+        MeshDeployScxmlInvokeTargetConflict,
         MeshDeployPartitionDuplicateName,
         MeshDeployPartitionMultiDevice,
         MeshDeployPartitionUnitDuplicate,
@@ -810,6 +813,9 @@ impl DiagnosticCode {
 
             // ── Discovery invariant (SCE_MESH.md §3.3) ──────────
             MeshDeployDiscoveryNotSupported => Some("SCE Mesh §3.3"),
+
+            // ── Mesh remote invoke codegen-shape exclusivity (SCE_MESH.md §9.6) ──
+            MeshDeployScxmlInvokeTargetConflict => Some("SCE Mesh §9.6"),
 
             // ── Mesh binding placeholder + server pool (SCE_MESH.md §14.4) ──
             MeshDeployPoolNotSupportedByTransport
@@ -1001,6 +1007,7 @@ impl DiagnosticCode {
             MeshDeployPoolEmptyInstanceList => "mesh/deploy-pool-empty-instance-list",
             MeshDeployPoolInvalidPlaceholder => "mesh/deploy-pool-invalid-placeholder",
             MeshDeployServerPoolNotSupported => "mesh/deploy-server-pool-not-supported",
+            MeshDeployScxmlInvokeTargetConflict => "mesh/deploy-scxml-invoke-target-conflict",
             MeshDeployPartitionDuplicateName => "mesh/deploy-partition-duplicate-name",
             MeshDeployPartitionMultiDevice => "mesh/deploy-partition-multi-device",
             MeshDeployPartitionUnitDuplicate => "mesh/deploy-partition-unit-duplicate",
@@ -2537,6 +2544,18 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5f473bdda8049652","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported on transport 'zenoh' — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can host a multi-instance server pool. Drop `instances:` from the server section, switch the server transport to one that supports pools, or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
             ),
             (
+                "mesh/deploy-scxml-invoke-target-conflict",
+                DeployError::ScxmlInvokeTargetConflict {
+                    machine: "worker".into(),
+                    inbound_peers: vec!["parent_mesh".into()],
+                    local_invoker: "parent_local".into(),
+                    local_src: "worker.scxml".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion on first run.
+                r##"{"v":1,"id":"fnv1a:8891aa8035b7c7da","code":"mesh/deploy-scxml-invoke-target-conflict","stage":"mesh-deploy","spec":"SCE Mesh §9.6","message":"machine 'worker' is both a remote `<invoke type=\"scxml\" src=\"#worker\">` target (mesh peer, inbound from: parent_mesh) and a local-path invoke target of machine 'parent_local' (src=\"worker.scxml\"). These two shapes cannot coexist: the mesh peer shape is default-constructible for SCE_MESH.md §9.6 `ChildSessionAdapter<Engine>`, while the local shape carries a `ParentStateMachine` template parameter. Fix: drop one — either change 'parent_local' to invoke '#worker' through mesh, or remove 'worker' from deploy.yaml topology.","actual":"worker"}"##,
+            ),
+            (
                 "mesh/deploy-partition-duplicate-name",
                 DeployError::PartitionDuplicateName {
                     name: "brake_main".into(),
@@ -3445,6 +3464,7 @@ mod tests {
             | MeshDeployPoolEmptyInstanceList
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
+            | MeshDeployScxmlInvokeTargetConflict
             | MeshDeployPartitionDuplicateName
             | MeshDeployPartitionMultiDevice
             | MeshDeployPartitionUnitDuplicate
@@ -3741,6 +3761,7 @@ mod tests {
                 | MeshDeployPoolEmptyInstanceList
                 | MeshDeployPoolInvalidPlaceholder
                 | MeshDeployServerPoolNotSupported
+                | MeshDeployScxmlInvokeTargetConflict
                 | MeshDeployPartitionDuplicateName
                 | MeshDeployPartitionMultiDevice
                 | MeshDeployPartitionUnitDuplicate
@@ -3794,9 +3815,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            124,
+            125,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 124 distinct variants to match the DiagnosticCode \
+             expected 125 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

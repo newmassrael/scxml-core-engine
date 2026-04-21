@@ -579,6 +579,17 @@ pub struct SCXMLModel {
     pub has_history_states: bool,
     pub has_event_metadata: bool,
     pub has_parent_communication: bool,
+    /// SCE_MESH.md §9.6 — codegen-shape seam. `true` when the machine
+    /// must emit the non-templated child shape (no `ParentStateMachine`
+    /// template param, no `parent_` pointer field, `#_parent` routed
+    /// through `performMeshSend`). Derived by [`crate::analyzer::analyze`]
+    /// as `has_parent_communication && !is_remote_invoke_target`. The
+    /// two shapes converge once §9.6 adopts a mesh-callback shim for
+    /// local invokes; until then this flag keeps W3C local-invoke tests
+    /// (test233/338) on the existing template shape while the mesh
+    /// worker emits the default-constructible shape required by
+    /// `ChildSessionAdapter<Engine>` (see §9.6 child session lifecycle).
+    pub needs_parent_template: bool,
     pub has_child_communication: bool,
     pub needs_http_send: bool,
     pub needs_script_engine: bool,
@@ -758,6 +769,21 @@ pub struct SCXMLModel {
     /// runtime lands. Empty when no peer invokes this machine.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scxml_remote_inbound_peers: Vec<String>,
+
+    /// SCE_MESH.md §9.6 — `true` when this machine serves as a remote
+    /// `<invoke type="scxml" src="#<this>">` target for at least one
+    /// sibling machine in the deploy.yaml topology (equivalently, when
+    /// [`Self::scxml_remote_inbound_peers`] is non-empty). Derived in
+    /// [`crate::collect_scxml_remote_peers`] and consumed by
+    /// [`crate::analyzer::analyze`] to compute
+    /// [`Self::needs_parent_template`] and by `actions/send.jinja2` to
+    /// route `<send target="#_parent">` through
+    /// [`StaticExecutionEngine::performMeshSend`] instead of the
+    /// local `parent_` pointer path. `ChildSessionAdapter<Engine>`
+    /// (§9.6 child session lifecycle) default-constructs the engine,
+    /// which requires the non-templated shape whenever a machine is
+    /// used as an `<invoke>` worker.
+    pub is_remote_invoke_target: bool,
 
     /// SCE_MESH.md §16.5 L3500 barrier-timeout runtime. Maps each
     /// `<parallel>` id **Rooted by the current partition** to the

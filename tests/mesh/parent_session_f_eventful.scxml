@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.2 wire-16 ChildEvent + §9.6.4 <finalize> verification.
+
+     The child worker emits `ping` via `<send target="#_parent">`. That
+     send is intercepted on the worker by `ChildSessionAdapter<Engine>`'s
+     mesh callback (installed by the non-templated codegen shape — see
+     `is_remote_invoke_target` classifier) and published as a wire-16
+     `ChildEvent` envelope over the `/sce_c2p_<worker>_<parent>` channel.
+
+     On the parent, `MeshDispatch::ChildEvent` reconstructs an
+     `EventWithMetadata` with `_event.origin=child_session_id` and
+     delivers it via `raiseExternal`. During the parent's next macrostep,
+     the runtime selects the `<transition event="ping">` in the invoking
+     state — the `<finalize>` block fires **before** transition
+     execution (W3C §6.4.4), flipping `finalized` from `false` to `true`
+     in the parent datamodel. The cond-guarded transition then evaluates
+     against the new value and proves end-to-end that:
+       (a) the mesh callback routed the child send (wire-16 emitted),
+       (b) the parent ran `<finalize>` before evaluating cond,
+       (c) the W3C ordering contract holds over mesh transport. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="lua" initial="waiting" name="parent_session_f_eventful">
+    <datamodel>
+        <data id="finalized" expr="false"/>
+    </datamodel>
+    <state id="waiting">
+        <invoke type="scxml" src="#worker_session_f_eventful" id="remote_inv">
+            <finalize>
+                <assign location="finalized" expr="true"/>
+            </finalize>
+        </invoke>
+        <transition event="ping" cond="finalized == true" target="pass"/>
+        <transition event="ping" target="fail"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

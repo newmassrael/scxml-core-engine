@@ -1993,6 +1993,212 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_test(NAME mesh_session_f_wire_roundtrip
              COMMAND mesh_session_f_wire_roundtrip_test)
 
+    # ── SCE_MESH §9.6.2 wire-16 + §9.6.4 finalize verification ─────
+    # Parent has `datamodel="lua"` so its codegen emits script engine;
+    # worker is a remote inbound peer so its codegen hits the new
+    # `is_remote_invoke_target=true` shape — `<send target="#_parent">`
+    # routes through `performMeshSend` → adapter's mesh callback →
+    # wire-16 envelope. `<finalize>` fires before the parent's
+    # transition selection (W3C §6.4.4) and the cond-guarded transition
+    # observes the flipped datamodel variable.
+    set(MESH_SESSION_F_EVENTFUL_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_eventful_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_sm.h"
+               "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_eventful.scxml"
+                -l cpp -o "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
+                --write-deps "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_eventful.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_eventful.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_sm.h.d"
+        COMMENT "Mesh §9.6.2 eventful: Generating parent_session_f_eventful_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_sm.h"
+               "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_eventful.scxml"
+                -l cpp -o "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
+                --write-deps "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_eventful.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_eventful.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_sm.h.d"
+        COMMENT "Mesh §9.6.2 eventful: Generating worker_session_f_eventful_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_session_f_eventful_test
+        mesh/test_mesh_session_f_eventful.cpp
+        "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_sm.h"
+        "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_transport.h"
+        "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_sm.h"
+        "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_transport.h"
+    )
+
+    target_include_directories(mesh_session_f_eventful_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_session_f_eventful_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_session_f_eventful_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_session_f_eventful_test)
+
+    add_test(NAME mesh_session_f_eventful
+             COMMAND mesh_session_f_eventful_test)
+
+    # ── SCE_MESH §9.6.5 autoforward="true" verification (wire-17) ──
+    # Parent autoforwards external `trigger` onto the child; child
+    # transitions to `<final>` and wire-18 fires.
+    set(MESH_SESSION_F_AUTOFWD_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_autoforward_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_sm.h"
+               "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_autoforward.scxml"
+                -l cpp -o "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
+                --write-deps "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_autoforward.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_autoforward.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_sm.h.d"
+        COMMENT "Mesh §9.6.5 autoforward: Generating parent_session_f_autoforward_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_sm.h"
+               "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_autoforward.scxml"
+                -l cpp -o "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
+                --write-deps "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_autoforward.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_autoforward.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_sm.h.d"
+        COMMENT "Mesh §9.6.5 autoforward: Generating worker_session_f_autoforward_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_session_f_autoforward_test
+        mesh/test_mesh_session_f_autoforward.cpp
+        "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_sm.h"
+        "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_transport.h"
+        "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_sm.h"
+        "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_transport.h"
+    )
+
+    target_include_directories(mesh_session_f_autoforward_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_session_f_autoforward_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_session_f_autoforward_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_session_f_autoforward_test)
+
+    add_test(NAME mesh_session_f_autoforward
+             COMMAND mesh_session_f_autoforward_test)
+
+    # ── SCE_MESH §9.6 wire-19 InvokeCancel verification ────────────
+    # Parent exits the invoking state via `<transition event="stop">`;
+    # onexit emits wire-19. Worker adapter cancels and erases session.
+    set(MESH_SESSION_F_CANCEL_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_cancel_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_sm.h"
+               "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_cancel.scxml"
+                -l cpp -o "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
+                --write-deps "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_cancel.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_cancel.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_sm.h.d"
+        COMMENT "Mesh §9.6 cancel: Generating parent_session_f_cancel_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_sm.h"
+               "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_cancel.scxml"
+                -l cpp -o "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
+                --write-deps "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_cancel.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_cancel.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_sm.h.d"
+        COMMENT "Mesh §9.6 cancel: Generating worker_session_f_cancel_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_session_f_cancel_test
+        mesh/test_mesh_session_f_cancel.cpp
+        "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_sm.h"
+        "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_transport.h"
+        "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_sm.h"
+        "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_transport.h"
+    )
+
+    target_include_directories(mesh_session_f_cancel_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_CANCEL_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_session_f_cancel_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_session_f_cancel_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_session_f_cancel_test)
+
+    add_test(NAME mesh_session_f_cancel
+             COMMAND mesh_session_f_cancel_test)
+
     # ── SCE_MESH §9.5 srcexpr compile verification ──────────────
     # Forces the srcexpr `{% if invoke_info.srcexpr %}` branches in
     # entry_exit_actions.jinja2 + state_machine.jinja2 to render and

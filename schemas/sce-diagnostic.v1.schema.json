@@ -94,6 +94,7 @@
         "mesh/deploy-pool-empty-instance-list",
         "mesh/deploy-pool-invalid-placeholder",
         "mesh/deploy-server-pool-not-supported",
+        "mesh/deploy-scxml-invoke-target-conflict",
         "mesh/deploy-partition-duplicate-name",
         "mesh/deploy-partition-multi-device",
         "mesh/deploy-partition-unit-duplicate",

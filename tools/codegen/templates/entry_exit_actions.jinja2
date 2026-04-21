@@ -564,7 +564,7 @@
 {# lands them on the non-static branch — but a datamodel-less history      #}
 {# cross-product would fall through every other flag and select static,    #}
 {# triggering "invalid use of non-static member" at instance-write sites.  #}
-{% if not model.needs_script_engine and not model.invokes | scxml and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects and not model.has_history_states %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% if not model.needs_script_engine and not model.invokes | scxml and not model.needs_parent_template and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects and not model.has_history_states %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.5 autoforward="true" verification (wire-17).
+
+     The parent's `<invoke autoforward="true">` declares that every
+     external event the parent receives must be replayed onto the child.
+     Per W3C §6.4.6 this runs during the parent's own macrostep before
+     normal transition selection; in the mesh case the generated
+     `forwardToAutoforwardChildren` closure routes through
+     `engine.performScxmlInvokeParentEvent(...)` which publishes wire-17
+     `ParentEvent` on the `/sce_p2c_<parent>_<child>` channel.
+
+     The worker's inbound pump (`pumpScxmlInvokeRequests`) dispatches
+     wire-17 through `WorkerSessionHost::onWire17`, calling the child
+     adapter's `raiseExternal(event_name, data, sendId)`. The child
+     transitions to `done` on the forwarded event; the next host tick
+     sees `isFinal()` and emits wire-18 `InvokeDone`, which the parent
+     observes as `done.invoke.remote_inv`. Reaching `pass` proves the
+     full autoforward round-trip. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting" name="parent_session_f_autoforward">
+    <state id="waiting">
+        <invoke type="scxml" src="#worker_session_f_autoforward" id="remote_inv" autoforward="true"/>
+        <!-- `trigger` must be in the parent's Event enum so the test driver
+             can `raiseExternal(Event::Trigger)`. A targetless transition
+             enumerates the event without altering the parent's state. -->
+        <transition event="trigger"/>
+        <transition event="done.invoke" target="pass"/>
+        <transition event="done.invoke.remote_inv" target="pass"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

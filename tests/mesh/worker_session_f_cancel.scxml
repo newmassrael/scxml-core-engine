@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 wire-19 InvokeCancel worker. Stays in `running`
+     indefinitely. The host spawns an adapter on wire-14, ticks it (no-op
+     since there is no onentry / transition fire), and awaits a wire-19
+     from the parent before erasing the session. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="running" name="worker_session_f_cancel">
+    <state id="running"/>
+</scxml>

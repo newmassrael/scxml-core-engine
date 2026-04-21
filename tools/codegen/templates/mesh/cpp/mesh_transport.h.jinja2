@@ -818,8 +818,16 @@ struct TransportRouter {
                 invoke_id_str,
                 env.source,
                 send_ctp);
-            adapter->engine().initialize();
 
+            // Publish wire-15 `InvokeStarted` BEFORE the child's first
+            // macrostep. `engine().initialize()` may invoke `<onentry>`
+            // bodies that emit `<send target="#_parent">`, each of which
+            // the mesh callback translates into a wire-16 `ChildEvent`.
+            // The parent's `onInvokeStarted` consumer stashes the child
+            // session URI on wire-15; if wire-16 overtook wire-15, the
+            // parent's `executeFinalizeForChildEvent` would see an empty
+            // `childSession.sessionId` and skip `<finalize>` — silently
+            // violating W3C §6.4.4 ordering (feedback_silently_broken_hooks).
             ::SCE::Mesh::MeshEnvelope started{};
             started.id = SCE::uuid::v7();
             started.source = host_machine_name_;
@@ -829,6 +837,8 @@ struct TransportRouter {
             started.subject = invoke_id_str;
             started.child_session_id = session_id;
             (void)send_ctp(started);
+
+            adapter->engine().initialize();
 
             if (adapter->isFinal()) {
                 emitWire18(*adapter, send_ctp);

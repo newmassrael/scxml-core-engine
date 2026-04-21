@@ -15,6 +15,20 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     add_system_events(model);
     build_prefix_matching(model);
 
+    // SCE_MESH.md §9.6 codegen-shape seam. Initial value from SCXML-only
+    // state — `is_remote_invoke_target` is still false here because this
+    // pipeline stage has not yet read deploy.yaml. The mesh-inject stage
+    // (`inject_partition_context_for`) recomputes the derived flag after
+    // populating `is_remote_invoke_target` from `scxml_remote_inbound_peers`.
+    // The value set here is what pure-SCXML consumers (conformance harness,
+    // WASM online codegen without deploy) observe; deploy.yaml-aware builds
+    // override it with the two-input flag. Single source of truth for the
+    // "emit ParentStateMachine template" condition consumed by
+    // state_machine.jinja2 / process_transition.jinja2 /
+    // entry_exit_actions.jinja2 / actions/send.jinja2.
+    model.needs_parent_template =
+        model.has_parent_communication && !model.is_remote_invoke_target;
+
     // Named Context: set needs_nonstatic_method
     model.needs_nonstatic_method = model.needs_script_engine
         || model.has_scxml_invoke()

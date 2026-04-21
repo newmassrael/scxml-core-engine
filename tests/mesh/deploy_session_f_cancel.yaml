@@ -1,0 +1,9 @@
+# SCE Mesh §9.6 wire-19 InvokeCancel verification fixture.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_session_f_cancel:
+        source: parent_session_f_cancel.scxml
+      worker_session_f_cancel:
+        source: worker_session_f_cancel.scxml

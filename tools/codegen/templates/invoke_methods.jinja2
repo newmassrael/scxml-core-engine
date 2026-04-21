@@ -419,7 +419,17 @@
                 "{{ invoke_info.invoke_id }}"
             ));
             (void)donedata;  // donedata surfacing on done.invoke.data is a follow-up
-            activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+            // W3C §6.4.4/§6.4.5 + SCE_MESH.md §9.6.3: do NOT erase activeInvokes_
+            // here. The entry must survive so any ChildEvent (wire-16) that
+            // reached the external queue earlier in the same drain as this
+            // wire-18 still matches by `sessionId == eventWithMeta.origin` in
+            // `executeFinalizeForChildEvent`. Ordering in a single parent
+            // macrostep: external queue contains [ping, done.invoke.X] →
+            // finalize runs on ping → transition selection on ping → (next
+            // event) done.invoke.X → transition selection → onexit of the
+            // invoking state calls `activeInvokes_.erase` exactly once.
+            // Erasing here would race the still-pending ChildEvent and skip
+            // its `<finalize>`, silently breaking W3C §6.4.4 ordering.
             AOT_DEBUG("AOT onInvokeDone: raised done.invoke for '{}'", subject);
             return;
         }

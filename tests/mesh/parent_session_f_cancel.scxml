@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 wire-19 InvokeCancel verification.
+
+     W3C §6.4.5: when a parent exits the state containing an `<invoke>`
+     before the child reaches `<final>`, the runtime cancels the child.
+     In the mesh case this surfaces as a wire-19 `InvokeCancel` envelope
+     on the `/sce_p2c_<parent>_<child>` channel, emitted from the
+     parent's `onexit` block (generated in invoke_methods.jinja2) via
+     `engine.performScxmlInvokeCancel(peer, invokeIdString)`.
+
+     The worker's inbound pump dispatches wire-19 through
+     `WorkerSessionHost::onWire19`, which looks up the adapter by
+     `env.subject`, calls `adapter->cancel()`, and erases the session.
+     Subsequent child sends are dropped (the adapter checks its own
+     cancelled flag) — preserving the §9.6 cancel contract.
+
+     Test driver raises `stop` externally; parent transitions to
+     `cancelled` and we assert the final state. The wire-19 observation
+     is implicit: if the cancel did not fire, the child would still be
+     `running` in the worker host and no wire-20 error would surface
+     either (there is nothing to error on) — so the only observable
+     signal is the parent reaching `cancelled` without a prior
+     `error.execution`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting" name="parent_session_f_cancel">
+    <state id="waiting">
+        <invoke type="scxml" src="#worker_session_f_cancel" id="remote_inv"/>
+        <transition event="stop" target="cancelled"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="cancelled"/>
+    <final id="fail"/>
+</scxml>

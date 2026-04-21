@@ -1,0 +1,20 @@
+# SCE Mesh §9.6 Session F eventful + finalize fixture.
+#
+# Two machines on one device. The parent's `<invoke src="#worker_session_f_eventful">`
+# classifies as a remote mesh invoke (sibling peer) so the codegen materialises
+# `/sce_p2c_parent_session_f_eventful_worker_session_f_eventful` and
+# `/sce_c2p_worker_session_f_eventful_parent_session_f_eventful` shm channels.
+#
+# Worker is a `scxml_remote_inbound_peer` in this deployment, so its codegen
+# sees `is_remote_invoke_target=true` — the new §9.6 shape-seam — and
+# emits `<send target="#_parent">` through `engine.performMeshSend`
+# instead of the templated `parent_->raiseExternal` path. This fixture is
+# the consumer that exercises that seam end-to-end.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_session_f_eventful:
+        source: parent_session_f_eventful.scxml
+      worker_session_f_eventful:
+        source: worker_session_f_eventful.scxml

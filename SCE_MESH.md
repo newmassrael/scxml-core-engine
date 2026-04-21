@@ -1448,6 +1448,8 @@ Additional wire-stable pattern values (reserved in §13 CBOR key map):
 
 Wire values 10-13 remain reserved for Stream patterns (§13 Phase 4); 14-20 are assigned to the full remote invoke lifecycle (Session F) and all seven are active as of this landing; 21 is `ParallelRegionDone` (Session E2). Future additions must use unused integers (22+). **No wire value may ever be reused or overloaded — see §13 "Adding a variant requires a new wire value, never reuse."**
 
+**Codegen-shape exclusivity.** A machine registered in `deploy.yaml` as a remote invoke peer (i.e. at least one sibling machine's SCXML contains `<invoke type="scxml" src="#<this>">`) MUST NOT simultaneously appear as a local-path `<invoke type="scxml" src="<this>.scxml">` target elsewhere in the same deployment. The mesh peer shape is default-constructible so `ChildSessionAdapter<Engine>` can own the child engine, while the local-path shape carries a `ParentStateMachine` template parameter and a `parent_` pointer threaded through the ctor for direct enum-based parent notification; the two shapes are structurally incompatible on a single generated SM class. Violations are rejected at build time with `mesh/deploy-scxml-invoke-target-conflict` (`DeployError::ScxmlInvokeTargetConflict`). Fix by flipping the local-path invoker to the `#<peer>` mesh shape, or by removing the machine from the deploy topology so it ceases to be a mesh peer.
+
 #### 9.6.3 `_event` field wiring (W3C §5.10.2 compliance)
 
 When a child event arrives at the parent as `ChildEvent`:
