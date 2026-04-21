@@ -124,15 +124,17 @@ Per-kind context objects carrying stateful scratch data. Rules:
 - The `id` is unique across all context objects in the document
   (`validation/duplicate-context-object`).
 - The `id` does not collide with a type alias the C++ codegen emits
-  on the generated state-machine class. The closed reserved set is
-  currently `{ policy }` — comparison is case-insensitive because
-  Jinja2's `capitalize` filter maps `policy`, `Policy`, and `POLICY`
-  to the same `PolicyType` alias
-  (`validation/reserved-context-id`). The canonical list lives in
-  `RESERVED_CONTEXT_IDS` in `sce-build/src/parser.rs` and is kept
-  narrow: extend only when a concrete new alias is added to
-  `tools/codegen/templates/state_machine.jinja2` and the collision
-  can be demonstrated.
+  on the generated state-machine class. At HEAD the reserved set is
+  `{ policy }` — comparison is case-insensitive because Jinja2's
+  `capitalize` filter maps `policy`, `Policy`, and `POLICY` to the
+  same `PolicyType` alias (`validation/reserved-context-id`). The
+  set is not maintained by hand: `RESERVED_CONTEXT_IDS` in
+  `sce-build/src/parser.rs` is a `LazyLock` that scans
+  `tools/codegen/templates/state_machine.jinja2` for literal
+  `using {Id}Type =` aliases at first access. Adding a new class-
+  scope alias to the template therefore extends the reserved set
+  automatically — no parallel const to update, and no drift window
+  between template and parser.
 - Kinds that require a context object (e.g. Validator for history
   tracking) reject documents that omit it
   (`validation/missing-context`).

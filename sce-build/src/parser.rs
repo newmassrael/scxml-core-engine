@@ -9,33 +9,70 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
-/// Reserved `<sce:context id="...">` names.
+/// Reserved `<sce:context id="...">` names, derived from the C++
+/// codegen template at first access.
 ///
 /// The C++ codegen emits `using {Id}Type = ...;` on the generated
 /// state-machine class (see `tools/codegen/templates/state_machine.jinja2`).
-/// Identifiers whose `capitalize`-d form would collide with an alias
-/// the class already exposes — at HEAD that is only `PolicyType` from
-/// the `using PolicyType = {{ _pol_inst }};` line in the same class
-/// scope — must be rejected at parse time so the collision never
+/// Identifiers whose `capitalize`-d form would collide with such an
+/// alias must be rejected at parse time so the collision never
 /// reaches template rendering or C++ compilation.
 ///
-/// Comparison is case-insensitive because Jinja2's `capitalize` filter
-/// lowercases every character after the first (`"POLICY".capitalize()
-/// == "Policy"`), so `policy`, `Policy`, and `POLICY` all generate the
-/// same `PolicyType` alias and therefore collide identically.
+/// # Single source of truth
 ///
-/// Kept narrow by audit: the open-source `doom_wasm` + `smart_light`
-/// corpus uses `hardware`, `enemy`, `aim`, `secret`, `player`, `combo`,
-/// `berserk`, `game`, `weapon` — none of which collide. Extend this
-/// list only when a concrete new alias is added to the template and
-/// the collision can be demonstrated, never speculatively.
+/// The template is the authoritative source. On first access this
+/// `LazyLock` scans the template text for literal `using {Id}Type =`
+/// aliases and publishes the lowercased prefixes as the reserved
+/// list. Adding a new `using FooType = ...` line to the template is
+/// therefore sufficient to reserve `foo` — there is no parallel
+/// const to update, and no drift can exist between the template's
+/// alias set and the reserved list because they are mechanically
+/// the same set.
 ///
-/// Exposed `pub` so the integration-test drift guard
-/// (`cpp_reserved_ids_cover_all_sm_class_type_aliases` in
-/// `sce-build/tests/forge_conformance.rs`) can cross-check the
-/// rendered template output against this list. The list is canonical
-/// SOT; the `pub` is a deliberate API surface, not a leak.
-pub const RESERVED_CONTEXT_IDS: &[&str] = &["policy"];
+/// # Regex extraction shape
+///
+/// `using\s+([A-Z][A-Za-z0-9_]*)Type\s*=` captures only literal
+/// identifier aliases. Jinja2 expressions such as
+/// `using {{ ctx.id | capitalize }}Type = ...` begin with `{`, which
+/// does not match the leading `[A-Z]`, so per-context aliases that
+/// come from user SCXML are excluded automatically. Conditional
+/// template blocks (`{% if ... %}using FooType = ...{% endif %}`)
+/// are still visible in the source — reserving a future-enabled
+/// alias's id from day one is the correct behaviour.
+///
+/// # Comparison semantics
+///
+/// Callers lowercase the context id before checking membership
+/// because Jinja2's `capitalize` filter lowercases every character
+/// after the first (`"POLICY".capitalize() == "Policy"`), so
+/// `policy`, `Policy`, and `POLICY` all generate the same
+/// `PolicyType` alias and therefore collide identically.
+///
+/// # Static-slice shape
+///
+/// The reserved list is published as `&'static [&'static str]` so
+/// [`crate::forge::error::ValidationError::ReservedContextId`]'s
+/// `reserved: &'static [&'static str]` field accepts it without
+/// conversion — the diagnostic wire format stays unchanged. Leaking
+/// is bounded by the template size (static), so the leak does not
+/// grow at runtime.
+pub static RESERVED_CONTEXT_IDS: LazyLock<&'static [&'static str]> = LazyLock::new(|| {
+    const TEMPLATE_SRC: &str =
+        include_str!("../../tools/codegen/templates/state_machine.jinja2");
+    let re = regex::Regex::new(r"using\s+([A-Z][A-Za-z0-9_]*)Type\s*=")
+        .expect("RESERVED_CONTEXT_IDS regex must compile");
+    let mut ids: Vec<String> = re
+        .captures_iter(TEMPLATE_SRC)
+        .map(|c| c[1].to_ascii_lowercase())
+        .collect();
+    ids.sort();
+    ids.dedup();
+    let leaked: Vec<&'static str> = ids
+        .into_iter()
+        .map(|s| &*Box::leak(s.into_boxed_str()))
+        .collect();
+    Box::leak(leaked.into_boxed_slice())
+});
 
 pub struct SCXMLParser {
     document_order_counter: u32,
@@ -2093,7 +2130,7 @@ impl SCXMLParser {
                 return Err(Located::new(
                     ValidationError::ReservedContextId {
                         id: ctx_id,
-                        reserved: RESERVED_CONTEXT_IDS,
+                        reserved: *RESERVED_CONTEXT_IDS,
                     }
                     .into(),
                     source_name,

@@ -1212,21 +1212,21 @@ fn cpp_context_typedef_single_duck_typed() {
 
 #[test]
 fn cpp_reserved_ids_cover_all_sm_class_type_aliases() {
-    // Drift guard: the C++ codegen emits `using {Id}Type = ...` aliases
-    // on the generated SM class. Any such alias whose identifier is NOT
-    // derived from a `<sce:context id="...">` declaration originates
-    // from the template itself and must have its lowercased form listed
-    // in `parser::RESERVED_CONTEXT_IDS`, so user-supplied SCXML cannot
-    // declare a colliding context id that reaches the C++ compiler with
-    // a duplicate typedef.
+    // Extractor regression guard for the template-derived
+    // `parser::RESERVED_CONTEXT_IDS`. The LazyLock scans the template
+    // source with the same `using {Id}Type =` pattern used here; this
+    // test renders a context-less fixture and verifies that every
+    // literal alias reaching the rendered output is also in the
+    // reserved set.
     //
-    // Rendering a context-less fixture pins "all matches come from the
-    // template". If this test fails, a new `using XxxType` alias was
-    // added to `state_machine.jinja2` without updating the reserved
-    // list. Either add the lowercased prefix to `RESERVED_CONTEXT_IDS`
-    // in `sce-build/src/parser.rs` (and to the enumeration in
-    // `docs/SCE_ACCEPTED_SUBSET.md` §2.3), or rename the alias to a
-    // non-`{Id}Type` pattern (see `EventWithMetadata` for prior art).
+    // Because the reserved list is *derived from* the template source
+    // at first access, source-vs-rendered divergence is the only way
+    // this test can fail: either the derive regex missed an alias the
+    // Jinja2 compiler still emits (e.g., a different spacing pattern),
+    // or a future `using {Id}Type =` was reached through an unexpected
+    // expansion path. The failure message names the lowercased id and
+    // points at `RESERVED_CONTEXT_IDS` in `sce-build/src/parser.rs` so
+    // the extractor can be widened in a single place.
     let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
                     version="1.0" name="fixture" initial="s1">
         <state id="s1"/>
@@ -1239,15 +1239,16 @@ fn cpp_reserved_ids_cover_all_sm_class_type_aliases() {
         let prefix = &cap[1];
         let lowered = prefix.to_ascii_lowercase();
         if !sce_build::parser::RESERVED_CONTEXT_IDS.contains(&lowered.as_str()) {
-            missing.push(format!("`using {prefix}Type` → add {lowered:?} to RESERVED_CONTEXT_IDS"));
+            missing.push(format!(
+                "`using {prefix}Type` in rendered output but {lowered:?} missing from template-derived RESERVED_CONTEXT_IDS"
+            ));
         }
     }
     assert!(
         missing.is_empty(),
-        "Template emits class-level typedef(s) absent from RESERVED_CONTEXT_IDS:\n  {}\n\
-         Update `RESERVED_CONTEXT_IDS` in sce-build/src/parser.rs and the enumeration in \
-         docs/SCE_ACCEPTED_SUBSET.md §2.3, or rename the alias away from the `{{Id}}Type` \
-         pattern.",
+        "Template-derived `RESERVED_CONTEXT_IDS` does not cover every alias \
+         reaching the rendered header — the regex extractor in `sce-build/src/parser.rs` \
+         needs widening:\n  {}",
         missing.join("\n  "),
     );
 }
