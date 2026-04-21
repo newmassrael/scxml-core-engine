@@ -1255,6 +1255,59 @@ mod tests {
         }
     }
 
+    #[test]
+    fn partition_region_liveliness_without_error_handler_rejects() {
+        // Symmetric to `partition_barrier_timeout_without_error_handler_rejects`
+        // for the §16.4 / §16.7 row 13 `REGION_PARTITIONED` raise path.
+        // `partition_region_liveliness_opt_in=true` with no
+        // `<transition event="error.communication">` in the SCXML must
+        // be refused at codegen — the `feedback_silently_broken_hooks`
+        // gate the runtime commit (`6c59ca18`) introduced alongside
+        // the Zenoh row-13 implementation. Guarded directly at the
+        // unit layer so the gate is not a
+        // `feedback_built_but_unconsumed` dead branch reachable only
+        // through the `mesh_zenoh_region_liveness_verification` E2E.
+        let mut model = parse(PARALLEL_FINAL_SCXML);
+        crate::analyzer::analyze(&mut model, "pf_fixture.scxml");
+        model.partition_context_present = true;
+        model
+            .partition_parallel_roles
+            .insert("root".to_string(), crate::model::PartitionRole::Root);
+        model.partition_region_liveliness_opt_in = true;
+        let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("tools")
+            .join("codegen")
+            .join("templates");
+        let res = generate_cpp(&model, &template_dir, "pf_fixture");
+        let err = match res {
+            Ok(_) => panic!(
+                "partition_region_liveliness_opt_in without error.communication handler must reject"
+            ),
+            Err(e) => e,
+        };
+        match err {
+            GenerateError::UnsupportedFeature(msg) => {
+                assert!(msg.contains("liveliness"), "msg cites the knob: {msg}");
+                assert!(
+                    msg.contains("error.communication"),
+                    "msg names the missing handler: {msg}"
+                );
+                assert!(
+                    msg.contains("REGION_PARTITIONED"),
+                    "msg names §16.7 row 13 reason: {msg}"
+                );
+                // Machine name is whatever `<scxml name=...>` carries in
+                // PARALLEL_FINAL_SCXML — the assertion only pins that
+                // SOME machine identifier is surfaced, not the exact
+                // string.
+                assert!(msg.contains("machine"), "msg names the compiled machine: {msg}");
+            }
+            other => panic!("expected UnsupportedFeature, got {other:?}"),
+        }
+    }
+
     /// Models without mesh-rpc invokes must NOT be rejected — the gate
     /// is feature-specific, not a blanket non-C++ block.
     #[test]
