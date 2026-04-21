@@ -1,4 +1,5 @@
 {
+  "network": "sce_someip_pool",
   "unicast": "127.0.0.1",
   "routing": "motor_pool_server",
   "applications": [

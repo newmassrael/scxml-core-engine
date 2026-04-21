@@ -1,4 +1,5 @@
 {
+  "network": "sce_someip_unsub",
   "unicast": "127.0.0.1",
   "routing": "motor_someip_unsub_server",
   "applications": [

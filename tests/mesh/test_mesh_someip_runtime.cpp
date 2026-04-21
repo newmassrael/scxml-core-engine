@@ -29,8 +29,10 @@
 //   6. FieldWrite:    brake send_to_motor (FieldWrite) → setter handler
 //                     (0x0201) → motor engine receives field.set.target_speed
 //
-// VSOMEIP_CONFIGURATION must point to vsomeip_e2e_test.json (internal
-// routing, service discovery disabled, motor as routing manager).
+// VSOMEIP_CONFIGURATION must point to vsomeip_e2e_runtime.json (internal
+// routing, service discovery disabled, motor as routing manager,
+// `network: sce_someip_runtime` to isolate /tmp/sce_someip_runtime-*
+// socket namespace from sibling SomeIP ctest fixtures).
 
 #include "brake_someip_multi_sm.h"
 #include "brake_someip_multi_transport.h"

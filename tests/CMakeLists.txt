@@ -2611,15 +2611,14 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         apply_sce_test_policies(mesh_someip_runtime_test)
         add_test(NAME mesh_someip_runtime
                  COMMAND mesh_someip_runtime_test)
-        # vsomeip's routing manager binds a well-known unix socket
-        # (/tmp/vsomeip-0 by default). Only one routing manager can own
-        # that path at a time, so serialize any test that spins up an
-        # internal-routing vsomeip process. RESOURCE_LOCK prevents
-        # parallel ctest runs from racing for the socket.
+        # vsomeip builds socket paths as "<VSOMEIP_BASE_PATH>/<network>-..."
+        # (utility::get_base_path, configuration_impl::load_network). Each
+        # mesh_someip_* test declares a unique `network` field in its JSON
+        # so /tmp/<network>-* namespaces never collide, which lets ctest -j
+        # run them in parallel without a shared routing-socket lock.
         set_tests_properties(mesh_someip_runtime PROPERTIES
             TIMEOUT 30
-            RESOURCE_LOCK vsomeip_routing_socket
-            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_runtime.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
         # ── Session I: engine-driven RPC/FieldRead over SOME/IP ──────
         # Sibling to mesh_someip_runtime — binds the real motor_someip_multi
@@ -2655,8 +2654,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                  COMMAND mesh_someip_rpc_engine_driven_test)
         set_tests_properties(mesh_someip_rpc_engine_driven PROPERTIES
             TIMEOUT 30
-            RESOURCE_LOCK vsomeip_routing_socket
-            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_rpc_engine.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
         # ── SCE Mesh §10.10 Gap 5 (i): SOME/IP late-boot OutboundBuffer ──
         # Re-runs sce-codegen on the same brake_someip_multi /
@@ -2746,7 +2744,6 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                  COMMAND mesh_someip_late_boot_test)
         set_tests_properties(mesh_someip_late_boot PROPERTIES
             TIMEOUT 30
-            RESOURCE_LOCK vsomeip_routing_socket
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_someip_late_boot.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
         # Session J: SOME/IP eventgroup notification (server-initiated push).
@@ -2780,8 +2777,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                  COMMAND mesh_someip_eventgroup_engine_driven_test)
         set_tests_properties(mesh_someip_eventgroup_engine_driven PROPERTIES
             TIMEOUT 30
-            RESOURCE_LOCK vsomeip_routing_socket
-            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_test.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_eventgroup.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
         # ── Gap S6: SOME/IP EventUnsubscribe E2E ──────────────────────
         # Closes next_session_someip_s6_event_unsubscribe.md: verifies
@@ -2876,7 +2872,6 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                  COMMAND mesh_someip_unsubscribe_test)
         set_tests_properties(mesh_someip_unsubscribe PROPERTIES
             TIMEOUT 30
-            RESOURCE_LOCK vsomeip_routing_socket
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_unsub.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
@@ -4036,7 +4031,6 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                  COMMAND mesh_someip_server_pool_runtime_test)
         set_tests_properties(mesh_someip_server_pool_runtime PROPERTIES
             TIMEOUT 30
-            RESOURCE_LOCK vsomeip_routing_socket
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_motor_pool.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
     else()
         message(STATUS "vsomeip3 not found — skipping mesh_someip_server_pool_compile_test")

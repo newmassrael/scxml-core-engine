@@ -1,7 +1,7 @@
 {
-  "network": "sce_someip_late_boot",
+  "network": "sce_someip_eventgroup",
   "unicast": "127.0.0.1",
-  "routing": "brake_someip_multi_app",
+  "routing": "motor_someip_multi_server",
   "applications": [
     { "name": "brake_someip_multi_app", "id": "0x1111" },
     { "name": "motor_someip_multi_server", "id": "0x2222" }
