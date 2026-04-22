@@ -159,4 +159,10 @@ MODULE.bazel.lock
 /third_party/*/BUILD.bazel
 
 # SCE embed output (regenerate via: ./scripts/package_embed.sh)
-embed/
+# embed/MANIFEST.json records the public-header API surface and is
+# checked in so consumers vendoring embed/ can diff old-vs-new across
+# sync points, and so verify_embed_manifest.sh can drift-guard changes.
+# The /embed/** pattern is required (not embed/) — git cannot re-include
+# a file under a directory that is ignored as a whole.
+/embed/**
+!/embed/MANIFEST.json

@@ -206,6 +206,21 @@ fi
 echo "${VERSION}" > "${OUTPUT_DIR}/VERSION"
 
 # ============================================================================
+# 6. Public-header manifest — emit after all headers are in place so the
+#    AST scan sees the exact surface consumers will receive. Skipped when
+#    clang++-19 is absent (manifest is advisory; consumers vendoring
+#    without clang can still use the embed package).
+# ============================================================================
+CLANG_FOR_MANIFEST="${CLANG:-clang++-19}"
+if command -v "${CLANG_FOR_MANIFEST}" >/dev/null 2>&1; then
+    echo "Emitting public-header manifest..."
+    "${SCRIPT_DIR}/emit_embed_manifest.sh" -d "${OUTPUT_DIR}"
+else
+    echo "WARNING: ${CLANG_FOR_MANIFEST} not found; skipping MANIFEST.json emit." >&2
+    echo "         Consumers that rely on the manifest should install clang-19." >&2
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 HEADER_COUNT=$(find "${OUTPUT_DIR}/include" -name "*.h" | wc -l)
