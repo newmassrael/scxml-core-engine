@@ -94,44 +94,83 @@ if [[ ${#HEADERS[@]} -eq 0 ]]; then
     exit 1
 fi
 
-echo "Scanning ${#HEADERS[@]} headers with ${CLANG}..."
+# Default to 4 parallel jobs; clang -ast-dump is memory-heavy (one TU per
+# header pulling the full transitive closure), so capping avoids OOM on
+# many-core machines. Override via JOBS=N to tune for the host.
+JOBS="${JOBS:-4}"
 
+echo "Scanning ${#HEADERS[@]} headers with ${CLANG} (JOBS=${JOBS})..."
+
+TMP_WORK_DIR="$(mktemp -d --suffix=.embed-manifest)"
 TMP_LINES="$(mktemp --suffix=.jsonl)"
 TMP_PARSE_ERRORS="$(mktemp --suffix=.txt)"
-trap 'rm -f "${TMP_LINES}" "${TMP_PARSE_ERRORS}"' EXIT
-
-CLANG_ARGS=(
-    -Xclang -ast-dump=json
-    -fsyntax-only
-    -std=c++17
-    -x c++-header
-    -I "${INCLUDE_DIR}"
-    -I "${EMBED_DIR}/third_party/nlohmann_json/include"
-    -I "${EMBED_DIR}/third_party/pugixml/src"
-)
+trap 'rm -rf "${TMP_WORK_DIR}"; rm -f "${TMP_LINES}" "${TMP_PARSE_ERRORS}"' EXIT
 
 # clang emits a complete AST even when a header is not self-contained
 # (missing transitive include, forward-decl collision, etc.), so the
 # manifest still captures symbols from partially-parsed inputs. The
 # headers that produced diagnostics are recorded verbatim in the manifest
 # so consumers can tell which entries may have degraded member layouts.
-for header in "${HEADERS[@]}"; do
-    CLANG_STDERR="$(mktemp)"
+#
+# Workers write per-header outputs into TMP_WORK_DIR so xargs -P >1 has no
+# shared-file race; the merge below appends in deterministic HEADERS order
+# so byte-output is identical to the prior serial implementation.
+process_one() {
+    local include_dir="$1"
+    local embed_dir="$2"
+    local clang_bin="$3"
+    local filter="$4"
+    local work_dir="$5"
+    local header="$6"
+
+    local rel="${header#${include_dir}/}"
+    local key="${rel//\//__}"
+    local out_lines="${work_dir}/${key}.jsonl"
+    local out_error="${work_dir}/${key}.err"
+    local clang_stderr
+    clang_stderr="$(mktemp)"
     set +e
-    "${CLANG}" "${CLANG_ARGS[@]}" "${header}" 2>"${CLANG_STDERR}" \
-        | python3 "${FILTER}" "${INCLUDE_DIR}" >> "${TMP_LINES}"
-    pipe_status=("${PIPESTATUS[@]}")
+    "${clang_bin}" \
+        -Xclang -ast-dump=json \
+        -fsyntax-only \
+        -std=c++17 \
+        -x c++-header \
+        -I "${include_dir}" \
+        -I "${embed_dir}/third_party/nlohmann_json/include" \
+        -I "${embed_dir}/third_party/pugixml/src" \
+        "${header}" 2>"${clang_stderr}" \
+        | python3 "${filter}" "${include_dir}" > "${out_lines}"
+    local pipe_status=("${PIPESTATUS[@]}")
     set -e
     if [[ "${pipe_status[1]}" != "0" ]]; then
         echo "ERROR: filter helper failed for ${header}" >&2
-        rm -f "${CLANG_STDERR}"
-        exit 1
+        rm -f "${clang_stderr}"
+        return 1
     fi
     if [[ "${pipe_status[0]}" != "0" ]]; then
-        rel="${header#${INCLUDE_DIR}/}"
-        printf '%s\n' "${rel}" >> "${TMP_PARSE_ERRORS}"
+        printf '%s\n' "${rel}" > "${out_error}"
     fi
-    rm -f "${CLANG_STDERR}"
+    rm -f "${clang_stderr}"
+}
+export -f process_one
+
+printf '%s\0' "${HEADERS[@]}" \
+    | xargs -0 -n1 -P "${JOBS}" \
+        bash -c 'process_one "$@"' _ \
+            "${INCLUDE_DIR}" "${EMBED_DIR}" "${CLANG}" "${FILTER}" "${TMP_WORK_DIR}"
+
+# Merge per-worker outputs in HEADERS order. The python merger below dedups
+# and sorts anyway, so order is not load-bearing — but preserving it keeps
+# the intermediate TMP_LINES diffable against the prior serial output.
+for header in "${HEADERS[@]}"; do
+    rel="${header#${INCLUDE_DIR}/}"
+    key="${rel//\//__}"
+    if [[ -s "${TMP_WORK_DIR}/${key}.jsonl" ]]; then
+        cat "${TMP_WORK_DIR}/${key}.jsonl" >> "${TMP_LINES}"
+    fi
+    if [[ -s "${TMP_WORK_DIR}/${key}.err" ]]; then
+        cat "${TMP_WORK_DIR}/${key}.err" >> "${TMP_PARSE_ERRORS}"
+    fi
 done
 
 # Collapse per-header lines into the final manifest with deterministic
