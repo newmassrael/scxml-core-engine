@@ -4618,6 +4618,80 @@ mod tests {
     }
 
     #[test]
+    fn parse_file_remaps_post_expansion_error_into_included_fragment() {
+        // End-to-end load-bearing test for the remap wiring: if
+        // `parse_file`'s `.map_err(remap_post_expansion ...)` line
+        // ever gets deleted, this test fails. Without it, the
+        // unit tests above still pass — proving remap_post_expansion
+        // works in isolation — but the pipeline would silently
+        // emit expanded coordinates, which is exactly the bug this
+        // commit closes.
+        //
+        // Shape: main.scxml has an outer <state> with a single
+        // <xi:include> pointing at frag.xml. frag.xml declares two
+        // <invoke id="dup"/> — W3C SCXML §3.14 duplicate-id catches
+        // this during parse_impl's invoke parse, producing a
+        // Located<ValidationError::DuplicateId> whose raw row/col
+        // lie in the expanded document. After remap, the location
+        // must resolve to frag.xml at the second invoke's real
+        // (row, col) inside frag.xml — not at an expanded offset
+        // the operator cannot navigate.
+        use crate::forge::error::{ForgeError, ValidationError};
+        use std::fs;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().expect("tempdir");
+        let frag_path = tmp.path().join("frag.xml");
+        let main_path = tmp.path().join("main.scxml");
+
+        let frag = r#"<fragment>
+<invoke id="dup" type="http://www.w3.org/TR/scxml/"/>
+<invoke id="dup" type="http://www.w3.org/TR/scxml/"/>
+</fragment>"#;
+        fs::write(&frag_path, frag).unwrap();
+
+        // Outer file also has boilerplate lines before the include
+        // so any confusion between outer row and fragment row
+        // produces a visibly wrong answer.
+        let main = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+        xmlns:xi="http://www.w3.org/2001/XInclude"
+        version="1.0" initial="s">
+    <state id="s">
+        <xi:include href="frag.xml"/>
+    </state>
+</scxml>"#;
+        fs::write(&main_path, main).unwrap();
+
+        let mut parser = SCXMLParser::new();
+        let err = parser
+            .parse_file(main_path.to_str().unwrap())
+            .expect_err("duplicate <invoke id> must fail");
+
+        // Error kind: DuplicateId for <invoke id>.
+        match &err.error {
+            ForgeError::Validation(ValidationError::DuplicateId { what, id, .. }) => {
+                assert_eq!(what, "<invoke id>");
+                assert_eq!(id, "dup");
+            }
+            other => panic!("expected DuplicateId, got: {other:?}"),
+        }
+
+        // Location must be remapped to frag.xml, not to main.scxml
+        // or an expanded label.
+        assert!(
+            err.location.file.ends_with("frag.xml"),
+            "expected location.file to end with 'frag.xml' (got {:?})",
+            err.location.file,
+        );
+
+        // The second <invoke id="dup"/> lives on line 3 of frag.xml
+        // (line 1 is <fragment>, line 2 is the first invoke).
+        // Without remap, this would report the expanded document's
+        // line, which depends on the splice offset and is ≠ 3.
+        assert_eq!(err.location.line, Some(3), "expected frag.xml line 3");
+    }
+
+    #[test]
     fn remap_post_expansion_walks_xsd_multi_record_container() {
         // XSD validation is a multi-record container — the outer
         // Located has no (line, col) of its own, but each XsdDiag
