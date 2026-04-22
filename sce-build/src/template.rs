@@ -1724,12 +1724,11 @@ mod tests {
     /// `cpp_param_name_pattern_matches_rust` precedent: read the
     /// authoritative C++ header via `include_str!` at test compile
     /// time, regex-scan the class declarations, assert set equality
-    /// against the Rust-side ground truth. `TemplateNotImplemented`
-    /// is the M1-era sentinel declared in the same header — it is
-    /// NOT part of the 8-way mapping (no Rust counterpart), so the
-    /// scan filters it out before comparison. M5 deletes
-    /// `TemplateNotImplemented`, at which point the filter becomes
-    /// a no-op rather than a wrong answer.
+    /// against the Rust-side ground truth. Every `class Template* :
+    /// public TemplateError` declaration in the header must appear
+    /// in the ground-truth table; a new class without a Rust
+    /// counterpart (or vice versa) surfaces as a pointed BTreeSet
+    /// diff rather than silent drift.
     #[test]
     fn cpp_template_subtypes_match_rust_diagnostic_codes() {
         use std::collections::BTreeSet;
@@ -1771,16 +1770,7 @@ mod tests {
         .unwrap();
         let mut found: BTreeSet<String> = BTreeSet::new();
         for captures in re.captures_iter(hdr) {
-            let name = captures[1].to_string();
-            // Filter out the M1-era sentinel: it is the only
-            // TemplateError subtype declared in the header that
-            // has no Rust counterpart. M5 deletes it outright, at
-            // which point the filter matches nothing and the test
-            // still passes.
-            if name == "TemplateNotImplemented" {
-                continue;
-            }
-            found.insert(name);
+            found.insert(captures[1].to_string());
         }
 
         // Sanity: the scan found *something*. If the header shape
