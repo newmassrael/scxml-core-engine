@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "b7b6e0a7",
+  "embed_version": "89f4ebc5",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 182,
