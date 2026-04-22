@@ -42,6 +42,7 @@
 // - Per-language value escaping — templates operate on the XML byte
 //   stream (RFC §6.2).
 
+use crate::position_map::{Origin, PositionMap};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -176,40 +177,60 @@ struct ParamDecl {
 /// Expand every `<sce:use>` element in `content`.
 ///
 /// `self_path` is the filesystem path of the document supplying
-/// `content`. It is added to the cycle-detection stack and used
-/// for diagnostic rendering; callers that have no filesystem
-/// identity (in-memory documents) should pass a stable label.
-/// `base_dir` is the directory `<sce:use template="relative/...">`
-/// is resolved against — typically `Path::new(self_path).parent()`.
+/// `content`. It is added to the cycle-detection stack, used for
+/// diagnostic rendering, and used as the `Origin::CallSite` path
+/// when a `<sce:use>` in this document supplies parameter values.
+/// Callers that have no filesystem identity (in-memory documents)
+/// should pass a stable label. `base_dir` is the directory
+/// `<sce:use template="relative/...">` is resolved against —
+/// typically `Path::new(self_path).parent()`.
+///
+/// `input_map` is the [`PositionMap`] keyed by `content`'s bytes,
+/// produced by the preprocessor stage immediately upstream — at
+/// the parser-boundary call site that is the [`crate::xinclude::expand`]
+/// output, so every byte of `content` already traces back to an
+/// outer-file or included-fragment origin. The returned
+/// `PositionMap` composes `input_map` (for bytes copied from
+/// `content`) with this expander's own [`Origin::File`] entries
+/// (for template-body bytes) and [`Origin::CallSite`] entries
+/// (for `{$param}` substitutions) so every post-expansion
+/// diagnostic can be remapped to a file/row/col the author can
+/// open. See `docs/SCE_ACCEPTED_SUBSET.md` §2.9 for the attribution
+/// contract.
 ///
 /// Returns the expanded document as an owned `String` suitable for
 /// handing to `roxmltree::Document::parse`. Short-circuits with
-/// `Ok(content.to_string())` when the input contains no `sce:use`
-/// substring, so documents that do not use templates pay only a
-/// single substring search on the critical path.
+/// `Ok((content.to_string(), input_map.clone()))` when the input
+/// contains no `sce:use` substring, so documents that do not use
+/// templates pay only a single substring search plus a map clone
+/// on the critical path.
 pub fn expand(
     content: &str,
     self_path: &str,
     base_dir: Option<&Path>,
-) -> Result<String, (TemplateError, TemplateLocation)> {
+    input_map: &PositionMap,
+) -> Result<(String, PositionMap), (TemplateError, TemplateLocation)> {
     if !content.contains("sce:use") {
-        return Ok(content.to_string());
+        return Ok((content.to_string(), input_map.clone()));
     }
+    let self_file = PathBuf::from(self_path);
     let mut stack: Vec<PathBuf> = Vec::new();
     if let Ok(abs) = std::fs::canonicalize(self_path) {
         stack.push(abs);
     } else {
-        stack.push(PathBuf::from(self_path));
+        stack.push(self_file.clone());
     }
-    expand_impl(content, base_dir, 0, &mut stack)
+    expand_impl(content, &self_file, base_dir, 0, &mut stack, input_map)
 }
 
 fn expand_impl(
     content: &str,
+    content_file: &Path,
     base_dir: Option<&Path>,
     depth: u32,
     stack: &mut Vec<PathBuf>,
-) -> Result<String, (TemplateError, TemplateLocation)> {
+    input_map: &PositionMap,
+) -> Result<(String, PositionMap), (TemplateError, TemplateLocation)> {
     if depth >= MAX_TEMPLATE_DEPTH {
         return Err((
             TemplateError::TooDeep {
@@ -236,20 +257,36 @@ fn expand_impl(
     let root = doc.root_element();
     let uses: Vec<roxmltree::Node> = collect_uses(&root);
     if uses.is_empty() {
-        return Ok(content.to_string());
+        // No `<sce:use>` in this content — the output is a 1:1
+        // copy of `content`, so the upstream map already describes
+        // every emitted byte.
+        return Ok((content.to_string(), input_map.clone()));
     }
 
     // Walk original byte stream, replacing each `<sce:use>` range
     // with the rendered template body. Document-order processing
-    // lets a single cursor serve the splice.
+    // lets a single cursor serve the splice. The outer position
+    // map is built in lock-step with the output string: prefix /
+    // tail regions compose from `input_map`, and each spliced
+    // body composes from the nested expansion's own map (which in
+    // turn carries template-file `Origin::File` entries and
+    // caller-file `Origin::CallSite` entries).
     let mut out = String::with_capacity(content.len());
     let mut cursor = 0usize;
+    let mut out_map = PositionMap::default();
 
     for node in uses {
-        let range = node.range();
-        out.push_str(&content[cursor..range.start]);
+        let use_range = node.range();
 
-        let loc = doc_loc(&doc, range.start);
+        // Prefix [cursor, use_range.start) — bytes unchanged from
+        // `content`, so compose from `input_map`.
+        if cursor < use_range.start {
+            let out_start = out.len();
+            out.push_str(&content[cursor..use_range.start]);
+            out_map.append_mapped_substring(input_map, cursor, use_range.start, out_start);
+        }
+
+        let loc = doc_loc(&doc, use_range.start);
 
         let template_attr = node
             .attribute("template")
@@ -290,30 +327,70 @@ fn expand_impl(
         // body can be recursively expanded with the wrapper's
         // namespace context intact, and (b) `<sce:param default="...">`
         // literals are never themselves substituted (RFC §6.1).
-        let substituted = substitute_into_template(&template_raw, template_attr, &params_bound)
-            .map_err(|e| (e, loc))?;
+        // `intermediate_map` is keyed by `substituted` bytes and
+        // records File origins for template-file regions + CallSite
+        // origins for each `{$param}` splice so the recursive expander
+        // below can compose them further without redoing the work.
+        let (substituted, intermediate_map) = substitute_into_template_with_map(
+            &template_raw,
+            &resolved,
+            template_attr,
+            &params_bound,
+            content_file,
+            loc.row,
+            loc.col,
+        )
+        .map_err(|e| (e, loc))?;
 
         // Recurse on the substituted template. Cycle detection and
-        // depth bound guard against pathological chains.
+        // depth bound guard against pathological chains. The nested
+        // call inherits `intermediate_map` as its `input_map`, so
+        // its output map threads caller→template→nested-template
+        // origins all the way down.
         stack.push(canon);
         let nested_base = resolved.parent().map(|p| p.to_path_buf());
-        let expanded_template =
-            expand_impl(&substituted, nested_base.as_deref(), depth + 1, stack)
-                .map_err(|(err, _)| (remap_nested(err, template_attr), loc))?;
+        let (expanded_template, expanded_map) = expand_impl(
+            &substituted,
+            &resolved,
+            nested_base.as_deref(),
+            depth + 1,
+            stack,
+            &intermediate_map,
+        )
+        .map_err(|(err, _)| (remap_nested(err, template_attr), loc))?;
         stack.pop();
 
         // Extract body (children of `<sce:template>` minus
         // `<sce:param>`) from the fully-expanded template and splice
-        // it into the outer document in place of the `<sce:use>` node.
-        let body = extract_template_body(&expanded_template, template_attr)
-            .map_err(|e| (e, loc))?;
-        out.push_str(&body);
+        // it into the outer document in place of the `<sce:use>`
+        // node. Ranges are byte-range pairs into `expanded_template`;
+        // each segment composes the matching slice of
+        // `expanded_map` into the outer map.
+        let body_ranges =
+            extract_template_body_ranges(&expanded_template, template_attr)
+                .map_err(|e| (e, loc))?;
+        for range in &body_ranges {
+            let seg_splice_start = out.len();
+            out.push_str(&expanded_template[range.start..range.end]);
+            out_map.append_mapped_substring(
+                &expanded_map,
+                range.start,
+                range.end,
+                seg_splice_start,
+            );
+        }
 
-        cursor = range.end;
+        cursor = use_range.end;
     }
 
-    out.push_str(&content[cursor..]);
-    Ok(out)
+    // Tail [cursor, content.len()) — unchanged from `content`.
+    if cursor < content.len() {
+        let out_start = out.len();
+        out.push_str(&content[cursor..]);
+        out_map.append_mapped_substring(input_map, cursor, content.len(), out_start);
+    }
+
+    Ok((out, out_map))
 }
 
 /// Collect every top-level `<sce:use>` element in the document in
@@ -383,18 +460,30 @@ fn resolve_template_path(
 
 /// Parse a template file, validate its structure, bind call-site
 /// parameters, and produce the *full* template text with body-scoped
-/// `{$name}` substitution applied. The `<sce:template>` wrapper and
-/// the `<sce:param>` declarations are emitted verbatim so (a) the
-/// return value is a self-contained XML document that can be fed
-/// back through [`expand_impl`] for nested `<sce:use>` expansion
+/// `{$name}` substitution applied — along with a [`PositionMap`]
+/// keyed by the returned text's bytes. The `<sce:template>` wrapper
+/// and the `<sce:param>` declarations are emitted verbatim so (a)
+/// the return value is a self-contained XML document that can be
+/// fed back through [`expand_impl`] for nested `<sce:use>` expansion
 /// without losing the `sce:` namespace binding declared on the
 /// template root, and (b) `<sce:param default="...">` literals are
 /// not themselves substituted (Q1 literal-only defaults).
-fn substitute_into_template(
+///
+/// The emitted map carries one [`Origin::File`] entry per contiguous
+/// run of template-file bytes (prefix before body, non-substituted
+/// body regions, suffix after body) and one [`Origin::CallSite`]
+/// entry per non-empty `{$param}` substitution, where the call-site
+/// (row, col) is the `<sce:use>` element's position in the caller —
+/// depth-1 per RFC §6.3 Q3 and `SCE_ACCEPTED_SUBSET.md` §2.9.
+fn substitute_into_template_with_map(
     template_raw: &str,
+    template_path: &Path,
     template_href: &str,
     bound: &HashMap<String, String>,
-) -> Result<String, TemplateError> {
+    caller_file: &Path,
+    caller_row: u32,
+    caller_col: u32,
+) -> Result<(String, PositionMap), TemplateError> {
     let doc = roxmltree::Document::parse(template_raw).map_err(|e| {
         TemplateError::Malformed {
             template: template_href.to_string(),
@@ -487,32 +576,89 @@ fn substitute_into_template(
         }
     }
 
+    let mut out_map = PositionMap::default();
+    out_map.register_file(template_path.to_path_buf(), template_raw);
+
     // Reassemble: original prefix up to body start, substituted
     // body, original suffix after body end. If the template has no
-    // body (only params or only whitespace), pass the raw through.
+    // body (only params or only whitespace), pass the raw through
+    // as a single identity entry over the template file.
     match (body_start, body_end) {
         (Some(bs), Some(be)) => {
-            let before = &template_raw[..bs];
-            let body = &template_raw[bs..be];
-            let after = &template_raw[be..];
             let mut out = String::with_capacity(template_raw.len() + 32);
-            out.push_str(before);
-            out.push_str(&apply_substitution(body, &params));
-            out.push_str(after);
-            Ok(out)
+            // Prefix (template-file bytes [0, bs)).
+            if bs > 0 {
+                out.push_str(&template_raw[..bs]);
+                out_map.push_entry(
+                    0,
+                    bs,
+                    Origin::File {
+                        path: template_path.to_path_buf(),
+                        source_offset: 0,
+                    },
+                );
+            }
+            // Body with substitutions. `apply_substitution_with_tracking`
+            // returns entries keyed by substituted-body offsets; we
+            // shift them by `body_base = out.len()` so they line up
+            // inside `out_map`.
+            let body_base = out.len();
+            let (substituted_body, body_entries) = apply_substitution_with_tracking(
+                &template_raw[bs..be],
+                bs,
+                template_path,
+                &params,
+                caller_file,
+                caller_row,
+                caller_col,
+            );
+            out.push_str(&substituted_body);
+            for (seg_start, seg_end, origin) in body_entries {
+                out_map.push_entry(body_base + seg_start, body_base + seg_end, origin);
+            }
+            // Suffix (template-file bytes [be, template_raw.len())).
+            if be < template_raw.len() {
+                let suffix_start = out.len();
+                out.push_str(&template_raw[be..]);
+                out_map.push_entry(
+                    suffix_start,
+                    out.len(),
+                    Origin::File {
+                        path: template_path.to_path_buf(),
+                        source_offset: be,
+                    },
+                );
+            }
+            Ok((out, out_map))
         }
-        _ => Ok(template_raw.to_string()),
+        _ => {
+            // No body — return template_raw as an identity map over
+            // the template file.
+            out_map.push_entry(
+                0,
+                template_raw.len(),
+                Origin::File {
+                    path: template_path.to_path_buf(),
+                    source_offset: 0,
+                },
+            );
+            Ok((template_raw.to_string(), out_map))
+        }
     }
 }
 
-/// Extract the body of a post-substitution, post-recursion template:
-/// the concatenated byte ranges of every non-`<sce:param>` child of
-/// the `<sce:template>` root. Fed into the outer document in place
-/// of the `<sce:use>` node.
-fn extract_template_body(
+/// Extract the byte ranges of the body children of a post-substitution,
+/// post-recursion template: every non-`<sce:param>` child of the
+/// `<sce:template>` root, in document order. Returned ranges are
+/// byte offsets into `expanded_template`. The caller splices the
+/// matching slices into the outer document in place of the
+/// `<sce:use>` node and composes each range's slice of the
+/// expanded map into the outer map — keeping every emitted byte
+/// traceable to a File or CallSite origin.
+fn extract_template_body_ranges(
     expanded_template: &str,
     template_href: &str,
-) -> Result<String, TemplateError> {
+) -> Result<Vec<std::ops::Range<usize>>, TemplateError> {
     let doc = roxmltree::Document::parse(expanded_template).map_err(|e| {
         TemplateError::Malformed {
             template: template_href.to_string(),
@@ -526,15 +672,15 @@ fn extract_template_body(
             detail: "expanded template root is not <sce:template>".to_string(),
         });
     }
-    let mut body = String::new();
+    let mut ranges = Vec::new();
     for child in root.children() {
         if child.is_element() && is_sce(&child, "param") {
             continue;
         }
         let range = child.range();
-        body.push_str(&expanded_template[range.start..range.end]);
+        ranges.push(range.start..range.end);
     }
-    Ok(body)
+    Ok(ranges)
 }
 
 /// Parse a single `<sce:param>` declaration. Validates the `name`
@@ -612,41 +758,107 @@ fn collect_use_bindings(node: &roxmltree::Node) -> HashMap<String, String> {
     map
 }
 
-/// Single-pass lexical substitution of `{$name}` tokens. Atomic:
-/// replacements do not cascade (a parameter value that itself
-/// contains `{$other}` is emitted verbatim, matching RFC §6.1
-/// literal-only default semantics).
+/// Single-pass lexical substitution of `{$name}` tokens, annotated
+/// with per-region [`Origin`] entries for the emitted bytes.
+/// Atomic: replacements do not cascade (a parameter value that
+/// itself contains `{$other}` is emitted verbatim, matching
+/// RFC §6.1 literal-only default semantics).
 ///
-/// Undeclared `{$name}` tokens that do not match any declared
-/// parameter are emitted verbatim; diagnostic for undeclared refs
-/// is the author's responsibility (the expander cannot distinguish
-/// authorial `{$literal}` text from an undeclared param reference
-/// without a wire-level convention).
-fn apply_substitution(body: &str, params: &HashMap<String, String>) -> String {
+/// Non-substituted runs of `body` get [`Origin::File`] entries
+/// pointing at `template_path` (with `source_offset` computed from
+/// `body_source_offset + body_cursor` so later lookups resolve into
+/// the template file's own text). Each non-empty `{$name}`
+/// substitution gets an [`Origin::CallSite`] entry naming
+/// `caller_file` at `(caller_row, caller_col)` — the depth-1
+/// collapse per RFC §6.3 Q3.
+///
+/// Undeclared `{$name}` tokens and malformed `{$` prefixes that
+/// do not match any declared parameter are emitted verbatim as
+/// template-file bytes; diagnostic for undeclared refs is the
+/// author's responsibility.
+///
+/// Returned entries start at byte 0 of the returned string and are
+/// contiguous — the caller shifts them by the body's splice offset
+/// inside the containing [`PositionMap`].
+fn apply_substitution_with_tracking(
+    body: &str,
+    body_source_offset: usize,
+    template_path: &Path,
+    params: &HashMap<String, String>,
+    caller_file: &Path,
+    caller_row: u32,
+    caller_col: u32,
+) -> (String, Vec<(usize, usize, Origin)>) {
     let mut out = String::with_capacity(body.len());
-    let mut pos = 0;
+    let mut entries: Vec<(usize, usize, Origin)> = Vec::new();
+    let mut pos = 0usize;
     while let Some(start_rel) = body[pos..].find("{$") {
         let start = pos + start_rel;
-        out.push_str(&body[pos..start]);
+        // Flush non-substituted prefix [pos, start) as template-file bytes.
+        if start > pos {
+            let out_start = out.len();
+            out.push_str(&body[pos..start]);
+            entries.push((
+                out_start,
+                out.len(),
+                Origin::File {
+                    path: template_path.to_path_buf(),
+                    source_offset: body_source_offset + pos,
+                },
+            ));
+        }
         let after = start + 2;
         if let Some(end_rel) = body[after..].find('}') {
             let name = &body[after..after + end_rel];
             if is_valid_param_name(name) {
                 if let Some(value) = params.get(name) {
-                    out.push_str(value);
+                    if !value.is_empty() {
+                        let out_start = out.len();
+                        out.push_str(value);
+                        entries.push((
+                            out_start,
+                            out.len(),
+                            Origin::CallSite {
+                                path: caller_file.to_path_buf(),
+                                row: caller_row,
+                                col: caller_col,
+                            },
+                        ));
+                    }
                     pos = after + end_rel + 1;
                     continue;
                 }
             }
         }
-        // Not a valid `{$name}` token — emit `{$` literally and
-        // advance past it. The next loop iteration picks up from
-        // there without re-matching the `{$` we just emitted.
+        // Not a valid `{$name}` token — emit `{$` literally as
+        // template-file bytes. The next loop iteration picks up
+        // from `after` without re-matching the `{$` we just emitted.
+        let out_start = out.len();
         out.push_str("{$");
+        entries.push((
+            out_start,
+            out.len(),
+            Origin::File {
+                path: template_path.to_path_buf(),
+                source_offset: body_source_offset + start,
+            },
+        ));
         pos = after;
     }
-    out.push_str(&body[pos..]);
-    out
+    // Tail (any bytes after the last `{$`).
+    if pos < body.len() {
+        let out_start = out.len();
+        out.push_str(&body[pos..]);
+        entries.push((
+            out_start,
+            out.len(),
+            Origin::File {
+                path: template_path.to_path_buf(),
+                source_offset: body_source_offset + pos,
+            },
+        ));
+    }
+    (out, entries)
 }
 
 /// Validate a `<sce:param name>` value. Matches
@@ -746,8 +958,12 @@ mod tests {
     #[test]
     fn passthrough_when_no_sce_use_substring() {
         let src = "<root><state id=\"s1\"/></root>";
-        let out = expand(src, "inline", None).expect("no sce:use");
+        let input_map = PositionMap::identity("inline", src);
+        let (out, map) = expand(src, "inline", None, &input_map).expect("no sce:use");
         assert_eq!(out, src);
+        // Short-circuit path must hand the upstream map through
+        // untouched — no splices happened.
+        assert!(map.is_identity());
     }
 
     #[test]
@@ -755,8 +971,11 @@ mod tests {
         // "sce:use" appears as a word in text/attribute but no
         // element exists — must parse to tell, and pass unchanged.
         let src = "<root description=\"how to sce:use this\"/>";
-        let out = expand(src, "inline", None).expect("no sce:use elements");
+        let input_map = PositionMap::identity("inline", src);
+        let (out, map) = expand(src, "inline", None, &input_map)
+            .expect("no sce:use elements");
         assert_eq!(out, src);
+        assert!(map.is_identity());
     }
 
     #[test]
@@ -776,11 +995,21 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.scxml", &main_src);
 
-        let out = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .expect("expansion succeeds");
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
+        let (out, map) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .expect("expansion succeeds");
         assert!(out.contains("_event.port == 80"));
         assert!(!out.contains("<sce:use"));
         assert!(!out.contains("{$port}"));
+        // A real splice happened — the output is no longer a 1:1
+        // copy of any single file, so the returned map must carry
+        // entries beyond identity.
+        assert!(!map.is_identity());
     }
 
     #[test]
@@ -799,7 +1028,14 @@ mod tests {
             tpl.file_name().unwrap().to_str().unwrap()
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
-        let out = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
+        let (out, _map) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap();
         assert!(out.contains(r#"value="TCP""#));
     }
 
@@ -822,7 +1058,14 @@ mod tests {
             name = tpl.file_name().unwrap().to_str().unwrap()
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
-        let out = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
+        let (out, _map) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap();
         assert!(out.contains(r#"n="1""#));
         assert!(out.contains(r#"n="2""#));
         assert_eq!(out.matches("<marker").count(), 2);
@@ -833,8 +1076,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let err = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         assert!(matches!(err.0, TemplateError::MissingTemplateAttribute));
     }
 
@@ -843,8 +1092,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template=""/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let err = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         assert!(matches!(err.0, TemplateError::MissingTemplateAttribute));
     }
 
@@ -864,8 +1119,14 @@ mod tests {
             tpl.file_name().unwrap().to_str().unwrap()
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
-        let err = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
+        let err = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         match err.0 {
             TemplateError::MissingParam { param, .. } => assert_eq!(param, "port"),
             other => panic!("expected MissingParam, got {:?}", other),
@@ -888,8 +1149,14 @@ mod tests {
             tpl.file_name().unwrap().to_str().unwrap()
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
-        let err = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
+        let err = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         match err.0 {
             TemplateError::UnknownParam { param, declared, .. } => {
                 assert_eq!(param, "typo");
@@ -904,8 +1171,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="missing.sce-template.xml"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let err = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         assert!(matches!(err.0, TemplateError::NotFound { .. }));
     }
 
@@ -919,8 +1192,14 @@ mod tests {
         );
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="bad.xml"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let err = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         assert!(matches!(err.0, TemplateError::Malformed { .. }));
     }
 
@@ -937,8 +1216,14 @@ mod tests {
         );
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="bad.sce-template.xml" port="80"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let err = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         assert!(matches!(err.0, TemplateError::Malformed { .. }));
     }
 
@@ -964,8 +1249,14 @@ mod tests {
         .unwrap();
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="a.sce-template.xml"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let err = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         assert!(matches!(err.0, TemplateError::Cycle { .. }));
     }
 
@@ -988,7 +1279,14 @@ mod tests {
         );
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="outer.sce-template.xml"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let out = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let (out, _map) = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap();
         assert!(out.contains("<leaf/>"));
         assert!(!out.contains("<sce:use"));
         assert!(!out.contains("<sce:template"));
@@ -1010,7 +1308,14 @@ mod tests {
         );
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="g.sce-template.xml" a="HIT"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let out = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let (out, _map) = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap();
         // `b` was not bound at the call site and took its default
         // `{$a}` literally — the literal appears in the output.
         assert!(out.contains(r#"b="{$a}""#));
@@ -1033,7 +1338,14 @@ mod tests {
         );
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="g.sce-template.xml" a="X"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let out = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let (out, _map) = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap();
         assert!(out.contains(r#"a="X""#));
         assert!(out.contains("{$undeclared}"));
     }
@@ -1045,8 +1357,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let main_src = "<root xmlns:sce=\"http://sce.dev/ext\">\n    <sce:use/>\n</root>";
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .unwrap_err();
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+        let err = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .unwrap_err();
         assert_eq!(err.1.row, 2);
     }
 

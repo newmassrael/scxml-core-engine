@@ -175,18 +175,29 @@ impl SCXMLParser {
         // so templates see a post-XInclude document. AOT-only per
         // RFC §6.5 — the C++ runtime does not implement templates,
         // so `<sce:use>` documents compile only through sce-build.
-        let expanded =
-            crate::template::expand(&included, scxml_path, base_dir.as_deref()).map_err(
-                |(err, loc)| {
-                    use crate::forge::error::{ForgeError, Located, XmlError};
-                    Located::new(
-                        ForgeError::Xml(XmlError::Template(err)),
-                        scxml_path,
-                        Some(loc.row),
-                        Some(loc.col),
-                    )
-                },
-            )?;
+        //
+        // The expander composes `xinclude_map` with its own entries
+        // (File origins for template-body bytes, CallSite origins
+        // for `{$param}` splices per RFC §6.3 Q3 / SCE_ACCEPTED_
+        // SUBSET.md §2.9) and returns a `final_map` that replaces
+        // `xinclude_map` for post-expansion remapping — every
+        // emitted byte, wherever it came from, traces back to a
+        // source file the author can open.
+        let (expanded, final_map) = crate::template::expand(
+            &included,
+            scxml_path,
+            base_dir.as_deref(),
+            &xinclude_map,
+        )
+        .map_err(|(err, loc)| {
+            use crate::forge::error::{ForgeError, Located, XmlError};
+            Located::new(
+                ForgeError::Xml(XmlError::Template(err)),
+                scxml_path,
+                Some(loc.row),
+                Some(loc.col),
+            )
+        })?;
 
         self.parse_impl(
             &expanded,
@@ -196,7 +207,7 @@ impl SCXMLParser {
             },
             base_dir.as_deref(),
         )
-        .map_err(|err| remap_post_expansion(err, &expanded, &xinclude_map))
+        .map_err(|err| remap_post_expansion(err, &expanded, &final_map))
     }
 
     /// Parse SCXML from a string (no filesystem access).
