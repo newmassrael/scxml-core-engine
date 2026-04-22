@@ -5070,6 +5070,15 @@ set_tests_properties(IntegrationTests PROPERTIES COST 3000)
 # Priority Level 4: COST 2500 (W3C SCXML compliance validation, higher priority than benchmarks)
 set_tests_properties(W3CFullComplianceTests PROPERTIES COST 2500)
 
+# Phase B SSOT byte-equivalence harness — Rust vs C++ `sce:template`
+# expansion parity. Skipped on WASM because the harness spawns
+# `sce-codegen expand` as a subprocess via popen, which is not
+# available in the Emscripten runtime. See
+# claudedocs/rfc-sce-template-phase-b.md §3 M1.
+if(NOT EMSCRIPTEN)
+    add_subdirectory(w3c_phase_b_parity)
+endif()
+
 # Priority Level 5: Performance benchmarks (measure performance after functional validation, execute last)
 # Benchmark subdirectory must be included AFTER all main tests to ensure proper execution order
 # WASM builds: Benchmarks excluded (Native-only performance measurement)
