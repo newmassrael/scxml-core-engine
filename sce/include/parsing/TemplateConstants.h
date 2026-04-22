@@ -55,10 +55,48 @@ inline constexpr int MAX_TEMPLATE_DEPTH = 10;
 // equivalence.
 //
 // Consumed by M2 (parameter substitution + C++ param validator).
-// M1 declares the constant; the validator that reads it does
-// not exist yet. RFC §3 M1 / §4 names M2 as the consuming
+// M1 declared the constant; `is_valid_param_name` (below) is the
+// M2 consumer. RFC §3 M1 / §4 named M2 as the consuming
 // milestone.
 inline constexpr std::string_view PARAM_NAME_PATTERN =
     R"pat([A-Za-z_][A-Za-z0-9_\-]*)pat";
+
+// Validate a `<sce:param name>` identifier against
+// `PARAM_NAME_PATTERN`. Returns true iff `name` matches
+// `[A-Za-z_][A-Za-z0-9_\-]*` anchored to the whole string —
+// the same contract as XSD `paramNameType` and the Rust
+// `is_valid_param_name` in `sce-build/src/template.rs`.
+//
+// Implemented as an inline character-class check rather than a
+// std::regex match: the pattern is small, fixed, and hot on the
+// preprocessor path (called once per `<sce:param>` declaration
+// and once per `{$token}` substitution attempt); std::regex
+// would add a one-time compile cost and per-call allocation
+// without behavioural gain. The pattern string itself is still
+// the authoritative cross-language anchor via `PARAM_NAME_PATTERN`,
+// pinned by the drift tests in `sce-build/src/template.rs::tests`.
+inline bool is_valid_param_name(std::string_view name) noexcept {
+    if (name.empty()) {
+        return false;
+    }
+    const char first = name[0];
+    const bool first_ok = (first >= 'A' && first <= 'Z') ||
+                          (first >= 'a' && first <= 'z') ||
+                          first == '_';
+    if (!first_ok) {
+        return false;
+    }
+    for (size_t i = 1; i < name.size(); ++i) {
+        const char c = name[i];
+        const bool rest_ok = (c >= 'A' && c <= 'Z') ||
+                             (c >= 'a' && c <= 'z') ||
+                             (c >= '0' && c <= '9') ||
+                             c == '_' || c == '-';
+        if (!rest_ok) {
+            return false;
+        }
+    }
+    return true;
+}
 
 }  // namespace SCE::parsing
