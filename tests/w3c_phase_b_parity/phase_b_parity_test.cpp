@@ -187,3 +187,17 @@ TEST(PhaseBParity, PassthroughNoUse) {
 TEST(PhaseBParity, WithParams) {
     runParityFixture("with_params");
 }
+
+// M3 fixture — two-level nested `<sce:use>` chain (main → outer →
+// inner). Exercises recursive expansion: the outer template's body
+// contains `<sce:use template="inner.scxml" endpoint="host:{$port}"/>`,
+// so the caller's `port=8080` must be substituted into the nested
+// call's `endpoint` argument BEFORE `inner.scxml` loads — proving
+// the substitute-then-recurse order matches between the Rust
+// string-editing expander and the C++ DOM-editing runtime. Also
+// exercises the per-template base-directory resolution for nested
+// lookups (the nested `inner.scxml` reference resolves against
+// outer.scxml's parent directory, not the caller's).
+TEST(PhaseBParity, Nested) {
+    runParityFixture("nested");
+}

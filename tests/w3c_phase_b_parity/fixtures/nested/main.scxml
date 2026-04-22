@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phase B M3 parity fixture: nested.
+
+  Exercises recursive `<sce:use>` expansion. The caller references
+  `outer.scxml`, whose template body in turn references
+  `inner.scxml`. Both Rust `sce-codegen expand` and C++
+  `PugiXMLDocument::processSceTemplate` must recurse into the
+  nested call — substituting the outer `{$port}` binding into the
+  inner `<sce:use>`'s `endpoint` argument, then substituting
+  `{$endpoint}` inside `inner.scxml`'s body before splicing
+  everything back into `<state id="idle">`. The harness
+  canonicalises through pugixml `format_raw` and diffs bytes —
+  any drift between the string-editing Rust expander and the
+  DOM-editing C++ runtime fails the CTest entry
+  `phase_b_parity_nested`.
+
+  See claudedocs/rfc-sce-template-phase-b.md §3 M3.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle">
+  <state id="idle">
+    <sce:use template="outer.scxml" port="8080"/>
+  </state>
+  <state id="accept"/>
+</scxml>

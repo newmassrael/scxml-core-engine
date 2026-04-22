@@ -50,3 +50,11 @@ add_phase_b_parity_fixture(passthrough_no_use PassthroughNoUse)
 # required parameter. First harness entry that actually drives the
 # expansion loop (splice + {$name} substitution) on both producers.
 add_phase_b_parity_fixture(with_params WithParams)
+
+# M3 fixture — two-level nested `<sce:use>`: caller references
+# `outer.scxml`, whose body in turn references `inner.scxml`.
+# Exercises substitution-before-recursion order (outer `{$port}`
+# must resolve before `inner.scxml` loads) and the recursion stack
+# + depth guard machinery. First harness entry where the caller's
+# expansion traverses more than one template file.
+add_phase_b_parity_fixture(nested Nested)
