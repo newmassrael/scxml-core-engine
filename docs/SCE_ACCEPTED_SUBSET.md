@@ -245,15 +245,21 @@ across all devices (`mesh/deploy-duplicate-machine`). The
 referenced from `bindings:` follow the rules in §2.5 and must resolve
 in full (`mesh/external-unresolved-names`).
 
-### §2.9 Composition extensions — `<sce:template>` (AOT-only)
+### §2.9 Composition extensions — `<sce:template>`
 
 `<sce:template>` / `<sce:use>` / `<sce:param>` add parameterised XML
 composition adjacent to XInclude (§2.7). XInclude handles
 byte-identical reuse; `sce:template` handles fragments that differ by
-a small closed set of constants. Implemented in sce-build
-(`crate::template::expand`) per RFC §6.5 Phase A; the C++ runtime
-does not expand templates, so documents containing `<sce:use>` are
-accepted only through `sce-codegen` / the AOT pipeline.
+a small closed set of constants. Both paths expand templates: the
+AOT pipeline in sce-build (`crate::template::expand`) per RFC §6.5
+Phase A, and the C++ Interpreter runtime in
+`SCE::PugiXMLDocument::processSceTemplate` per RFC §3 Phase B M5 —
+documents produced by each path are byte-equivalent after
+canonicalisation, pinned by the CTest harness under
+`tests/w3c_phase_b_parity/`. Each failure mode raises a typed
+`SCE::parsing::Template<Variant>` subtype agreeing 1:1 with the Rust
+`xml/template-*` DiagnosticCode set (pinned by
+`cpp_template_subtypes_match_rust_diagnostic_codes`).
 
 Expansion semantics (RFC §3):
 
@@ -305,17 +311,21 @@ implemented by `crate::position_map::Origin::CallSite` and
   navigate to the body they wrote rather than to a caller that did
   nothing wrong.
 
-**Residual C++ runtime asymmetry (Phase B M4):** The C++
-Interpreter now expands templates at load time and throws typed
-`SCE::parsing::Template<Variant>` subtypes agreeing 1:1 with the
-Rust `xml/template-*` DiagnosticCode set. Diagnostic *coordinates*
-on the C++ side still report at post-expansion positions (the
-pre-`f68824ba` Rust behaviour) — no C++ `PositionMap` port. The
-asymmetry narrows to source-coordinate attribution rather than
-subset-coverage, and is re-opened by the RFC §1 Q3 trigger
-conditions (user report, IDE / telemetry consumer, or M5 harness
-fixture pressure on error-coordinate agreement). M5 flips the
-"(AOT-only)" heading language outright.
+**Residual asymmetry — diagnostic coordinates only.** Subset
+coverage on the C++ Interpreter side is closed (Phase B M5): every
+document the AOT pipeline accepts through the template path now
+expands identically at runtime. The only remaining divergence is
+*where* a template-fired diagnostic's `location.{file, row, col}`
+points: the C++ runtime reports at post-expansion positions (the
+pre-`f68824ba` Rust behaviour) because no `PositionMap` port has
+landed on the C++ side. The AOT pipeline remaps coordinates through
+`crate::position_map` so diagnostics name the caller's `<sce:use>`
+element or the template-file body as appropriate. The asymmetry
+re-opens under the RFC §1 Q3 trigger conditions (user report,
+IDE / telemetry consumer needing deep source coordinates, or
+parity-harness fixture pressure on error-coordinate agreement);
+absent any of those signals, the runtime position behaviour is a
+documented scope marker rather than a defect.
 
 Other XML meta-processing primitives (parameter entities,
 conditional inclusion, computed attributes, Turing-complete
