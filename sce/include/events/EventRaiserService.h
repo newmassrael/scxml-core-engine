@@ -5,6 +5,7 @@
 
 #include "events/IEventRaiserRegistry.h"
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace SCE {

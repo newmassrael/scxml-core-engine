@@ -5,6 +5,7 @@
 
 #include <deque>
 #include <functional>
+#include <stdexcept>
 #include <string>
 
 #ifdef SCE_THREAD_SAFE

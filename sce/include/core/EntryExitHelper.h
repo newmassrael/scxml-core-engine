@@ -18,6 +18,7 @@
 
 #include "core/LogMacros.h"
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace SCE::Core {
