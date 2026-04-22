@@ -58,3 +58,10 @@ add_phase_b_parity_fixture(with_params WithParams)
 # + depth guard machinery. First harness entry where the caller's
 # expansion traverses more than one template file.
 add_phase_b_parity_fixture(nested Nested)
+
+# M3 error-path fixture — a → b → a cycle. First harness entry
+# where BOTH producers must FAIL: Rust emits DiagnosticCode
+# `xml/template-cycle` on stderr (JSON mode), C++ throws
+# `SCE::parsing::TemplateCycle`. The parity assertion compares
+# discriminants, not message bytes (RFC §3 M3).
+add_phase_b_parity_fixture(cycle_detected CycleDetected)

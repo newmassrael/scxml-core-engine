@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cycle leg A: includes B, which in turn includes A — the
+  recursion stack rejects the second visit to A with a
+  `TemplateCycle` / `xml/template-cycle` classification.
+-->
+<sce:template xmlns:sce="http://sce.dev/ext" name="a">
+  <sce:use template="b.scxml"/>
+</sce:template>

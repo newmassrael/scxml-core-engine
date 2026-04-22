@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cycle leg B: closes the loop by re-including A. The stack at
+  the moment of check is `main → a → b`, so when the expander
+  encounters `<sce:use template="a.scxml"/>` it finds A already
+  present and raises the cycle diagnostic.
+-->
+<sce:template xmlns:sce="http://sce.dev/ext" name="b">
+  <sce:use template="a.scxml"/>
+</sce:template>

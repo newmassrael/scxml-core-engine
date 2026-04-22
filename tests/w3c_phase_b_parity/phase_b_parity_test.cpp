@@ -27,14 +27,17 @@
 // real expansion loop with a `with_params` fixture.
 
 #include "parsing/PugiXMLParser.h"
+#include "parsing/TemplateError.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <gtest/gtest.h>
 #include <memory>
 #include <pugixml.hpp>
 #include <sstream>
 #include <string>
+#include <typeinfo>
 
 namespace {
 
@@ -45,10 +48,10 @@ namespace {
 // works equally well under CI, local cmake --build, or install-tree
 // testing.
 std::string runSceCodegenExpand(const std::string &sceCodegenBin, const std::string &scxmlPath) {
-    // Quote both arguments to survive spaces / shell metacharacters.
-    // The inner paths come from CMake / the fixture tree and are
-    // not attacker-controlled; quoting here is hygiene, not a
-    // security boundary.
+    // Quote both arguments to survive shell metacharacters. The
+    // inner paths come from CMake / the fixture tree and are not
+    // attacker-controlled; quoting here is hygiene, not a security
+    // boundary.
     std::string cmd = "\"" + sceCodegenBin + "\" expand \"" + scxmlPath + "\" 2>/dev/null";
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) {
@@ -60,6 +63,60 @@ std::string runSceCodegenExpand(const std::string &sceCodegenBin, const std::str
         out += buf;
     }
     return out;
+}
+
+// Capture of a failing `sce-codegen expand` invocation. Stderr
+// carries the NDJSON diagnostic in `--error-format json` mode
+// (SCE_ERROR_CONTRACT.md §10), stdout should be empty on the
+// error path but is captured for diagnosis if a future regression
+// leaks partial output.
+struct SceCodegenExpandError {
+    int exitCode = 0;
+    std::string stdoutText;
+    std::string stderrText;
+};
+
+// Run `sce-codegen --error-format json expand <scxml>` and capture
+// both streams plus the exit code. Used by the M3 error-path
+// parity harness to assert the Rust producer fails with a specific
+// DiagnosticCode before the C++ side is probed for an equivalent
+// typed exception.
+SceCodegenExpandError runSceCodegenExpandExpectFail(const std::string &sceCodegenBin,
+                                                    const std::string &scxmlPath) {
+    // Merge stderr into stdout via `2>&1` so popen captures both
+    // streams; the tests inspect the combined text, and Rust's
+    // success-path stdout is empty on error so the NDJSON banner
+    // is unambiguously the failure record. Using a temporary stderr
+    // redirect file avoids shell-quoting surprises on complex paths.
+    const std::string cmd =
+        "\"" + sceCodegenBin + "\" --error-format json expand \"" + scxmlPath + "\" 2>&1";
+    SceCodegenExpandError result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    if (!pipe) {
+        result.exitCode = -1;
+        return result;
+    }
+    char buf[4096];
+    while (std::fgets(buf, sizeof(buf), pipe.get()) != nullptr) {
+        // Stderr-merged mode — treat all captured bytes as
+        // "diagnostic text" for the grep-based assertions below.
+        result.stderrText += buf;
+    }
+    const int raw = pclose(pipe.release());
+    result.exitCode = raw;
+    return result;
+}
+
+// Asserts a substring appears in `haystack`. Keeps the failure
+// message compact so GTest prints both the expected code and the
+// full captured stream without the helper doing its own formatting.
+bool diagnosticCodeAppears(const std::string &haystack, const std::string &code) {
+    // DiagnosticCode fields are emitted as `"code":"xml/..."` per
+    // SCE_ERROR_CONTRACT.md §10. Matching the quoted form avoids a
+    // false positive if the code string appears inside a message
+    // body that happens to name it.
+    const std::string needle = "\"code\":\"" + code + "\"";
+    return haystack.find(needle) != std::string::npos;
 }
 
 // Round-trip an XML string through pugixml so both producers are
@@ -200,4 +257,108 @@ TEST(PhaseBParity, WithParams) {
 // outer.scxml's parent directory, not the caller's).
 TEST(PhaseBParity, Nested) {
     runParityFixture("nested");
+}
+
+// ── M3 error-path harness ───────────────────────────────────────
+//
+// Introduced with the `cycle_detected` fixture: the first harness
+// entry where both producers must FAIL rather than succeed. The
+// assertion contract is intentionally looser than the byte-diff
+// success path — error messages are UX surface (operator-facing
+// text, subject to rewording across releases) while discriminants
+// are API surface (DiagnosticCode on the Rust side maps 1:1 to a
+// C++ TemplateError subtype by RFC §1 Q4). Comparing messages
+// would either let the two sides drift without failing or force
+// message text to be locked cross-language; the discriminant
+// match captures the useful invariant without either problem.
+//
+// See claudedocs/rfc-sce-template-phase-b.md §3 M3 "Does not
+// compare error messages".
+
+// Run an error-path fixture through both producers and assert
+// discriminant equivalence. `rustCode` is the expected
+// DiagnosticCode emitted on stderr in `--error-format json` mode;
+// `cppMatches(const std::exception&)` is a predicate that returns
+// true iff the caught exception's dynamic type is the C++ mirror
+// subtype of `rustCode`. Splitting the C++ side into a predicate
+// (instead of a class-template type parameter) keeps the helper
+// callable from a non-template TEST macro body.
+template <typename CppCheck>
+void runErrorParityFixture(const std::string &fixtureName,
+                           const std::string &rustCode,
+                           const char *cppSubtypeName,
+                           CppCheck cppMatches) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN env var must be set by CMake "
+                               "add_test ENVIRONMENT";
+
+    const std::string fixturePath = resolveFixture(fixtureName.c_str());
+    ASSERT_FALSE(fixturePath.empty());
+
+    // Rust side: must fail with non-zero exit and emit the
+    // expected DiagnosticCode on stderr (merged into our pipe
+    // above).
+    const auto rustResult = runSceCodegenExpandExpectFail(bin, fixturePath);
+    ASSERT_NE(rustResult.exitCode, 0)
+        << "sce-codegen expand unexpectedly succeeded on error-path fixture '"
+        << fixtureName << "'.\nCaptured output:\n" << rustResult.stderrText;
+    ASSERT_TRUE(diagnosticCodeAppears(rustResult.stderrText, rustCode))
+        << "sce-codegen expand on fixture '" << fixtureName
+        << "' did not emit DiagnosticCode '" << rustCode
+        << "'. Captured output:\n" << rustResult.stderrText;
+
+    // C++ side: running the preprocessors MUST throw a
+    // TemplateError subtype whose dynamic type satisfies the
+    // `cppMatches` predicate. Anything else (no throw, wrong
+    // subtype, unrelated exception) is a parity violation.
+    bool threwExpected = false;
+    std::string actualType;
+    std::string actualMessage;
+    try {
+        auto pugiDoc = std::make_shared<pugi::xml_document>();
+        auto loadResult = pugiDoc->load_file(fixturePath.c_str());
+        ASSERT_TRUE(loadResult) << "Failed to load C++ fixture: "
+                                << loadResult.description();
+        auto sceDoc = std::make_shared<SCE::PugiXMLDocument>(pugiDoc);
+        {
+            std::string basePath = fixturePath;
+            auto slash = basePath.find_last_of('/');
+            if (slash != std::string::npos) {
+                sceDoc->setBasePath(basePath.substr(0, slash));
+            }
+        }
+        sceDoc->setSourcePath(fixturePath);
+        sceDoc->processXInclude();
+        sceDoc->processSceTemplate();
+    } catch (const SCE::parsing::TemplateError &ex) {
+        actualType = typeid(ex).name();
+        actualMessage = ex.what();
+        threwExpected = cppMatches(ex);
+    } catch (const std::exception &ex) {
+        actualType = typeid(ex).name();
+        actualMessage = ex.what();
+    }
+
+    ASSERT_TRUE(threwExpected)
+        << "Phase B parity violation on error-path fixture '" << fixtureName
+        << "': C++ preprocessors did not throw `" << cppSubtypeName
+        << "`. Actual type: " << actualType
+        << ". Actual message: " << actualMessage
+        << ". Rust emitted: " << rustCode
+        << ". Cross-language discriminant parity is the M3 error-path "
+           "contract — see claudedocs/rfc-sce-template-phase-b.md §3 M3.";
+}
+
+// M3 error-path fixture — a.scxml uses b.scxml which uses a.scxml,
+// completing a cycle through `main.scxml`. Both producers must
+// raise the cycle diagnostic discriminant. First harness entry
+// that asserts FAILURE equivalence rather than success bytes.
+TEST(PhaseBParity, CycleDetected) {
+    runErrorParityFixture(
+        "cycle_detected",
+        "xml/template-cycle",
+        "SCE::parsing::TemplateCycle",
+        [](const SCE::parsing::TemplateError &ex) -> bool {
+            return dynamic_cast<const SCE::parsing::TemplateCycle *>(&ex) != nullptr;
+        });
 }
