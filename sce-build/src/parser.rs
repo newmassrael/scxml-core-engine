@@ -4703,6 +4703,107 @@ mod tests {
     }
 
     #[test]
+    fn parse_file_remaps_post_expansion_error_into_template_body() {
+        // End-to-end load-bearing test for the template half of
+        // preprocessor coordinate mapping: if `parse_file` ever
+        // stops threading `template::expand`'s `PositionMap` into
+        // `remap_post_expansion`, this test fails while the unit
+        // tests still pass (proving the pipeline wiring — not just
+        // the map-building — is exercised).
+        //
+        // Shape: main.scxml hosts a single `<sce:use>` pointing at
+        // t.xml. t.xml declares two `<invoke id="{$id}">` in a
+        // row — parameterised over `{$id}` so the same value is
+        // spliced twice, producing duplicate invoke ids after
+        // expansion. parse_impl's W3C SCXML §3.14 duplicate-id
+        // check fires at the second `<invoke>` element's range —
+        // bytes that came 1:1 from t.xml, so Origin::File routes
+        // the diagnostic back to t.xml's row, not to the expanded
+        // document's row. If `parse_file` were to drop template's
+        // map and keep feeding `xinclude_map` into
+        // `remap_post_expansion`, the lookup would resolve the
+        // expanded offset against the post-xinclude document
+        // (identity over main.scxml here) and point at some
+        // unrelated main.scxml row — the assertion below would
+        // then fail.
+        //
+        // This is the template-half analogue of
+        // `parse_file_remaps_post_expansion_error_into_included_fragment`;
+        // together they cover the two preprocessor stages sharing
+        // the single `remap_post_expansion` boundary at
+        // `parse_file`'s `.map_err(...)` line.
+        use crate::forge::error::{ForgeError, ValidationError};
+        use std::fs;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().expect("tempdir");
+        let t_path = tmp.path().join("t.xml");
+        let main_path = tmp.path().join("main.scxml");
+
+        // Template file — two `<invoke>` declarations share the
+        // same `{$id}` param so one call-site binding produces a
+        // duplicate. The second `<invoke>` line is the position
+        // the remap must resolve to.
+        //
+        // Lines:
+        //   1: <sce:template ...>
+        //   2:   <sce:param name="id" required="true"/>
+        //   3:   <invoke id="{$id}" type="..."/>
+        //   4:   <invoke id="{$id}" type="..."/>
+        //   5: </sce:template>
+        let template_raw = r#"<sce:template xmlns:sce="http://sce.dev/ext" name="t">
+  <sce:param name="id" required="true"/>
+  <invoke id="{$id}" type="http://www.w3.org/TR/scxml/"/>
+  <invoke id="{$id}" type="http://www.w3.org/TR/scxml/"/>
+</sce:template>"#;
+        fs::write(&t_path, template_raw).unwrap();
+
+        // Main file — `<sce:use>` lives inside a `<state>` so
+        // both invokes parent the same state and the duplicate-id
+        // check runs against the state's invoke set.
+        let main = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s">
+    <state id="s">
+        <sce:use template="t.xml" id="dup"/>
+    </state>
+</scxml>"#;
+        fs::write(&main_path, main).unwrap();
+
+        let mut parser = SCXMLParser::new();
+        let err = parser
+            .parse_file(main_path.to_str().unwrap())
+            .expect_err("duplicate <invoke id> must fail");
+
+        match &err.error {
+            ForgeError::Validation(ValidationError::DuplicateId { what, id, .. }) => {
+                assert_eq!(what, "<invoke id>");
+                assert_eq!(id, "dup");
+            }
+            other => panic!("expected DuplicateId, got: {other:?}"),
+        }
+
+        // Location must be remapped to the template file — the
+        // duplicate invoke's element bytes came from t.xml, not
+        // from main.scxml.
+        assert!(
+            err.location.file.ends_with("t.xml"),
+            "expected location.file to end with 't.xml' (got {:?})",
+            err.location.file,
+        );
+        // The second `<invoke id="{$id}">` lives on line 4 of the
+        // template file. Without the template-map thread, the
+        // reported line would be whatever row this expanded byte
+        // lands at in the in-memory post-template document — which
+        // is ≠ 4 because splicing always shifts line numbers.
+        assert_eq!(
+            err.location.line,
+            Some(4),
+            "expected t.xml line 4 for the second <invoke>",
+        );
+    }
+
+    #[test]
     fn remap_post_expansion_walks_xsd_multi_record_container() {
         // XSD validation is a multi-record container — the outer
         // Located has no (line, col) of its own, but each XsdDiag
