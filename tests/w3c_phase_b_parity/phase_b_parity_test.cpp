@@ -132,14 +132,16 @@ std::string resolveFixture(const char *name) {
 
 }  // namespace
 
-// M1 fixture — no `<sce:use>` in the document, both producers
-// return the input unchanged.
-TEST(PhaseBParity, PassthroughNoUse) {
+// Single-fixture parity check shared by every harness entry.
+// Extracted from PhaseBParity.PassthroughNoUse once M2 added the
+// second fixture — keeps new fixtures to one `TEST(...)` macro
+// body plus one CMakeLists line.
+void runParityFixture(const std::string &fixtureName) {
     const char *bin = std::getenv("SCE_CODEGEN_BIN");
     ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN env var must be set by CMake "
                                "add_test ENVIRONMENT";
 
-    const std::string fixturePath = resolveFixture("passthrough_no_use");
+    const std::string fixturePath = resolveFixture(fixtureName.c_str());
     ASSERT_FALSE(fixturePath.empty());
 
     const std::string rustText = runSceCodegenExpand(bin, fixturePath);
@@ -154,10 +156,27 @@ TEST(PhaseBParity, PassthroughNoUse) {
     // prints both strings so the developer sees which DOM subtree
     // diverged without rerunning under a debugger.
     ASSERT_EQ(rustCanonical, cppCanonical)
-        << "Phase B parity violation: Rust-canonical and C++-canonical "
-           "expansion outputs diverge. This means `sce-codegen expand` "
-           "and `PugiXMLDocument::processSceTemplate` disagree on the "
+        << "Phase B parity violation on fixture '" << fixtureName
+        << "': Rust-canonical and C++-canonical expansion outputs "
+           "diverge. This means `sce-codegen expand` and "
+           "`PugiXMLDocument::processSceTemplate` disagree on the "
            "effective post-preprocessor document — the asymmetry Phase "
            "B exists to close. See "
            "claudedocs/rfc-sce-template-phase-b.md §1 Q1.";
+}
+
+// M1 fixture — no `<sce:use>` in the document, both producers
+// return the input unchanged.
+TEST(PhaseBParity, PassthroughNoUse) {
+    runParityFixture("passthrough_no_use");
+}
+
+// M2 fixture — single `<sce:use>` with one required parameter
+// (`port="80"`). First harness entry that actually drives the
+// expansion loop: the template body must be spliced into the
+// caller's `<state id="idle">` and every `{$port}` replaced with
+// `80`. Canonicalisation is what normalises away the string-edit
+// vs DOM-edit differences between the two producers.
+TEST(PhaseBParity, WithParams) {
+    runParityFixture("with_params");
 }

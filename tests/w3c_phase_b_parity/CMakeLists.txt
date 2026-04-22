@@ -45,3 +45,8 @@ endfunction()
 # M1 fixture — no `<sce:use>` present; both producers short-circuit
 # to identity. Verifies the harness plumbing itself.
 add_phase_b_parity_fixture(passthrough_no_use PassthroughNoUse)
+
+# M2 fixture — `<sce:use template="t.scxml" port="80"/>` with one
+# required parameter. First harness entry that actually drives the
+# expansion loop (splice + {$name} substitution) on both producers.
+add_phase_b_parity_fixture(with_params WithParams)

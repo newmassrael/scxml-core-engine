@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phase B M2 parity fixture: with_params.
+
+  Exercises the real expansion loop: the caller supplies one
+  `<sce:use>` that references `t.scxml` and binds the required
+  `port` parameter to the string "80". Both producers (Rust
+  `sce-codegen expand` and C++
+  `PugiXMLDocument::processSceTemplate`) must splice the
+  template body into `<state id="idle">` and replace every
+  `{$port}` token with `80`. The harness canonicalises through
+  pugixml `format_raw` and diffs bytes — any drift between the
+  string-editing Rust expander and the DOM-editing C++ runtime
+  fails the CTest entry `phase_b_parity_with_params`.
+
+  See claudedocs/rfc-sce-template-phase-b.md §3 M2.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle">
+  <state id="idle">
+    <sce:use template="t.scxml" port="80"/>
+  </state>
+  <state id="accept"/>
+</scxml>

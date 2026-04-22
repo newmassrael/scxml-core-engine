@@ -1475,6 +1475,18 @@ mod tests {
     ///
     /// Follows the `xinclude::xinclude_depth_matches_runtime` pattern
     /// for cross-language mirrored constants.
+    ///
+    /// Phase B M2 extended this test to also verify behavioural
+    /// agreement of the C++ `PARAM_NAME_PATTERN` constant (now
+    /// consumed by `SCE::parsing::is_valid_param_name`). The C++
+    /// header is read via `include_str!`, its raw-string literal is
+    /// extracted, compiled as a Rust regex, and applied to the same
+    /// corpus. Byte-equality between the C++ and XSD patterns is
+    /// already pinned by `cpp_param_name_pattern_matches_rust`; this
+    /// corpus agreement adds behavioural parity so a future edit
+    /// that keeps bytes equal but breaks the regex (e.g. an invalid
+    /// Unicode escape) surfaces as a test failure rather than a
+    /// silent runtime-only divergence.
     #[test]
     fn xsd_param_name_pattern_agrees_with_rust_impl() {
         let xsd = include_str!("../../schemas/sce-forge-ext.xsd");
@@ -1507,6 +1519,42 @@ mod tests {
                     pattern text: {xsd_pattern:?}")
         });
 
+        // Extract the C++ raw-string pattern (same raw-string-delimiter
+        // shape `cpp_param_name_pattern_matches_rust` pins) and compile
+        // it as a Rust regex. Corpus agreement closes the triangle:
+        // XSD regex <-> Rust validator <-> C++ regex all verdict the
+        // same cases. Option 2 from the Phase B M2 task spec (pure
+        // Rust, no cross-build dependency).
+        let cpp_hdr =
+            include_str!("../../sce/include/parsing/TemplateConstants.h");
+        let cpp_begin_anchor = r#"R"pat("#;
+        let cpp_end_anchor = r#")pat""#;
+        let cpp_begin = cpp_hdr.find(cpp_begin_anchor).unwrap_or_else(|| {
+            panic!(
+                "TemplateConstants.h must declare PARAM_NAME_PATTERN with \
+                 the R\"pat(...)pat\" raw-string form; if the delimiter \
+                 changed, update this drift test in the same commit"
+            )
+        });
+        let cpp_content_start = cpp_begin + cpp_begin_anchor.len();
+        let cpp_content_end_rel = cpp_hdr[cpp_content_start..]
+            .find(cpp_end_anchor)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Unterminated R\"pat(...)pat\" literal in \
+                     TemplateConstants.h — closing `)pat\"` not found"
+                )
+            });
+        let cpp_pattern =
+            &cpp_hdr[cpp_content_start..cpp_content_start + cpp_content_end_rel];
+        let cpp_anchored = format!("^(?:{})$", cpp_pattern);
+        let cpp_re = regex::Regex::new(&cpp_anchored).unwrap_or_else(|e| {
+            panic!(
+                "C++ PARAM_NAME_PATTERN is not a valid Rust regex: {e} — \
+                 pattern text: {cpp_pattern:?}"
+            )
+        });
+
         // Corpus: positive + negative cases exercising every edge of
         // `[A-Za-z_][A-Za-z0-9_\-]*`. Expand this list whenever the
         // grammar grows a new character class.
@@ -1531,6 +1579,7 @@ mod tests {
         for (name, expected) in corpus {
             let rust_verdict = is_valid_param_name(name);
             let xsd_verdict = xsd_re.is_match(name);
+            let cpp_verdict = cpp_re.is_match(name);
             assert_eq!(
                 rust_verdict, *expected,
                 "Rust is_valid_param_name disagrees on {name:?} — \
@@ -1540,6 +1589,11 @@ mod tests {
                 xsd_verdict, *expected,
                 "XSD paramNameType pattern disagrees on {name:?} — \
                  expected {expected}, got {xsd_verdict} (pattern: {xsd_pattern:?})"
+            );
+            assert_eq!(
+                cpp_verdict, *expected,
+                "C++ PARAM_NAME_PATTERN disagrees on {name:?} — \
+                 expected {expected}, got {cpp_verdict} (pattern: {cpp_pattern:?})"
             );
         }
     }
