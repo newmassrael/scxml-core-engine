@@ -485,17 +485,34 @@ bool PugiXMLDocument::processSceTemplate() {
     // trips immediately), then recursing into every loaded template
     // until the leaf is reached or `MAX_TEMPLATE_DEPTH` is hit.
     //
-    // Error classification:
+    // Error classification (M4 closes the typed-subtype mapping):
+    //   - `TemplateMissingAttribute` (M4) for a call-site `<sce:use>`
+    //     with no `template` attribute or an empty string.
+    //   - `TemplateNotFound` (M4) for resolver miss, with the search
+    //     trail attached verbatim to the Rust `resolve_template_path`
+    //     `tried` rendering.
+    //   - `TemplateReadError` / `TemplateMalformed` (M4) split file-
+    //     load failures by pugixml status: I/O-class statuses
+    //     (`status_file_not_found`, `status_io_error`,
+    //     `status_out_of_memory`, `status_internal_error`) route to
+    //     `TemplateReadError`; every other non-OK status is a parse
+    //     failure and routes to `TemplateMalformed`.
+    //   - `TemplateMalformed` (M4) also covers structural errors on
+    //     the template side: wrong root element, `<sce:param>`
+    //     missing `name`, invalid name pattern, duplicate name, bad
+    //     `required` value, or `required` + `default` declared
+    //     together.
     //   - `TemplateUnknownParam` / `TemplateMissingParam` (M2) for
     //     call-site parameter mismatches.
     //   - `TemplateCycle` (M3) for self- or mutually-recursive
     //     templates.
     //   - `TemplateTooDeep` (M3) for acyclic but pathologically long
     //     chains.
-    //   - `TemplateNotImplemented` still covers file-load /
-    //     malformed-template shapes until M4 lands typed
-    //     `TemplateNotFound` / `TemplateReadError` /
-    //     `TemplateMalformed` / `TemplateMissingAttribute`.
+    //
+    // After M4, every throw in this function is a proper named
+    // subtype — `TemplateNotImplemented` remains only as the base-
+    // class sentinel declared in `TemplateError.h`, and M5 deletes
+    // it once the `docs/SCE_ACCEPTED_SUBSET.md` §2.9 flip lands.
     //
     // Full design contract: `claudedocs/rfc-sce-template-phase-b.md`.
     if (!doc_) {
@@ -564,15 +581,12 @@ void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
                                     int depth) {
     // 1. Caller must carry a `template` attribute. Empty-string is
     // equivalent to missing per Rust's
-    // `TemplateError::MissingTemplateAttribute` semantics; the
-    // typed C++ subtype `TemplateMissingAttribute` arrives in M4.
+    // `TemplateError::MissingTemplateAttribute` semantics.
     const auto templateAttr = useNode.attribute("template");
     const std::string templateHref = templateAttr ? templateAttr.value() : std::string();
     if (templateHref.empty()) {
-        throw SCE::parsing::TemplateNotImplemented(
-            "<sce:use> missing or empty `template` attribute — typed "
-            "SCE::parsing::TemplateMissingAttribute arrives in Phase B "
-            "M4 (claudedocs/rfc-sce-template-phase-b.md §3 M4).");
+        throw SCE::parsing::TemplateMissingAttribute(
+            "<sce:use> missing required `template` attribute");
     }
 
     // 2. Resolve the template path against the caller's base
@@ -581,13 +595,23 @@ void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
     // through `baseDir` so a nested `<sce:use>` inside a template
     // body resolves relative to the TEMPLATE's location, matching
     // Rust's `nested_base = resolved.parent()` in
-    // `sce-build/src/template.rs::expand_impl`.
-    const std::string resolvedPath = resolveFilePathInBase(templateHref, baseDir);
+    // `sce-build/src/template.rs::expand_impl`. The search-trail
+    // overload captures the paths that were tried so the NotFound
+    // diagnostic renders the same comma-separated list Rust emits.
+    std::vector<std::string> searchedPaths;
+    const std::string resolvedPath =
+        resolveFilePathInBase(templateHref, baseDir, searchedPaths);
     if (resolvedPath.empty()) {
-        throw SCE::parsing::TemplateNotImplemented(
-            "<sce:use template=\"" + templateHref + "\">: template file "
-            "could not be located. Typed SCE::parsing::TemplateNotFound "
-            "arrives in Phase B M4.");
+        std::string searchedRendered;
+        for (const auto &path : searchedPaths) {
+            if (!searchedRendered.empty()) {
+                searchedRendered.append(", ");
+            }
+            searchedRendered.append(path);
+        }
+        throw SCE::parsing::TemplateNotFound(
+            "<sce:use template=\"" + templateHref + "\">: file not "
+            "found (searched: " + searchedRendered + ")");
     }
 
     // 2b. Cycle detection via canonicalised path. If the template
@@ -605,23 +629,36 @@ void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
         }
     }
 
-    // 3. Load + parse the template file.
+    // 3. Load + parse the template file. Split I/O-class failures
+    // (ReadError) from document-shape failures (Malformed) by
+    // pugi::xml_parse_status — the Rust side separates these into
+    // two DiagnosticCodes so agent dispatch can pick an I/O vs
+    // content fix without reparsing the message body.
     pugi::xml_document templateDoc;
     const auto loadResult = templateDoc.load_file(resolvedPath.c_str());
     if (!loadResult) {
-        throw SCE::parsing::TemplateNotImplemented(
-            "<sce:use template=\"" + templateHref + "\">: template file "
-            "failed to load (" + loadResult.description() + "). Typed "
-            "SCE::parsing::TemplateReadError / TemplateMalformed arrive "
-            "in Phase B M4.");
+        const auto status = loadResult.status;
+        const bool ioClass = status == pugi::status_file_not_found ||
+                             status == pugi::status_io_error ||
+                             status == pugi::status_out_of_memory ||
+                             status == pugi::status_internal_error;
+        if (ioClass) {
+            throw SCE::parsing::TemplateReadError(
+                "<sce:use template=\"" + templateHref + "\">: cannot "
+                "read: " + loadResult.description());
+        }
+        throw SCE::parsing::TemplateMalformed(
+            "<sce:use template=\"" + templateHref + "\">: template is "
+            "malformed: " + loadResult.description());
     }
 
     const auto templateRoot = templateDoc.document_element();
     if (!templateRoot || std::string(templateRoot.name()) != "sce:template") {
-        throw SCE::parsing::TemplateNotImplemented(
-            "<sce:use template=\"" + templateHref + "\">: template root "
-            "must be <sce:template>. Typed SCE::parsing::TemplateMalformed "
-            "arrives in Phase B M4.");
+        const std::string rootName = templateRoot ? templateRoot.name() : "<none>";
+        throw SCE::parsing::TemplateMalformed(
+            "<sce:use template=\"" + templateHref + "\">: template is "
+            "malformed: root element must be <sce:template>, got <" +
+            rootName + ">");
     }
 
     // 4. Collect `<sce:param>` declarations.
@@ -635,27 +672,25 @@ void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
         }
         const auto nameAttr = child.attribute("name");
         if (!nameAttr) {
-            throw SCE::parsing::TemplateNotImplemented(
-                "<sce:param> missing `name` attribute in template \"" +
-                templateHref + "\". Typed SCE::parsing::TemplateMalformed "
-                "arrives in Phase B M4.");
+            throw SCE::parsing::TemplateMalformed(
+                "<sce:use template=\"" + templateHref + "\">: template "
+                "is malformed: <sce:param> missing required `name` "
+                "attribute");
         }
         const std::string paramName = nameAttr.value();
         if (!SCE::parsing::is_valid_param_name(paramName)) {
-            throw SCE::parsing::TemplateNotImplemented(
-                "<sce:param name=\"" + paramName + "\"> in template \"" +
-                templateHref + "\": name must match " +
-                std::string(SCE::parsing::PARAM_NAME_PATTERN) +
-                ". Typed SCE::parsing::TemplateMalformed arrives in "
-                "Phase B M4.");
+            throw SCE::parsing::TemplateMalformed(
+                "<sce:use template=\"" + templateHref + "\">: template "
+                "is malformed: <sce:param name=\"" + paramName +
+                "\"> name must match " +
+                std::string(SCE::parsing::PARAM_NAME_PATTERN));
         }
         for (const auto &prev : decls) {
             if (prev.name == paramName) {
-                throw SCE::parsing::TemplateNotImplemented(
-                    "<sce:param name=\"" + paramName + "\">: duplicate "
-                    "declaration in template \"" + templateHref + "\". "
-                    "Typed SCE::parsing::TemplateMalformed arrives in "
-                    "Phase B M4.");
+                throw SCE::parsing::TemplateMalformed(
+                    "<sce:use template=\"" + templateHref + "\">: "
+                    "template is malformed: duplicate <sce:param "
+                    "name=\"" + paramName + "\"> declaration");
             }
         }
 
@@ -666,11 +701,11 @@ void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
             if (reqVal == "true") {
                 decl.required = true;
             } else if (reqVal != "false") {
-                throw SCE::parsing::TemplateNotImplemented(
-                    "<sce:param name=\"" + paramName + "\"> `required` "
-                    "must be \"true\" or \"false\", got \"" + reqVal +
-                    "\". Typed SCE::parsing::TemplateMalformed arrives "
-                    "in Phase B M4.");
+                throw SCE::parsing::TemplateMalformed(
+                    "<sce:use template=\"" + templateHref + "\">: "
+                    "template is malformed: <sce:param name=\"" +
+                    paramName + "\"> `required` must be \"true\" or "
+                    "\"false\", got \"" + reqVal + "\"");
             }
         }
         if (const auto defAttr = child.attribute("default")) {
@@ -678,11 +713,11 @@ void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
             decl.defaultValue = defAttr.value();
         }
         if (decl.required && decl.hasDefault) {
-            throw SCE::parsing::TemplateNotImplemented(
-                "<sce:param name=\"" + paramName + "\"> declares both "
-                "`required=\"true\"` and `default=\"...\"` — mutually "
-                "exclusive. Typed SCE::parsing::TemplateMalformed "
-                "arrives in Phase B M4.");
+            throw SCE::parsing::TemplateMalformed(
+                "<sce:use template=\"" + templateHref + "\">: template "
+                "is malformed: <sce:param name=\"" + paramName +
+                "\"> declares both `required=\"true\"` and "
+                "`default=\"...\"` — mutually exclusive");
         }
         decls.push_back(std::move(decl));
     }
@@ -792,13 +827,15 @@ void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
     // safely; substitution has already been applied to the source
     // nodes, so the clones carry the resolved values without a
     // second traversal pass.
+    //
+    // `useNode.parent()` is always non-empty here because every
+    // `useNode` arrives via `collectSceUses`, which walks children
+    // of a passed-in root and only pushes descendants — never the
+    // root node itself. Removing the belt-and-suspenders
+    // `!callerParent` check in M4 closes the last M4-labelled
+    // `TemplateNotImplemented` throw without introducing a retype
+    // target for an unreachable branch.
     auto callerParent = useNode.parent();
-    if (!callerParent) {
-        throw SCE::parsing::TemplateNotImplemented(
-            "<sce:use> at document root has no parent to splice into; "
-            "root-level template invocation is out of scope until "
-            "Phase B M4 root-splice handling lands.");
-    }
     for (auto child : templateRoot.children()) {
         if (child.type() == pugi::node_element &&
             std::string(child.name()) == "sce:param") {
@@ -820,12 +857,23 @@ std::string PugiXMLDocument::resolveFilePath(const std::string &href) const {
 
 std::string PugiXMLDocument::resolveFilePathInBase(const std::string &href,
                                                     const std::string &baseDir) {
-    // Use as-is if absolute path
+    std::vector<std::string> discarded;
+    return resolveFilePathInBase(href, baseDir, discarded);
+}
+
+std::string PugiXMLDocument::resolveFilePathInBase(const std::string &href,
+                                                    const std::string &baseDir,
+                                                    std::vector<std::string> &searched) {
+    // Mirrors `sce-build/src/template.rs::resolve_template_path`: each
+    // branch that checks `exists()` appends the candidate to
+    // `searched` on miss, so the NotFound diagnostic carries the same
+    // trail the Rust side emits (absolute → base → cwd).
     std::filesystem::path hrefPath(href);
     if (hrefPath.is_absolute()) {
         if (std::filesystem::exists(hrefPath)) {
             return hrefPath.string();
         }
+        searched.push_back(hrefPath.string());
         return "";
     }
 
@@ -835,12 +883,14 @@ std::string PugiXMLDocument::resolveFilePathInBase(const std::string &href,
         if (std::filesystem::exists(fullPath)) {
             return std::filesystem::absolute(fullPath).string();
         }
+        searched.push_back(fullPath.string());
     }
 
     // Try current directory
     if (std::filesystem::exists(href)) {
         return std::filesystem::absolute(href).string();
     }
+    searched.push_back(href);
 
     return "";
 }

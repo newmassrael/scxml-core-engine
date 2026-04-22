@@ -85,8 +85,20 @@ private:
     // `<sce:use>` inside a template body against the TEMPLATE's
     // directory, not the outer document's `basePath_`. Returns the
     // absolute path on success, empty string on not-found.
+    //
+    // The out-param overload additionally records the search trail —
+    // the paths that were checked and did not exist — so the Phase B
+    // M4 `TemplateNotFound` throw site can render the same
+    // comma-separated trail Rust emits via
+    // `resolve_template_path`'s `tried` vector in
+    // `sce-build/src/template.rs`. Callers that do not need the
+    // trail use the single-arg form; the two forms share the
+    // underlying resolver.
     static std::string resolveFilePathInBase(const std::string &href,
                                              const std::string &baseDir);
+    static std::string resolveFilePathInBase(const std::string &href,
+                                             const std::string &baseDir,
+                                             std::vector<std::string> &searched);
 
     // Expand every top-level `<sce:use>` element rooted at `root`.
     // Recursion is driven by the per-call cycle stack + depth:
