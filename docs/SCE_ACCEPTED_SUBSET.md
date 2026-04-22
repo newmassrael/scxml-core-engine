@@ -207,11 +207,14 @@ shape:
 
 Semantics match the minimal subset the runtime implements: the
 children of the included document's root element are spliced
-in place of the `<xi:include>` node; `href` resolves
-absolute-first, then relative to the including file, then
-relative to the current working directory; recursion is bounded
-by a documented depth limit (mirrored from the runtime), and
-cycles are detected.
+in place of the `<xi:include>` node — the root element itself
+is discarded, so authors bundle N top-level fragments under any
+XML wrapper (e.g. `<fragment>…</fragment>`) without affecting
+SCXML validity, and a single `<xi:include>` composes them all.
+`href` resolves absolute-first, then relative to the including
+file, then relative to the current working directory; recursion
+is bounded by a documented depth limit (mirrored from the
+runtime), and cycles are detected.
 
 Unsupported W3C XInclude features are rejected explicitly rather
 than silently ignored — accepting them at build time would
