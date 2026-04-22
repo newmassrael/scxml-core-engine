@@ -1,11 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "6e371c64",
-  "non_self_contained_headers": [
-    "runtime/InterpreterInvokeManager.h"
-  ],
+  "embed_version": "b2937bcf",
+  "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 185,
+  "symbol_count": 182,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -412,18 +410,6 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::InvokeHelper"
-    },
-    {
-      "header": "core/InvokeManagerAdapters.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::AOTInvokeManager<T>"
-    },
-    {
-      "header": "core/InvokeProcessingAlgorithms.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::InvokeProcessingAlgorithms"
     },
     {
       "header": "core/LogMacros.h",
@@ -988,12 +974,6 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::InterpreterEventQueue"
-    },
-    {
-      "header": "runtime/InterpreterInvokeManager.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::InterpreterInvokeManager"
     },
     {
       "header": "runtime/InvokeExecutor.h",
