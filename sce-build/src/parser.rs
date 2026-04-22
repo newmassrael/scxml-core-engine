@@ -4804,6 +4804,128 @@ mod tests {
     }
 
     #[test]
+    fn parse_file_remaps_post_expansion_error_into_callsite() {
+        // End-to-end load-bearing test for the `Origin::CallSite`
+        // branch of preprocessor coordinate mapping. The sibling
+        // `parse_file_remaps_post_expansion_error_into_template_body`
+        // exercises template-body bytes (`Origin::File`); this test
+        // exercises the bytes synthesised by `{$param}` substitution.
+        // Together they pin both arms of the composition chain
+        //   parse_file → template::expand
+        //   → substitute_into_template_with_map
+        //   → apply_substitution_with_tracking (CallSite emission)
+        //   → append_mapped_substring
+        //   → outer map → lookup → SourcePos
+        // staying wired end-to-end. Without this test, every layer
+        // has unit coverage but no consumer depends on the chain
+        // keeping CallSite entries intact — exactly the
+        // `feedback_built_but_unconsumed.md` hazard.
+        //
+        // Shape: a unique substring is bound to a required `<sce:use
+        // id="...">` param; the template body splices it via
+        // `{$id}`. After expansion we locate the marker in the
+        // returned text and assert every byte in its range resolves
+        // through `PositionMap::lookup` to the *caller's*
+        // `<sce:use>` element row/col, not to the template file.
+        // Drives `template::expand` directly rather than `parse_file`
+        // — most validators report at element-open offsets (which
+        // are template-body bytes), so coercing one to fire inside a
+        // substituted attribute value is fragile across libxml2 /
+        // roxmltree versions. The narrower entry point still walks
+        // the same composition primitives.
+        //
+        // Load-bearing verification (manual, in-session): swap the
+        // `Origin::CallSite { ... }` emission inside
+        // `template::apply_substitution_with_tracking` for
+        // `Origin::File { path: template_path.to_path_buf(), ... }`
+        // and re-run; the marker bytes then resolve to `t.xml` and
+        // the assertions below fail. Restore to confirm green.
+        use crate::position_map::PositionMap;
+        use crate::template;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().expect("tempdir");
+        let t_path = tmp.path().join("t.xml");
+        let main_path = tmp.path().join("main.scxml");
+
+        let template_raw =
+            r#"<sce:template xmlns:sce="http://sce.dev/ext" name="t">
+  <sce:param name="id" required="true"/>
+  <marker value="{$id}"/>
+</sce:template>"#;
+        fs::write(&t_path, template_raw).unwrap();
+
+        // Distinctive marker that a) the user's `find` can locate
+        // unambiguously in the expanded output, and b) cannot
+        // collide with template-file bytes since the template never
+        // contains it literally.
+        const MARKER: &str = "ZZZ_UNIQUE_MARKER_ZZZ";
+        let main_src = format!(
+            "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"\n\
+             \x20\x20\x20\x20xmlns:sce=\"http://sce.dev/ext\"\n\
+             \x20\x20\x20\x20version=\"1.0\" initial=\"s\">\n\
+             \x20\x20\x20\x20<sce:use template=\"t.xml\" id=\"{MARKER}\"/>\n\
+             </scxml>"
+        );
+        fs::write(&main_path, &main_src).unwrap();
+
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
+        let (expanded, map) = template::expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .expect("template expansion succeeds");
+
+        // The marker must appear exactly once in the expanded
+        // output — the `id="..."` value spliced into `{$id}`. Both
+        // checks (presence + uniqueness) guard against an expander
+        // change that drops or duplicates substitutions.
+        let marker_offset = expanded.find(MARKER).expect(
+            "marker substring must be present in expanded document — \
+             splice path produced no output",
+        );
+        assert!(
+            expanded[marker_offset + MARKER.len()..].find(MARKER).is_none(),
+            "marker must be unique in expanded output",
+        );
+
+        // The `<sce:use>` element in `main.scxml` lives on row 4
+        // (lines 1-3 are the `<scxml>` open spread across three
+        // lines), col 5 (4-space indent before `<`). roxmltree's
+        // `range().start` points at `<`, and
+        // `apply_substitution_with_tracking` records the call-site
+        // (row, col) supplied by `expand_impl`'s `doc_loc` — i.e.
+        // exactly that position.
+        let use_row = 4u32;
+        let use_col = 5u32;
+
+        // Sweep the entire marker range, not just the first byte.
+        // CallSite collapse means *every* byte in the substituted
+        // run must point at the same call-site (row, col); a future
+        // refactor that emits per-byte File entries would slip past
+        // a single-byte spot-check.
+        for byte_in_marker in 0..MARKER.len() {
+            let pos = map.lookup(marker_offset + byte_in_marker);
+            assert!(
+                pos.file.ends_with("main.scxml"),
+                "marker byte {byte_in_marker} must remap to caller \
+                 (main.scxml), got {:?}",
+                pos.file,
+            );
+            assert_eq!(
+                (pos.row, pos.col),
+                (use_row, use_col),
+                "marker byte {byte_in_marker} must point at <sce:use> \
+                 (row={use_row}, col={use_col}); CallSite collapse \
+                 violated",
+            );
+        }
+    }
+
+    #[test]
     fn remap_post_expansion_walks_xsd_multi_record_container() {
         // XSD validation is a multi-record container — the outer
         // Located has no (line, col) of its own, but each XsdDiag
