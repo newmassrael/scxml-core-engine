@@ -270,4 +270,72 @@
     above and applied directly to <data> elements.
   -->
 
+  <!-- ═══════════════════════════════════════════════════════════════
+       Composition extensions — sce:template / sce:use / sce:param
+       (RFC §6.5 Phase A, AOT-only)
+
+       In normal build flow the sce-build template expander (Rust)
+       eliminates every <sce:use> before the XSD validator runs, so
+       these declarations act as schema self-awareness: they enable
+       tooling (editor integrations, standalone template-file linters)
+       to recognise the grammar. Structural correctness inside template
+       files is still enforced at expansion time by
+       sce-build/src/template.rs.
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Param-name pattern matches RFC §3.1. Mirrored by is_valid_param_name
+       in sce-build/src/template.rs; keep the two in sync. -->
+  <xs:simpleType name="paramNameType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Za-z_][A-Za-z0-9_\-]*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Call site inside an SCXML document. The `template` attribute is
+       the only reserved slot; every other attribute binds a parameter
+       declared by the referenced template file. xs:anyAttribute
+       (processContents="skip") captures param bindings without requiring
+       them to be pre-declared — the expander validates them at build
+       time against the template's <sce:param> declarations. -->
+  <xs:element name="use">
+    <xs:complexType>
+      <xs:attribute name="template" type="xs:string" use="required"/>
+      <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Template declaration — root element of a standalone template file.
+       Declared here so the schema is self-describing for tooling; template
+       files themselves are not routed through this XSD in the build flow
+       (the expander parses them directly).
+
+       Content model: zero or more <sce:param> declarations followed by
+       body content (xs:any lax). XSD 1.0 cannot express both (a) "params
+       must precede body" and (b) "body may contain any sce:* element"
+       without ambiguity; the sequence here enforces (a), which matches
+       the canonical authoring convention in RFC §3.1. -->
+  <xs:element name="template">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:param" minOccurs="0" maxOccurs="unbounded"/>
+        <xs:any namespace="##any" processContents="lax"
+                minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Parameter declaration inside a template file. `name` is always
+       required. `required="true"` and `default="..."` are mutually
+       exclusive per RFC §3.1; XSD 1.0 cannot express that constraint
+       natively (assertions are XSD 1.1), so the expander enforces it at
+       build time and raises xml/template-malformed on collision. -->
+  <xs:element name="param">
+    <xs:complexType>
+      <xs:attribute name="name" type="sce:paramNameType" use="required"/>
+      <xs:attribute name="required" type="xs:boolean"/>
+      <xs:attribute name="default" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
 </xs:schema>

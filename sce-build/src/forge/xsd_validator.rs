@@ -291,6 +291,30 @@ mod tests {
   </datamodel>
 </scxml>"#;
 
+    // ── sce:template / sce:use / sce:param grammar (RFC §6.5 Phase A).
+    //    Normal build flow expands <sce:use> before XSD runs, so these
+    //    cases exercise the schema declarations directly — useful for
+    //    editor integrations and for catching missing `template=` on
+    //    documents that reach the validator unexpanded (e.g. via the
+    //    in-memory parse_string path). ──
+    const VALID_USE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="x">
+  <state id="accepting">
+    <sce:use template="guard.sce-template.xml" port="80" proto="TCP"/>
+  </state>
+</scxml>"#;
+
+    const USE_MISSING_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="x">
+  <state id="accepting">
+    <sce:use port="80"/>
+  </state>
+</scxml>"#;
+
     fn schema() -> PathBuf {
         find_schema_path().expect("schemas/sce-forge.xsd must be reachable from CARGO_MANIFEST_DIR")
     }
@@ -323,6 +347,21 @@ mod tests {
         let combined = err.to_string();
         assert!(combined.contains("direction"), "attribute cited: {combined}");
         assert!(combined.contains("sideways"), "value cited: {combined}");
+    }
+
+    #[test]
+    fn valid_sce_use_passes() {
+        validate(VALID_USE, "valid_use.scxml", &schema()).expect("must pass");
+    }
+
+    #[test]
+    fn sce_use_without_template_attribute_is_rejected() {
+        let err = validate(USE_MISSING_TEMPLATE, "no_template.scxml", &schema()).unwrap_err();
+        let combined = err.to_string();
+        assert!(
+            combined.contains("template"),
+            "schema error must cite the missing `template` attribute: {combined}"
+        );
     }
 
     #[test]
