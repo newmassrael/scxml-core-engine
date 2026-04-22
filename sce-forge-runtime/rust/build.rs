@@ -22,7 +22,7 @@ use sce_build::{
     compile_forge_with_imports,
     conformance::{self, Manifest},
     generator::Language,
-    ForgeCompileOptions,
+    DocumentLabel, ForgeCompileOptions,
 };
 use std::path::Path;
 
@@ -65,7 +65,7 @@ fn main() {
 
         let output = compile_forge_with_imports(
             &content,
-            &fixture.name,
+            DocumentLabel::symmetric(&fixture.name),
             Language::Rust,
             &resource_dir,
             &options,
