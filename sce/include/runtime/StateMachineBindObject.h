@@ -15,6 +15,7 @@
  * ClassBinding.h (QuickJS-specific ClassBinder<T>) remains available for direct QuickJS use.
  */
 
+#include "runtime/StateMachine.h"
 #include "scripting/GenericClassBinder.h"
 
 namespace SCE {
