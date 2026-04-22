@@ -147,20 +147,33 @@ impl SCXMLParser {
         // before XSD validation so the schema validator sees the
         // expanded document — sce:* extensions can then live in
         // included fragments without losing validation.
-        let included = crate::xinclude::expand(&content, scxml_path, base_dir.as_deref())
-            .map_err(|(err, loc)| {
-                use crate::forge::error::{ForgeError, Located, XmlError};
-                Located::new(
-                    ForgeError::Xml(XmlError::XInclude(err)),
-                    scxml_path,
-                    Some(loc.row),
-                    Some(loc.col),
-                )
-            })?;
+        //
+        // The expander now also returns a `PositionMap` keyed by
+        // expanded bytes — every subsequent diagnostic that fires
+        // against the expanded document (XSD line numbers,
+        // roxmltree row/col, semantic validation) gets remapped at
+        // the parse-impl boundary below so `location.{file, row,
+        // col}` points at the author source, not at in-memory
+        // expanded coordinates. Expander-internal errors
+        // (MissingHref, NotFound, ...) already report positions in
+        // the pre-expansion outer file, so they wrap directly
+        // without going through the map.
+        let (included, xinclude_map) =
+            crate::xinclude::expand(&content, scxml_path, base_dir.as_deref()).map_err(
+                |(err, loc)| {
+                    use crate::forge::error::{ForgeError, Located, XmlError};
+                    Located::new(
+                        ForgeError::Xml(XmlError::XInclude(err)),
+                        scxml_path,
+                        Some(loc.row),
+                        Some(loc.col),
+                    )
+                },
+            )?;
 
         // `sce:template` expansion runs immediately after XInclude
-        // so templates see a post-XInclude document. RFC §7 Phase A:
-        // AOT-only — the C++ runtime does not implement templates,
+        // so templates see a post-XInclude document. AOT-only per
+        // RFC §6.5 — the C++ runtime does not implement templates,
         // so `<sce:use>` documents compile only through sce-build.
         let expanded =
             crate::template::expand(&included, scxml_path, base_dir.as_deref()).map_err(
@@ -183,6 +196,7 @@ impl SCXMLParser {
             },
             base_dir.as_deref(),
         )
+        .map_err(|err| remap_post_expansion(err, &expanded, &xinclude_map))
     }
 
     /// Parse SCXML from a string (no filesystem access).
@@ -2766,6 +2780,72 @@ fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// ── Post-expansion diagnostic coordinate remapping ──────────
+// ══════════════════════════════════════════════════════════════
+
+/// Translate an expanded-document `Located<ForgeError>` back to
+/// author source coordinates using the xinclude expansion map.
+///
+/// Applied at the `parse_impl` boundary so every validator /
+/// emitter in the pipeline stays oblivious to the map — they emit
+/// expanded coordinates (as today), and this single function
+/// rewrites them on the way out. No-op when the map is identity,
+/// which keeps the common case (documents without `<xi:include>`)
+/// byte-identical to the pre-map behaviour.
+///
+/// Also walks into `XmlError::SchemaValidation` so every
+/// per-record libxml2 line carried by `XsdErrors` remaps too —
+/// those entries are the multi-record container the diagnostic
+/// emitter iterates, and the outer `Located`'s single (line, col)
+/// is `None/None` for schema validation, so without walking in
+/// the XSD lines would stay in expanded coordinates.
+fn remap_post_expansion(
+    mut err: crate::forge::error::Located<crate::forge::error::ForgeError>,
+    expanded_text: &str,
+    map: &crate::position_map::PositionMap,
+) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
+    use crate::forge::error::{ForgeError, XmlError};
+    if map.is_identity() {
+        return err;
+    }
+
+    // ── outer (line, col) on the Located wrapper ────────────
+    if let (Some(line), Some(col)) = (err.location.line, err.location.col) {
+        let offset = crate::position_map::rowcol_to_offset(expanded_text, line, col);
+        let src = map.lookup(offset);
+        err.location.file = src.file.display().to_string();
+        err.location.line = Some(src.row);
+        err.location.col = Some(src.col);
+    }
+
+    // ── XsdErrors multi-record container (per-record lines) ─
+    if let ForgeError::Xml(XmlError::SchemaValidation(ref mut xsd)) = err.error {
+        for record in &mut xsd.diagnostics {
+            if let Some(line) = record.line {
+                // libxml2 reports a 1-based line and sometimes a
+                // column; resolve at the column it gave us, or
+                // column 1 when it is missing.
+                let col = record.col.unwrap_or(1);
+                let offset = crate::position_map::rowcol_to_offset(expanded_text, line, col);
+                let src = map.lookup(offset);
+                record.line = Some(src.row);
+                if record.col.is_some() {
+                    record.col = Some(src.col);
+                }
+            }
+        }
+        // Keep the container's `source_label` consistent with the
+        // rewritten outer location — downstream NDJSON emission
+        // pulls the per-record file from this field, so leaving it
+        // as the expanded-document label would mis-attribute each
+        // XsdDiag.
+        xsd.source_label = err.location.file.clone();
+    }
+
+    err
+}
+
+// ══════════════════════════════════════════════════════════════
 // ── Unit tests ───────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
 
@@ -4458,5 +4538,159 @@ mod tests {
         </scxml>"##;
         let (attr, _) = first_removed_attribute(scxml);
         assert_eq!(attr, "sce:reply-timeout");
+    }
+
+    // ── remap_post_expansion ────────────────────────────────
+
+    #[test]
+    fn remap_post_expansion_rewrites_outer_line_col_into_included_file() {
+        // Hand-crafted PositionMap mimicking xinclude splice:
+        //   expanded[0..4)  = "AAA\n"   from outer.xml[0..4)
+        //   expanded[4..11) = "BBBBBB\n" from frag.xml[0..7)
+        //   expanded[11..14)= "CCC"     from outer.xml[4..7)
+        use crate::forge::error::{ForgeError, Located, XmlError};
+        use crate::position_map::{Origin, PositionMap};
+        use std::path::PathBuf;
+
+        let expanded = "AAA\nBBBBBB\nCCC";
+        let mut map = PositionMap::default();
+        map.register_file(PathBuf::from("outer.xml"), "AAA\nCCC");
+        map.register_file(PathBuf::from("frag.xml"), "BBBBBB\n");
+        map.push_entry(
+            0,
+            4,
+            Origin::File {
+                path: PathBuf::from("outer.xml"),
+                source_offset: 0,
+            },
+        );
+        map.push_entry(
+            4,
+            11,
+            Origin::File {
+                path: PathBuf::from("frag.xml"),
+                source_offset: 0,
+            },
+        );
+        map.push_entry(
+            11,
+            14,
+            Origin::File {
+                path: PathBuf::from("outer.xml"),
+                source_offset: 4,
+            },
+        );
+
+        // Expanded (row 2, col 3) — byte offset 4 + 2 = 6 on the
+        // BBBBBB line, which maps to frag.xml (row 1, col 3).
+        let err = Located::new(
+            ForgeError::Xml(XmlError::Parse("synthetic".to_string())),
+            "expanded.scxml",
+            Some(2),
+            Some(3),
+        );
+        let remapped = remap_post_expansion(err, expanded, &map);
+        assert_eq!(remapped.location.file, "frag.xml");
+        assert_eq!(remapped.location.line, Some(1));
+        assert_eq!(remapped.location.col, Some(3));
+    }
+
+    #[test]
+    fn remap_post_expansion_identity_map_is_noop() {
+        // Identity map (no xinclude): remap must leave the error
+        // byte-identical to prove documents without preprocessor
+        // expansion pay no behavioural cost.
+        use crate::forge::error::{ForgeError, Located, XmlError};
+        use crate::position_map::PositionMap;
+
+        let text = "<root/>";
+        let map = PositionMap::identity("main.scxml", text);
+        let err = Located::new(
+            ForgeError::Xml(XmlError::Parse("synthetic".to_string())),
+            "some-diag-label",
+            Some(42),
+            Some(17),
+        );
+        let remapped = remap_post_expansion(err, text, &map);
+        assert_eq!(remapped.location.file, "some-diag-label");
+        assert_eq!(remapped.location.line, Some(42));
+        assert_eq!(remapped.location.col, Some(17));
+    }
+
+    #[test]
+    fn remap_post_expansion_walks_xsd_multi_record_container() {
+        // XSD validation is a multi-record container — the outer
+        // Located has no (line, col) of its own, but each XsdDiag
+        // carries its own line. The remap must descend into the
+        // container so per-record lines resolve to source.
+        use crate::forge::error::{ForgeError, Located, XmlError};
+        use crate::forge::xsd_validator::{XsdDiag, XsdErrors};
+        use crate::position_map::{Origin, PositionMap};
+        use std::path::PathBuf;
+
+        let expanded = "AAA\nBBBBBB\nCCC";
+        let mut map = PositionMap::default();
+        map.register_file(PathBuf::from("outer.xml"), "AAA\nCCC");
+        map.register_file(PathBuf::from("frag.xml"), "BBBBBB\n");
+        map.push_entry(
+            0,
+            4,
+            Origin::File {
+                path: PathBuf::from("outer.xml"),
+                source_offset: 0,
+            },
+        );
+        map.push_entry(
+            4,
+            11,
+            Origin::File {
+                path: PathBuf::from("frag.xml"),
+                source_offset: 0,
+            },
+        );
+        map.push_entry(
+            11,
+            14,
+            Origin::File {
+                path: PathBuf::from("outer.xml"),
+                source_offset: 4,
+            },
+        );
+
+        let xsd_errs = XsdErrors {
+            source_label: "expanded.scxml".to_string(),
+            diagnostics: vec![
+                XsdDiag {
+                    line: Some(2),
+                    col: Some(3),
+                    message: "violation on frag line".to_string(),
+                },
+                XsdDiag {
+                    line: Some(3),
+                    col: None,
+                    message: "violation on tail line".to_string(),
+                },
+            ],
+        };
+        let err = Located::new(
+            ForgeError::Xml(XmlError::SchemaValidation(xsd_errs)),
+            "expanded.scxml",
+            None,
+            None,
+        );
+        let remapped = remap_post_expansion(err, expanded, &map);
+
+        if let ForgeError::Xml(XmlError::SchemaValidation(ref xsd)) = remapped.error {
+            // Record 0: expanded (2, 3) → frag.xml (1, 3).
+            assert_eq!(xsd.diagnostics[0].line, Some(1));
+            assert_eq!(xsd.diagnostics[0].col, Some(3));
+            // Record 1: expanded (3, ?) → outer.xml (2, ?).
+            // Col was None on input → stays None (we only rewrite
+            // col when one was originally reported).
+            assert_eq!(xsd.diagnostics[1].line, Some(2));
+            assert_eq!(xsd.diagnostics[1].col, None);
+        } else {
+            panic!("expected SchemaValidation variant");
+        }
     }
 }

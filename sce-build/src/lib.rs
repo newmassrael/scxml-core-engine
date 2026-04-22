@@ -18,6 +18,12 @@
 
 pub mod model;
 pub mod parser;
+/// Byte-level mapping from an expanded SCXML document back to its
+/// source origins. Consumed by the parser boundary to remap
+/// post-expansion diagnostic coordinates (XSD line numbers,
+/// roxmltree row/col, semantic validation) to author file/row/col.
+/// See [`position_map`] for the shape and lookup semantics.
+pub mod position_map;
 /// W3C XInclude preprocessing. Runs between XSD validation and
 /// roxmltree's document parse so the AOT code generator consumes
 /// the same post-expansion document as the C++ runtime. See

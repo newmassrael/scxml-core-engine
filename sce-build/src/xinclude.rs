@@ -48,6 +48,7 @@
 // node's row/column so downstream diagnostics can surface a
 // machine-readable location.
 
+use crate::position_map::{Origin, PositionMap};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -145,42 +146,60 @@ pub struct XIncludeLocation {
 /// Expand every `<xi:include>` / `<include>` element in `content`.
 ///
 /// `self_path` is the filesystem path of the document supplying
-/// `content`. It is added to the cycle-detection stack and used
-/// for diagnostic rendering; callers that have no filesystem
-/// identity (in-memory documents) should pass a stable label
-/// such as the `DocumentLabel` diagnostic string. `base_dir` is
-/// the directory `<xi:include href="relative/...">` is resolved
-/// against — typically `Path::new(self_path).parent()`.
+/// `content`. It is added to the cycle-detection stack, used for
+/// diagnostic rendering, and used as the `Origin::File` path for
+/// outer-content regions in the returned [`PositionMap`].
+/// Callers that have no filesystem identity (in-memory documents)
+/// should pass a stable label such as the `DocumentLabel`
+/// diagnostic string. `base_dir` is the directory
+/// `<xi:include href="relative/...">` is resolved against —
+/// typically `Path::new(self_path).parent()`.
 ///
 /// Returns the expanded document as an owned `String` suitable
-/// for handing to `roxmltree::Document::parse`. Short-circuits
-/// with an `Ok(content.to_string())` when the input has no
-/// `include` substring at all, so documents that do not use
-/// XInclude pay only a single substring search on the critical
-/// path.
+/// for handing to `roxmltree::Document::parse`, plus a
+/// [`PositionMap`] mapping every expanded byte back to its source
+/// (the outer file, or an included fragment). Documents without
+/// any include hit a short-circuit that returns the identity map
+/// — no allocation beyond the single `content.to_string()`.
+///
+/// # Error model
+///
+/// Errors fire *during* expansion, so their row/col are positions
+/// in the pre-expansion `content` — already in source
+/// coordinates, never in expanded coordinates. The position map
+/// is not used to translate these; callers wrap them directly in
+/// `Located` with the `<xi:include>` node's position as reported
+/// here. Only *post-expansion* diagnostics (XSD, semantic
+/// validation on the expanded tree, expression transpile) need
+/// the map.
 pub fn expand(
     content: &str,
     self_path: &str,
     base_dir: Option<&Path>,
-) -> Result<String, (XIncludeError, XIncludeLocation)> {
+) -> Result<(String, PositionMap), (XIncludeError, XIncludeLocation)> {
+    let self_file = PathBuf::from(self_path);
     if !content.contains("include") {
-        return Ok(content.to_string());
+        return Ok((
+            content.to_string(),
+            PositionMap::identity(self_file, content),
+        ));
     }
     let mut stack: Vec<PathBuf> = Vec::new();
     if let Ok(abs) = std::fs::canonicalize(self_path) {
         stack.push(abs);
     } else {
-        stack.push(PathBuf::from(self_path));
+        stack.push(self_file.clone());
     }
-    expand_impl(content, base_dir, 0, &mut stack)
+    expand_impl(content, &self_file, base_dir, 0, &mut stack)
 }
 
 fn expand_impl(
     content: &str,
+    content_file: &Path,
     base_dir: Option<&Path>,
     depth: u32,
     stack: &mut Vec<PathBuf>,
-) -> Result<String, (XIncludeError, XIncludeLocation)> {
+) -> Result<(String, PositionMap), (XIncludeError, XIncludeLocation)> {
     if depth >= MAX_XINCLUDE_DEPTH {
         return Err((
             XIncludeError::TooDeep {
@@ -207,21 +226,43 @@ fn expand_impl(
     let root = doc.root_element();
     let includes: Vec<roxmltree::Node> = collect_includes(&root);
     if includes.is_empty() {
-        return Ok(content.to_string());
+        // No includes in this content — the output is a 1:1 copy
+        // of `content` from `content_file`, so identity is exact.
+        return Ok((
+            content.to_string(),
+            PositionMap::identity(content_file.to_path_buf(), content),
+        ));
     }
 
     // Emit the output by splicing: walk the original byte stream
     // and replace each `<xi:include>` range with the rendered
     // children of the included document's root. Processing in
     // document order (left to right) lets a single cursor serve
-    // the splice and keeps the offset math trivial.
+    // the splice and keeps the offset math trivial. The position
+    // map is built in lock-step with the output, so every emitted
+    // byte lands in exactly one entry.
     let mut out = String::with_capacity(content.len());
     let mut cursor = 0usize;
+    let mut map = PositionMap::default();
+    map.register_file(content_file.to_path_buf(), content);
 
     for node in includes {
         let range = node.range();
-        // Copy the unchanged prefix up to this include node.
-        out.push_str(&content[cursor..range.start]);
+
+        // Copy the unchanged prefix up to this include node and
+        // tag it as an outer-file region.
+        if cursor < range.start {
+            let out_start = out.len();
+            out.push_str(&content[cursor..range.start]);
+            map.push_entry(
+                out_start,
+                out.len(),
+                Origin::File {
+                    path: content_file.to_path_buf(),
+                    source_offset: cursor,
+                },
+            );
+        }
 
         let loc = doc_loc(&doc, range.start);
 
@@ -263,30 +304,55 @@ fn expand_impl(
 
         stack.push(canon);
         let nested_base = resolved.parent().map(|p| p.to_path_buf());
-        let expanded = expand_impl(&raw, nested_base.as_deref(), depth + 1, stack).map_err(
-            |(err, nested_loc)| {
-                // The nested error's row/col references the
-                // included file, not the outer one. For the AOT
-                // diagnostic we keep the outer-file location
-                // (the `<xi:include>` node) because that is
-                // where the operator will apply the fix — the
-                // inner location is still available via the
-                // nested error's own rendering inside `detail`.
-                let _ = nested_loc;
-                (remap_nested(err, href), loc)
-            },
-        )?;
+        let (expanded, nested_map) =
+            expand_impl(&raw, &resolved, nested_base.as_deref(), depth + 1, stack).map_err(
+                |(err, nested_loc)| {
+                    // The nested error's row/col references the
+                    // included file, not the outer one. For the AOT
+                    // diagnostic we keep the outer-file location
+                    // (the `<xi:include>` node) because that is
+                    // where the operator will apply the fix — the
+                    // inner location is still available via the
+                    // nested error's own rendering inside `detail`.
+                    let _ = nested_loc;
+                    (remap_nested(err, href), loc)
+                },
+            )?;
         stack.pop();
 
-        let rendered = render_root_children(&expanded, href).map_err(|e| (e, loc))?;
+        let (rendered, rendered_range) = render_root_children(&expanded, href)
+            .map_err(|e| (e, loc))?;
+        let splice_start = out.len();
         out.push_str(&rendered);
+        // Compose the nested map for exactly the bytes we just
+        // spliced in: clip nested entries to the rendered range,
+        // then shift them so they land at `splice_start` in the
+        // outer map.
+        map.append_mapped_substring(
+            &nested_map,
+            rendered_range.start,
+            rendered_range.end,
+            splice_start,
+        );
 
         cursor = range.end;
     }
 
     // Tail: copy the unchanged suffix after the last include.
-    out.push_str(&content[cursor..]);
-    Ok(out)
+    if cursor < content.len() {
+        let out_start = out.len();
+        out.push_str(&content[cursor..]);
+        map.push_entry(
+            out_start,
+            out.len(),
+            Origin::File {
+                path: content_file.to_path_buf(),
+                source_offset: cursor,
+            },
+        );
+    }
+
+    Ok((out, map))
 }
 
 /// Collect every `<xi:include>` / `<include>` element in the
@@ -408,7 +474,17 @@ fn resolve_href(href: &str, base_dir: Option<&Path>) -> Result<PathBuf, XInclude
 /// parent: the root element itself is dropped (the document is a
 /// fragment wrapper), and every child — element, text, comment —
 /// is preserved so SCXML mixed content survives the splice.
-fn render_root_children(expanded: &str, href: &str) -> Result<String, XIncludeError> {
+///
+/// Returns both the rendered string and the `[start, end)` byte
+/// range it occupies inside `expanded`. The caller needs the
+/// range to compose the nested expansion's `PositionMap` with
+/// its own — the children slice is what actually lands in the
+/// outer output, and the range tells the map which sub-region to
+/// inherit.
+fn render_root_children(
+    expanded: &str,
+    href: &str,
+) -> Result<(String, std::ops::Range<usize>), XIncludeError> {
     let doc = roxmltree::Document::parse(expanded).map_err(|e| XIncludeError::Malformed {
         href: href.to_string(),
         detail: e.to_string(),
@@ -416,11 +492,11 @@ fn render_root_children(expanded: &str, href: &str) -> Result<String, XIncludeEr
     let root = doc.root_element();
     let children: Vec<_> = root.children().collect();
     if children.is_empty() {
-        return Ok(String::new());
+        return Ok((String::new(), 0..0));
     }
     let start = children.first().unwrap().range().start;
     let end = children.last().unwrap().range().end;
-    Ok(expanded[start..end].to_string())
+    Ok((expanded[start..end].to_string(), start..end))
 }
 
 /// Convert a byte offset into a 1-based (row, col) pair using
@@ -499,8 +575,9 @@ mod tests {
     #[test]
     fn passthrough_when_no_include_substring() {
         let src = "<root><state id=\"s1\"/></root>";
-        let out = expand(src, "inline", None).expect("no includes");
+        let (out, map) = expand(src, "inline", None).expect("no includes");
         assert_eq!(out, src);
+        assert!(map.is_identity());
     }
 
     #[test]
@@ -510,8 +587,9 @@ mod tests {
         // the document to tell, and must pass it through
         // unchanged.
         let src = "<root description=\"please include docs\"/>";
-        let out = expand(src, "inline", None).expect("no include elements");
+        let (out, map) = expand(src, "inline", None).expect("no include elements");
         assert_eq!(out, src);
+        assert!(map.is_identity());
     }
 
     #[test]
@@ -528,7 +606,7 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let out = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path()))
+        let (out, map) = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path()))
             .expect("expansion succeeds");
         // The children of `<fragment>` must be spliced in place
         // of the `<xi:include>` element, dropping the wrapper.
@@ -536,6 +614,11 @@ mod tests {
         assert!(out.contains("<state id=\"s2\"/>"));
         assert!(!out.contains("<xi:include"));
         assert!(!out.contains("<fragment"));
+        // Map must reflect that expansion happened — identity
+        // would mean the single entry covered the whole output
+        // from main.xml, which is wrong for a document with a
+        // splice.
+        assert!(!map.is_identity());
     }
 
     #[test]
@@ -551,7 +634,8 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let out = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let (out, _map) =
+            expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
         assert!(out.contains("<x/>"));
         assert!(!out.contains("<include"));
     }
@@ -625,7 +709,8 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let out = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let (out, _map) =
+            expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
         assert!(out.contains("<leaf/>"));
         assert!(!out.contains("<xi:include"));
         assert!(!out.contains("<mid"));
@@ -648,7 +733,8 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let out = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let (out, _map) =
+            expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
         // Both splice points must have been replaced.
         assert_eq!(out.matches("<x/>").count(), 2);
         assert!(!out.contains("<xi:include"));
