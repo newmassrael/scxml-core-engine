@@ -433,11 +433,25 @@ foreach(_sce_runtime_dir model runtime actions events states parsing factory)
     )
 endforeach()
 
+# Codegen-component assets (cmake utilities + templates) are declared in
+# sce/sce_codegen_assets.cmake — the single source of truth shared with
+# scripts/package_embed.sh. Adding a file to the Codegen component means
+# editing only the SSOT; both install() rules and the embed packager
+# pick it up automatically.
+include(${CMAKE_CURRENT_SOURCE_DIR}/sce/sce_codegen_assets.cmake)
+
 # Install Jinja2 templates (used by sce-codegen at runtime via SCE_TEMPLATE_DIR)
-install(DIRECTORY tools/codegen/templates
+install(DIRECTORY ${SCE_CODEGEN_TEMPLATE_DIR}
     DESTINATION ${SCE_INSTALL_CODEGENDIR}
     COMPONENT Codegen
-    FILES_MATCHING PATTERN "*.jinja2"
+    FILES_MATCHING PATTERN "${SCE_CODEGEN_TEMPLATE_PATTERN}"
+)
+
+# Install clang-format style file alongside templates so SCEClangFormat.cmake
+# can locate it in system-install layout via auto-detection.
+install(FILES ${SCE_CODEGEN_STYLE_FILE}
+    DESTINATION ${SCE_INSTALL_CODEGENDIR}
+    COMPONENT Codegen
 )
 
 # Install sce-codegen binary if it was built before cmake configure.
@@ -608,9 +622,11 @@ install(FILES
     DESTINATION ${SCE_INSTALL_CMAKEDIR}
     COMPONENT Core
 )
-install(FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEClangFormat.cmake"
-    DESTINATION ${SCE_INSTALL_CMAKEDIR}
-    COMPONENT Codegen
-)
+# SCECodegen.cmake + SCEClangFormat.cmake — file list in
+# sce/sce_codegen_assets.cmake (SSOT shared with package_embed.sh).
+foreach(_sce_codegen_cmake IN LISTS SCE_CODEGEN_CMAKE_FILES)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_codegen_cmake}"
+        DESTINATION ${SCE_INSTALL_CMAKEDIR}
+        COMPONENT Codegen
+    )
+endforeach()

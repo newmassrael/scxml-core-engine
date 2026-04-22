@@ -173,6 +173,77 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - `SendHelper.h` — `SCE::detail::starts_with()` dual-mode helper (C++20 `std::string::starts_with` or manual)
 - `StatePolicyConcepts.h` — `void_t` type traits always available; concepts aliased on C++20, `constexpr bool` on C++17
 
+### Distribution Models
+
+SCE ships in two independent distribution forms. Downstream consumers pick whichever matches their toolchain constraints; the two paths are isolated and neither depends on the other at runtime.
+
+#### A. System install — `cmake --install` + `find_package(SCE)`
+
+**Audience**: Consumers who can install SCE system-wide (Rust toolchain required at install time, no restriction at consumer build time).
+
+**Producer**: `cmake --install build --component <Tier>` after a normal CMake build. Components mirror the 4-tier split (`Core`, `Scripting`, `Runtime`) plus `Codegen` for the codegen utilities. See `CMakeLists.txt:317` block.
+
+**Layout** (default `${CMAKE_INSTALL_PREFIX}`):
+```
+lib/libsce_base.a, libsce_scripting.a, libsce_runtime.a
+lib/cmake/SCE/         — SCEConfig.cmake, SCECodegen.cmake, SCEClangFormat.cmake
+bin/sce-codegen        — Codegen binary
+share/sce/codegen/     — default.clang-format + templates/ tree
+include/               — Headers partitioned by tier
+```
+
+**Consumer integration**:
+```cmake
+find_package(SCE REQUIRED COMPONENTS Core Codegen)
+sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
+target_link_libraries(my_app PRIVATE SCE::sce_base)
+```
+
+#### B. Embed vendor — `scripts/package_embed.sh` + `add_subdirectory()`
+
+**Audience**: Consumers who vendor SCE source into `third_party/` and build it in-tree alongside their own code (no Rust toolchain, no git, no network at consumer build time — only a C++17 compiler). Representative downstream: `tc8-harness`.
+
+**Producer**: `./scripts/package_embed.sh [-o OUTPUT_DIR]` emits a self-contained tree. The in-tree `embed/` directory is a gitignored artifact (only `embed/MANIFEST.json` is checked in — `verify_embed_manifest.sh` diffs it as a drift guard).
+
+**Layout** (`embed/` root):
+```
+CMakeLists.txt         — Consumer-facing entry (from scripts/embed_CMakeLists.txt)
+BUILD.bazel            — Bazel entry (auto-generated)
+VERSION                — Git-describe of the source tree at packaging time
+MANIFEST.json          — Public-header symbol surface (checked in for drift guard)
+include/               — Headers (partitioned by SCE_BASE_INCLUDE_DIRS)
+src/                   — sce_base sources (SCE_BASE_SOURCES SSOT)
+third_party/           — nlohmann_json, pugixml, optional spdlog
+sce_base_sources.cmake — SSOT copy for in-place builds
+SCECodegen.cmake       — sce_add_state_machine() function
+SCEClangFormat.cmake   — clang-format post-processor
+tools/codegen/
+  ├─ default.clang-format
+  └─ templates/          — Jinja2 templates (cpp/rust/kotlin/go/python)
+```
+
+**Consumer integration**:
+```cmake
+add_subdirectory(third_party/sce)
+include(${CMAKE_CURRENT_SOURCE_DIR}/third_party/sce/SCECodegen.cmake)
+sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
+target_link_libraries(my_app PRIVATE sce_base)
+```
+
+The embed payload ships source + cmake utilities + codegen templates, but **not** the `sce-codegen` binary (platform-specific). Consumers place `sce-codegen` on `PATH`; `SCECodegen.cmake` resolves it via `find_program` and auto-detects `SCE_TEMPLATE_DIR` relative to the shipped `tools/codegen/templates/` — no manual configuration required.
+
+#### Single source of truth: `sce/sce_codegen_assets.cmake`
+
+Codegen-component files are declared once and consumed by both paths:
+
+| Variable | Purpose |
+|----------|---------|
+| `SCE_CODEGEN_CMAKE_FILES` | CMake utility files (SCECodegen.cmake, SCEClangFormat.cmake) |
+| `SCE_CODEGEN_TEMPLATE_DIR` | Jinja2 template tree path |
+| `SCE_CODEGEN_STYLE_FILE` | clang-format style file path |
+
+Adding a new utility or template group means editing `sce_codegen_assets.cmake` only. `CMakeLists.txt` `install()` rules and `package_embed.sh` both parse this file — drift between the two paths is not possible by construction, and `scripts/smoke_embed_consumer.sh` exercises the full embed→consumer-build pipeline in CI as a secondary guard.
+
 ---
 
 ## Code Generator: sce-codegen (Rust + minijinja)

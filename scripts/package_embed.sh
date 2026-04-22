@@ -192,8 +192,70 @@ BZLEOF
 # Bazel repository rule for consumers referencing SCE source tree directly
 cp "${SCE_ROOT}/bazel/sce_repo.bzl" "${OUTPUT_DIR}/"
 
-# SCECodegen.cmake — provides sce_add_state_machine() for build-time codegen
-cp "${SCE_ROOT}/cmake/SCECodegen.cmake" "${OUTPUT_DIR}/"
+# ============================================================================
+# 4b. Codegen assets from SSOT (sce/sce_codegen_assets.cmake)
+# ----------------------------------------------------------------------------
+# Shared with CMakeLists.txt install() rules. Adding a new CMake utility
+# or template group to the Codegen component means editing the SSOT
+# only — this block reads it and mirrors the layout inside embed/.
+# Historical drift (missing SCEClangFormat.cmake, missing templates/)
+# was caused by hardcoded cp calls here bypassing the SSOT.
+# ============================================================================
+CODEGEN_ASSETS_CMAKE="${SCE_ROOT}/sce/sce_codegen_assets.cmake"
+if [ ! -f "${CODEGEN_ASSETS_CMAKE}" ]; then
+    echo "ERROR: ${CODEGEN_ASSETS_CMAKE} not found" >&2
+    exit 1
+fi
+
+# Parse SCE_CODEGEN_CMAKE_FILES: paths relative to SCE root.
+CODEGEN_CMAKE_FILES=$(sed -n '/set(SCE_CODEGEN_CMAKE_FILES/,/^)/{
+    s/^[[:space:]]*//
+    /^set(/d
+    /^)/d
+    /^#/d
+    /^$/d
+    p
+}' "${CODEGEN_ASSETS_CMAKE}")
+
+# Parse SCE_CODEGEN_TEMPLATE_DIR + SCE_CODEGEN_STYLE_FILE: single path, single-line set().
+CODEGEN_TEMPLATE_DIR=$(sed -n 's/^set(SCE_CODEGEN_TEMPLATE_DIR \([^)]*\))$/\1/p' "${CODEGEN_ASSETS_CMAKE}")
+CODEGEN_STYLE_FILE=$(sed -n 's/^set(SCE_CODEGEN_STYLE_FILE \([^)]*\))$/\1/p' "${CODEGEN_ASSETS_CMAKE}")
+
+if [ -z "${CODEGEN_CMAKE_FILES}" ] || [ -z "${CODEGEN_TEMPLATE_DIR}" ] || [ -z "${CODEGEN_STYLE_FILE}" ]; then
+    echo "ERROR: Failed to parse SSOT ${CODEGEN_ASSETS_CMAKE}" >&2
+    echo "       CODEGEN_CMAKE_FILES=[${CODEGEN_CMAKE_FILES}]" >&2
+    echo "       CODEGEN_TEMPLATE_DIR=[${CODEGEN_TEMPLATE_DIR}]" >&2
+    echo "       CODEGEN_STYLE_FILE=[${CODEGEN_STYLE_FILE}]" >&2
+    exit 1
+fi
+
+echo "Copying codegen cmake utilities..."
+for f in ${CODEGEN_CMAKE_FILES}; do
+    if [ ! -f "${SCE_ROOT}/${f}" ]; then
+        echo "ERROR: SSOT-listed file missing: ${f}" >&2
+        exit 1
+    fi
+    # SCECodegen.cmake expects its siblings next to it at the embed root
+    # (include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake) resolves
+    # against embed/ in the vendoring scenario).
+    cp "${SCE_ROOT}/${f}" "${OUTPUT_DIR}/$(basename "${f}")"
+done
+
+echo "Copying codegen templates..."
+mkdir -p "${OUTPUT_DIR}/${CODEGEN_TEMPLATE_DIR}"
+# Copy the tree so SCE_TEMPLATE_DIR auto-detection in SCECodegen.cmake
+# finds embed/tools/codegen/templates/ alongside embed/SCECodegen.cmake.
+cp -r "${SCE_ROOT}/${CODEGEN_TEMPLATE_DIR}/." \
+      "${OUTPUT_DIR}/${CODEGEN_TEMPLATE_DIR}/"
+
+echo "Copying codegen clang-format style..."
+if [ ! -f "${SCE_ROOT}/${CODEGEN_STYLE_FILE}" ]; then
+    echo "ERROR: SSOT-listed style file missing: ${CODEGEN_STYLE_FILE}" >&2
+    exit 1
+fi
+mkdir -p "${OUTPUT_DIR}/$(dirname "${CODEGEN_STYLE_FILE}")"
+cp "${SCE_ROOT}/${CODEGEN_STYLE_FILE}" \
+   "${OUTPUT_DIR}/${CODEGEN_STYLE_FILE}"
 
 # ============================================================================
 # 5. VERSION file

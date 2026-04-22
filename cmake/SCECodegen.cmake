@@ -33,6 +33,29 @@ endif()
 
 message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 
+# Auto-detect SCE_TEMPLATE_DIR so release sce-codegen binaries (which
+# refuse silent fallback — see sce-build::find_template_base) find the
+# Jinja2 templates in all three distribution layouts without the
+# consumer having to set SCE_TEMPLATE_DIR manually:
+#
+#   In-tree:        cmake/      <-> ../tools/codegen/templates
+#   Embed vendor:   embed/      <-> tools/codegen/templates (alongside)
+#   System install: lib/cmake/SCE/ <-> ../../share/sce/codegen/templates
+#
+# Consumer-set SCE_TEMPLATE_DIR wins; auto-detection only runs when unset.
+if(NOT SCE_TEMPLATE_DIR)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../tools/codegen/templates/state_machine.jinja2")
+        set(SCE_TEMPLATE_DIR "${CMAKE_CURRENT_LIST_DIR}/../tools/codegen/templates")
+    elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/tools/codegen/templates/state_machine.jinja2")
+        set(SCE_TEMPLATE_DIR "${CMAKE_CURRENT_LIST_DIR}/tools/codegen/templates")
+    elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../share/sce/codegen/templates/state_machine.jinja2")
+        set(SCE_TEMPLATE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../share/sce/codegen/templates")
+    endif()
+    if(SCE_TEMPLATE_DIR)
+        message(STATUS "SCE: Auto-detected template dir: ${SCE_TEMPLATE_DIR}")
+    endif()
+endif()
+
 # clang-format integration for generated C++ code
 include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
 

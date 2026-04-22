@@ -21,11 +21,27 @@ if(NOT DEFINED SCE_CLANG_FORMAT_FOUND)
     endif()
 endif()
 
-# Default style file path
+# Default style file path — auto-detected across three distribution layouts:
+#
+#   In-tree:        cmake/      <-> ../tools/codegen/default.clang-format
+#   Embed vendor:   embed/      <-> tools/codegen/default.clang-format (alongside)
+#   System install: lib/cmake/SCE/ <-> ../../share/sce/codegen/default.clang-format
+#
+# Consumer-set SCE_CLANG_FORMAT_STYLE wins; auto-detection only runs when unset.
 if(NOT SCE_CLANG_FORMAT_STYLE)
-    get_filename_component(_SCE_CF_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
-    set(SCE_CLANG_FORMAT_STYLE "${_SCE_CF_ROOT}/tools/codegen/default.clang-format"
-        CACHE FILEPATH "clang-format style file for generated C++ code")
+    set(_SCE_CF_CANDIDATES
+        "${CMAKE_CURRENT_LIST_DIR}/../tools/codegen/default.clang-format"
+        "${CMAKE_CURRENT_LIST_DIR}/tools/codegen/default.clang-format"
+        "${CMAKE_CURRENT_LIST_DIR}/../../share/sce/codegen/default.clang-format"
+    )
+    foreach(_sce_cf_candidate IN LISTS _SCE_CF_CANDIDATES)
+        if(EXISTS "${_sce_cf_candidate}")
+            set(SCE_CLANG_FORMAT_STYLE "${_sce_cf_candidate}"
+                CACHE FILEPATH "clang-format style file for generated C++ code")
+            break()
+        endif()
+    endforeach()
+    unset(_SCE_CF_CANDIDATES)
 endif()
 
 # sce_clang_format_command(<output_var> <file1> [file2 ...])

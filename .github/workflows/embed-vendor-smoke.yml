@@ -1,0 +1,103 @@
+name: Embed Vendor Smoke
+
+# Guards the embed/ vendor distribution path. The job regenerates a
+# fresh embed payload from the sce_codegen_assets.cmake SSOT and builds
+# a minimal consumer against it (end-to-end: include SCECodegen.cmake,
+# sce_add_state_machine, compile, link sce_base). Missing files that
+# bypassed the SSOT (historical drift: SCEClangFormat.cmake,
+# tools/codegen/templates/, default.clang-format) fail here rather
+# than downstream in consumer projects like tc8-harness.
+#
+# Also re-emits the public-header manifest and diffs against the
+# checked-in embed/MANIFEST.json — catches header-surface drift that
+# package_embed.sh would otherwise ship silently.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'sce/**'
+      - 'cmake/**'
+      - 'tools/codegen/**'
+      - 'scripts/package_embed.sh'
+      - 'scripts/smoke_embed_consumer.sh'
+      - 'scripts/verify_embed_manifest.sh'
+      - 'scripts/embed_CMakeLists.txt'
+      - 'embed/MANIFEST.json'
+      - '.github/workflows/embed-vendor-smoke.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce/**'
+      - 'cmake/**'
+      - 'tools/codegen/**'
+      - 'scripts/package_embed.sh'
+      - 'scripts/smoke_embed_consumer.sh'
+      - 'scripts/verify_embed_manifest.sh'
+      - 'scripts/embed_CMakeLists.txt'
+      - 'embed/MANIFEST.json'
+      - '.github/workflows/embed-vendor-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  embed-smoke:
+    name: Embed vendor smoke build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          g++ \
+          ninja-build \
+          pkg-config \
+          clang-19
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
+    - name: Put sce-codegen on PATH
+      # SCECodegen.cmake's find_program resolves sce-codegen from PATH
+      # in the embed vendoring scenario (no system SCE install).
+      run: |
+        echo "${{ github.workspace }}/target/release" >> "$GITHUB_PATH"
+
+    - name: Verify embed manifest (public-header drift guard)
+      # Must run before smoke regenerates embed/ — verify_embed_manifest.sh
+      # diffs the checked-in MANIFEST.json against a fresh emit.
+      run: ./scripts/verify_embed_manifest.sh
+
+    - name: Run embed consumer smoke build
+      # Regenerates embed/ in a scratch dir, checks SSOT-listed assets
+      # physically landed, then configures + builds a minimal consumer
+      # end-to-end. Catches drift between sce_codegen_assets.cmake and
+      # scripts/package_embed.sh that unit tests wouldn't see.
+      run: ./scripts/smoke_embed_consumer.sh
