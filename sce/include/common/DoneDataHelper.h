@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "common/EventDataHelper.h"
 #include "scripting/IScriptEngine.h"
 #include <functional>
 #include <optional>
@@ -80,16 +81,22 @@ public:
      * static code generator's literal branch (Zero Duplication).
      *
      * @param literal Inline text content from `<content>literal</content>`
-     * @param outEventData _event.data output (raw string)
+     * @param outEventData _event.data output as a canonical JSON scalar so the
+     *                     wire path (mesh §9.6.2 wire-18) and the local fallback
+     *                     parse in `EventRaiserImpl::raiseEventWithPriority` —
+     *                     which hydrates `typedData` via
+     *                     `EventDataHelper::jsonStringToScriptValue` when typed
+     *                     data is absent — see the same bytes they can round-trip.
      * @param outTypedData Optional typed pipeline — a `ScriptValue(string)`
      *                     is stored so downstream consumers that inspect
      *                     `typedData` observe a string-kind value.
      */
     static void emitContentLiteral(const std::string &literal, std::string &outEventData,
                                    std::optional<ScriptValue> *outTypedData = nullptr) {
-        outEventData = literal;
+        ScriptValue value{literal};
+        outEventData = EventDataHelper::scriptValueToJsonString(value);
         if (outTypedData) {
-            *outTypedData = ScriptValue(literal);
+            *outTypedData = std::move(value);
         }
     }
 
@@ -107,16 +114,18 @@ public:
 
         if (result.isSuccess()) {
             const auto &value = result.getInternalValue();
-            outEventData = convertScriptValueToJson(value, false);
+            // W3C SCXML 5.5 + B.2: ship canonical JSON so the wire path
+            // (mesh §9.6.2 wire-18) and the local fallback parse in
+            // `EventRaiserImpl::raiseEventWithPriority` can round-trip
+            // through `EventDataHelper::jsonStringToScriptValue`.
+            // `scriptValueToJsonString` handles ScriptArray/ScriptObject
+            // recursively, quoting strings and preserving numeric/bool
+            // types — no `null`-then-falls-back-to-source-expression hack.
+            outEventData = EventDataHelper::scriptValueToJsonString(value);
 
             // W3C SCXML 5.5: Preserve typed data for engine-agnostic pipeline
             if (outTypedData) {
                 *outTypedData = value;
-            }
-
-            // For objects/arrays (null case), use original content as fallback
-            if (outEventData == "null" && !std::holds_alternative<ScriptNull>(value)) {
-                outEventData = contentExpr;
             }
             return true;
         }
@@ -211,7 +220,11 @@ public:
                 first = false;
 
                 const auto &value = result.getInternalValue();
-                jsonBuilder << "\"" << escapeJsonString(paramName) << "\":" << convertScriptValueToJson(value, true);
+                // W3C SCXML 5.5 + B.2: Use canonical JSON serializer so nested
+                // ScriptObject/ScriptArray param values round-trip through the
+                // wire / local JSON-fallback paths identically to typedData.
+                jsonBuilder << "\"" << escapeJsonString(paramName) << "\":"
+                            << EventDataHelper::scriptValueToJsonString(value);
 
                 // Preserve typed value for engine-agnostic pipeline
                 if (typedObj) {
@@ -277,29 +290,6 @@ public:
         return escaped.str();
     }
 
-    /**
-     * @brief Convert ScriptValue to JSON representation
-     *
-     * @param value ScriptValue variant
-     * @param quoteStrings If true, wrap strings in quotes
-     * @return JSON string representation
-     */
-    static std::string convertScriptValueToJson(const ScriptValue &value, bool quoteStrings) {
-        if (std::holds_alternative<std::string>(value)) {
-            const std::string &str = std::get<std::string>(value);
-            if (quoteStrings) {
-                return "\"" + escapeJsonString(str) + "\"";
-            }
-            return str;
-        } else if (std::holds_alternative<double>(value)) {
-            return std::to_string(std::get<double>(value));
-        } else if (std::holds_alternative<int64_t>(value)) {
-            return std::to_string(std::get<int64_t>(value));
-        } else if (std::holds_alternative<bool>(value)) {
-            return std::get<bool>(value) ? "true" : "false";
-        }
-        return "null";
-    }
 };
 
 }  // namespace SCE

@@ -2222,6 +2222,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
                 "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
                 "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
                 "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
                 "${SCE_CODEGEN}"
         DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h.d"
@@ -2240,6 +2241,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
                 "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
                 "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
                 "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
                 "${SCE_CODEGEN}"
         DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h.d"
@@ -2258,10 +2260,30 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
                 "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
                 "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
                 "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
                 "${SCE_CODEGEN}"
         DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h.d"
         COMMENT "Mesh §9.6.2 donedata: Generating worker_session_f_donedata_content_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
+               "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
+                -l cpp -o "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+                --write-deps "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h.d"
+        COMMENT "Mesh §9.6.2 donedata: Generating worker_session_f_donedata_nested_{sm,transport}.h"
         VERBATIM
     )
 
@@ -2273,6 +2295,8 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
         "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
         "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
+        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
+        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h"
     )
 
     target_include_directories(mesh_session_f_donedata_test

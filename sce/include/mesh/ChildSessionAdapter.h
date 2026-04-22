@@ -24,7 +24,6 @@
 
 #pragma once
 
-#include "common/EventDataHelper.h"
 #include "common/Uuid.h"
 #include "mesh/IChildSession.h"
 #include "mesh/MeshEnvelope.h"
@@ -111,30 +110,13 @@ public:
         // W3C SCXML 5.5 + 6.3.1: surface the `<donedata>` payload that the
         // child stashed at top-level `<final>` entry. Shared single source
         // of truth with the local-invoke path — both read from
-        // `StaticExecutionEngine::donedataAtFinal`, populated from the
-        // same `DoneDataHelper::evaluateParams` / `evaluateContent`
-        // pipeline in `entry_exit_actions.jinja2`.
-        //
-        // Wire encoding: we MUST ship valid JSON so the parent's
-        // `setPolicyMetadata` can re-hydrate `typedData` via
-        // `jsonStringToScriptValue`. `DoneDataHelper::evaluateContent`
-        // intentionally stores a bare string (no JSON quoting) for
-        // `<content expr="...'"/>` — the local path uses the paired
-        // `typedData` to avoid a JSON round-trip, but that typed pipe
-        // does not exist across the wire. When `typedData` is present
-        // we re-serialise through `EventDataHelper::scriptValueToJsonString`
-        // (the symmetric counterpart of `jsonStringToScriptValue`) so
-        // a `<content expr="'foo'"/>` goes onto the wire as `"foo"`
-        // (six bytes, valid JSON) rather than `foo` (three bytes, which
-        // the parent's Lua binding would evaluate as an undefined global
-        // → `nil`). When typed data is unavailable (e.g.
-        // `emitContentLiteral` running under `sce_base` without a
-        // script engine) the raw stash is returned; `<param>` builds
-        // already produce valid JSON regardless.
-        const auto& typed = engine_.typedDonedataAtFinal();
-        if (typed.has_value()) {
-            return ::SCE::EventDataHelper::scriptValueToJsonString(typed.value());
-        }
+        // `StaticExecutionEngine::donedataAtFinal`, populated by the
+        // `DoneDataHelper::evaluateParams` / `evaluateContent` /
+        // `emitContentLiteral` pipeline, each of which now stores
+        // canonical JSON (via `EventDataHelper::scriptValueToJsonString`).
+        // No wire-side re-serialization needed: the parent's
+        // `setPolicyMetadata` re-hydrates `typedData` by parsing this
+        // JSON with `jsonStringToScriptValue` — the symmetric counterpart.
         return engine_.donedataAtFinal();
     }
 

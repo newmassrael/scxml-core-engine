@@ -3,7 +3,8 @@
 //
 // SCE Mesh §9.6.2 wire-18 donedata surfacing — W3C SCXML 5.5 / 6.3.1.
 //
-// The parent sequentially invokes two workers:
+// The parent sequentially invokes three workers covering every
+// `<donedata>` flavor:
 //
 //   1. `worker_session_f_donedata_param` reaches a top-level `<final>`
 //      whose `<donedata>` is a single `<param name="result" expr="42"/>`.
@@ -20,9 +21,21 @@
 //
 //   2. `worker_session_f_donedata_content` reaches a top-level `<final>`
 //      whose `<donedata>` is `<content expr="'hello_content'"/>`. The
-//      `evaluateContent` branch produces a JSON string; the round-trip
-//      yields a plain Lua string on the parent side and the cond
-//      `_event.data == 'hello_content'` passes.
+//      `evaluateContent` branch produces a canonical JSON string; the
+//      round-trip yields a plain Lua string on the parent side and the
+//      cond `_event.data == 'hello_content'` passes.
+//
+//   3. `worker_session_f_donedata_nested` reaches a top-level `<final>`
+//      whose `<donedata>` is a nested `<content expr="{result =
+//      {status = 'ok', codes = {200, 201}}}"/>`. This closes the
+//      long-standing raw-string bug in `evaluateContent`: before the
+//      canonical-JSON rewire, ScriptObject/ScriptArray values hit the
+//      `null`-fallback branch and the raw Lua expression text was
+//      leaked onto the wire, so a nested payload decayed to garbage
+//      on the parent side. After the rewire through
+//      `EventDataHelper::scriptValueToJsonString`, the cond exercises
+//      nested-object property access, nested-array element access,
+//      and integer type preservation in a single guard.
 //
 // Any fall-through done.invoke takes a deterministic `fail` transition
 // so regressions surface immediately rather than as a 5s timeout. The
@@ -36,6 +49,8 @@
 #include "worker_session_f_donedata_param_transport.h"
 #include "worker_session_f_donedata_content_sm.h"
 #include "worker_session_f_donedata_content_transport.h"
+#include "worker_session_f_donedata_nested_sm.h"
+#include "worker_session_f_donedata_nested_transport.h"
 
 #include <chrono>
 #include <cstdio>
@@ -57,6 +72,12 @@ int main() {
     SCE::Generated::worker_session_f_donedata_content::TransportRouter<ContentWorker>
         worker_content_router({&worker_content});
 
+    using NestedWorker = SCE::Generated::worker_session_f_donedata_nested::worker_session_f_donedata_nested;
+    NestedWorker worker_nested;
+    worker_nested.initialize();
+    SCE::Generated::worker_session_f_donedata_nested::TransportRouter<NestedWorker>
+        worker_nested_router({&worker_nested});
+
     using ParentEngine = SCE::Generated::parent_session_f_donedata::parent_session_f_donedata;
     ParentEngine parent;
     SCE::Generated::parent_session_f_donedata::TransportRouter<ParentEngine> parent_router({&parent});
@@ -68,6 +89,7 @@ int main() {
     while (clock::now() < deadline) {
         worker_param_router.pumpScxmlInvokeRequests();
         worker_content_router.pumpScxmlInvokeRequests();
+        worker_nested_router.pumpScxmlInvokeRequests();
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
         if (parent.getCurrentState() == ParentState::Pass) {
@@ -76,12 +98,16 @@ int main() {
         }
         if (parent.getCurrentState() == ParentState::Fail) {
             std::fprintf(stderr,
-                         "FAIL: parent reached `fail`. Check the cond "
-                         "`_event.data.result == 42` (param branch) or "
+                         "FAIL: parent reached `fail`. Check the conds "
+                         "`_event.data.result == 42` (param branch), "
                          "`_event.data == 'hello_content'` (content "
-                         "branch). Empty `_event.data` means the "
-                         "stash / getDonedata / emitWire18 / onInvokeDone "
-                         "chain dropped the payload.\n");
+                         "branch), or `_event.data.result.codes[1] == "
+                         "200 and .codes[2] == 201` (nested branch). "
+                         "Empty `_event.data` means the stash / "
+                         "getDonedata / emitWire18 / onInvokeDone chain "
+                         "dropped the payload; a nested-branch failure "
+                         "points at the `DoneDataHelper::evaluateContent` "
+                         "canonical-JSON contract.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

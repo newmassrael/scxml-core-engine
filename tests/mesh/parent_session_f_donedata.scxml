@@ -2,7 +2,7 @@
 <!-- SCE Mesh §9.6.2 wire-18 donedata — parent driver.
 
      Verifies that the W3C SCXML 5.5 / 6.3.1 donedata payload survives
-     the wire-18 round-trip for BOTH donedata flavors:
+     the wire-18 round-trip for THREE donedata flavors:
 
        phase_param   — worker returns `<param name="result" expr="42"/>`;
                         parent cond `_event.data.result == 42` asserts
@@ -13,13 +13,22 @@
                         asserts that the content-expression branch
                         serialises as a JSON string and re-parses into
                         a Lua string on the parent side.
+       phase_nested  — worker returns `<content expr="{result =
+                        {status = 'ok', codes = {200, 201}}}"/>`; parent
+                        cond exercises nested object access, nested
+                        array access, and integer type preservation
+                        after the canonical-JSON round-trip through
+                        `EventDataHelper::scriptValueToJsonString` /
+                        `jsonStringToScriptValue`.
 
      Failure modes:
        - `_event.data` empty → the stash / getDonedata / emitWire18 /
          onInvokeDone chain dropped the payload somewhere;
        - name missing (`result == nil`) → JSON param envelope broken;
        - wrong type (`_event.data.result == "42"` as string) →
-         typedData hydration regressed.
+         typedData hydration regressed;
+       - nested object/array flattened or stringified → canonical-JSON
+         contract broke in `DoneDataHelper::evaluateContent`.
      Any fall-through done.invoke without the matching cond takes the
      `fail` transition so regressions surface as a deterministic fail
      rather than a 5s timeout. -->
@@ -28,6 +37,7 @@
        name="parent_session_f_donedata">
     <datamodel>
         <data id="param_ok" expr="false"/>
+        <data id="content_ok" expr="false"/>
     </datamodel>
     <state id="phase_param">
         <invoke type="scxml" src="#worker_session_f_donedata_param" id="inv_param"/>
@@ -43,8 +53,22 @@
         <invoke type="scxml" src="#worker_session_f_donedata_content" id="inv_content"/>
         <transition event="done.invoke.inv_content"
                     cond="param_ok and _event.data == 'hello_content'"
-                    target="pass"/>
+                    target="phase_nested">
+            <assign location="content_ok" expr="true"/>
+        </transition>
         <transition event="done.invoke.inv_content" target="fail"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <state id="phase_nested">
+        <invoke type="scxml" src="#worker_session_f_donedata_nested" id="inv_nested"/>
+        <!-- Array indices are written 0-based per SCE's ECMAScript-style
+             expression input convention; `transform_array_indexing` in
+             lua_transformer.rs shifts integer-literal subscripts by +1
+             when emitting Lua, so `[0]`/`[1]` here become Lua `[1]`/`[2]`. -->
+        <transition event="done.invoke.inv_nested"
+                    cond="content_ok and _event.data ~= nil and _event.data.result ~= nil and _event.data.result.status == 'ok' and _event.data.result.codes ~= nil and _event.data.result.codes[0] == 200 and _event.data.result.codes[1] == 201"
+                    target="pass"/>
+        <transition event="done.invoke.inv_nested" target="fail"/>
         <transition event="error.execution" target="fail"/>
     </state>
     <final id="pass"/>

@@ -4095,7 +4095,8 @@ void StateMachine::handleCompoundStateFinalChild(const std::string &finalStateId
 
 // W3C SCXML 5.5: Helper functions moved to DoneDataHelper (Zero Duplication)
 // - escapeJsonString() -> DoneDataHelper::escapeJsonString()
-// - convertScriptValueToJson() -> DoneDataHelper::convertScriptValueToJson()
+// ScriptValue -> JSON conversion goes through EventDataHelper::scriptValueToJsonString
+// (canonical JSON pipeline; see DoneDataHelper::evaluateContent/evaluateParams).
 
 /**
  * W3C SCXML 5.5 & 5.7: Evaluate donedata and return JSON event data
