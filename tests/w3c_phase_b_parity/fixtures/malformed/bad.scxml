@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Malformed template: the root element is `<not-a-template>`,
+  not `<sce:template>`. Both producers must reject this with a
+  Malformed classification before attempting any parameter
+  binding or body splice.
+-->
+<not-a-template xmlns:sce="http://sce.dev/ext">
+  <foo/>
+</not-a-template>

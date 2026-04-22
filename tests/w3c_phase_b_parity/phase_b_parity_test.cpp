@@ -362,3 +362,55 @@ TEST(PhaseBParity, CycleDetected) {
             return dynamic_cast<const SCE::parsing::TemplateCycle *>(&ex) != nullptr;
         });
 }
+
+// M4 error-path fixture — `<sce:use template="ghost.scxml"/>`
+// references a file that does not exist. Rust emits
+// `xml/template-not-found`; C++ throws
+// `SCE::parsing::TemplateNotFound`. The search trail rendered in
+// the diagnostic message is subject to path-format drift
+// (absolute vs display form) and is not compared — the
+// discriminant match is the API-surface invariant.
+TEST(PhaseBParity, NotFound) {
+    runErrorParityFixture(
+        "not_found",
+        "xml/template-not-found",
+        "SCE::parsing::TemplateNotFound",
+        [](const SCE::parsing::TemplateError &ex) -> bool {
+            return dynamic_cast<const SCE::parsing::TemplateNotFound *>(&ex) != nullptr;
+        });
+}
+
+// M4 error-path fixture — template file has the wrong root
+// element (`<not-a-template>` instead of `<sce:template>`). Rust
+// emits `xml/template-malformed`; C++ throws
+// `SCE::parsing::TemplateMalformed`. Malformed is a shared bucket
+// for three repair surfaces (wrong root, invalid XML, ill-formed
+// `<sce:param>`); this fixture covers wrong-root — the other two
+// are exercised by Rust unit tests in `template.rs::tests`.
+TEST(PhaseBParity, Malformed) {
+    runErrorParityFixture(
+        "malformed",
+        "xml/template-malformed",
+        "SCE::parsing::TemplateMalformed",
+        [](const SCE::parsing::TemplateError &ex) -> bool {
+            return dynamic_cast<const SCE::parsing::TemplateMalformed *>(&ex) != nullptr;
+        });
+}
+
+// M4 error-path fixture — `<sce:use/>` omits the required
+// `template` attribute. Rust emits
+// `xml/template-missing-attribute` (with a deterministic
+// `add_attribute` fix payload); C++ throws
+// `SCE::parsing::TemplateMissingAttribute`. The fix payload is
+// not inspected by the discriminant-only contract, but the
+// DiagnosticCode assertion pins the wire name so agent dispatch
+// keys on the code without having to parse the payload.
+TEST(PhaseBParity, MissingAttribute) {
+    runErrorParityFixture(
+        "missing_attribute",
+        "xml/template-missing-attribute",
+        "SCE::parsing::TemplateMissingAttribute",
+        [](const SCE::parsing::TemplateError &ex) -> bool {
+            return dynamic_cast<const SCE::parsing::TemplateMissingAttribute *>(&ex) != nullptr;
+        });
+}

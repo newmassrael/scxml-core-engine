@@ -65,3 +65,35 @@ add_phase_b_parity_fixture(nested Nested)
 # `SCE::parsing::TemplateCycle`. The parity assertion compares
 # discriminants, not message bytes (RFC §3 M3).
 add_phase_b_parity_fixture(cycle_detected CycleDetected)
+
+# M4 error-path fixture — `<sce:use template="ghost.scxml"/>`
+# references a file that does not exist. Rust emits
+# `xml/template-not-found`; C++ throws
+# `SCE::parsing::TemplateNotFound`. Extends the M3 error-path
+# harness pattern to the file-load error family.
+add_phase_b_parity_fixture(not_found NotFound)
+
+# M4 error-path fixture — template file has the wrong root element
+# (`<not-a-template>` instead of `<sce:template>`). Rust emits
+# `xml/template-malformed`; C++ throws
+# `SCE::parsing::TemplateMalformed`.
+add_phase_b_parity_fixture(malformed Malformed)
+
+# M4 error-path fixture — `<sce:use/>` omits the required
+# `template` attribute entirely. Rust emits
+# `xml/template-missing-attribute`; C++ throws
+# `SCE::parsing::TemplateMissingAttribute`.
+add_phase_b_parity_fixture(missing_attribute MissingAttribute)
+
+# NOTE: M4 intentionally omits the `read_error/` fixture. An
+# operator-reproducible I/O failure is hard to manufacture in a
+# CI-friendly way: `chmod 000` is bypassed when CI runs as root;
+# a directory-as-file trick produces platform-specific pugi
+# status codes; symlink loops are undefined on some filesystems.
+# The Rust unit tests in `sce-build/src/template.rs::tests`
+# exercise the ReadError branch directly, and the 8-variant
+# drift test `cpp_template_subtypes_match_rust_diagnostic_codes`
+# pins the C++ `TemplateReadError` subtype against the Rust
+# `xml/template-read-error` DiagnosticCode — the harness is not
+# the only consumer of the type. See claudedocs/rfc-sce-template-phase-b.md
+# §3 M4 read-error note.

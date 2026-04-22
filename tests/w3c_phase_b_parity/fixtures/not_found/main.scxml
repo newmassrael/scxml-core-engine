@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phase B M4 error-path parity fixture: not_found.
+
+  `<sce:use template="ghost.scxml"/>` references a file that does
+  not exist in the fixture directory (nor anywhere else the
+  resolver would search). Both producers must FAIL with
+  equivalent classifications:
+    - Rust emits DiagnosticCode `xml/template-not-found` on stderr.
+    - C++ throws `SCE::parsing::TemplateNotFound`.
+
+  The harness asserts discriminant agreement only — the search
+  trail rendered in the message is subject to path-format drift
+  between producers (absolute vs display form) and is not the
+  useful invariant. RFC §3 M3 pinned the same contract for
+  `cycle_detected`; M4 extends it to the file-load error family.
+
+  See claudedocs/rfc-sce-template-phase-b.md §3 M4.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="s1"
+       name="not_found">
+  <state id="s1">
+    <sce:use template="ghost.scxml"/>
+  </state>
+</scxml>
