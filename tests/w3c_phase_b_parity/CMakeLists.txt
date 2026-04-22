@@ -87,6 +87,44 @@ add_phase_b_parity_fixture(malformed Malformed)
 # `SCE::parsing::TemplateMissingAttribute`.
 add_phase_b_parity_fixture(missing_attribute MissingAttribute)
 
+# ── M5 success-path Phase A replays ────────────────────────────
+#
+# Each M5 fixture below mirrors a Phase A success-path test in
+# `sce-build/src/template.rs::tests` that wasn't already replayed
+# by the M1-M3 harness entries above. The M5 landing contract
+# (RFC §3 M5) is 100% byte-equivalence across every Phase A
+# success fixture — these entries close that gate.
+
+# M5 fixture — "sce:use" appears as a substring inside a comment
+# and an attribute value, but no `<sce:use>` element exists. Both
+# producers must scan the element tree (not a byte-level grep) to
+# decide no expansion is needed. Phase A origin:
+# `passthrough_when_substring_but_no_element`.
+add_phase_b_parity_fixture(passthrough_substring_in_comment PassthroughSubstringInComment)
+
+# M5 fixture — `<sce:param name="proto" default="TCP"/>`; the
+# caller omits `proto`, so the splice picks up the default value.
+# First harness entry exercising the defaulted-param fallback.
+# Phase A origin: `default_value_substitutes_when_call_site_omits`.
+add_phase_b_parity_fixture(default_value DefaultValue)
+
+# M5 fixture — two sibling `<sce:use>` referencing the same
+# template with different `n` bindings. Catches regressions where
+# a producer threads state (e.g. cached maps) across sibling
+# expansions. Phase A origin: `sibling_uses_are_independent`.
+add_phase_b_parity_fixture(sibling_uses SiblingUses)
+
+# M5 fixture — `<sce:param name="b" default="{$a}"/>`; when the
+# caller supplies `a` but omits `b`, the literal `{$a}` appears
+# in the body (single-pass / literal-only semantics, RFC §6.1 Q1).
+# Phase A origin: `substitution_is_single_pass`.
+add_phase_b_parity_fixture(single_pass_substitution SinglePassSubstitution)
+
+# M5 fixture — `{$undeclared}` token alongside a declared `{$a}`;
+# the declared one is substituted, the undeclared one passes
+# through unchanged. Phase A origin: `undeclared_braces_pass_through`.
+add_phase_b_parity_fixture(undeclared_braces UndeclaredBraces)
+
 # NOTE: M4 intentionally omits the `read_error/` fixture. An
 # operator-reproducible I/O failure is hard to manufacture in a
 # CI-friendly way: `chmod 000` is bypassed when CI runs as root;

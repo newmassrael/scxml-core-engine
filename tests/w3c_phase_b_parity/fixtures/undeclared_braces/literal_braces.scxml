@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phase B M5 parity template: literal_braces.
+
+  Declares `a` (required) and uses both `{$a}` (declared — gets
+  substituted) and `{$undeclared}` (not a param — passes through
+  verbatim). The output must carry both the substituted value
+  (`a="X"`) and the untouched literal (`{$undeclared}`).
+-->
+<sce:template xmlns:sce="http://sce.dev/ext" name="literal_braces">
+  <sce:param name="a" required="true"/>
+  <transition event="probe" target="marker_{$a}_{$undeclared}_end"/>
+</sce:template>

@@ -259,6 +259,62 @@ TEST(PhaseBParity, Nested) {
     runParityFixture("nested");
 }
 
+// ── M5 Phase A success-path replays ─────────────────────────────
+//
+// RFC §3 M5 pins 100% byte-equivalence across every Phase A
+// success-path fixture. The M1-M3 entries above cover the
+// passthrough, single-parameter, and nested-multi-file paths;
+// the entries below close the remaining success scenarios from
+// `sce-build/src/template.rs::tests`: substring false-positives,
+// defaulted parameters, sibling independence, single-pass
+// semantics on cascading defaults, and undeclared-brace
+// passthrough. Each uses the shared `runParityFixture` driver,
+// so the check collapses to one TEST macro body per scenario.
+
+// M5 Phase A replay — "sce:use" appears in a comment and an
+// attribute value but no element. Both producers must reach the
+// same "no expansion needed" conclusion via element scan, not
+// substring search. Source: Phase A
+// `passthrough_when_substring_but_no_element`.
+TEST(PhaseBParity, PassthroughSubstringInComment) {
+    runParityFixture("passthrough_substring_in_comment");
+}
+
+// M5 Phase A replay — `<sce:param default="TCP"/>` fallback when
+// the caller omits the parameter. First harness entry that
+// exercises the default-value splice path. Source: Phase A
+// `default_value_substitutes_when_call_site_omits`.
+TEST(PhaseBParity, DefaultValue) {
+    runParityFixture("default_value");
+}
+
+// M5 Phase A replay — two sibling `<sce:use>` with different
+// `n` bindings. Each splice must carry its own parameter map;
+// a producer that caches across siblings would leak the second
+// binding into the first expansion. Source: Phase A
+// `sibling_uses_are_independent`.
+TEST(PhaseBParity, SiblingUses) {
+    runParityFixture("sibling_uses");
+}
+
+// M5 Phase A replay — `<sce:param b default="{$a}"/>` emits the
+// literal `{$a}` when `b` is omitted (single-pass, literal-only;
+// RFC §6.1 Q1 in rfc-sce-template-sce-param.md). A producer that
+// iterated to fixed point would substitute `HIT` here — both
+// must stop after one pass. Source: Phase A
+// `substitution_is_single_pass`.
+TEST(PhaseBParity, SinglePassSubstitution) {
+    runParityFixture("single_pass_substitution");
+}
+
+// M5 Phase A replay — `{$undeclared}` passes through unchanged
+// while the declared `{$a}` is substituted. Preserves authored
+// literal content that happens to contain brace-dollar tokens.
+// Source: Phase A `undeclared_braces_pass_through`.
+TEST(PhaseBParity, UndeclaredBraces) {
+    runParityFixture("undeclared_braces");
+}
+
 // ── M3 error-path harness ───────────────────────────────────────
 //
 // Introduced with the `cycle_detected` fixture: the first harness

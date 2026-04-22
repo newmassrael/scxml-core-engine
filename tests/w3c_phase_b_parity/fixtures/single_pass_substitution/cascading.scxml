@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phase B M5 parity template: cascading.
+
+  Declares `a` (required) and `b` (defaulting to `{$a}`). Only
+  `b` appears in the body as `{$b}`. When the caller supplies
+  `a="HIT"` and omits `b`, the splice emits
+  `marker b="{$a}"` — single-pass semantics mean the default
+  string is never re-substituted, even though `{$a}` would
+  otherwise bind.
+-->
+<sce:template xmlns:sce="http://sce.dev/ext" name="cascading">
+  <sce:param name="a" required="true"/>
+  <sce:param name="b" default="{$a}"/>
+  <transition event="check" target="marker_{$b}"/>
+</sce:template>

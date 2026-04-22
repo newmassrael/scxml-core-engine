@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phase B M5 parity fixture: single_pass_substitution.
+
+  Phase A replay of `substitution_is_single_pass`
+  (sce-build/src/template.rs::tests). The caller binds `a="HIT"`
+  and omits `b`; the template's `<sce:param name="b"
+  default="{$a}"/>` therefore emits the LITERAL `{$a}` in the
+  body — NOT the string `HIT`. RFC §6.1 pins substitution as
+  single-pass / literal-only: the expander must not iterate
+  until fixed point. Catches any regression where a producer
+  cascades substitutions across parameter layers.
+
+  Pinned by claudedocs/rfc-sce-template-phase-b.md §3 M5 and
+  RFC §6.1 (rfc-sce-template-sce-param.md Q1).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle">
+  <state id="idle">
+    <sce:use template="cascading.scxml" a="HIT"/>
+  </state>
+</scxml>
