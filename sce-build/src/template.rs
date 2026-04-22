@@ -1061,4 +1061,90 @@ mod tests {
         assert!(!is_valid_param_name("port space"));
         assert!(!is_valid_param_name("port.dot"));
     }
+
+    /// Drift guard between the XSD `paramNameType` pattern and the
+    /// Rust `is_valid_param_name` implementation.
+    ///
+    /// Both enforce RFC §3.1 `[A-Za-z_][A-Za-z0-9_\-]*`. XSD's check
+    /// fires during schema validation on `<sce:param name="...">`
+    /// declarations; Rust's check fires inside the expander on the
+    /// same input. A silent divergence would let a name accepted by
+    /// one tool fail the other — the same `sce:template` file would
+    /// schema-validate but trip expansion (or vice versa). The test
+    /// extracts the XSD pattern at build time via
+    /// [`include_str!`], compiles it as a Rust regex (anchored so it
+    /// matches the XSD's whole-string semantics), and asserts both
+    /// impls agree on a curated corpus of positive + negative cases
+    /// spanning every edge the pattern's character classes care about.
+    ///
+    /// Follows the `xinclude::xinclude_depth_matches_runtime` pattern
+    /// for cross-language mirrored constants.
+    #[test]
+    fn xsd_param_name_pattern_agrees_with_rust_impl() {
+        let xsd = include_str!("../../schemas/sce-forge-ext.xsd");
+        // Extract the pattern value from the <xs:pattern value="..."/>
+        // inside <xs:simpleType name="paramNameType">. Anchored on
+        // `simpleType name="paramNameType"` so we don't accidentally
+        // pick up another simpleType's pattern during a future edit.
+        let anchor = r#"<xs:simpleType name="paramNameType">"#;
+        let start = xsd.find(anchor).expect(
+            "XSD must declare <xs:simpleType name=\"paramNameType\"> — \
+             check schemas/sce-forge-ext.xsd",
+        );
+        let after = &xsd[start..];
+        let pat_start = after
+            .find(r#"<xs:pattern value=""#)
+            .expect("paramNameType must declare an <xs:pattern value=\"...\"/> child");
+        let pat_begin = start + pat_start + r#"<xs:pattern value=""#.len();
+        let pat_end_rel = xsd[pat_begin..]
+            .find('"')
+            .expect("pattern value must be terminated by a double-quote");
+        let xsd_pattern = &xsd[pat_begin..pat_begin + pat_end_rel];
+
+        // Anchor the XSD pattern for Rust regex semantics: XSD
+        // patterns match the *whole* lexical value, Rust `regex::is_match`
+        // matches anywhere. Without the anchors the Rust regex would
+        // accept trailing garbage the XSD rejects.
+        let anchored = format!("^(?:{})$", xsd_pattern);
+        let xsd_re = regex::Regex::new(&anchored).unwrap_or_else(|e| {
+            panic!("XSD paramNameType pattern is not a valid Rust regex: {e} — \
+                    pattern text: {xsd_pattern:?}")
+        });
+
+        // Corpus: positive + negative cases exercising every edge of
+        // `[A-Za-z_][A-Za-z0-9_\-]*`. Expand this list whenever the
+        // grammar grows a new character class.
+        let corpus: &[(&str, bool)] = &[
+            ("port", true),
+            ("Port", true),
+            ("PORT", true),
+            ("_port", true),
+            ("port_1", true),
+            ("port-1", true),
+            ("p", true),
+            ("a-b-c", true),
+            ("", false),
+            ("1port", false),
+            ("-port", false),
+            ("port.dot", false),
+            ("port space", false),
+            ("port!", false),
+            ("ポート", false),
+        ];
+
+        for (name, expected) in corpus {
+            let rust_verdict = is_valid_param_name(name);
+            let xsd_verdict = xsd_re.is_match(name);
+            assert_eq!(
+                rust_verdict, *expected,
+                "Rust is_valid_param_name disagrees on {name:?} — \
+                 expected {expected}, got {rust_verdict}"
+            );
+            assert_eq!(
+                xsd_verdict, *expected,
+                "XSD paramNameType pattern disagrees on {name:?} — \
+                 expected {expected}, got {xsd_verdict} (pattern: {xsd_pattern:?})"
+            );
+        }
+    }
 }
