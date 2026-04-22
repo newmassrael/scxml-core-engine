@@ -1711,4 +1711,121 @@ mod tests {
             cpp_pattern, xsd_pattern
         );
     }
+
+    /// Pin the 1:1 mapping between Rust `TemplateError` variants,
+    /// the `xml/template-*` DiagnosticCodes they emit, and the C++
+    /// `SCE::parsing::Template<Variant>` subtypes declared in
+    /// `sce/include/parsing/TemplateError.h`. When M4 lands every
+    /// named subtype, the three sets must agree — a commit on any
+    /// one side that fails to update the other two is the drift
+    /// this test is designed to catch.
+    ///
+    /// Follows the `cpp_template_depth_matches_rust` +
+    /// `cpp_param_name_pattern_matches_rust` precedent: read the
+    /// authoritative C++ header via `include_str!` at test compile
+    /// time, regex-scan the class declarations, assert set equality
+    /// against the Rust-side ground truth. `TemplateNotImplemented`
+    /// is the M1-era sentinel declared in the same header — it is
+    /// NOT part of the 8-way mapping (no Rust counterpart), so the
+    /// scan filters it out before comparison. M5 deletes
+    /// `TemplateNotImplemented`, at which point the filter becomes
+    /// a no-op rather than a wrong answer.
+    #[test]
+    fn cpp_template_subtypes_match_rust_diagnostic_codes() {
+        use std::collections::BTreeSet;
+
+        // Authoritative Rust ground truth — the 8 xml/template-*
+        // DiagnosticCodes, paired with the C++ class name that
+        // must exist in the header. Table-form so an audit reading
+        // this test sees exactly which Rust variant maps to which
+        // C++ class without having to walk two files in parallel.
+        let rust_to_cpp: &[(&str, &str)] = &[
+            ("xml/template-not-found", "TemplateNotFound"),
+            ("xml/template-read-error", "TemplateReadError"),
+            ("xml/template-malformed", "TemplateMalformed"),
+            ("xml/template-missing-attribute", "TemplateMissingAttribute"),
+            ("xml/template-missing-param", "TemplateMissingParam"),
+            ("xml/template-unknown-param", "TemplateUnknownParam"),
+            ("xml/template-cycle", "TemplateCycle"),
+            ("xml/template-too-deep", "TemplateTooDeep"),
+        ];
+        assert_eq!(
+            rust_to_cpp.len(),
+            8,
+            "Expected 8-way mapping; update rust_to_cpp if the \
+             DiagnosticCode set grew or shrank"
+        );
+        let expected_cpp: BTreeSet<&str> =
+            rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
+
+        // Scan the C++ header for every `class TemplateXxx : public
+        // TemplateError` declaration. Matches the precedent in
+        // `cpp_template_depth_matches_rust` of pinning the
+        // declaration *shape* — a future rewrite that switches to
+        // `struct` or inserts attributes surfaces as a clear
+        // no-match rather than a false pass.
+        let hdr = include_str!("../../sce/include/parsing/TemplateError.h");
+        let re = regex::Regex::new(
+            r"class\s+(Template\w+)\s*:\s*public\s+TemplateError\b",
+        )
+        .unwrap();
+        let mut found: BTreeSet<String> = BTreeSet::new();
+        for captures in re.captures_iter(hdr) {
+            let name = captures[1].to_string();
+            // Filter out the M1-era sentinel: it is the only
+            // TemplateError subtype declared in the header that
+            // has no Rust counterpart. M5 deletes it outright, at
+            // which point the filter matches nothing and the test
+            // still passes.
+            if name == "TemplateNotImplemented" {
+                continue;
+            }
+            found.insert(name);
+        }
+
+        // Sanity: the scan found *something*. If the header shape
+        // changed so the regex no longer matches any class, fail
+        // with a pointed message instead of silently reporting an
+        // empty set equals an empty set.
+        assert!(
+            !found.is_empty(),
+            "sce/include/parsing/TemplateError.h must declare at \
+             least one `class Template<Variant> : public \
+             TemplateError` — if the declaration shape changed, \
+             update this drift test in the same commit"
+        );
+
+        let found_refs: BTreeSet<&str> =
+            found.iter().map(|s| s.as_str()).collect();
+        assert_eq!(
+            found_refs, expected_cpp,
+            "TemplateError subtype drift: C++ header = {:?}, \
+             expected (from DiagnosticCode mapping) = {:?}. Change \
+             both sides in the same commit — see RFC §1 Q4 \
+             (claudedocs/rfc-sce-template-phase-b.md) for the \
+             invariant.",
+            found_refs, expected_cpp
+        );
+
+        // Cross-check: every Rust DiagnosticCode name MUST be
+        // spelled as the `serde(rename = "...")` literal in
+        // `sce-build/src/forge/diagnostic.rs`. If a future edit
+        // renames a code (e.g. `xml/template-not-found` →
+        // `xml/template-missing-file`), this assertion fails with
+        // a pointed diff rather than the drift travelling silently
+        // through JSON wire contracts.
+        let diag = include_str!("forge/diagnostic.rs");
+        for (rust_code, cpp_name) in rust_to_cpp {
+            let needle = format!("\"{}\"", rust_code);
+            assert!(
+                diag.contains(&needle),
+                "DiagnosticCode `{}` (paired with C++ `{}`) is not \
+                 declared as a `serde(rename)` literal in \
+                 sce-build/src/forge/diagnostic.rs. Keep the wire \
+                 name, the Rust variant, and the C++ subtype in \
+                 sync — see RFC §1 Q4.",
+                rust_code, cpp_name
+            );
+        }
+    }
 }
