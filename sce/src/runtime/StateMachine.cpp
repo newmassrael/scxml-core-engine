@@ -2270,9 +2270,11 @@ bool StateMachine::enterState(const std::string &stateId) {
         dataModelInit_->initializeStateDataOnEntry(stateId);
     }
 
-    SCE_LOG_DEBUG("[ENTER STATE DEBUG] About to call hierarchyManager_->enterState('{}') (Test 570 debug)", stateId);
+    // Hot path: per-state-entry (~600 hits per W3C harness run). Trace-only
+    // so Debug keeps enterState summaries, not the hierarchyManager round-trip.
+    SCE_LOG_TRACE("[ENTER STATE DEBUG] About to call hierarchyManager_->enterState('{}') (Test 570 debug)", stateId);
     bool hierarchyResult = hierarchyManager_->enterState(stateId);
-    SCE_LOG_DEBUG("[ENTER STATE DEBUG] hierarchyManager_->enterState('{}') returned {} (Test 570 debug)", stateId,
+    SCE_LOG_TRACE("[ENTER STATE DEBUG] hierarchyManager_->enterState('{}') returned {} (Test 570 debug)", stateId,
               hierarchyResult);
     assert(hierarchyResult && "SCXML violation: state entry must succeed");
     (void)hierarchyResult;  // Suppress unused variable warning in release builds
@@ -2541,8 +2543,9 @@ bool StateMachine::checkEventlessTransitions() {
     // Track recursion depth for visualizer transition tracking
     ++eventlessRecursionDepth_;
 
-    // DEBUG: Log WHO is calling this function
-    SCE_LOG_DEBUG("[CHECK EVENTLESS] checkEventlessTransitions() called, recursionDepth={}, isRunning_={}",
+    // Hot path: per-microstep (~1.2k hits per W3C harness run). Trace-only so
+    // Debug keeps the selection result, not the entry marker + recursion depth.
+    SCE_LOG_TRACE("[CHECK EVENTLESS] checkEventlessTransitions() called, recursionDepth={}, isRunning_={}",
               eventlessRecursionDepth_, isRunning_.load());
 
     // W3C SCXML 3.13: Eventless Transition Selection Algorithm

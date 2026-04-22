@@ -415,7 +415,10 @@ void EventRaiserImpl::setImmediateMode(bool immediate) {
 }
 
 void EventRaiserImpl::processQueuedEvents() {
-    SCE_LOG_DEBUG("EventRaiserImpl: Processing all queued events synchronously");
+    // Hot path: fires per microstep with ~empty queue on most calls (2k+ hits
+    // per W3C harness run). Trace-only so Debug-level logs stay focused on
+    // state-machine events, not event-loop plumbing.
+    SCE_LOG_TRACE("EventRaiserImpl: Processing all queued events synchronously");
 
     // W3C SCXML 6.2: Poll EventScheduler for ready delayed events (platform-transparent)
     // Platform-specific behavior: WASM polls, Native no-op (background thread handles it)
@@ -429,7 +432,7 @@ void EventRaiserImpl::processQueuedEvents() {
     // Move all synchronous queued events to local vector under lock
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
-        SCE_LOG_DEBUG("EventRaiserImpl: Synchronous queue size before processing: {}", synchronousQueue_.size());
+        SCE_LOG_TRACE("EventRaiserImpl: Synchronous queue size before processing: {}", synchronousQueue_.size());
 
         // W3C SCXML compliance: priority_queue already maintains priority order
         // Extract all events in priority order
@@ -438,11 +441,11 @@ void EventRaiserImpl::processQueuedEvents() {
             synchronousQueue_.pop();
         }
 
-        SCE_LOG_DEBUG("EventRaiserImpl: Events extracted in priority order for processing: {}", eventsToProcess.size());
+        SCE_LOG_TRACE("EventRaiserImpl: Events extracted in priority order for processing: {}", eventsToProcess.size());
     }
 
     // Events are already in correct priority order from priority_queue
-    SCE_LOG_DEBUG("EventRaiserImpl: Events already sorted by W3C SCXML priority (INTERNAL first, then EXTERNAL)");
+    SCE_LOG_TRACE("EventRaiserImpl: Events already sorted by W3C SCXML priority (INTERNAL first, then EXTERNAL)");
 
     // [W3C193 DEBUG] Log the event processing order
     for (size_t i = 0; i < eventsToProcess.size(); ++i) {
@@ -460,7 +463,7 @@ void EventRaiserImpl::processQueuedEvents() {
         executeEventCallback(event);
     }
 
-    SCE_LOG_DEBUG("EventRaiserImpl: Finished processing all queued events");
+    SCE_LOG_TRACE("EventRaiserImpl: Finished processing all queued events");
 }
 
 bool EventRaiserImpl::processNextQueuedEvent() {
