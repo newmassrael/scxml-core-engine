@@ -6,10 +6,12 @@
 # pugixml `format_raw` and diffs bytes. Any divergence is the
 # cross-language drift Phase B exists to close.
 #
-# M1 registers one fixture (`passthrough_no_use`); M2-M4
-# milestones add fixtures as the C++ expander grows past the
-# `TemplateNotImplemented` sentinel — one `add_phase_b_parity_fixture`
-# call per fixture so new tests are one-line additions.
+# One `add_phase_b_parity_fixture` call per fixture so new tests
+# are one-line additions. Success-path fixtures use the default
+# `runParityFixture` driver; error-path fixtures pair with a
+# matching `TEST(PhaseBParity, ...)` macro that calls
+# `runErrorParityFixture` with the expected Rust DiagnosticCode
+# and a C++ subtype dynamic_cast predicate.
 
 add_executable(phase_b_parity_test
     phase_b_parity_test.cpp

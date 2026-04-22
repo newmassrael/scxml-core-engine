@@ -29,15 +29,10 @@ namespace SCE::parsing {
 // cross-language drift.
 
 // Maximum nesting depth for recursive `<sce:use>` expansion.
-// Mirrors `sce-build/src/template.rs::MAX_TEMPLATE_DEPTH`.
-//
-// Consumed by M3 (recursive expansion + cycle detection). M1
-// declares the constant but does not yet enforce it — the M1
-// skeleton short-circuits on any non-passthrough shape via
-// `TemplateNotImplemented`, so the recursion loop that reads
-// this constant does not exist yet. RFC §3 M1 / §4 names M3 as
-// the consuming milestone to satisfy
-// `feedback_built_but_unconsumed.md`.
+// Mirrors `sce-build/src/template.rs::MAX_TEMPLATE_DEPTH` and is
+// enforced by `PugiXMLDocument::expandAllUsesInTree` at the top of
+// each recursive entry; exceeding the limit raises
+// `SCE::parsing::TemplateTooDeep`.
 inline constexpr int MAX_TEMPLATE_DEPTH = 10;
 
 // Pattern accepted for `<sce:param name="...">` identifiers.
@@ -54,10 +49,9 @@ inline constexpr int MAX_TEMPLATE_DEPTH = 10;
 // the anchoring test asserts byte equality, not regex
 // equivalence.
 //
-// Consumed by M2 (parameter substitution + C++ param validator).
-// M1 declared the constant; `is_valid_param_name` (below) is the
-// M2 consumer. RFC §3 M1 / §4 named M2 as the consuming
-// milestone.
+// Consumed by `is_valid_param_name` (below), which runs on every
+// `<sce:param>` declaration and every `{$token}` substitution
+// candidate during expansion.
 inline constexpr std::string_view PARAM_NAME_PATTERN =
     R"pat([A-Za-z_][A-Za-z0-9_\-]*)pat";
 

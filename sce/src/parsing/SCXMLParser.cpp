@@ -78,11 +78,11 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         SCE_LOG_DEBUG("Processing XIncludes");
         doc->processXInclude();
 
-        // Process `<sce:use>` template expansion.
-        // Phase B M1 supports only the no-op passthrough path;
-        // documents containing `<sce:use>` raise
-        // `SCE::parsing::TemplateNotImplemented` caught by the
-        // surrounding std::exception handler. See
+        // Process `<sce:use>` template expansion. Each failure
+        // mode raises a typed `SCE::parsing::TemplateError`
+        // subtype (see `sce/include/parsing/TemplateError.h` for
+        // the 8-variant set) caught by the surrounding
+        // `std::exception` handler. See
         // claudedocs/rfc-sce-template-phase-b.md.
         SCE_LOG_DEBUG("Processing sce:template");
         doc->processSceTemplate();
@@ -115,11 +115,11 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         SCE_LOG_DEBUG("Processing XIncludes");
         doc->processXInclude();
 
-        // Process `<sce:use>` template expansion.
-        // Phase B M1 supports only the no-op passthrough path;
-        // documents containing `<sce:use>` raise
-        // `SCE::parsing::TemplateNotImplemented` caught by the
-        // surrounding std::exception handler. See
+        // Process `<sce:use>` template expansion. Each failure
+        // mode raises a typed `SCE::parsing::TemplateError`
+        // subtype (see `sce/include/parsing/TemplateError.h` for
+        // the 8-variant set) caught by the surrounding
+        // `std::exception` handler. See
         // claudedocs/rfc-sce-template-phase-b.md.
         SCE_LOG_DEBUG("Processing sce:template");
         doc->processSceTemplate();

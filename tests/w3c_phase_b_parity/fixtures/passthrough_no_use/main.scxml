@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Phase B M1 parity fixture: passthrough_no_use.
+  Phase B parity fixture: passthrough_no_use.
 
   The document contains no `<sce:use>` element, so both producers
   (Rust `sce-codegen expand` and C++ `processXInclude` +
@@ -8,10 +8,7 @@
   path. The harness asserts their canonicalised outputs are
   byte-identical, proving the harness plumbing itself works.
 
-  M2 will add a `with_params/` sibling fixture exercising
-  `<sce:use>` + parameter substitution once the C++ expander
-  stops throwing `TemplateNotImplemented` on non-trivial shapes.
-  See claudedocs/rfc-sce-template-phase-b.md §3 M1-M5.
+  See claudedocs/rfc-sce-template-phase-b.md §3.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

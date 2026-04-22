@@ -478,41 +478,38 @@ std::string renderTemplateChain(const std::vector<std::filesystem::path> &stack,
 }  // namespace
 
 bool PugiXMLDocument::processSceTemplate() {
-    // Phase B M3: recursive `<sce:use>` expansion with parameter
-    // substitution, cycle detection, and depth enforcement. Mirrors
+    // Recursive `<sce:use>` expansion with parameter substitution,
+    // cycle detection, and depth enforcement. Mirrors
     // `sce-build/src/template.rs::expand` by seeding a canonical-path
     // stack with the caller document (so a top-level self-reference
     // trips immediately), then recursing into every loaded template
     // until the leaf is reached or `MAX_TEMPLATE_DEPTH` is hit.
     //
-    // Error classification (M4 closes the typed-subtype mapping):
-    //   - `TemplateMissingAttribute` (M4) for a call-site `<sce:use>`
+    // Error classification (every throw is a proper named subtype;
+    // the 8 classes map 1:1 to the Rust `xml/template-*`
+    // DiagnosticCode set and are pinned by
+    // `cpp_template_subtypes_match_rust_diagnostic_codes`):
+    //   - `TemplateMissingAttribute` for a call-site `<sce:use>`
     //     with no `template` attribute or an empty string.
-    //   - `TemplateNotFound` (M4) for resolver miss, with the search
+    //   - `TemplateNotFound` for resolver miss, with the search
     //     trail attached verbatim to the Rust `resolve_template_path`
     //     `tried` rendering.
-    //   - `TemplateReadError` / `TemplateMalformed` (M4) split file-
-    //     load failures by pugixml status: I/O-class statuses
+    //   - `TemplateReadError` / `TemplateMalformed` split file-load
+    //     failures by pugixml status: I/O-class statuses
     //     (`status_file_not_found`, `status_io_error`,
     //     `status_out_of_memory`, `status_internal_error`) route to
     //     `TemplateReadError`; every other non-OK status is a parse
     //     failure and routes to `TemplateMalformed`.
-    //   - `TemplateMalformed` (M4) also covers structural errors on
-    //     the template side: wrong root element, `<sce:param>`
-    //     missing `name`, invalid name pattern, duplicate name, bad
+    //   - `TemplateMalformed` also covers structural errors on the
+    //     template side: wrong root element, `<sce:param>` missing
+    //     `name`, invalid name pattern, duplicate name, bad
     //     `required` value, or `required` + `default` declared
     //     together.
-    //   - `TemplateUnknownParam` / `TemplateMissingParam` (M2) for
+    //   - `TemplateUnknownParam` / `TemplateMissingParam` for
     //     call-site parameter mismatches.
-    //   - `TemplateCycle` (M3) for self- or mutually-recursive
-    //     templates.
-    //   - `TemplateTooDeep` (M3) for acyclic but pathologically long
+    //   - `TemplateCycle` for self- or mutually-recursive templates.
+    //   - `TemplateTooDeep` for acyclic but pathologically long
     //     chains.
-    //
-    // After M4, every throw in this function is a proper named
-    // subtype — `TemplateNotImplemented` remains only as the base-
-    // class sentinel declared in `TemplateError.h`, and M5 deletes
-    // it once the `docs/SCE_ACCEPTED_SUBSET.md` §2.9 flip lands.
     //
     // Full design contract: `claudedocs/rfc-sce-template-phase-b.md`.
     if (!doc_) {
@@ -831,10 +828,7 @@ void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
     // `useNode.parent()` is always non-empty here because every
     // `useNode` arrives via `collectSceUses`, which walks children
     // of a passed-in root and only pushes descendants — never the
-    // root node itself. Removing the belt-and-suspenders
-    // `!callerParent` check in M4 closes the last M4-labelled
-    // `TemplateNotImplemented` throw without introducing a retype
-    // target for an unreachable branch.
+    // root node itself.
     auto callerParent = useNode.parent();
     for (auto child : templateRoot.children()) {
         if (child.type() == pugi::node_element &&

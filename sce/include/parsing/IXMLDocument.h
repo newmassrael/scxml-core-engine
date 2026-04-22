@@ -45,13 +45,12 @@ public:
      * yields a byte-equivalent post-preprocessor document on the other
      * (claudedocs/rfc-sce-template-phase-b.md §1 Q1).
      *
-     * Phase B M1 implements the no-op passthrough path only; any
-     * `<sce:use>` element triggers a `SCE::parsing::TemplateNotImplemented`
-     * exception naming the M2-M5 milestone that will support the
-     * encountered shape. Implementations must throw
-     * `SCE::parsing::TemplateError` (or a subtype) — never silently
-     * succeed on unsupported shapes, since that is the failure mode
-     * Phase B exists to close.
+     * Implementations must throw `SCE::parsing::TemplateError`
+     * (or one of its typed subtypes — see
+     * `sce/include/parsing/TemplateError.h`) on any failure, never
+     * silently succeed on unsupported shapes. The typed subtypes map
+     * 1:1 to the Rust `xml/template-*` DiagnosticCode set so the
+     * AOT and Interpreter paths surface the same class of failure.
      */
     virtual bool processSceTemplate() = 0;
 
