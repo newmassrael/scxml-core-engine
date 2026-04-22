@@ -268,6 +268,26 @@ pub enum DiagnosticCode {
     XmlParse,
     #[serde(rename = "xml/schema-validation")]
     XmlSchemaValidation,
+    // ── XInclude preprocessing (runs before roxmltree; C++ runtime
+    //    parity with PugiXMLDocument::processXInclude). Split by
+    //    repair shape so agents can dispatch: missing-href gets a
+    //    deterministic add_attribute fix, cycle/too-deep indicate
+    //    structural restructuring, malformed points at the included
+    //    file, unsupported lists the feature to remove. ─────────
+    #[serde(rename = "xml/xinclude-missing-href")]
+    XmlXIncludeMissingHref,
+    #[serde(rename = "xml/xinclude-not-found")]
+    XmlXIncludeNotFound,
+    #[serde(rename = "xml/xinclude-read-error")]
+    XmlXIncludeReadError,
+    #[serde(rename = "xml/xinclude-cycle")]
+    XmlXIncludeCycle,
+    #[serde(rename = "xml/xinclude-too-deep")]
+    XmlXIncludeTooDeep,
+    #[serde(rename = "xml/xinclude-malformed")]
+    XmlXIncludeMalformed,
+    #[serde(rename = "xml/xinclude-unsupported")]
+    XmlXIncludeUnsupported,
 
     #[serde(rename = "validation/missing-element")]
     ValidationMissingElement,
@@ -562,6 +582,13 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Xml
         XmlParse,
         XmlSchemaValidation,
+        XmlXIncludeMissingHref,
+        XmlXIncludeNotFound,
+        XmlXIncludeReadError,
+        XmlXIncludeCycle,
+        XmlXIncludeTooDeep,
+        XmlXIncludeMalformed,
+        XmlXIncludeUnsupported,
         // Validation
         ValidationMissingElement,
         ValidationMissingAttribute,
@@ -867,6 +894,13 @@ impl DiagnosticCode {
             // the wire format honest; the message still carries the
             // repair guidance.
             XmlParse
+            | XmlXIncludeMissingHref
+            | XmlXIncludeNotFound
+            | XmlXIncludeReadError
+            | XmlXIncludeCycle
+            | XmlXIncludeTooDeep
+            | XmlXIncludeMalformed
+            | XmlXIncludeUnsupported
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
@@ -937,6 +971,13 @@ impl DiagnosticCode {
         match self {
             XmlParse => "xml/parse",
             XmlSchemaValidation => "xml/schema-validation",
+            XmlXIncludeMissingHref => "xml/xinclude-missing-href",
+            XmlXIncludeNotFound => "xml/xinclude-not-found",
+            XmlXIncludeReadError => "xml/xinclude-read-error",
+            XmlXIncludeCycle => "xml/xinclude-cycle",
+            XmlXIncludeTooDeep => "xml/xinclude-too-deep",
+            XmlXIncludeMalformed => "xml/xinclude-malformed",
+            XmlXIncludeUnsupported => "xml/xinclude-unsupported",
             ValidationMissingElement => "validation/missing-element",
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
@@ -1223,6 +1264,7 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
 }
 
 fn xml_fields(e: &XmlError) -> DiagnosticPayload {
+    use crate::xinclude::XIncludeError;
     match e {
         XmlError::Parse(detail) => DiagnosticPayload {
             code: DiagnosticCode::XmlParse,
@@ -1239,6 +1281,71 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: Vec::new(),
+        },
+        // XInclude failure modes. The leaf variant drives the code —
+        // agents can dispatch without text parsing. `actual` carries
+        // the offending href when known so repair bots can substitute
+        // without re-parsing the message; `key_fragments` tie into
+        // the content-hash `id` so two runs against the same broken
+        // document yield the same identifier.
+        XmlError::XInclude(XIncludeError::MissingHref) => DiagnosticPayload {
+            code: DiagnosticCode::XmlXIncludeMissingHref,
+            stage: Stage::Xml,
+            expected: None,
+            actual: None,
+            fix: Some(Fix::AddAttribute {
+                element: "xi:include".to_string(),
+                attr: "href".to_string(),
+            }),
+            key_fragments: Vec::new(),
+        },
+        XmlError::XInclude(XIncludeError::NotFound { href, searched }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlXIncludeNotFound,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(href.clone()),
+            fix: None,
+            key_fragments: vec![href.clone(), searched.clone()],
+        },
+        XmlError::XInclude(XIncludeError::ReadError { href, .. }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlXIncludeReadError,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(href.clone()),
+            fix: None,
+            key_fragments: vec![href.clone()],
+        },
+        XmlError::XInclude(XIncludeError::Cycle { href, chain }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlXIncludeCycle,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(href.clone()),
+            fix: None,
+            key_fragments: vec![href.clone(), chain.clone()],
+        },
+        XmlError::XInclude(XIncludeError::TooDeep { limit }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlXIncludeTooDeep,
+            stage: Stage::Xml,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![limit.to_string()],
+        },
+        XmlError::XInclude(XIncludeError::Malformed { href, detail }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlXIncludeMalformed,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(href.clone()),
+            fix: None,
+            key_fragments: vec![href.clone(), detail.clone()],
+        },
+        XmlError::XInclude(XIncludeError::Unsupported { href, feature }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlXIncludeUnsupported,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some((*feature).to_string()),
+            fix: None,
+            key_fragments: vec![href.clone(), feature.to_string()],
         },
     }
 }
@@ -2364,6 +2471,69 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:dac850da181d48e9","code":"io/filesystem","stage":"io","message":"I/O error on /tmp/build/out.rs: entity not found"}"#,
             ),
+            // XInclude preprocessing variants. Each distinct repair
+            // shape (missing-href → add_attribute, cycle / too-deep →
+            // structural, not-found / read-error → filesystem,
+            // malformed / unsupported → content) rides its own golden
+            // so byte-stability drift reveals the specific variant.
+            (
+                "forge/xinclude-missing-href",
+                XmlError::XInclude(crate::xinclude::XIncludeError::MissingHref).into(),
+                r#"{"v":1,"id":"fnv1a:797b1211b61e7cb7","code":"xml/xinclude-missing-href","stage":"xml","message":"<xi:include> missing or empty `href` attribute","fix":{"kind":"add_attribute","element":"xi:include","attr":"href"}}"#,
+            ),
+            (
+                "forge/xinclude-not-found",
+                XmlError::XInclude(crate::xinclude::XIncludeError::NotFound {
+                    href: "guards.xml".into(),
+                    searched: "/project/src/guards.xml".into(),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:36347afad13073c5","code":"xml/xinclude-not-found","stage":"xml","message":"<xi:include href=\"guards.xml\">: file not found (searched: /project/src/guards.xml)","actual":"guards.xml"}"#,
+            ),
+            (
+                "forge/xinclude-read-error",
+                XmlError::XInclude(crate::xinclude::XIncludeError::ReadError {
+                    href: "guards.xml".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c3d60d1cfc810e30","code":"xml/xinclude-read-error","stage":"xml","message":"<xi:include href=\"guards.xml\">: cannot read: permission denied","actual":"guards.xml"}"#,
+            ),
+            (
+                "forge/xinclude-cycle",
+                XmlError::XInclude(crate::xinclude::XIncludeError::Cycle {
+                    href: "a.xml".into(),
+                    chain: "/a.xml → /b.xml → /a.xml".into(),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bf44e30be028ada7","code":"xml/xinclude-cycle","stage":"xml","message":"<xi:include href=\"a.xml\">: cycle detected (/a.xml → /b.xml → /a.xml)","actual":"a.xml"}"#,
+            ),
+            (
+                "forge/xinclude-too-deep",
+                XmlError::XInclude(crate::xinclude::XIncludeError::TooDeep {
+                    limit: crate::xinclude::MAX_XINCLUDE_DEPTH,
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2574d9d5d0fadfc4","code":"xml/xinclude-too-deep","stage":"xml","message":"<xi:include> nesting exceeds depth limit of 10"}"#,
+            ),
+            (
+                "forge/xinclude-malformed",
+                XmlError::XInclude(crate::xinclude::XIncludeError::Malformed {
+                    href: "frag.xml".into(),
+                    detail: "unexpected end tag".into(),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2ed3aed0e1159c97","code":"xml/xinclude-malformed","stage":"xml","message":"<xi:include href=\"frag.xml\">: included file is malformed: unexpected end tag","actual":"frag.xml"}"#,
+            ),
+            (
+                "forge/xinclude-unsupported",
+                XmlError::XInclude(crate::xinclude::XIncludeError::Unsupported {
+                    href: "frag.xml".into(),
+                    feature: "parse=\"text\" (only parse=\"xml\" is supported)",
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:76b67406e28c984e","code":"xml/xinclude-unsupported","stage":"xml","message":"<xi:include href=\"frag.xml\">: unsupported feature: parse=\"text\" (only parse=\"xml\" is supported)","actual":"parse=\"text\" (only parse=\"xml\" is supported)"}"#,
+            ),
         ]
     }
 
@@ -3403,6 +3573,13 @@ mod tests {
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
             | XmlSchemaValidation
+            | XmlXIncludeMissingHref
+            | XmlXIncludeNotFound
+            | XmlXIncludeReadError
+            | XmlXIncludeCycle
+            | XmlXIncludeTooDeep
+            | XmlXIncludeMalformed
+            | XmlXIncludeUnsupported
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationDuplicateId
@@ -3722,7 +3899,11 @@ mod tests {
         fn must_be_listed(code: DiagnosticCode) -> bool {
             use DiagnosticCode::*;
             match code {
-                XmlParse | XmlSchemaValidation | ValidationMissingElement
+                XmlParse | XmlSchemaValidation
+                | XmlXIncludeMissingHref | XmlXIncludeNotFound | XmlXIncludeReadError
+                | XmlXIncludeCycle | XmlXIncludeTooDeep | XmlXIncludeMalformed
+                | XmlXIncludeUnsupported
+                | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationUnsupportedKind | ValidationDuplicateId
                 | ValidationDuplicateContextObject | ValidationReservedContextId
@@ -3815,9 +3996,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            125,
+            132,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 125 distinct variants to match the DiagnosticCode \
+             expected 132 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

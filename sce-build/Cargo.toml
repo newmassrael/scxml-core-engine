@@ -56,6 +56,10 @@ cli = ["clap"]
 [dev-dependencies]
 schemars = "0.8"
 syn = { version = "2", features = ["parsing", "full"] }
+# Sandboxed directories for XInclude expansion tests. Lets each
+# `#[test]` build a transient file tree without touching the crate's
+# own files (avoids race conditions under `cargo test -- --test-threads`).
+tempfile = "3"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

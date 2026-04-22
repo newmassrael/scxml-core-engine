@@ -143,7 +143,9 @@ std::string UniqueIdGenerator::generateBaseId(const std::string &prefix, std::at
     oss << prefix << "_" << timestamp << "_" << globalCount << "_" << std::hex << randomComponent;
 
     std::string id = oss.str();
-    SCE_LOG_DEBUG("UniqueIdGenerator: Generated ID: {} (type counter: {})", id, typeCounter);
+    // Hot path: fires on every send/invoke/cancel/session. Trace-only to keep
+    // Debug-level logs focused on state-machine events, not identifier churn.
+    SCE_LOG_TRACE("UniqueIdGenerator: Generated ID: {} (type counter: {})", id, typeCounter);
 
     return id;
 }

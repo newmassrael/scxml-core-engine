@@ -18,6 +18,13 @@
 
 pub mod model;
 pub mod parser;
+/// W3C XInclude preprocessing. Runs between XSD validation and
+/// roxmltree's document parse so the AOT code generator consumes
+/// the same post-expansion document as the C++ runtime. See
+/// [`xinclude`] for the expansion semantics and the deliberate
+/// divergence in error handling (runtime warns-and-continues,
+/// AOT hard-errors).
+pub mod xinclude;
 pub mod analyzer;
 pub mod script_engine_analyzer;
 pub mod filters;

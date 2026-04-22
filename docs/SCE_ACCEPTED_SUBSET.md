@@ -191,7 +191,46 @@ Acceptance is conditional on the deploy topology resolving both ends
 of the RPC pair (`mesh/topology-receiver-not-declared`,
 `mesh/topology-unresolved-targets`).
 
-### §2.7 Deploy manifest (`deploy.yaml`)
+### §2.7 XInclude composition — `<xi:include>`
+
+Multi-file SCXML composition via W3C XInclude (namespace
+`http://www.w3.org/2001/XInclude`) is processed at parse time so
+the AOT code generator consumes the same effective document as
+the C++ runtime (`PugiXMLDocument::processXInclude`). Accepted
+shape:
+
+```xml
+<scxml xmlns:xi="http://www.w3.org/2001/XInclude">
+  <xi:include href="guards.xml"/>
+</scxml>
+```
+
+Semantics match the minimal subset the runtime implements: the
+children of the included document's root element are spliced
+in place of the `<xi:include>` node; `href` resolves
+absolute-first, then relative to the including file, then
+relative to the current working directory; recursion is bounded
+by a documented depth limit (mirrored from the runtime), and
+cycles are detected.
+
+Unsupported W3C XInclude features are rejected explicitly rather
+than silently ignored — accepting them at build time would
+produce state machines diverging from runtime parse:
+
+- `parse="text"` — `xml/xinclude-unsupported`.
+- `xpointer=` — `xml/xinclude-unsupported`.
+- `<xi:fallback>` — `xml/xinclude-unsupported`.
+
+Rejections the AOT pipeline hard-errors on (the C++ runtime
+warns-and-skips the same inputs; matching behaviour at
+build-time is preferable to silent divergence): missing or empty
+`href` (`xml/xinclude-missing-href`, fixable), unresolvable
+`href` (`xml/xinclude-not-found`), filesystem read failures
+(`xml/xinclude-read-error`), cycles (`xml/xinclude-cycle`),
+depth overflow (`xml/xinclude-too-deep`), and malformed
+included files (`xml/xinclude-malformed`).
+
+### §2.8 Deploy manifest (`deploy.yaml`)
 
 Accepted when `--deploy <path>` is passed. Schema is enforced by
 serde with `deny_unknown_fields` (`mesh/deploy-parse` on unknown
@@ -265,7 +304,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (122 codes)
+## Appendix — `DiagnosticCode` index (129 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -289,6 +328,12 @@ Codes that the author can avoid by writing a better SCXML /
 |---|---|
 | `xml/parse` | Xml |
 | `xml/schema-validation` | Xml |
+| `xml/xinclude-missing-href` | Xml |
+| `xml/xinclude-not-found` | Xml |
+| `xml/xinclude-cycle` | Xml |
+| `xml/xinclude-too-deep` | Xml |
+| `xml/xinclude-malformed` | Xml |
+| `xml/xinclude-unsupported` | Xml |
 | `validation/missing-element` | Validation |
 | `validation/missing-attribute` | Validation |
 | `validation/invalid-attribute` | Validation |
@@ -402,6 +447,7 @@ or SCE-internal issues.
 
 | Code | Stage | Reason diagnostic-only |
 |---|---|---|
+| `xml/xinclude-read-error` | Xml | Filesystem read failure on an `<xi:include>` target |
 | `import/read-error` | Import | Filesystem read failure on imported file |
 | `manifest/io` | Manifest | Filesystem failure during manifest resolution |
 | `generate/invalid-config` | Generate | SCE-internal codegen config |

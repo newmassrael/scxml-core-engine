@@ -130,6 +130,16 @@ pub enum XmlError {
 
     #[error("{0}")]
     SchemaValidation(#[from] crate::forge::xsd_validator::XsdErrors),
+
+    /// W3C XInclude preprocessing failure. The Rust AOT pipeline
+    /// rejects XInclude failures that the C++ runtime would warn
+    /// and skip — the two parsers must yield the same effective
+    /// document or AOT-generated code silently diverges from
+    /// Interpreter-parsed behaviour. Raised by
+    /// [`crate::xinclude::expand`] before roxmltree sees the
+    /// document.
+    #[error(transparent)]
+    XInclude(#[from] crate::xinclude::XIncludeError),
 }
 
 // ── Stage 3: Semantic validation ───────────────────────────────

@@ -24,6 +24,13 @@
       "enum": [
         "xml/parse",
         "xml/schema-validation",
+        "xml/xinclude-missing-href",
+        "xml/xinclude-not-found",
+        "xml/xinclude-read-error",
+        "xml/xinclude-cycle",
+        "xml/xinclude-too-deep",
+        "xml/xinclude-malformed",
+        "xml/xinclude-unsupported",
         "validation/missing-element",
         "validation/missing-attribute",
         "validation/invalid-attribute",

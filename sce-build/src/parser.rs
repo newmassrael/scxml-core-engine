@@ -137,8 +137,29 @@ impl SCXMLParser {
             .unwrap_or(&name)
             .to_string();
         let base_dir = Path::new(scxml_path).parent().map(|p| p.to_path_buf());
+
+        // XInclude parity with `PugiXMLDocument::processXInclude`
+        // (sce/src/parsing/PugiXMLParser.cpp:212). The C++ runtime
+        // expands `<xi:include>` at parse time; without this step
+        // the AOT code generator consumes a different effective
+        // document than the interpreter, silently producing state
+        // machines that diverge from runtime behaviour. Performed
+        // before XSD validation so the schema validator sees the
+        // expanded document — sce:* extensions can then live in
+        // included fragments without losing validation.
+        let expanded = crate::xinclude::expand(&content, scxml_path, base_dir.as_deref())
+            .map_err(|(err, loc)| {
+                use crate::forge::error::{ForgeError, Located, XmlError};
+                Located::new(
+                    ForgeError::Xml(XmlError::XInclude(err)),
+                    scxml_path,
+                    Some(loc.row),
+                    Some(loc.col),
+                )
+            })?;
+
         self.parse_impl(
-            &content,
+            &expanded,
             DocumentLabel {
                 identifier: &name,
                 diagnostic_label: &diag_label,
