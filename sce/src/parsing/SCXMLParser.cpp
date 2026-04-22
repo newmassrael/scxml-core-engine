@@ -78,6 +78,15 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         SCE_LOG_DEBUG("Processing XIncludes");
         doc->processXInclude();
 
+        // Process `<sce:use>` template expansion.
+        // Phase B M1 supports only the no-op passthrough path;
+        // documents containing `<sce:use>` raise
+        // `SCE::parsing::TemplateNotImplemented` caught by the
+        // surrounding std::exception handler. See
+        // claudedocs/rfc-sce-template-phase-b.md.
+        SCE_LOG_DEBUG("Processing sce:template");
+        doc->processSceTemplate();
+
         // Parse document
         return parseAbstractDocument(doc);
     } catch (const std::exception &ex) {
@@ -105,6 +114,15 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         // Process XIncludes
         SCE_LOG_DEBUG("Processing XIncludes");
         doc->processXInclude();
+
+        // Process `<sce:use>` template expansion.
+        // Phase B M1 supports only the no-op passthrough path;
+        // documents containing `<sce:use>` raise
+        // `SCE::parsing::TemplateNotImplemented` caught by the
+        // surrounding std::exception handler. See
+        // claudedocs/rfc-sce-template-phase-b.md.
+        SCE_LOG_DEBUG("Processing sce:template");
+        doc->processSceTemplate();
 
         // Parse document
         return parseAbstractDocument(doc);

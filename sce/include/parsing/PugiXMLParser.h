@@ -51,6 +51,7 @@ public:
 
     std::shared_ptr<IXMLElement> getRootElement() override;
     bool processXInclude() override;
+    bool processSceTemplate() override;
     std::string getErrorMessage() const override;
     bool isValid() const override;
 

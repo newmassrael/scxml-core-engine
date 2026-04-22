@@ -4,6 +4,7 @@
 #include "parsing/PugiXMLParser.h"
 #include "core/LogMacros.h"
 #include "parsing/IXMLElement.h"
+#include "parsing/TemplateError.h"
 #include <cstring>
 #include <filesystem>
 #include <sstream>
@@ -305,6 +306,66 @@ bool PugiXMLDocument::processXIncludeRecursive(pugi::xml_node node, int depth) {
     }
 
     return true;
+}
+
+namespace {
+
+// `<sce:use>` detection as a DOM walk. pugixml stores element
+// names including their namespace prefix, so `sce:use` appears as
+// a literal element name string — the check mirrors Rust's
+// `content.contains("sce:use")` fast path (`sce-build/src/template.rs`),
+// just on the already-parsed tree instead of the raw source.
+// Matching on the prefixed form "sce:" deliberately; the AOT
+// expander is strict about the sce: namespace binding per
+// `claudedocs/rfc-sce-template-sce-param.md` §3, and the runtime
+// mirrors that strictness so a document accepted by one path
+// binds identically on the other.
+bool containsSceUse(pugi::xml_node node) {
+    for (const auto &child : node.children()) {
+        if (std::string(child.name()) == "sce:use") {
+            return true;
+        }
+        if (containsSceUse(child)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+bool PugiXMLDocument::processSceTemplate() {
+    // Phase B M1: no-op passthrough only. Full design contract in
+    // `claudedocs/rfc-sce-template-phase-b.md`. Any `<sce:use>`
+    // element in the document is out of M1 scope; the skeleton
+    // throws `SCE::parsing::TemplateNotImplemented` naming the
+    // milestone that will support the shape rather than silently
+    // passing through an unexpanded `<sce:use>` (which would
+    // diverge from AOT behaviour — the failure mode Phase B
+    // exists to close).
+    if (!doc_) {
+        errorMessage_ = "Document is null";
+        return false;
+    }
+
+    auto root = doc_->document_element();
+    if (!root) {
+        // Empty document has no `<sce:use>` by definition —
+        // trivially passes the passthrough contract.
+        return true;
+    }
+
+    if (!containsSceUse(root)) {
+        SCE_LOG_DEBUG("PugiXMLDocument: processSceTemplate no-op (no <sce:use> present)");
+        return true;
+    }
+
+    throw SCE::parsing::TemplateNotImplemented(
+        "<sce:use> expansion requires Phase B milestone M2 "
+        "(claudedocs/rfc-sce-template-phase-b.md). M1 only supports "
+        "the no-op passthrough case; any document containing "
+        "<sce:use> must currently be compiled through the sce-build "
+        "AOT pipeline (see docs/SCE_ACCEPTED_SUBSET.md §2.9).");
 }
 
 std::string PugiXMLDocument::resolveFilePath(const std::string &href) const {

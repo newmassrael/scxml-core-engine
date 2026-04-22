@@ -36,6 +36,26 @@ public:
     virtual bool processXInclude() = 0;
 
     /**
+     * @brief Process `<sce:use>` template expansion directives
+     * @return true on success
+     *
+     * Expands `<sce:use template="...">` against `<sce:template>` files
+     * sibling to the current document. Mirrors the AOT expander
+     * `sce-build/src/template.rs` so a document accepted by one path
+     * yields a byte-equivalent post-preprocessor document on the other
+     * (claudedocs/rfc-sce-template-phase-b.md §1 Q1).
+     *
+     * Phase B M1 implements the no-op passthrough path only; any
+     * `<sce:use>` element triggers a `SCE::parsing::TemplateNotImplemented`
+     * exception naming the M2-M5 milestone that will support the
+     * encountered shape. Implementations must throw
+     * `SCE::parsing::TemplateError` (or a subtype) — never silently
+     * succeed on unsupported shapes, since that is the failure mode
+     * Phase B exists to close.
+     */
+    virtual bool processSceTemplate() = 0;
+
+    /**
      * @brief Get error message if parsing failed
      * @return Error message, empty if no error
      */
