@@ -89,6 +89,91 @@ pub struct SCXMLParser {
     invoke_ids_seen: BTreeSet<String>,
 }
 
+/// Run the XInclude + `sce:template` preprocessors on raw SCXML
+/// content and return the post-expansion text together with a
+/// [`PositionMap`] that remaps expanded-byte coordinates back to
+/// author source coordinates.
+///
+/// Shared by [`SCXMLParser::parse_file`] (which then feeds the
+/// expanded text into [`SCXMLParser::parse_impl`] and remaps any
+/// downstream diagnostic via the returned map) and by the
+/// `sce-codegen expand` subcommand (which prints the expanded text
+/// to stdout for the Phase B SSOT parity harness —
+/// `tests/w3c_phase_b_parity/` consumes the same bytes the
+/// codegen pipeline consumes).
+///
+/// Extracting this into a free function keeps the preprocessor
+/// sequence single-source: any future third pass, or any change
+/// to the xinclude/template ordering, is picked up by both the
+/// codegen consumer and the parity harness without a second edit.
+/// Phase B RFC §1 Q1 (`claudedocs/rfc-sce-template-phase-b.md`)
+/// commits this SSOT guarantee at the Rust-side boundary; the
+/// cross-language SSOT guarantee is enforced by the C++ harness
+/// driver diffing canonicalised outputs.
+pub fn expand_preprocessors(
+    content: &str,
+    scxml_path: &str,
+    base_dir: Option<&Path>,
+) -> Result<
+    (String, crate::position_map::PositionMap),
+    crate::forge::error::Located<crate::forge::error::ForgeError>,
+> {
+    // XInclude parity with `PugiXMLDocument::processXInclude`
+    // (sce/src/parsing/PugiXMLParser.cpp:212). The C++ runtime
+    // expands `<xi:include>` at parse time; without this step
+    // the AOT code generator consumes a different effective
+    // document than the interpreter, silently producing state
+    // machines that diverge from runtime behaviour.
+    //
+    // The expander also returns a `PositionMap` keyed by expanded
+    // bytes — every subsequent diagnostic that fires against the
+    // expanded document (XSD line numbers, roxmltree row/col,
+    // semantic validation) gets remapped at the parse-impl
+    // boundary so `location.{file, row, col}` points at the
+    // author source, not at in-memory expanded coordinates.
+    // Expander-internal errors (MissingHref, NotFound, ...)
+    // already report positions in the pre-expansion outer file,
+    // so they wrap directly without going through the map.
+    let (included, xinclude_map) = crate::xinclude::expand(content, scxml_path, base_dir)
+        .map_err(|(err, loc)| {
+            use crate::forge::error::{ForgeError, Located, XmlError};
+            Located::new(
+                ForgeError::Xml(XmlError::XInclude(err)),
+                scxml_path,
+                Some(loc.row),
+                Some(loc.col),
+            )
+        })?;
+
+    // `sce:template` expansion runs immediately after XInclude
+    // so templates see a post-XInclude document. Phase A v1 is
+    // AOT-only per RFC §6.5 Q5; Phase B brings C++ Interpreter
+    // parity over milestones M1-M5 (see
+    // `claudedocs/rfc-sce-template-phase-b.md`).
+    //
+    // The expander composes `xinclude_map` with its own entries
+    // (File origins for template-body bytes, CallSite origins
+    // for `{$param}` splices per RFC §6.3 Q3 / SCE_ACCEPTED_
+    // SUBSET.md §2.9) and returns a `final_map` that replaces
+    // `xinclude_map` for post-expansion remapping — every
+    // emitted byte, wherever it came from, traces back to a
+    // source file the author can open.
+    let (expanded, final_map) =
+        crate::template::expand(&included, scxml_path, base_dir, &xinclude_map).map_err(
+            |(err, loc)| {
+                use crate::forge::error::{ForgeError, Located, XmlError};
+                Located::new(
+                    ForgeError::Xml(XmlError::Template(err)),
+                    scxml_path,
+                    Some(loc.row),
+                    Some(loc.col),
+                )
+            },
+        )?;
+
+    Ok((expanded, final_map))
+}
+
 impl SCXMLParser {
     pub fn new() -> Self {
         Self {
@@ -138,66 +223,7 @@ impl SCXMLParser {
             .to_string();
         let base_dir = Path::new(scxml_path).parent().map(|p| p.to_path_buf());
 
-        // XInclude parity with `PugiXMLDocument::processXInclude`
-        // (sce/src/parsing/PugiXMLParser.cpp:212). The C++ runtime
-        // expands `<xi:include>` at parse time; without this step
-        // the AOT code generator consumes a different effective
-        // document than the interpreter, silently producing state
-        // machines that diverge from runtime behaviour. Performed
-        // before XSD validation so the schema validator sees the
-        // expanded document — sce:* extensions can then live in
-        // included fragments without losing validation.
-        //
-        // The expander now also returns a `PositionMap` keyed by
-        // expanded bytes — every subsequent diagnostic that fires
-        // against the expanded document (XSD line numbers,
-        // roxmltree row/col, semantic validation) gets remapped at
-        // the parse-impl boundary below so `location.{file, row,
-        // col}` points at the author source, not at in-memory
-        // expanded coordinates. Expander-internal errors
-        // (MissingHref, NotFound, ...) already report positions in
-        // the pre-expansion outer file, so they wrap directly
-        // without going through the map.
-        let (included, xinclude_map) =
-            crate::xinclude::expand(&content, scxml_path, base_dir.as_deref()).map_err(
-                |(err, loc)| {
-                    use crate::forge::error::{ForgeError, Located, XmlError};
-                    Located::new(
-                        ForgeError::Xml(XmlError::XInclude(err)),
-                        scxml_path,
-                        Some(loc.row),
-                        Some(loc.col),
-                    )
-                },
-            )?;
-
-        // `sce:template` expansion runs immediately after XInclude
-        // so templates see a post-XInclude document. AOT-only per
-        // RFC §6.5 — the C++ runtime does not implement templates,
-        // so `<sce:use>` documents compile only through sce-build.
-        //
-        // The expander composes `xinclude_map` with its own entries
-        // (File origins for template-body bytes, CallSite origins
-        // for `{$param}` splices per RFC §6.3 Q3 / SCE_ACCEPTED_
-        // SUBSET.md §2.9) and returns a `final_map` that replaces
-        // `xinclude_map` for post-expansion remapping — every
-        // emitted byte, wherever it came from, traces back to a
-        // source file the author can open.
-        let (expanded, final_map) = crate::template::expand(
-            &included,
-            scxml_path,
-            base_dir.as_deref(),
-            &xinclude_map,
-        )
-        .map_err(|(err, loc)| {
-            use crate::forge::error::{ForgeError, Located, XmlError};
-            Located::new(
-                ForgeError::Xml(XmlError::Template(err)),
-                scxml_path,
-                Some(loc.row),
-                Some(loc.col),
-            )
-        })?;
+        let (expanded, final_map) = expand_preprocessors(&content, scxml_path, base_dir.as_deref())?;
 
         self.parse_impl(
             &expanded,

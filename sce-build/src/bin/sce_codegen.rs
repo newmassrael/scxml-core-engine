@@ -405,6 +405,26 @@ enum Commands {
         #[arg(short, long)]
         output_dir: String,
     },
+    /// Expand preprocessors (XInclude + `sce:template`) on an SCXML
+    /// file and print the post-expansion text to stdout.
+    ///
+    /// Introduced for the Phase B SSOT byte-equivalence parity
+    /// harness (`tests/w3c_phase_b_parity/`): the C++ test driver
+    /// compares this subcommand's stdout against the pugixml
+    /// runtime's `processXInclude` + `processSceTemplate` output.
+    /// Both producers canonicalise through the same pugixml
+    /// serialiser before diff, per
+    /// `claudedocs/rfc-sce-template-phase-b.md` §1 Q1.
+    ///
+    /// Calls [`sce_build::parser::expand_preprocessors`] — the same
+    /// function [`sce_build::parser::SCXMLParser::parse_file`]
+    /// uses — so no third-party caller can drift the subcommand's
+    /// semantics away from the codegen pipeline's view of the same
+    /// document.
+    Expand {
+        /// Input SCXML file path
+        scxml: String,
+    },
     /// Print the conformance fixture name list from a manifest. Build
     /// systems consume this so they don't need a native JSON parser
     /// (CMake, Gradle, plain Bash) to enumerate fixtures.
@@ -484,6 +504,7 @@ fn main() {
             output_dir,
         } => cmd_generate_conformance(&language, &manifest, &output_dir),
         Commands::ListFixtures { manifest, format } => cmd_list_fixtures(&manifest, &format),
+        Commands::Expand { scxml } => cmd_expand(&scxml),
     }
 }
 
@@ -2278,6 +2299,34 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
         cli_exit(CliError::WriteOutput { path: out_path.display().to_string(), source: e })
     });
     println!("Generated conformance harness: {}", out_path.display());
+}
+
+// ── Subcommand: expand ─────────────────────────────────────────
+
+fn cmd_expand(scxml_path: &str) {
+    let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
+    });
+    let base_dir = Path::new(scxml_path).parent();
+    let (expanded, _map) =
+        sce_build::parser::expand_preprocessors(&content, scxml_path, base_dir).unwrap_or_else(
+            |err| current_error_format().emit_and_exit(&err, "Preprocessor error: "),
+        );
+    // Write raw bytes to stdout without trailing newline so the
+    // Phase B parity harness can byte-compare against the C++
+    // pugixml canonicalisation without newline handling quirks.
+    use std::io::Write;
+    std::io::stdout()
+        .write_all(expanded.as_bytes())
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::WriteOutput {
+                path: "<stdout>".to_string(),
+                source: e,
+            })
+        });
 }
 
 // ── Subcommand: list-fixtures ──────────────────────────────────
