@@ -292,11 +292,12 @@ implemented by `crate::position_map::Origin::CallSite` and
 
 - When a diagnostic fires in bytes produced by `{$param}`
   substitution, `location.{file, row, col}` points at the offending
-  `<sce:param>` element in the **caller document** — not at the
-  parent `<sce:use>`, and not inside the substituted value.
-  Column precision inside the substituted value is deliberately
-  collapsed (every byte of the substituted region shares the
-  `<sce:param>`'s (row, col)).
+  `<sce:use>` element in the **caller document** — the call site
+  that supplied the parameter bindings (attributes on `<sce:use>`,
+  per the XSD in `schemas/sce-forge-ext.xsd`). Column precision
+  inside the substituted value is deliberately collapsed (every
+  byte of every substituted region shares the same single (row,
+  col) — the `<sce:use>`'s element position).
 - When a diagnostic fires in template-body bytes (regions copied
   1:1 from the template file during expansion, i.e. not produced
   by `{$param}` substitution), `location.{file, row, col}` points
