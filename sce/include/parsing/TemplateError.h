@@ -13,14 +13,15 @@ namespace SCE::parsing {
 //
 // Phase B tracked in `claudedocs/rfc-sce-template-phase-b.md`.
 // M1 declared the base class and the `TemplateNotImplemented`
-// sentinel. M2 (this header revision) adds the first two named
-// subtypes that arrive with parameter substitution:
-// `TemplateUnknownParam` + `TemplateMissingParam`. M3-M4 add the
-// remaining six subtypes mirroring
+// sentinel. M2 added the first two named subtypes
+// (`TemplateUnknownParam` + `TemplateMissingParam`). M3 (this
+// header revision) adds the recursion-guard subtypes that arrive
+// with recursive expansion: `TemplateCycle` + `TemplateTooDeep`.
+// M4 adds the remaining four mirroring
 // `sce-build/src/template.rs::TemplateError`:
 //
-//   M2: TemplateMissingParam, TemplateUnknownParam   ← this revision
-//   M3: TemplateCycle, TemplateTooDeep
+//   M2: TemplateMissingParam, TemplateUnknownParam
+//   M3: TemplateCycle, TemplateTooDeep                ← this revision
 //   M4: TemplateNotFound, TemplateReadError,
 //       TemplateMalformed, TemplateMissingAttribute
 //   M5: delete TemplateNotImplemented (every shape is now a
@@ -77,6 +78,35 @@ public:
 // (fields `template`, `param`) and maps 1:1 to the Rust
 // `xml/template-missing-param` DiagnosticCode.
 class TemplateMissingParam : public TemplateError {
+public:
+    using TemplateError::TemplateError;
+};
+
+// A cycle was detected in the template inclusion graph — expanding
+// the referenced template would revisit a file already on the
+// recursion stack. Mirrors
+// `sce-build/src/template.rs::TemplateError::Cycle`
+// (fields `template`, `chain`) and maps 1:1 to the Rust
+// `xml/template-cycle` DiagnosticCode. The message renders the
+// full chain as `outer → middle → inner` so the operator can see
+// which file eventually loops back — same rendering convention as
+// Rust's `render_chain`, which keeps the discriminant key stable
+// for agent dispatch across the language boundary.
+class TemplateCycle : public TemplateError {
+public:
+    using TemplateError::TemplateError;
+};
+
+// Recursion exceeded
+// `SCE::parsing::MAX_TEMPLATE_DEPTH`, catching pathological (but
+// acyclic) template chains where each file pulls in another
+// without looping back. Mirrors
+// `sce-build/src/template.rs::TemplateError::TooDeep`
+// (field `limit`) and maps 1:1 to the Rust
+// `xml/template-too-deep` DiagnosticCode. The message names the
+// depth limit so the operator can see the enforced bound without
+// reading the header.
+class TemplateTooDeep : public TemplateError {
 public:
     using TemplateError::TemplateError;
 };
