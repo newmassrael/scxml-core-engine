@@ -305,6 +305,18 @@ implemented by `crate::position_map::Origin::CallSite` and
   navigate to the body they wrote rather than to a caller that did
   nothing wrong.
 
+**Residual C++ runtime asymmetry (Phase B M4):** The C++
+Interpreter now expands templates at load time and throws typed
+`SCE::parsing::Template<Variant>` subtypes agreeing 1:1 with the
+Rust `xml/template-*` DiagnosticCode set. Diagnostic *coordinates*
+on the C++ side still report at post-expansion positions (the
+pre-`f68824ba` Rust behaviour) — no C++ `PositionMap` port. The
+asymmetry narrows to source-coordinate attribution rather than
+subset-coverage, and is re-opened by the RFC §1 Q3 trigger
+conditions (user report, IDE / telemetry consumer, or M5 harness
+fixture pressure on error-coordinate agreement). M5 flips the
+"(AOT-only)" heading language outright.
+
 Other XML meta-processing primitives (parameter entities,
 conditional inclusion, computed attributes, Turing-complete
 templating) remain out of scope — see `ARCHITECTURE.md` → "Scope &
