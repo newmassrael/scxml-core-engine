@@ -277,8 +277,10 @@ Expansion semantics (RFC §3):
 Rejections the AOT pipeline hard-errors on: unresolvable template
 path (`xml/template-not-found`), filesystem read failures
 (`xml/template-read-error`, Diagnostic-only), malformed template
-file or malformed `<sce:use>` / `<sce:param>` declarations
-(`xml/template-malformed`), omitted `required="true"` parameter
+file or malformed `<sce:param>` declaration
+(`xml/template-malformed`), `<sce:use>` missing the required
+`template` attribute (`xml/template-missing-attribute`, fixable),
+omitted `required="true"` parameter
 (`xml/template-missing-param`, fixable), unknown attribute on
 `<sce:use>` (`xml/template-unknown-param`), cycles
 (`xml/template-cycle`), and depth overflow
@@ -351,7 +353,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (136 codes)
+## Appendix — `DiagnosticCode` index (137 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -383,6 +385,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `xml/xinclude-unsupported` | Xml |
 | `xml/template-not-found` | Xml |
 | `xml/template-malformed` | Xml |
+| `xml/template-missing-attribute` | Xml |
 | `xml/template-missing-param` | Xml |
 | `xml/template-unknown-param` | Xml |
 | `xml/template-cycle` | Xml |

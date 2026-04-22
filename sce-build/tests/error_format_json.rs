@@ -1410,6 +1410,32 @@ fn template_unknown_param_emits_xml_template_unknown_param() {
 }
 
 #[test]
+fn template_missing_attribute_emits_add_attribute_fix() {
+    let main_scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s1" name="missing_attr">
+  <state id="s1">
+    <sce:use port="80"/>
+  </state>
+</scxml>
+"#;
+    let (_dir, scxml) = write_template_fixture(
+        "template-missing-attr",
+        &[("main.scxml", main_scxml)],
+    );
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success(), "missing template attribute must fail");
+    let diag = single_diagnostic(&String::from_utf8(out.stderr).unwrap());
+    // Deterministic fix points at the exact attribute to insert.
+    assert_eq!(diag["code"], "xml/template-missing-attribute");
+    assert_eq!(diag["stage"], "xml");
+    assert_eq!(diag["fix"]["kind"], "add_attribute");
+    assert_eq!(diag["fix"]["element"], "sce:use");
+    assert_eq!(diag["fix"]["attr"], "template");
+}
+
+#[test]
 fn template_cycle_emits_xml_template_cycle() {
     let main_scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

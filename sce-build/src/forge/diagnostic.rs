@@ -289,18 +289,22 @@ pub enum DiagnosticCode {
     #[serde(rename = "xml/xinclude-unsupported")]
     XmlXIncludeUnsupported,
     // ── sce:template preprocessing (AOT-only, RFC §6.5 Phase A).
-    //    Split by repair shape: missing-param gets a deterministic
-    //    add_attribute fix, unknown-param lists declared names so
-    //    agents can correct the typo, cycle / too-deep indicate
-    //    structural chain problems, malformed points at the
-    //    template file (or the `<sce:use>` call site for usage
-    //    errors), not-found / read-error are filesystem-level. ──
+    //    Split by repair shape so agents can dispatch without
+    //    parsing message text: missing-attribute / missing-param
+    //    carry deterministic add_attribute fixes, unknown-param
+    //    lists declared names so agents correct typos, cycle /
+    //    too-deep indicate structural chain problems, malformed
+    //    points at the template file (call-site attribute errors
+    //    ride missing-attribute), not-found / read-error are
+    //    filesystem-level. ──
     #[serde(rename = "xml/template-not-found")]
     XmlTemplateNotFound,
     #[serde(rename = "xml/template-read-error")]
     XmlTemplateReadError,
     #[serde(rename = "xml/template-malformed")]
     XmlTemplateMalformed,
+    #[serde(rename = "xml/template-missing-attribute")]
+    XmlTemplateMissingAttribute,
     #[serde(rename = "xml/template-missing-param")]
     XmlTemplateMissingParam,
     #[serde(rename = "xml/template-unknown-param")]
@@ -613,6 +617,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         XmlTemplateNotFound,
         XmlTemplateReadError,
         XmlTemplateMalformed,
+        XmlTemplateMissingAttribute,
         XmlTemplateMissingParam,
         XmlTemplateUnknownParam,
         XmlTemplateCycle,
@@ -932,6 +937,7 @@ impl DiagnosticCode {
             | XmlTemplateNotFound
             | XmlTemplateReadError
             | XmlTemplateMalformed
+            | XmlTemplateMissingAttribute
             | XmlTemplateMissingParam
             | XmlTemplateUnknownParam
             | XmlTemplateCycle
@@ -1016,6 +1022,7 @@ impl DiagnosticCode {
             XmlTemplateNotFound => "xml/template-not-found",
             XmlTemplateReadError => "xml/template-read-error",
             XmlTemplateMalformed => "xml/template-malformed",
+            XmlTemplateMissingAttribute => "xml/template-missing-attribute",
             XmlTemplateMissingParam => "xml/template-missing-param",
             XmlTemplateUnknownParam => "xml/template-unknown-param",
             XmlTemplateCycle => "xml/template-cycle",
@@ -1422,6 +1429,17 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             actual: Some(template.clone()),
             fix: None,
             key_fragments: vec![template.clone(), detail.clone()],
+        },
+        XmlError::Template(TemplateError::MissingTemplateAttribute) => DiagnosticPayload {
+            code: DiagnosticCode::XmlTemplateMissingAttribute,
+            stage: Stage::Xml,
+            expected: None,
+            actual: None,
+            fix: Some(Fix::AddAttribute {
+                element: "sce:use".to_string(),
+                attr: "template".to_string(),
+            }),
+            key_fragments: Vec::new(),
         },
         XmlError::Template(TemplateError::MissingParam { template, param }) => DiagnosticPayload {
             code: DiagnosticCode::XmlTemplateMissingParam,
@@ -2683,6 +2701,12 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:94db895eb4789a8d","code":"xml/template-malformed","stage":"xml","message":"<sce:use template=\"bad.sce-template.xml\">: template is malformed: root element must be <sce:template>, got <not-a-template>","actual":"bad.sce-template.xml"}"#,
             ),
             (
+                "forge/template-missing-attribute",
+                XmlError::Template(crate::template::TemplateError::MissingTemplateAttribute)
+                    .into(),
+                r#"{"v":1,"id":"fnv1a:0cace1208b4c7470","code":"xml/template-missing-attribute","stage":"xml","message":"<sce:use> missing required `template` attribute","fix":{"kind":"add_attribute","element":"sce:use","attr":"template"}}"#,
+            ),
+            (
                 "forge/template-missing-param",
                 XmlError::Template(crate::template::TemplateError::MissingParam {
                     template: "guard.sce-template.xml".into(),
@@ -3767,6 +3791,7 @@ mod tests {
             | XmlTemplateNotFound
             | XmlTemplateReadError
             | XmlTemplateMalformed
+            | XmlTemplateMissingAttribute
             | XmlTemplateMissingParam
             | XmlTemplateUnknownParam
             | XmlTemplateCycle
@@ -4095,6 +4120,7 @@ mod tests {
                 | XmlXIncludeCycle | XmlXIncludeTooDeep | XmlXIncludeMalformed
                 | XmlXIncludeUnsupported
                 | XmlTemplateNotFound | XmlTemplateReadError | XmlTemplateMalformed
+                | XmlTemplateMissingAttribute
                 | XmlTemplateMissingParam | XmlTemplateUnknownParam
                 | XmlTemplateCycle | XmlTemplateTooDeep
                 | ValidationMissingElement
@@ -4190,9 +4216,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            139,
+            140,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 139 distinct variants to match the DiagnosticCode \
+             expected 140 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

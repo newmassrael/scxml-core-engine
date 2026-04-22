@@ -93,16 +93,28 @@ pub enum TemplateError {
     },
 
     /// Template file was read but either (a) is not well-formed XML,
-    /// (b) its root is not `<sce:template>`, (c) a `<sce:param>`
+    /// (b) its root is not `<sce:template>`, or (c) a `<sce:param>`
     /// declaration is ill-formed (missing `name`, invalid name
     /// pattern, duplicate name, or both `required="true"` and
-    /// `default=...` declared), or (d) the `<sce:use>` element is
-    /// missing the required `template` attribute. All four repair
-    /// surfaces share the Malformed code because each is a
-    /// build-time authoring bug that the XSD grammar (see Q4 of the
-    /// RFC) will catch in the same bucket once integrated.
+    /// `default=...` declared). These three repair surfaces share
+    /// the Malformed code because each points at the template file
+    /// itself; errors at the call site (e.g. `<sce:use>` missing
+    /// the required `template` attribute) ride
+    /// [`TemplateError::MissingTemplateAttribute`] instead so
+    /// repair agents can dispatch call-site vs file-side fixes
+    /// without text parsing.
     #[error("<sce:use template=\"{template}\">: template is malformed: {detail}")]
     Malformed { template: String, detail: String },
+
+    /// `<sce:use>` element is missing the required `template`
+    /// attribute (or the attribute is present but empty). Carries
+    /// a deterministic `add_attribute` fix so repair agents can
+    /// insert the attribute without reading the call-site context.
+    /// Mirrors the [`crate::xinclude::XIncludeError::MissingHref`]
+    /// pattern: the required-attribute case gets its own code so
+    /// `xml/template-malformed` stays focused on file-side issues.
+    #[error("<sce:use> missing required `template` attribute")]
+    MissingTemplateAttribute,
 
     /// `<sce:use>` omitted a `<sce:param required="true">`. Carries
     /// a deterministic `add_attribute` fix so repair agents can
@@ -242,15 +254,7 @@ fn expand_impl(
         let template_attr = node
             .attribute("template")
             .filter(|v| !v.is_empty())
-            .ok_or_else(|| {
-                (
-                    TemplateError::Malformed {
-                        template: String::new(),
-                        detail: "<sce:use> missing required `template` attribute".to_string(),
-                    },
-                    loc,
-                )
-            })?;
+            .ok_or((TemplateError::MissingTemplateAttribute, loc))?;
 
         let resolved =
             resolve_template_path(template_attr, base_dir).map_err(|e| (e, loc))?;
@@ -690,7 +694,9 @@ fn render_chain(stack: &[PathBuf], next: &Path) -> String {
 /// transitive reference inside the included chain.
 fn remap_nested(err: TemplateError, outer_href: &str) -> TemplateError {
     match err {
-        TemplateError::TooDeep { .. } | TemplateError::Cycle { .. } => err,
+        TemplateError::TooDeep { .. }
+        | TemplateError::Cycle { .. }
+        | TemplateError::MissingTemplateAttribute => err,
         TemplateError::NotFound { searched, .. } => TemplateError::NotFound {
             template: outer_href.to_string(),
             searched,
@@ -823,23 +829,23 @@ mod tests {
     }
 
     #[test]
-    fn missing_template_attribute_is_malformed() {
+    fn missing_template_attribute_is_own_variant() {
         let tmp = TempDir::new().unwrap();
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
         let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
             .unwrap_err();
-        assert!(matches!(err.0, TemplateError::Malformed { .. }));
+        assert!(matches!(err.0, TemplateError::MissingTemplateAttribute));
     }
 
     #[test]
-    fn empty_template_attribute_is_malformed() {
+    fn empty_template_attribute_is_missing_template_attribute() {
         let tmp = TempDir::new().unwrap();
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template=""/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
         let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()))
             .unwrap_err();
-        assert!(matches!(err.0, TemplateError::Malformed { .. }));
+        assert!(matches!(err.0, TemplateError::MissingTemplateAttribute));
     }
 
     #[test]

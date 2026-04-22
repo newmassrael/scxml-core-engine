@@ -34,6 +34,7 @@
         "xml/template-not-found",
         "xml/template-read-error",
         "xml/template-malformed",
+        "xml/template-missing-attribute",
         "xml/template-missing-param",
         "xml/template-unknown-param",
         "xml/template-cycle",
