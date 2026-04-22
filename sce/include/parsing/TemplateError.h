@@ -14,15 +14,16 @@ namespace SCE::parsing {
 // Phase B tracked in `claudedocs/rfc-sce-template-phase-b.md`.
 // M1 declared the base class and the `TemplateNotImplemented`
 // sentinel. M2 added the first two named subtypes
-// (`TemplateUnknownParam` + `TemplateMissingParam`). M3 (this
-// header revision) adds the recursion-guard subtypes that arrive
-// with recursive expansion: `TemplateCycle` + `TemplateTooDeep`.
-// M4 adds the remaining four mirroring
-// `sce-build/src/template.rs::TemplateError`:
+// (`TemplateUnknownParam` + `TemplateMissingParam`). M3 added the
+// recursion-guard subtypes that arrived with recursive expansion
+// (`TemplateCycle` + `TemplateTooDeep`). M4 (this header revision)
+// adds the remaining four file-load / structure subtypes mirroring
+// `sce-build/src/template.rs::TemplateError` — closing the 1:1
+// mapping:
 //
 //   M2: TemplateMissingParam, TemplateUnknownParam
-//   M3: TemplateCycle, TemplateTooDeep                ← this revision
-//   M4: TemplateNotFound, TemplateReadError,
+//   M3: TemplateCycle, TemplateTooDeep
+//   M4: TemplateNotFound, TemplateReadError,          ← this revision
 //       TemplateMalformed, TemplateMissingAttribute
 //   M5: delete TemplateNotImplemented (every shape is now a
 //       proper named subtype; sentinel becomes dead code)
@@ -107,6 +108,67 @@ public:
 // depth limit so the operator can see the enforced bound without
 // reading the header.
 class TemplateTooDeep : public TemplateError {
+public:
+    using TemplateError::TemplateError;
+};
+
+// `<sce:use template="...">` named a file that could not be
+// located against the caller's base directory (nor any fallback
+// the resolver searched). Mirrors
+// `sce-build/src/template.rs::TemplateError::NotFound`
+// (fields `template`, `searched`) and maps 1:1 to the Rust
+// `xml/template-not-found` DiagnosticCode. The message carries the
+// referenced template name and the searched paths so the operator
+// can pick the right one without guessing.
+class TemplateNotFound : public TemplateError {
+public:
+    using TemplateError::TemplateError;
+};
+
+// Resolved template file exists but could not be read —
+// permission denied, I/O failure, or a libxml/pugixml I/O-level
+// load failure that is NOT a malformed-document class. Mirrors
+// `sce-build/src/template.rs::TemplateError::ReadError`
+// (fields `template`, `source: std::io::Error`) and maps 1:1 to
+// the Rust `xml/template-read-error` DiagnosticCode. Classified
+// "Diagnostic-only" in the acceptance doc: an infrastructure
+// failure the SCXML author cannot prevent by editing the document.
+class TemplateReadError : public TemplateError {
+public:
+    using TemplateError::TemplateError;
+};
+
+// Template file was read but either (a) is not well-formed XML,
+// (b) its root element is not `<sce:template>`, or (c) a
+// `<sce:param>` declaration is ill-formed (missing `name`,
+// invalid name pattern, duplicate name, bad `required` value, or
+// both `required="true"` and `default="..."` declared
+// simultaneously). Mirrors
+// `sce-build/src/template.rs::TemplateError::Malformed`
+// (fields `template`, `detail`) and maps 1:1 to the Rust
+// `xml/template-malformed` DiagnosticCode. The three repair
+// surfaces share a single subtype because each points at the
+// template file itself; call-site attribute omissions ride
+// `TemplateMissingAttribute` instead so repair agents can
+// dispatch call-site vs file-side fixes without text parsing.
+class TemplateMalformed : public TemplateError {
+public:
+    using TemplateError::TemplateError;
+};
+
+// `<sce:use>` is missing the required `template` attribute, or
+// the attribute is present but its value is the empty string
+// (empty never resolves against any base directory, so the
+// failure is classified at the call site rather than as
+// `TemplateNotFound`). Mirrors
+// `sce-build/src/template.rs::TemplateError::MissingTemplateAttribute`
+// (unit variant) and maps 1:1 to the Rust
+// `xml/template-missing-attribute` DiagnosticCode. The
+// separation from `TemplateMalformed` keeps
+// `xml/template-malformed` focused on file-side issues so repair
+// agents dispatching on the code do not have to re-parse the
+// message body to pick the right fix kind.
+class TemplateMissingAttribute : public TemplateError {
 public:
     using TemplateError::TemplateError;
 };
