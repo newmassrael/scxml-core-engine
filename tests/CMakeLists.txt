@@ -4665,6 +4665,19 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         message(STATUS "zenohcxx not found — skipping mesh_pool_zenoh_runtime_test")
     endif()
 
+    # ── SCE_TEMPLATE_DIR injection for mesh rejection ctests ───────────
+    # sce-codegen's `find_template_base` refuses the compile-time
+    # CARGO_MANIFEST_DIR fallback in release builds (the only profile
+    # cmake/SCECodegen.cmake accepts), so each ctest that fork+execs
+    # sce-codegen must supply SCE_TEMPLATE_DIR via set_tests_properties
+    # ENVIRONMENT — inheriting the developer's shell export is not a
+    # contract ctest can rely on. Tests append their name to
+    # SCE_REJECTION_TESTS; a single foreach at the end of the rejection
+    # family applies the env so an 18th entry needs only the list append.
+    set(SCE_REJECTION_TEST_ENV
+        "SCE_TEMPLATE_DIR=${CMAKE_SOURCE_DIR}/tools/codegen/templates")
+    set(SCE_REJECTION_TESTS)
+
     # ── Negative: event coverage violation must fail codegen ────
     # brake_bad.scxml sends "brake.activte" (typo) to #motor. The event
     # has no matching <transition> in motor.scxml, so TopologyError::
@@ -4683,6 +4696,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 "${MESH_TEST_DIR}/deploy_bad.yaml"
                 "${MESH_NEG_OUTPUT_DIR}"
     )
+    list(APPEND SCE_REJECTION_TESTS mesh_event_coverage_rejection)
 
     # ── Negative: pattern capability violation must fail codegen ──
     # SHM advertises {FireForget, FieldAccess} only — it is a one-way
@@ -4704,6 +4718,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 "${MESH_TEST_DIR}/deploy_shm_request.yaml"
                 "${MESH_PATTERN_NEG_OUTPUT_DIR}"
     )
+    list(APPEND SCE_REJECTION_TESTS mesh_pattern_capability_rejection)
 
     # ── SCE_MESH §14 partition rule mutation matrix ─────────────────────
     # The deploy.rs (rules 6-10) and partitions.rs (rules 1, 2, 11) unit
@@ -4775,6 +4790,7 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                     "${CMAKE_CURRENT_BINARY_DIR}/mesh_partition_rule${_rule_id}_generated"
                     "${_expected_code}"
         )
+        list(APPEND SCE_REJECTION_TESTS mesh_partition_rule${_rule_id}_rejection)
     endforeach()
 
     # ── Phase 3 entry #5: deploy.yaml-only middleware switch demo ──────
@@ -4794,6 +4810,13 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
                 "someip:${MESH_TEST_DIR}/deploy_someip.yaml:vsomeip::application"
                 "zenoh:${MESH_TEST_DIR}/deploy_zenoh.yaml:zenoh::Session"
     )
+    list(APPEND SCE_REJECTION_TESTS mesh_middleware_switch_demo)
+
+    # Apply SCE_TEMPLATE_DIR to every rejection-family ctest in one pass.
+    foreach(_rejection_test IN LISTS SCE_REJECTION_TESTS)
+        set_tests_properties(${_rejection_test} PROPERTIES
+            ENVIRONMENT "${SCE_REJECTION_TEST_ENV}")
+    endforeach()
 
     # ── SCE Mesh §16.8 distributed conformance harness — seed ──────────
     # §16.8.1 target shape: each W3C IRP test declared `yes` in
