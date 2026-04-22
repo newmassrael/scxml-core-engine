@@ -765,10 +765,19 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
             return nullptr;
         }
 
-        // Create document wrapper with base path
+        // Create document wrapper with base path + source path.
+        // Base path feeds `<xi:include>` / `<sce:use template>`
+        // resolution; source path seeds the cycle-detection stack in
+        // `processSceTemplate` so a top-level document that references
+        // itself via `<sce:use template="self.scxml"/>` is caught
+        // before loading the template file a second time. Mirrors
+        // Rust's `sce-build/src/template.rs::expand(self_path, ...)`
+        // plumbing at the parser boundary so the C++ runtime has the
+        // same self-reference coverage as the AOT expander.
         auto wrappedDoc = std::make_shared<PugiXMLDocument>(doc);
         std::filesystem::path filePath(filename);
         wrappedDoc->setBasePath(filePath.parent_path().string());
+        wrappedDoc->setSourcePath(filename);
 
         return wrappedDoc;
 

@@ -102,10 +102,16 @@ std::string runCppPreprocessors(const std::string &scxmlPath) {
     }
 
     auto sceDoc = std::make_shared<SCE::PugiXMLDocument>(pugiDoc);
-    // Base path governs `<xi:include href="...">` resolution; for
-    // M1's no-use fixture this has no effect but the call keeps
-    // the test driver aligned with the SCXMLParser.cpp flow so
-    // future fixtures that do include fragments work the same way.
+    // Base path governs `<xi:include href="...">` and
+    // `<sce:use template="...">` resolution; source path seeds the
+    // M3 cycle-detection stack so a fixture that points its top-level
+    // `<sce:use template="main.scxml"/>` back at itself is caught
+    // symmetrically with Rust (which seeds the stack via the
+    // `expand(self_path, ...)` argument in
+    // sce-build/src/template.rs). Keeps the test driver aligned with
+    // the SCXMLParser.cpp flow so fixtures that exercise xincludes,
+    // templates, or nested/cyclic references all see the same
+    // plumbing on both producers.
     {
         std::string basePath = scxmlPath;
         auto slash = basePath.find_last_of('/');
@@ -113,6 +119,7 @@ std::string runCppPreprocessors(const std::string &scxmlPath) {
             sceDoc->setBasePath(basePath.substr(0, slash));
         }
     }
+    sceDoc->setSourcePath(scxmlPath);
 
     sceDoc->processXInclude();
     sceDoc->processSceTemplate();

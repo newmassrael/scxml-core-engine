@@ -60,6 +60,19 @@ public:
         basePath_ = basePath;
     }
 
+    // Internal: Set the absolute source path of the document this
+    // wrapper was loaded from. Consumed by `processSceTemplate` to
+    // seed the cycle-detection stack so a top-level document that
+    // says `<sce:use template="self.scxml"/>` (pointing back at
+    // itself) is caught before loading the template file the second
+    // time. In-memory documents (parseContent) leave sourcePath_
+    // empty; cycle detection then only trips once the stack has
+    // accumulated at least one loaded template. Mirrors Rust's
+    // `expand(self_path, ...)` parameter in `sce-build/src/template.rs`.
+    void setSourcePath(const std::string &sourcePath) {
+        sourcePath_ = sourcePath;
+    }
+
 private:
     bool processXIncludeRecursive(pugi::xml_node node, int depth = 0);
     std::string resolveFilePath(const std::string &href) const;
@@ -77,6 +90,7 @@ private:
     std::shared_ptr<pugi::xml_document> doc_;
     std::string errorMessage_;
     std::string basePath_;
+    std::string sourcePath_;
     static constexpr int MAX_XINCLUDE_DEPTH = 10;
 };
 
