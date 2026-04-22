@@ -25,6 +25,12 @@ pub mod parser;
 /// divergence in error handling (runtime warns-and-continues,
 /// AOT hard-errors).
 pub mod xinclude;
+/// `sce:template` / `sce:use` / `sce:param` preprocessing —
+/// parameterised composition adjacent to XInclude. AOT-only per
+/// RFC §6.5 Phase A; runs immediately after XInclude expansion
+/// so templates see a post-XInclude document. See [`template`]
+/// for the expansion semantics and error model.
+pub mod template;
 pub mod analyzer;
 pub mod script_engine_analyzer;
 pub mod filters;

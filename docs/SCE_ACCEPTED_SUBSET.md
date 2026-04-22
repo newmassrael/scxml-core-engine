@@ -245,18 +245,49 @@ across all devices (`mesh/deploy-duplicate-machine`). The
 referenced from `bindings:` follow the rules in §2.5 and must resolve
 in full (`mesh/external-unresolved-names`).
 
-### §2.9 Composition extensions — `<sce:template>` (RFC pending)
+### §2.9 Composition extensions — `<sce:template>` (AOT-only)
 
 `<sce:template>` / `<sce:use>` / `<sce:param>` add parameterised XML
 composition adjacent to XInclude (§2.7). XInclude handles
 byte-identical reuse; `sce:template` handles fragments that differ by
-a small closed set of constants. Spec frozen in
-`claudedocs/rfc-sce-template-sce-param.md` (Phase A: sce-build Rust
-expander; Phase B optional C++ runtime parity per RFC §6.5). Other
-XML meta-processing primitives (parameter entities, conditional
-inclusion, computed attributes, Turing-complete templating) remain out
-of scope — see `ARCHITECTURE.md` → "Scope & Composition" for the
-discipline gate.
+a small closed set of constants. Implemented in sce-build
+(`crate::template::expand`) per RFC §6.5 Phase A; the C++ runtime
+does not expand templates, so documents containing `<sce:use>` are
+accepted only through `sce-codegen` / the AOT pipeline.
+
+Expansion semantics (RFC §3):
+
+- A template declaration is a standalone XML file whose root is
+  `<sce:template name="...">`. Children `<sce:param name="..."
+  required="true"|default="...">` declare parameters; remaining
+  children form the template body.
+- `<sce:use template="relative/path.xml" ...>` at the call site
+  resolves the template file with XInclude precedence
+  (absolute-first, then base-directory, then cwd), binds every
+  non-reserved attribute as a parameter value, and splices the
+  rendered body in place of the `<sce:use>` node. Attributes named
+  `template` are reserved.
+- `{$name}` tokens inside the template body (attribute values and
+  text nodes) are replaced by the parameter's bound string in a
+  single lexical pass. Substitution does not cascade — a bound
+  value that itself contains `{$other}` is emitted verbatim.
+- Nesting is bounded by `MAX_TEMPLATE_DEPTH = 10` (mirrors
+  XInclude). Cycles are detected via the same path-stack mechanism.
+
+Rejections the AOT pipeline hard-errors on: unresolvable template
+path (`xml/template-not-found`), filesystem read failures
+(`xml/template-read-error`, Diagnostic-only), malformed template
+file or malformed `<sce:use>` / `<sce:param>` declarations
+(`xml/template-malformed`), omitted `required="true"` parameter
+(`xml/template-missing-param`, fixable), unknown attribute on
+`<sce:use>` (`xml/template-unknown-param`), cycles
+(`xml/template-cycle`), and depth overflow
+(`xml/template-too-deep`).
+
+Other XML meta-processing primitives (parameter entities,
+conditional inclusion, computed attributes, Turing-complete
+templating) remain out of scope — see `ARCHITECTURE.md` → "Scope &
+Composition" for the discipline gate.
 
 ---
 
@@ -320,7 +351,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (129 codes)
+## Appendix — `DiagnosticCode` index (136 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -350,6 +381,12 @@ Codes that the author can avoid by writing a better SCXML /
 | `xml/xinclude-too-deep` | Xml |
 | `xml/xinclude-malformed` | Xml |
 | `xml/xinclude-unsupported` | Xml |
+| `xml/template-not-found` | Xml |
+| `xml/template-malformed` | Xml |
+| `xml/template-missing-param` | Xml |
+| `xml/template-unknown-param` | Xml |
+| `xml/template-cycle` | Xml |
+| `xml/template-too-deep` | Xml |
 | `validation/missing-element` | Validation |
 | `validation/missing-attribute` | Validation |
 | `validation/invalid-attribute` | Validation |
@@ -464,6 +501,7 @@ or SCE-internal issues.
 | Code | Stage | Reason diagnostic-only |
 |---|---|---|
 | `xml/xinclude-read-error` | Xml | Filesystem read failure on an `<xi:include>` target |
+| `xml/template-read-error` | Xml | Filesystem read failure on a `<sce:use>` template target |
 | `import/read-error` | Import | Filesystem read failure on imported file |
 | `manifest/io` | Manifest | Filesystem failure during manifest resolution |
 | `generate/invalid-config` | Generate | SCE-internal codegen config |

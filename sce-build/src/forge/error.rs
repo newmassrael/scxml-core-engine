@@ -140,6 +140,15 @@ pub enum XmlError {
     /// document.
     #[error(transparent)]
     XInclude(#[from] crate::xinclude::XIncludeError),
+
+    /// `<sce:use>` / `<sce:template>` preprocessing failure. AOT-only
+    /// expansion per RFC §6.5 Phase A — the C++ runtime does not
+    /// implement template expansion, so documents containing
+    /// `<sce:use>` are accepted only through `sce-build`. Raised by
+    /// [`crate::template::expand`] immediately after XInclude so
+    /// templates see a post-XInclude document.
+    #[error(transparent)]
+    Template(#[from] crate::template::TemplateError),
 }
 
 // ── Stage 3: Semantic validation ───────────────────────────────

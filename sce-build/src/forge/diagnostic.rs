@@ -288,6 +288,27 @@ pub enum DiagnosticCode {
     XmlXIncludeMalformed,
     #[serde(rename = "xml/xinclude-unsupported")]
     XmlXIncludeUnsupported,
+    // ── sce:template preprocessing (AOT-only, RFC §6.5 Phase A).
+    //    Split by repair shape: missing-param gets a deterministic
+    //    add_attribute fix, unknown-param lists declared names so
+    //    agents can correct the typo, cycle / too-deep indicate
+    //    structural chain problems, malformed points at the
+    //    template file (or the `<sce:use>` call site for usage
+    //    errors), not-found / read-error are filesystem-level. ──
+    #[serde(rename = "xml/template-not-found")]
+    XmlTemplateNotFound,
+    #[serde(rename = "xml/template-read-error")]
+    XmlTemplateReadError,
+    #[serde(rename = "xml/template-malformed")]
+    XmlTemplateMalformed,
+    #[serde(rename = "xml/template-missing-param")]
+    XmlTemplateMissingParam,
+    #[serde(rename = "xml/template-unknown-param")]
+    XmlTemplateUnknownParam,
+    #[serde(rename = "xml/template-cycle")]
+    XmlTemplateCycle,
+    #[serde(rename = "xml/template-too-deep")]
+    XmlTemplateTooDeep,
 
     #[serde(rename = "validation/missing-element")]
     ValidationMissingElement,
@@ -589,6 +610,13 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         XmlXIncludeTooDeep,
         XmlXIncludeMalformed,
         XmlXIncludeUnsupported,
+        XmlTemplateNotFound,
+        XmlTemplateReadError,
+        XmlTemplateMalformed,
+        XmlTemplateMissingParam,
+        XmlTemplateUnknownParam,
+        XmlTemplateCycle,
+        XmlTemplateTooDeep,
         // Validation
         ValidationMissingElement,
         ValidationMissingAttribute,
@@ -901,6 +929,13 @@ impl DiagnosticCode {
             | XmlXIncludeTooDeep
             | XmlXIncludeMalformed
             | XmlXIncludeUnsupported
+            | XmlTemplateNotFound
+            | XmlTemplateReadError
+            | XmlTemplateMalformed
+            | XmlTemplateMissingParam
+            | XmlTemplateUnknownParam
+            | XmlTemplateCycle
+            | XmlTemplateTooDeep
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
@@ -978,6 +1013,13 @@ impl DiagnosticCode {
             XmlXIncludeTooDeep => "xml/xinclude-too-deep",
             XmlXIncludeMalformed => "xml/xinclude-malformed",
             XmlXIncludeUnsupported => "xml/xinclude-unsupported",
+            XmlTemplateNotFound => "xml/template-not-found",
+            XmlTemplateReadError => "xml/template-read-error",
+            XmlTemplateMalformed => "xml/template-malformed",
+            XmlTemplateMissingParam => "xml/template-missing-param",
+            XmlTemplateUnknownParam => "xml/template-unknown-param",
+            XmlTemplateCycle => "xml/template-cycle",
+            XmlTemplateTooDeep => "xml/template-too-deep",
             ValidationMissingElement => "validation/missing-element",
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
@@ -1264,6 +1306,7 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
 }
 
 fn xml_fields(e: &XmlError) -> DiagnosticPayload {
+    use crate::template::TemplateError;
     use crate::xinclude::XIncludeError;
     match e {
         XmlError::Parse(detail) => DiagnosticPayload {
@@ -1346,6 +1389,78 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             actual: Some((*feature).to_string()),
             fix: None,
             key_fragments: vec![href.clone(), feature.to_string()],
+        },
+        // `sce:template` failure modes. Parallel to XInclude: the
+        // leaf variant drives the code so agents can dispatch
+        // without parsing text; `actual` carries the offending
+        // template path (or parameter name, for the param-shaped
+        // variants) so repair bots can act without re-parsing the
+        // message; `key_fragments` tie into the `id` hash.
+        XmlError::Template(TemplateError::NotFound {
+            template,
+            searched,
+        }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlTemplateNotFound,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(template.clone()),
+            fix: None,
+            key_fragments: vec![template.clone(), searched.clone()],
+        },
+        XmlError::Template(TemplateError::ReadError { template, .. }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlTemplateReadError,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(template.clone()),
+            fix: None,
+            key_fragments: vec![template.clone()],
+        },
+        XmlError::Template(TemplateError::Malformed { template, detail }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlTemplateMalformed,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(template.clone()),
+            fix: None,
+            key_fragments: vec![template.clone(), detail.clone()],
+        },
+        XmlError::Template(TemplateError::MissingParam { template, param }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlTemplateMissingParam,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(param.clone()),
+            fix: Some(Fix::AddAttribute {
+                element: "sce:use".to_string(),
+                attr: param.clone(),
+            }),
+            key_fragments: vec![template.clone(), param.clone()],
+        },
+        XmlError::Template(TemplateError::UnknownParam {
+            template,
+            param,
+            declared,
+        }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlTemplateUnknownParam,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(param.clone()),
+            fix: None,
+            key_fragments: vec![template.clone(), param.clone(), declared.clone()],
+        },
+        XmlError::Template(TemplateError::Cycle { template, chain }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlTemplateCycle,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(template.clone()),
+            fix: None,
+            key_fragments: vec![template.clone(), chain.clone()],
+        },
+        XmlError::Template(TemplateError::TooDeep { limit }) => DiagnosticPayload {
+            code: DiagnosticCode::XmlTemplateTooDeep,
+            stage: Stage::Xml,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![limit.to_string()],
         },
     }
 }
@@ -2534,6 +2649,75 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:76b67406e28c984e","code":"xml/xinclude-unsupported","stage":"xml","message":"<xi:include href=\"frag.xml\">: unsupported feature: parse=\"text\" (only parse=\"xml\" is supported)","actual":"parse=\"text\" (only parse=\"xml\" is supported)"}"#,
             ),
+            // sce:template preprocessing variants. Each distinct
+            // repair shape (missing-param → add_attribute, cycle /
+            // too-deep → structural, not-found / read-error →
+            // filesystem, malformed / unknown-param → content)
+            // rides its own golden so byte-stability drift reveals
+            // the specific variant.
+            (
+                "forge/template-not-found",
+                XmlError::Template(crate::template::TemplateError::NotFound {
+                    template: "guard.sce-template.xml".into(),
+                    searched: "/project/src/guard.sce-template.xml".into(),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8908a8dea70619f7","code":"xml/template-not-found","stage":"xml","message":"<sce:use template=\"guard.sce-template.xml\">: file not found (searched: /project/src/guard.sce-template.xml)","actual":"guard.sce-template.xml"}"#,
+            ),
+            (
+                "forge/template-read-error",
+                XmlError::Template(crate::template::TemplateError::ReadError {
+                    template: "guard.sce-template.xml".into(),
+                    source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:51f1b394ed4bd273","code":"xml/template-read-error","stage":"xml","message":"<sce:use template=\"guard.sce-template.xml\">: cannot read: permission denied","actual":"guard.sce-template.xml"}"#,
+            ),
+            (
+                "forge/template-malformed",
+                XmlError::Template(crate::template::TemplateError::Malformed {
+                    template: "bad.sce-template.xml".into(),
+                    detail: "root element must be <sce:template>, got <not-a-template>".into(),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:94db895eb4789a8d","code":"xml/template-malformed","stage":"xml","message":"<sce:use template=\"bad.sce-template.xml\">: template is malformed: root element must be <sce:template>, got <not-a-template>","actual":"bad.sce-template.xml"}"#,
+            ),
+            (
+                "forge/template-missing-param",
+                XmlError::Template(crate::template::TemplateError::MissingParam {
+                    template: "guard.sce-template.xml".into(),
+                    param: "port".into(),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:58b212f0a042eeea","code":"xml/template-missing-param","stage":"xml","message":"<sce:use template=\"guard.sce-template.xml\">: missing required parameter 'port'","actual":"port","fix":{"kind":"add_attribute","element":"sce:use","attr":"port"}}"#,
+            ),
+            (
+                "forge/template-unknown-param",
+                XmlError::Template(crate::template::TemplateError::UnknownParam {
+                    template: "guard.sce-template.xml".into(),
+                    param: "typo".into(),
+                    declared: "port, proto".into(),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6f7f0531e1ab2dad","code":"xml/template-unknown-param","stage":"xml","message":"<sce:use template=\"guard.sce-template.xml\">: unknown parameter 'typo' (declared: port, proto)","actual":"typo"}"#,
+            ),
+            (
+                "forge/template-cycle",
+                XmlError::Template(crate::template::TemplateError::Cycle {
+                    template: "a.sce-template.xml".into(),
+                    chain: "/a.sce-template.xml → /b.sce-template.xml → /a.sce-template.xml".into(),
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9cbb70932a16f657","code":"xml/template-cycle","stage":"xml","message":"<sce:use template=\"a.sce-template.xml\">: cycle detected (/a.sce-template.xml → /b.sce-template.xml → /a.sce-template.xml)","actual":"a.sce-template.xml"}"#,
+            ),
+            (
+                "forge/template-too-deep",
+                XmlError::Template(crate::template::TemplateError::TooDeep {
+                    limit: crate::template::MAX_TEMPLATE_DEPTH,
+                })
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b3b0c2c9723a4ca2","code":"xml/template-too-deep","stage":"xml","message":"<sce:use> template nesting exceeds depth limit of 10"}"#,
+            ),
         ]
     }
 
@@ -3580,6 +3764,13 @@ mod tests {
             | XmlXIncludeTooDeep
             | XmlXIncludeMalformed
             | XmlXIncludeUnsupported
+            | XmlTemplateNotFound
+            | XmlTemplateReadError
+            | XmlTemplateMalformed
+            | XmlTemplateMissingParam
+            | XmlTemplateUnknownParam
+            | XmlTemplateCycle
+            | XmlTemplateTooDeep
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationDuplicateId
@@ -3903,6 +4094,9 @@ mod tests {
                 | XmlXIncludeMissingHref | XmlXIncludeNotFound | XmlXIncludeReadError
                 | XmlXIncludeCycle | XmlXIncludeTooDeep | XmlXIncludeMalformed
                 | XmlXIncludeUnsupported
+                | XmlTemplateNotFound | XmlTemplateReadError | XmlTemplateMalformed
+                | XmlTemplateMissingParam | XmlTemplateUnknownParam
+                | XmlTemplateCycle | XmlTemplateTooDeep
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationUnsupportedKind | ValidationDuplicateId
@@ -3996,9 +4190,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            132,
+            139,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 132 distinct variants to match the DiagnosticCode \
+             expected 139 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

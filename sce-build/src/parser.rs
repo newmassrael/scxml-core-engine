@@ -147,7 +147,7 @@ impl SCXMLParser {
         // before XSD validation so the schema validator sees the
         // expanded document — sce:* extensions can then live in
         // included fragments without losing validation.
-        let expanded = crate::xinclude::expand(&content, scxml_path, base_dir.as_deref())
+        let included = crate::xinclude::expand(&content, scxml_path, base_dir.as_deref())
             .map_err(|(err, loc)| {
                 use crate::forge::error::{ForgeError, Located, XmlError};
                 Located::new(
@@ -157,6 +157,23 @@ impl SCXMLParser {
                     Some(loc.col),
                 )
             })?;
+
+        // `sce:template` expansion runs immediately after XInclude
+        // so templates see a post-XInclude document. RFC §7 Phase A:
+        // AOT-only — the C++ runtime does not implement templates,
+        // so `<sce:use>` documents compile only through sce-build.
+        let expanded =
+            crate::template::expand(&included, scxml_path, base_dir.as_deref()).map_err(
+                |(err, loc)| {
+                    use crate::forge::error::{ForgeError, Located, XmlError};
+                    Located::new(
+                        ForgeError::Xml(XmlError::Template(err)),
+                        scxml_path,
+                        Some(loc.row),
+                        Some(loc.col),
+                    )
+                },
+            )?;
 
         self.parse_impl(
             &expanded,
