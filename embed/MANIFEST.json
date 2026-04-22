@@ -1,23 +1,15 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "7a7f77df",
+  "embed_version": "5a657ecc",
   "non_self_contained_headers": [
-    "core/AOTEventQueue.h",
-    "core/EntryExitHelper.h",
-    "core/EventQueueManager.h",
-    "core/HistoryHelper.h",
     "core/ParallelStateAdapters.h",
-    "core/StateEntryHelper.h",
-    "events/EventRaiserService.h",
     "events/HttpEventCoordinator.h",
     "events/HttpEventTarget.h",
-    "runtime/HistoryManager.h",
-    "runtime/HistoryValidator.h",
     "runtime/InterpreterInvokeManager.h",
     "runtime/StateMachineBindObject.h"
   ],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 189,
+  "symbol_count": 188,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -966,25 +958,6 @@
         "method HistoryRestorationResult (const std::vector<std::string> &, bool) createSuccess",
         "method void () noexcept HistoryRestorationResult",
         "method void () noexcept ~HistoryRestorationResult",
-        "method void (HistoryRestorationResult &&) noexcept HistoryRestorationResult",
-        "method void (const HistoryRestorationResult &) HistoryRestorationResult"
-      ],
-      "name": "SCE::HistoryRestorationResult"
-    },
-    {
-      "header": "runtime/HistoryManager.h",
-      "kind": "struct",
-      "members": [
-        "field bool isRestoredFromRecording",
-        "field bool success",
-        "field std::string errorMessage",
-        "field std::vector<std::string> targetStateIds",
-        "method HistoryRestorationResult &(HistoryRestorationResult &&) operator=",
-        "method HistoryRestorationResult &(const HistoryRestorationResult &) operator=",
-        "method HistoryRestorationResult (const std::string &) createError",
-        "method HistoryRestorationResult (const std::vector<std::string> &, bool) createSuccess",
-        "method void () noexcept HistoryRestorationResult",
-        "method void () ~HistoryRestorationResult",
         "method void (HistoryRestorationResult &&) noexcept HistoryRestorationResult",
         "method void (const HistoryRestorationResult &) HistoryRestorationResult"
       ],
