@@ -111,7 +111,7 @@ private:
      */
     std::string createJsonPayload(const EventDescriptor &event) const;
 
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && defined(SCE_ENABLE_HTTP)
     /**
      * @brief Create HTTP client for the target (Native only)
      *

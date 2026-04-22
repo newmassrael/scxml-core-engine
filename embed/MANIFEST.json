@@ -1,9 +1,7 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "906c58d7",
+  "embed_version": "6e371c64",
   "non_self_contained_headers": [
-    "events/HttpEventCoordinator.h",
-    "events/HttpEventTarget.h",
     "runtime/InterpreterInvokeManager.h"
   ],
   "schema": "sce-embed-manifest.v1",
