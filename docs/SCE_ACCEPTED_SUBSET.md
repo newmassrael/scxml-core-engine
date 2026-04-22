@@ -286,6 +286,24 @@ omitted `required="true"` parameter
 (`xml/template-cycle`), and depth overflow
 (`xml/template-too-deep`).
 
+Post-expansion diagnostic attribution (RFC §6.3 Q3 depth-1 rule, as
+implemented by `crate::position_map::Origin::CallSite` and
+`Origin::File` emitted during `template::expand`):
+
+- When a diagnostic fires in bytes produced by `{$param}`
+  substitution, `location.{file, row, col}` points at the offending
+  `<sce:param>` element in the **caller document** — not at the
+  parent `<sce:use>`, and not inside the substituted value.
+  Column precision inside the substituted value is deliberately
+  collapsed (every byte of the substituted region shares the
+  `<sce:param>`'s (row, col)).
+- When a diagnostic fires in template-body bytes (regions copied
+  1:1 from the template file during expansion, i.e. not produced
+  by `{$param}` substitution), `location.{file, row, col}` points
+  at the template file's own (row, col). This lets template authors
+  navigate to the body they wrote rather than to a caller that did
+  nothing wrong.
+
 Other XML meta-processing primitives (parameter entities,
 conditional inclusion, computed attributes, Turing-complete
 templating) remain out of scope — see `ARCHITECTURE.md` → "Scope &
