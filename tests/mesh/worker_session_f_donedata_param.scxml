@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.2 wire-18 donedata verification — param branch.
+
+     The worker's only state is a top-level `<final>` carrying a
+     `<donedata>` payload built from a single `<param>`. Per W3C SCXML
+     5.5, the Processor evaluates the param list into a name/value
+     object and places the result on `_event.data` of the synthesized
+     `done.invoke.<id>` event.
+
+     On the worker side, `entry_exit_actions.jinja2` calls
+     `DoneDataHelper::evaluateParams` and stashes the JSON payload onto
+     the engine via `stashDonedataAtFinal`. `ChildSessionAdapter::getDonedata`
+     reads it back; `emitWire18` ships the bytes to the parent; the
+     parent's `onInvokeDone` threads them into
+     `done.invoke.inv_param._event.data`. The parent's cond guard
+     (`_event.data.result == 42`) proves the round-trip preserved
+     both the name and the typed value. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="lua" initial="done"
+       name="worker_session_f_donedata_param">
+    <final id="done">
+        <donedata>
+            <param name="result" expr="42"/>
+        </donedata>
+    </final>
+</scxml>

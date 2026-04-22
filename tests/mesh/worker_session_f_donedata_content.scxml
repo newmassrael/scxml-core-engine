@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.2 wire-18 donedata verification — content branch.
+
+     Complements `worker_session_f_donedata_param` by exercising the
+     `<content expr="..."/>` branch of `DoneDataHelper::evaluateContent`:
+     the evaluated expression becomes the full `_event.data` value (not
+     a name/value object). The parent's cond guard (`_event.data ==
+     'hello_content'`) verifies that the content-expression branch of
+     the donedata pipeline wires identically through wire-18 —
+     same stash, same publish, same parent `setPolicyMetadata` hydration
+     via `EventDataHelper::jsonStringToScriptValue`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="lua" initial="done"
+       name="worker_session_f_donedata_content">
+    <final id="done">
+        <donedata>
+            <content expr="'hello_content'"/>
+        </donedata>
+    </final>
+</scxml>

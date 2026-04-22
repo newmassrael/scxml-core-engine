@@ -447,8 +447,15 @@
 
                     AOT_DEBUG("Final state {{ state_id }} reached with event data: {}", eventData);
 {% if not state.parent %}
+                    // W3C SCXML 5.5 + 6.3.1: top-level `<final>` — no `done.state.<parent>`
+                    // emission will consume `eventData`/`typedData`, so stash onto the
+                    // engine for the invoke completion consumers (local invoke callback
+                    // in `invoke_methods.jinja2`; SCE Mesh §9.6.2 wire-18 publish via
+                    // `ChildSessionAdapter::getDonedata`). Shared single source of
+                    // truth — `stashDonedataAtFinal` is defined on
+                    // `StaticExecutionEngine` base.
+                    engine.stashDonedataAtFinal(std::move(eventData), std::move(typedData));
                 }  // W3C SCXML 5.5: close donedata scope for top-level final
-                   // (no `done.state.<parent>` emission follows to consume eventData/typedData).
 {% endif %}
 {% endif %}
 {% if state.is_final and state.parent %}

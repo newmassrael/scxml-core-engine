@@ -1,0 +1,19 @@
+# SCE Mesh §9.6.2 wire-18 donedata fixture.
+#
+# Three machines on one device. The parent sequentially invokes two
+# workers: one that donedata-s a `<param>`, one that donedata-s a
+# `<content expr>`. Both peers are remote invoke targets of the parent
+# so their codegen hits `is_remote_invoke_target=true` and their
+# top-level `<final>` entry stashes the evaluated payload via
+# `StaticExecutionEngine::stashDonedataAtFinal`, which
+# `ChildSessionAdapter::getDonedata()` reads for the wire-18 publish.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_session_f_donedata:
+        source: parent_session_f_donedata.scxml
+      worker_session_f_donedata_param:
+        source: worker_session_f_donedata_param.scxml
+      worker_session_f_donedata_content:
+        source: worker_session_f_donedata_content.scxml

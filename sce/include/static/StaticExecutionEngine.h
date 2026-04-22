@@ -523,6 +523,17 @@ private:
     std::string currentEventInvokeId_;  // SCE Mesh §9.5: invokeId of event being processed
     SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
+    // W3C SCXML 5.5 + 6.3.1: donedata payload stashed at top-level <final> entry.
+    // Consumed by:
+    //   - local invoke completion callback (invoke_methods.jinja2) to populate
+    //     `done.invoke.<id>._event.data`;
+    //   - SCE Mesh ChildSessionAdapter::getDonedata() (§9.6.2 wire-18) to carry
+    //     the payload to the parent peer.
+    // Shared single source of truth — no local vs remote divergence. Empty
+    // string / nullopt when the top-level final had no `<donedata>` child.
+    std::string pendingDonedataAtFinal_;
+    std::optional<ScriptValue> pendingTypedDonedataAtFinal_;
+
 protected:
     StatePolicy policy_;  // Policy instance for stateful policies
 
@@ -1156,6 +1167,39 @@ public:
     bool isGlobalFinalState() const {
         return StatePolicy::isFinalState(currentState_) &&
                !StatePolicy::getParent(currentState_).has_value();
+    }
+
+    /**
+     * @brief Stash donedata evaluated at top-level `<final>` entry
+     *        (W3C SCXML 5.5 + 6.3.1).
+     *
+     * Called by generated entry actions (`entry_exit_actions.jinja2`) after
+     * `DoneDataHelper::evaluateParams` / `evaluateContent` / `emitContentLiteral`
+     * has produced the payload for the reached top-level `<final>`. Shared
+     * between the local invoke completion path (read by
+     * `invoke_methods.jinja2`'s completionCallback to populate
+     * `done.invoke.<id>._event.data`) and the SCE Mesh worker (read by
+     * `ChildSessionAdapter::getDonedata()` to ship wire-18 per §9.6.2). Called
+     * at most once per invocation — the final state is terminal.
+     */
+    void stashDonedataAtFinal(std::string data, std::optional<ScriptValue> typedData) {
+        pendingDonedataAtFinal_ = std::move(data);
+        pendingTypedDonedataAtFinal_ = std::move(typedData);
+    }
+
+    /// W3C SCXML 5.5 + 6.3.1: JSON/literal string payload from the reached
+    /// top-level `<final>`'s `<donedata>`. Empty when no donedata was authored
+    /// or the machine has not reached a top-level final yet. Consumed by both
+    /// local invoke completion and SCE Mesh §9.6.2 wire-18.
+    const std::string& donedataAtFinal() const { return pendingDonedataAtFinal_; }
+
+    /// W3C SCXML 5.5 + B.2: Structured donedata (engine-agnostic ScriptValue)
+    /// paired with `donedataAtFinal()`. `setPolicyMetadata` consumes this to
+    /// populate `_event.data` without a JSON round-trip when the child is
+    /// local; on the wire-18 path the parent's `setPolicyMetadata` re-parses
+    /// `data` via `EventDataHelper::jsonStringToScriptValue`.
+    const std::optional<ScriptValue>& typedDonedataAtFinal() const {
+        return pendingTypedDonedataAtFinal_;
     }
 
     /**

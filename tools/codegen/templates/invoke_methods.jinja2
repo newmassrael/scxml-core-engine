@@ -147,13 +147,20 @@
                             // Mark as completed (for Cancel_invoke logic - test 236)
                             pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
 
-                            // W3C SCXML 6.3.1: Create done.invoke event with invokeId via EventMetadataHelper
+                            // W3C SCXML 5.5 + 6.3.1: lift the child's donedata payload onto
+                            // `done.invoke.<id>._event.data` — stashed on the child engine at
+                            // top-level `<final>` entry by `entry_exit_actions.jinja2` via
+                            // `stashDonedataAtFinal`. typedData is forwarded in-process to
+                            // skip the JSON round-trip; the mesh §9.6.2 wire-18 path instead
+                            // rebuilds typedData from `data` bytes on the parent side.
                             // ARCHITECTURE.md Zero Duplication: Single Source of Truth for event metadata
                             // Send done.invoke to external queue (matches Interpreter event ordering)
                             self_->raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
                                 typename SelfType::Event, typename SelfType::EventWithMetadata>(
                                 {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
-                                "{{ invoke_info.invoke_id }}"
+                                "{{ invoke_info.invoke_id }}",
+                                child_{{ invoke_info.field_suffix }}_->donedataAtFinal(),
+                                child_{{ invoke_info.field_suffix }}_->typedDonedataAtFinal()
                             ));
                         });
 
@@ -221,10 +228,16 @@
                         child_{{ invoke_info.field_suffix }}_->setCompletionCallback([this]() {
                             AOT_DEBUG("Hybrid child {{ invoke_info.invoke_id }} completed, sending done.invoke");
                             pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
+                            // W3C SCXML 5.5 + 6.3.1: lift the hybrid child's donedata payload
+                            // onto `done.invoke.<id>._event.data`. Same single-source stash as
+                            // the scxml local path — `stashDonedataAtFinal` on
+                            // `StaticExecutionEngine` — so the hybrid consumer stays identical.
                             self_->raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
                                 typename SelfType::Event, typename SelfType::EventWithMetadata>(
                                 {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
-                                "{{ invoke_info.invoke_id }}"
+                                "{{ invoke_info.invoke_id }}",
+                                child_{{ invoke_info.field_suffix }}_->donedataAtFinal(),
+                                child_{{ invoke_info.field_suffix }}_->typedDonedataAtFinal()
                             ));
                         });
 
@@ -398,10 +411,12 @@
 
     // SCE_MESH.md §9.6.2 wire-18 consumer — child reached <final>. Raise
     // the W3C `done.invoke.<id>` event and set the pending flag so the
-    // paired onexit cancel suppresses a redundant wire-19. Donedata
-    // surfacing is deferred to a later landing (IChildSession::getDonedata
-    // returns empty) — the envelope's `data` field is forwarded verbatim
-    // in the meantime.
+    // paired onexit cancel suppresses a redundant wire-19. The envelope's
+    // `data` bytes carry the child's `<donedata>` payload (W3C SCXML 5.5,
+    // JSON-encoded by `DoneDataHelper` on the worker); we thread it onto
+    // `_event.data` so `done.invoke.<id>` parity with the local-invoke
+    // path is byte-for-byte. `typedData` is left unset — the parent's
+    // `setPolicyMetadata` hydrates it via `jsonStringToScriptValue`.
     template <typename Engine>
     void onInvokeDone(const ::SCE::Mesh::MeshEnvelope& env, Engine& engine) {
         if (!env.subject) {
@@ -416,9 +431,9 @@
             engine.raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
                 typename Engine::Event, typename Engine::EventWithMetadata>(
                 {% if invoke_info.use_specific_event %}Engine::Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Engine::Event::Done_invoke{% endif %},
-                "{{ invoke_info.invoke_id }}"
+                "{{ invoke_info.invoke_id }}",
+                donedata
             ));
-            (void)donedata;  // donedata surfacing on done.invoke.data is a follow-up
             // W3C §6.4.4/§6.4.5 + SCE_MESH.md §9.6.3: do NOT erase activeInvokes_
             // here. The entry must survive so any ChildEvent (wire-16) that
             // reached the external queue earlier in the same drain as this

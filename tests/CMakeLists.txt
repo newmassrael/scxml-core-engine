@@ -2199,6 +2199,101 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_test(NAME mesh_session_f_cancel
              COMMAND mesh_session_f_cancel_test)
 
+    # ── SCE_MESH §9.6.2 wire-18 donedata (W3C SCXML 5.5 / 6.3.1) ──
+    # Three machines: parent sequentially invokes one worker whose
+    # `<donedata>` is a `<param>` and a second worker whose `<donedata>`
+    # is a `<content expr>`. Closes the c06fae17 deferral
+    # (`ChildSessionAdapter::getDonedata()` previously returned empty)
+    # and the f3aa83ba `(void)donedata;` marker in the wire-18 receive
+    # branch. Both branches round-trip through
+    # `StaticExecutionEngine::stashDonedataAtFinal` on the worker engine
+    # and `EventDataHelper::jsonStringToScriptValue` on the parent.
+    set(MESH_SESSION_F_DONEDATA_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_donedata_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
+               "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
+                -l cpp -o "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+                --write-deps "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h.d"
+        COMMENT "Mesh §9.6.2 donedata: Generating parent_session_f_donedata_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
+               "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
+                -l cpp -o "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+                --write-deps "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h.d"
+        COMMENT "Mesh §9.6.2 donedata: Generating worker_session_f_donedata_param_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
+               "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                -l cpp -o "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+                --write-deps "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h.d"
+        COMMENT "Mesh §9.6.2 donedata: Generating worker_session_f_donedata_content_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_session_f_donedata_test
+        mesh/test_mesh_session_f_donedata.cpp
+        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
+        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h"
+        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
+        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
+        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
+        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
+    )
+
+    target_include_directories(mesh_session_f_donedata_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_session_f_donedata_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_session_f_donedata_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_session_f_donedata_test)
+
+    add_test(NAME mesh_session_f_donedata
+             COMMAND mesh_session_f_donedata_test)
+
     # ── SCE_MESH §9.5 srcexpr compile verification ──────────────
     # Forces the srcexpr `{% if invoke_info.srcexpr %}` branches in
     # entry_exit_actions.jinja2 + state_machine.jinja2 to render and

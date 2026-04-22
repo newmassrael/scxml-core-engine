@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.2 wire-18 donedata — parent driver.
+
+     Verifies that the W3C SCXML 5.5 / 6.3.1 donedata payload survives
+     the wire-18 round-trip for BOTH donedata flavors:
+
+       phase_param   — worker returns `<param name="result" expr="42"/>`;
+                        parent cond `_event.data.result == 42` asserts
+                        that the name survived and the expression value
+                        re-hydrated as the expected Lua number.
+       phase_content — worker returns `<content expr="'hello_content'"/>`;
+                        parent cond `_event.data == 'hello_content'`
+                        asserts that the content-expression branch
+                        serialises as a JSON string and re-parses into
+                        a Lua string on the parent side.
+
+     Failure modes:
+       - `_event.data` empty → the stash / getDonedata / emitWire18 /
+         onInvokeDone chain dropped the payload somewhere;
+       - name missing (`result == nil`) → JSON param envelope broken;
+       - wrong type (`_event.data.result == "42"` as string) →
+         typedData hydration regressed.
+     Any fall-through done.invoke without the matching cond takes the
+     `fail` transition so regressions surface as a deterministic fail
+     rather than a 5s timeout. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="lua" initial="phase_param"
+       name="parent_session_f_donedata">
+    <datamodel>
+        <data id="param_ok" expr="false"/>
+    </datamodel>
+    <state id="phase_param">
+        <invoke type="scxml" src="#worker_session_f_donedata_param" id="inv_param"/>
+        <transition event="done.invoke.inv_param"
+                    cond="_event.data ~= nil and _event.data.result == 42"
+                    target="phase_content">
+            <assign location="param_ok" expr="true"/>
+        </transition>
+        <transition event="done.invoke.inv_param" target="fail"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <state id="phase_content">
+        <invoke type="scxml" src="#worker_session_f_donedata_content" id="inv_content"/>
+        <transition event="done.invoke.inv_content"
+                    cond="param_ok and _event.data == 'hello_content'"
+                    target="pass"/>
+        <transition event="done.invoke.inv_content" target="fail"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

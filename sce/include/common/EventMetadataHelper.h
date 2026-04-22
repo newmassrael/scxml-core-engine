@@ -19,8 +19,10 @@
 #include "SCXMLTypes.h"
 #include "common/EventDataHelper.h"
 #include "core/StatePolicyConcepts.h"
+#include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 // Forward declaration to avoid circular dependency
 namespace SCE::Static {
@@ -322,7 +324,7 @@ public:
     template <typename EventEnum, typename MetadataType>
     static MetadataType createDoneInvokeEvent(EventEnum event, const std::string &invokeId) {
         return MetadataType(event,     // event - W3C SCXML 6.3.1: done.invoke or done.invoke.id
-                            "",        // data - empty for basic done.invoke (donedata handled separately)
+                            "",        // data - empty (no donedata from child)
                             "",        // origin - empty (child completion doesn't specify origin)
                             "",        // sendId - empty (not a send event)
                             "",        // type - empty (internal event, not external)
@@ -330,6 +332,47 @@ public:
                             invokeId,  // invokeId - W3C SCXML 6.3.1: _event.invokeid field
                             ""         // target - empty (not a send event)
         );
+    }
+
+    /**
+     * @brief W3C SCXML 5.5 + 6.3.1: Create done.invoke event carrying donedata
+     *
+     * Overload of `createDoneInvokeEvent` that surfaces the child's
+     * `<donedata>` payload on `_event.data` of the synthesized
+     * `done.invoke.<id>` event. W3C SCXML 5.5: the Processor MUST evaluate
+     * donedata `<param>` / `<content>` children and place the resulting
+     * data in `_event.data`; §6.3.1 pairs this with `_event.invokeid`.
+     *
+     * Shared across:
+     *   - local invoke completion callback (`invoke_methods.jinja2`
+     *     `setCompletionCallback`), which reads the child's
+     *     `donedataAtFinal()` / `typedDonedataAtFinal()`;
+     *   - SCE Mesh §9.6.2 wire-18 consumer (`onInvokeDone`), which rebuilds
+     *     the payload from the envelope's `data` bytes — `typedData` left
+     *     empty so `setPolicyMetadata` re-parses via
+     *     `EventDataHelper::jsonStringToScriptValue`.
+     *
+     * @param typedData Structured payload for the local path (avoids a JSON
+     *                  round-trip when the child engine is in-process). Pass
+     *                  `std::nullopt` on the wire path — the parent's
+     *                  `setPolicyMetadata` hydrates `typedData` from `data`.
+     */
+    template <typename EventEnum, typename MetadataType>
+    static MetadataType createDoneInvokeEvent(EventEnum event,
+                                              const std::string &invokeId,
+                                              const std::string &data,
+                                              std::optional<ScriptValue> typedData = std::nullopt) {
+        MetadataType metadata(event,     // event - W3C SCXML 6.3.1
+                              data,      // data - W3C SCXML 5.5 donedata payload
+                              "",        // origin
+                              "",        // sendId
+                              "",        // type
+                              "",        // originType
+                              invokeId,  // invokeId - W3C SCXML 6.3.1
+                              ""         // target
+        );
+        metadata.typedData = std::move(typedData);
+        return metadata;
     }
 };
 
