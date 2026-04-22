@@ -64,6 +64,16 @@ private:
     bool processXIncludeRecursive(pugi::xml_node node, int depth = 0);
     std::string resolveFilePath(const std::string &href) const;
 
+    // Expand a single `<sce:use>` node in place. Loads the template
+    // file, validates params against the caller's attribute set,
+    // substitutes `{$name}` tokens in the cloned body, and splices
+    // the result into the caller parent before removing the original
+    // `<sce:use>`. Throws `SCE::parsing::TemplateError` (or one of
+    // its subtypes) on any failure — callers plumb the exception up
+    // through `processSceTemplate` for `SCXMLParser::parseFile` to
+    // convert into `addError` messages.
+    void expandSceUse(pugi::xml_node useNode);
+
     std::shared_ptr<pugi::xml_document> doc_;
     std::string errorMessage_;
     std::string basePath_;
