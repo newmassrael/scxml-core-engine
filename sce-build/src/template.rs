@@ -1380,6 +1380,84 @@ mod tests {
         assert!(!is_valid_param_name("port.dot"));
     }
 
+    #[test]
+    fn template_expand_empty_result_does_not_panic() {
+        // Drift guard for the contract "`expand` always returns a
+        // PositionMap on which `lookup` can safely be called".
+        // `PositionMap::lookup` panics on a zero-entry map (see the
+        // `!self.entries.is_empty()` assertion) and `is_identity()`
+        // does *not* short-circuit the empty case because it
+        // requires `entries.len() == 1`. So the contract reduces to
+        // "expand never returns an empty map".
+        //
+        // The combinatorial worry is the splice path inside
+        // `expand_impl`: it constructs `out_map` from contiguous
+        // entries — prefix region, then per-`<sce:use>` body splice,
+        // then tail. If the inputs were arranged so that no prefix
+        // (first `<sce:use>` at byte 0), no body entries (template
+        // has only `<sce:param>` declarations →
+        // `extract_template_body_ranges` returns `[]`), and no tail
+        // (last `<sce:use>` ends at `content.len()`) all held at
+        // once, `out_map` would land at zero entries.
+        //
+        // This test exercises that combination by making `<sce:use>`
+        // both the document root and the entire content, with a
+        // body-less template. As of 2026-04-22 the path is
+        // *unreachable* from any well-formed XML: `collect_uses`
+        // walks `root.children()`, so when `<sce:use>` is itself the
+        // root it is never collected and the splice loop never runs;
+        // `expand_impl` short-circuits at the `uses.is_empty()`
+        // branch and hands back `input_map.clone()`. Any legal
+        // multi-`sce:use` arrangement still has root-element open /
+        // close tags as prefix and tail bytes, so prefix + tail
+        // entries always exist. The empty-`out_map` panic path can
+        // therefore only be reached by a future change that either
+        // promotes a root-level `<sce:use>` into the splice loop or
+        // changes how surrounding bytes are accounted for.
+        //
+        // Per `feedback_green_tests_not_correct.md` a panic on user
+        // input is a real defect even when masked by upstream
+        // parser behaviour, so this test stays in place to catch
+        // such a regression at the producer rather than waiting for
+        // a downstream `lookup` call to surface it.
+        let tmp = TempDir::new().unwrap();
+        let tpl = write(
+            tmp.path(),
+            "empty.sce-template.xml",
+            r#"<sce:template xmlns:sce="http://sce.dev/ext" name="empty">
+  <sce:param name="x" default=""/>
+</sce:template>"#,
+        );
+        let main_src = format!(
+            r#"<sce:use xmlns:sce="http://sce.dev/ext" template="{}"/>"#,
+            tpl.file_name().unwrap().to_str().unwrap()
+        );
+        let main_path = write(tmp.path(), "main.xml", &main_src);
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
+
+        let (out, map) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &input_map,
+        )
+        .expect("expansion succeeds even when the result is empty");
+
+        // Sweep [0, max(out.len(), 1)) so the offset=0 case (which
+        // historically triggered the panic) is always exercised
+        // even when out.len() == 0. The contract this test pins is
+        // non-panic + a resolvable SourcePos with sensible 1-based
+        // (row, col); the exact file attribution is implementation
+        // detail (the natural choice is the caller's file, since
+        // the bytes were "consumed from" main.xml).
+        let probe_end = out.len().max(1);
+        for offset in 0..probe_end {
+            let pos = map.lookup(offset);
+            assert!(pos.row >= 1, "row must be 1-based, got {}", pos.row);
+            assert!(pos.col >= 1, "col must be 1-based, got {}", pos.col);
+        }
+    }
+
     /// Drift guard between the XSD `paramNameType` pattern and the
     /// Rust `is_valid_param_name` implementation.
     ///
