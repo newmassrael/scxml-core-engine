@@ -1221,3 +1221,228 @@ fn stdout_does_not_emit_human_prose() {
         "human-mode 'Document rejected' line must not appear on clean generate: {stdout}"
     );
 }
+
+// ── sce:template preprocessing: end-to-end wire-contract coverage ──
+//
+// Exercises the full CLI path (read file → xinclude → template
+// expansion → parse → validate → emit diagnostic) for `<sce:use>`
+// failure modes. Each negative test confirms the `code`, `stage`,
+// and `exit_code` an upstream agent keys on. A positive test pins
+// that a successfully-expanded template document produces clean
+// codegen output (no diagnostic line on stderr).
+
+/// Build a scratch directory populated with the given named
+/// files. Returns the directory handle plus the primary file path
+/// (the first entry, by convention the SCXML that sce-codegen
+/// consumes).
+fn write_template_fixture(
+    label: &str,
+    files: &[(&str, &str)],
+) -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new(label);
+    let mut main_path: Option<PathBuf> = None;
+    for (name, body) in files {
+        let path = dir.path().join(name);
+        std::fs::write(&path, body).expect("write fixture");
+        if main_path.is_none() {
+            main_path = Some(path);
+        }
+    }
+    (dir, main_path.expect("fixtures must include at least one file"))
+}
+
+/// Read the single NDJSON diagnostic line from stderr. Panics if
+/// stderr doesn't contain exactly one JSON record.
+fn single_diagnostic(stderr: &str) -> serde_json::Value {
+    let trimmed = stderr.trim_end();
+    let lines: Vec<&str> = trimmed.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "expected exactly one diagnostic line, got {}:\n{trimmed}",
+        lines.len()
+    );
+    serde_json::from_str(lines[0])
+        .unwrap_or_else(|e| panic!("stderr line is not valid JSON ({e}): {}", lines[0]))
+}
+
+#[test]
+fn template_expansion_succeeds_on_well_formed_document() {
+    let main_scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s1" name="with_template">
+  <state id="s1">
+    <sce:use template="guard.sce-template.xml" port="80"/>
+  </state>
+</scxml>
+"#;
+    let tpl = r#"<?xml version="1.0" encoding="UTF-8"?>
+<sce:template xmlns:sce="http://sce.dev/ext" name="guard">
+  <sce:param name="port" required="true"/>
+  <transition cond="_event.data == {$port}" target="s1"/>
+</sce:template>
+"#;
+    let (_dir, scxml) = write_template_fixture(
+        "template-positive",
+        &[("main.scxml", main_scxml), ("guard.sce-template.xml", tpl)],
+    );
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(
+        out.status.success(),
+        "codegen must succeed on expanded document; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    assert!(
+        stderr.trim().is_empty(),
+        "json mode emits no diagnostic line on success: {stderr}"
+    );
+}
+
+#[test]
+fn template_not_found_emits_xml_template_not_found() {
+    let main_scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s1" name="missing_template">
+  <state id="s1">
+    <sce:use template="missing.sce-template.xml" port="80"/>
+  </state>
+</scxml>
+"#;
+    let (_dir, scxml) = write_template_fixture(
+        "template-not-found",
+        &[("main.scxml", main_scxml)],
+    );
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success(), "missing template file must fail");
+    assert_eq!(out.status.code(), Some(2), "XML stage exit code is 2");
+    let diag = single_diagnostic(&String::from_utf8(out.stderr).unwrap());
+    assert_eq!(diag["code"], "xml/template-not-found");
+    assert_eq!(diag["stage"], "xml");
+    assert_eq!(diag["actual"], "missing.sce-template.xml");
+}
+
+#[test]
+fn template_malformed_root_emits_xml_template_malformed() {
+    let main_scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s1" name="bad_template">
+  <state id="s1">
+    <sce:use template="bad.sce-template.xml"/>
+  </state>
+</scxml>
+"#;
+    // Root is not <sce:template> — expander rejects as Malformed.
+    let bad_tpl = r#"<not-a-template><x/></not-a-template>"#;
+    let (_dir, scxml) = write_template_fixture(
+        "template-malformed",
+        &[("main.scxml", main_scxml), ("bad.sce-template.xml", bad_tpl)],
+    );
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    let diag = single_diagnostic(&String::from_utf8(out.stderr).unwrap());
+    assert_eq!(diag["code"], "xml/template-malformed");
+    assert_eq!(diag["stage"], "xml");
+}
+
+#[test]
+fn template_missing_required_param_emits_add_attribute_fix() {
+    let main_scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s1" name="missing_param">
+  <state id="s1">
+    <sce:use template="guard.sce-template.xml"/>
+  </state>
+</scxml>
+"#;
+    let tpl = r#"<?xml version="1.0" encoding="UTF-8"?>
+<sce:template xmlns:sce="http://sce.dev/ext" name="guard">
+  <sce:param name="port" required="true"/>
+  <transition cond="_event.data == {$port}" target="s1"/>
+</sce:template>
+"#;
+    let (_dir, scxml) = write_template_fixture(
+        "template-missing-param",
+        &[("main.scxml", main_scxml), ("guard.sce-template.xml", tpl)],
+    );
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    let diag = single_diagnostic(&String::from_utf8(out.stderr).unwrap());
+    assert_eq!(diag["code"], "xml/template-missing-param");
+    assert_eq!(diag["actual"], "port");
+    // Structured fix must name the missing attribute so repair bots
+    // can patch without re-parsing the message.
+    assert_eq!(diag["fix"]["kind"], "add_attribute");
+    assert_eq!(diag["fix"]["element"], "sce:use");
+    assert_eq!(diag["fix"]["attr"], "port");
+}
+
+#[test]
+fn template_unknown_param_emits_xml_template_unknown_param() {
+    let main_scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s1" name="unknown_param">
+  <state id="s1">
+    <sce:use template="guard.sce-template.xml" port="80" typo="x"/>
+  </state>
+</scxml>
+"#;
+    let tpl = r#"<?xml version="1.0" encoding="UTF-8"?>
+<sce:template xmlns:sce="http://sce.dev/ext" name="guard">
+  <sce:param name="port" required="true"/>
+  <transition cond="_event.data == {$port}" target="s1"/>
+</sce:template>
+"#;
+    let (_dir, scxml) = write_template_fixture(
+        "template-unknown-param",
+        &[("main.scxml", main_scxml), ("guard.sce-template.xml", tpl)],
+    );
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    let diag = single_diagnostic(&String::from_utf8(out.stderr).unwrap());
+    assert_eq!(diag["code"], "xml/template-unknown-param");
+    assert_eq!(diag["actual"], "typo");
+}
+
+#[test]
+fn template_cycle_emits_xml_template_cycle() {
+    let main_scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s1" name="cycle">
+  <state id="s1">
+    <sce:use template="a.sce-template.xml"/>
+  </state>
+</scxml>
+"#;
+    // a uses b which uses a — chain detected when `a` reappears on
+    // the expansion stack.
+    let a_tpl = r#"<?xml version="1.0" encoding="UTF-8"?>
+<sce:template xmlns:sce="http://sce.dev/ext" name="a">
+  <sce:use template="b.sce-template.xml"/>
+</sce:template>
+"#;
+    let b_tpl = r#"<?xml version="1.0" encoding="UTF-8"?>
+<sce:template xmlns:sce="http://sce.dev/ext" name="b">
+  <sce:use template="a.sce-template.xml"/>
+</sce:template>
+"#;
+    let (_dir, scxml) = write_template_fixture(
+        "template-cycle",
+        &[
+            ("main.scxml", main_scxml),
+            ("a.sce-template.xml", a_tpl),
+            ("b.sce-template.xml", b_tpl),
+        ],
+    );
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+    assert!(!out.status.success());
+    let diag = single_diagnostic(&String::from_utf8(out.stderr).unwrap());
+    assert_eq!(diag["code"], "xml/template-cycle");
+    assert_eq!(diag["stage"], "xml");
+}
