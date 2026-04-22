@@ -14,6 +14,56 @@
 
 ---
 
+## Scope & Composition
+
+SCE is the trust boundary in the NL→SCXML→code pipeline. It consumes
+SCXML and produces validated, typed, target-language source code. The
+`sce:*` namespace is bounded by measured benefit — each primitive earns
+its place through demonstrated use and layer fit.
+
+**SCE owns:**
+- W3C SCXML conformance — parser, IR, runtime semantics
+- W3C XInclude — byte-identical fragment composition at parse time
+- `sce:*` extensions:
+  - **Runtime/semantic**: mesh, context, import, field
+  - **Composition**: `sce:template` / `sce:use` / `sce:param` for
+    parameterised XML expansion (RFC at
+    `claudedocs/rfc-sce-template-sce-param.md`)
+- Forge typed expression pipeline — data fields, inline-eligibility
+- Cross-language byte-equivalence across N codegen backends
+
+**Why SCE owns templating** (rather than delegating to producer-side
+preprocessors):
+- *Native source-mapping* — template diagnostics point at author intent
+  (template file row/col), not at expanded bytes. External preprocessors
+  require a sidecar convention that the ecosystem has not converged on.
+- *Forge-typed parameters* — typed `<sce:param>` integrates with Forge
+  inline-eligibility, allowing template instances to feed const-fold
+  analysis directly. External expansion loses the template-instance
+  semantic link.
+- *Single toolchain UX* — `sce-build` performs expansion + parse + type
+  + codegen + diagnostic in one stream. No external dependency for
+  consumers to wire into their build pipelines.
+- *Bounded marginal cost* — ~1000 LOC + 7 diagnostic codes, modelled on
+  the existing XInclude pattern (sce-build expander + optional C++
+  runtime parity per RFC §6.5).
+
+**Producer-side preprocessing (still valid)** — producers MAY emit
+canonical SCXML before SCE consumes it (LLM prompt layers, DSL→SCXML
+compilers, Jinja2/m4 preprocessors). SCE's in-tree composition is
+recommended when the source is human-authored SCXML; producer-side is
+natural when SCXML is one of several formats the producer generates.
+
+**Charter discipline:** further `sce:*` primitives must demonstrate
+(a) a use case not covered by existing primitives, (b) layer fit (Stage 0
+composition / Stage 2 typing / Stage 4 runtime), and (c) cross-language
+portability. Turing-complete templating, conditional inclusion, computed
+attributes, and parameter entities are NOT accepted by default —
+`sce:template` is intentionally a *minimal* lexical substitution
+primitive (see RFC §2 non-goals).
+
+---
+
 ## 4-Tier Library Architecture
 
 The engine is structured as four layered libraries with strict dependency hierarchy. Each tier adds capabilities while maintaining backward compatibility. Consumers link only the tier they need.

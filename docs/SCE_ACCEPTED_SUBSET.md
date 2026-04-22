@@ -245,6 +245,19 @@ across all devices (`mesh/deploy-duplicate-machine`). The
 referenced from `bindings:` follow the rules in §2.5 and must resolve
 in full (`mesh/external-unresolved-names`).
 
+### §2.9 Composition extensions — `<sce:template>` (RFC pending)
+
+`<sce:template>` / `<sce:use>` / `<sce:param>` add parameterised XML
+composition adjacent to XInclude (§2.7). XInclude handles
+byte-identical reuse; `sce:template` handles fragments that differ by
+a small closed set of constants. Spec frozen in
+`claudedocs/rfc-sce-template-sce-param.md` (Phase A: sce-build Rust
+expander; Phase B optional C++ runtime parity per RFC §6.5). Other
+XML meta-processing primitives (parameter entities, conditional
+inclusion, computed attributes, Turing-complete templating) remain out
+of scope — see `ARCHITECTURE.md` → "Scope & Composition" for the
+discipline gate.
+
 ---
 
 ## §3 Exclusions (cannot be statically generated)
