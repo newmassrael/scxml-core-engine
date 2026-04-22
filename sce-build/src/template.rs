@@ -1543,4 +1543,118 @@ mod tests {
             );
         }
     }
+
+    /// Drift guard between the Rust AOT expander's
+    /// `MAX_TEMPLATE_DEPTH` and the C++ Interpreter runtime's
+    /// `sce/include/parsing/TemplateConstants.h::MAX_TEMPLATE_DEPTH`.
+    ///
+    /// Phase B M1 declares the C++ constant ahead of its M3
+    /// consumer so the drift test has a pinned target the moment
+    /// the constant exists. Without this test a future change on
+    /// either side would silently drift — e.g. a Rust bump to 16
+    /// could leave C++ still enforcing 10, so a document accepted
+    /// by sce-codegen would be rejected by the Interpreter
+    /// (or vice versa) once M3 lands the recursion loop.
+    ///
+    /// Follows `xsd_param_name_pattern_agrees_with_rust_impl` and
+    /// `xinclude::xinclude_depth_matches_runtime` for the
+    /// `include_str!` + extract + compare pattern. The regex pins
+    /// the declaration shape so a future rewrite (e.g. moving from
+    /// `inline constexpr` to a `#define`) surfaces as a clear test
+    /// failure with a next-step pointer rather than a confused
+    /// no-match.
+    #[test]
+    fn cpp_template_depth_matches_rust() {
+        let hdr = include_str!("../../sce/include/parsing/TemplateConstants.h");
+        let re = regex::Regex::new(
+            r"inline\s+constexpr\s+int\s+MAX_TEMPLATE_DEPTH\s*=\s*(\d+)\s*;",
+        )
+        .unwrap();
+        let captures = re.captures(hdr).unwrap_or_else(|| {
+            panic!(
+                "sce/include/parsing/TemplateConstants.h must declare \
+                 `inline constexpr int MAX_TEMPLATE_DEPTH = <n>;` — if the \
+                 declaration shape changed, update this drift test in \
+                 the same commit"
+            )
+        });
+        let cpp_value: u32 = captures[1].parse().unwrap();
+        assert_eq!(
+            cpp_value, MAX_TEMPLATE_DEPTH,
+            "MAX_TEMPLATE_DEPTH drift: Rust = {}, C++ header = {}. \
+             Change both sides in the same commit.",
+            MAX_TEMPLATE_DEPTH, cpp_value
+        );
+    }
+
+    /// Drift guard between the C++ Interpreter runtime's
+    /// `PARAM_NAME_PATTERN` string_view and the XSD
+    /// `paramNameType` pattern text.
+    ///
+    /// `xsd_param_name_pattern_agrees_with_rust_impl` already pins
+    /// the XSD pattern against the Rust regex; this test extends
+    /// the agreement to the C++ side by asserting the C++ raw
+    /// string literal is byte-identical to the XSD pattern. With
+    /// all three on record (XSD, Rust, C++), a change on any one
+    /// side surfaces as a red test on the other two before the
+    /// drift can reach a released artifact.
+    ///
+    /// The C++ validator that consumes `PARAM_NAME_PATTERN` lands
+    /// in M2. M1 declares the constant so the drift test has a
+    /// pinned target the moment the header exists — RFC §3 M1 /
+    /// §4 names M2 as the consumer per
+    /// `feedback_built_but_unconsumed.md`.
+    #[test]
+    fn cpp_param_name_pattern_matches_rust() {
+        let hdr = include_str!("../../sce/include/parsing/TemplateConstants.h");
+        // Extract the raw string literal between R"pat( and )pat".
+        // The delimiter `pat` is part of the header's source shape
+        // so the test pins both the pattern text AND the raw-string
+        // delimiter convention — a future edit that changes the
+        // delimiter name surfaces as a clear no-match rather than a
+        // byte-equal pass on a matching-but-differently-framed
+        // literal.
+        let begin_anchor = r#"R"pat("#;
+        let end_anchor = r#")pat""#;
+        let begin = hdr.find(begin_anchor).unwrap_or_else(|| {
+            panic!(
+                "TemplateConstants.h must declare PARAM_NAME_PATTERN \
+                 with the R\"pat(...)pat\" raw-string form; if the \
+                 delimiter changed, update this drift test in the \
+                 same commit"
+            )
+        });
+        let content_start = begin + begin_anchor.len();
+        let content_end = hdr[content_start..].find(end_anchor).unwrap_or_else(|| {
+            panic!(
+                "Unterminated R\"pat(...)pat\" literal in \
+                 TemplateConstants.h — closing `)pat\"` not found"
+            )
+        });
+        let cpp_pattern = &hdr[content_start..content_start + content_end];
+
+        // Extract the XSD pattern (same logic as
+        // xsd_param_name_pattern_agrees_with_rust_impl).
+        let xsd = include_str!("../../schemas/sce-forge-ext.xsd");
+        let anchor = r#"<xs:simpleType name="paramNameType">"#;
+        let start = xsd.find(anchor).expect(
+            "XSD must declare <xs:simpleType name=\"paramNameType\">",
+        );
+        let after = &xsd[start..];
+        let pat_start = after
+            .find(r#"<xs:pattern value=""#)
+            .expect("paramNameType must declare an <xs:pattern value=\"...\"/> child");
+        let pat_begin = start + pat_start + r#"<xs:pattern value=""#.len();
+        let pat_end_rel = xsd[pat_begin..]
+            .find('"')
+            .expect("XSD pattern value must be terminated by a double-quote");
+        let xsd_pattern = &xsd[pat_begin..pat_begin + pat_end_rel];
+
+        assert_eq!(
+            cpp_pattern, xsd_pattern,
+            "PARAM_NAME_PATTERN drift: C++ header = {:?}, XSD = {:?}. \
+             Change both sides in the same commit.",
+            cpp_pattern, xsd_pattern
+        );
+    }
 }
