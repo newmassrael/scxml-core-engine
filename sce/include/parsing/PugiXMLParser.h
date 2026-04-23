@@ -75,6 +75,29 @@ public:
         sourcePath_ = sourcePath;
     }
 
+    // Internal: Set the raw source text this wrapper was loaded
+    // from. Consumed by `processSceTemplate` to seed the
+    // `SCE::parsing::PositionMap` identity entry so template
+    // expansion can report diagnostic coordinates in the author's
+    // source file rather than in the post-expansion in-memory
+    // document. Mirrors Rust's `content` parameter to
+    // `sce-build/src/template.rs::expand`. `parseFile` reads the
+    // file text before handing it to pugixml so the member captures
+    // the exact bytes parsed; `parseContent` captures its input
+    // string verbatim.
+    void setSourceText(const std::string &sourceText) {
+        sourceText_ = sourceText;
+    }
+
+    // Internal: Return the raw source text captured at load time.
+    // Used by `processSceTemplate` to construct the identity
+    // `PositionMap`. Empty when the wrapper was constructed without
+    // a `setSourceText` call (legacy callers); consumers guard
+    // accordingly.
+    const std::string &sourceText() const {
+        return sourceText_;
+    }
+
 private:
     bool processXIncludeRecursive(pugi::xml_node node, int depth = 0);
     std::string resolveFilePath(const std::string &href) const;
@@ -132,6 +155,7 @@ private:
     std::string errorMessage_;
     std::string basePath_;
     std::string sourcePath_;
+    std::string sourceText_;
     static constexpr int MAX_XINCLUDE_DEPTH = 10;
 };
 

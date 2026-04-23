@@ -8,6 +8,7 @@
 #include "parsing/TemplateError.h"
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string_view>
 #include <unordered_map>
@@ -912,9 +913,26 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
 
         SCE_LOG_INFO("PugiXMLParser: Parsing file: {}", filename);
 
-        // Parse file using pugixml
+        // Read the file into an in-memory buffer first so the
+        // `PugiXMLDocument` wrapper can stash the exact bytes pugixml
+        // parsed — `processSceTemplate` needs a stable view of the
+        // author's source text to build a `SCE::parsing::PositionMap`
+        // identity entry (RFC §3 P2). `load_buffer` parses directly
+        // out of that buffer without a second file read, keeping the
+        // cached `sourceText_` byte-identical to what pugixml saw.
+        std::ifstream in(filename, std::ios::binary);
+        if (!in) {
+            lastError_ = "Cannot open file: " + filename;
+            SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
+            return nullptr;
+        }
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        std::string sourceText = buffer.str();
+
         auto doc = std::make_shared<pugi::xml_document>();
-        pugi::xml_parse_result result = doc->load_file(filename.c_str());
+        pugi::xml_parse_result result =
+            doc->load_buffer(sourceText.data(), sourceText.size());
 
         if (!result) {
             lastError_ = "Parse error: " + std::string(result.description());
@@ -922,19 +940,24 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
             return nullptr;
         }
 
-        // Create document wrapper with base path + source path.
-        // Base path feeds `<xi:include>` / `<sce:use template>`
-        // resolution; source path seeds the cycle-detection stack in
-        // `processSceTemplate` so a top-level document that references
-        // itself via `<sce:use template="self.scxml"/>` is caught
-        // before loading the template file a second time. Mirrors
-        // Rust's `sce-build/src/template.rs::expand(self_path, ...)`
-        // plumbing at the parser boundary so the C++ runtime has the
-        // same self-reference coverage as the AOT expander.
+        // Create document wrapper with base path + source path +
+        // source text. Base path feeds `<xi:include>` / `<sce:use
+        // template>` resolution; source path seeds the
+        // cycle-detection stack in `processSceTemplate` so a top-level
+        // document that references itself via `<sce:use
+        // template="self.scxml"/>` is caught before loading the
+        // template file a second time; source text seeds the
+        // PositionMap identity entry so post-expansion diagnostics
+        // can be remapped to (file, row, col) in the author's
+        // source. Mirrors Rust's `sce-build/src/template.rs::expand
+        // (content, self_path, ...)` plumbing at the parser boundary
+        // so the C++ runtime has the same self-reference +
+        // coordinate-remap plumbing as the AOT expander.
         auto wrappedDoc = std::make_shared<PugiXMLDocument>(doc);
         std::filesystem::path filePath(filename);
         wrappedDoc->setBasePath(filePath.parent_path().string());
         wrappedDoc->setSourcePath(filename);
+        wrappedDoc->setSourceText(sourceText);
 
         return wrappedDoc;
 
@@ -959,7 +982,17 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &con
             return nullptr;
         }
 
-        return std::make_shared<PugiXMLDocument>(doc);
+        // Capture the caller's content verbatim so `processSceTemplate`
+        // can build a PositionMap identity entry keyed by the same
+        // bytes pugixml parsed. `parseContent` does not receive a
+        // source path (in-memory documents are anonymous), so only
+        // sourceText_ is set; the absent sourcePath_ leaves cycle
+        // detection dormant until a nested template load introduces
+        // a real path into the stack.
+        auto wrappedDoc = std::make_shared<PugiXMLDocument>(doc);
+        wrappedDoc->setSourceText(content);
+
+        return wrappedDoc;
 
     } catch (const std::exception &ex) {
         lastError_ = "Exception while parsing content: " + std::string(ex.what());
