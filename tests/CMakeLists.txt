@@ -5079,6 +5079,11 @@ if(NOT EMSCRIPTEN)
     add_subdirectory(w3c_phase_b_parity)
 endif()
 
+# Phase C P1 — PositionMap unit-test family. Runs everywhere
+# (no subprocess dependency). See
+# claudedocs/rfc-sce-template-phase-c.md §3 P1.
+add_subdirectory(parsing)
+
 # Priority Level 5: Performance benchmarks (measure performance after functional validation, execute last)
 # Benchmark subdirectory must be included AFTER all main tests to ensure proper execution order
 # WASM builds: Benchmarks excluded (Native-only performance measurement)
