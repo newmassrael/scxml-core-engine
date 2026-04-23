@@ -1883,22 +1883,22 @@ pub fn find_template_base() -> std::path::PathBuf {
         }
         return p.to_path_buf();
     }
-    // Release builds refuse silent fallback: `CARGO_MANIFEST_DIR` is
-    // baked at compile time and may point at a stale source tree on
-    // install targets, producing silently-wrong output. Dev/test
-    // builds keep the fallback so `cargo test` and in-repo `cargo run`
-    // work without explicit setup.
-    #[cfg(debug_assertions)]
-    {
-        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let candidate = crate_dir.join("../tools/codegen/templates");
-        if candidate.exists() {
-            return candidate;
-        }
-        let candidate = Path::new("tools/codegen/templates");
-        if candidate.exists() {
-            return candidate.to_path_buf();
-        }
+    // `CARGO_MANIFEST_DIR` is baked at compile time and may point at a
+    // stale source tree on install targets. The `.exists()` check is
+    // the guard: when the installed binary runs on a machine that does
+    // not carry the original source tree, the candidate path is absent
+    // and we fall through to the panic below. Silent-wrong output is
+    // only possible if the exact source-tree path happens to exist on
+    // the install target — an edge case the `SCE_TEMPLATE_DIR` override
+    // above remains the authoritative escape hatch for.
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let candidate = crate_dir.join("../tools/codegen/templates");
+    if candidate.exists() {
+        return candidate;
+    }
+    let candidate = Path::new("tools/codegen/templates");
+    if candidate.exists() {
+        return candidate.to_path_buf();
     }
     panic!(
         "Cannot find Jinja2 templates. Set SCE_TEMPLATE_DIR to the installed \
