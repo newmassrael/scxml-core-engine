@@ -438,6 +438,120 @@ pub fn rowcol_to_offset(expanded_text: &str, row: u32, col: u32) -> usize {
 mod tests {
     use super::*;
 
+    /// Drift test pinning the C++ `Origin` variant shape against
+    /// the Rust `Origin` enum declared above. Follows the
+    /// `cpp_template_subtypes_match_rust_diagnostic_codes` precedent
+    /// in `sce-build/src/template.rs::tests` (Phase B M4): read the
+    /// authoritative C++ header via `include_str!` at test compile
+    /// time, regex-scan the struct declarations, assert set
+    /// equality of struct names and field-name-and-type-family
+    /// allowlists.
+    ///
+    /// What this test pins (Phase C RFC §1 Q4):
+    ///
+    ///   * Both `FileOrigin` and `CallSiteOrigin` struct declarations
+    ///     exist in the C++ header.
+    ///   * `FileOrigin` declares exactly two fields: one path-typed,
+    ///     one size/integer-typed named `source_offset`.
+    ///   * `CallSiteOrigin` declares exactly three fields: one
+    ///     path-typed, two integer-typed named `row` and `col`.
+    ///   * Path-family types: `std::filesystem::path` (C++) /
+    ///     `PathBuf` / `std::string_view`.
+    ///   * Integer-family types: `size_t` / `uint32_t` / `uint64_t` /
+    ///     `u32` / `usize`.
+    ///
+    /// What this test does NOT pin: exact C++ types (so
+    /// portability-driven swaps like `size_t` → `uint64_t` stay
+    /// allowed), method signatures, `std::variant` discriminant
+    /// order (the Rust `#[non_exhaustive]` enum's discriminants
+    /// evolve independently), implementation shape of `lookup` or
+    /// `append_mapped_substring`. Those are covered by the P1
+    /// C++ unit tests in `tests/parsing/PositionMap_test.cpp`
+    /// (implementation-level correctness) rather than drift.
+    ///
+    /// Load-bearing: rename `FileOrigin` to `FileOriginRenamed` in
+    /// the C++ header → this test reds with a pointed missing-struct
+    /// assertion instead of passing silently.
+    #[test]
+    fn cpp_origin_shape_matches_rust() {
+        let hdr = include_str!("../../sce/include/parsing/PositionMap.h");
+
+        // Path-family allowlist — any of these types is acceptable
+        // for a path-typed field on either side.
+        let path_family = r"(?:std::filesystem::path|PathBuf|std::string_view)";
+        // Integer-family allowlist — any of these types is acceptable
+        // for a size/offset/row/col field. Portability-driven swaps
+        // within this set do not red the test.
+        let int_family = r"(?:size_t|uint32_t|uint64_t|u32|usize)";
+
+        // FileOrigin: `struct FileOrigin { <path-family> path; <int-family> source_offset{...}; };`
+        // Match liberally on field initialisers (brace-or-paren or
+        // nothing) and whitespace to survive benign header reflows.
+        let file_origin_re = regex::Regex::new(&format!(
+            r"struct\s+FileOrigin\s*\{{\s*{path}\s+path\s*(?:\{{[^}}]*\}})?\s*;\s*{int}\s+source_offset\s*(?:\{{[^}}]*\}})?\s*;\s*\}}\s*;",
+            path = path_family,
+            int = int_family,
+        ))
+        .expect("FileOrigin regex must compile");
+
+        // CallSiteOrigin: path + two int-family fields named row, col.
+        let call_site_origin_re = regex::Regex::new(&format!(
+            r"struct\s+CallSiteOrigin\s*\{{\s*{path}\s+path\s*(?:\{{[^}}]*\}})?\s*;\s*{int}\s+row\s*(?:\{{[^}}]*\}})?\s*;\s*{int}\s+col\s*(?:\{{[^}}]*\}})?\s*;\s*\}}\s*;",
+            path = path_family,
+            int = int_family,
+        ))
+        .expect("CallSiteOrigin regex must compile");
+
+        assert!(
+            file_origin_re.is_match(hdr),
+            "sce/include/parsing/PositionMap.h must declare `struct \
+             FileOrigin {{ <path-family> path; <int-family> \
+             source_offset; }};` matching the Rust `Origin::File` \
+             variant. If the field order or type family changed, \
+             update this drift test in the same commit — see RFC \
+             §1 Q4 (claudedocs/rfc-sce-template-phase-c.md) for the \
+             invariant. Path family allowlist: {path}. Integer \
+             family allowlist: {int}.",
+            path = path_family,
+            int = int_family,
+        );
+
+        assert!(
+            call_site_origin_re.is_match(hdr),
+            "sce/include/parsing/PositionMap.h must declare `struct \
+             CallSiteOrigin {{ <path-family> path; <int-family> row; \
+             <int-family> col; }};` matching the Rust \
+             `Origin::CallSite` variant. If the field order or type \
+             family changed, update this drift test in the same \
+             commit — see RFC §1 Q4 \
+             (claudedocs/rfc-sce-template-phase-c.md) for the \
+             invariant. Path family allowlist: {path}. Integer \
+             family allowlist: {int}.",
+            path = path_family,
+            int = int_family,
+        );
+
+        // Cross-check: the C++ header must also expose the
+        // `SCE::parsing::Origin` alias as a `std::variant` over
+        // both structs. A future rewrite that drops `std::variant`
+        // (e.g. switching to a tagged class hierarchy) loses the
+        // 1:1 shape agreement with Rust's enum and the P2 wiring
+        // contract would silently diverge.
+        let origin_variant_re = regex::Regex::new(
+            r"using\s+Origin\s*=\s*std::variant\s*<\s*FileOrigin\s*,\s*CallSiteOrigin\s*>\s*;",
+        )
+        .expect("Origin variant regex must compile");
+        assert!(
+            origin_variant_re.is_match(hdr),
+            "sce/include/parsing/PositionMap.h must alias \
+             `SCE::parsing::Origin` as `std::variant<FileOrigin, \
+             CallSiteOrigin>` — the 1:1 shape agreement with the \
+             Rust `Origin` enum depends on this exact pair. \
+             Adding a third variant requires updating the Rust \
+             enum and this drift test in the same commit."
+        );
+    }
+
     #[test]
     fn identity_single_line_ascii() {
         let text = "<root/>";
