@@ -1,0 +1,35 @@
+# SCE Mesh §14 rule 5 — author-declared machine id contains the reserved
+# `__sce_synth_invoke__` infix (SCE_MESH.md §9.6.6 rule 1).
+#
+# Expected diagnostic: mesh/deploy-partition-synth-infix-collision
+# Fires from: sce-build/src/mesh/deploy.rs
+#             validate_synth_invoke_infix line 1126
+#
+# `__sce_synth_invoke__` is reserved for machines synthesised from
+# `<invoke type="scxml">` inline `<content>` — the parser emits
+# `<parent>__sce_synth_invoke__<invoke_id>` (§9.6.6). If an author
+# declares a machine whose id carries the same infix but whose stem
+# before the infix is NOT itself a listed machine, a future
+# synthesised peer could silently shadow (or be shadowed by) the
+# hand-authored id, and partition coverage rules (§14 rules 1/2/9)
+# could not tell the two apart.
+#
+# Explicit-override carve-out (§9.6.6 rule 3): had a sibling
+# `motor_partition` entry been present in the same topology, the
+# validator would have admitted this deploy as an intentional cross-
+# partition override of the synth machine. This fixture omits the
+# parent stem so the carve-out does NOT fire and rule 5 rejection
+# surfaces at the CLI layer.
+#
+# Coverage axis vs. the Rust unit test
+# `synth_infix_rejected_when_no_matching_parent` in deploy.rs: that
+# test proves the `DeployError::PartitionSynthInfixCollision` shape.
+# This ctest lifts the same path to serde → DeployError → ForgeError
+# → NDJSON stderr + non-zero exit + absent `*_transport.*` artifact,
+# which is the end-to-end contract the author actually sees.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor_partition__sce_synth_invoke__ghost:
+        source: motor_partition.scxml

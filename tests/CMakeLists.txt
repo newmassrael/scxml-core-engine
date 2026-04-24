@@ -4848,6 +4848,12 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     set(MESH_PARTITION_NEG_MATRIX
         "1|mesh/deploy-partition-uncovered-unit|motor_partition_nested.scxml"
         "2|mesh/deploy-partition-partial-coverage-requires-default|motor_partition.scxml"
+        # SCE_MESH.md §14 rule 5 — author-declared id carries the reserved
+        # `__sce_synth_invoke__` infix with no matching parent stem in
+        # `topology.*.machines`. The §9.6.6 rule 3 override carve-out
+        # is not triggered because the parent would have to be declared
+        # as its own machine for the infix-bearing entry to be admitted.
+        "5|mesh/deploy-partition-synth-infix-collision|motor_partition.scxml"
         "6|mesh/deploy-partition-duplicate-name|motor_partition.scxml"
         "7|mesh/deploy-partition-multi-device|motor_partition.scxml"
         "8|mesh/deploy-partition-unit-duplicate|motor_partition.scxml"
