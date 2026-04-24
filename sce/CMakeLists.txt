@@ -420,6 +420,7 @@ add_library(sce_runtime
     src/parsing/DoneDataParser.cpp
     src/parsing/ParsingCommon.cpp
     src/parsing/PositionMap.cpp
+    src/parsing/TemplateExpander.cpp
     src/parsing/XmlSerializationHelper.cpp
 
     # XML Parser abstraction (Platform-specific implementation)
