@@ -79,7 +79,6 @@ pub struct SCXMLParser {
     document_order_counter: u32,
     invoke_counter: u32,
     hybrid_invoke_counter: u32,
-    inline_child_counter: u32,
     send_counter: u32,
     /// W3C SCXML §3.14: every `<invoke>` id must be document-unique.
     /// Both author-supplied and auto-generated ids feed this set so
@@ -180,7 +179,6 @@ impl SCXMLParser {
             document_order_counter: 0,
             invoke_counter: 0,
             hybrid_invoke_counter: 0,
-            inline_child_counter: 0,
             send_counter: 0,
             invoke_ids_seen: BTreeSet::new(),
         }
@@ -1592,13 +1590,22 @@ impl SCXMLParser {
             let (resolved_src, resolved_child_name) =
                 if has_inline_scxml && !inline_scxml_text.is_empty() {
                     if let Some(scxml_dir) = base_dir {
-                        let child_name = extract_inline_child_name(
-                            &inline_scxml_text,
+                        // SCE Mesh §9.6.6 rule 1: synthesised machine name is
+                        // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
+                        // `field_suffix` is the invoke_id with its leading
+                        // underscore trimmed (line ~1438), so author ids map
+                        // verbatim and the auto-generated `_invoke_N` ids
+                        // (W3C §6.4.1 §3.14 — SCE emits one when `id` is
+                        // absent) produce `invoke_N` rather than the triple
+                        // underscore block `__sce_synth_invoke___invoke_N`.
+                        let synth_name = format!(
+                            "{}{}{}",
                             &model.name,
-                            &mut self.inline_child_counter,
+                            crate::mesh::deploy::SYNTH_INVOKE_INFIX,
+                            &field_suffix,
                         );
                         let child_scxml_path =
-                            scxml_dir.join(format!("{child_name}.scxml"));
+                            scxml_dir.join(format!("{synth_name}.scxml"));
                         let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
                             inline_scxml_text.replacen(
                                 "<scxml",
@@ -1616,7 +1623,15 @@ impl SCXMLParser {
                                 child_scxml_path.display()
                             );
                         }
-                        (format!("{child_name}.scxml"), child_name)
+                        // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
+                        // carries the canonical `#<machine>` mesh peer
+                        // reference so `classify_remote_scxml_invokes`
+                        // treats the synth peer through the same axis as
+                        // author-declared peers. The concrete disk path
+                        // is retained on `child_name` for local child
+                        // session codegen (`invoke_methods.jinja2` etc.)
+                        // and `parse_child_metadata` below.
+                        (format!("#{synth_name}"), synth_name)
                     } else {
                         (src.clone(), String::new())
                     }
@@ -2770,27 +2785,6 @@ fn collect_parent_send_events(actions: &[Action], events: &mut std::collections:
     }
 }
 
-/// Extract child name from inline SCXML text. Uses `name` attribute if present,
-/// otherwise generates `{parent}_child{N}`.
-fn extract_inline_child_name(
-    inline_text: &str,
-    parent_name: &str,
-    counter: &mut u32,
-) -> String {
-    // Try to parse the name attribute from the inline SCXML
-    if let Ok(doc) = roxmltree::Document::parse(inline_text) {
-        let root = doc.root_element();
-        if let Some(name) = root.attribute("name") {
-            if !name.is_empty() {
-                return format!("{parent_name}_{name}");
-            }
-        }
-    }
-    let name = format!("{parent_name}_child{counter}");
-    *counter += 1;
-    name
-}
-
 /// Parse a child SCXML file to extract metadata (needs_script_engine, datamodel vars).
 ///
 /// The fields written (`child_needs_script_engine`, `child_datamodel_vars`)
@@ -3397,43 +3391,6 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(actions_to_javascript(&[action]), "");
-    }
-
-    // ── extract_inline_child_name ────────────────────────────
-
-    #[test]
-    fn inline_child_name_from_attribute() {
-        let scxml = r#"<scxml name="child1" xmlns="http://www.w3.org/2005/07/scxml" version="1.0"><state id="s"/></scxml>"#;
-        let mut counter = 0u32;
-        let name = extract_inline_child_name(scxml, "parent", &mut counter);
-        assert_eq!(name, "parent_child1");
-        assert_eq!(counter, 0); // counter not incremented when name found
-    }
-
-    #[test]
-    fn inline_child_name_auto_generated() {
-        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"><state id="s"/></scxml>"#;
-        let mut counter = 1u32;
-        let name = extract_inline_child_name(scxml, "parent", &mut counter);
-        assert_eq!(name, "parent_child1");
-        assert_eq!(counter, 2);
-    }
-
-    #[test]
-    fn inline_child_name_empty_name_attr() {
-        let scxml = r#"<scxml name="" xmlns="http://www.w3.org/2005/07/scxml" version="1.0"><state id="s"/></scxml>"#;
-        let mut counter = 0u32;
-        let name = extract_inline_child_name(scxml, "parent", &mut counter);
-        assert_eq!(name, "parent_child0");
-        assert_eq!(counter, 1);
-    }
-
-    #[test]
-    fn inline_child_name_invalid_xml() {
-        let mut counter = 0u32;
-        let name = extract_inline_child_name("<not valid xml", "parent", &mut counter);
-        assert_eq!(name, "parent_child0");
-        assert_eq!(counter, 1);
     }
 
     // ── actions_contain_event_metadata ────────────────────────

@@ -1375,13 +1375,23 @@ fn collect_scxml_remote_peers(
 ///
 /// Left `None` for:
 /// - Local W3C invokes with `src="file:..."` or `src="<relative>.scxml"`
-///   (parser resolves inline `<content>` into this shape — §9.6.6 mesh
-///   synthesis is still Session F scope).
+///   (external-file form; remain on the local child-session path).
+/// - Inline `<content>` invokes synthesised by the parser into
+///   `src="#<parent>__sce_synth_invoke__<id>"` (§9.6.6 rules 1+2) when
+///   the synth machine is not registered in `deploy.yaml` — these flow
+///   through the local child-session path, matching W3C semantics for
+///   non-mesh builds and for mesh builds whose author did not opt into
+///   distribution for the synth machine (§9.6.6 rule 3 default:
+///   "same partition as parent").
 /// - Self-references (`#<own machine>`) — these would always fail at
 ///   build time, but classification here is defensive against author typos.
 /// - Unknown `#<name>` that is not a deploy-declared machine — the build
 ///   remains a local W3C invoke and the existing "child SCXML not found"
 ///   path reports it.
+/// - Targets whose `deploy.yaml` partition matches the parent's
+///   partition — per §9.6.6 rule 3 the synthesised child defaults to the
+///   parent's partition; cross-partition placement is what turns the
+///   invoke into a remote-mesh invoke.
 fn classify_remote_scxml_invokes(
     model: &mut SCXMLModel,
     deploy_cfg: &mesh::deploy::DeployConfig,
