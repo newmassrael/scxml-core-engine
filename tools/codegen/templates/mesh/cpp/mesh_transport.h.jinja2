@@ -2765,6 +2765,27 @@ struct TransportRouter {
         return true;
     }
 
+{% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
+    /// SCE_MESH.md §9.6 / §16.8.3 — kernel-assigned endpoint readback for
+    /// the device-shared custom_tcp server. Intended consumer is the
+    /// two-process cross-device harness: when deploy.yaml declares
+    /// `transports.custom_tcp.listen: "127.0.0.1:0"` the actual port is
+    /// chosen by `bind()` inside `init()`, so the harness reads the
+    /// chosen `host:port` back via this getter and exports it to the
+    /// dialing peer (who feeds it into its own `init(PortOverride)`).
+    ///
+    /// Returns `std::nullopt` when `init()` has not run, failed to bind,
+    /// or `shutdown()` has already closed the listen fd. The narrow
+    /// forwarding keeps the field encapsulated — callers should not
+    /// reach into `custom_tcp_server_` directly — and the nullopt path
+    /// matches `Server::local_endpoint()`'s own contract so the
+    /// interface stays thin.
+    [[nodiscard]] std::optional<std::string> custom_tcp_local_endpoint() const {
+        return custom_tcp_server_ ? custom_tcp_server_->local_endpoint()
+                                  : std::nullopt;
+    }
+
+{% endif %}
     /// Stop all transport connections and release shared resources.
     void shutdown() {
 {% if has_ordered_binding %}
