@@ -309,7 +309,16 @@ struct {{ model.name }}Policy {
     mutable ::SCE::PullScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
     {% endif %}
 
-    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid %}
+    {# SCE_MESH.md §9.6.2 — a parent whose only `<invoke type="scxml">` is     #}
+    {# remote-mesh (rewritten by classifier to `remote_mesh_target`) still     #}
+    {# emits entry-block code that reads `sessionId_` when seeding each        #}
+    {# `activeInvokes_` ChildSession. `scxml_family` drops those invokes       #}
+    {# (it's the W3C-local filter), so the outbound-peers shape must be       #}
+    {# checked explicitly — matching the paired                              #}
+    {# `(model.invokes | scxml) or (model.invokes | scxml_remote)` idiom      #}
+    {# used across invoke_methods.jinja2. Same rationale below on             #}
+    {# executeExitActions static/non-static selection.                       #}
+    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
     // Session ID for JSEngine/Invoke (lazy-initialized)
     mutable ::std::optional<::std::string> sessionId_;
     {% endif %}
@@ -479,7 +488,7 @@ struct {{ model.name }}Policy {
         // W3C SCXML 6.4.5: Cancel all pending delayed sends to parent on child termination
         // SimpleScheduler destructor automatically cleans up pending events
         {% endif %}
-        {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid %}
+        {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
         if (sessionId_.has_value()) {
             auto& scriptEngine = getScriptEngine();
             scriptEngine.destroySession(sessionId_.value());

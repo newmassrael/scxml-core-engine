@@ -144,7 +144,11 @@
     {% include 'process_transition.jinja2' %}
 
 public:
-    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid %}
+    {# SCE_MESH.md §9.6.2 — parent with only remote `<invoke type="scxml">`  #}
+    {# still needs `ensureSessionId()` so `sessionId_.has_value()` calls in    #}
+    {# the remote-invoke onentry block compile. Mirrors the paired field      #}
+    {# declaration in `state_machine.jinja2` (`or model.invokes | scxml_remote`). #}
+    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
     {% include 'scriptengine_helpers.jinja2' %}
     {% endif %}
 

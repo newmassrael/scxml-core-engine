@@ -571,7 +571,14 @@
 {# lands them on the non-static branch — but a datamodel-less history      #}
 {# cross-product would fall through every other flag and select static,    #}
 {# triggering "invalid use of non-static member" at instance-write sites.  #}
-{% if not model.needs_script_engine and not model.invokes | scxml and not model.needs_parent_template and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects and not model.has_history_states %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{# SCE_MESH.md §9.6.2 — remote `<invoke type="scxml">` lands onexit        #}
+{# cancel code that reads/erases `activeInvokes_` and                      #}
+{# `pendingDoneInvoke_<id>_` (instance members). A parent whose only       #}
+{# scxml invoke is remote-mesh drops out of `invokes | scxml` (the         #}
+{# W3C-local filter), so the static branch would strand those body         #}
+{# references. Mirrors the paired `sessionId_` gate in                     #}
+{# `state_machine.jinja2`.                                                 #}
+{% if not model.needs_script_engine and not model.invokes | scxml and not model.invokes | scxml_remote and not model.needs_parent_template and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects and not model.has_history_states %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 
