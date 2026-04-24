@@ -1203,32 +1203,62 @@ fn validate_scxml_invoke_transport(
         }
 
         // Cross-device. Now discriminate the failure shape.
-        let failure = match &peer_binding.transport {
-            None => mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding,
-            Some(t) if t == "shm" || t == "local" => {
-                mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable {
-                    transport: t.clone(),
+        let failure: Option<mesh::error::ScxmlInvokeCrossDeviceFailure> =
+            match &peer_binding.transport {
+                None => Some(mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding),
+                Some(t) if t == "shm" || t == "local" => {
+                    Some(mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable {
+                        transport: t.clone(),
+                    })
                 }
-            }
-            Some(t) => {
-                // Structurally capable (someip / zenoh / custom_tcp /
-                // dds / can), but Session 2 has not yet landed the
-                // wire-14/20 dispatch for any of them. Same precedent
-                // as `partition-wire21-custom-tcp-unimplemented`:
-                // build-time rejection beats runtime silent fallback.
-                mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired {
-                    transport: t.clone(),
+                Some(t) if t == "custom_tcp" => {
+                    // SCE_MESH.md §9.6 L1393 Session 2: custom_tcp
+                    // scxml-remote is wired. Reject only when the
+                    // device-shared server cannot be emitted for lack
+                    // of a listen endpoint on either side. Both
+                    // parent and peer devices need `listen:` because
+                    // scxml-remote invoke is bidirectional — parent
+                    // receives wire-15/16/18/20 replies, peer
+                    // receives wire-14/17/19 requests.
+                    let missing_device = [&parent_device, &peer_device]
+                        .iter()
+                        .find_map(|dev| {
+                            let has_listen = deploy_cfg
+                                .topology
+                                .get(*dev)
+                                .and_then(|d| d.transports.custom_tcp.as_ref())
+                                .and_then(|c| c.listen.as_ref())
+                                .is_some();
+                            (!has_listen).then(|| (*dev).clone())
+                        });
+                    missing_device.map(|device| {
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
+                            transport: t.clone(),
+                            device,
+                        }
+                    })
                 }
-            }
-        };
+                Some(t) => {
+                    // Structurally capable (someip / zenoh / dds /
+                    // can) but the C++ wire-14/20 dispatch has not
+                    // landed yet. Mirrors `partition-wire21-custom-
+                    // tcp-unimplemented`: build-time rejection beats
+                    // runtime silent fallback.
+                    Some(mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired {
+                        transport: t.clone(),
+                    })
+                }
+            };
 
-        return Err(mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
-            parent: resolved_name.to_string(),
-            peer: peer_name.clone(),
-            parent_device,
-            peer_device,
-            failure,
-        });
+        if let Some(failure) = failure {
+            return Err(mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
+                parent: resolved_name.to_string(),
+                peer: peer_name.clone(),
+                parent_device,
+                peer_device,
+                failure,
+            });
+        }
     }
     Ok(())
 }
@@ -3174,8 +3204,8 @@ topology:
     }
 
     /// Cross-device peer with `bindings["#worker"].transport: zenoh` —
-    /// structurally capable transport but Session 2 has not yet landed
-    /// the C++ wire-14/20 dispatch. Rejected with `TransportUnwired`.
+    /// structurally capable transport but the C++ wire-14/20 dispatch
+    /// has not landed for it. Rejected with `TransportUnwired`.
     #[test]
     fn cross_device_capable_transport_unwired_rejected() {
         use std::fs;
@@ -3185,7 +3215,7 @@ topology:
             .parse_file(tmp.join("parent.scxml").to_str().unwrap())
             .expect("parse parent");
         let err = inject_partition_context_for(&mut model, &deploy_path, None)
-            .expect_err("cross-device invoke over zenoh must reject until Session 2 wires dispatch");
+            .expect_err("cross-device invoke over zenoh must reject — wire-14/20 not wired for zenoh");
         match err {
             mesh::error::MeshError::Deploy(
                 mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
@@ -3198,6 +3228,175 @@ topology:
                 assert_eq!(transport, "zenoh");
             }
             other => panic!("expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Build a cross-device deploy.yaml whose two devices optionally
+    /// declare their own `transports.custom_tcp.listen:`. Used by the
+    /// custom_tcp acceptance / listen-missing suites — the base
+    /// `setup_cross_device_deployment` helper hardcodes the topology
+    /// shape and cannot thread device-level transport config through.
+    fn setup_custom_tcp_deployment(
+        tmp_subdir: &str,
+        bindings: &str,
+        ecu_a_listen: Option<&str>,
+        ecu_b_listen: Option<&str>,
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_crossdev_tcp_{}_{}_{}",
+            tmp_subdir,
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let render_transports = |listen: Option<&str>| -> String {
+            match listen {
+                Some(ep) => format!(
+                    "    transports:\n      custom_tcp:\n        listen: \"{ep}\"\n"
+                ),
+                None => String::new(),
+            }
+        };
+        let ecu_a_transports = render_transports(ecu_a_listen);
+        let ecu_b_transports = render_transports(ecu_b_listen);
+
+        let deploy = format!(
+            r##"version: "1.0"
+topology:
+  ecu_a:
+{ecu_a_transports}    machines:
+      parent:
+        source: parent.scxml
+{bindings}
+  ecu_b:
+{ecu_b_transports}    machines:
+      worker:
+        source: worker.scxml
+"##
+        );
+        let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" src="#worker" id="inv0"/>
+  </state>
+</scxml>"##;
+        let worker_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done" name="worker">
+  <final id="done"/>
+</scxml>"##;
+
+        let deploy_path = tmp.join("deploy.yaml");
+        fs::write(&deploy_path, deploy).unwrap();
+        fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
+        fs::write(tmp.join("worker.scxml"), worker_scxml).unwrap();
+        (tmp, deploy_path)
+    }
+
+    /// Cross-device peer with `bindings["#worker"].transport: custom_tcp`
+    /// and both devices declaring `transports.custom_tcp.listen:` — the
+    /// wired path accepts without error.
+    #[test]
+    fn cross_device_custom_tcp_accepted() {
+        use std::fs;
+        let bindings = "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
+        let (tmp, deploy_path) = setup_custom_tcp_deployment(
+            "accepted",
+            bindings,
+            Some("127.0.0.1:19200"),
+            Some("127.0.0.1:19201"),
+        );
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent");
+        inject_partition_context_for(&mut model, &deploy_path, None)
+            .expect("cross-device custom_tcp with listen on both devices must accept");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Cross-device peer with `custom_tcp` but the peer's device
+    /// omits `transports.custom_tcp.listen:` — wire-14/17/19 has no
+    /// inbound channel on the peer side. Rejected with
+    /// `TransportListenMissing` identifying the peer device.
+    #[test]
+    fn cross_device_custom_tcp_peer_listen_missing_rejected() {
+        use std::fs;
+        let bindings = "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
+        let (tmp, deploy_path) = setup_custom_tcp_deployment(
+            "peer_missing",
+            bindings,
+            Some("127.0.0.1:19202"),
+            None,
+        );
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent");
+        let err = inject_partition_context_for(&mut model, &deploy_path, None)
+            .expect_err("custom_tcp without peer listen must reject");
+        match err {
+            mesh::error::MeshError::Deploy(
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
+                    failure:
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
+                            transport,
+                            device,
+                        },
+                    ..
+                },
+            ) => {
+                assert_eq!(transport, "custom_tcp");
+                assert_eq!(device, "ecu_b");
+            }
+            other => panic!(
+                "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
+            ),
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Cross-device peer with `custom_tcp` but the parent's own
+    /// device omits `transports.custom_tcp.listen:` — wire-15/16/18/20
+    /// replies have no inbound channel on the parent side. Rejected
+    /// with `TransportListenMissing` identifying the parent device
+    /// (checked first in the `[parent, peer]` walk order).
+    #[test]
+    fn cross_device_custom_tcp_parent_listen_missing_rejected() {
+        use std::fs;
+        let bindings = "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
+        let (tmp, deploy_path) = setup_custom_tcp_deployment(
+            "parent_missing",
+            bindings,
+            None,
+            Some("127.0.0.1:19203"),
+        );
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent");
+        let err = inject_partition_context_for(&mut model, &deploy_path, None)
+            .expect_err("custom_tcp without parent listen must reject");
+        match err {
+            mesh::error::MeshError::Deploy(
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
+                    failure:
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
+                            transport,
+                            device,
+                        },
+                    ..
+                },
+            ) => {
+                assert_eq!(transport, "custom_tcp");
+                assert_eq!(device, "ecu_a");
+            }
+            other => panic!(
+                "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
+            ),
         }
         let _ = fs::remove_dir_all(&tmp);
     }

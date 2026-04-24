@@ -85,7 +85,7 @@ impl std::fmt::Display for PartitionTransportBindingFailure {
 /// Why a cross-device `<invoke type="scxml" src="#<peer>">` deploy
 /// declaration was rejected by
 /// [`DeployError::ScxmlInvokeCrossDeviceTransport`] (SCE_MESH.md §9.6
-/// L1393). The three shapes are structurally distinct so tests + IDE
+/// L1393). The shapes are structurally distinct so tests + IDE
 /// diagnostics can match without prose-parsing:
 ///
 /// - `MissingBinding` — parent declares no `bindings["#<peer>"]` entry
@@ -94,15 +94,25 @@ impl std::fmt::Display for PartitionTransportBindingFailure {
 ///   transports that cannot cross a device boundary (shm segments are
 ///   pid-namespaced; local is in-process).
 /// - `TransportUnwired` — binding names a structurally capable
-///   transport (someip / zenoh / custom_tcp / dds) but Session 2 has
-///   not yet landed the C++ wire-14/20 dispatch for it. Same precedent
-///   as §16.5's `partition-wire21-custom-tcp-unimplemented`: reject at
-///   build time rather than silent runtime fallback.
+///   transport (someip / zenoh / dds) but the C++ wire-14/20 dispatch
+///   has not yet landed for it. Same precedent as §16.5's
+///   `partition-wire21-custom-tcp-unimplemented`: reject at build time
+///   rather than silent runtime fallback.
+/// - `TransportListenMissing` — binding selects a wired transport
+///   whose device-shared server model requires a `listen:` endpoint
+///   on the named device (today: custom_tcp on parent or peer), but
+///   the device's `transports.<transport>` config omits it. Without
+///   `listen:` the generated `TransportRouter` skips the Server
+///   emission, so wire-15/16/18/20 replies (parent-side) or
+///   wire-14/17/19 requests (worker-side) have no inbound channel —
+///   silent send-only failure. The device field names which side is
+///   missing the config so the fix is unambiguous.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScxmlInvokeCrossDeviceFailure {
     MissingBinding,
     TransportIncapable { transport: String },
     TransportUnwired { transport: String },
+    TransportListenMissing { transport: String, device: String },
 }
 
 impl std::fmt::Display for ScxmlInvokeCrossDeviceFailure {
@@ -120,8 +130,16 @@ impl std::fmt::Display for ScxmlInvokeCrossDeviceFailure {
             Self::TransportUnwired { transport } => write!(
                 f,
                 "transport '{transport}' is structurally capable but \
-                 Session F cross-device wire-14/20 dispatch has not \
-                 landed for it yet (shm same-device is the only wired path)"
+                 cross-device wire-14/20 dispatch has not landed for it \
+                 yet (shm same-device and custom_tcp are the wired paths)"
+            ),
+            Self::TransportListenMissing { transport, device } => write!(
+                f,
+                "transport '{transport}' requires `transports.{transport}.listen:` \
+                 on device '{device}' so the device-shared server can receive \
+                 the reply stream (parent) or request stream (worker); without it \
+                 the generated TransportRouter skips the Server emission and the \
+                 inbound direction is silently dropped"
             ),
         }
     }
