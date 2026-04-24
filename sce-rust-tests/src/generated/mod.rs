@@ -1,6 +1,14 @@
 // GENERATED -- DO NOT EDIT (sce-codegen)
 //! Generated W3C SCXML conformance test state machines (202 tests).
 
+// Hand-authored integration fixtures (non-W3C-IRP). Regenerated via:
+//   target/release/sce-codegen generate sce-rust-tests/fixtures/<stem>.scxml \
+//       -l rust -o sce-rust-tests/src/generated/<stem>/
+// followed by `--as-child --parent-stem <stem>` passes for each emitted
+// `<stem>_childN.scxml`. Keep these modules separate from the test144..test580
+// W3C IRP block below so the W3C regeneration pipeline is not contaminated.
+pub mod donedata_local_invoke;
+
 pub mod test144;
 pub mod test147;
 pub mod test148;
