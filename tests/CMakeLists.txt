@@ -2910,6 +2910,45 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         # parallel ctest invocations against different ports).
         RESOURCE_LOCK sce_mesh_custom_tcp_${SCE_TEST_CUSTOM_TCP_PORT})
 
+    # ── SCE_MESH.md §16.8.3 two-process orchestration smoke ────────
+    # Proves the bash orchestrator in tests/mesh/run_two_process_fixture.sh
+    # correctly:
+    #   (1) spawns the worker, waits for its "LISTEN_ENDPOINT=host:port"
+    #       stderr handshake line, resolved by Server::local_endpoint()
+    #       after a bind on "127.0.0.1:0" (A1 ephemeral + A2 readback);
+    #   (2) exports the endpoint as MESH_PEER_ENDPOINT and launches the
+    #       parent, which connects its CustomTcp::Client there and sends
+    #       one envelope (the runtime-override pattern consumed by
+    #       Stage B cross-device fixtures);
+    #   (3) SIGTERMs the worker after the parent exits and propagates the
+    #       parent's exit code as the ctest result.
+    # Unlike the other mesh tests this one uses a kernel-ephemeral port,
+    # so it needs no RESOURCE_LOCK against SCE_TEST_CUSTOM_TCP_PORT.
+    add_executable(mesh_two_process_smoke_worker
+        mesh/test_two_process_smoke_worker.cpp)
+    target_include_directories(mesh_two_process_smoke_worker
+        PRIVATE ${CMAKE_SOURCE_DIR}/sce/include)
+    target_link_libraries(mesh_two_process_smoke_worker
+        PRIVATE sce_base sce_mesh_common pthread)
+    target_compile_features(mesh_two_process_smoke_worker PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_two_process_smoke_worker)
+
+    add_executable(mesh_two_process_smoke_parent
+        mesh/test_two_process_smoke_parent.cpp)
+    target_include_directories(mesh_two_process_smoke_parent
+        PRIVATE ${CMAKE_SOURCE_DIR}/sce/include)
+    target_link_libraries(mesh_two_process_smoke_parent
+        PRIVATE sce_base sce_mesh_common pthread)
+    target_compile_features(mesh_two_process_smoke_parent PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_two_process_smoke_parent)
+
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/two_process_test.cmake)
+    sce_register_two_process_mesh_test(
+        NAME    mesh_two_process_smoke
+        WORKER  mesh_two_process_smoke_worker
+        PARENT  mesh_two_process_smoke_parent
+        TIMEOUT 30)
+
     # ── Phase 3 entry #4d: end-to-end payload verification ─────────
     # Proves <param> data survives: sender → JSON → wire → drain
     # → raiseExternal → _event.data → receiver cond matches.
