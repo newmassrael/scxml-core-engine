@@ -793,12 +793,23 @@ TemplateExpandResult expandImpl(std::string_view content,
         const std::uint32_t callerRow = callerPos.row;
         const std::uint32_t callerCol = callerPos.col;
 
+        // Caller-file SourcePos for the `<sce:use>` element, used
+        // to populate `TemplateError::location()` at the throw sites
+        // below. Every failure mode that keys to this particular
+        // `<sce:use>` (missing attr, not-found, cycle, read-error,
+        // substitution failure) gets its location stamped to the
+        // same author-source coordinate so diagnostic consumers can
+        // present one pointed line in the caller file.
+        const SourcePos useLocation{contentFile, callerRow, callerCol};
+
         const auto templateAttr = useNode.attribute("template");
         const std::string templateHref =
             templateAttr ? templateAttr.value() : std::string();
         if (templateHref.empty()) {
-            throw TemplateMissingAttribute(
+            TemplateMissingAttribute err(
                 "<sce:use> missing required `template` attribute");
+            err.setLocation(useLocation);
+            throw err;
         }
 
         std::vector<std::string> tried;
@@ -812,26 +823,49 @@ TemplateExpandResult expandImpl(std::string_view content,
                 }
                 trail.append(entry);
             }
-            throw TemplateNotFound(
+            TemplateNotFound err(
                 "<sce:use template=\"" + templateHref +
                 "\">: file not found (searched: " + trail + ")");
+            err.setLocation(useLocation);
+            throw err;
         }
 
         const auto canon = canonicaliseForCycle(resolvedPath);
         for (const auto &entry : stack) {
             if (entry == canon) {
-                throw TemplateCycle(
+                TemplateCycle err(
                     "<sce:use template=\"" + templateHref +
                     "\">: cycle detected (" + renderChain(stack, canon) + ")");
+                err.setLocation(useLocation);
+                throw err;
             }
         }
 
-        const std::string templateText =
-            readTemplateText(resolvedPath, templateHref);
+        std::string templateText;
+        try {
+            templateText = readTemplateText(resolvedPath, templateHref);
+        } catch (TemplateReadError &e) {
+            e.setLocation(useLocation);
+            throw;
+        }
         const auto bindings = collectUseBindings(useNode);
-        const auto substitution = substituteIntoTemplateWithMap(
-            templateText, resolvedPath, templateHref, bindings, contentFile,
-            callerRow, callerCol);
+        SubstituteIntoTemplateResult substitution;
+        try {
+            substitution = substituteIntoTemplateWithMap(
+                templateText, resolvedPath, templateHref, bindings,
+                contentFile, callerRow, callerCol);
+        } catch (TemplateError &e) {
+            // The `<sce:use>` failure surfaces at the caller site —
+            // even when the root cause (malformed template,
+            // unknown/missing param) sits inside the template file.
+            // Author-facing diagnostics point at the call site per
+            // RFC §6.3 Q3 depth-1 rule so the operator sees which
+            // `<sce:use>` to fix first.
+            if (!e.location().has_value()) {
+                e.setLocation(useLocation);
+            }
+            throw;
+        }
 
         stack.push_back(canon);
         const std::filesystem::path nestedBase = resolvedPath.parent_path();
@@ -840,6 +874,15 @@ TemplateExpandResult expandImpl(std::string_view content,
             nested = expandImpl(substitution.substituted, resolvedPath,
                                  nestedBase, depth + 1, stack,
                                  substitution.positions);
+        } catch (TemplateError &e) {
+            stack.pop_back();
+            // Nested failures already carry an inner location when
+            // available; fall back to the caller's `<sce:use>` only
+            // when nothing downstream set one.
+            if (!e.location().has_value()) {
+                e.setLocation(useLocation);
+            }
+            throw;
         } catch (...) {
             stack.pop_back();
             throw;

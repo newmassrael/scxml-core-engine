@@ -3,8 +3,12 @@
 
 #pragma once
 
+#include "parsing/PositionMap.h"
+
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace SCE::parsing {
 
@@ -31,6 +35,32 @@ namespace SCE::parsing {
 class TemplateError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
+
+    // Author-source location where this error was raised, when the
+    // expander's throw site has enough context to derive one.
+    // Populated by `sce/src/parsing/TemplateExpander.cpp` throw sites
+    // via `PositionMap::lookup` against the caller source; failure
+    // modes without a keyed byte (e.g. `TemplateTooDeep`) leave this
+    // as `std::nullopt`. Consumers that present diagnostics to the
+    // author (e.g. the logging adapter in `SCXMLParser::parseFile`)
+    // read this to report `(file, row, col)` instead of the
+    // post-expansion in-memory offsets. Phase C P2 per
+    // `claudedocs/rfc-sce-template-phase-c.md` §3 P2 deliverable #4.
+    const std::optional<SourcePos> &location() const noexcept {
+        return location_;
+    }
+
+    // Attach a `SourcePos` to this error. Called by expander throw
+    // sites just before `throw`; the compose-and-throw idiom keeps
+    // the call sites single-line (`err.setLocation(...); throw
+    // std::move(err);`) so the base-class plumbing stays invisible
+    // to non-throwing callers.
+    void setLocation(SourcePos pos) {
+        location_ = std::move(pos);
+    }
+
+private:
+    std::optional<SourcePos> location_;
 };
 
 // `<sce:use>` supplied an attribute that does not match any

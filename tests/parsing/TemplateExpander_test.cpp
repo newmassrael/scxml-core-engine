@@ -392,3 +392,29 @@ TEST(TemplateExpander, ExpandStringNotFoundThrows) {
         expandString(caller, "/tmp/caller.scxml", "/tmp"),
         SCE::parsing::TemplateNotFound);
 }
+
+// ── TemplateError::location() populated at throw sites ──────────────
+// Round-trip verification that the depth-1 author-source location
+// is stamped on thrown subtypes so diagnostic consumers can present
+// `(file, row, col)` directly. A caller with a `<sce:use>` on its
+// second line pointing at a missing template should produce a
+// TemplateNotFound whose location() names the caller file at row 2.
+TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
+    const std::string callerSource =
+        "<root xmlns:sce=\"http://sce.dev/ext\">\n"
+        "  <sce:use template=\"does_not_exist.scxml\"/>\n"
+        "</root>";
+    const std::string callerPath = "/tmp/p2_location_test_caller.scxml";
+    try {
+        expandString(callerSource, callerPath, "/tmp");
+        FAIL() << "expected TemplateNotFound";
+    } catch (const SCE::parsing::TemplateNotFound &e) {
+        const auto &loc = e.location();
+        ASSERT_TRUE(loc.has_value());
+        EXPECT_EQ(loc->file, std::filesystem::path(callerPath));
+        EXPECT_EQ(loc->row, 2u);
+        // The `<sce:use>` element starts at column 3 on line 2
+        // (two leading spaces + `<`).
+        EXPECT_EQ(loc->col, 3u);
+    }
+}
