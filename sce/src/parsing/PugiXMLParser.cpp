@@ -6,6 +6,7 @@
 #include "parsing/IXMLElement.h"
 #include "parsing/TemplateConstants.h"
 #include "parsing/TemplateError.h"
+#include "parsing/TemplateExpander.h"
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -313,532 +314,83 @@ bool PugiXMLDocument::processXIncludeRecursive(pugi::xml_node node, int depth) {
     return true;
 }
 
-namespace {
-
-// `<sce:use>` detection as a DOM walk. pugixml stores element
-// names including their namespace prefix, so `sce:use` appears as
-// a literal element name string — the check mirrors Rust's
-// `content.contains("sce:use")` fast path (`sce-build/src/template.rs`),
-// just on the already-parsed tree instead of the raw source.
-// Matching on the prefixed form "sce:" deliberately; the AOT
-// expander is strict about the sce: namespace binding per
-// `claudedocs/rfc-sce-template-sce-param.md` §3, and the runtime
-// mirrors that strictness so a document accepted by one path
-// binds identically on the other.
-bool containsSceUse(pugi::xml_node node) {
-    for (const auto &child : node.children()) {
-        if (std::string(child.name()) == "sce:use") {
-            return true;
-        }
-        if (containsSceUse(child)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Collect every `<sce:use>` descendant in document order. Used by
-// the splice loop so mutations of the parent/child lists while
-// expanding happen against a pre-captured node list; iterating
-// `children()` while calling `insert_copy_before` + `remove_child`
-// would invalidate the walker.
-void collectSceUses(pugi::xml_node node, std::vector<pugi::xml_node> &out) {
-    for (const auto &child : node.children()) {
-        if (child.type() != pugi::node_element) {
-            continue;
-        }
-        if (std::string(child.name()) == "sce:use") {
-            out.push_back(child);
-        } else {
-            collectSceUses(child, out);
-        }
-    }
-}
-
-// Single-pass `{$name}` substitution, mirroring Rust's
-// `apply_substitution_with_tracking` semantics
-// (`sce-build/src/template.rs`). No back-references: a param value
-// that itself contains `{$other}` is emitted verbatim (RFC §6.1
-// literal-only defaults). `{$` sequences that do not match a valid
-// declared param are emitted verbatim as source bytes. The C++
-// runtime does not track a PositionMap (RFC §1 Q3 defers that to
-// M4 conditional).
-std::string substituteTokens(std::string_view body,
-                             const std::unordered_map<std::string, std::string> &params) {
-    std::string out;
-    out.reserve(body.size());
-    size_t pos = 0;
-    while (pos < body.size()) {
-        size_t start = body.find("{$", pos);
-        if (start == std::string_view::npos) {
-            out.append(body.data() + pos, body.size() - pos);
-            break;
-        }
-        out.append(body.data() + pos, start - pos);
-        const size_t after = start + 2;
-        const size_t end = body.find('}', after);
-        if (end != std::string_view::npos) {
-            const std::string_view name(body.data() + after, end - after);
-            if (SCE::parsing::is_valid_param_name(name)) {
-                const auto it = params.find(std::string(name));
-                if (it != params.end()) {
-                    out.append(it->second);
-                    pos = end + 1;
-                    continue;
-                }
-            }
-        }
-        // Not a valid `{$name}` token — emit `{$` literally and
-        // advance past it. The `}` (if any) stays in the stream
-        // so adjacent literal braces are preserved byte-for-byte.
-        out.append("{$");
-        pos = after;
-    }
-    return out;
-}
-
-// Walk a DOM subtree, substituting `{$name}` in every attribute
-// value and every pcdata / cdata text node. Elements are recursed.
-// Substitution is applied in-place after `insert_copy_before` so
-// the caller does not need to build a substituted string tree
-// before splicing — cheaper memory and one less serialise step.
-void substituteInSubtree(pugi::xml_node node,
-                         const std::unordered_map<std::string, std::string> &params) {
-    if (node.type() == pugi::node_element) {
-        for (auto attr : node.attributes()) {
-            const std::string_view raw(attr.value());
-            if (raw.find("{$") == std::string_view::npos) {
-                continue;
-            }
-            attr.set_value(substituteTokens(raw, params).c_str());
-        }
-        for (auto child : node.children()) {
-            substituteInSubtree(child, params);
-        }
-    } else if (node.type() == pugi::node_pcdata || node.type() == pugi::node_cdata) {
-        const std::string_view raw(node.value());
-        if (raw.find("{$") == std::string_view::npos) {
-            return;
-        }
-        node.set_value(substituteTokens(raw, params).c_str());
-    }
-}
-
-struct ParamDecl {
-    std::string name;
-    bool required = false;
-    bool hasDefault = false;
-    std::string defaultValue;
-};
-
-// Canonicalise a resolved template path for cycle-stack membership
-// checks. `std::filesystem::canonical` dereferences symlinks and
-// resolves relative components, so `./foo.xml`, `../dir/foo.xml`,
-// and `foo.xml` all reduce to the same key. On error (file no
-// longer exists at the moment we canonicalise, race with a
-// deletion, etc.) we fall back to the resolved path unchanged so
-// membership comparison still trips for the common case of
-// repeated identical strings — mirrors Rust's
-// `std::fs::canonicalize(&resolved).unwrap_or_else(|_| resolved.clone())`
-// in `sce-build/src/template.rs`.
-std::filesystem::path canonicaliseTemplatePath(const std::string &resolvedPath) {
-    std::error_code ec;
-    auto canon = std::filesystem::canonical(resolvedPath, ec);
-    if (ec) {
-        return std::filesystem::path(resolvedPath);
-    }
-    return canon;
-}
-
-// Render a cycle chain as `outer -> inner -> ...` for the
-// `TemplateCycle` message. `stack` is the current recursion path
-// (caller-file at index 0, then each nested template in order);
-// `next` is the template whose expansion would have reopened the
-// cycle. The rendered string matches Rust's `render_chain` in
-// `sce-build/src/template.rs` so cross-language diagnostic
-// consumers (agents, CI parsers) can key on the same separator
-// convention.
-std::string renderTemplateChain(const std::vector<std::filesystem::path> &stack,
-                                const std::filesystem::path &next) {
-    // The arrow glyph (U+2192) matches Rust's " → " separator.
-    static const std::string arrow = " \xe2\x86\x92 ";
-    std::string out;
-    for (const auto &entry : stack) {
-        if (!out.empty()) {
-            out.append(arrow);
-        }
-        out.append(entry.string());
-    }
-    if (!out.empty()) {
-        out.append(arrow);
-    }
-    out.append(next.string());
-    return out;
-}
-
-}  // namespace
-
-bool PugiXMLDocument::processSceTemplate() {
-    // Recursive `<sce:use>` expansion with parameter substitution,
-    // cycle detection, and depth enforcement. Mirrors
-    // `sce-build/src/template.rs::expand` by seeding a canonical-path
-    // stack with the caller document (so a top-level self-reference
-    // trips immediately), then recursing into every loaded template
-    // until the leaf is reached or `MAX_TEMPLATE_DEPTH` is hit.
+SceTemplateResult PugiXMLDocument::processSceTemplate() {
+    // String-level `<sce:use>` expansion. Serialises the current
+    // (post-XInclude) DOM, hands it to `SCE::parsing::expandString`
+    // which mirrors `sce-build/src/template.rs::expand`, then
+    // reparses the expanded text back into `doc_` so downstream
+    // validation sees the expanded tree. The returned PositionMap
+    // tracks every emitted byte back to File/CallSite origins for
+    // diagnostic remapping (RFC §3 P2, see
+    // claudedocs/rfc-sce-template-phase-c.md).
     //
-    // Error classification (every throw is a proper named subtype;
-    // the 8 classes map 1:1 to the Rust `xml/template-*`
-    // DiagnosticCode set and are pinned by
-    // `cpp_template_subtypes_match_rust_diagnostic_codes`):
-    //   - `TemplateMissingAttribute` for a call-site `<sce:use>`
-    //     with no `template` attribute or an empty string.
-    //   - `TemplateNotFound` for resolver miss, with the search
-    //     trail attached verbatim to the Rust `resolve_template_path`
-    //     `tried` rendering.
-    //   - `TemplateReadError` / `TemplateMalformed` split file-load
-    //     failures by pugixml status: I/O-class statuses
-    //     (`status_file_not_found`, `status_io_error`,
-    //     `status_out_of_memory`, `status_internal_error`) route to
-    //     `TemplateReadError`; every other non-OK status is a parse
-    //     failure and routes to `TemplateMalformed`.
-    //   - `TemplateMalformed` also covers structural errors on the
-    //     template side: wrong root element, `<sce:param>` missing
-    //     `name`, invalid name pattern, duplicate name, bad
-    //     `required` value, or `required` + `default` declared
-    //     together.
-    //   - `TemplateUnknownParam` / `TemplateMissingParam` for
-    //     call-site parameter mismatches.
-    //   - `TemplateCycle` for self- or mutually-recursive templates.
-    //   - `TemplateTooDeep` for acyclic but pathologically long
-    //     chains.
-    //
-    // Full design contract: `claudedocs/rfc-sce-template-phase-b.md`.
+    // Error classification flows through `TemplateError` subtypes
+    // thrown by the expander (TemplateMissingAttribute,
+    // TemplateNotFound, TemplateReadError, TemplateMalformed,
+    // TemplateUnknownParam, TemplateMissingParam, TemplateCycle,
+    // TemplateTooDeep). `SCXMLParser::parseFile`'s std::exception
+    // catch-all collects the message via addError.
+    SceTemplateResult result;
     if (!doc_) {
         errorMessage_ = "Document is null";
-        return false;
+        return result;
     }
 
-    auto root = doc_->document_element();
-    if (!root) {
-        // Empty document has no `<sce:use>` by definition —
-        // trivially passes the passthrough contract.
-        return true;
+    // Fast path: documents whose captured source contains no
+    // `<sce:use>` bypass serialise/reparse entirely, preserving the
+    // existing DOM pointers. Returns an identity PositionMap over
+    // the author's raw source bytes so diagnostic lookups resolve
+    // to (file, row, col) without a post-normalisation skew.
+    if (!sourceText_.empty() &&
+        sourceText_.find("sce:use") == std::string::npos) {
+        result.ok = true;
+        result.positions = SCE::parsing::PositionMap::identity(
+            std::filesystem::path(sourcePath_), sourceText_);
+        return result;
     }
 
-    if (!containsSceUse(root)) {
-        SCE_LOG_DEBUG("PugiXMLDocument: processSceTemplate no-op (no <sce:use> present)");
-        return true;
+    // Serialise the current DOM state (post-XInclude) with
+    // `format_raw` — no indent tweaks, no declaration rewrite —
+    // so the bytes handed to the string-level expander mirror the
+    // parser's DOM one-to-one modulo normalisation. The serialised
+    // view is the coordinate space for the PositionMap; RFC §3 P2
+    // item #5 accepts this (xinclude-fragment remap is Phase X).
+    std::ostringstream serialised;
+    doc_->save(serialised, "", pugi::format_raw | pugi::format_no_declaration);
+    const std::string content = serialised.str();
+
+    // Secondary fast path: the serialised post-XInclude text may
+    // also lack `<sce:use>` if XInclude neither introduced nor
+    // preserved one. Identity over the serialised bytes gets
+    // PositionMap lookups pointing at the expanded DOM without a
+    // second expander invocation.
+    if (content.find("sce:use") == std::string::npos) {
+        result.ok = true;
+        result.positions = SCE::parsing::PositionMap::identity(
+            std::filesystem::path(sourcePath_), content);
+        return result;
     }
 
-    // Seed the cycle-detection stack with the caller document's
-    // own canonical path so a top-level `<sce:use template="self"/>`
-    // is trapped before we re-load the same file. In-memory parses
-    // (parseContent) leave `sourcePath_` empty; the stack then begins
-    // empty and trips on the first templates that reopen later. This
-    // matches Rust's behaviour when callers pass an in-memory label
-    // through `expand(self_path, ...)`.
-    std::vector<std::filesystem::path> stack;
-    if (!sourcePath_.empty()) {
-        stack.push_back(canonicaliseTemplatePath(sourcePath_));
+    auto expanded =
+        SCE::parsing::expandString(content, sourcePath_, basePath_);
+
+    // Reparse into the same shared_ptr'd document so every
+    // `IXMLElement` the caller has already retrieved continues to
+    // see the expanded tree. `xml_document::reset()` clears without
+    // deallocating the owning shared_ptr, then load_buffer populates
+    // it with the expanded bytes.
+    doc_->reset();
+    const auto parseResult = doc_->load_buffer(
+        expanded.expanded_text.data(), expanded.expanded_text.size());
+    if (!parseResult) {
+        errorMessage_ = "Failed to reparse expanded template: " +
+                        std::string(parseResult.description());
+        return result;
     }
 
-    expandAllUsesInTree(root, basePath_, stack, 0);
-    return true;
-}
-
-void PugiXMLDocument::expandAllUsesInTree(pugi::xml_node root,
-                                          const std::string &baseDir,
-                                          std::vector<std::filesystem::path> &stack,
-                                          int depth) {
-    // Depth gate fires at entry per Rust `expand_impl` semantics —
-    // a chain of `MAX_TEMPLATE_DEPTH` nested templates hits the
-    // `depth >= MAX_TEMPLATE_DEPTH` check on the deepest recursion
-    // attempt and is rejected before another template is loaded.
-    if (depth >= SCE::parsing::MAX_TEMPLATE_DEPTH) {
-        throw SCE::parsing::TemplateTooDeep(
-            "<sce:use> template nesting exceeds depth limit of " +
-            std::to_string(SCE::parsing::MAX_TEMPLATE_DEPTH));
-    }
-
-    // Document-order collection decouples traversal from mutation:
-    // `insert_copy_before` / `remove_child` on the caller side
-    // during `expandSceUse` can rearrange the tree under us if we
-    // iterated `children()` directly. Pre-collecting captures the
-    // top-level uses before any splicing begins.
-    std::vector<pugi::xml_node> useNodes;
-    collectSceUses(root, useNodes);
-
-    for (auto &useNode : useNodes) {
-        expandSceUse(useNode, baseDir, stack, depth);
-    }
-}
-
-void PugiXMLDocument::expandSceUse(pugi::xml_node useNode,
-                                    const std::string &baseDir,
-                                    std::vector<std::filesystem::path> &stack,
-                                    int depth) {
-    // 1. Caller must carry a `template` attribute. Empty-string is
-    // equivalent to missing per Rust's
-    // `TemplateError::MissingTemplateAttribute` semantics.
-    const auto templateAttr = useNode.attribute("template");
-    const std::string templateHref = templateAttr ? templateAttr.value() : std::string();
-    if (templateHref.empty()) {
-        throw SCE::parsing::TemplateMissingAttribute(
-            "<sce:use> missing required `template` attribute");
-    }
-
-    // 2. Resolve the template path against the caller's base
-    // directory. The member `basePath_` holds the outer document's
-    // base; the recursion passes template-local base directories
-    // through `baseDir` so a nested `<sce:use>` inside a template
-    // body resolves relative to the TEMPLATE's location, matching
-    // Rust's `nested_base = resolved.parent()` in
-    // `sce-build/src/template.rs::expand_impl`. The search-trail
-    // overload captures the paths that were tried so the NotFound
-    // diagnostic renders the same comma-separated list Rust emits.
-    std::vector<std::string> searchedPaths;
-    const std::string resolvedPath =
-        resolveFilePathInBase(templateHref, baseDir, searchedPaths);
-    if (resolvedPath.empty()) {
-        std::string searchedRendered;
-        for (const auto &path : searchedPaths) {
-            if (!searchedRendered.empty()) {
-                searchedRendered.append(", ");
-            }
-            searchedRendered.append(path);
-        }
-        throw SCE::parsing::TemplateNotFound(
-            "<sce:use template=\"" + templateHref + "\">: file not "
-            "found (searched: " + searchedRendered + ")");
-    }
-
-    // 2b. Cycle detection via canonicalised path. If the template
-    // we are about to load is already on the recursion stack, the
-    // chain would loop — stop before reopening the file. The
-    // membership check uses canonical paths so aliased forms
-    // (`./foo.xml`, `foo.xml`, `../dir/foo.xml`) collapse to the
-    // same key, mirroring Rust's `std::fs::canonicalize` check.
-    const auto canonResolved = canonicaliseTemplatePath(resolvedPath);
-    for (const auto &entry : stack) {
-        if (entry == canonResolved) {
-            throw SCE::parsing::TemplateCycle(
-                "<sce:use template=\"" + templateHref + "\">: cycle detected (" +
-                renderTemplateChain(stack, canonResolved) + ")");
-        }
-    }
-
-    // 3. Load + parse the template file. Split I/O-class failures
-    // (ReadError) from document-shape failures (Malformed) by
-    // pugi::xml_parse_status — the Rust side separates these into
-    // two DiagnosticCodes so agent dispatch can pick an I/O vs
-    // content fix without reparsing the message body.
-    pugi::xml_document templateDoc;
-    const auto loadResult = templateDoc.load_file(resolvedPath.c_str());
-    if (!loadResult) {
-        const auto status = loadResult.status;
-        const bool ioClass = status == pugi::status_file_not_found ||
-                             status == pugi::status_io_error ||
-                             status == pugi::status_out_of_memory ||
-                             status == pugi::status_internal_error;
-        if (ioClass) {
-            throw SCE::parsing::TemplateReadError(
-                "<sce:use template=\"" + templateHref + "\">: cannot "
-                "read: " + loadResult.description());
-        }
-        throw SCE::parsing::TemplateMalformed(
-            "<sce:use template=\"" + templateHref + "\">: template is "
-            "malformed: " + loadResult.description());
-    }
-
-    const auto templateRoot = templateDoc.document_element();
-    if (!templateRoot || std::string(templateRoot.name()) != "sce:template") {
-        const std::string rootName = templateRoot ? templateRoot.name() : "<none>";
-        throw SCE::parsing::TemplateMalformed(
-            "<sce:use template=\"" + templateHref + "\">: template is "
-            "malformed: root element must be <sce:template>, got <" +
-            rootName + ">");
-    }
-
-    // 4. Collect `<sce:param>` declarations.
-    std::vector<ParamDecl> decls;
-    for (auto child : templateRoot.children()) {
-        if (child.type() != pugi::node_element) {
-            continue;
-        }
-        if (std::string(child.name()) != "sce:param") {
-            continue;
-        }
-        const auto nameAttr = child.attribute("name");
-        if (!nameAttr) {
-            throw SCE::parsing::TemplateMalformed(
-                "<sce:use template=\"" + templateHref + "\">: template "
-                "is malformed: <sce:param> missing required `name` "
-                "attribute");
-        }
-        const std::string paramName = nameAttr.value();
-        if (!SCE::parsing::is_valid_param_name(paramName)) {
-            throw SCE::parsing::TemplateMalformed(
-                "<sce:use template=\"" + templateHref + "\">: template "
-                "is malformed: <sce:param name=\"" + paramName +
-                "\"> name must match " +
-                std::string(SCE::parsing::PARAM_NAME_PATTERN));
-        }
-        for (const auto &prev : decls) {
-            if (prev.name == paramName) {
-                throw SCE::parsing::TemplateMalformed(
-                    "<sce:use template=\"" + templateHref + "\">: "
-                    "template is malformed: duplicate <sce:param "
-                    "name=\"" + paramName + "\"> declaration");
-            }
-        }
-
-        ParamDecl decl;
-        decl.name = paramName;
-        if (const auto reqAttr = child.attribute("required")) {
-            const std::string reqVal = reqAttr.value();
-            if (reqVal == "true") {
-                decl.required = true;
-            } else if (reqVal != "false") {
-                throw SCE::parsing::TemplateMalformed(
-                    "<sce:use template=\"" + templateHref + "\">: "
-                    "template is malformed: <sce:param name=\"" +
-                    paramName + "\"> `required` must be \"true\" or "
-                    "\"false\", got \"" + reqVal + "\"");
-            }
-        }
-        if (const auto defAttr = child.attribute("default")) {
-            decl.hasDefault = true;
-            decl.defaultValue = defAttr.value();
-        }
-        if (decl.required && decl.hasDefault) {
-            throw SCE::parsing::TemplateMalformed(
-                "<sce:use template=\"" + templateHref + "\">: template "
-                "is malformed: <sce:param name=\"" + paramName +
-                "\"> declares both `required=\"true\"` and "
-                "`default=\"...\"` — mutually exclusive");
-        }
-        decls.push_back(std::move(decl));
-    }
-
-    // 5. Gather caller bindings. Skip `template` and `xmlns`/`xmlns:*`
-    // — pugixml treats namespace declarations as regular attributes,
-    // so the bindings set must filter them out explicitly.
-    std::unordered_map<std::string, std::string> callerBindings;
-    for (const auto attr : useNode.attributes()) {
-        const std::string attrName = attr.name();
-        if (attrName == "template") {
-            continue;
-        }
-        if (attrName == "xmlns" ||
-            (attrName.size() > 6 && attrName.compare(0, 6, "xmlns:") == 0)) {
-            continue;
-        }
-        callerBindings.emplace(attrName, attr.value());
-    }
-
-    // 6. Every caller binding must name a declared param. Mirrors
-    // Rust's UnknownParam classification; this is the M2 typed throw.
-    for (const auto &kv : callerBindings) {
-        bool declared = false;
-        for (const auto &d : decls) {
-            if (d.name == kv.first) {
-                declared = true;
-                break;
-            }
-        }
-        if (declared) {
-            continue;
-        }
-        std::string declaredList;
-        for (const auto &d : decls) {
-            if (!declaredList.empty()) {
-                declaredList.append(", ");
-            }
-            declaredList.append(d.name);
-        }
-        if (declaredList.empty()) {
-            declaredList = "<none>";
-        }
-        throw SCE::parsing::TemplateUnknownParam(
-            "<sce:use template=\"" + templateHref + "\">: unknown "
-            "parameter '" + kv.first + "' (declared: " + declaredList +
-            ")");
-    }
-
-    // 7. Bind: caller value > default > empty. Missing required is
-    // the second M2 typed throw.
-    std::unordered_map<std::string, std::string> params;
-    params.reserve(decls.size());
-    for (const auto &d : decls) {
-        const auto it = callerBindings.find(d.name);
-        if (it != callerBindings.end()) {
-            params.emplace(d.name, it->second);
-            continue;
-        }
-        if (d.required) {
-            throw SCE::parsing::TemplateMissingParam(
-                "<sce:use template=\"" + templateHref + "\">: missing "
-                "required parameter '" + d.name + "'");
-        }
-        params.emplace(d.name, d.hasDefault ? d.defaultValue : std::string());
-    }
-
-    // 8. Substitute `{$name}` in the template body children in-place
-    // inside `templateDoc`. Substitution runs BEFORE the nested
-    // recursion so any `{$name}` appearing inside a nested
-    // `<sce:use>` attribute (e.g. `<sce:use y="{$x}"/>`) is resolved
-    // against the OUTER call's bindings before the nested template
-    // even loads — mirrors Rust
-    // `substitute_into_template_with_map` → `expand_impl` order in
-    // `sce-build/src/template.rs`. `<sce:param>` declarations are
-    // skipped so `<sce:param default="{$a}">` literals never expand
-    // (RFC §6.1 literal-only defaults).
-    for (auto child : templateRoot.children()) {
-        if (child.type() == pugi::node_element &&
-            std::string(child.name()) == "sce:param") {
-            continue;
-        }
-        substituteInSubtree(child, params);
-    }
-
-    // 9. Recursively expand nested `<sce:use>` inside the templateDoc
-    // body. `templateBaseDir` is the template file's own directory,
-    // so a nested `<sce:use template="sibling.scxml"/>` resolves
-    // relative to the template, not the outer caller. The canonical
-    // path is pushed onto the cycle stack for the duration of the
-    // recursion, then popped so sibling expansions at the same depth
-    // do not see each other as cycles.
-    const std::string templateBaseDir =
-        std::filesystem::path(resolvedPath).parent_path().string();
-    stack.push_back(canonResolved);
-    try {
-        expandAllUsesInTree(templateRoot, templateBaseDir, stack, depth + 1);
-    } catch (...) {
-        stack.pop_back();
-        throw;
-    }
-    stack.pop_back();
-
-    // 10. Splice body children (non-param) into the caller parent in
-    // place of the `<sce:use>` node. `insert_copy_before` clones
-    // into the caller document so `templateDoc` can go out of scope
-    // safely; substitution has already been applied to the source
-    // nodes, so the clones carry the resolved values without a
-    // second traversal pass.
-    //
-    // `useNode.parent()` is always non-empty here because every
-    // `useNode` arrives via `collectSceUses`, which walks children
-    // of a passed-in root and only pushes descendants — never the
-    // root node itself.
-    auto callerParent = useNode.parent();
-    for (auto child : templateRoot.children()) {
-        if (child.type() == pugi::node_element &&
-            std::string(child.name()) == "sce:param") {
-            continue;
-        }
-        callerParent.insert_copy_before(child, useNode);
-    }
-    callerParent.remove_child(useNode);
+    result.ok = true;
+    result.positions = std::move(expanded.positions);
+    return result;
 }
 
 std::string PugiXMLDocument::resolveFilePath(const std::string &href) const {

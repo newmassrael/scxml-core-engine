@@ -53,7 +53,7 @@ public:
 
     std::shared_ptr<IXMLElement> getRootElement() override;
     bool processXInclude() override;
-    bool processSceTemplate() override;
+    SceTemplateResult processSceTemplate() override;
     std::string getErrorMessage() const override;
     bool isValid() const override;
 
@@ -122,34 +122,6 @@ private:
     static std::string resolveFilePathInBase(const std::string &href,
                                              const std::string &baseDir,
                                              std::vector<std::string> &searched);
-
-    // Expand every top-level `<sce:use>` element rooted at `root`.
-    // Recursion is driven by the per-call cycle stack + depth:
-    // - `stack` carries canonicalised absolute paths of templates
-    //   already on the expansion path; a resolved template found in
-    //   the stack throws `TemplateCycle` with the full chain.
-    // - `depth` increments on each nested recursion; when it reaches
-    //   `SCE::parsing::MAX_TEMPLATE_DEPTH` a `TemplateTooDeep` error
-    //   is thrown. Mirrors Rust's `expand_impl` in
-    //   `sce-build/src/template.rs`.
-    void expandAllUsesInTree(pugi::xml_node root,
-                             const std::string &baseDir,
-                             std::vector<std::filesystem::path> &stack,
-                             int depth);
-
-    // Expand a single `<sce:use>` node in place. Loads the template
-    // file, validates params against the caller's attribute set,
-    // substitutes `{$name}` tokens in the body, recursively expands
-    // any nested `<sce:use>` inside the substituted body, and splices
-    // the result into the caller parent before removing the original
-    // `<sce:use>`. Throws `SCE::parsing::TemplateError` (or one of
-    // its subtypes) on any failure — callers plumb the exception up
-    // through `processSceTemplate` for `SCXMLParser::parseFile` to
-    // convert into `addError` messages.
-    void expandSceUse(pugi::xml_node useNode,
-                      const std::string &baseDir,
-                      std::vector<std::filesystem::path> &stack,
-                      int depth);
 
     std::shared_ptr<pugi::xml_document> doc_;
     std::string errorMessage_;

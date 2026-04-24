@@ -4,10 +4,25 @@
 #pragma once
 
 #include "IXMLElement.h"
+#include "parsing/PositionMap.h"
 #include <memory>
 #include <string>
 
 namespace SCE {
+
+// Result of `IXMLDocument::processSceTemplate`. Carries the
+// template-expansion `PositionMap` alongside the success flag so
+// downstream diagnostic emitters can remap in-memory coordinates
+// back to the author's source file. See
+// `claudedocs/rfc-sce-template-phase-c.md` §3 P2. The PositionMap
+// is identity when `<sce:use>` is absent from the source document
+// and otherwise captures every spliced template body byte with
+// File/CallSite origin attribution (RFC §6.3 Q3 depth-1 rule).
+struct SceTemplateResult {
+    bool ok = false;
+    SCE::parsing::PositionMap positions;
+};
+
 
 /**
  * @brief Abstract XML document interface
@@ -52,7 +67,7 @@ public:
      * 1:1 to the Rust `xml/template-*` DiagnosticCode set so the
      * AOT and Interpreter paths surface the same class of failure.
      */
-    virtual bool processSceTemplate() = 0;
+    virtual SceTemplateResult processSceTemplate() = 0;
 
     /**
      * @brief Get error message if parsing failed
