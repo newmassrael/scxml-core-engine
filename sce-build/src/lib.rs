@@ -1398,6 +1398,7 @@ fn classify_remote_scxml_invokes(
     resolved_name: &str,
 ) {
     let mut mutated = false;
+    let parent_partition = mesh::partitions::partition_for_machine(deploy_cfg, resolved_name);
     for state in model.states.values_mut() {
         for invoke in state.invokes.iter_mut() {
             if let model::Invoke::Scxml(info) = invoke {
@@ -1407,7 +1408,15 @@ fn classify_remote_scxml_invokes(
                 if target == resolved_name {
                     continue;
                 }
-                if deploy_cfg.device_for_machine(target).is_some() {
+                if deploy_cfg.device_for_machine(target).is_none() {
+                    continue;
+                }
+                // §9.6.6 rule 3 — same-partition invokes run in one OS
+                // process and therefore take the local child-session
+                // path; only cross-partition invokes cross a mesh wire.
+                let target_partition =
+                    mesh::partitions::partition_for_machine(deploy_cfg, target);
+                if target_partition != parent_partition {
                     info.remote_mesh_target = Some(target.to_string());
                     mutated = true;
                 }
@@ -2122,10 +2131,13 @@ topology:
         assert_eq!(info.remote_mesh_target.as_deref(), Some("worker"));
     }
 
-    /// Local inline-content invoke resolves to a relative file path
-    /// (`parent_child0.scxml` per `extract_inline_child_name`), never a
-    /// `#<name>` form. Classifier must leave it alone so W3C test191/192/
-    /// 253 keep going through the local W3C invoke path.
+    /// WASM-mode inline-content invoke (`parse_string`, no `base_dir`)
+    /// keeps `src` empty because the parser cannot write the synth
+    /// sibling without a filesystem; the classifier therefore finds
+    /// nothing to strip the `#` prefix from and leaves the entry
+    /// alone. End-to-end inline synthesis (§9.6.6 rule 2) is covered
+    /// by the W3C 191/192/253 ctest suite once a real sibling dir is
+    /// in play.
     #[test]
     fn inline_content_invoke_left_unflagged() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -2147,8 +2159,95 @@ topology:
         };
         assert!(
             info.remote_mesh_target.is_none(),
-            "local inline-content invoke must not be flagged; got {:?}",
+            "WASM-mode inline-content invoke must not be flagged; got {:?}",
             info.remote_mesh_target
+        );
+    }
+
+    /// SCE_MESH.md §9.6.6 rule 3: a target whose deploy.yaml partition
+    /// matches the parent's partition is a local invoke — the mesh
+    /// wire would introduce a needless hop. Covers the upgraded
+    /// partition-aware classifier; pre-upgrade the classifier would
+    /// have flagged this as remote on pure "declared peer" grounds.
+    #[test]
+    fn same_partition_peer_not_flagged_remote() {
+        let deploy = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent: { source: parent.scxml }
+      worker: { source: worker.scxml }
+partitions:
+  grouped:
+    machines: [parent, worker]
+    contains:
+      invokes:
+        - { machine: parent, invoke: inv0 }
+"#;
+        let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must parse");
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" src="#worker" id="inv0"/>
+  </state>
+</scxml>"##;
+        let mut model = parse_parent(scxml);
+        classify_remote_scxml_invokes(&mut model, &cfg, "parent");
+        let state = model.states.get("s1").expect("s1 present");
+        let info = match &state.invokes[0] {
+            model::Invoke::Scxml(i) => i,
+            other => panic!("expected Scxml invoke, got {other:?}"),
+        };
+        assert!(
+            info.remote_mesh_target.is_none(),
+            "same-partition peer must not be flagged remote; got {:?}",
+            info.remote_mesh_target,
+        );
+    }
+
+    /// §9.6.6 rule 3 cross-partition: distinct partitions ⇒ distinct
+    /// OS processes ⇒ mesh hop. Classifier flags as remote so the
+    /// C++ codegen takes the §10.7.1 Session F path.
+    #[test]
+    fn cross_partition_peer_flagged_remote() {
+        let deploy = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent: { source: parent.scxml }
+      worker: { source: worker.scxml }
+partitions:
+  left:
+    machines: [parent]
+    contains:
+      invokes:
+        - { machine: parent, invoke: inv0 }
+  right:
+    machines: [worker]
+    contains:
+      invokes:
+        - { machine: worker, invoke: dummy }
+"#;
+        let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must parse");
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" src="#worker" id="inv0"/>
+  </state>
+</scxml>"##;
+        let mut model = parse_parent(scxml);
+        classify_remote_scxml_invokes(&mut model, &cfg, "parent");
+        let state = model.states.get("s1").expect("s1 present");
+        let info = match &state.invokes[0] {
+            model::Invoke::Scxml(i) => i,
+            other => panic!("expected Scxml invoke, got {other:?}"),
+        };
+        assert_eq!(
+            info.remote_mesh_target.as_deref(),
+            Some("worker"),
+            "cross-partition peer must be flagged remote",
         );
     }
 

@@ -140,6 +140,50 @@ pub fn is_machine_partition_listed(cfg: &DeployConfig, machine: &str) -> bool {
         .any(|(_, decl)| decl.machines.iter().any(|m| m == machine))
 }
 
+/// SCE_MESH.md §9.6.6 rule 3 + §14 partition resolution — return an
+/// opaque "execution location" token for `machine`. Two machines share
+/// an OS process when, and only when, this function returns the same
+/// token for both.
+///
+/// Rules, highest priority first:
+///
+/// 1. **Explicit partition listing.** If `partitions:` is declared and
+///    `machine` appears under some partition's `machines:` list, the
+///    partition name is the token — whether the machine is an author
+///    peer or a synthesised child. This is the `deploy.yaml` override
+///    surface spec §9.6.6 rule 3 names for "reassigning the synth to a
+///    different partition".
+/// 2. **Synthesised machine inheritance.** When a `machine` carries the
+///    reserved `__sce_synth_invoke__` infix and was not caught by rule 1,
+///    spec §9.6.6 rule 3 places it in the *parent's* partition by
+///    default. Strip the infix to recover the parent id and recurse.
+///    `rsplit_once` handles nested inline invoke (`parent__sce_synth_invoke__X__sce_synth_invoke__Y`)
+///    by unwinding one layer per call.
+/// 3. **Monolithic fallback.** A machine not listed and not synthesised
+///    returns a per-machine synthetic token (prefix `__monolithic__`).
+///    Distinct machines therefore produce distinct tokens, preserving
+///    the pre-partition-aware invariant that cross-machine invokes on a
+///    no-partitions build are classified as remote.
+///
+/// `__monolithic__` is not a reserved SCE Mesh identifier; the prefix is
+/// local to this function and never leaks through `deploy.yaml`, codegen,
+/// or diagnostics. The token is compared for equality only.
+pub fn partition_for_machine(cfg: &DeployConfig, machine: &str) -> String {
+    if let Some(partitions) = &cfg.partitions {
+        for (name, decl) in partitions.iter() {
+            if decl.machines.iter().any(|m| m == machine) {
+                return name.clone();
+            }
+        }
+    }
+    if let Some((parent, _)) = machine.rsplit_once(crate::mesh::deploy::SYNTH_INVOKE_INFIX) {
+        if !parent.is_empty() {
+            return partition_for_machine(cfg, parent);
+        }
+    }
+    format!("__monolithic__{machine}")
+}
+
 /// The set of machines that appear under any partition's `machines:`
 /// list. Rule 1 only applies to these — a machine absent from every
 /// partition runs monolithically per spec L2791 (no warning).
@@ -1147,5 +1191,147 @@ partitions:
         models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
         validate_partitions_against_models(&cfg, &models)
             .expect("single-partition parallel with custom_tcp must pass — no wire-21 traffic");
+    }
+
+    // ── partition_for_machine ─────────────────────────────────
+
+    /// No `partitions:` block in deploy.yaml — every machine is its own
+    /// monolithic process, so two distinct machines produce distinct
+    /// tokens (preserving the pre-partition-aware remote-classifier
+    /// invariant that cross-machine invokes flag remote).
+    #[test]
+    fn partition_for_machine_no_partitions_block_is_monolithic_per_machine() {
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+      motor: { source: motor.scxml }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let brake = partition_for_machine(&cfg, "brake");
+        let motor = partition_for_machine(&cfg, "motor");
+        assert_ne!(brake, motor, "distinct machines must occupy distinct locations");
+        assert!(brake.starts_with("__monolithic__"));
+        assert!(motor.starts_with("__monolithic__"));
+    }
+
+    /// Two machines listed under the same partition resolve to the
+    /// same token — this is the case the classifier upgrade collapses
+    /// into a local invoke, removing a needless mesh hop.
+    ///
+    /// The `contains:` blocks reference an `invoke:dummy` unit so the
+    /// partition passes rule 10 (non-empty); this test covers resolver
+    /// semantics only, so the referenced invoke is never cross-checked
+    /// against an SCXML model.
+    #[test]
+    fn partition_for_machine_same_partition_shares_token() {
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+      motor: { source: motor.scxml }
+partitions:
+  grouped:
+    machines: [brake, motor]
+    contains:
+      invokes:
+        - { machine: brake, invoke: dummy }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        assert_eq!(
+            partition_for_machine(&cfg, "brake"),
+            partition_for_machine(&cfg, "motor"),
+        );
+        assert_eq!(partition_for_machine(&cfg, "brake"), "grouped");
+    }
+
+    /// Two machines under distinct partitions get distinct tokens —
+    /// classifier will flag cross-partition invokes as remote.
+    #[test]
+    fn partition_for_machine_distinct_partitions_resolve_distinct() {
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+      motor: { source: motor.scxml }
+partitions:
+  left:
+    machines: [brake]
+    contains:
+      invokes:
+        - { machine: brake, invoke: dummy }
+  right:
+    machines: [motor]
+    contains:
+      invokes:
+        - { machine: motor, invoke: dummy }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        assert_eq!(partition_for_machine(&cfg, "brake"), "left");
+        assert_eq!(partition_for_machine(&cfg, "motor"), "right");
+    }
+
+    /// §9.6.6 rule 3 default: an un-declared synth machine inherits
+    /// its parent's location via string decomposition. Parent is
+    /// monolithic → synth is the same monolith → same location.
+    #[test]
+    fn partition_for_machine_synth_inherits_parent_monolithic() {
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let parent = partition_for_machine(&cfg, "brake");
+        let synth = partition_for_machine(&cfg, "brake__sce_synth_invoke__worker");
+        assert_eq!(parent, synth, "synth must inherit parent's location");
+    }
+
+    /// §9.6.6 rule 3 default with partitions declared: the parent is
+    /// listed under partition P, so an undeclared synth inherits P.
+    #[test]
+    fn partition_for_machine_synth_inherits_parent_partition() {
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+partitions:
+  main:
+    machines: [brake]
+    contains:
+      invokes:
+        - { machine: brake, invoke: dummy }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        assert_eq!(partition_for_machine(&cfg, "brake"), "main");
+        assert_eq!(
+            partition_for_machine(&cfg, "brake__sce_synth_invoke__worker"),
+            "main",
+        );
+    }
+
+    /// Nested inline invoke: `parent__sce_synth_invoke__X__sce_synth_invoke__Y`.
+    /// Each `rsplit_once` peels one layer; we recurse until we resolve
+    /// to either a listed machine or a monolithic fallback.
+    #[test]
+    fn partition_for_machine_synth_nested_peels_one_layer_per_call() {
+        let deploy = r#"
+topology:
+  ecu:
+    machines:
+      brake: { source: brake.scxml }
+"#;
+        let cfg = parse_deploy_str(deploy).expect("deploy must parse");
+        let parent = partition_for_machine(&cfg, "brake");
+        let nested = partition_for_machine(
+            &cfg,
+            "brake__sce_synth_invoke__outer__sce_synth_invoke__inner",
+        );
+        assert_eq!(parent, nested);
     }
 }
