@@ -171,6 +171,40 @@ std::unordered_map<std::string, std::string> collectUseBindings(
 std::vector<ByteRange> extractTemplateBodyRanges(
     std::string_view expandedTemplate, std::string_view templateHref);
 
+// Fully render a template file's bytes into its substituted form
+// + PositionMap. Mirrors
+// `sce-build/src/template.rs::substitute_into_template_with_map`
+// — validates the template structure, collects `<sce:param>`
+// declarations, binds caller values against those declarations,
+// substitutes `{$name}` tokens inside the body (body span = first
+// non-param child start → last non-param child end), and emits a
+// PositionMap covering every byte of the returned text. Throws
+// `TemplateMalformed` / `TemplateUnknownParam` /
+// `TemplateMissingParam` on the corresponding failure modes.
+struct SubstituteIntoTemplateResult {
+    std::string substituted;
+    PositionMap positions;
+};
+
+SubstituteIntoTemplateResult substituteIntoTemplateWithMap(
+    std::string_view templateRaw,
+    const std::filesystem::path &templatePath,
+    std::string_view templateHref,
+    const std::unordered_map<std::string, std::string> &bound,
+    const std::filesystem::path &callerFile, std::uint32_t callerRow,
+    std::uint32_t callerCol);
+
+// Resolve `templateHref` relative to `baseDir`. Mirrors
+// `sce-build/src/template.rs::resolve_template_path`: absolute →
+// base directory → current working directory. Returns the resolved
+// absolute path on hit; on miss, `searched` receives the paths
+// tried (for the `TemplateNotFound` diagnostic) and the function
+// returns an empty path.
+std::filesystem::path resolveTemplatePath(
+    std::string_view templateHref,
+    const std::filesystem::path &baseDir,
+    std::vector<std::string> &searched);
+
 // Find the byte offset one-past the closing `>` of the XML element
 // starting at `start` in `source`. `tagName` is the element's full
 // prefixed local name (e.g. `"sce:use"`). Handles self-closing

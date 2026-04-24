@@ -6,11 +6,16 @@
 
 #include <pugixml.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <sstream>
 #include <string>
+#include <system_error>
 #include <unordered_map>
+#include <unordered_set>
 
 // String-level `<sce:use>` / `<sce:template>` expander
 // implementation. Mirrors `sce-build/src/template.rs`; see the
@@ -373,6 +378,268 @@ std::unordered_map<std::string, std::string> collectUseBindings(
     return bindings;
 }
 
+std::filesystem::path resolveTemplatePath(
+    std::string_view templateHref, const std::filesystem::path &baseDir,
+    std::vector<std::string> &searched) {
+    // Mirrors `sce-build/src/template.rs::resolve_template_path`:
+    // absolute → base directory → current working directory. Every
+    // branch that checks `exists()` appends the candidate to
+    // `searched` on miss so the `TemplateNotFound` diagnostic renders
+    // the same trail the Rust side emits.
+    std::filesystem::path path(std::string{templateHref});
+    if (path.is_absolute()) {
+        if (std::filesystem::exists(path)) {
+            return path;
+        }
+        searched.push_back(path.string());
+        return {};
+    }
+    if (!baseDir.empty()) {
+        const auto candidate = baseDir / path;
+        if (std::filesystem::exists(candidate)) {
+            return std::filesystem::absolute(candidate);
+        }
+        searched.push_back(candidate.string());
+    }
+    if (std::filesystem::exists(path)) {
+        return std::filesystem::absolute(path);
+    }
+    searched.push_back(path.string());
+    return {};
+}
+
+namespace {
+
+// Canonicalise a resolved template path for cycle-stack membership.
+// Falls back to the uncanonical form on error so self-references
+// still trip when the resolver and the canonicaliser disagree
+// (e.g. a transient filesystem state during canonical()).
+std::filesystem::path canonicaliseForCycle(
+    const std::filesystem::path &resolved) {
+    std::error_code ec;
+    auto canon = std::filesystem::canonical(resolved, ec);
+    if (ec) {
+        return resolved;
+    }
+    return canon;
+}
+
+// Render a cycle chain as `outer → inner → next` using the U+2192
+// arrow. Mirrors Rust `sce-build/src/template.rs::render_chain` so
+// cross-language diagnostic consumers key on the same separator.
+std::string renderChain(const std::vector<std::filesystem::path> &stack,
+                        const std::filesystem::path &next) {
+    static const std::string arrow = " \xe2\x86\x92 ";
+    std::string out;
+    for (const auto &entry : stack) {
+        if (!out.empty()) {
+            out.append(arrow);
+        }
+        out.append(entry.string());
+    }
+    if (!out.empty()) {
+        out.append(arrow);
+    }
+    out.append(next.string());
+    return out;
+}
+
+// Read the full text of `path` into an owned string. Throws
+// `TemplateReadError` labelled with `templateHref` on I/O failure
+// so the expander's call site can surface the correct typed
+// subtype without re-classifying.
+std::string readTemplateText(const std::filesystem::path &path,
+                             std::string_view templateHref) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw TemplateReadError(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: cannot read: open failed");
+    }
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    if (in.bad()) {
+        throw TemplateReadError(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: cannot read: I/O failure during read");
+    }
+    return buffer.str();
+}
+
+}  // namespace
+
+SubstituteIntoTemplateResult substituteIntoTemplateWithMap(
+    std::string_view templateRaw,
+    const std::filesystem::path &templatePath,
+    std::string_view templateHref,
+    const std::unordered_map<std::string, std::string> &bound,
+    const std::filesystem::path &callerFile, std::uint32_t callerRow,
+    std::uint32_t callerCol) {
+    pugi::xml_document doc;
+    const auto parseResult =
+        doc.load_buffer(templateRaw.data(), templateRaw.size());
+    if (!parseResult) {
+        throw TemplateMalformed(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: template is malformed: " + parseResult.description());
+    }
+    const auto root = doc.document_element();
+    if (!root || std::string(root.name()) != "sce:template") {
+        const std::string rootName = root ? root.name() : "<none>";
+        throw TemplateMalformed(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: template is malformed: root element must be <sce:template>, "
+            "got <" +
+            rootName + ">");
+    }
+
+    // Collect `<sce:param>` declarations + compute body byte span.
+    std::vector<ParamDecl> decls;
+    std::unordered_set<std::string> seenNames;
+    bool haveBodyStart = false;
+    std::size_t bodyStart = 0;
+    std::size_t bodyEnd = 0;
+
+    for (const auto child : root.children()) {
+        if (child.type() == pugi::node_element &&
+            std::string(child.name()) == "sce:param") {
+            ParamDecl decl = parseParamDecl(child, templateHref);
+            if (!seenNames.insert(decl.name).second) {
+                throw TemplateMalformed(
+                    "<sce:use template=\"" + std::string(templateHref) +
+                    "\">: template is malformed: duplicate <sce:param "
+                    "name=\"" +
+                    decl.name + "\"> declaration");
+            }
+            decls.push_back(std::move(decl));
+            continue;
+        }
+        if (child.type() != pugi::node_element &&
+            child.type() != pugi::node_pcdata &&
+            child.type() != pugi::node_cdata &&
+            child.type() != pugi::node_comment) {
+            continue;
+        }
+        const auto childStartSigned = child.offset_debug();
+        if (childStartSigned < 0) {
+            continue;
+        }
+        std::size_t childStart =
+            static_cast<std::size_t>(childStartSigned);
+        if (child.type() == pugi::node_element && childStart > 0 &&
+            templateRaw[childStart] != '<' &&
+            templateRaw[childStart - 1] == '<') {
+            childStart -= 1;
+        }
+        std::size_t childEnd = childStart;
+        if (child.type() == pugi::node_element) {
+            childEnd =
+                findElementEnd(templateRaw, childStart,
+                                std::string(child.name()));
+        } else if (child.type() == pugi::node_comment) {
+            const std::size_t closer = templateRaw.find("-->", childStart);
+            childEnd = (closer == std::string_view::npos)
+                           ? templateRaw.size()
+                           : closer + 3;
+        } else {
+            // pcdata / cdata: run to the next `<` (next sibling or
+            // the `</sce:template>` closing tag).
+            const std::size_t nextOpen = templateRaw.find('<', childStart);
+            childEnd = (nextOpen == std::string_view::npos)
+                           ? templateRaw.size()
+                           : nextOpen;
+        }
+        if (!haveBodyStart) {
+            bodyStart = childStart;
+            haveBodyStart = true;
+        }
+        bodyEnd = childEnd;
+    }
+
+    // Bindings validation mirrors Rust `substitute_into_template_with_map`:
+    // every bound name must be declared, every required param must be
+    // bound, missing non-required params get their default or empty.
+    std::string declaredList;
+    for (const auto &d : decls) {
+        if (!declaredList.empty()) {
+            declaredList.append(", ");
+        }
+        declaredList.append(d.name);
+    }
+    if (declaredList.empty()) {
+        declaredList = "<none>";
+    }
+    for (const auto &kv : bound) {
+        const bool known = std::any_of(decls.begin(), decls.end(),
+                                        [&](const ParamDecl &d) {
+                                            return d.name == kv.first;
+                                        });
+        if (!known) {
+            throw TemplateUnknownParam(
+                "<sce:use template=\"" + std::string(templateHref) +
+                "\">: unknown parameter '" + kv.first + "' (declared: " +
+                declaredList + ")");
+        }
+    }
+
+    std::unordered_map<std::string, std::string> params;
+    params.reserve(decls.size());
+    for (const auto &d : decls) {
+        const auto it = bound.find(d.name);
+        if (it != bound.end()) {
+            params.emplace(d.name, it->second);
+            continue;
+        }
+        if (d.required) {
+            throw TemplateMissingParam(
+                "<sce:use template=\"" + std::string(templateHref) +
+                "\">: missing required parameter '" + d.name + "'");
+        }
+        params.emplace(d.name, d.hasDefault ? d.defaultValue : std::string());
+    }
+
+    SubstituteIntoTemplateResult result;
+    result.positions.register_file(templatePath,
+                                    std::string_view{templateRaw});
+
+    if (!haveBodyStart) {
+        // No body — the whole template file is a single File-origin
+        // passthrough (mirrors Rust's "template has no body" branch).
+        result.substituted.assign(templateRaw);
+        result.positions.push_entry(
+            0, templateRaw.size(),
+            FileOrigin{templatePath, 0});
+        return result;
+    }
+
+    // Reassemble: prefix [0, bodyStart) + substituted body
+    // + suffix [bodyEnd, templateRaw.size()).
+    result.substituted.reserve(templateRaw.size() + 32);
+    if (bodyStart > 0) {
+        result.substituted.append(templateRaw.substr(0, bodyStart));
+        result.positions.push_entry(0, bodyStart,
+                                     FileOrigin{templatePath, 0});
+    }
+    const std::size_t bodyBase = result.substituted.size();
+    const auto substitution = applySubstitutionWithTracking(
+        templateRaw.substr(bodyStart, bodyEnd - bodyStart), bodyStart,
+        templatePath, params, callerFile, callerRow, callerCol);
+    result.substituted.append(substitution.substituted);
+    for (const auto &entry : substitution.entries) {
+        result.positions.push_entry(bodyBase + entry.out_start,
+                                     bodyBase + entry.out_end,
+                                     entry.origin);
+    }
+    if (bodyEnd < templateRaw.size()) {
+        const std::size_t suffixStart = result.substituted.size();
+        result.substituted.append(templateRaw.substr(bodyEnd));
+        result.positions.push_entry(
+            suffixStart, result.substituted.size(),
+            FileOrigin{templatePath, bodyEnd});
+    }
+    return result;
+}
+
 std::vector<ByteRange> extractTemplateBodyRanges(
     std::string_view expandedTemplate, std::string_view templateHref) {
     pugi::xml_document doc;
@@ -433,6 +700,178 @@ std::vector<ByteRange> extractTemplateBodyRanges(
     return ranges;
 }
 
+namespace {
+
+// Recursive string-level expander. Mirrors
+// `sce-build/src/template.rs::expand_impl`. Public entry point is
+// `SCE::parsing::expandString`, which seeds the cycle stack and the
+// identity input map before calling into this function.
+TemplateExpandResult expandImpl(std::string_view content,
+                                const std::filesystem::path &contentFile,
+                                const std::filesystem::path &baseDir,
+                                std::uint32_t depth,
+                                std::vector<std::filesystem::path> &stack,
+                                const PositionMap &inputMap) {
+    if (depth >= static_cast<std::uint32_t>(MAX_TEMPLATE_DEPTH)) {
+        throw TemplateTooDeep(
+            "<sce:use> template nesting exceeds depth limit of " +
+            std::to_string(MAX_TEMPLATE_DEPTH));
+    }
+
+    pugi::xml_document doc;
+    const auto parseResult = doc.load_buffer(content.data(), content.size());
+    if (!parseResult) {
+        throw TemplateMalformed(
+            std::string("source document is malformed: ") +
+            parseResult.description());
+    }
+
+    struct SceUseHit {
+        ByteRange range;
+        pugi::xml_node node;
+    };
+    std::vector<SceUseHit> uses;
+    std::function<void(pugi::xml_node)> walk;
+    walk = [&](pugi::xml_node node) {
+        for (const auto &child : node.children()) {
+            if (child.type() != pugi::node_element) {
+                continue;
+            }
+            if (std::string(child.name()) == "sce:use") {
+                const auto startSigned = child.offset_debug();
+                if (startSigned < 0) {
+                    continue;
+                }
+                std::size_t start = static_cast<std::size_t>(startSigned);
+                if (start > 0 && content[start] != '<' &&
+                    content[start - 1] == '<') {
+                    start -= 1;
+                }
+                const std::size_t end =
+                    findElementEnd(content, start, "sce:use");
+                uses.push_back(SceUseHit{ByteRange{start, end}, child});
+                continue;
+            }
+            walk(child);
+        }
+    };
+    const auto rootNode = doc.document_element();
+    if (rootNode) {
+        walk(rootNode);
+    }
+
+    if (uses.empty()) {
+        // No `<sce:use>` in this content — output is 1:1 copy of
+        // `content`, so the upstream map already describes every
+        // emitted byte. Mirrors Rust's early-return identity.
+        return TemplateExpandResult{std::string(content), inputMap};
+    }
+
+    // Identity over `content` provides content-local (row, col)
+    // for `<sce:use>` call-site metadata (Rust `doc_loc` equivalent).
+    const auto identity = PositionMap::identity(contentFile, content);
+
+    std::string out;
+    out.reserve(content.size());
+    PositionMap outMap;
+    std::size_t cursor = 0;
+
+    for (const auto &hit : uses) {
+        const auto useRange = hit.range;
+        const auto &useNode = hit.node;
+
+        // Prefix [cursor, useRange.start) — bytes unchanged from
+        // `content`, so compose from `inputMap`.
+        if (cursor < useRange.start) {
+            const std::size_t outStart = out.size();
+            out.append(content.substr(cursor, useRange.start - cursor));
+            outMap.append_mapped_substring(inputMap, cursor, useRange.start,
+                                            outStart);
+        }
+
+        const auto callerPos = identity.lookup(useRange.start);
+        const std::uint32_t callerRow = callerPos.row;
+        const std::uint32_t callerCol = callerPos.col;
+
+        const auto templateAttr = useNode.attribute("template");
+        const std::string templateHref =
+            templateAttr ? templateAttr.value() : std::string();
+        if (templateHref.empty()) {
+            throw TemplateMissingAttribute(
+                "<sce:use> missing required `template` attribute");
+        }
+
+        std::vector<std::string> tried;
+        const auto resolvedPath =
+            resolveTemplatePath(templateHref, baseDir, tried);
+        if (resolvedPath.empty()) {
+            std::string trail;
+            for (const auto &entry : tried) {
+                if (!trail.empty()) {
+                    trail.append(", ");
+                }
+                trail.append(entry);
+            }
+            throw TemplateNotFound(
+                "<sce:use template=\"" + templateHref +
+                "\">: file not found (searched: " + trail + ")");
+        }
+
+        const auto canon = canonicaliseForCycle(resolvedPath);
+        for (const auto &entry : stack) {
+            if (entry == canon) {
+                throw TemplateCycle(
+                    "<sce:use template=\"" + templateHref +
+                    "\">: cycle detected (" + renderChain(stack, canon) + ")");
+            }
+        }
+
+        const std::string templateText =
+            readTemplateText(resolvedPath, templateHref);
+        const auto bindings = collectUseBindings(useNode);
+        const auto substitution = substituteIntoTemplateWithMap(
+            templateText, resolvedPath, templateHref, bindings, contentFile,
+            callerRow, callerCol);
+
+        stack.push_back(canon);
+        const std::filesystem::path nestedBase = resolvedPath.parent_path();
+        TemplateExpandResult nested;
+        try {
+            nested = expandImpl(substitution.substituted, resolvedPath,
+                                 nestedBase, depth + 1, stack,
+                                 substitution.positions);
+        } catch (...) {
+            stack.pop_back();
+            throw;
+        }
+        stack.pop_back();
+
+        const auto bodyRanges =
+            extractTemplateBodyRanges(nested.expanded_text, templateHref);
+        for (const auto &range : bodyRanges) {
+            const std::size_t segStart = out.size();
+            out.append(nested.expanded_text.substr(
+                range.start, range.end - range.start));
+            outMap.append_mapped_substring(nested.positions, range.start,
+                                            range.end, segStart);
+        }
+
+        cursor = useRange.end;
+    }
+
+    // Tail [cursor, content.size()) — bytes unchanged from `content`.
+    if (cursor < content.size()) {
+        const std::size_t outStart = out.size();
+        out.append(content.substr(cursor));
+        outMap.append_mapped_substring(inputMap, cursor, content.size(),
+                                        outStart);
+    }
+
+    return TemplateExpandResult{std::move(out), std::move(outMap)};
+}
+
+}  // namespace
+
 }  // namespace detail
 
 TemplateExpandResult expandString(std::string_view content,
@@ -447,18 +886,19 @@ TemplateExpandResult expandString(std::string_view content,
         return result;
     }
 
-    // Full recursive expansion is not yet implemented in this
-    // commit; the next Phase C P2 commits port
-    // `substitute_into_template_with_map` and `expand_impl`. The
-    // scanner primitives above stand as the consumer for the
-    // current commit — unit tests in
-    // `tests/parsing/TemplateExpander_test.cpp` exercise them.
-    (void)baseDir;
-    TemplateExpandResult result;
-    result.expanded_text.assign(content);
-    result.positions =
-        PositionMap::identity(std::filesystem::path(selfPath), content);
-    return result;
+    const std::filesystem::path selfFile{std::string{selfPath}};
+    const std::filesystem::path baseFile{std::string{baseDir}};
+
+    std::vector<std::filesystem::path> stack;
+    if (!selfPath.empty()) {
+        std::error_code ec;
+        auto canon = std::filesystem::canonical(selfFile, ec);
+        stack.push_back(ec ? selfFile : canon);
+    }
+
+    const auto inputMap = PositionMap::identity(selfFile, content);
+    return detail::expandImpl(content, selfFile, baseFile, /*depth=*/0, stack,
+                               inputMap);
 }
 
 }  // namespace SCE::parsing

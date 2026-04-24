@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -301,4 +302,93 @@ TEST(TemplateExpander, ExtractTemplateBodyRangesWrongRootThrows) {
     const std::string expanded = R"(<root><a/></root>)";
     EXPECT_THROW(extractTemplateBodyRanges(expanded, "tmpl"),
                  TemplateMalformed);
+}
+
+// ── expandString: end-to-end simple substitution ────────────────────
+// Writes a template file with one param + one body element, invokes
+// it from an in-memory caller, verifies the expanded text contains
+// the substituted value and the PositionMap lookups resolve as
+// expected (body bytes → template file; substituted bytes → caller).
+TEST(TemplateExpander, ExpandStringSimpleSubstitution) {
+    const auto tmpDir = std::filesystem::temp_directory_path() /
+                        "sce_template_expander_test_simple";
+    std::filesystem::create_directories(tmpDir);
+    const auto tmplPath = tmpDir / "t.scxml";
+    const std::string tmplBody =
+        R"(<sce:template xmlns:sce="http://sce.dev/ext"><sce:param name="x"/><state id="{$x}"/></sce:template>)";
+    {
+        std::ofstream out(tmplPath, std::ios::binary);
+        out << tmplBody;
+    }
+    const std::string caller =
+        R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml" x="S1"/></root>)";
+    const auto result =
+        expandString(caller, (tmpDir / "caller.scxml").string(),
+                     tmpDir.string());
+    EXPECT_FALSE(result.positions.is_identity());
+    EXPECT_NE(result.expanded_text.find("<state id=\"S1\"/>"),
+              std::string::npos);
+
+    // Byte inside `S1` should resolve back to the caller file (the
+    // CallSiteOrigin depth-1 collapse).
+    const std::size_t s1Offset = result.expanded_text.find("S1");
+    ASSERT_NE(s1Offset, std::string::npos);
+    const auto substPos = result.positions.lookup(s1Offset);
+    EXPECT_EQ(substPos.file, tmpDir / "caller.scxml");
+
+    // Byte inside the spliced `<state` (template-file bytes) should
+    // resolve to the template file.
+    const std::size_t stateOffset = result.expanded_text.find("<state");
+    ASSERT_NE(stateOffset, std::string::npos);
+    const auto bodyPos = result.positions.lookup(stateOffset + 2);  // inside `ta`
+    EXPECT_EQ(bodyPos.file, tmplPath);
+
+    std::filesystem::remove_all(tmpDir);
+}
+
+// ── expandString: missing required param throws ────────────────────
+TEST(TemplateExpander, ExpandStringMissingRequiredParamThrows) {
+    const auto tmpDir = std::filesystem::temp_directory_path() /
+                        "sce_template_expander_test_missing";
+    std::filesystem::create_directories(tmpDir);
+    const auto tmplPath = tmpDir / "t.scxml";
+    {
+        std::ofstream out(tmplPath, std::ios::binary);
+        out << R"(<sce:template xmlns:sce="http://sce.dev/ext"><sce:param name="x" required="true"/><a/></sce:template>)";
+    }
+    const std::string caller =
+        R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml"/></root>)";
+    EXPECT_THROW(
+        expandString(caller, (tmpDir / "caller.scxml").string(),
+                     tmpDir.string()),
+        SCE::parsing::TemplateMissingParam);
+    std::filesystem::remove_all(tmpDir);
+}
+
+// ── expandString: unknown caller binding throws ────────────────────
+TEST(TemplateExpander, ExpandStringUnknownBindingThrows) {
+    const auto tmpDir = std::filesystem::temp_directory_path() /
+                        "sce_template_expander_test_unknown";
+    std::filesystem::create_directories(tmpDir);
+    const auto tmplPath = tmpDir / "t.scxml";
+    {
+        std::ofstream out(tmplPath, std::ios::binary);
+        out << R"(<sce:template xmlns:sce="http://sce.dev/ext"><sce:param name="x"/><a/></sce:template>)";
+    }
+    const std::string caller =
+        R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml" x="v" bogus="b"/></root>)";
+    EXPECT_THROW(
+        expandString(caller, (tmpDir / "caller.scxml").string(),
+                     tmpDir.string()),
+        SCE::parsing::TemplateUnknownParam);
+    std::filesystem::remove_all(tmpDir);
+}
+
+// ── expandString: template not found throws ────────────────────────
+TEST(TemplateExpander, ExpandStringNotFoundThrows) {
+    const std::string caller =
+        R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="does_not_exist.scxml"/></root>)";
+    EXPECT_THROW(
+        expandString(caller, "/tmp/caller.scxml", "/tmp"),
+        SCE::parsing::TemplateNotFound);
 }
