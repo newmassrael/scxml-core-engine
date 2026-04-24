@@ -13,6 +13,7 @@
 #include "parsing/GuardParser.h"
 #include "parsing/IXMLElement.h"
 #include "parsing/InvokeParser.h"
+#include "parsing/PositionMap.h"
 #include "parsing/StateNodeParser.h"
 #include "parsing/TransitionParser.h"
 #include "parsing/XIncludeProcessor.h"
@@ -148,6 +149,21 @@ public:
         return xincludeProcessor_;
     }
 
+    /**
+     * @brief PositionMap captured from the most recent
+     *        `processSceTemplate` call.
+     *
+     * Populated by `parseFile` / `parseContent` after template
+     * expansion completes. Downstream diagnostic emitters can call
+     * `templatePositions().lookup(byte_offset)` to translate a
+     * post-expansion in-memory offset back to the author's
+     * `(file, row, col)`. RFC §3 P2 deliverable #3 — see
+     * `claudedocs/rfc-sce-template-phase-c.md`.
+     */
+    const SCE::parsing::PositionMap &templatePositions() const noexcept {
+        return templatePositions_;
+    }
+
 private:
     /**
      * @brief Execute platform-agnostic XML document parsing
@@ -215,6 +231,7 @@ private:
     std::shared_ptr<IXIncludeProcessor> xincludeProcessor_;
     std::vector<std::string> errorMessages_;
     std::vector<std::string> warningMessages_;
+    SCE::parsing::PositionMap templatePositions_;
 };
 
 }  // namespace SCE

@@ -7,6 +7,7 @@
 #include "core/LogMacros.h"
 #include "parsing/IXMLParser.h"
 #include "parsing/ParsingCommon.h"
+#include "parsing/TemplateError.h"
 
 #include "parsing/IXMLElement.h"
 
@@ -81,14 +82,31 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         // Process `<sce:use>` template expansion. Each failure
         // mode raises a typed `SCE::parsing::TemplateError`
         // subtype (see `sce/include/parsing/TemplateError.h` for
-        // the 8-variant set) caught by the surrounding
-        // `std::exception` handler. See
-        // claudedocs/rfc-sce-template-phase-b.md.
+        // the 8-variant set) caught below — `TemplateError` is a
+        // `std::exception`, so the typed handler runs first and
+        // populates the error with the author-source location
+        // when one was stamped by the expander
+        // (`TemplateExpander.cpp`). See Phase C P2 §3 P2 in
+        // claudedocs/rfc-sce-template-phase-c.md.
         SCE_LOG_DEBUG("Processing sce:template");
-        doc->processSceTemplate();
+        auto templateResult = doc->processSceTemplate();
+        if (!templateResult.ok) {
+            addError("Template expansion failed: " + doc->getErrorMessage());
+            return nullptr;
+        }
+        templatePositions_ = std::move(templateResult.positions);
 
         // Parse document
         return parseAbstractDocument(doc);
+    } catch (const SCE::parsing::TemplateError &tpl) {
+        std::string msg = tpl.what();
+        if (tpl.location().has_value()) {
+            const auto &loc = *tpl.location();
+            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) +
+                   ":" + std::to_string(loc.col);
+        }
+        addError(msg);
+        return nullptr;
     } catch (const std::exception &ex) {
         addError("Exception while parsing file: " + std::string(ex.what()));
         return nullptr;
@@ -117,15 +135,27 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
 
         // Process `<sce:use>` template expansion. Each failure
         // mode raises a typed `SCE::parsing::TemplateError`
-        // subtype (see `sce/include/parsing/TemplateError.h` for
-        // the 8-variant set) caught by the surrounding
-        // `std::exception` handler. See
-        // claudedocs/rfc-sce-template-phase-b.md.
+        // subtype caught below so the emitted diagnostic carries
+        // the author-source location populated by the expander.
         SCE_LOG_DEBUG("Processing sce:template");
-        doc->processSceTemplate();
+        auto templateResult = doc->processSceTemplate();
+        if (!templateResult.ok) {
+            addError("Template expansion failed: " + doc->getErrorMessage());
+            return nullptr;
+        }
+        templatePositions_ = std::move(templateResult.positions);
 
         // Parse document
         return parseAbstractDocument(doc);
+    } catch (const SCE::parsing::TemplateError &tpl) {
+        std::string msg = tpl.what();
+        if (tpl.location().has_value()) {
+            const auto &loc = *tpl.location();
+            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) +
+                   ":" + std::to_string(loc.col);
+        }
+        addError(msg);
+        return nullptr;
     } catch (const std::exception &ex) {
         addError("Exception while parsing content: " + std::string(ex.what()));
         return nullptr;
