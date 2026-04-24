@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6.6 rule 3 — inline <content> synth override across
+     partitions. The parser emits a sibling
+     `parent_synth_inline__sce_synth_invoke__remote_inv.scxml` at build
+     time (`sce-build/src/parser.rs:1607-1620`); deploy_synth_inline.yaml
+     registers that synth as a distinct machine and places it on a
+     different partition than the parent. The classifier then marks
+     this invoke `remote_mesh_target`; the synth's own peer collection
+     recognises the `__sce_synth_invoke__` infix (rule 3 + infix
+     inversion in `collect_scxml_remote_peers`) and flips
+     `is_remote_invoke_target=true`, so the synth codegen emits the
+     non-templated `WorkerSessionHost` shape and the parent emits
+     wire-14 InvokeStart via shm. wire-18 InvokeDone flows back
+     because the synth body is a trivial `<final>` (reaches isFinal
+     during its initial macrostep). The parent's
+     `done.invoke.remote_inv` transition observes the raise —
+     the shortest success path through §9.6.6's cross-partition
+     override. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting" name="parent_synth_inline">
+    <state id="waiting">
+        <invoke type="scxml" id="remote_inv">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" initial="done">
+                    <final id="done"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="done.invoke.remote_inv" target="pass"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

@@ -1,0 +1,42 @@
+# SCE Mesh §9.6.6 rule 3 — inline <content> override onto a different
+# partition. The synth machine id
+# `parent_synth_inline__sce_synth_invoke__remote_inv` is what the parser
+# minted from the parent's `<invoke id="remote_inv"><content>...`
+# (`sce-build/src/parser.rs:1601-1606`, using the reserved
+# `__sce_synth_invoke__` infix). Registering it in `topology:` makes it
+# discoverable to the classifier; placing parent and synth under
+# distinct `partitions:` entries engages `partition_for_machine` rule 1
+# (explicit partition listing), so `classify_remote_scxml_invokes` sees
+# a cross-partition peer and flags the invoke `remote_mesh_target`.
+# `collect_scxml_remote_peers` on the synth side inverts the infix to
+# pick up the parent as an inbound peer — together these drive the
+# `WorkerSessionHost` shape on the synth and the wire-14/18 transport
+# pair between partitions.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_synth_inline:
+        source: parent_synth_inline.scxml
+      parent_synth_inline__sce_synth_invoke__remote_inv:
+        source: parent_synth_inline__sce_synth_invoke__remote_inv.scxml
+
+partitions:
+  p_parent:
+    machines: [parent_synth_inline]
+    contains:
+      invokes:
+        - { machine: parent_synth_inline, invoke: remote_inv }
+  p_worker:
+    machines: [parent_synth_inline__sce_synth_invoke__remote_inv]
+    # §14 rule 10 forbids empty `contains:` — a partition with no
+    # units has no runtime purpose. The synth body is a trivial
+    # `<final>` with no `<invoke>` of its own, so there is no real
+    # unit to cover; the `unused` sentinel follows the pattern pinned
+    # by sce-build's own §9.6.6 override unit test (`lib.rs:2663-2664`,
+    # `synth_invoke_override_flagged_remote`). Rule 1 only checks that
+    # the machine's enumerated units are covered — ghost entries for
+    # non-existent invoke ids are ignored by `collect_covered_units`.
+    contains:
+      invokes:
+        - { machine: parent_synth_inline__sce_synth_invoke__remote_inv, invoke: unused }

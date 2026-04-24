@@ -1994,6 +1994,112 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     add_test(NAME mesh_session_f_wire_roundtrip
              COMMAND mesh_session_f_wire_roundtrip_test)
 
+    # ── SCE_MESH §9.6.6 rule 3 cross-partition synth override ─────
+    # Closes §16.9 F exit criterion #4: "Inline <content> synthesized
+    # child executes on a different partition." Unlike the §9.6.2
+    # author-declared pair above (parent + worker both in source), here
+    # the child is parser-emitted as a side-effect of parent codegen
+    # (`sce-build/src/parser.rs:1607-1620`). The parser writes the synth
+    # SCXML into the parent's `base_dir`; to keep tests/mesh/ source-tree
+    # clean, we stage the parent + deploy.yaml into the build output
+    # dir first so the synth materialises inside the build tree. Three
+    # stages (staging → parent codegen → synth codegen) replace the
+    # two author-declared `add_custom_command`s used by the wired
+    # fixture — the synth `.scxml` is an intermediate output, not an
+    # author input.
+    set(MESH_SYNTH_OVERRIDE_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_synth_invoke_override_generated")
+
+    # Stage 1: copy author inputs into the build dir.
+    add_custom_command(
+        OUTPUT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
+               "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MESH_TEST_DIR}/parent_synth_inline.scxml"
+                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MESH_TEST_DIR}/deploy_synth_inline.yaml"
+                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
+        DEPENDS "${MESH_TEST_DIR}/parent_synth_inline.scxml"
+                "${MESH_TEST_DIR}/deploy_synth_inline.yaml"
+        COMMENT "Mesh §9.6.6: Staging parent + deploy fixture for synth-invoke override"
+        VERBATIM
+    )
+
+    # Stage 2: parent codegen. Parser side-effect materialises the synth
+    # SCXML next to the staged parent. The synth path is declared as an
+    # OUTPUT so the Stage 3 command can depend on it through CMake's
+    # normal file-dependency graph.
+    add_custom_command(
+        OUTPUT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_sm.h"
+               "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_transport.h"
+               "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv.scxml"
+        COMMAND "${SCE_CODEGEN}" generate
+                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
+                -l cpp -o "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
+                --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
+                --write-deps "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_sm.h.d"
+        DEPENDS "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
+                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_sm.h.d"
+        COMMENT "Mesh §9.6.6: Generating parent_synth_inline_{sm,transport}.h (synth .scxml side-effect)"
+        VERBATIM
+    )
+
+    # Stage 3: synth codegen with --deploy. Running against the
+    # parser-emitted sibling engages `classify_remote_scxml_invokes` and
+    # `collect_scxml_remote_peers` on the synth model; the §9.6.6
+    # rule-3 infix inversion inside the latter adds the parent as an
+    # inbound peer, flipping `is_remote_invoke_target=true`. Codegen
+    # then picks the non-templated WorkerSessionHost shape. This is NOT
+    # the `--as-child` path used by `w3c_static_generated`: that path
+    # assumes a local-child shape, which would skip the mesh transport
+    # emission this test exercises.
+    add_custom_command(
+        OUTPUT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h"
+               "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate
+                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv.scxml"
+                -l cpp -o "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
+                --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
+                --write-deps "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h.d"
+        DEPENDS "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv.scxml"
+                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h.d"
+        COMMENT "Mesh §9.6.6: Generating synth sm+transport (rule-3 cross-partition override)"
+        VERBATIM
+    )
+
+    add_executable(mesh_synth_invoke_override_e2e_test
+        mesh/test_mesh_synth_invoke_override_e2e.cpp
+        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_sm.h"
+        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_transport.h"
+        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h"
+        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_transport.h"
+    )
+
+    target_include_directories(mesh_synth_invoke_override_e2e_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_synth_invoke_override_e2e_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_synth_invoke_override_e2e_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_synth_invoke_override_e2e_test)
+
+    add_test(NAME mesh_synth_invoke_override_e2e
+             COMMAND mesh_synth_invoke_override_e2e_test)
+
     # ── SCE_MESH §9.6.2 wire-16 + §9.6.4 finalize verification ─────
     # Parent has `datamodel="lua"` so its codegen emits script engine;
     # worker is a remote inbound peer so its codegen hits the new
