@@ -271,7 +271,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // W3C SCXML 6.5.1: Completion callback registered for both normal execution and snapshot restoration
     // Child state machines must send done.invoke when reaching final state after being restored
     std::weak_ptr<StateMachine> weakParentSM = parentStateMachine_;
-    weakChildSM.lock()->setCompletionCallback([weakParentSM, invokeid, childSessionId, parentSessionId,
+    weakChildSM.lock()->setCompletionCallback([weakParentSM, weakChildSM, invokeid, childSessionId, parentSessionId,
                                                eventDispatcher]() {
         SCE_LOG_INFO("SCXMLInvokeHandler: Child completion callback invoked - invokeid: {}, session: {}", invokeid,
                  childSessionId);
@@ -301,7 +301,20 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         // Note: EXTERNAL priority auto-detected for done.* events (EventRaiserImpl.cpp:148)
         auto parentEventRaiser = parentSM->getEventRaiser();
         if (parentEventRaiser) {
-            std::string eventData = "";  // W3C SCXML 6.4: done.invoke has no data payload
+            // W3C SCXML 5.5 + 6.3.1: carry the child's donedata payload on
+            // `done.invoke.<id>._event.data`. The child stashed it at top-level
+            // `<final>` entry via `StateMachine::enterState` into
+            // `pendingDonedataAtFinal_`; we read it back here via
+            // `donedataAtFinal()`. Mirror of the AOT `invoke_methods.jinja2`
+            // completion callback which reads `child_..._->donedataAtFinal()`
+            // from `StaticExecutionEngine`. typedData is re-hydrated on the
+            // parent side inside `EventRaiserImpl::raiseEventWithPriority`
+            // (W3C SCXML B.2 JSON auto-parse), so we only thread the JSON
+            // string through the public `IEventRaiser` interface.
+            std::string eventData;
+            if (auto childSM = weakChildSM.lock()) {
+                eventData = childSM->donedataAtFinal();
+            }
 
             bool success =
                 parentEventRaiser->raiseEvent(doneEvent,       // event name (done.invoke.*)

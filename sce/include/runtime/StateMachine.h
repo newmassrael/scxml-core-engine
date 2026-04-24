@@ -420,6 +420,35 @@ public:
     void setCompletionCallback(CompletionCallback callback);
 
     /**
+     * @brief W3C SCXML 5.5 + 6.3.1: JSON payload from the reached top-level
+     *        `<final>`'s `<donedata>`. Empty when no donedata was authored,
+     *        donedata evaluation failed, or the machine has not reached a
+     *        top-level final yet. Mirror of
+     *        `StaticExecutionEngine::donedataAtFinal()` on the AOT side;
+     *        consumed by `SCXMLInvokeHandler`'s completion callback to
+     *        populate `done.invoke.<id>._event.data`.
+     */
+    const std::string &donedataAtFinal() const {
+        return pendingDonedataAtFinal_;
+    }
+
+    /**
+     * @brief W3C SCXML 5.5 + B.2: Structured donedata paired with
+     *        `donedataAtFinal()`. Skipping the JSON round-trip when the
+     *        parent is in-process would require an impl-specific
+     *        `raiseEventWithPriority` path; the public `IEventRaiser`
+     *        5-arg `raiseEvent` used by `SCXMLInvokeHandler` re-hydrates
+     *        via `EventDataHelper::jsonStringToScriptValue` inside
+     *        `EventRaiserImpl::raiseEventWithPriority`, so callers that
+     *        use the interface can rely on `donedataAtFinal()` alone;
+     *        this getter exists for parity with the AOT shape and for
+     *        future impl-specific fast paths.
+     */
+    const std::optional<ScriptValue> &typedDonedataAtFinal() const {
+        return pendingTypedDonedataAtFinal_;
+    }
+
+    /**
      * @brief Set EventRaiser for event processing
      * @param eventRaiser EventRaiser instance for event handling
      */
@@ -658,6 +687,15 @@ private:
 
     // W3C SCXML 6.5: Completion callback for invoke done.invoke event
     CompletionCallback completionCallback_;
+
+    // W3C SCXML 5.5 + 6.3.1: donedata payload captured when the machine
+    // enters a top-level `<final>`. Populated once per invocation by
+    // `enterState` before `completionCallback_` fires, mirroring
+    // `StaticExecutionEngine::stashDonedataAtFinal` on the AOT side.
+    // Consumed by `SCXMLInvokeHandler`'s completion callback to populate
+    // `done.invoke.<id>._event.data` (`donedataAtFinal()` getter).
+    std::string pendingDonedataAtFinal_;
+    std::optional<ScriptValue> pendingTypedDonedataAtFinal_;
 
     // W3C SCXML 6.4: Pending invoke execution (deferred until macrostep end)
     // Uses InvokeHelper for shared logic with AOT engine (ARCHITECTURE.md Zero Duplication)
