@@ -137,3 +137,34 @@ add_phase_b_parity_fixture(undeclared_braces UndeclaredBraces)
 # `xml/template-read-error` DiagnosticCode — the harness is not
 # the only consumer of the type. See claudedocs/rfc-sce-template-phase-b.md
 # §3 M4 read-error note.
+
+# ── Phase C P3 coordinate-parity fixtures ──────────────────────
+#
+# These three fixtures opt in to end-to-end `location.{file,
+# line, col}` agreement between the Rust NDJSON and the C++
+# `TemplateError::location()` (via `assertCoordinateAgreement`
+# on `runErrorParityFixture`) or drive the success-path
+# PositionMap::lookup primitive directly (via
+# `runCoordinateLookupFixture`). Together with the §2.9
+# paragraph delete in the same commit-series, they close the
+# Phase C template-half. See claudedocs/rfc-sce-template-phase-c.md
+# §3 P3.
+
+# P3 error-path fixture — `<sce:use bogus="x"/>` supplies a
+# parameter the template does not declare. Asserts coordinate
+# agreement at the caller's `<sce:use>` row/col.
+add_phase_b_parity_fixture(coord_callsite_param CoordCallsiteParam)
+
+# P3 error-path fixture — template carries a malformed
+# `<sce:param required="maybe"/>` declaration. Asserts
+# coordinate agreement at the caller's `<sce:use>` row/col (the
+# depth-1 collapse pulls the diagnostic to the caller even
+# though the offending bytes live inside the template file).
+add_phase_b_parity_fixture(coord_template_body CoordTemplateBody)
+
+# P3 success-path fixture — `<state id="s_{$id}"/>` splice; a
+# byte inside the substituted id resolves back to the caller's
+# `<sce:use>` via `PositionMap::lookup`. No Rust NDJSON
+# counterpart (success path), so the harness drives
+# `expandString` directly through `runCoordinateLookupFixture`.
+add_phase_b_parity_fixture(coord_nested_collapse CoordNestedCollapse)

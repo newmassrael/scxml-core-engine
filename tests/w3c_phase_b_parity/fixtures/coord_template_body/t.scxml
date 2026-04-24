@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template used by coord_template_body/main.scxml. Declares
+  `<sce:param name="port" required="maybe"/>` — the `required`
+  attribute only accepts "true" / "false", so `parse_param_decl`
+  classifies this as Malformed on both sides. Exists to prove
+  the coordinate-parity assertion pins the caller-site row even
+  when the root cause lives inside the template file.
+-->
+<sce:template xmlns="http://www.w3.org/2005/07/scxml"
+              xmlns:sce="http://sce.dev/ext"
+              name="coord_template_body_t">
+  <sce:param name="port" required="maybe"/>
+  <state id="t_body"/>
+</sce:template>

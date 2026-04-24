@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template used by coord_nested_collapse/main.scxml. The body
+  contains a single `<state>` whose id is built from the bound
+  `id` parameter — every byte of the substituted value in the
+  expanded output should trace back (via PositionMap::lookup)
+  to main.scxml's `<sce:use>` element rather than to this file,
+  per the depth-1 collapse rule.
+-->
+<sce:template xmlns="http://www.w3.org/2005/07/scxml"
+              xmlns:sce="http://sce.dev/ext"
+              name="coord_nested_collapse_inner">
+  <sce:param name="id" required="true"/>
+  <state id="s_{$id}"/>
+</sce:template>

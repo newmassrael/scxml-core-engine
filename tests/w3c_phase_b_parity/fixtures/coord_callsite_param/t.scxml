@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template used by coord_callsite_param/main.scxml. Declares one
+  parameter (`port`) with a default, so a caller that supplies
+  `bogus="x"` (as main.scxml does) trips the unknown-parameter
+  classification at the binding step.
+-->
+<sce:template xmlns="http://www.w3.org/2005/07/scxml"
+              xmlns:sce="http://sce.dev/ext"
+              name="coord_callsite_param_t">
+  <sce:param name="port" default="80"/>
+  <state id="t_body"/>
+</sce:template>

@@ -28,15 +28,23 @@
 
 #include "parsing/PugiXMLParser.h"
 #include "parsing/TemplateError.h"
+#include "parsing/TemplateExpander.h"
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
+#include <optional>
 #include <pugixml.hpp>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <typeinfo>
 
 namespace {
@@ -119,6 +127,129 @@ bool diagnosticCodeAppears(const std::string &haystack, const std::string &code)
     return haystack.find(needle) != std::string::npos;
 }
 
+// Extracted location fields from a Rust `--error-format=json`
+// NDJSON diagnostic line. Carries the basename rather than the
+// full path so cross-checks against C++ `SourcePos::file` work
+// under both absolute-path (C++) and CWD-relative (Rust NDJSON)
+// conventions without either side having to canonicalise.
+struct RustJsonLocation {
+    std::string file;
+    std::uint32_t line = 0;
+    std::uint32_t col = 0;
+};
+
+// Extract the NDJSON `"location":{"file":"...","line":N,"col":M}`
+// fragment from `haystack`. Minimal substring parser — the JSON
+// emitter (see `forge/error::Located::to_ndjson_line`) always
+// orders fields file/line/col, never splits across newlines, and
+// only escapes the path's interior quotes with `\"` which a raw
+// scan can ignore in practice because test fixture paths never
+// contain embedded double quotes. Returns `std::nullopt` when any
+// of the three fields is absent or unparseable so the caller can
+// surface a pointed assertion message rather than a generic
+// "failed to parse" blob.
+std::optional<RustJsonLocation> extractRustJsonLocation(const std::string &haystack) {
+    const std::size_t locPos = haystack.find("\"location\":{");
+    if (locPos == std::string::npos) {
+        return std::nullopt;
+    }
+
+    const std::string fileKey = "\"file\":\"";
+    const std::size_t fileStart = haystack.find(fileKey, locPos);
+    if (fileStart == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t fileValueStart = fileStart + fileKey.size();
+    const std::size_t fileValueEnd = haystack.find('"', fileValueStart);
+    if (fileValueEnd == std::string::npos) {
+        return std::nullopt;
+    }
+
+    const std::string lineKey = "\"line\":";
+    const std::size_t lineKeyPos = haystack.find(lineKey, fileValueEnd);
+    if (lineKeyPos == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t lineValueStart = lineKeyPos + lineKey.size();
+    std::size_t lineValueEnd = lineValueStart;
+    while (lineValueEnd < haystack.size() &&
+           std::isdigit(static_cast<unsigned char>(haystack[lineValueEnd]))) {
+        ++lineValueEnd;
+    }
+    if (lineValueEnd == lineValueStart) {
+        return std::nullopt;
+    }
+
+    const std::string colKey = "\"col\":";
+    const std::size_t colKeyPos = haystack.find(colKey, lineValueEnd);
+    if (colKeyPos == std::string::npos) {
+        return std::nullopt;
+    }
+    const std::size_t colValueStart = colKeyPos + colKey.size();
+    std::size_t colValueEnd = colValueStart;
+    while (colValueEnd < haystack.size() &&
+           std::isdigit(static_cast<unsigned char>(haystack[colValueEnd]))) {
+        ++colValueEnd;
+    }
+    if (colValueEnd == colValueStart) {
+        return std::nullopt;
+    }
+
+    RustJsonLocation out;
+    std::filesystem::path filePath(
+        haystack.substr(fileValueStart, fileValueEnd - fileValueStart));
+    out.file = filePath.filename().string();
+    out.line = static_cast<std::uint32_t>(
+        std::stoul(haystack.substr(lineValueStart, lineValueEnd - lineValueStart)));
+    out.col = static_cast<std::uint32_t>(
+        std::stoul(haystack.substr(colValueStart, colValueEnd - colValueStart)));
+    return out;
+}
+
+// Byte-offset → 1-based (row, col) translator mirroring
+// `SCE::parsing::rowcol_to_offset`'s inverse. The fixture helpers
+// below use this to derive the expected caller-site coordinate
+// directly from the fixture source bytes, so a fixture author
+// who moves the `<sce:use>` element vertically does not have to
+// hand-update a hardcoded expected row.
+struct RowCol {
+    std::uint32_t row;
+    std::uint32_t col;
+};
+
+RowCol offsetToRowCol(std::string_view text, std::size_t offset) {
+    std::uint32_t row = 1;
+    std::uint32_t col = 1;
+    const std::size_t end = std::min(offset, text.size());
+    for (std::size_t i = 0; i < end; ++i) {
+        const unsigned char byte = static_cast<unsigned char>(text[i]);
+        if (byte == '\n') {
+            ++row;
+            col = 1;
+        } else if ((byte & 0xC0) != 0x80) {
+            // Count Unicode scalar starts (skip continuation bytes)
+            // so column precision matches `PositionMap::lookup`'s
+            // Unicode-scalar-counting convention — see comment on
+            // `SourcePos::col` in parsing/PositionMap.h. `col` is
+            // updated eagerly so that after processing every byte
+            // below `offset` it equals the column of the byte *at*
+            // `offset` (1-based).
+            ++col;
+        }
+    }
+    return {row, col};
+}
+
+std::string readFileOrEmpty(const std::string &path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return {};
+    }
+    std::ostringstream buf;
+    buf << in.rdbuf();
+    return buf.str();
+}
+
 // Round-trip an XML string through pugixml so both producers are
 // compared at the same serialisation convention. `format_raw` omits
 // indentation and trailing whitespace; `format_no_declaration`
@@ -152,8 +283,19 @@ std::string canonicaliseDocument(const pugi::xml_document &doc) {
 // serialise() method to the production interface for a single
 // test consumer.
 std::string runCppPreprocessors(const std::string &scxmlPath) {
+    // Read the file into a buffer so the `PugiXMLDocument` wrapper
+    // can stash the exact bytes pugixml parsed — `processSceTemplate`
+    // needs a stable view of the author's source text to build a
+    // `SCE::parsing::PositionMap` identity entry with author-source
+    // coordinates (RFC §3 P2/P3). Mirrors `PugiXMLParser::parseFile`
+    // so the harness sees the same plumbing as production callers.
+    const std::string sourceText = readFileOrEmpty(scxmlPath);
+    if (sourceText.empty()) {
+        return std::string("<<CPP_LOAD_ERROR:could not read source>>");
+    }
+
     auto pugiDoc = std::make_shared<pugi::xml_document>();
-    auto loadResult = pugiDoc->load_file(scxmlPath.c_str());
+    auto loadResult = pugiDoc->load_buffer(sourceText.data(), sourceText.size());
     if (!loadResult) {
         return std::string("<<CPP_LOAD_ERROR:") + loadResult.description() + ">>";
     }
@@ -177,6 +319,7 @@ std::string runCppPreprocessors(const std::string &scxmlPath) {
         }
     }
     sceDoc->setSourcePath(scxmlPath);
+    sceDoc->setSourceText(sourceText);
 
     sceDoc->processXInclude();
     sceDoc->processSceTemplate();
@@ -339,11 +482,21 @@ TEST(PhaseBParity, UndeclaredBraces) {
 // subtype of `rustCode`. Splitting the C++ side into a predicate
 // (instead of a class-template type parameter) keeps the helper
 // callable from a non-template TEST macro body.
+//
+// `assertCoordinateAgreement` is the Phase C P3 opt-in: when true,
+// the harness additionally compares the Rust NDJSON
+// `location.{file, line, col}` against the C++ `TemplateError::
+// location()->{file, row, col}` and fails on mismatch. The five
+// pre-P3 error fixtures (cycle_detected, not_found, malformed,
+// missing_attribute) keep the default-false discriminant-only
+// contract — coordinate agreement is opt-in per fixture, not
+// retroactive.
 template <typename CppCheck>
 void runErrorParityFixture(const std::string &fixtureName,
                            const std::string &rustCode,
                            const char *cppSubtypeName,
-                           CppCheck cppMatches) {
+                           CppCheck cppMatches,
+                           bool assertCoordinateAgreement = false) {
     const char *bin = std::getenv("SCE_CODEGEN_BIN");
     ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN env var must be set by CMake "
                                "add_test ENVIRONMENT";
@@ -370,9 +523,14 @@ void runErrorParityFixture(const std::string &fixtureName,
     bool threwExpected = false;
     std::string actualType;
     std::string actualMessage;
+    std::optional<SCE::parsing::SourcePos> cppLocation;
     try {
+        const std::string sourceText = readFileOrEmpty(fixturePath);
+        ASSERT_FALSE(sourceText.empty())
+            << "Failed to read fixture source text: " << fixturePath;
         auto pugiDoc = std::make_shared<pugi::xml_document>();
-        auto loadResult = pugiDoc->load_file(fixturePath.c_str());
+        auto loadResult =
+            pugiDoc->load_buffer(sourceText.data(), sourceText.size());
         ASSERT_TRUE(loadResult) << "Failed to load C++ fixture: "
                                 << loadResult.description();
         auto sceDoc = std::make_shared<SCE::PugiXMLDocument>(pugiDoc);
@@ -384,12 +542,14 @@ void runErrorParityFixture(const std::string &fixtureName,
             }
         }
         sceDoc->setSourcePath(fixturePath);
+        sceDoc->setSourceText(sourceText);
         sceDoc->processXInclude();
         sceDoc->processSceTemplate();
     } catch (const SCE::parsing::TemplateError &ex) {
         actualType = typeid(ex).name();
         actualMessage = ex.what();
         threwExpected = cppMatches(ex);
+        cppLocation = ex.location();
     } catch (const std::exception &ex) {
         actualType = typeid(ex).name();
         actualMessage = ex.what();
@@ -403,6 +563,117 @@ void runErrorParityFixture(const std::string &fixtureName,
         << ". Rust emitted: " << rustCode
         << ". Cross-language discriminant parity is the M3 error-path "
            "contract — see claudedocs/rfc-sce-template-phase-b.md §3 M3.";
+
+    if (!assertCoordinateAgreement) {
+        return;
+    }
+
+    // Phase C P3 coordinate-agreement check. Reached only for
+    // fixtures that opt in via the fourth argument — the five
+    // pre-P3 error fixtures keep the discriminant-only contract
+    // unchanged. Compares the Rust NDJSON `location.{file, line,
+    // col}` against the C++ `TemplateError::location()` so any
+    // drift between the two sides (e.g. one side reporting a
+    // post-expansion offset instead of an author-source offset)
+    // surfaces as a pointed diff rather than a silent disagreement.
+    // See claudedocs/rfc-sce-template-phase-c.md §3 P3 deliverable
+    // #2.
+    const auto rustLoc = extractRustJsonLocation(rustResult.stderrText);
+    ASSERT_TRUE(rustLoc.has_value())
+        << "Phase C P3 coordinate-agreement on '" << fixtureName
+        << "': Rust NDJSON did not carry a parseable "
+           "`location.{file,line,col}` triple.\n"
+           "Captured output:\n"
+        << rustResult.stderrText;
+    ASSERT_TRUE(cppLocation.has_value())
+        << "Phase C P3 coordinate-agreement on '" << fixtureName
+        << "': C++ `" << cppSubtypeName
+        << "` threw with `TemplateError::location() == std::nullopt`. "
+           "P2 wires location() at every throw site inside the "
+           "`<sce:use>` processing loop — see TemplateExpander.cpp "
+           "`useLocation` stamping.";
+
+    const std::string cppFile =
+        cppLocation->file.filename().string();
+    ASSERT_EQ(rustLoc->file, cppFile)
+        << "Phase C P3 coordinate-agreement on '" << fixtureName
+        << "': Rust file='" << rustLoc->file
+        << "', C++ file='" << cppFile << "'.";
+    ASSERT_EQ(rustLoc->line, cppLocation->row)
+        << "Phase C P3 coordinate-agreement on '" << fixtureName
+        << "': Rust line=" << rustLoc->line
+        << ", C++ row=" << cppLocation->row << ".";
+    ASSERT_EQ(rustLoc->col, cppLocation->col)
+        << "Phase C P3 coordinate-agreement on '" << fixtureName
+        << "': Rust col=" << rustLoc->col
+        << ", C++ col=" << cppLocation->col << ".";
+}
+
+// Phase C P3 success-path coordinate lookup driver. Drives the
+// expander directly (not through the full parser) so the assertion
+// pins the PositionMap primitive rather than the
+// `PugiXMLDocument::processSceTemplate` reparse boundary, which
+// discards the expanded text bytes that `PositionMap::lookup`
+// keys against. Loads `main.scxml`, runs `expandString`, locates
+// the needle in the expanded output, and asserts the resulting
+// `SourcePos` matches the coordinate of the caller's `<sce:use>`
+// element in the source bytes. See claudedocs/rfc-sce-template-
+// phase-c.md §3 P3 deliverable #1 third bullet.
+void runCoordinateLookupFixture(const std::string &fixtureName,
+                                std::string_view callerNeedle,
+                                std::string_view expandedNeedle) {
+    const std::string fixturePath = resolveFixture(fixtureName.c_str());
+    ASSERT_FALSE(fixturePath.empty());
+
+    const std::string source = readFileOrEmpty(fixturePath);
+    ASSERT_FALSE(source.empty())
+        << "Failed to read success-path fixture: " << fixturePath;
+
+    const std::size_t callerOffset = source.find(callerNeedle);
+    ASSERT_NE(callerOffset, std::string::npos)
+        << "Fixture '" << fixtureName << "' does not contain the caller "
+           "needle '" << callerNeedle << "' the harness scans for to "
+           "derive the expected row/col. Either update the fixture or "
+           "the needle to keep them in sync.";
+    const RowCol expected = offsetToRowCol(source, callerOffset);
+
+    std::string basePath = fixturePath;
+    const auto slash = basePath.find_last_of('/');
+    const std::string baseDir =
+        (slash == std::string::npos) ? std::string{} : basePath.substr(0, slash);
+
+    SCE::parsing::TemplateExpandResult result;
+    try {
+        result = SCE::parsing::expandString(source, fixturePath, baseDir);
+    } catch (const std::exception &ex) {
+        FAIL() << "Fixture '" << fixtureName
+               << "' unexpectedly failed expansion: " << ex.what();
+        return;
+    }
+
+    const std::size_t expandedOffset =
+        result.expanded_text.find(expandedNeedle);
+    ASSERT_NE(expandedOffset, std::string::npos)
+        << "Fixture '" << fixtureName << "' expanded output does not "
+           "contain the substituted needle '" << expandedNeedle
+           << "'. Expander output:\n" << result.expanded_text;
+
+    const auto resolved = result.positions.lookup(expandedOffset);
+    const std::string resolvedFile = resolved.file.filename().string();
+    ASSERT_EQ(resolvedFile, std::filesystem::path(fixturePath).filename().string())
+        << "Phase C P3 coord_lookup on '" << fixtureName
+        << "': depth-1 collapse expected `lookup()` to resolve to the "
+           "caller file, got file='" << resolvedFile << "'.";
+    ASSERT_EQ(resolved.row, expected.row)
+        << "Phase C P3 coord_lookup on '" << fixtureName
+        << "': `lookup()` row=" << resolved.row
+        << " but the `<sce:use>` caller sits at row=" << expected.row
+        << " in the fixture source.";
+    ASSERT_EQ(resolved.col, expected.col)
+        << "Phase C P3 coord_lookup on '" << fixtureName
+        << "': `lookup()` col=" << resolved.col
+        << " but the `<sce:use>` caller sits at col=" << expected.col
+        << " in the fixture source.";
 }
 
 // M3 error-path fixture — a.scxml uses b.scxml which uses a.scxml,
@@ -469,4 +740,64 @@ TEST(PhaseBParity, MissingAttribute) {
         [](const SCE::parsing::TemplateError &ex) -> bool {
             return dynamic_cast<const SCE::parsing::TemplateMissingAttribute *>(&ex) != nullptr;
         });
+}
+
+// ── Phase C P3 coordinate-parity fixtures ───────────────────────
+//
+// Three fixtures that opt in to `assertCoordinateAgreement` on the
+// error-path harness (or use the success-path `runCoordinateLookup
+// Fixture` driver) to pin end-to-end `location.{file, line, col}`
+// agreement between the Rust NDJSON and the C++ `TemplateError::
+// location()`. Together with the §2.9 paragraph delete in the same
+// commit-series, these fixtures close the Phase C template-half
+// of the coordinate-remap asymmetry (the xinclude-half is Phase X
+// under separate trigger conditions). See claudedocs/rfc-sce-
+// template-phase-c.md §3 P3.
+
+// P3 error-path fixture — caller passes `bogus="x"` which the
+// template does not declare. Both producers must raise the
+// unknown-parameter diagnostic and both must pin its
+// `location.{file, line, col}` at the caller's `<sce:use>` in
+// main.scxml (depth-1 collapse, RFC §6.3 Q3).
+TEST(PhaseBParity, CoordCallsiteParam) {
+    runErrorParityFixture(
+        "coord_callsite_param",
+        "xml/template-unknown-param",
+        "SCE::parsing::TemplateUnknownParam",
+        [](const SCE::parsing::TemplateError &ex) -> bool {
+            return dynamic_cast<const SCE::parsing::TemplateUnknownParam *>(&ex) != nullptr;
+        },
+        /*assertCoordinateAgreement=*/true);
+}
+
+// P3 error-path fixture — template declares `<sce:param
+// required="maybe"/>` (only "true"/"false" are valid). Both
+// producers raise Malformed; both pin the coordinate at the
+// caller's `<sce:use>` in main.scxml even though the offending
+// bytes sit inside the template file — depth-1 collapse pulls
+// the diagnostic to the author's call site per RFC §6.3 Q3 so
+// repair agents see one pointed line in the caller.
+TEST(PhaseBParity, CoordTemplateBody) {
+    runErrorParityFixture(
+        "coord_template_body",
+        "xml/template-malformed",
+        "SCE::parsing::TemplateMalformed",
+        [](const SCE::parsing::TemplateError &ex) -> bool {
+            return dynamic_cast<const SCE::parsing::TemplateMalformed *>(&ex) != nullptr;
+        },
+        /*assertCoordinateAgreement=*/true);
+}
+
+// P3 success-path fixture — template splices a bound parameter
+// into a `<state id="s_{$id}"/>` attribute; a byte inside the
+// substituted id value must resolve via `PositionMap::lookup` to
+// the caller's `<sce:use>` element, not to the template file.
+// No Rust NDJSON counterpart because `--error-format=json` is
+// error-only; `runCoordinateLookupFixture` drives the C++
+// expander directly and asserts the depth-1 invariant.
+TEST(PhaseBParity, CoordNestedCollapse) {
+    runCoordinateLookupFixture(
+        "coord_nested_collapse",
+        /*callerNeedle=*/"<sce:use template=\"inner.scxml\"",
+        /*expandedNeedle=*/"ZQ42");
 }
