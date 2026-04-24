@@ -1,0 +1,48 @@
+# SCE Mesh §9.6 Session F wire-14/15/18 cross-device lifecycle fixture.
+#
+# Two-device topology that mirrors deploy_session_f_wired.yaml but splits
+# the parent and worker onto distinct ecus so the classifier marks the
+# peer as cross-device and the codegen emits the custom_tcp wire-14/20
+# Client + device-shared Server path from Session 2. The SCXMLs are
+# reused verbatim — they carry no transport hint (only `#<peer>` invoke
+# references), so the transport choice lives entirely in the deploy.yaml
+# `bindings["#<peer>"].transport: custom_tcp` entry below.
+#
+# Port strategy (Stage B / SCE_MESH.md §9.6 Session 3):
+#   * ecu_parent uses a static CMake-configurable port
+#     (`SCE_TEST_CROSSDEV_LIFECYCLE_PORT`, serialised via RESOURCE_LOCK
+#     so parallel ctest cannot race the bind). The worker's codegen-
+#     baked `c2p_to_parent_session_f_wired_` connect endpoint resolves
+#     to this port directly — no runtime override needed on the worker
+#     side.
+#   * ecu_worker uses the `"127.0.0.1:0"` kernel-ephemeral sentinel.
+#     `Server::local_endpoint()` surfaces the assigned port after bind,
+#     the worker binary announces it on stderr, and the parent applies
+#     `TransportRouter::init(PortOverride)` to redirect its per-peer
+#     `p2c_to_worker_session_f_wired_` Client before the first dial.
+#     This is the TransportRouter-level consumer of the PortOverride
+#     plumbing that Stage A3 added.
+#
+# Only one ephemeral direction is exercised here because the existing
+# PortOverride API is init-time only (SCE_MESH.md §9.6 Session 2b).
+# Bilateral ephemeral would require a post-init endpoint update hook;
+# deferred until a fixture actually needs it.
+version: "1.0"
+topology:
+  ecu_parent:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:@SCE_TEST_CROSSDEV_LIFECYCLE_PORT@"
+    machines:
+      parent_session_f_wired:
+        source: "@SCE_MESH_TEST_DIR_REL@/parent_session_f_wired.scxml"
+        bindings:
+          "#worker_session_f_wired":
+            transport: custom_tcp
+  ecu_worker:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:0"
+    machines:
+      worker_session_f_wired:
+        source: "@SCE_MESH_TEST_DIR_REL@/worker_session_f_wired.scxml"

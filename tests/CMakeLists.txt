@@ -2949,6 +2949,102 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         PARENT  mesh_two_process_smoke_parent
         TIMEOUT 30)
 
+    # ── Session 3 Stage B: cross-device wire-14/15/18 lifecycle ────
+    # Real TransportRouter on both sides of a TCP loopback boundary.
+    # The worker hosts `worker_session_f_wired` with a kernel-ephemeral
+    # listen (`"127.0.0.1:0"`), announces the assigned port via
+    # `custom_tcp_local_endpoint()` on stderr, and the parent consumes
+    # it through `PortOverride::peer_connect_endpoints`. Parent's own
+    # listen uses a static CMake-configurable port so the worker's
+    # reply channel resolves at codegen time without a reverse
+    # handshake. The SCXMLs are reused from deploy_session_f_wired.yaml
+    # verbatim — the crossdev variant differs only in deploy.yaml
+    # topology (two ecus) + per-peer `transport: custom_tcp` binding.
+    set(MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_crossdev_lifecycle_generated")
+
+    set(SCE_TEST_CROSSDEV_LIFECYCLE_PORT "55823" CACHE STRING
+        "Static TCP loopback port the crossdev lifecycle parent Server binds \
+(IANA dynamic range). Override with \
+-DSCE_TEST_CROSSDEV_LIFECYCLE_PORT=N when the default collides; \
+RESOURCE_LOCK keys off the value so parallel ctest stays safe.")
+
+    file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
+        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}" "${MESH_TEST_DIR}")
+    configure_file(
+        "${MESH_TEST_DIR}/deploy_session_f_crossdev_lifecycle.yaml.in"
+        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
+        @ONLY)
+
+    add_custom_command(
+        OUTPUT "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_sm.h"
+                "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
+                -l cpp -o "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
+                --deploy "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
+                --write-deps "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
+                "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_sm.h.d"
+        COMMENT "Mesh §9.6 crossdev lifecycle: Generating parent_session_f_wired_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_sm.h"
+                "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
+                -l cpp -o "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
+                --deploy "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
+                --write-deps "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
+                "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_sm.h.d"
+        COMMENT "Mesh §9.6 crossdev lifecycle: Generating worker_session_f_wired_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_session_f_crossdev_lifecycle_worker
+        mesh/test_mesh_session_f_crossdev_lifecycle_worker.cpp
+        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_sm.h"
+        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_transport.h")
+    target_include_directories(mesh_session_f_crossdev_lifecycle_worker
+        PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR})
+    target_link_libraries(mesh_session_f_crossdev_lifecycle_worker
+        PRIVATE sce_runtime sce_mesh_common)
+    target_compile_features(mesh_session_f_crossdev_lifecycle_worker PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_session_f_crossdev_lifecycle_worker)
+
+    add_executable(mesh_session_f_crossdev_lifecycle_parent
+        mesh/test_mesh_session_f_crossdev_lifecycle_parent.cpp
+        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_sm.h"
+        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_transport.h")
+    target_include_directories(mesh_session_f_crossdev_lifecycle_parent
+        PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR})
+    target_link_libraries(mesh_session_f_crossdev_lifecycle_parent
+        PRIVATE sce_runtime sce_mesh_common GTest::gtest GTest::gtest_main)
+    target_compile_features(mesh_session_f_crossdev_lifecycle_parent PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_session_f_crossdev_lifecycle_parent)
+
+    sce_register_two_process_mesh_test(
+        NAME    mesh_session_f_crossdev_lifecycle
+        WORKER  mesh_session_f_crossdev_lifecycle_worker
+        PARENT  mesh_session_f_crossdev_lifecycle_parent
+        TIMEOUT 30)
+    set_tests_properties(mesh_session_f_crossdev_lifecycle PROPERTIES
+        # Lock on the parent's static Server port so parallel ctest
+        # cannot collide across this fixture and any future test that
+        # reuses the same port cache variable.
+        RESOURCE_LOCK sce_mesh_crossdev_lifecycle_${SCE_TEST_CROSSDEV_LIFECYCLE_PORT})
+
     # ── Phase 3 entry #4d: end-to-end payload verification ─────────
     # Proves <param> data survives: sender → JSON → wire → drain
     # → raiseExternal → _event.data → receiver cond matches.
