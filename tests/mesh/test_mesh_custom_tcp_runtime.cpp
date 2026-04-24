@@ -186,6 +186,74 @@ int main() {
         }
     }
 
+    // ── 0c. Client::set_connect_endpoint runtime override ───
+    // TransportRouter::init(PortOverride) routes each peer's declared
+    // override here before the Client's lazy connect. Contract under
+    // test: success pre-connect, rejection after a socket is open,
+    // rejection after shutdown. The second block then sends through
+    // the override endpoint to prove the swap actually redirected the
+    // dial (a no-op override would have connected to the decoy port).
+    {
+        SCE::Mesh::CustomTcp::Client client("127.0.0.1:1", nullptr);
+        if (!client.set_connect_endpoint("127.0.0.1:65500")) {
+            std::fprintf(stderr, "FAIL: set_connect_endpoint rejected pre-connect override\n");
+            return 111;
+        }
+        // Re-assignment before any send() is also legal — the last
+        // assignment wins, so the harness can retry the override after
+        // picking up a fresher endpoint from the peer's export.
+        if (!client.set_connect_endpoint("127.0.0.1:65501")) {
+            std::fprintf(stderr, "FAIL: second pre-connect set_connect_endpoint failed\n");
+            return 112;
+        }
+        client.shutdown();
+        if (client.set_connect_endpoint("127.0.0.1:65502")) {
+            std::fprintf(stderr, "FAIL: set_connect_endpoint accepted post-shutdown override\n");
+            return 113;
+        }
+    }
+    {
+        SCE::Mesh::CustomTcp::Server target_server(
+            "127.0.0.1:0",
+            [](const SCE::Mesh::MeshEnvelope&) {});
+        if (!target_server.valid()) {
+            std::fprintf(stderr, "FAIL: override-target server bind failed\n");
+            return 114;
+        }
+        auto target_ep = target_server.local_endpoint();
+        if (!target_ep) {
+            std::fprintf(stderr, "FAIL: override-target local_endpoint returned nullopt\n");
+            return 115;
+        }
+        // Decoy endpoint that must not be where the send lands. Port 1
+        // is privileged on Linux so unprivileged bind to it fails; a
+        // no-op override would leave connect dialing :1 and send would
+        // return false.
+        SCE::Mesh::CustomTcp::Client client("127.0.0.1:1", nullptr);
+        if (!client.set_connect_endpoint(*target_ep)) {
+            std::fprintf(stderr, "FAIL: set_connect_endpoint pre-connect rejected\n");
+            return 116;
+        }
+        SCE::Mesh::MeshEnvelope env;
+        env.id = SCE::uuid::v7();
+        env.source = "override_route_test";
+        env.type = "override.ping";
+        env.pattern = SCE::Mesh::PatternKind::FireForget;
+        env.datacontenttype = SCE::Mesh::PayloadCodec::None;
+        if (!client.send(env)) {
+            std::fprintf(stderr, "FAIL: send via overridden endpoint returned false\n");
+            return 117;
+        }
+        // Once the Client connected, the override setter must latch
+        // off — a second override would either race the live socket
+        // or silently drop a reconnect hint, both worse than failing
+        // loudly.
+        if (client.set_connect_endpoint("127.0.0.1:9999")) {
+            std::fprintf(stderr, "FAIL: set_connect_endpoint accepted post-connect override\n");
+            return 118;
+        }
+    }
+
     // ── 1. Engine-level FireForget E2E ────────────────────────
     {
         SCE::Generated::brake::brake brake;

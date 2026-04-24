@@ -2048,7 +2048,18 @@ struct TransportRouter {
     ///         threads, opened Zenoh session) is torn down via `shutdown()`
     ///         before returning — the router is left in a safe state for
     ///         destruction or a retry.
+{% if "custom_tcp" in transport_types %}
+    ///
+    /// @param port_override  Optional runtime endpoint overrides consumed
+    ///         by custom_tcp peers. `peer_connect_endpoints[peer_name]`
+    ///         replaces the codegen-baked `peer.connect_endpoint` for
+    ///         that peer before the Client dials. Default-constructed =
+    ///         no overrides (uses deploy.yaml values verbatim).
+    [[nodiscard]] bool init(
+        [[maybe_unused]] const SCE::Mesh::CustomTcp::PortOverride& port_override = {}) {
+{% else %}
     [[nodiscard]] bool init() {
+{% endif %}
         // No session-binding assertion needed: `sessions_` is a fixed-
         // size pointer array populated in the ctor initializer list, so
         // any attempt to reach init() with an unbound session would
@@ -2188,6 +2199,34 @@ struct TransportRouter {
             shutdown();
             return false;
         }
+        // §9.6 runtime port overrides: replace codegen-baked
+        // peer.connect_endpoint for any peer whose name is keyed in
+        // `port_override.peer_connect_endpoints`. The two-process
+        // cross-device harness exports each listener's local_endpoint()
+        // after bind and feeds it here so the dialing side connects to
+        // the kernel-assigned ephemeral port instead of the deploy.yaml
+        // `"host:0"` placeholder. Absent entries leave the endpoint as
+        // deploy.yaml declared it. set_connect_endpoint returns false
+        // only if the Client has already dialled — a programming error
+        // we surface via shutdown() rather than silently ignore.
+{% for peer in custom_tcp_outbound_peers %}
+        if (auto it = port_override.peer_connect_endpoints.find("{{ peer.name }}");
+            it != port_override.peer_connect_endpoints.end()) {
+            if (!p2c_to_{{ peer.name }}_.set_connect_endpoint(it->second)) {
+                shutdown();
+                return false;
+            }
+        }
+{% endfor %}
+{% for peer in custom_tcp_inbound_peers %}
+        if (auto it = port_override.peer_connect_endpoints.find("{{ peer.name }}");
+            it != port_override.peer_connect_endpoints.end()) {
+            if (!c2p_to_{{ peer.name }}_.set_connect_endpoint(it->second)) {
+                shutdown();
+                return false;
+            }
+        }
+{% endfor %}
 {% endif %}
 {% if "zenoh" in transport_types %}
         try {

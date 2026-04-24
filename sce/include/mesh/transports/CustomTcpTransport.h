@@ -51,6 +51,7 @@
 #include <sys/types.h>
 #include <thread>
 #include <unistd.h>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -60,6 +61,20 @@ namespace SCE::Mesh::CustomTcp {
 /// successfully decoded envelope. The callback owns dispatch to the
 /// engine; this layer does no policy interpretation.
 using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
+
+/// Runtime override for endpoints the generated TransportRouter::init()
+/// would otherwise take from codegen-baked deploy.yaml values. The
+/// two-process cross-device harness populates this before calling
+/// init() so the dialing side connects to the listener's kernel-
+/// assigned ephemeral port instead of the deploy.yaml placeholder.
+/// Default-constructed means "no overrides, use codegen values".
+struct PortOverride {
+    /// Map from peer name (the key of deploy.yaml `bindings["#<peer>"]`)
+    /// to the `"host:port"` endpoint that should replace the codegen-
+    /// baked `peer.connect_endpoint`. Only custom_tcp peers honour it;
+    /// other transports ignore entries silently.
+    std::unordered_map<std::string, std::string> peer_connect_endpoints;
+};
 
 namespace detail {
 
@@ -341,6 +356,24 @@ public:
 
     Client(const Client&) = delete;
     Client& operator=(const Client&) = delete;
+
+    /// Replace the connect endpoint before the first `send()` has been
+    /// issued. Intended for runtime overrides: deploy.yaml bakes a
+    /// placeholder endpoint (often `"host:0"` for ephemeral peers) and
+    /// the harness reassigns the actual endpoint after discovering the
+    /// peer's listener. Returns false if a socket is already open
+    /// (connect() already ran) or the client is shutting down; in
+    /// either case the existing endpoint is preserved. Acquires the
+    /// same `send_mutex_` that guards `connect()`, so races between
+    /// this setter and a concurrent `send()` resolve deterministically
+    /// — one side wins the lock and the other observes the decided
+    /// state on entry.
+    [[nodiscard]] bool set_connect_endpoint(std::string endpoint) {
+        std::lock_guard<std::mutex> lock(send_mutex_);
+        if (fd_ >= 0 || stopping_.load()) return false;
+        connect_endpoint_ = std::move(endpoint);
+        return true;
+    }
 
     /// Encode and send the envelope. Connects on demand; subsequent calls
     /// reuse the same socket. Returns false on connect / send failure.
