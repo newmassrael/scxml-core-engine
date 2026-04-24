@@ -349,15 +349,39 @@ SceTemplateResult PugiXMLDocument::processSceTemplate() {
         return result;
     }
 
-    // Serialise the current DOM state (post-XInclude) with
-    // `format_raw` — no indent tweaks, no declaration rewrite —
-    // so the bytes handed to the string-level expander mirror the
-    // parser's DOM one-to-one modulo normalisation. The serialised
-    // view is the coordinate space for the PositionMap; RFC §3 P2
-    // item #5 accepts this (xinclude-fragment remap is Phase X).
-    std::ostringstream serialised;
-    doc_->save(serialised, "", pugi::format_raw | pugi::format_no_declaration);
-    const std::string content = serialised.str();
+    // Coordinate space selection for `expandString`'s identity
+    // map. Two cases:
+    //
+    //   (a) `sourceText_` is available AND no `<xi:include>` element
+    //       is present in the author's bytes — then `processXInclude`
+    //       above was a structural no-op, the DOM matches
+    //       `sourceText_` byte-for-byte, and feeding the expander the
+    //       author bytes directly preserves author-source (row, col)
+    //       through every `PositionMap::lookup` downstream. This is
+    //       the path that Phase C P3 coord-parity fixtures depend on
+    //       (see claudedocs/rfc-sce-template-phase-c.md §3 P3).
+    //
+    //   (b) `sourceText_` is unavailable OR the document actually
+    //       uses `<xi:include>` — fall back to serialising the
+    //       post-XInclude DOM through `format_raw`, accepting the
+    //       documented xinclude-fragment coordinate skew (Phase X
+    //       closes this, RFC §3 P2 item #5).
+    //
+    // The check uses substring search rather than DOM traversal to
+    // stay cheap on the hot path; `xi:include` is prefixed with
+    // the reserved XInclude namespace and so no false positives
+    // appear in author content outside of actual include sites.
+    std::string content;
+    const bool useAuthorBytes =
+        !sourceText_.empty() &&
+        sourceText_.find("xi:include") == std::string::npos;
+    if (useAuthorBytes) {
+        content = sourceText_;
+    } else {
+        std::ostringstream serialised;
+        doc_->save(serialised, "", pugi::format_raw | pugi::format_no_declaration);
+        content = serialised.str();
+    }
 
     // Secondary fast path: the serialised post-XInclude text may
     // also lack `<sce:use>` if XInclude neither introduced nor
