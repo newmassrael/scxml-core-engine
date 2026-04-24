@@ -1248,9 +1248,18 @@ fn validate_scxml_invoke_target_exclusivity(
                     continue;
                 };
                 if candidate_canonical == own_canonical {
+                    // Downcast the peer-binding vec to plain names — the
+                    // diagnostic only shows the peer names as context
+                    // hints ("invoked by foo, bar as a mesh peer") and
+                    // does not need the transport detail.
+                    let inbound_names: Vec<String> = model
+                        .scxml_remote_inbound_peers
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect();
                     return Err(mesh::error::DeployError::ScxmlInvokeTargetConflict {
                         machine: resolved_name.to_string(),
-                        inbound_peers: model.scxml_remote_inbound_peers.clone(),
+                        inbound_peers: inbound_names,
                         local_invoker: peer_name.clone(),
                         local_src: src_raw.to_string(),
                     });
@@ -1286,26 +1295,44 @@ fn collect_scxml_remote_peers(
     resolved_name: &str,
     deploy_path: &Path,
 ) {
-    // Outbound: walk the just-enriched local invokes.
-    let mut outbound: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // Outbound: walk the just-enriched local invokes. Each peer carries
+    // the author-declared transport (or `None` for same-device implicit
+    // shm) resolved by `classify_remote_scxml_invokes` from the parent's
+    // `bindings["#<peer>"]` entry. Two invokes in the same machine pointing
+    // at the same peer cannot disagree on the transport — the deploy.yaml
+    // binding is per-(parent, peer) pair, not per-invoke — so deduping on
+    // `.name` via `BTreeMap` and keeping the first-observed transport is
+    // correct. Sorted by name via `BTreeMap` iteration order.
+    let mut outbound: std::collections::BTreeMap<String, Option<String>> =
+        std::collections::BTreeMap::new();
     for state in model.states.values() {
         for invoke in &state.invokes {
             if let model::Invoke::Scxml(info) = invoke {
                 if let Some(target) = &info.remote_mesh_target {
-                    outbound.insert(target.clone());
+                    outbound
+                        .entry(target.clone())
+                        .or_insert_with(|| info.remote_mesh_transport.clone());
                 }
             }
         }
     }
-    model.scxml_remote_outbound_peers = outbound.into_iter().collect();
+    model.scxml_remote_outbound_peers = outbound
+        .into_iter()
+        .map(|(name, transport)| model::ScxmlRemotePeerBinding { name, transport })
+        .collect();
 
     // Inbound: scan every sibling machine's SCXML for
     // `<invoke type="scxml" src="#<this>">`. The deploy.yaml `source:` field
     // is relative to the deploy.yaml's own directory, per the existing
-    // machine-source resolution convention.
+    // machine-source resolution convention. Each inbound entry records
+    // the peer-side transport for `#<this>` — the peer's
+    // `bindings["#<this>"].transport` is the authoritative value because
+    // the peer is the parent in the wire-14 sense, and deploy.yaml places
+    // the transport on the sender's binding (§9.6 L1393).
     let deploy_dir = deploy_path.parent().unwrap_or_else(|| Path::new("."));
     let self_marker = format!("#{resolved_name}");
-    let mut inbound: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut inbound: std::collections::BTreeMap<String, Option<String>> =
+        std::collections::BTreeMap::new();
 
     // Regex matches a whole `<invoke ...>` / `<invoke .../>` open tag as one
     // capture, then the same pattern's `src="#<name>"` capture locates the
@@ -1317,6 +1344,8 @@ fn collect_scxml_remote_peers(
     let invoke_tag_re = regex::Regex::new(r##"<invoke\b[^>]*>"##).expect("valid regex");
     let src_attr_re = regex::Regex::new(r##"\bsrc="#([A-Za-z_][A-Za-z0-9_]*)""##).expect("valid regex");
     let type_attr_re = regex::Regex::new(r##"\btype="([^"]*)""##).expect("valid regex");
+
+    let self_binding_key = format!("#{resolved_name}");
 
     for device in deploy_cfg.topology.values() {
         for (peer_name, peer_cfg) in &device.machines {
@@ -1342,7 +1371,15 @@ fn collect_scxml_remote_peers(
                 }
                 if let Some(cap) = src_attr_re.captures(tag_text) {
                     if &cap[1] == resolved_name {
-                        inbound.insert(peer_name.clone());
+                        // Read the peer-side transport declaration from
+                        // the peer machine's `bindings["#<this>"]` entry;
+                        // `None` means the peer did not declare an
+                        // explicit binding (same-device implicit shm).
+                        let peer_transport = peer_cfg
+                            .bindings
+                            .get(self_binding_key.as_str())
+                            .map(|b| b.transport.clone());
+                        inbound.entry(peer_name.clone()).or_insert(peer_transport);
                     }
                 }
             }
@@ -1371,12 +1408,24 @@ fn collect_scxml_remote_peers(
             let parent_partition =
                 mesh::partitions::partition_for_machine(deploy_cfg, parent_candidate);
             if self_partition != parent_partition {
-                inbound.insert(parent_candidate.to_string());
+                // Synth peers look up the parent's binding for the synth
+                // machine's name — symmetric to the named-peer path above.
+                let parent_transport = deploy_cfg
+                    .device_for_machine(parent_candidate)
+                    .and_then(|d| d.machines.get(parent_candidate))
+                    .and_then(|m| m.bindings.get(self_binding_key.as_str()))
+                    .map(|b| b.transport.clone());
+                inbound
+                    .entry(parent_candidate.to_string())
+                    .or_insert(parent_transport);
             }
         }
     }
 
-    model.scxml_remote_inbound_peers = inbound.into_iter().collect();
+    model.scxml_remote_inbound_peers = inbound
+        .into_iter()
+        .map(|(name, transport)| model::ScxmlRemotePeerBinding { name, transport })
+        .collect();
     // SCE_MESH.md §9.6 — codegen-shape seam. When at least one sibling
     // invokes this machine remotely, the generated SM must be
     // default-constructible for `ChildSessionAdapter<Engine>` to own it.
@@ -1427,6 +1476,15 @@ fn classify_remote_scxml_invokes(
 ) {
     let mut mutated = false;
     let parent_partition = mesh::partitions::partition_for_machine(deploy_cfg, resolved_name);
+    // SCE_MESH.md §9.6 L1393 — the parent's own `bindings["#<peer>"]`
+    // entry is the single source of truth for "which transport when this
+    // machine addresses #peer" for both `<send>` and `<invoke>` axes.
+    // Cross-device peers require an entry here; same-device peers take
+    // the implicit shm fallback (today's only wired codegen path).
+    let parent_bindings = deploy_cfg
+        .device_for_machine(resolved_name)
+        .and_then(|d| d.machines.get(resolved_name))
+        .map(|m| &m.bindings);
     for state in model.states.values_mut() {
         for invoke in state.invokes.iter_mut() {
             if let model::Invoke::Scxml(info) = invoke {
@@ -1446,6 +1504,19 @@ fn classify_remote_scxml_invokes(
                     mesh::partitions::partition_for_machine(deploy_cfg, target);
                 if target_partition != parent_partition {
                     info.remote_mesh_target = Some(target.to_string());
+                    // SCE_MESH.md §9.6 L1393 — record the declared transport
+                    // for this peer so `validate_scxml_invoke_transport`
+                    // can reject cross-device declarations that name an
+                    // incapable or not-yet-wired transport. `None` here
+                    // means "author declared no binding for this peer";
+                    // the validator separates that case from "declared
+                    // but transport is shm/local" for better diagnostics.
+                    // `TargetId` implements `Borrow<str>`, so the `HashMap`
+                    // lookup keys on the raw `"#<target>"` literal directly.
+                    let peer_key = format!("#{target}");
+                    info.remote_mesh_transport = parent_bindings
+                        .and_then(|b| b.get(peer_key.as_str()))
+                        .map(|binding| binding.transport.clone());
                     mutated = true;
                 }
             }
@@ -2435,7 +2506,10 @@ topology:
             .expect("mesh-only worker must accept");
         // Partition context not required — single-device deploy.
         assert!(!ctx);
-        assert_eq!(model.scxml_remote_inbound_peers, vec!["parent_mesh".to_string()]);
+        assert_eq!(
+            model.scxml_remote_inbound_peers,
+            vec![model::ScxmlRemotePeerBinding::new("parent_mesh")],
+        );
         assert!(
             model.is_remote_invoke_target,
             "mesh-peer worker must have is_remote_invoke_target set for the codegen-shape seam"
@@ -2692,7 +2766,9 @@ partitions:
 
         assert_eq!(
             parent_model.scxml_remote_outbound_peers,
-            vec!["parent__sce_synth_invoke__inv0".to_string()],
+            vec![model::ScxmlRemotePeerBinding::new(
+                "parent__sce_synth_invoke__inv0",
+            )],
             "parent must list synth as outbound peer",
         );
         assert!(
@@ -2732,7 +2808,7 @@ partitions:
         );
         assert_eq!(
             synth_model.scxml_remote_inbound_peers,
-            vec!["parent".to_string()],
+            vec![model::ScxmlRemotePeerBinding::new("parent")],
             "synth must recognize its parent as an inbound peer via the \
              __sce_synth_invoke__ infix inversion (rule-3 override)",
         );

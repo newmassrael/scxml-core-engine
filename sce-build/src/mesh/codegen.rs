@@ -813,8 +813,8 @@ pub fn generate_mesh(
     partition_self_name: Option<&str>,
     partition_wire21_outbound: &BTreeMap<String, String>,
     partition_wire21_inbound: &[String],
-    scxml_remote_outbound_peers: &[String],
-    scxml_remote_inbound_peers: &[String],
+    scxml_remote_outbound_peers: &[crate::model::ScxmlRemotePeerBinding],
+    scxml_remote_inbound_peers: &[crate::model::ScxmlRemotePeerBinding],
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -992,8 +992,8 @@ fn generate_cpp_mesh(
     partition_self_name: Option<&str>,
     partition_wire21_outbound: &BTreeMap<String, String>,
     partition_wire21_inbound: &[String],
-    scxml_remote_outbound_peers: &[String],
-    scxml_remote_inbound_peers: &[String],
+    scxml_remote_outbound_peers: &[crate::model::ScxmlRemotePeerBinding],
+    scxml_remote_inbound_peers: &[crate::model::ScxmlRemotePeerBinding],
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND

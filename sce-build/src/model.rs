@@ -448,6 +448,35 @@ impl std::ops::DerefMut for MeshRpcInvokeInfo {
     }
 }
 
+/// SCE_MESH.md §9.6.2 wire-14/20 peer entry — a machine name paired with
+/// the author-selected deploy.yaml transport for the scxml-remote invoke
+/// channel. `transport` is `None` for same-device cross-partition peers
+/// that take the implicit shm fallback (today's only wired codegen path);
+/// `Some(<name>)` carries a cross-device declaration resolved from
+/// `machines.<parent>.bindings["#<peer>"].transport`. Session 1 of the
+/// cross-device roll-out records the field on the model so downstream
+/// validators can reject declarations that name a transport whose C++
+/// wire-14/20 dispatch Session 2 has not yet wired.
+#[derive(Debug, Clone, Serialize, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ScxmlRemotePeerBinding {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
+}
+
+impl ScxmlRemotePeerBinding {
+    /// Construct a peer entry with no author-declared transport — the
+    /// same-device shm implicit-fallback shape. Keeps call sites tidy
+    /// where the transport is always absent (today's classifier callers
+    /// that operate on same-device data).
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            transport: None,
+        }
+    }
+}
+
 /// W3C SCXML 6.4: Static invoke (`<invoke src="..."` or inline `<content>`).
 ///
 /// Holds only the fields the static lifecycle actually uses. Hybrid-only
@@ -478,6 +507,16 @@ pub struct ScxmlInvokeInfo {
     /// by [`crate::inject_partition_context_for`] from the deploy topology.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_mesh_target: Option<String>,
+    /// SCE_MESH.md §9.6 L1393 cross-device transport — the author-declared
+    /// transport on `machines.<parent>.bindings["#<peer>"]` when the peer
+    /// is cross-device. `None` when `remote_mesh_target` is also `None`
+    /// (not a remote invoke) OR the invoke is cross-partition same-device
+    /// (implicit shm fallback, today's only wired codegen path). The
+    /// Session 1 cross-device validator rejects cross-device declarations
+    /// whose transport is not yet wired by Session 2 C++ dispatch, so
+    /// this field is only a diagnostic payload until Session 2 lands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_mesh_transport: Option<String>,
 }
 
 /// W3C SCXML 6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).
@@ -750,25 +789,32 @@ pub struct SCXMLModel {
     /// SCE_MESH.md §9.6.2 wire-14 outbound peers — deploy.yaml machine
     /// names referenced by any `<invoke type="scxml" src="#peer">` in
     /// this machine's SCXML that the classifier (`classify_remote_scxml_invokes`)
-    /// marked with `remote_mesh_target`. Sorted, deduplicated. Codegen
-    /// materializes one outbound `ScxmlInvokeChannel` (shm) per entry
-    /// for the §9.6.2 `InvokeStart` envelope, paired with an inbound
-    /// `ScxmlInvokeChannel` for the peer's wire-20 `InvokeError` reply.
-    /// Empty when the machine issues no remote SCXML invokes.
+    /// marked with `remote_mesh_target`. Sorted by `.name`, deduplicated.
+    /// Each entry also carries the author-declared `transport:` from the
+    /// parent's `bindings["#<peer>"]` entry (cross-device case) or `None`
+    /// (same-device implicit shm). Codegen materializes one outbound
+    /// `ScxmlInvokeChannel` (shm) per entry for the §9.6.2 `InvokeStart`
+    /// envelope, paired with an inbound `ScxmlInvokeChannel` for the
+    /// peer's wire-20 `InvokeError` reply. Empty when the machine issues
+    /// no remote SCXML invokes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scxml_remote_outbound_peers: Vec<String>,
+    pub scxml_remote_outbound_peers: Vec<ScxmlRemotePeerBinding>,
 
     /// SCE_MESH.md §9.6.2 wire-14 inbound peers — deploy.yaml machine
     /// names of other machines whose SCXML issues a remote `<invoke
     /// type="scxml" src="#<this>">`, with `<this>` equal to the machine
-    /// currently being codegen'd. Sorted, deduplicated. Codegen
-    /// materializes one inbound `ScxmlInvokeChannel` per entry for
-    /// receiving wire-14 `InvokeStart`, paired with an outbound
+    /// currently being codegen'd. Sorted by `.name`, deduplicated.
+    /// The `transport:` field mirrors the parent's `bindings["#<this>"]`
+    /// entry (cross-device case) or `None` (same-device implicit shm);
+    /// the symmetry is required so the worker-side codegen can emit the
+    /// matching transport channel when Session 2 extends past shm.
+    /// Codegen materializes one inbound `ScxmlInvokeChannel` per entry
+    /// for receiving wire-14 `InvokeStart`, paired with an outbound
     /// `ScxmlInvokeChannel` for answering with wire-20 `InvokeError`
     /// carrying `SESSION_F_NOT_IMPLEMENTED` until the child-session
     /// runtime lands. Empty when no peer invokes this machine.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scxml_remote_inbound_peers: Vec<String>,
+    pub scxml_remote_inbound_peers: Vec<ScxmlRemotePeerBinding>,
 
     /// SCE_MESH.md §9.6 — `true` when this machine serves as a remote
     /// `<invoke type="scxml" src="#<this>">` target for at least one

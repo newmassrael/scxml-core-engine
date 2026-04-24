@@ -1664,6 +1664,7 @@ impl SCXMLParser {
                 src: resolved_src,
                 namelist,
                 remote_mesh_target: None,
+                remote_mesh_transport: None,
             };
 
             // Populate child-side metadata (script-engine flag, datamodel

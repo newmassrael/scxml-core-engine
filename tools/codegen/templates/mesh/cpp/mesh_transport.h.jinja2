@@ -530,14 +530,14 @@ static constexpr const char* PARTITION_WIRE21_FROM_{{ r.src_partition_snake | up
 using ScxmlInvokeChannel = SCE::Mesh::ShmChannel<>;
 
 {% for peer in scxml_remote_outbound_peers %}
-// Outbound peer: I am parent, `{{ peer }}` is child.
-static constexpr const char* P2C_TO_{{ peer | upper }}   = "/sce_p2c_{{ machine_name }}_{{ peer }}";
-static constexpr const char* C2P_FROM_{{ peer | upper }} = "/sce_c2p_{{ peer }}_{{ machine_name }}";
+// Outbound peer: I am parent, `{{ peer.name }}` is child.
+static constexpr const char* P2C_TO_{{ peer.name | upper }}   = "/sce_p2c_{{ machine_name }}_{{ peer.name }}";
+static constexpr const char* C2P_FROM_{{ peer.name | upper }} = "/sce_c2p_{{ peer.name }}_{{ machine_name }}";
 {% endfor %}
 {% for peer in scxml_remote_inbound_peers %}
-// Inbound peer: I am child, `{{ peer }}` is parent.
-static constexpr const char* P2C_FROM_{{ peer | upper }} = "/sce_p2c_{{ peer }}_{{ machine_name }}";
-static constexpr const char* C2P_TO_{{ peer | upper }}   = "/sce_c2p_{{ machine_name }}_{{ peer }}";
+// Inbound peer: I am child, `{{ peer.name }}` is parent.
+static constexpr const char* P2C_FROM_{{ peer.name | upper }} = "/sce_p2c_{{ peer.name }}_{{ machine_name }}";
+static constexpr const char* C2P_TO_{{ peer.name | upper }}   = "/sce_c2p_{{ machine_name }}_{{ peer.name }}";
 {% endfor %}
 
 {% endif %}
@@ -768,12 +768,12 @@ struct TransportRouter {
    against the same `/sce_p2c_<parent>_<child>` / `/sce_c2p_<child>_<parent>`
    POSIX identifiers with no runtime handshake. #}
 {% for peer in scxml_remote_outbound_peers %}
-    ScxmlInvokeChannel p2c_to_{{ peer }}_;
-    ScxmlInvokeChannel c2p_from_{{ peer }}_;
+    ScxmlInvokeChannel p2c_to_{{ peer.name }}_;
+    ScxmlInvokeChannel c2p_from_{{ peer.name }}_;
 {% endfor %}
 {% for peer in scxml_remote_inbound_peers %}
-    ScxmlInvokeChannel p2c_from_{{ peer }}_;
-    ScxmlInvokeChannel c2p_to_{{ peer }}_;
+    ScxmlInvokeChannel p2c_from_{{ peer.name }}_;
+    ScxmlInvokeChannel c2p_to_{{ peer.name }}_;
 {% endfor %}
 
 {% if scxml_remote_inbound_peers %}
@@ -1478,12 +1478,12 @@ struct TransportRouter {
     the outbound peer launches); `c2p_to_<peer>_` creates so the
     outbound peer can observe the reply. #}
 {%- for peer in scxml_remote_outbound_peers %}
-{%-   set ns.parts = ns.parts + ["p2c_to_" ~ peer ~ "_(P2C_TO_" ~ (peer | upper) ~ ", ScxmlInvokeChannel::Mode::Create)"] %}
-{%-   set ns.parts = ns.parts + ["c2p_from_" ~ peer ~ "_(C2P_FROM_" ~ (peer | upper) ~ ", ScxmlInvokeChannel::Mode::Open)"] %}
+{%-   set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(P2C_TO_" ~ (peer.name | upper) ~ ", ScxmlInvokeChannel::Mode::Create)"] %}
+{%-   set ns.parts = ns.parts + ["c2p_from_" ~ peer.name ~ "_(C2P_FROM_" ~ (peer.name | upper) ~ ", ScxmlInvokeChannel::Mode::Open)"] %}
 {%- endfor %}
 {%- for peer in scxml_remote_inbound_peers %}
-{%-   set ns.parts = ns.parts + ["p2c_from_" ~ peer ~ "_(P2C_FROM_" ~ (peer | upper) ~ ", ScxmlInvokeChannel::Mode::Open)"] %}
-{%-   set ns.parts = ns.parts + ["c2p_to_" ~ peer ~ "_(C2P_TO_" ~ (peer | upper) ~ ", ScxmlInvokeChannel::Mode::Create)"] %}
+{%-   set ns.parts = ns.parts + ["p2c_from_" ~ peer.name ~ "_(P2C_FROM_" ~ (peer.name | upper) ~ ", ScxmlInvokeChannel::Mode::Open)"] %}
+{%-   set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(C2P_TO_" ~ (peer.name | upper) ~ ", ScxmlInvokeChannel::Mode::Create)"] %}
 {%- endfor %}
 {%- if scxml_remote_inbound_peers %}
 {#- SCE_MESH.md §9.6 WorkerSessionHost init — hosted-machine identity
@@ -1754,8 +1754,8 @@ struct TransportRouter {
                     env.subject = invokeIdString;
                     env.routing_id = routing_id_;
 {% for peer in scxml_remote_outbound_peers %}
-                    if (target == "{{ peer }}") {
-                        return p2c_to_{{ peer }}_.send(env);
+                    if (target == "{{ peer.name }}") {
+                        return p2c_to_{{ peer.name }}_.send(env);
                     }
 {% endfor %}
                     return false;  // unknown peer — caller falls through to local raise
@@ -1791,8 +1791,8 @@ struct TransportRouter {
                     }
                     env.routing_id = routing_id_;
 {% for peer in scxml_remote_outbound_peers %}
-                    if (target == "{{ peer }}") {
-                        return p2c_to_{{ peer }}_.send(env);
+                    if (target == "{{ peer.name }}") {
+                        return p2c_to_{{ peer.name }}_.send(env);
                     }
 {% endfor %}
                     return false;
@@ -1810,8 +1810,8 @@ struct TransportRouter {
                     env.subject = invokeIdString;
                     env.routing_id = routing_id_;
 {% for peer in scxml_remote_outbound_peers %}
-                    if (target == "{{ peer }}") {
-                        return p2c_to_{{ peer }}_.send(env);
+                    if (target == "{{ peer.name }}") {
+                        return p2c_to_{{ peer.name }}_.send(env);
                     }
 {% endfor %}
                     return false;
@@ -1870,19 +1870,19 @@ struct TransportRouter {
     std::size_t pumpScxmlInvokeRequests() {
         std::size_t total = 0;
 {% for peer in scxml_remote_inbound_peers %}
-        if (!p2c_from_{{ peer }}_.valid()) {
-            p2c_from_{{ peer }}_ = ScxmlInvokeChannel(
-                P2C_FROM_{{ peer | upper }},
+        if (!p2c_from_{{ peer.name }}_.valid()) {
+            p2c_from_{{ peer.name }}_ = ScxmlInvokeChannel(
+                P2C_FROM_{{ peer.name | upper }},
                 ScxmlInvokeChannel::Mode::Open);
         }
-        if (p2c_from_{{ peer }}_.valid()) {
-            total += p2c_from_{{ peer }}_.drainWith(
+        if (p2c_from_{{ peer.name }}_.valid()) {
+            total += p2c_from_{{ peer.name }}_.drainWith(
                 [this](const SCE::Mesh::MeshEnvelope& in) {
                     switch (in.pattern) {
                     case SCE::Mesh::PatternKind::InvokeStart:
                         worker_session_host_.onWire14(in,
                             [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
-                                return c2p_to_{{ peer }}_.send(env);
+                                return c2p_to_{{ peer.name }}_.send(env);
                             });
                         break;
                     case SCE::Mesh::PatternKind::ParentEvent:
@@ -1904,9 +1904,9 @@ struct TransportRouter {
         worker_session_host_.tick(
             [this](const std::string& parent_peer) -> SCE::Mesh::ChildToParentPublisher {
 {% for peer in scxml_remote_inbound_peers %}
-                if (parent_peer == "{{ peer }}") {
+                if (parent_peer == "{{ peer.name }}") {
                     return [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
-                        return c2p_to_{{ peer }}_.send(env);
+                        return c2p_to_{{ peer.name }}_.send(env);
                     };
                 }
 {% endfor %}
@@ -1929,13 +1929,13 @@ struct TransportRouter {
     std::size_t pumpScxmlInvokeReplies() {
         std::size_t total = 0;
 {% for peer in scxml_remote_outbound_peers %}
-        if (!c2p_from_{{ peer }}_.valid()) {
-            c2p_from_{{ peer }}_ = ScxmlInvokeChannel(
-                C2P_FROM_{{ peer | upper }},
+        if (!c2p_from_{{ peer.name }}_.valid()) {
+            c2p_from_{{ peer.name }}_ = ScxmlInvokeChannel(
+                C2P_FROM_{{ peer.name | upper }},
                 ScxmlInvokeChannel::Mode::Open);
         }
-        if (c2p_from_{{ peer }}_.valid()) {
-            total += c2p_from_{{ peer }}_
+        if (c2p_from_{{ peer.name }}_.valid()) {
+            total += c2p_from_{{ peer.name }}_
                 .template drain<typename SenderEngine::PolicyType>(*sessions_[0]);
         }
 {% endfor %}
