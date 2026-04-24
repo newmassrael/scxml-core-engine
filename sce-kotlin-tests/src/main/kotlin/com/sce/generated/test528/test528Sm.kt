@@ -305,7 +305,7 @@ class Test528StateMachine(
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     try {
                         val contentResult = engineDD.evaluateExpr(sidDD, "undefined.invalidProperty")
-                        // C++ DoneDataHelper::evaluateContent: convertScriptValueToJson
+                        // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
                         raiseInternal(Test528Event.Error.Execution, EventMetadata.platform())
