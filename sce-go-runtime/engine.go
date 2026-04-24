@@ -45,6 +45,14 @@ type Engine[S comparable, E comparable] struct {
 
 	// scheduler is the W3C SCXML 6.2 delayed event scheduler.
 	scheduler *PullScheduler[E]
+
+	// donedataAtFinal is the W3C SCXML 5.5 + 6.3.1 stashed donedata payload
+	// for a top-level <final>. Entry actions stash it here; an invoking
+	// parent reads it back via DonedataAtFinal() to lift onto
+	// done.invoke.<id>._event.data. Mirrors the C++ AOT
+	// stashDonedataAtFinal contract and the Rust Engine::donedata_at_final
+	// field.
+	donedataAtFinal string
 }
 
 // NewEngine constructs a new engine with the given policy instance.
@@ -56,12 +64,13 @@ type Engine[S comparable, E comparable] struct {
 // Matches Rust Engine::new.
 func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, E] {
 	return &Engine[S, E]{
-		policy:        policy,
-		currentState:  policy.InitialState(),
-		internalQueue: NewEventQueueManager[EventWithMetadata[E]](),
-		externalQueue: NewEventQueueManager[EventWithMetadata[E]](),
-		isRunning:     false,
-		scheduler:     NewPullScheduler[E](),
+		policy:          policy,
+		currentState:    policy.InitialState(),
+		internalQueue:   NewEventQueueManager[EventWithMetadata[E]](),
+		externalQueue:   NewEventQueueManager[EventWithMetadata[E]](),
+		isRunning:       false,
+		scheduler:       NewPullScheduler[E](),
+		donedataAtFinal: "",
 	}
 }
 
@@ -324,6 +333,29 @@ func (e *Engine[S, E]) ProcessEventWithMeta(event E, metadata EventMetadata) {
 	}
 	e.externalQueue.Raise(meta)
 	e.Step()
+}
+
+// ================================================================
+// Donedata stash (W3C SCXML 5.5 + 6.3.1)
+// ================================================================
+
+// StashDonedataAtFinal records the donedata payload evaluated on a
+// top-level <final> entry so an invoking parent can lift it onto
+// done.invoke.<id>._event.data.
+//
+// Matches C++ StaticExecutionEngine::stashDonedataAtFinal and Rust
+// Engine::stash_donedata_at_final.
+func (e *Engine[S, E]) StashDonedataAtFinal(data string) {
+	e.donedataAtFinal = data
+}
+
+// DonedataAtFinal returns the donedata payload stashed on top-level
+// <final> entry, or "" if none was stashed.
+//
+// Matches C++ StaticExecutionEngine::donedataAtFinal and Rust
+// Engine::donedata_at_final.
+func (e *Engine[S, E]) DonedataAtFinal() string {
+	return e.donedataAtFinal
 }
 
 // ================================================================

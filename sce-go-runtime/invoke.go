@@ -123,6 +123,11 @@ type ChildEngine interface {
 	RaiseExternalByName(eventName, eventData string)
 	SetCompletionCallback(callback func())
 	GetParentEventQueue() chan ParentEvent
+
+	// DonedataAtFinal returns the donedata payload stashed by the child's
+	// top-level <final> onentry, for the parent's RaiseDoneInvoke to lift
+	// onto done.invoke.<id>._event.data (W3C SCXML 5.5 + 6.3.1).
+	DonedataAtFinal() string
 }
 
 // DrainAndRaiseChildEvents drains events from a child's ParentExternalQueue
@@ -164,8 +169,14 @@ func DrainAndRaiseChildEvents[S comparable, E comparable](
 
 // RaiseDoneInvoke raises a done.invoke event in the parent engine (W3C SCXML 6.3.1).
 // Port of Rust raise_done_invoke().
+//
+// donedata is the child's stashed top-level <final> donedata payload
+// (W3C SCXML 5.5 + 6.3.1); it is threaded onto EventMetadata.Data so
+// the parent's transition cond can read _event.data. Pass "" when the
+// child's <final> carries no donedata.
 func RaiseDoneInvoke[S comparable, E comparable](
 	invokeID string,
+	donedata string,
 	engine *Engine[S, E],
 ) {
 	eventName := "done.invoke." + invokeID
@@ -179,6 +190,7 @@ func RaiseDoneInvoke[S comparable, E comparable](
 	}
 	meta := NewEventWithMetadata(event)
 	meta.Metadata.InvokeID = invokeID
+	meta.Metadata.Data = donedata
 	engine.RaiseExternalWithMeta(meta)
 }
 

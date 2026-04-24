@@ -117,7 +117,10 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
-				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", engine)
+				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
+				// and the Rust raise_done_invoke(donedata) 3-arg signature.
+				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", wrapper.DonedataAtFinal(), engine)
 			}
 			continue
 		}
@@ -183,7 +186,9 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
-				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", engine)
+				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+				// done.invoke.<id>._event.data.
+				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", wrapper.DonedataAtFinal(), engine)
 			}
 			continue
 		}
@@ -204,7 +209,9 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} {
 			p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
-			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", engine)
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", child.DonedataAtFinal(), engine)
 		}
 	}
 {% endfor %}
@@ -216,7 +223,9 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} {
 			p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
-			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", engine)
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", child.DonedataAtFinal(), engine)
 		}
 	}
 {% endfor %}
@@ -292,6 +301,7 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFin
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
 type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
@@ -304,6 +314,7 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFin
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 {% endfor %}
 
 {% else %}

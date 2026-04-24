@@ -28,7 +28,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% endif %}
 	switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or state.invokes | scxml or state.invokes | hybrid %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or state.invokes | scxml or state.invokes | hybrid %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:
 {% for block in state.on_entry_blocks %}
 		// W3C SCXML 3.8: onentry block {{ loop.index0 }} (break on error stops subsequent actions)
@@ -118,6 +118,16 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% endif %}
 		_ = doneEventData
 		_ = doneDataOk
+{% endif %}
+{% if state.is_final and state.donedata and not state.parent %}
+		// W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
+		// invoking parent's RaiseDoneInvoke can lift it onto
+		// done.invoke.<id>._event.data. Mirrors the C++ AOT
+		// stashDonedataAtFinal contract and Rust
+		// Engine::stash_donedata_at_final.
+		if doneDataOk {
+			engine.StashDonedataAtFinal(doneEventData)
+		}
 {% endif %}
 {% if state.is_final and state.parent %}
 {% set done_event = ("done.state." ~ state.parent) | to_event_variant %}
