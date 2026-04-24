@@ -139,6 +139,53 @@ int main() {
         }
     }
 
+    // ── 0b. Ephemeral bind + local_endpoint readback ─────────
+    // Proves that `Server` bound with "127.0.0.1:0" delegates port
+    // assignment to the kernel and `local_endpoint()` surfaces the
+    // kernel's choice. The two-process cross-device harness (Stage
+    // A4) relies on exporting this endpoint to the peer process at
+    // runtime rather than baking a static port into codegen.
+    {
+        SCE::Mesh::CustomTcp::Server ephem_server(
+            "127.0.0.1:0",
+            [](const SCE::Mesh::MeshEnvelope&) {});
+        if (!ephem_server.valid()) {
+            std::fprintf(stderr, "FAIL: ephemeral Server bind failed on 127.0.0.1:0\n");
+            return 106;
+        }
+        auto ep = ephem_server.local_endpoint();
+        if (!ep) {
+            std::fprintf(stderr, "FAIL: local_endpoint returned nullopt on valid server\n");
+            return 107;
+        }
+        // Round-trip the readback through parse_endpoint: the returned
+        // string must itself be a well-formed endpoint, and the decoded
+        // port must be non-zero (the kernel assigned a real ephemeral
+        // port, not the literal :0 sentinel we requested). Reusing the
+        // parser avoids bespoke string arithmetic and pins the readback
+        // format to whatever parse_endpoint accepts.
+        sockaddr_in verify{};
+        if (!SCE::Mesh::CustomTcp::detail::parse_endpoint(*ep, verify)) {
+            std::fprintf(stderr, "FAIL: local_endpoint returned unparseable '%s'\n",
+                         ep->c_str());
+            return 108;
+        }
+        if (ntohs(verify.sin_port) == 0) {
+            std::fprintf(stderr,
+                         "FAIL: local_endpoint returned ephemeral sentinel '%s'\n",
+                         ep->c_str());
+            return 109;
+        }
+        // After explicit shutdown the listen fd closes, so the readback
+        // must switch to nullopt — guards against a post-teardown read
+        // silently returning a stale cached endpoint.
+        ephem_server.shutdown();
+        if (ephem_server.local_endpoint().has_value()) {
+            std::fprintf(stderr, "FAIL: local_endpoint returned a value after shutdown\n");
+            return 110;
+        }
+    }
+
     // ── 1. Engine-level FireForget E2E ────────────────────────
     {
         SCE::Generated::brake::brake brake;

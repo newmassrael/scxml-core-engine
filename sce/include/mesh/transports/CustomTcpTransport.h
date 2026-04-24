@@ -43,6 +43,7 @@
 #include <cstring>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <string>
@@ -65,9 +66,9 @@ namespace detail {
 /// Parse `host:port` (IPv4 only). Returns false on malformed input or a
 /// port outside [0, 65535]. Port 0 is the BSD-sockets sentinel that asks
 /// the kernel to pick an ephemeral port at bind() time; listen-side
-/// callers read the assigned port back via `getsockname` on the bound
-/// socket. On the connect side a literal `:0` parses but ::connect then
-/// fails cleanly (no peer listens on 0), so Client::connect returns false
+/// callers read the assigned port back via `Server::local_endpoint()`.
+/// On the connect side a literal `:0` parses but ::connect then fails
+/// cleanly (no peer listens on 0), so Client::connect returns false
 /// without a silent fault. Caller is responsible for ensuring the host
 /// portion is an IPv4 dotted quad — the harness reference transport is
 /// loopback-only by design (SCE_MESH.md §16.8.3).
@@ -213,6 +214,34 @@ public:
     Server& operator=(const Server&) = delete;
 
     [[nodiscard]] bool valid() const noexcept { return valid_; }
+
+    /// Return the actually-bound `host:port` after bind. When the server
+    /// was constructed with `host:0` the kernel assigns an ephemeral port
+    /// at bind time; this getter surfaces the kernel's choice via
+    /// `getsockname` so two-process harnesses can export the endpoint to
+    /// peers at runtime instead of baking a static port into codegen.
+    /// Returns `std::nullopt` when the server never became valid (bind or
+    /// listen failed) or when `shutdown()` has already closed the listen
+    /// fd. Not synchronized against `shutdown()` — a caller racing with
+    /// teardown may observe a nullopt; serialise externally if a stable
+    /// readback across teardown is required.
+    [[nodiscard]] std::optional<std::string> local_endpoint() const {
+        if (!valid_ || listen_fd_ < 0) return std::nullopt;
+        sockaddr_in addr{};
+        socklen_t len = sizeof(addr);
+        if (::getsockname(listen_fd_, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+            return std::nullopt;
+        }
+        if (addr.sin_family != AF_INET) return std::nullopt;
+        char host[INET_ADDRSTRLEN] = {};
+        if (::inet_ntop(AF_INET, &addr.sin_addr, host, sizeof(host)) == nullptr) {
+            return std::nullopt;
+        }
+        std::string out(host);
+        out.push_back(':');
+        out.append(std::to_string(ntohs(addr.sin_port)));
+        return out;
+    }
 
     void shutdown() {
         bool expected = false;
