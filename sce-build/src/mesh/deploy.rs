@@ -1111,18 +1111,41 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
 /// `<invoke type="scxml">` inline `<content>` (§9.6.6) are named
 /// `<parent>__sce_synth_invoke__<id>`; a collision would silently
 /// shadow or be shadowed by the synthesized peer at runtime, and the
-/// partition coverage rules could not tell the two apart. Checked
-/// unconditionally across every `topology.*.machines.*` key so
-/// opting into `partitions:` later never re-labels a previously-valid
-/// id as a collision.
+/// partition coverage rules could not tell the two apart.
+///
+/// **Explicit override carve-out** (§9.6.6 rule 3): when the author
+/// reassigns a synth machine to a different partition, they must also
+/// add the synth to `topology.*.machines` so transport codegen can
+/// emit the wire. Such an entry carries the reserved infix by
+/// construction. It is admitted iff the name matches the synth shape
+/// `<parent>__sce_synth_invoke__<id>` where `<parent>` is itself a
+/// declared machine — so the entry is provably the projection of an
+/// inline invoke that the author intended to distribute, not a typo.
+/// Typos that merely contain the infix (no matching parent) continue
+/// to fire `PartitionSynthInfixCollision` as before.
 fn validate_synth_invoke_infix(cfg: &DeployConfig) -> Result<(), DeployError> {
+    // Pre-compute the set of all declared machine ids once — the
+    // carve-out below needs a membership check per infix-bearing name.
+    let all_machines: std::collections::HashSet<&str> = cfg
+        .topology
+        .values()
+        .flat_map(|d| d.machines.keys().map(String::as_str))
+        .collect();
     for device in cfg.topology.values() {
         for name in device.machines.keys() {
-            if name.contains(SYNTH_INVOKE_INFIX) {
-                return Err(DeployError::PartitionSynthInfixCollision {
-                    machine: name.clone(),
-                });
+            let Some((parent, _)) = name.split_once(SYNTH_INVOKE_INFIX) else {
+                continue;  // no infix, no collision concern
+            };
+            if !parent.is_empty() && all_machines.contains(parent) {
+                // Explicit override surface — author declares synth
+                // under a non-parent partition, a sibling topology
+                // entry for it is required so transport codegen can
+                // emit channels. Admit.
+                continue;
             }
+            return Err(DeployError::PartitionSynthInfixCollision {
+                machine: name.clone(),
+            });
         }
     }
     Ok(())
@@ -3993,5 +4016,56 @@ topology:
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         assert!(cfg.partitions.is_none());
+    }
+
+    // ── §9.6.6 rule 3 explicit override carve-out ─────────────
+
+    /// Author overrides a synth machine's partition by adding it to
+    /// `topology.*.machines` with a source that matches the parser's
+    /// sibling emission. Because the bare stem before
+    /// `__sce_synth_invoke__` is an actually-declared parent machine,
+    /// `validate_synth_invoke_infix` treats the entry as an explicit
+    /// override and admits the deploy.
+    #[test]
+    fn synth_infix_admitted_when_parent_is_declared() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent:
+        source: parent.scxml
+      parent__sce_synth_invoke__inv0:
+        source: parent__sce_synth_invoke__inv0.scxml
+"##;
+        let cfg = parse_deploy_str(yaml).expect("explicit override must parse");
+        assert!(cfg
+            .topology
+            .get("ecu1")
+            .unwrap()
+            .machines
+            .contains_key("parent__sce_synth_invoke__inv0"));
+    }
+
+    /// Infix-bearing id with no matching parent is still a typo —
+    /// rejection preserved so authors cannot accidentally shadow a
+    /// future synth with a hand-authored name.
+    #[test]
+    fn synth_infix_rejected_when_no_matching_parent() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      typo__sce_synth_invoke__orphan:
+        source: typo__sce_synth_invoke__orphan.scxml
+"##;
+        let err = parse_deploy_str(yaml).expect_err("infix without parent must reject");
+        match err {
+            crate::mesh::error::DeployError::PartitionSynthInfixCollision { machine } => {
+                assert_eq!(machine, "typo__sce_synth_invoke__orphan");
+            }
+            other => panic!("expected PartitionSynthInfixCollision, got {other:?}"),
+        }
     }
 }

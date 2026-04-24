@@ -2437,4 +2437,158 @@ topology:
         };
         assert!(info.remote_mesh_target.is_none());
     }
+
+    /// End-to-end §9.6.6 rule 3 override. Author places the
+    /// synthesised child on a different partition than the parent;
+    /// deploy validation admits the override-style topology entry and
+    /// the classifier flags the synth as remote so C++ codegen emits
+    /// the §10.7.1 Session F scaffold. The sibling synth SCXML on
+    /// disk is what lets `parse_child_metadata` populate the
+    /// child-side fields without reparse failure.
+    #[test]
+    fn synth_invoke_override_flagged_remote() {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_synth_override_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    platform: linux-x86_64
+    machines:
+      parent:
+        source: parent.scxml
+      parent__sce_synth_invoke__inv0:
+        source: parent__sce_synth_invoke__inv0.scxml
+partitions:
+  p_main:
+    machines: [parent]
+    contains:
+      invokes:
+        - { machine: parent, invoke: inv0 }
+  p_remote:
+    machines: [parent__sce_synth_invoke__inv0]
+    contains:
+      invokes:
+        - { machine: parent__sce_synth_invoke__inv0, invoke: unused }
+"##;
+        let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" id="inv0">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done">
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"##;
+
+        fs::write(tmp.join("deploy.yaml"), deploy).unwrap();
+        fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
+
+        // parse_file writes the synth sibling SCXML alongside the parent
+        // as a side-effect, so `inject_partition_context_for` can reparse
+        // it through parse_child_metadata without filesystem errors.
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent with inline content");
+
+        // Validate only the classification axis; partition-coverage
+        // rule 1 is out of scope here (the fixture uses `unused`
+        // invoke ids on the synth side to satisfy rule 10 non-empty).
+        let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must admit override");
+        classify_remote_scxml_invokes(&mut model, &cfg, "parent");
+
+        let state = model.states.get("s1").expect("s1 present");
+        let info = match &state.invokes[0] {
+            model::Invoke::Scxml(i) => i,
+            other => panic!("expected Scxml invoke, got {other:?}"),
+        };
+        assert_eq!(
+            info.remote_mesh_target.as_deref(),
+            Some("parent__sce_synth_invoke__inv0"),
+            "override-partitioned synth must be flagged remote",
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// §9.6.6 rule 3 default. Parent and inline-content invoke run in
+    /// the same partition (the synth's implicit inheritance). The
+    /// classifier must leave the synth local so the generated code
+    /// uses the local child-session path, matching W3C test191/192/253
+    /// semantics under a partitioned deploy.
+    #[test]
+    fn synth_invoke_default_inherits_parent_partition_local() {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_synth_default_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent:
+        source: parent.scxml
+partitions:
+  p_main:
+    machines: [parent]
+    contains:
+      invokes:
+        - { machine: parent, invoke: inv0 }
+"##;
+        let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" id="inv0">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done">
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"##;
+
+        fs::write(tmp.join("deploy.yaml"), deploy).unwrap();
+        fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
+
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent with inline content");
+
+        let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must parse");
+        classify_remote_scxml_invokes(&mut model, &cfg, "parent");
+
+        let state = model.states.get("s1").expect("s1 present");
+        let info = match &state.invokes[0] {
+            model::Invoke::Scxml(i) => i,
+            other => panic!("expected Scxml invoke, got {other:?}"),
+        };
+        assert!(
+            info.remote_mesh_target.is_none(),
+            "default-inheritance synth must stay local; got {:?}",
+            info.remote_mesh_target,
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
 }
