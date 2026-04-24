@@ -369,6 +369,13 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% if "custom_tcp" in transport_types %}
 #include <memory>
 #include "mesh/transports/CustomTcpTransport.h"
+{% if scxml_remote_inbound_peers | selectattr("transport", "equalto", "custom_tcp") | list %}
+// §9.6 Session 2 staging queue for wire-14/17/19 arrived on the custom_tcp
+// server callback thread: mutex-guarded drain on the worker's pump cadence
+// keeps WorkerSessionHost's child session map single-threaded.
+#include <mutex>
+#include <vector>
+{% endif %}
 {% endif %}
 {% if has_undeduped_transport %}
 // SCE_MESH.md §10.5: runtime per-sender envelope-id dedup for transports
@@ -787,8 +794,13 @@ struct TransportRouter {
 {%   if peer.transport == "custom_tcp" %}
     // §9.6 custom_tcp inbound: single `Client` for wire-15/16/18/20
     // reply send; inbound wire-14/17/19 arrive via the device-shared
-    // server (Session 2 commit 2 wires the callback dispatch).
+    // server callback, which stages them in `tcp_invoke_inbound_queue_`
+    // under a mutex so the worker's pump thread drains on its cadence
+    // (prevents the transport callback thread from racing the child
+    // session map inside `WorkerSessionHost`).
     SCE::Mesh::CustomTcp::Client c2p_to_{{ peer.name }}_;
+    std::mutex tcp_invoke_inbound_mutex_{{ peer.name }}_;
+    std::vector<SCE::Mesh::MeshEnvelope> tcp_invoke_inbound_queue_{{ peer.name }}_;
 {%   else %}
     SCE::Mesh::ShmChannel<> p2c_from_{{ peer.name }}_;
     SCE::Mesh::ShmChannel<> c2p_to_{{ peer.name }}_;
@@ -1930,11 +1942,40 @@ struct TransportRouter {
                 });
         }
 {% endfor %}
-{# §9.6 custom_tcp inbound peers: pump skips them — wire-14/17/19 arrive
-   through the device-shared `custom_tcp_server_` callback that Session 2
-   commit 2 installs. The tick() below still visits them, since child
-   sessions may exist regardless of which transport their parent came in
-   on. #}
+{# §9.6 custom_tcp inbound: wire-14/17/19 arrived via the device-shared
+   `custom_tcp_server_` callback and are staged in per-peer queues under
+   a mutex (the callback runs on a transport thread). Drain on the
+   worker's pump cadence so every onWire14/17/19 call executes on the
+   same thread as the shm drainWith path above. `swap` minimises lock
+   hold time — the actual dispatch runs outside the mutex. #}
+{% for peer in scxml_remote_inbound_peers if peer.transport == "custom_tcp" %}
+        {
+            std::vector<SCE::Mesh::MeshEnvelope> drained;
+            {
+                std::scoped_lock lk(tcp_invoke_inbound_mutex_{{ peer.name }}_);
+                drained.swap(tcp_invoke_inbound_queue_{{ peer.name }}_);
+            }
+            for (const auto& in : drained) {
+                switch (in.pattern) {
+                case SCE::Mesh::PatternKind::InvokeStart:
+                    worker_session_host_.onWire14(in,
+                        [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
+                            return c2p_to_{{ peer.name }}_.send(env);
+                        });
+                    break;
+                case SCE::Mesh::PatternKind::ParentEvent:
+                    worker_session_host_.onWire17(in);
+                    break;
+                case SCE::Mesh::PatternKind::InvokeCancel:
+                    worker_session_host_.onWire19(in);
+                    break;
+                default:
+                    break;  // Server callback filters by pattern already
+                }
+                ++total;
+            }
+        }
+{% endfor %}
         // After inbound drain, tick active child sessions. Each tick may
         // publish further wire-16 (via the adapter's send callback) or
         // detect `<final>` and emit wire-18. Publisher resolution by
@@ -2084,13 +2125,63 @@ struct TransportRouter {
 {% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
         // custom_tcp device-shared server: bind+listen happens in the
         // ctor; failure surfaces as `valid() == false`. Inbound envelopes
-        // dispatch through `dispatchToSession` on the per-connection
-        // read thread the Server class spawns (SCE_MESH.md §16.8.3).
+        // dispatch on the per-connection read thread the Server class
+        // spawns (SCE_MESH.md §16.8.3).
+        //
+        // Pattern dispatch:
+        //   * §9.6 wire-14/17/19 (worker-side scxml-remote invoke request
+        //     stream) — stage into per-peer queue; the worker's
+        //     `pumpScxmlInvokeRequests` drains on its cadence under a
+        //     mutex so the callback thread never enters WorkerSessionHost
+        //     concurrently with the pump. Dropped silently if
+        //     `env.source` does not match any declared custom_tcp inbound
+        //     peer (likely a sender bug — a remote invoke envelope
+        //     reaching the wrong device).
+        //   * §9.6 wire-15/16/18/20 (parent-side scxml-remote invoke
+        //     reply stream) — `dispatchToSession` is documented as
+        //     thread-safe for callback threads (§14.4 convention mirrors
+        //     SOME/IP / Zenoh paths), so parent-side envelopes dispatch
+        //     inline with no staging.
+        //   * Everything else (§16.5 `ParallelRegionDone`, future
+        //     patterns) — falls through to `dispatchToSession`, the
+        //     existing engine path.
+        //
         // session_idx is `0`: custom_tcp is client-only / non-pool, so
         // N_SESSIONS is 1 here.
+{%- set custom_tcp_inbound_peers = scxml_remote_inbound_peers | selectattr("transport", "equalto", "custom_tcp") | list %}
+{%- set custom_tcp_outbound_peers = scxml_remote_outbound_peers | selectattr("transport", "equalto", "custom_tcp") | list %}
         custom_tcp_server_ = std::make_unique<SCE::Mesh::CustomTcp::Server>(
             {{ custom_tcp_transport.listen }},
             [this](const SCE::Mesh::MeshEnvelope& env) {
+{% if custom_tcp_inbound_peers or custom_tcp_outbound_peers %}
+                switch (env.pattern) {
+{% if custom_tcp_inbound_peers %}
+                case SCE::Mesh::PatternKind::InvokeStart:
+                case SCE::Mesh::PatternKind::ParentEvent:
+                case SCE::Mesh::PatternKind::InvokeCancel: {
+{% for peer in custom_tcp_inbound_peers %}
+                    if (env.source == "{{ peer.name }}") {
+                        std::scoped_lock lk(tcp_invoke_inbound_mutex_{{ peer.name }}_);
+                        tcp_invoke_inbound_queue_{{ peer.name }}_.push_back(env);
+                        return;
+                    }
+{% endfor %}
+                    return;  // unknown source — drop (sender bug)
+                }
+{% endif %}
+{% if custom_tcp_outbound_peers %}
+                case SCE::Mesh::PatternKind::InvokeStarted:
+                case SCE::Mesh::PatternKind::ChildEvent:
+                case SCE::Mesh::PatternKind::InvokeDone:
+                case SCE::Mesh::PatternKind::InvokeError:
+                    // Parent-side: dispatchEnvelope handles wires 15/16/18/20
+                    (void)this->dispatchToSession(env, 0);
+                    return;
+{% endif %}
+                default:
+                    break;  // fall through
+                }
+{% endif %}
                 (void)this->dispatchToSession(env, 0);
             });
         if (!custom_tcp_server_->valid()) {
