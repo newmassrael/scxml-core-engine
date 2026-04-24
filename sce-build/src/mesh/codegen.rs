@@ -1221,6 +1221,20 @@ fn generate_cpp_mesh(
         transport_types.insert("custom_tcp");
     }
 
+    // SCE_MESH.md §9.6 Session 2: scxml-remote invoke peers that opted
+    // into custom_tcp demand the same CustomTcpTransport.h include + any
+    // `{% if "custom_tcp" in transport_types %}` scaffolding, even when
+    // no `<send>` target on this machine selected custom_tcp. The send
+    // target set and scxml-remote peer set are independent surfaces —
+    // both feed the include gate.
+    if scxml_remote_outbound_peers
+        .iter()
+        .chain(scxml_remote_inbound_peers.iter())
+        .any(|p| p.transport.as_deref() == Some("custom_tcp"))
+    {
+        transport_types.insert("custom_tcp");
+    }
+
     // SCE_MESH.md §10.5: per-binding dedup decision drives machine-level
     // emission. A receiver emits the runtime DedupRouter iff at least one
     // inbound path on the machine actually needs runtime dedup — that's

@@ -1381,6 +1381,37 @@ fn validate_scxml_invoke_target_exclusivity(
 ///   which is the safe default (transport-absent local raise still fires
 ///   via the classifier's per-invoke `remote_mesh_target` on the caller
 ///   side).
+/// SCE_MESH.md §9.6 Session 2 — resolve the peer-side `transports.custom_tcp.listen`
+/// endpoint for a remote-invoke peer. The template's `CustomTcp::Client`
+/// ctor needs the remote endpoint to dial (parent → peer's listen for
+/// outbound; worker → parent's listen for inbound), and deploy.yaml places
+/// the listen address on the *peer's* device-level transport config —
+/// the side that is accepting connections.
+///
+/// Returns `None` unless:
+///   1. `transport == Some("custom_tcp")` (the only transport that consumes
+///      this field in Session 2), AND
+///   2. The peer resolves to a topology device, AND
+///   3. That device declares `transports.custom_tcp.listen:`.
+///
+/// Other transports keep `None`; the template's shm and future-transport
+/// arms never read this field. When all three conditions hold but the
+/// listen value is empty, the downstream validator (Session 2 commit 3)
+/// rejects the deployment — this helper stays narrow and fact-only.
+fn resolve_connect_endpoint(
+    deploy_cfg: &mesh::deploy::DeployConfig,
+    transport: Option<&str>,
+    peer_name: &str,
+) -> Option<String> {
+    if transport != Some("custom_tcp") {
+        return None;
+    }
+    deploy_cfg
+        .device_for_machine(peer_name)
+        .and_then(|device| device.transports.custom_tcp.as_ref())
+        .and_then(|cfg| cfg.listen.clone())
+}
+
 fn collect_scxml_remote_peers(
     model: &mut SCXMLModel,
     deploy_cfg: &mesh::deploy::DeployConfig,
@@ -1410,7 +1441,20 @@ fn collect_scxml_remote_peers(
     }
     model.scxml_remote_outbound_peers = outbound
         .into_iter()
-        .map(|(name, transport)| model::ScxmlRemotePeerBinding { name, transport })
+        .map(|(name, transport)| {
+            // SCE_MESH.md §9.6 Session 2: custom_tcp peers need the peer's
+            // own `transports.custom_tcp.listen` so the parent's per-peer
+            // `CustomTcp::Client` ctor has a connect endpoint. Other
+            // transports (including shm/None) carry `None` — the template
+            // only consults `connect_endpoint` inside the custom_tcp arm.
+            let connect_endpoint =
+                resolve_connect_endpoint(deploy_cfg, transport.as_deref(), &name);
+            model::ScxmlRemotePeerBinding {
+                name,
+                transport,
+                connect_endpoint,
+            }
+        })
         .collect();
 
     // Inbound: scan every sibling machine's SCXML for
@@ -1516,7 +1560,21 @@ fn collect_scxml_remote_peers(
 
     model.scxml_remote_inbound_peers = inbound
         .into_iter()
-        .map(|(name, transport)| model::ScxmlRemotePeerBinding { name, transport })
+        .map(|(name, transport)| {
+            // SCE_MESH.md §9.6 Session 2: inbound peer's connect endpoint
+            // is the *parent's* listen address — the worker's per-peer
+            // `CustomTcp::Client` for `c2p_to_<peer>_` dials into it to
+            // publish wire-15/16/18/20. Lookup is symmetric to the
+            // outbound side (resolve_connect_endpoint consults the peer's
+            // own device config).
+            let connect_endpoint =
+                resolve_connect_endpoint(deploy_cfg, transport.as_deref(), &name);
+            model::ScxmlRemotePeerBinding {
+                name,
+                transport,
+                connect_endpoint,
+            }
+        })
         .collect();
     // SCE_MESH.md §9.6 — codegen-shape seam. When at least one sibling
     // invokes this machine remotely, the generated SM must be

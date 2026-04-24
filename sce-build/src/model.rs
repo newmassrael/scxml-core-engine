@@ -454,14 +454,22 @@ impl std::ops::DerefMut for MeshRpcInvokeInfo {
 /// that take the implicit shm fallback (today's only wired codegen path);
 /// `Some(<name>)` carries a cross-device declaration resolved from
 /// `machines.<parent>.bindings["#<peer>"].transport`. Session 1 of the
-/// cross-device roll-out records the field on the model so downstream
-/// validators can reject declarations that name a transport whose C++
-/// wire-14/20 dispatch Session 2 has not yet wired.
+/// cross-device roll-out records the field on the model; Session 2 adds
+/// `connect_endpoint` so custom_tcp codegen has the peer's listen address
+/// available for the per-peer `CustomTcp::Client` ctor args.
+///
+/// `connect_endpoint` mirrors `transport`: it is `Some` only when the peer
+/// actually needs an endpoint (currently custom_tcp only) AND the peer's
+/// device has `transports.custom_tcp.listen` declared in deploy.yaml; all
+/// other paths (shm, local, missing device config) keep it `None`. Stored
+/// unquoted — the template emits the quoted C++ string literal.
 #[derive(Debug, Clone, Serialize, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ScxmlRemotePeerBinding {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_endpoint: Option<String>,
 }
 
 impl ScxmlRemotePeerBinding {
@@ -473,6 +481,7 @@ impl ScxmlRemotePeerBinding {
         Self {
             name: name.into(),
             transport: None,
+            connect_endpoint: None,
         }
     }
 }

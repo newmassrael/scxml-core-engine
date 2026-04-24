@@ -514,28 +514,34 @@ static constexpr const char* PARTITION_WIRE21_FROM_{{ r.src_partition_snake | up
 {% endif %}
 {# ── (B3b) SCE_MESH.md §9.6.2 Session F lifecycle channels ──
    Remote `<invoke type="scxml">` multiplexes all parent↔child wires
-   (14/15/16/17/18/19/20) onto two direction-oriented shm channels per
-   (parent, child) link:
-     `/sce_p2c_<parent>_<child>` — parent → child (wires 14, 17, 19)
-     `/sce_c2p_<child>_<parent>` — child → parent (wires 15, 16, 18, 20)
-   Dispatcher branches on `env.pattern` after the channel boundary, so
-   adding a wire value (§13 "Adding a variant requires a new wire value")
-   does not grow the channel count. Symmetric naming: the POSIX name
-   always embeds `(parent, child)` in that order regardless of which side
-   Creates vs. Opens.
-   Default arena/ring sizes (from `ShmChannel.h`) suffice for the per-
-   invoke traffic of a single lifecycle (wire-14 start + the child's
-   observable send stream + wire-18 done). #}
-{% if scxml_remote_outbound_peers or scxml_remote_inbound_peers %}
-using ScxmlInvokeChannel = SCE::Mesh::ShmChannel<>;
+   (14/15/16/17/18/19/20) per-peer. Channel primitive is chosen at
+   codegen time from the peer's author-declared transport (§9.6 L1395):
 
-{% for peer in scxml_remote_outbound_peers %}
-// Outbound peer: I am parent, `{{ peer.name }}` is child.
+     shm (default, same-device cross-partition):
+       `/sce_p2c_<parent>_<child>` — parent → child (wires 14, 17, 19)
+       `/sce_c2p_<child>_<parent>` — child → parent (wires 15, 16, 18, 20)
+       Two `ShmChannel<>` members per peer; dispatcher branches on
+       `env.pattern` after the channel boundary. Symmetric POSIX naming:
+       the name embeds `(parent, child)` in that order regardless of
+       which side Creates vs. Opens. Default arena/ring sizes suffice
+       for the per-invoke traffic of a single lifecycle (wire-14 start +
+       child's observable send stream + wire-18 done).
+
+     custom_tcp (cross-device, Session 2 wiring):
+       One `CustomTcp::Client` per peer for the outbound direction
+       (p2c_to_<peer>_ on parent, c2p_to_<peer>_ on worker). Inbound
+       wires arrive through the device-shared `custom_tcp_server_`
+       (§16.8.3) and are pattern-routed to the WorkerSessionHost
+       (wire-14/17/19) or `dispatchToSession` (wire-15/16/18/20) by the
+       receive callback that Session 2 commit 2 installs. #}
+{% if scxml_remote_outbound_peers or scxml_remote_inbound_peers %}
+{% for peer in scxml_remote_outbound_peers if peer.transport != "custom_tcp" %}
+// Outbound peer: I am parent, `{{ peer.name }}` is child (shm).
 static constexpr const char* P2C_TO_{{ peer.name | upper }}   = "/sce_p2c_{{ machine_name }}_{{ peer.name }}";
 static constexpr const char* C2P_FROM_{{ peer.name | upper }} = "/sce_c2p_{{ peer.name }}_{{ machine_name }}";
 {% endfor %}
-{% for peer in scxml_remote_inbound_peers %}
-// Inbound peer: I am child, `{{ peer.name }}` is parent.
+{% for peer in scxml_remote_inbound_peers if peer.transport != "custom_tcp" %}
+// Inbound peer: I am child, `{{ peer.name }}` is parent (shm).
 static constexpr const char* P2C_FROM_{{ peer.name | upper }} = "/sce_p2c_{{ peer.name }}_{{ machine_name }}";
 static constexpr const char* C2P_TO_{{ peer.name | upper }}   = "/sce_c2p_{{ machine_name }}_{{ peer.name }}";
 {% endfor %}
@@ -768,12 +774,25 @@ struct TransportRouter {
    against the same `/sce_p2c_<parent>_<child>` / `/sce_c2p_<child>_<parent>`
    POSIX identifiers with no runtime handshake. #}
 {% for peer in scxml_remote_outbound_peers %}
-    ScxmlInvokeChannel p2c_to_{{ peer.name }}_;
-    ScxmlInvokeChannel c2p_from_{{ peer.name }}_;
+{%   if peer.transport == "custom_tcp" %}
+    // §9.6 custom_tcp outbound: single `Client` for wire-14/17/19 send;
+    // inbound wire-15/16/18/20 arrive via the device-shared server.
+    SCE::Mesh::CustomTcp::Client p2c_to_{{ peer.name }}_;
+{%   else %}
+    SCE::Mesh::ShmChannel<> p2c_to_{{ peer.name }}_;
+    SCE::Mesh::ShmChannel<> c2p_from_{{ peer.name }}_;
+{%   endif %}
 {% endfor %}
 {% for peer in scxml_remote_inbound_peers %}
-    ScxmlInvokeChannel p2c_from_{{ peer.name }}_;
-    ScxmlInvokeChannel c2p_to_{{ peer.name }}_;
+{%   if peer.transport == "custom_tcp" %}
+    // §9.6 custom_tcp inbound: single `Client` for wire-15/16/18/20
+    // reply send; inbound wire-14/17/19 arrive via the device-shared
+    // server (Session 2 commit 2 wires the callback dispatch).
+    SCE::Mesh::CustomTcp::Client c2p_to_{{ peer.name }}_;
+{%   else %}
+    SCE::Mesh::ShmChannel<> p2c_from_{{ peer.name }}_;
+    SCE::Mesh::ShmChannel<> c2p_to_{{ peer.name }}_;
+{%   endif %}
 {% endfor %}
 
 {% if scxml_remote_inbound_peers %}
@@ -1470,20 +1489,34 @@ struct TransportRouter {
 {%- for r in partition_wire21_inbound_sources %}
 {%-   set ns.parts = ns.parts + ["wire21_from_" ~ r.src_partition_snake ~ "_(PARTITION_WIRE21_FROM_" ~ (r.src_partition_snake | upper) ~ ", PartitionWire21Channel::Mode::Open)"] %}
 {%- endfor %}
-{#- SCE_MESH.md §9.6.2 Session F ScxmlInvokeChannel pairs. Declaration
+{#- SCE_MESH.md §9.6.2 Session F scxml-remote invoke channels. Declaration
     order in (D1c') puts outbound peers before inbound peers; the ctor
-    init list mirrors that. Outbound peer's `p2c_to_<peer>_` creates
-    its shm channel; the paired `c2p_from_<peer>_` opens lazily. The
-    inbound peer's `p2c_from_<peer>_` opens (may yield invalid until
-    the outbound peer launches); `c2p_to_<peer>_` creates so the
-    outbound peer can observe the reply. #}
+    init list mirrors that. Per-peer transport branches:
+      * shm: outbound `p2c_to_<peer>_` creates, paired `c2p_from_<peer>_`
+        opens lazily. Inbound `p2c_from_<peer>_` opens (may yield invalid
+        until the outbound peer launches); `c2p_to_<peer>_` creates so
+        the outbound peer can observe the reply.
+      * custom_tcp: one `Client` per peer, connect endpoint comes from
+        `peer.connect_endpoint` (Rust classifier resolved the peer's own
+        `transports.custom_tcp.listen`). The Client's receive callback is
+        a no-op here — inbound dispatch goes through the device-shared
+        `custom_tcp_server_` (Session 2 commit 2 installs the pattern
+        switch). #}
 {%- for peer in scxml_remote_outbound_peers %}
-{%-   set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(P2C_TO_" ~ (peer.name | upper) ~ ", ScxmlInvokeChannel::Mode::Create)"] %}
-{%-   set ns.parts = ns.parts + ["c2p_from_" ~ peer.name ~ "_(C2P_FROM_" ~ (peer.name | upper) ~ ", ScxmlInvokeChannel::Mode::Open)"] %}
+{%-   if peer.transport == "custom_tcp" %}
+{%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
+{%-   else %}
+{%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(P2C_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
+{%-     set ns.parts = ns.parts + ["c2p_from_" ~ peer.name ~ "_(C2P_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
+{%-   endif %}
 {%- endfor %}
 {%- for peer in scxml_remote_inbound_peers %}
-{%-   set ns.parts = ns.parts + ["p2c_from_" ~ peer.name ~ "_(P2C_FROM_" ~ (peer.name | upper) ~ ", ScxmlInvokeChannel::Mode::Open)"] %}
-{%-   set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(C2P_TO_" ~ (peer.name | upper) ~ ", ScxmlInvokeChannel::Mode::Create)"] %}
+{%-   if peer.transport == "custom_tcp" %}
+{%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
+{%-   else %}
+{%-     set ns.parts = ns.parts + ["p2c_from_" ~ peer.name ~ "_(P2C_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
+{%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(C2P_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
+{%-   endif %}
 {%- endfor %}
 {%- if scxml_remote_inbound_peers %}
 {#- SCE_MESH.md §9.6 WorkerSessionHost init — hosted-machine identity
@@ -1869,11 +1902,11 @@ struct TransportRouter {
     /// yet at our ctor time (typical startup race).
     std::size_t pumpScxmlInvokeRequests() {
         std::size_t total = 0;
-{% for peer in scxml_remote_inbound_peers %}
+{% for peer in scxml_remote_inbound_peers if peer.transport != "custom_tcp" %}
         if (!p2c_from_{{ peer.name }}_.valid()) {
-            p2c_from_{{ peer.name }}_ = ScxmlInvokeChannel(
+            p2c_from_{{ peer.name }}_ = SCE::Mesh::ShmChannel<>(
                 P2C_FROM_{{ peer.name | upper }},
-                ScxmlInvokeChannel::Mode::Open);
+                SCE::Mesh::ShmChannel<>::Mode::Open);
         }
         if (p2c_from_{{ peer.name }}_.valid()) {
             total += p2c_from_{{ peer.name }}_.drainWith(
@@ -1897,6 +1930,11 @@ struct TransportRouter {
                 });
         }
 {% endfor %}
+{# §9.6 custom_tcp inbound peers: pump skips them — wire-14/17/19 arrive
+   through the device-shared `custom_tcp_server_` callback that Session 2
+   commit 2 installs. The tick() below still visits them, since child
+   sessions may exist regardless of which transport their parent came in
+   on. #}
         // After inbound drain, tick active child sessions. Each tick may
         // publish further wire-16 (via the adapter's send callback) or
         // detect `<final>` and emit wire-18. Publisher resolution by
@@ -1928,17 +1966,22 @@ struct TransportRouter {
     /// Same lazy-reopen as `pumpScxmlInvokeRequests`.
     std::size_t pumpScxmlInvokeReplies() {
         std::size_t total = 0;
-{% for peer in scxml_remote_outbound_peers %}
+{% for peer in scxml_remote_outbound_peers if peer.transport != "custom_tcp" %}
         if (!c2p_from_{{ peer.name }}_.valid()) {
-            c2p_from_{{ peer.name }}_ = ScxmlInvokeChannel(
+            c2p_from_{{ peer.name }}_ = SCE::Mesh::ShmChannel<>(
                 C2P_FROM_{{ peer.name | upper }},
-                ScxmlInvokeChannel::Mode::Open);
+                SCE::Mesh::ShmChannel<>::Mode::Open);
         }
         if (c2p_from_{{ peer.name }}_.valid()) {
             total += c2p_from_{{ peer.name }}_
                 .template drain<typename SenderEngine::PolicyType>(*sessions_[0]);
         }
 {% endfor %}
+{# §9.6 custom_tcp outbound peers: pump skips them — wire-15/16/18/20
+   arrive through the device-shared `custom_tcp_server_` callback that
+   Session 2 commit 2 installs, which dispatches directly into
+   `dispatchToSession(env, 0)` (same MeshDispatch entry this pump uses
+   for shm). No polling needed on the parent side. #}
         return total;
     }
 {% endif %}
