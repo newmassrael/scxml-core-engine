@@ -354,7 +354,7 @@ class Test241StateMachine(
                     }
                     invokeParams["Var1"] = engineInv.getVariable(sidInv, "Var1")
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test241Child0StateMachine(scriptEngine)
+                        val childSM = Test241SceSynthInvokeInvoke0StateMachine(scriptEngine)
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test241Event.Done.Invoke, "", generatedInvokeId)
@@ -380,7 +380,7 @@ class Test241StateMachine(
                         return@run  // C++ pattern: invoke cancelled on param error
                     }
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test241Child1StateMachine(scriptEngine)
+                        val childSM = Test241SceSynthInvokeInvoke1StateMachine(scriptEngine)
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_1", childSM, false, Test241Event.Done.Invoke, "", generatedInvokeId)
@@ -406,7 +406,7 @@ class Test241StateMachine(
                         return@run  // C++ pattern: invoke cancelled on param error
                     }
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test241Child2StateMachine(scriptEngine)
+                        val childSM = Test241SceSynthInvokeInvoke2StateMachine(scriptEngine)
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_2", childSM, false, Test241Event.Done.Invoke, "", generatedInvokeId)

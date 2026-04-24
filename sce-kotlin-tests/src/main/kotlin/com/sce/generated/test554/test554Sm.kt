@@ -252,7 +252,7 @@ class Test554StateMachine(
                     }
                     invokeParams["__undefined_variable_for_error__"] = engineInv.getVariable(sidInv, "__undefined_variable_for_error__")
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test554Child0StateMachine(scriptEngine)
+                        val childSM = Test554SceSynthInvokeInvoke0StateMachine(scriptEngine)
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test554Event.Done.Invoke, "", generatedInvokeId)

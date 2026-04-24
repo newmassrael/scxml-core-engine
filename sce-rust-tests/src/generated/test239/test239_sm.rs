@@ -118,8 +118,8 @@ pub struct Test239Policy {
     // W3C SCXML 6.4: Static invoke child '_invoke_0' (test239sub1)
     child_invoke_0: Option<Box<sce_rust_runtime::Engine<super::test239sub1_sm::Test239sub1Policy>>>,
     pending_done_invoke_invoke_0: bool,
-    // W3C SCXML 6.4: Static invoke child '_invoke_1' (test239_child0)
-    child_invoke_1: Option<Box<sce_rust_runtime::Engine<super::test239_child0_sm::Test239Child0Policy>>>,
+    // W3C SCXML 6.4: Static invoke child '_invoke_1' (test239__sce_synth_invoke__invoke_1)
+    child_invoke_1: Option<Box<sce_rust_runtime::Engine<super::test239__sce_synth_invoke__invoke_1_sm::Test239SceSynthInvokeInvoke1Policy>>>,
     pending_done_invoke_invoke_1: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated — any SM can be invoked as a child
@@ -241,7 +241,7 @@ impl Test239Policy {
                     &pending.invoke_id);
 
                 // W3C SCXML 6.4: Create child state machine
-                let mut child_policy = super::test239_child0_sm::Test239Child0Policy::new();
+                let mut child_policy = super::test239__sce_synth_invoke__invoke_1_sm::Test239SceSynthInvokeInvoke1Policy::new();
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();

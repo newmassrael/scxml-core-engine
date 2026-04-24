@@ -2,5 +2,5 @@
 
 mod test235_sm;
 pub use test235_sm::*;
-mod test235_child0_sm;
-pub use test235_child0_sm::*;
+mod test235__sce_synth_invoke__foo_sm;
+pub use test235__sce_synth_invoke__foo_sm::*;

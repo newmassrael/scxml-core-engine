@@ -2,5 +2,5 @@
 
 mod test347_sm;
 pub use test347_sm::*;
-mod test347_machineName_sm;
-pub use test347_machineName_sm::*;
+mod test347__sce_synth_invoke__child_sm;
+pub use test347__sce_synth_invoke__child_sm::*;

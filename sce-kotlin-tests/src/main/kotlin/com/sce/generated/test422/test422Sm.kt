@@ -310,7 +310,7 @@ class Test422StateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "s1.${System.identityHashCode(this)}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test422Child0StateMachine(scriptEngine)
+                        val childSM = Test422SceSynthInvokeInvoke0StateMachine(scriptEngine)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test422Event.Done.Invoke, "", generatedInvokeId)
                     }
@@ -324,7 +324,7 @@ class Test422StateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "s11.${System.identityHashCode(this)}._invoke_1"
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test422Child1StateMachine(scriptEngine)
+                        val childSM = Test422SceSynthInvokeInvoke1StateMachine(scriptEngine)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_1", childSM, false, Test422Event.Done.Invoke, "", generatedInvokeId)
                     }
@@ -338,7 +338,7 @@ class Test422StateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "s12.${System.identityHashCode(this)}._invoke_2"
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test422Child2StateMachine(scriptEngine)
+                        val childSM = Test422SceSynthInvokeInvoke2StateMachine(scriptEngine)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_2", childSM, false, Test422Event.Done.Invoke, "", generatedInvokeId)
                     }

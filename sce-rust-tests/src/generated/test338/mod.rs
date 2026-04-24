@@ -2,5 +2,5 @@
 
 mod test338_sm;
 pub use test338_sm::*;
-mod test338_machineName_sm;
-pub use test338_machineName_sm::*;
+mod test338__sce_synth_invoke__invoke_0_sm;
+pub use test338__sce_synth_invoke__invoke_0_sm::*;

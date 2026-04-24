@@ -252,7 +252,7 @@ class Test233StateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test233Child0StateMachine(scriptEngine)
+                        val childSM = Test233SceSynthInvokeInvoke0StateMachine(scriptEngine)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test233Event.Done.Invoke, "Var1 = _event.data.aParam;", generatedInvokeId)
                     }

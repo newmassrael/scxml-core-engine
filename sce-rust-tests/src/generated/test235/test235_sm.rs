@@ -114,8 +114,8 @@ pub struct Test235Policy {
     pending_invokes: Vec<sce_rust_runtime::invoke::PendingInvoke<Test235State>>,
     // W3C SCXML 6.4: Active child sessions (invoke_id -> ChildSession)
     active_invokes: std::collections::HashMap<String, sce_rust_runtime::invoke::ChildSession>,
-    // W3C SCXML 6.4: Static invoke child 'foo' (test235_child0)
-    child_foo: Option<Box<sce_rust_runtime::Engine<super::test235_child0_sm::Test235Child0Policy>>>,
+    // W3C SCXML 6.4: Static invoke child 'foo' (test235__sce_synth_invoke__foo)
+    child_foo: Option<Box<sce_rust_runtime::Engine<super::test235__sce_synth_invoke__foo_sm::Test235SceSynthInvokeFooPolicy>>>,
     pending_done_invoke_foo: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated — any SM can be invoked as a child
@@ -165,7 +165,7 @@ impl Test235Policy {
                     &pending.invoke_id);
 
                 // W3C SCXML 6.4: Create child state machine
-                let mut child_policy = super::test235_child0_sm::Test235Child0Policy::new();
+                let mut child_policy = super::test235__sce_synth_invoke__foo_sm::Test235SceSynthInvokeFooPolicy::new();
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();

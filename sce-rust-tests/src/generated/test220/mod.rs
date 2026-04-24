@@ -2,5 +2,5 @@
 
 mod test220_sm;
 pub use test220_sm::*;
-mod test220_child0_sm;
-pub use test220_child0_sm::*;
+mod test220__sce_synth_invoke__invoke_0_sm;
+pub use test220__sce_synth_invoke__invoke_0_sm::*;

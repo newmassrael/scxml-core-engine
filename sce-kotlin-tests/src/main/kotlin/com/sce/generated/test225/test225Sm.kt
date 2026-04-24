@@ -277,7 +277,7 @@ class Test225StateMachine(
                         }
                     }
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test225Child0StateMachine(scriptEngine)
+                        val childSM = Test225SceSynthInvokeInvoke0StateMachine(scriptEngine)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId)
                     }
@@ -294,7 +294,7 @@ class Test225StateMachine(
                         }
                     }
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test225Child1StateMachine(scriptEngine)
+                        val childSM = Test225SceSynthInvokeInvoke1StateMachine(scriptEngine)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_1", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId)
                     }

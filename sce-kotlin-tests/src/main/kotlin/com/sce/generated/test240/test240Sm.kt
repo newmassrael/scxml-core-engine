@@ -329,7 +329,7 @@ class Test240StateMachine(
                     }
                     invokeParams["Var1"] = engineInv.getVariable(sidInv, "Var1")
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test240Child0StateMachine(scriptEngine)
+                        val childSM = Test240SceSynthInvokeInvoke0StateMachine(scriptEngine)
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test240Event.Done.Invoke, "", generatedInvokeId)
@@ -355,7 +355,7 @@ class Test240StateMachine(
                         return@run  // C++ pattern: invoke cancelled on param error
                     }
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test240Child1StateMachine(scriptEngine)
+                        val childSM = Test240SceSynthInvokeInvoke1StateMachine(scriptEngine)
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_1", childSM, false, Test240Event.Done.Invoke, "", generatedInvokeId)

@@ -257,7 +257,7 @@ class Test243StateMachine(
                         return@run  // C++ pattern: invoke cancelled on param error
                     }
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test243Child0StateMachine(scriptEngine)
+                        val childSM = Test243SceSynthInvokeInvoke0StateMachine(scriptEngine)
                         setInvokeParams(childSM, invokeParams)
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test243Event.Done.Invoke, "", generatedInvokeId)

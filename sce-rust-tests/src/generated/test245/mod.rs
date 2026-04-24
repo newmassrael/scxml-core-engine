@@ -2,5 +2,5 @@
 
 mod test245_sm;
 pub use test245_sm::*;
-mod test245_child0_sm;
-pub use test245_child0_sm::*;
+mod test245__sce_synth_invoke__invoke_0_sm;
+pub use test245__sce_synth_invoke__invoke_0_sm::*;
