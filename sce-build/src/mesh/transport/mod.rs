@@ -10,6 +10,15 @@
 //   1. Add one entry to `lookup()` below   (Rust — shape + capabilities)
 //   2. Add {% elif %} blocks in mesh_transport.h.jinja2  (C++ codegen)
 // The template's `#error` fallback catches (2) drift at C++ compile time.
+//
+// Per-transport scxml-invoke codegen helpers (SCE_MESH.md §9.6 L1399 (b))
+// live in sibling submodules: resolve_connect_endpoint and future
+// per-peer resolvers stay off this registry so the descriptor layer
+// does not re-grow inline per-transport branches.
+
+pub mod custom_tcp;
+pub mod shm;
+pub mod someip;
 
 use std::fmt;
 
