@@ -1,6 +1,6 @@
 
 // GENERATED CODE — DO NOT EDIT
-// Source: /tmp/dd_kt/donedata_local_invoke_child1.scxml
+// Source: sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke_child1.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 
 package com.sce.generated.donedata_local_invoke
@@ -189,6 +189,25 @@ class DonedataLocalInvokeChild1StateMachine(
             is DonedataLocalInvokeChild1State.Done -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("done")) return
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                run {
+                    ensureScriptEngine()
+                    val engineDD = scriptEngine ?: return@run
+                    val sidDD = scriptSessionId ?: return@run
+                    var doneEventData = ""
+                    // W3C SCXML 5.5: Evaluate <content expr="..."/>
+                    try {
+                        val contentResult = engineDD.evaluateExpr(sidDD, "'hello_content'")
+                        // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
+                        doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
+                    } catch (_: Exception) {
+                        raiseInternal(DonedataLocalInvokeChild1Event.Error.Execution, EventMetadata.platform())
+                    }
+                    // W3C SCXML 5.5 + 6.3.1: stash onto the engine so the invoking parent's
+                    // startInvoke completion callback can lift the payload onto
+                    // done.invoke.<id>._event.data. Mirrors C++ AOT stashDonedataAtFinal.
+                    stashDonedataAtFinal(doneEventData)
+                }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }

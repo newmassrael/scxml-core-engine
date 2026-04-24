@@ -1,6 +1,6 @@
 
 // GENERATED CODE — DO NOT EDIT
-// Source: /tmp/dd_kt/donedata_local_invoke_child0.scxml
+// Source: sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke_child0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 
 package com.sce.generated.donedata_local_invoke
@@ -189,6 +189,31 @@ class DonedataLocalInvokeChild0StateMachine(
             is DonedataLocalInvokeChild0State.Done -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("done")) return
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                run {
+                    ensureScriptEngine()
+                    val engineDD = scriptEngine ?: return@run
+                    val sidDD = scriptSessionId ?: return@run
+                    var doneEventData = ""
+                    // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
+                    val doneParams = mutableMapOf<String, Any?>()
+                    var doneParamStructuralError = false
+                    try {
+                        doneParams["result"] = engineDD.evaluateExpr(sidDD, "42")
+                    } catch (_: Exception) {
+                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        raiseInternal(DonedataLocalInvokeChild0Event.Error.Execution, EventMetadata.platform())
+                    }
+                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
+                    if (doneParamStructuralError) return@run
+                    if (doneParams.isNotEmpty()) {
+                        doneEventData = buildJsonFromParams(doneParams)
+                    }
+                    // W3C SCXML 5.5 + 6.3.1: stash onto the engine so the invoking parent's
+                    // startInvoke completion callback can lift the payload onto
+                    // done.invoke.<id>._event.data. Mirrors C++ AOT stashDonedataAtFinal.
+                    stashDonedataAtFinal(doneEventData)
+                }
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }

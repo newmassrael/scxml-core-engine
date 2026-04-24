@@ -347,6 +347,34 @@ abstract class StateMachineEngine<S : State, E : Event>(
         pendingFinalState = true
     }
 
+    /**
+     * W3C SCXML 5.5 + 6.3.1: Stashed `<donedata>` payload for the top-level
+     * `<final>` that ended this machine. The parent invoker reads it back via
+     * [donedataAtFinal] in [startInvoke]'s completion callback and threads it
+     * onto the emitted `done.invoke.<id>._event.data`.
+     *
+     * C++ AOT parity: mirrors `StaticExecutionEngine::stashDonedataAtFinal` /
+     * `donedataAtFinal()`. Compound-state finals emit `done.state.<parent>`
+     * with the payload carried directly on the event metadata and so do not
+     * route through this field.
+     */
+    private var donedataAtFinal: String = ""
+
+    /**
+     * Called from generated [onEntry] code when a top-level `<final>` with
+     * `<donedata>` is entered. The evaluated payload is held on the engine
+     * until the invoking parent emits `done.invoke.<id>`.
+     */
+    protected fun stashDonedataAtFinal(data: String) {
+        donedataAtFinal = data
+    }
+
+    /**
+     * W3C SCXML 5.5 + 6.3.1: Readback for the parent's invoke completion
+     * callback. Empty string when the terminal `<final>` had no `<donedata>`.
+     */
+    fun donedataAtFinal(): String = donedataAtFinal
+
     // --- Generated Code Overrides ---
 
     /**
@@ -1065,12 +1093,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
 
         if (syncMode) {
-            // C++ AOT pattern: synchronous child initialization
+            // C++ AOT pattern: synchronous child initialization.
+            // W3C SCXML 5.5 + 6.3.1: lift the child's stashed <donedata> onto
+            // done.invoke.<id>._event.data — mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent). Reading the field
+            // inside the closure (not at construction time) lets the generated
+            // onEntry code stash after `activeInvokes[...]` is wired in.
             val onComplete = if (doneEvent != null) {
                 {
                     externalEventQueue.addLast(QueuedEvent(doneEvent, EventMetadata(
                         type = "platform",
-                        invokeId = invokeId
+                        invokeId = invokeId,
+                        data = child.donedataAtFinal()
                     )))
                 }
             } else null
@@ -1093,7 +1128,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (doneEvent != null) {
                 send(doneEvent, EventMetadata(
                     type = "platform",
-                    invokeId = invokeId
+                    invokeId = invokeId,
+                    data = child.donedataAtFinal()
                 ))
             }
         }
