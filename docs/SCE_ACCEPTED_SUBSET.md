@@ -482,6 +482,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-partition-partial-coverage-requires-default` | Mesh Deploy |
 | `mesh/deploy-partition-pool-machine` | Mesh Deploy |
 | `mesh/deploy-partition-transport-binding-unsupported` | Mesh Deploy |
+| `mesh/deploy-scxml-invoke-cross-device-transport` | Mesh Deploy |
 | `mesh/deploy-partition-barrier-timeout-invalid` | Mesh Deploy |
 | `mesh/partition-parallel-root-undesignated` | Mesh Deploy |
 | `mesh/partition-parallel-root-ambiguous` | Mesh Deploy |

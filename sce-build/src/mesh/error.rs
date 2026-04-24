@@ -82,6 +82,51 @@ impl std::fmt::Display for PartitionTransportBindingFailure {
     }
 }
 
+/// Why a cross-device `<invoke type="scxml" src="#<peer>">` deploy
+/// declaration was rejected by
+/// [`DeployError::ScxmlInvokeCrossDeviceTransport`] (SCE_MESH.md §9.6
+/// L1393). The three shapes are structurally distinct so tests + IDE
+/// diagnostics can match without prose-parsing:
+///
+/// - `MissingBinding` — parent declares no `bindings["#<peer>"]` entry
+///   at all; the cross-device invoke has no transport declaration.
+/// - `TransportIncapable` — binding present but names `shm` or `local`,
+///   transports that cannot cross a device boundary (shm segments are
+///   pid-namespaced; local is in-process).
+/// - `TransportUnwired` — binding names a structurally capable
+///   transport (someip / zenoh / custom_tcp / dds) but Session 2 has
+///   not yet landed the C++ wire-14/20 dispatch for it. Same precedent
+///   as §16.5's `partition-wire21-custom-tcp-unimplemented`: reject at
+///   build time rather than silent runtime fallback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScxmlInvokeCrossDeviceFailure {
+    MissingBinding,
+    TransportIncapable { transport: String },
+    TransportUnwired { transport: String },
+}
+
+impl std::fmt::Display for ScxmlInvokeCrossDeviceFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingBinding => write!(
+                f,
+                "parent declares no `bindings[\"#<peer>\"]` entry for the cross-device peer"
+            ),
+            Self::TransportIncapable { transport } => write!(
+                f,
+                "transport '{transport}' cannot cross a device boundary \
+                 (shm segments are pid-namespaced; local is in-process)"
+            ),
+            Self::TransportUnwired { transport } => write!(
+                f,
+                "transport '{transport}' is structurally capable but \
+                 Session F cross-device wire-14/20 dispatch has not \
+                 landed for it yet (shm same-device is the only wired path)"
+            ),
+        }
+    }
+}
+
 /// Errors from deploy.yaml deserialization.
 #[derive(Debug, thiserror::Error)]
 pub enum DeployError {
@@ -456,6 +501,32 @@ pub enum DeployError {
         partition: String,
         transport: String,
         failure: PartitionTransportBindingFailure,
+    },
+
+    /// SCE_MESH.md §9.6 L1393 — `<invoke type="scxml" src="#<peer>">`
+    /// classified as cross-device (parent's partition's `device:` differs
+    /// from peer's partition's `device:`) but the parent's
+    /// `bindings["#<peer>"]` declaration is absent, names an incapable
+    /// transport, or names a transport whose Session F wire-14/20
+    /// dispatch has not yet landed in C++ codegen. [`ScxmlInvokeCrossDeviceFailure`]
+    /// discriminates the three shapes so downstream consumers (tests,
+    /// IDE diagnostics, CI error mapping) can match structurally.
+    ///
+    /// Same-device cross-partition invokes are accepted without any
+    /// `bindings` declaration — they take the implicit shm channel
+    /// which is today's only wired path (§9.6.2 wire-14/20 over shm).
+    #[error("machine '{parent}' (device '{parent_device}') → \
+             `<invoke type=\"scxml\" src=\"#{peer}\">` on device '{peer_device}': {failure}. \
+             SCE Mesh §9.6 L1393 requires each cross-device scxml-remote peer to declare \
+             its transport on `machines.{parent}.bindings[\"#{peer}\"].transport`, and that \
+             transport must be both capable of crossing devices AND wired by the Session F \
+             C++ dispatch.")]
+    ScxmlInvokeCrossDeviceTransport {
+        parent: String,
+        peer: String,
+        parent_device: String,
+        peer_device: String,
+        failure: ScxmlInvokeCrossDeviceFailure,
     },
 
     /// A partition declared `barrier_timeout_ms:` with a value that
@@ -1486,6 +1557,36 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // across this refactor (see
             // `forge/diagnostic.rs::mesh_golden_entries`).
             key_fragments: vec![partition.clone(), transport.clone(), failure.to_string()],
+        },
+        DeployError::ScxmlInvokeCrossDeviceTransport {
+            parent,
+            peer,
+            parent_device,
+            peer_device,
+            failure,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployScxmlInvokeCrossDeviceTransport,
+            stage: Stage::MeshDeploy,
+            // `{parent}/{peer}` names the per-invoke pair that triggered
+            // the rejection — matches the shape `ScxmlInvokeTargetConflict`
+            // uses so downstream UIs can render both §9.6 diagnostics the
+            // same way.
+            actual: Some(format!("{parent}/{peer}")),
+            expected: None,
+            // Three equally-valid repairs depending on `failure`: add the
+            // binding, pick a different transport, or wait for the
+            // Session 2 C++ wire-14/20 dispatch to land. Author intent
+            // decides — no mechanical fix.
+            fix: None,
+            // All discriminating data flows through `key_fragments` so
+            // the fnv1a id is stable across the three failure shapes.
+            key_fragments: vec![
+                parent.clone(),
+                peer.clone(),
+                parent_device.clone(),
+                peer_device.clone(),
+                failure.to_string(),
+            ],
         },
         DeployError::PartitionBarrierTimeoutInvalid {
             partition,

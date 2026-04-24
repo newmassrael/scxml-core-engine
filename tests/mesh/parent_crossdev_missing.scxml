@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 L1393 cross-device rejection fixture — parent side.
+
+     Issues `<invoke type="scxml" src="#worker_crossdev_missing">` where
+     worker_crossdev_missing is declared on a different device in
+     `deploy_scxml_invoke_cross_device_missing_binding.yaml`. Classifier
+     flags the invoke cross-partition; validator sees `bindings:` absent
+     on the parent and rejects with
+     `mesh/deploy-scxml-invoke-cross-device-transport` (MissingBinding).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       initial="s1"
+       name="parent_crossdev_missing">
+  <state id="s1">
+    <invoke type="scxml" src="#worker_crossdev_missing" id="inv0"/>
+  </state>
+</scxml>

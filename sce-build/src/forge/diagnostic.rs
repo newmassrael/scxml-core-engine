@@ -486,6 +486,8 @@ pub enum DiagnosticCode {
     MeshDeployPartitionPoolMachine,
     #[serde(rename = "mesh/deploy-partition-transport-binding-unsupported")]
     MeshDeployPartitionTransportBindingUnsupported,
+    #[serde(rename = "mesh/deploy-scxml-invoke-cross-device-transport")]
+    MeshDeployScxmlInvokeCrossDeviceTransport,
     #[serde(rename = "mesh/deploy-partition-barrier-timeout-invalid")]
     MeshDeployPartitionBarrierTimeoutInvalid,
     #[serde(rename = "mesh/partition-parallel-root-undesignated")]
@@ -711,6 +713,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPartitionPartialCoverageRequiresDefault,
         MeshDeployPartitionPoolMachine,
         MeshDeployPartitionTransportBindingUnsupported,
+        MeshDeployScxmlInvokeCrossDeviceTransport,
         MeshDeployPartitionBarrierTimeoutInvalid,
         MeshPartitionParallelRootUndesignated,
         MeshPartitionParallelRootAmbiguous,
@@ -876,6 +879,9 @@ impl DiagnosticCode {
 
             // ── Mesh remote invoke codegen-shape exclusivity (SCE_MESH.md §9.6) ──
             MeshDeployScxmlInvokeTargetConflict => Some("SCE Mesh §9.6"),
+
+            // ── Mesh cross-device scxml-remote transport (SCE_MESH.md §9.6 L1393) ──
+            MeshDeployScxmlInvokeCrossDeviceTransport => Some("SCE Mesh §9.6 L1393"),
 
             // ── Mesh binding placeholder + server pool (SCE_MESH.md §14.4) ──
             MeshDeployPoolNotSupportedByTransport
@@ -1108,6 +1114,7 @@ impl DiagnosticCode {
             MeshDeployPartitionPartialCoverageRequiresDefault => "mesh/deploy-partition-partial-coverage-requires-default",
             MeshDeployPartitionPoolMachine => "mesh/deploy-partition-pool-machine",
             MeshDeployPartitionTransportBindingUnsupported => "mesh/deploy-partition-transport-binding-unsupported",
+            MeshDeployScxmlInvokeCrossDeviceTransport => "mesh/deploy-scxml-invoke-cross-device-transport",
             MeshDeployPartitionBarrierTimeoutInvalid => "mesh/deploy-partition-barrier-timeout-invalid",
             MeshPartitionParallelRootUndesignated => "mesh/partition-parallel-root-undesignated",
             MeshPartitionParallelRootAmbiguous => "mesh/partition-parallel-root-ambiguous",
@@ -3038,6 +3045,22 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:1e038670d04a2bdb","code":"mesh/deploy-partition-transport-binding-unsupported","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'motor_left': `transport_binding: zenoh` is not a valid inter-partition IPC transport — transport 'zenoh' does not carry inter-partition IPC (supports_inter_partition_ipc = false). SCE Mesh §14 requires a transport whose primary purpose is same-machine IPC (today: shm, custom_tcp). Switch to one of those or omit `transport_binding:` to accept the default (§14 L2730 \"kind tcp/shm\").","actual":"motor_left"}"#,
             ),
             (
+                "mesh/deploy-scxml-invoke-cross-device-transport",
+                DeployError::ScxmlInvokeCrossDeviceTransport {
+                    parent: "parent_x".into(),
+                    peer: "worker_y".into(),
+                    parent_device: "ecu_a".into(),
+                    peer_device: "ecu_b".into(),
+                    failure: crate::mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                // r##"..."## because the `<invoke src=\"#worker_y\">`
+                // payload contains `"#` which would close r#"..."# early.
+                r##"{"v":1,"id":"fnv1a:612c7ce1ce735e8d","code":"mesh/deploy-scxml-invoke-cross-device-transport","stage":"mesh-deploy","spec":"SCE Mesh §9.6 L1393","message":"machine 'parent_x' (device 'ecu_a') → `<invoke type=\"scxml\" src=\"#worker_y\">` on device 'ecu_b': parent declares no `bindings[\"#<peer>\"]` entry for the cross-device peer. SCE Mesh §9.6 L1393 requires each cross-device scxml-remote peer to declare its transport on `machines.parent_x.bindings[\"#worker_y\"].transport`, and that transport must be both capable of crossing devices AND wired by the Session F C++ dispatch.","actual":"parent_x/worker_y"}"##,
+            ),
+            (
                 "mesh/deploy-partition-barrier-timeout-invalid",
                 DeployError::PartitionBarrierTimeoutInvalid {
                     partition: "motor_left".into(),
@@ -3868,6 +3891,7 @@ mod tests {
             | MeshDeployPartitionPartialCoverageRequiresDefault
             | MeshDeployPartitionPoolMachine
             | MeshDeployPartitionTransportBindingUnsupported
+            | MeshDeployScxmlInvokeCrossDeviceTransport
             | MeshDeployPartitionBarrierTimeoutInvalid
             | MeshPartitionParallelRootUndesignated
             | MeshPartitionParallelRootAmbiguous
@@ -4173,6 +4197,7 @@ mod tests {
                 | MeshDeployPartitionPartialCoverageRequiresDefault
                 | MeshDeployPartitionPoolMachine
                 | MeshDeployPartitionTransportBindingUnsupported
+                | MeshDeployScxmlInvokeCrossDeviceTransport
                 | MeshDeployPartitionBarrierTimeoutInvalid
                 | MeshPartitionParallelRootUndesignated
                 | MeshPartitionParallelRootAmbiguous
@@ -4216,9 +4241,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            140,
+            141,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 140 distinct variants to match the DiagnosticCode \
+             expected 141 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

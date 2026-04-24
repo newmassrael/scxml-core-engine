@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 L1393 cross-device rejection fixture — worker side.
+
+     Minimal `<final>`-only body. The fixture's purpose is to exercise
+     the parent-side cross-device validator at `sce-codegen` time; the
+     worker SCXML only needs to parse cleanly so the deploy topology is
+     well-formed. Never compiled — the validator fails the build before
+     any codegen runs.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       initial="done"
+       name="worker_crossdev_missing">
+  <final id="done"/>
+</scxml>

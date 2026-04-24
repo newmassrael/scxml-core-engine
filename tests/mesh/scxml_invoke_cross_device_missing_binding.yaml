@@ -1,0 +1,27 @@
+# SCE Mesh §9.6 L1393 — cross-device scxml-remote invoke without a
+# declared transport binding.
+#
+# Expected diagnostic: mesh/deploy-scxml-invoke-cross-device-transport
+# Fires from: sce-build/src/lib.rs
+#             validate_scxml_invoke_transport — MissingBinding branch
+#
+# `parent` (device ecu_a) issues `<invoke type="scxml" src="#worker">`
+# where worker lives on device ecu_b. §9.6 L1393 requires the parent
+# machine to declare `bindings["#worker"].transport` so the Session F
+# wire-14/20 dispatch can target the peer's device; omitting the
+# declaration fires this diagnostic. Adding
+# `machines.parent.bindings: {"#worker": {transport: <wired-xport>}}`
+# is not yet sufficient for Session 1 because no cross-device transport
+# is wired in C++ codegen — a capable transport would fire the
+# TransportUnwired branch of the same diagnostic instead, deferred
+# until Session 2 lands the wire-14/20 dispatch.
+version: "1.0"
+topology:
+  ecu_a:
+    machines:
+      parent_crossdev_missing:
+        source: parent_crossdev_missing.scxml
+  ecu_b:
+    machines:
+      worker_crossdev_missing:
+        source: worker_crossdev_missing.scxml

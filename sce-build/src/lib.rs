@@ -1148,8 +1148,100 @@ pub fn inject_partition_context_for(
     collect_scxml_remote_peers(model, &deploy_cfg, &resolved_name, deploy_path);
     validate_scxml_invoke_target_exclusivity(model, &deploy_cfg, &resolved_name, deploy_path)
         .map_err(mesh::error::MeshError::Deploy)?;
+    validate_scxml_invoke_transport(model, &deploy_cfg, &resolved_name)
+        .map_err(mesh::error::MeshError::Deploy)?;
 
     Ok(present)
+}
+
+/// SCE_MESH.md §9.6 L1393 — cross-device scxml-remote invoke transport
+/// validator. The classifier
+/// ([`classify_remote_scxml_invokes`]) has already marked each
+/// `Invoke::Scxml` that crosses a partition with
+/// `remote_mesh_target`/`remote_mesh_transport`; this pass layers the
+/// device-identity check on top and rejects configurations that would
+/// either emit no wire traffic (missing binding) or crash at link time
+/// (incapable transport) or silently degrade to `SESSION_F_TRANSPORT_UNAVAILABLE`
+/// at runtime because the Session 2 C++ wire-14/20 dispatch has not
+/// been wired for the declared transport.
+///
+/// Same-device cross-partition peers remain accepted without a
+/// `bindings` entry — they take the implicit shm channel which is the
+/// only wired path today (§9.6.2). Cross-device is defined as "peer's
+/// device ≠ parent's device" per §14 rule 7 (each partition is
+/// single-device, so cross-device ⇔ the peer machine lives on a
+/// different `topology.<device>` entry).
+///
+/// Scope: outbound-side only. A cross-device misdeclaration always
+/// surfaces on the parent's codegen run, so inbound-side re-check is
+/// redundant — Session 2's C++ wiring will pull symmetric pair
+/// validation when the dispatch lands.
+fn validate_scxml_invoke_transport(
+    model: &SCXMLModel,
+    deploy_cfg: &mesh::deploy::DeployConfig,
+    resolved_name: &str,
+) -> Result<(), mesh::error::DeployError> {
+    // Locate the parent's device name. Absent ⇒ parent not deployed;
+    // upstream parser rejected, so staying silent here avoids piling a
+    // second error on top. Mirrors the fail-silent convention in
+    // `validate_scxml_invoke_target_exclusivity`.
+    let Some(parent_device) = device_name_for(deploy_cfg, resolved_name) else {
+        return Ok(());
+    };
+
+    for peer_binding in &model.scxml_remote_outbound_peers {
+        let peer_name = &peer_binding.name;
+        let Some(peer_device) = device_name_for(deploy_cfg, peer_name) else {
+            // Unknown peer — classifier should not have flagged this,
+            // but defend against future classifier changes by skipping.
+            continue;
+        };
+        if peer_device == parent_device {
+            // Same-device cross-partition — implicit shm path is the
+            // only wired codegen today. No binding required.
+            continue;
+        }
+
+        // Cross-device. Now discriminate the failure shape.
+        let failure = match &peer_binding.transport {
+            None => mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding,
+            Some(t) if t == "shm" || t == "local" => {
+                mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable {
+                    transport: t.clone(),
+                }
+            }
+            Some(t) => {
+                // Structurally capable (someip / zenoh / custom_tcp /
+                // dds / can), but Session 2 has not yet landed the
+                // wire-14/20 dispatch for any of them. Same precedent
+                // as `partition-wire21-custom-tcp-unimplemented`:
+                // build-time rejection beats runtime silent fallback.
+                mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired {
+                    transport: t.clone(),
+                }
+            }
+        };
+
+        return Err(mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
+            parent: resolved_name.to_string(),
+            peer: peer_name.clone(),
+            parent_device,
+            peer_device,
+            failure,
+        });
+    }
+    Ok(())
+}
+
+/// Resolve the `topology.<device>` key that hosts `machine`. Returned
+/// as an owned `String` because most callers stash it in an error
+/// payload; the lookup is O(devices × machines) which is constant for
+/// realistic deployments.
+fn device_name_for(deploy_cfg: &mesh::deploy::DeployConfig, machine: &str) -> Option<String> {
+    deploy_cfg
+        .topology
+        .iter()
+        .find_map(|(dev_name, dev)| dev.machines.contains_key(machine).then(|| dev_name.clone()))
 }
 
 /// SCE_MESH.md §9.6 — codegen-shape exclusivity. Reject any deployment
@@ -2905,6 +2997,150 @@ partitions:
              to preserve the local child-session shape",
         );
 
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    // ── SCE_MESH.md §9.6 L1393 cross-device transport validator ──
+    //
+    // Shared scaffold for the three rejection modes: two machines on
+    // separate devices, parent invokes `#worker`, caller supplies a
+    // per-target `bindings:` block shape (or none).
+    fn setup_cross_device_deployment(
+        tmp_subdir: &str,
+        parent_bindings: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_crossdev_{}_{}_{}",
+            tmp_subdir,
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = format!(
+            r##"version: "1.0"
+topology:
+  ecu_a:
+    machines:
+      parent:
+        source: parent.scxml
+{parent_bindings}
+  ecu_b:
+    machines:
+      worker:
+        source: worker.scxml
+"##
+        );
+        let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" src="#worker" id="inv0"/>
+  </state>
+</scxml>"##;
+        let worker_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done" name="worker">
+  <final id="done"/>
+</scxml>"##;
+
+        let deploy_path = tmp.join("deploy.yaml");
+        fs::write(&deploy_path, deploy).unwrap();
+        fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
+        fs::write(tmp.join("worker.scxml"), worker_scxml).unwrap();
+        (tmp, deploy_path)
+    }
+
+    /// Cross-device peer with no `bindings["#worker"]` entry — the
+    /// author declared nothing, so the validator cannot know which
+    /// transport to target. Rejected with `MissingBinding`.
+    #[test]
+    fn cross_device_missing_binding_rejected() {
+        use std::fs;
+        let (tmp, deploy_path) = setup_cross_device_deployment("missing", "");
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent");
+        let err = inject_partition_context_for(&mut model, &deploy_path, None)
+            .expect_err("cross-device invoke without binding must reject");
+        match err {
+            mesh::error::MeshError::Deploy(
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
+                    parent,
+                    peer,
+                    parent_device,
+                    peer_device,
+                    failure: mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding,
+                },
+            ) => {
+                assert_eq!(parent, "parent");
+                assert_eq!(peer, "worker");
+                assert_eq!(parent_device, "ecu_a");
+                assert_eq!(peer_device, "ecu_b");
+            }
+            other => panic!("expected ScxmlInvokeCrossDeviceTransport/MissingBinding, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Cross-device peer with `bindings["#worker"].transport: shm` —
+    /// shm segments are pid-namespaced and cannot cross a device boundary.
+    /// Rejected with `TransportIncapable`.
+    #[test]
+    fn cross_device_shm_incapable_rejected() {
+        use std::fs;
+        let bindings = "        bindings:\n          \"#worker\":\n            transport: shm\n";
+        let (tmp, deploy_path) = setup_cross_device_deployment("shm", bindings);
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent");
+        let err = inject_partition_context_for(&mut model, &deploy_path, None)
+            .expect_err("cross-device invoke over shm must reject");
+        match err {
+            mesh::error::MeshError::Deploy(
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
+                    peer,
+                    failure: mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable { transport },
+                    ..
+                },
+            ) => {
+                assert_eq!(peer, "worker");
+                assert_eq!(transport, "shm");
+            }
+            other => panic!("expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Cross-device peer with `bindings["#worker"].transport: zenoh` —
+    /// structurally capable transport but Session 2 has not yet landed
+    /// the C++ wire-14/20 dispatch. Rejected with `TransportUnwired`.
+    #[test]
+    fn cross_device_capable_transport_unwired_rejected() {
+        use std::fs;
+        let bindings = "        bindings:\n          \"#worker\":\n            transport: zenoh\n";
+        let (tmp, deploy_path) = setup_cross_device_deployment("zenoh", bindings);
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent");
+        let err = inject_partition_context_for(&mut model, &deploy_path, None)
+            .expect_err("cross-device invoke over zenoh must reject until Session 2 wires dispatch");
+        match err {
+            mesh::error::MeshError::Deploy(
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
+                    peer,
+                    failure: mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired { transport },
+                    ..
+                },
+            ) => {
+                assert_eq!(peer, "worker");
+                assert_eq!(transport, "zenoh");
+            }
+            other => panic!("expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}"),
+        }
         let _ = fs::remove_dir_all(&tmp);
     }
 }

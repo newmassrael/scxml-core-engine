@@ -4906,6 +4906,29 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
         list(APPEND SCE_REJECTION_TESTS mesh_partition_rule${_rule_id}_rejection)
     endforeach()
 
+    # ── SCE_MESH.md §9.6 L1393 cross-device scxml-remote transport ─────
+    # Parent issues `<invoke type="scxml" src="#worker">` where worker
+    # is declared on a different device. Without a
+    # `machines.parent.bindings["#worker"].transport` entry the Session F
+    # wire-14/20 dispatch has no target device, so
+    # `validate_scxml_invoke_transport` rejects at deploy time. The
+    # Rust-level unit suite in sce-build/src/lib.rs covers all three
+    # failure variants (MissingBinding / TransportIncapable /
+    # TransportUnwired); this ctest lifts the simplest variant to the
+    # CLI + NDJSON layer so a future regression that silently disables
+    # the validator or re-routes its diagnostic through a different code
+    # fails at ctest time.
+    add_test(
+        NAME mesh_scxml_invoke_cross_device_missing_rejection
+        COMMAND "${MESH_TEST_DIR}/expect_partition_failure.sh"
+                "${SCE_CODEGEN}"
+                "${MESH_TEST_DIR}/parent_crossdev_missing.scxml"
+                "${MESH_TEST_DIR}/scxml_invoke_cross_device_missing_binding.yaml"
+                "${CMAKE_CURRENT_BINARY_DIR}/mesh_scxml_invoke_cross_device_missing_generated"
+                "mesh/deploy-scxml-invoke-cross-device-transport"
+    )
+    list(APPEND SCE_REJECTION_TESTS mesh_scxml_invoke_cross_device_missing_rejection)
+
     # ── Phase 3 entry #5: deploy.yaml-only middleware switch demo ──────
     # Proves that the SAME brake.scxml compiles against four different
     # transports with zero source changes — only the deploy.yaml differs.

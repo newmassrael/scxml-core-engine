@@ -120,6 +120,7 @@
         "mesh/deploy-partition-partial-coverage-requires-default",
         "mesh/deploy-partition-pool-machine",
         "mesh/deploy-partition-transport-binding-unsupported",
+        "mesh/deploy-scxml-invoke-cross-device-transport",
         "mesh/deploy-partition-barrier-timeout-invalid",
         "mesh/partition-parallel-root-undesignated",
         "mesh/partition-parallel-root-ambiguous",
