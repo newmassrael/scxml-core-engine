@@ -419,6 +419,7 @@ target_link_libraries(core_parser_tests
 add_executable(integration_tests
     integration/StateMachineIntegrationTest.cpp
     integration/ActionIntegrationTest.cpp
+    integration/DonedataLocalInvokeTest.cpp
     integration/SCXMLEventTest.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
