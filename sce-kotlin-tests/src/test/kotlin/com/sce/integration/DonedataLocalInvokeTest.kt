@@ -17,7 +17,9 @@
 //   target/release/sce-codegen generate \
 //       sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml \
 //       -l kotlin -o "$TMP/"
-//   for child in "$TMP"/donedata_local_invoke_child*.scxml; do
+//   # SCE_MESH.md §9.6.6 rule 1: parser emits synth siblings as
+//   # `<parent>__sce_synth_invoke__<id>.scxml` (previously `_child<N>.scxml`).
+//   for child in "$TMP"/donedata_local_invoke__sce_synth_invoke__*.scxml; do
 //       target/release/sce-codegen generate "$child" \
 //           --as-child --parent-stem donedata_local_invoke \
 //           -l kotlin -o "$TMP/"
