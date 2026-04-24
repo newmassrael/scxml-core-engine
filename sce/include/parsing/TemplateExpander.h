@@ -6,9 +6,14 @@
 #include "parsing/PositionMap.h"
 #include "parsing/TemplateError.h"
 
+#include <pugixml.hpp>
+
 #include <cstddef>
+#include <cstdint>
+#include <filesystem>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 // String-level `<sce:use>` / `<sce:template>` expander. Mirrors
@@ -74,6 +79,97 @@ struct ByteRange {
     std::size_t start;
     std::size_t end;
 };
+
+// Declaration of a single `<sce:param>` inside a template file.
+// Mirrors Rust `sce-build/src/template.rs::ParamDecl`. `hasDefault`
+// separates "declared with default" from "declared without default"
+// so the downstream binder can apply the RFC §3.1 three-state
+// fallback (caller value > default > empty) without an extra
+// Optional wrapper.
+struct ParamDecl {
+    std::string name;
+    bool required = false;
+    bool hasDefault = false;
+    std::string defaultValue;
+};
+
+// One emitted byte range plus its origin. Ordered output from
+// `applySubstitutionWithTracking`; the caller shifts the offsets
+// by the body splice offset when composing into a larger
+// PositionMap.
+struct SubstitutionEntry {
+    std::size_t out_start;
+    std::size_t out_end;
+    Origin origin;
+};
+
+// Result of a single body-level `{$name}` substitution pass.
+// Mirrors Rust's tuple return from
+// `apply_substitution_with_tracking` — the rendered body plus a
+// contiguous vector of origin-tagged output ranges covering every
+// emitted byte.
+struct SubstitutionResult {
+    std::string substituted;
+    std::vector<SubstitutionEntry> entries;
+};
+
+// Single-pass lexical `{$name}` substitution with per-region
+// origin tracking. Mirrors
+// `sce-build/src/template.rs::apply_substitution_with_tracking`
+// line-for-line — atomic (replacements do not cascade), undeclared
+// `{$name}` tokens emitted verbatim as template-file bytes, empty
+// param values skipped (no zero-length `CallSite` entry emitted).
+//
+// `body` is the span of the template file being substituted.
+// `bodySourceOffset` is that span's start offset inside the
+// template-file source (so a File-origin entry records
+// `source_offset = bodySourceOffset + body-local offset`).
+// `templatePath` labels the template file for File-origin entries.
+// `params` is the bound-name → literal-value map; missing names
+// in this map are treated as undeclared and their tokens are
+// emitted verbatim. `(callerFile, callerRow, callerCol)` is the
+// depth-1 collapse point RFC §6.3 Q3 mandates — every byte of a
+// successful substitution gets the *same* (callerRow, callerCol)
+// regardless of where inside the substituted value it lands.
+SubstitutionResult applySubstitutionWithTracking(
+    std::string_view body, std::size_t bodySourceOffset,
+    const std::filesystem::path &templatePath,
+    const std::unordered_map<std::string, std::string> &params,
+    const std::filesystem::path &callerFile, std::uint32_t callerRow,
+    std::uint32_t callerCol);
+
+// Parse a `<sce:param>` declaration node. Validates the `name`
+// pattern (XSD `paramNameType` via
+// `SCE::parsing::is_valid_param_name`), the mutual exclusion of
+// `required="true"` and `default="..."`, and the boolean
+// `required` literal. Throws `TemplateMalformed` with the
+// offending template's href baked into the message for every
+// failure path. Mirrors
+// `sce-build/src/template.rs::parse_param_decl`.
+ParamDecl parseParamDecl(pugi::xml_node node,
+                         std::string_view templateHref);
+
+// Collect caller `<sce:use>` bindings. Every attribute other
+// than the reserved `template` and `xmlns` / `xmlns:*` namespace
+// declarations contributes one binding keyed by the attribute's
+// local name. Mirrors
+// `sce-build/src/template.rs::collect_use_bindings` but filters
+// the pugixml-exposed namespace declarations that roxmltree
+// hides at the parser layer.
+std::unordered_map<std::string, std::string> collectUseBindings(
+    pugi::xml_node useNode);
+
+// Extract body byte ranges of a post-substitution, post-recursion
+// template document. Every non-`<sce:param>` child of the
+// `<sce:template>` root contributes one byte range inside
+// `expandedTemplate`; the caller splices each range into the
+// outer document in place of the `<sce:use>` node and composes
+// the matching `PositionMap` slice into the outer map. Throws
+// `TemplateMalformed` when `expandedTemplate` is not well-formed
+// or its root is not `<sce:template>`. Mirrors
+// `sce-build/src/template.rs::extract_template_body_ranges`.
+std::vector<ByteRange> extractTemplateBodyRanges(
+    std::string_view expandedTemplate, std::string_view templateHref);
 
 // Find the byte offset one-past the closing `>` of the XML element
 // starting at `start` in `source`. `tagName` is the element's full

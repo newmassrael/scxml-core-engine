@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 #include "parsing/TemplateExpander.h"
+#include "parsing/TemplateConstants.h"
 
 #include <pugixml.hpp>
 
@@ -9,6 +10,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <unordered_map>
 
 // String-level `<sce:use>` / `<sce:template>` expander
 // implementation. Mirrors `sce-build/src/template.rs`; see the
@@ -234,6 +236,201 @@ std::vector<ByteRange> collectTopLevelSceUseRanges(std::string_view source) {
         walk(root);
     }
     return result;
+}
+
+SubstitutionResult applySubstitutionWithTracking(
+    std::string_view body, std::size_t bodySourceOffset,
+    const std::filesystem::path &templatePath,
+    const std::unordered_map<std::string, std::string> &params,
+    const std::filesystem::path &callerFile, std::uint32_t callerRow,
+    std::uint32_t callerCol) {
+    SubstitutionResult result;
+    result.substituted.reserve(body.size());
+    std::size_t pos = 0;
+    while (pos < body.size()) {
+        const std::size_t startRel = body.substr(pos).find("{$");
+        if (startRel == std::string_view::npos) {
+            break;
+        }
+        const std::size_t start = pos + startRel;
+        // Flush non-substituted prefix [pos, start) as template-file
+        // bytes. Mirrors Rust's prefix-flush in
+        // `apply_substitution_with_tracking`.
+        if (start > pos) {
+            const std::size_t outStart = result.substituted.size();
+            result.substituted.append(body.substr(pos, start - pos));
+            result.entries.push_back(SubstitutionEntry{
+                outStart, result.substituted.size(),
+                FileOrigin{templatePath, bodySourceOffset + pos}});
+        }
+        const std::size_t after = start + 2;
+        const std::size_t closeRel =
+            (after < body.size()) ? body.substr(after).find('}')
+                                  : std::string_view::npos;
+        if (closeRel != std::string_view::npos) {
+            const std::string_view name = body.substr(after, closeRel);
+            if (is_valid_param_name(name)) {
+                const auto it = params.find(std::string(name));
+                if (it != params.end()) {
+                    if (!it->second.empty()) {
+                        const std::size_t outStart = result.substituted.size();
+                        result.substituted.append(it->second);
+                        result.entries.push_back(SubstitutionEntry{
+                            outStart, result.substituted.size(),
+                            CallSiteOrigin{callerFile, callerRow, callerCol}});
+                    }
+                    pos = after + closeRel + 1;
+                    continue;
+                }
+            }
+        }
+        // Not a valid `{$name}` token — emit `{$` literally as
+        // template-file bytes and resume the scan immediately
+        // after. Mirrors Rust's literal-`{$` emission path.
+        const std::size_t outStart = result.substituted.size();
+        result.substituted.append("{$");
+        result.entries.push_back(SubstitutionEntry{
+            outStart, result.substituted.size(),
+            FileOrigin{templatePath, bodySourceOffset + start}});
+        pos = after;
+    }
+    // Tail — any bytes past the last `{$`.
+    if (pos < body.size()) {
+        const std::size_t outStart = result.substituted.size();
+        result.substituted.append(body.substr(pos));
+        result.entries.push_back(SubstitutionEntry{
+            outStart, result.substituted.size(),
+            FileOrigin{templatePath, bodySourceOffset + pos}});
+    }
+    return result;
+}
+
+ParamDecl parseParamDecl(pugi::xml_node node, std::string_view templateHref) {
+    // Mirrors `sce-build/src/template.rs::parse_param_decl`. Every
+    // malformed shape surfaces as `TemplateMalformed` with a
+    // message naming the offending template so agent-side repair
+    // heuristics can dispatch without re-reading the body.
+    const auto nameAttr = node.attribute("name");
+    if (!nameAttr) {
+        throw TemplateMalformed(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: template is malformed: <sce:param> missing required `name` "
+            "attribute");
+    }
+    std::string paramName = nameAttr.value();
+    if (!is_valid_param_name(paramName)) {
+        throw TemplateMalformed(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: template is malformed: <sce:param name=\"" + paramName +
+            "\"> name must match " + std::string(PARAM_NAME_PATTERN));
+    }
+
+    ParamDecl decl;
+    decl.name = std::move(paramName);
+    if (const auto reqAttr = node.attribute("required")) {
+        const std::string reqVal = reqAttr.value();
+        if (reqVal == "true") {
+            decl.required = true;
+        } else if (reqVal != "false") {
+            throw TemplateMalformed(
+                "<sce:use template=\"" + std::string(templateHref) +
+                "\">: template is malformed: <sce:param name=\"" + decl.name +
+                "\"> `required` must be \"true\" or \"false\", got \"" +
+                reqVal + "\"");
+        }
+    }
+    if (const auto defAttr = node.attribute("default")) {
+        decl.hasDefault = true;
+        decl.defaultValue = defAttr.value();
+    }
+    if (decl.required && decl.hasDefault) {
+        throw TemplateMalformed(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: template is malformed: <sce:param name=\"" + decl.name +
+            "\"> declares both `required=\"true\"` and `default=\"...\"` — "
+            "mutually exclusive");
+    }
+    return decl;
+}
+
+std::unordered_map<std::string, std::string> collectUseBindings(
+    pugi::xml_node useNode) {
+    std::unordered_map<std::string, std::string> bindings;
+    for (const auto attr : useNode.attributes()) {
+        const std::string attrName = attr.name();
+        if (attrName == "template") {
+            continue;
+        }
+        // pugixml exposes XML namespace declarations as regular
+        // attributes; filter them to match Rust roxmltree's
+        // `attribute()` iterator shape which hides namespaces.
+        if (attrName == "xmlns" ||
+            (attrName.size() > 6 && attrName.compare(0, 6, "xmlns:") == 0)) {
+            continue;
+        }
+        bindings.emplace(attrName, attr.value());
+    }
+    return bindings;
+}
+
+std::vector<ByteRange> extractTemplateBodyRanges(
+    std::string_view expandedTemplate, std::string_view templateHref) {
+    pugi::xml_document doc;
+    const auto parseResult =
+        doc.load_buffer(expandedTemplate.data(), expandedTemplate.size());
+    if (!parseResult) {
+        throw TemplateMalformed(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: template is malformed: expanded template is malformed: " +
+            parseResult.description());
+    }
+    const auto root = doc.document_element();
+    if (!root || std::string(root.name()) != "sce:template") {
+        throw TemplateMalformed(
+            "<sce:use template=\"" + std::string(templateHref) +
+            "\">: template is malformed: expanded template root is not "
+            "<sce:template>");
+    }
+    std::vector<ByteRange> ranges;
+    for (const auto child : root.children()) {
+        if (child.type() == pugi::node_element &&
+            std::string(child.name()) == "sce:param") {
+            continue;
+        }
+        const auto startSigned = child.offset_debug();
+        if (startSigned < 0) {
+            continue;
+        }
+        std::size_t start = static_cast<std::size_t>(startSigned);
+        if (start > 0 && expandedTemplate[start] != '<' &&
+            expandedTemplate[start - 1] == '<') {
+            start -= 1;
+        }
+        std::size_t end = start;
+        if (child.type() == pugi::node_element) {
+            end = findElementEnd(expandedTemplate, start,
+                                  std::string(child.name()));
+        } else if (child.type() == pugi::node_pcdata ||
+                   child.type() == pugi::node_cdata) {
+            // Text node: span runs from `start` to the next `<` or
+            // EOF. pugi `offset_debug` on text nodes points at the
+            // first character of the data.
+            end = expandedTemplate.find('<', start);
+            if (end == std::string_view::npos) {
+                end = expandedTemplate.size();
+            }
+        } else if (child.type() == pugi::node_comment) {
+            const std::size_t closer =
+                expandedTemplate.find("-->", start);
+            end = (closer == std::string_view::npos)
+                      ? expandedTemplate.size()
+                      : closer + 3;
+        } else {
+            continue;
+        }
+        ranges.push_back(ByteRange{start, end});
+    }
+    return ranges;
 }
 
 }  // namespace detail
