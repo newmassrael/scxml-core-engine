@@ -3,22 +3,38 @@
 #
 # Handshake protocol between this script and the worker / parent binaries:
 #
-#   1. Worker binds its Server to "127.0.0.1:0" (ephemeral), reads its
-#      Server::local_endpoint() back via getsockname, then writes one
-#      line of the form
+#   1. Worker binds one or more Servers (each on "127.0.0.1:0" for an
+#      ephemeral kernel port), reads each local_endpoint back via
+#      getsockname, then writes one line per listener to stderr:
 #
-#          LISTEN_ENDPOINT=host:port
+#          LISTEN_ENDPOINT=host:port            (single-peer backward-compat)
+#        or
+#          LISTEN_ENDPOINT_<peer>=host:port     (multi-peer fan-out)
 #
-#      to stderr and flushes. The worker then blocks until SIGTERM.
+#      Worker finally writes a sync barrier:
 #
-#   2. This script reads the first matching LISTEN_ENDPOINT= line from
-#      the worker's stderr (default 5s handshake timeout). It exports the
-#      endpoint as MESH_PEER_ENDPOINT and launches the parent binary with
-#      any extra args the caller passed through. The parent reads
-#      MESH_PEER_ENDPOINT at startup and uses it as the connect target —
-#      typically via TransportRouter::init(PortOverride) so the Client
-#      dials the kernel-assigned ephemeral port instead of the deploy.yaml
-#      "host:0" placeholder.
+#          LISTEN_READY
+#
+#      and flushes. The worker then blocks until SIGTERM. The barrier
+#      lets the orchestrator distinguish "all listeners announced" from
+#      "partial announcement still buffered", which matters when a
+#      multi-peer worker fans out >1 listen line across separate
+#      `fprintf`s.
+#
+#   2. This script polls the worker's stderr until `LISTEN_READY`
+#      appears (default 5s timeout). It then parses every
+#      `LISTEN_ENDPOINT(|_<peer>)=` line and exports each as an env
+#      var:
+#
+#          LISTEN_ENDPOINT=ep          → MESH_PEER_ENDPOINT=ep
+#          LISTEN_ENDPOINT_<peer>=ep   → MESH_PEER_ENDPOINT_<peer>=ep
+#
+#      The parent binary is then launched with any extra args the
+#      caller passed through. The parent reads whichever env vars it
+#      needs at startup and feeds them into
+#      `TransportRouter::init(PortOverride)` so the Client(s) dial the
+#      kernel-assigned ephemeral port(s) instead of the deploy.yaml
+#      `"127.0.0.1:0"` placeholders.
 #
 #   3. When the parent exits the worker is SIGTERM'd, joined, and the
 #      parent's exit code is propagated as this script's exit code.
@@ -26,7 +42,7 @@
 # Failures at each stage emit a diagnostic to stderr before exiting non-zero:
 #
 #     exit 64  — misuse (wrong argv count)
-#     exit 65  — handshake timeout (worker never emitted LISTEN_ENDPOINT=)
+#     exit 65  — handshake timeout (worker never emitted LISTEN_READY)
 #     exit N   — parent exit code (N != 0 passes through verbatim)
 #
 # Worker SIGTERM exit status is intentionally discarded — the worker's
@@ -52,14 +68,16 @@ WORKER_STDERR="$TMPDIR/worker.stderr"
 "$WORKER_BIN" 2> "$WORKER_STDERR" &
 WORKER_PID=$!
 
-MESH_PEER_ENDPOINT=""
+# Poll for LISTEN_READY. The barrier guarantees every LISTEN_ENDPOINT*=
+# line the worker intended to emit has already been flushed when we
+# start parsing the file; before the barrier, grep could race the
+# worker between multi-peer fanout writes and observe only a subset.
+SAW_READY=false
 for _ in $(seq 1 "$HANDSHAKE_ITERS"); do
-    if [[ -s "$WORKER_STDERR" ]]; then
-        MESH_PEER_ENDPOINT=$(grep -m1 '^LISTEN_ENDPOINT=' "$WORKER_STDERR" 2>/dev/null \
-                             | head -1 | cut -d= -f2-)
-        if [[ -n "$MESH_PEER_ENDPOINT" ]]; then
-            break
-        fi
+    if [[ -s "$WORKER_STDERR" ]] \
+       && grep -q '^LISTEN_READY$' "$WORKER_STDERR" 2>/dev/null; then
+        SAW_READY=true
+        break
     fi
     # Worker may have crashed before announcing — short-circuit the wait
     # loop so the timeout diagnostic lands promptly rather than 5s late.
@@ -69,8 +87,8 @@ for _ in $(seq 1 "$HANDSHAKE_ITERS"); do
     sleep 0.1
 done
 
-if [[ -z "$MESH_PEER_ENDPOINT" ]]; then
-    echo "orchestrator: worker never emitted LISTEN_ENDPOINT= within ${HANDSHAKE_TIMEOUT_MS}ms" >&2
+if [[ "$SAW_READY" != "true" ]]; then
+    echo "orchestrator: worker never emitted LISTEN_READY within ${HANDSHAKE_TIMEOUT_MS}ms" >&2
     echo "orchestrator: worker stderr follows --" >&2
     cat "$WORKER_STDERR" >&2 || true
     kill -TERM "$WORKER_PID" 2>/dev/null || true
@@ -78,9 +96,26 @@ if [[ -z "$MESH_PEER_ENDPOINT" ]]; then
     exit 65
 fi
 
-echo "orchestrator: worker listening on $MESH_PEER_ENDPOINT (pid $WORKER_PID)" >&2
+# Parse every LISTEN_ENDPOINT*= line into the corresponding env var.
+# `declare -A` is unnecessary — a straight export per match keeps bash
+# 3.x compatibility and sidesteps the associative-array/ordering
+# question (ctest invokes this script under whatever shell CMake picked
+# at `add_test` registration, typically `bash` on Linux; nothing in the
+# protocol depends on export order).
+while IFS='=' read -r key value; do
+    case "$key" in
+        LISTEN_ENDPOINT)
+            export MESH_PEER_ENDPOINT="$value"
+            echo "orchestrator: worker listening on $value (pid $WORKER_PID)" >&2
+            ;;
+        LISTEN_ENDPOINT_*)
+            peer="${key#LISTEN_ENDPOINT_}"
+            export "MESH_PEER_ENDPOINT_${peer}=$value"
+            echo "orchestrator: peer '$peer' listening on $value" >&2
+            ;;
+    esac
+done < <(grep '^LISTEN_ENDPOINT\(_[A-Za-z0-9_]*\)\?=' "$WORKER_STDERR" 2>/dev/null)
 
-export MESH_PEER_ENDPOINT
 "$PARENT_BIN" "$@"
 PARENT_EXIT=$?
 

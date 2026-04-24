@@ -49,11 +49,15 @@ int main() {
         return 2;
     }
 
-    // Handshake line the orchestrator (run_two_process_fixture.sh) greps
-    // out of our stderr. Must be flushed immediately — the script starts
-    // polling right after launch and a buffered write would extend the
-    // handshake timeout window for nothing.
+    // Handshake lines the orchestrator (run_two_process_fixture.sh)
+    // greps out of our stderr. `LISTEN_ENDPOINT=` carries the port;
+    // `LISTEN_READY` is the barrier the orchestrator polls for before
+    // parsing — multi-peer workers fan out multiple LISTEN lines, and
+    // the barrier is what tells the script "all listeners announced"
+    // uniformly across single- and multi-peer callers. Both lines
+    // flushed together so the orchestrator's grep sees them atomically.
     std::fprintf(stderr, "LISTEN_ENDPOINT=%s\n", ep->c_str());
+    std::fprintf(stderr, "LISTEN_READY\n");
     std::fflush(stderr);
 
     // Wait for SIGTERM. `pause` returns -1 when interrupted by any

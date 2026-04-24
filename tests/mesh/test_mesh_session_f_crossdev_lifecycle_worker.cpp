@@ -69,6 +69,7 @@ int main() {
         return 2;
     }
     std::fprintf(stderr, "LISTEN_ENDPOINT=%s\n", ep->c_str());
+    std::fprintf(stderr, "LISTEN_READY\n");
     std::fflush(stderr);
 
     // Pump wire-14/17/19 until SIGTERM. The parent's wire-14 arrives
