@@ -3045,6 +3045,100 @@ RESOURCE_LOCK keys off the value so parallel ctest stays safe.")
         # reuses the same port cache variable.
         RESOURCE_LOCK sce_mesh_crossdev_lifecycle_${SCE_TEST_CROSSDEV_LIFECYCLE_PORT})
 
+    # ── Session 3 Stage B: cross-device wire-18 donedata coverage ──
+    # Three worker shapes (param / content / nested) on one ecu, each
+    # binding its own kernel-ephemeral Server. Worker announces all
+    # three ports via `LISTEN_ENDPOINT_<peer>=` lines + `LISTEN_READY`
+    # barrier; the orchestrator exports each as
+    # `MESH_PEER_ENDPOINT_<peer>` and the parent seeds
+    # `PortOverride::peer_connect_endpoints` with three entries in one
+    # shot. SCXMLs reused verbatim from deploy_session_f_donedata.yaml
+    # — the crossdev variant differs only in the two-device topology
+    # plus three `transport: custom_tcp` bindings.
+    set(MESH_CROSSDEV_DONEDATA_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_crossdev_donedata_generated")
+
+    set(SCE_TEST_CROSSDEV_DONEDATA_PORT "55824" CACHE STRING
+        "Static TCP loopback port the crossdev donedata parent Server binds \
+(IANA dynamic range). Separate from SCE_TEST_CROSSDEV_LIFECYCLE_PORT so \
+parallel ctest runs of the two crossdev fixtures don't serialise; override \
+with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
+
+    file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}" "${MESH_TEST_DIR}")
+    configure_file(
+        "${MESH_TEST_DIR}/deploy_session_f_crossdev_donedata.yaml.in"
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/deploy_session_f_crossdev_donedata.yaml"
+        @ONLY)
+
+    set(MESH_CROSSDEV_DONEDATA_SCXMLS
+        parent_session_f_donedata
+        worker_session_f_donedata_param
+        worker_session_f_donedata_content
+        worker_session_f_donedata_nested)
+
+    set(MESH_CROSSDEV_DONEDATA_SCXML_DEPS
+        "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
+        "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
+        "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+        "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml")
+
+    foreach(machine ${MESH_CROSSDEV_DONEDATA_SCXMLS})
+        add_custom_command(
+            OUTPUT "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h"
+                    "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${machine}.scxml"
+                    -l cpp -o "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                    --deploy "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/deploy_session_f_crossdev_donedata.yaml"
+                    --write-deps "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
+            DEPENDS ${MESH_CROSSDEV_DONEDATA_SCXML_DEPS}
+                    "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/deploy_session_f_crossdev_donedata.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
+            COMMENT "Mesh §9.6 crossdev donedata: Generating ${machine}_{sm,transport}.h"
+            VERBATIM
+        )
+    endforeach()
+
+    add_executable(mesh_session_f_crossdev_donedata_worker
+        mesh/test_mesh_session_f_crossdev_donedata_worker.cpp
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h")
+    target_include_directories(mesh_session_f_crossdev_donedata_worker
+        PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR})
+    target_link_libraries(mesh_session_f_crossdev_donedata_worker
+        PRIVATE sce_runtime sce_mesh_common)
+    target_compile_features(mesh_session_f_crossdev_donedata_worker PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_session_f_crossdev_donedata_worker)
+
+    add_executable(mesh_session_f_crossdev_donedata_parent
+        mesh/test_mesh_session_f_crossdev_donedata_parent.cpp
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
+        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h")
+    target_include_directories(mesh_session_f_crossdev_donedata_parent
+        PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR})
+    target_link_libraries(mesh_session_f_crossdev_donedata_parent
+        PRIVATE sce_runtime sce_mesh_common GTest::gtest GTest::gtest_main)
+    target_compile_features(mesh_session_f_crossdev_donedata_parent PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_session_f_crossdev_donedata_parent)
+
+    sce_register_two_process_mesh_test(
+        NAME    mesh_session_f_crossdev_donedata
+        WORKER  mesh_session_f_crossdev_donedata_worker
+        PARENT  mesh_session_f_crossdev_donedata_parent
+        TIMEOUT 45)
+    set_tests_properties(mesh_session_f_crossdev_donedata PROPERTIES
+        # Lock on parent's static Server port so parallel runs against
+        # the same port cache variable serialise cleanly.
+        RESOURCE_LOCK sce_mesh_crossdev_donedata_${SCE_TEST_CROSSDEV_DONEDATA_PORT})
+
     # ── Phase 3 entry #4d: end-to-end payload verification ─────────
     # Proves <param> data survives: sender → JSON → wire → drain
     # → raiseExternal → _event.data → receiver cond matches.

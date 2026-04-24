@@ -1,0 +1,55 @@
+# SCE Mesh §9.6.2 wire-18 donedata cross-device fixture.
+#
+# Four machines split across two devices: parent on ecu_parent, three
+# worker shapes (param / content / nested) on ecu_worker. Reuses the
+# shm-baseline SCXMLs verbatim; the only difference from
+# deploy_session_f_donedata.yaml is the device split + `custom_tcp`
+# bindings, so every classifier downstream (remote_mesh_target,
+# scxml_remote_outbound_peers, resolve_connect_endpoint) produces the
+# same cross-device TransportRouter shape used by the lifecycle fixture.
+#
+# Coverage vs. shm baseline: this fixture validates that the three
+# `<donedata>` flavors (single `<param>`, primitive `<content expr>`,
+# nested `<content expr>` with object + array + integer) survive a
+# real TCP wire-18 round-trip with matching decoded `_event.data`
+# semantics. The CBOR+length-prefix framing introduces a wire-byte
+# divergence from the shm baseline (byte-identical comparison is not
+# possible across transports per SCE_MESH.md §9.6.2 envelope framing),
+# so assertions target the decoded payload via
+# `EventDataHelper::jsonStringToScriptValue` — the same contract the
+# shm fixture exercises for identity.
+#
+# Port strategy matches deploy_session_f_crossdev_lifecycle.yaml.in:
+# parent uses a static CMake-configurable port, workers use
+# kernel-ephemeral sentinels. The worker binary reads each router's
+# `custom_tcp_local_endpoint()` and announces three lines of the form
+# `LISTEN_ENDPOINT_<peer>=host:port` so the parent can install a
+# three-entry `PortOverride::peer_connect_endpoints` before
+# `TransportRouter::init`.
+version: "1.0"
+topology:
+  ecu_parent:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:@SCE_TEST_CROSSDEV_DONEDATA_PORT@"
+    machines:
+      parent_session_f_donedata:
+        source: "@SCE_MESH_TEST_DIR_REL@/parent_session_f_donedata.scxml"
+        bindings:
+          "#worker_session_f_donedata_param":
+            transport: custom_tcp
+          "#worker_session_f_donedata_content":
+            transport: custom_tcp
+          "#worker_session_f_donedata_nested":
+            transport: custom_tcp
+  ecu_worker:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:0"
+    machines:
+      worker_session_f_donedata_param:
+        source: "@SCE_MESH_TEST_DIR_REL@/worker_session_f_donedata_param.scxml"
+      worker_session_f_donedata_content:
+        source: "@SCE_MESH_TEST_DIR_REL@/worker_session_f_donedata_content.scxml"
+      worker_session_f_donedata_nested:
+        source: "@SCE_MESH_TEST_DIR_REL@/worker_session_f_donedata_nested.scxml"
