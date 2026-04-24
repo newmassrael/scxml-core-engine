@@ -2,5 +2,5 @@
 
 mod test192_sm;
 pub use test192_sm::*;
-mod test192_child0_sm;
-pub use test192_child0_sm::*;
+mod test192__sce_synth_invoke__invokedChild_sm;
+pub use test192__sce_synth_invoke__invokedChild_sm::*;

@@ -1,6 +1,6 @@
 
 // GENERATED CODE — DO NOT EDIT
-// Source: resources/253/test253_child0.scxml
+// Source: resources/253/test253__sce_synth_invoke__foo.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 
 package com.sce.generated.test253
@@ -10,32 +10,32 @@ import com.sce.runtime.*
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface Test253Child0State : State {
-    data object Sub0 : Test253Child0State
-    data object Sub1 : Test253Child0State
-    data object SubFinal : Test253Child0State
+sealed interface Test253SceSynthInvokeFooState : State {
+    data object Sub0 : Test253SceSynthInvokeFooState
+    data object Sub1 : Test253SceSynthInvokeFooState
+    data object SubFinal : Test253SceSynthInvokeFooState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface Test253Child0Event : Event {
-    data object ChildRunning : Test253Child0Event
-    sealed interface Error : Test253Child0Event {
+sealed interface Test253SceSynthInvokeFooEvent : Event {
+    data object ChildRunning : Test253SceSynthInvokeFooEvent
+    sealed interface Error : Test253SceSynthInvokeFooEvent {
         data object Execution : Error
     }
-    data object Failure : Test253Child0Event
-    data object ParentToChild : Test253Child0Event
-    data object Success : Test253Child0Event
+    data object Failure : Test253SceSynthInvokeFooEvent
+    data object ParentToChild : Test253SceSynthInvokeFooEvent
+    data object Success : Test253SceSynthInvokeFooEvent
 }
 // --- State Machine (W3C SCXML) ---
 
-class Test253Child0StateMachine(
+class Test253SceSynthInvokeFooStateMachine(
     scriptEngine: ScxmlScriptEngine? = null
-) : StateMachineEngine<Test253Child0State, Test253Child0Event>(scriptEngine) {
+) : StateMachineEngine<Test253SceSynthInvokeFooState, Test253SceSynthInvokeFooEvent>(scriptEngine) {
 
     // Datamodel (W3C SCXML 5.3)
 
-    override val initialState: Test253Child0State = Test253Child0State.Sub0
+    override val initialState: Test253SceSynthInvokeFooState = Test253SceSynthInvokeFooState.Sub0
 
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
@@ -46,50 +46,50 @@ class Test253Child0StateMachine(
 
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): Test253Child0State? = when (stateId) {
-        "sub0" -> Test253Child0State.Sub0
-        "sub1" -> Test253Child0State.Sub1
-        "subFinal" -> Test253Child0State.SubFinal
+    override fun resolveState(stateId: String): Test253SceSynthInvokeFooState? = when (stateId) {
+        "sub0" -> Test253SceSynthInvokeFooState.Sub0
+        "sub1" -> Test253SceSynthInvokeFooState.Sub1
+        "subFinal" -> Test253SceSynthInvokeFooState.SubFinal
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: Test253Child0State): String = when (state) {
-        is Test253Child0State.Sub0 -> "sub0"
-        is Test253Child0State.Sub1 -> "sub1"
-        is Test253Child0State.SubFinal -> "subFinal"
+    override fun stateIdOf(state: Test253SceSynthInvokeFooState): String = when (state) {
+        is Test253SceSynthInvokeFooState.Sub0 -> "sub0"
+        is Test253SceSynthInvokeFooState.Sub1 -> "sub1"
+        is Test253SceSynthInvokeFooState.SubFinal -> "subFinal"
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: Test253Child0State): Boolean = when (state) {
+    override fun isAtomicState(state: Test253SceSynthInvokeFooState): Boolean = when (state) {
         else -> true
     }
 
 
     // W3C SCXML 3.13: Document order for exit ordering
-    override fun documentOrderOf(state: Test253Child0State): Int = when (state) {
-        is Test253Child0State.Sub0 -> 0
-        is Test253Child0State.Sub1 -> 1
-        is Test253Child0State.SubFinal -> 2
+    override fun documentOrderOf(state: Test253SceSynthInvokeFooState): Int = when (state) {
+        is Test253SceSynthInvokeFooState.Sub0 -> 0
+        is Test253SceSynthInvokeFooState.Sub1 -> 1
+        is Test253SceSynthInvokeFooState.SubFinal -> 2
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): Test253Child0Event? = when (name) {
-        "childRunning" -> Test253Child0Event.ChildRunning
-        "error.execution" -> Test253Child0Event.Error.Execution
-        "failure" -> Test253Child0Event.Failure
-        "parentToChild" -> Test253Child0Event.ParentToChild
-        "success" -> Test253Child0Event.Success
+    override fun resolveEventByName(name: String): Test253SceSynthInvokeFooEvent? = when (name) {
+        "childRunning" -> Test253SceSynthInvokeFooEvent.ChildRunning
+        "error.execution" -> Test253SceSynthInvokeFooEvent.Error.Execution
+        "failure" -> Test253SceSynthInvokeFooEvent.Failure
+        "parentToChild" -> Test253SceSynthInvokeFooEvent.ParentToChild
+        "success" -> Test253SceSynthInvokeFooEvent.Success
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
-    override fun eventNameOf(event: Test253Child0Event): String? = when (event) {
-        is Test253Child0Event.ChildRunning -> "childRunning"
-        is Test253Child0Event.Error.Execution -> "error.execution"
-        is Test253Child0Event.Failure -> "failure"
-        is Test253Child0Event.ParentToChild -> "parentToChild"
-        is Test253Child0Event.Success -> "success"
+    override fun eventNameOf(event: Test253SceSynthInvokeFooEvent): String? = when (event) {
+        is Test253SceSynthInvokeFooEvent.ChildRunning -> "childRunning"
+        is Test253SceSynthInvokeFooEvent.Error.Execution -> "error.execution"
+        is Test253SceSynthInvokeFooEvent.Failure -> "failure"
+        is Test253SceSynthInvokeFooEvent.ParentToChild -> "parentToChild"
+        is Test253SceSynthInvokeFooEvent.Success -> "success"
     }
 
 
@@ -104,7 +104,7 @@ class Test253Child0StateMachine(
         engine.createSession(sid)
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        engine.setupSystemVariables(sid, "test253_child0")
+        engine.setupSystemVariables(sid, "test253__sce_synth_invoke__foo")
 
         // W3C SCXML 5.2: Runtime variable 'Var2' (late binding, undefined)
         try {
@@ -137,7 +137,7 @@ class Test253Child0StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test253Child0Event.Error.Execution)
+            raiseInternal(Test253SceSynthInvokeFooEvent.Error.Execution)
             false
         }
     }
@@ -150,7 +150,7 @@ class Test253Child0StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test253Child0Event.Error.Execution)
+            raiseInternal(Test253SceSynthInvokeFooEvent.Error.Execution)
         }
     }
 
@@ -162,12 +162,12 @@ class Test253Child0StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test253Child0Event.Error.Execution)
+            raiseInternal(Test253SceSynthInvokeFooEvent.Error.Execution)
         }
     }
 
     // W3C SCXML 5.10: Set _event before event processing
-    private fun setCurrentEventInScriptEngine(event: Test253Child0Event) {
+    private fun setCurrentEventInScriptEngine(event: Test253SceSynthInvokeFooEvent) {
         ensureScriptEngine()
         val engine = scriptEngine ?: return
         val sid = scriptSessionId ?: return
@@ -196,50 +196,50 @@ class Test253Child0StateMachine(
 
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
-        state: Test253Child0State,
-        event: Test253Child0Event
-    ): TransitionResult<Test253Child0State> {
+        state: Test253SceSynthInvokeFooState,
+        event: Test253SceSynthInvokeFooEvent
+    ): TransitionResult<Test253SceSynthInvokeFooState> {
         // W3C SCXML 5.10: Set _event before guard evaluation
         setCurrentEventInScriptEngine(event)
         return when (state) {
-        is Test253Child0State.Sub0 -> processSub0(event)
+        is Test253SceSynthInvokeFooState.Sub0 -> processSub0(event)
         else -> TransitionResult.Ignored
     }
     }
 
     // W3C SCXML Appendix D: Eventless (null) transition check
     override fun processNullEvent(
-        state: Test253Child0State
-    ): TransitionResult<Test253Child0State> = when (state) {
-        is Test253Child0State.Sub1 -> processNullSub1()
+        state: Test253SceSynthInvokeFooState
+    ): TransitionResult<Test253SceSynthInvokeFooState> = when (state) {
+        is Test253SceSynthInvokeFooState.Sub1 -> processNullSub1()
         else -> TransitionResult.Ignored
     }
 
     // --- Per-State Null (Eventless) Handlers ---
 
     private fun processNullSub1(
-    ): TransitionResult<Test253Child0State> = when {
-        safeEvaluateGuard("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> TransitionResult.External(Test253Child0State.SubFinal, Test253Child0State.Sub1)
-        safeEvaluateGuard("Var2 == 'scxml'") -> TransitionResult.External(Test253Child0State.SubFinal, Test253Child0State.Sub1)
+    ): TransitionResult<Test253SceSynthInvokeFooState> = when {
+        safeEvaluateGuard("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1)
+        safeEvaluateGuard("Var2 == 'scxml'") -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test253Child0State.SubFinal, Test253Child0State.Sub1)
+        else -> TransitionResult.External(Test253SceSynthInvokeFooState.SubFinal, Test253SceSynthInvokeFooState.Sub1)
     }
 
     // --- Per-State Event Handlers ---
 
     private fun processSub0(
-        event: Test253Child0Event
-    ): TransitionResult<Test253Child0State> = when {
-        event is Test253Child0Event.ParentToChild -> TransitionResult.External(Test253Child0State.Sub1, Test253Child0State.Sub0)
+        event: Test253SceSynthInvokeFooEvent
+    ): TransitionResult<Test253SceSynthInvokeFooState> = when {
+        event is Test253SceSynthInvokeFooEvent.ParentToChild -> TransitionResult.External(Test253SceSynthInvokeFooState.Sub1, Test253SceSynthInvokeFooState.Sub0)
 
         else -> TransitionResult.Ignored
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    override fun onEntry(state: Test253Child0State) {
+    override fun onEntry(state: Test253SceSynthInvokeFooState) {
         when (state) {
-            is Test253Child0State.Sub0 -> {
+            is Test253SceSynthInvokeFooState.Sub0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub0")) return
 
@@ -247,11 +247,11 @@ class Test253Child0StateMachine(
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childRunning", "")
             }
-            is Test253Child0State.Sub1 -> {
+            is Test253SceSynthInvokeFooState.Sub1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub1")) return
             }
-            is Test253Child0State.SubFinal -> {
+            is Test253SceSynthInvokeFooState.SubFinal -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -261,15 +261,15 @@ class Test253Child0StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    override fun onExit(state: Test253Child0State) {
+    override fun onExit(state: Test253SceSynthInvokeFooState) {
         when (state) {
-            is Test253Child0State.Sub0 -> {
+            is Test253SceSynthInvokeFooState.Sub0 -> {
                 activeStateIds.remove("sub0")
             }
-            is Test253Child0State.Sub1 -> {
+            is Test253SceSynthInvokeFooState.Sub1 -> {
                 activeStateIds.remove("sub1")
             }
-            is Test253Child0State.SubFinal -> {
+            is Test253SceSynthInvokeFooState.SubFinal -> {
                 activeStateIds.remove("subFinal")
             }
         }
@@ -277,19 +277,19 @@ class Test253Child0StateMachine(
 
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
-        source: Test253Child0State,
-        event: Test253Child0Event?
+        source: Test253SceSynthInvokeFooState,
+        event: Test253SceSynthInvokeFooEvent?
     ) {
         when (source) {
-        is Test253Child0State.Sub0 -> when {
-            event is Test253Child0Event.ParentToChild -> {
+        is Test253SceSynthInvokeFooState.Sub0 -> when {
+            event is Test253SceSynthInvokeFooEvent.ParentToChild -> {
 
 
             executeAssign("Var2", "_event.origintype")
             }
             else -> {}
         }
-        is Test253Child0State.Sub1 -> when {
+        is Test253SceSynthInvokeFooState.Sub1 -> when {
             event == null && safeEvaluateGuard("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> {
 
 
