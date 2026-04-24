@@ -311,22 +311,6 @@ implemented by `crate::position_map::Origin::CallSite` and
   navigate to the body they wrote rather than to a caller that did
   nothing wrong.
 
-**Residual asymmetry — diagnostic coordinates only.** Subset
-coverage on the C++ Interpreter side is closed (Phase B M5): every
-document the AOT pipeline accepts through the template path now
-expands identically at runtime. The only remaining divergence is
-*where* a template-fired diagnostic's `location.{file, row, col}`
-points: the C++ runtime reports at post-expansion positions (the
-pre-`f68824ba` Rust behaviour) because no `PositionMap` port has
-landed on the C++ side. The AOT pipeline remaps coordinates through
-`crate::position_map` so diagnostics name the caller's `<sce:use>`
-element or the template-file body as appropriate. The asymmetry
-re-opens under the RFC §1 Q3 trigger conditions (user report,
-IDE / telemetry consumer needing deep source coordinates, or
-parity-harness fixture pressure on error-coordinate agreement);
-absent any of those signals, the runtime position behaviour is a
-documented scope marker rather than a defect.
-
 Other XML meta-processing primitives (parameter entities,
 conditional inclusion, computed attributes, Turing-complete
 templating) remain out of scope — see `ARCHITECTURE.md` → "Scope &
