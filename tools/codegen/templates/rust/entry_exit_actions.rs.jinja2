@@ -28,7 +28,7 @@
 {% if model.has_entry_actions %}
         match state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% if state.datamodel and model.binding == 'late' %}
                 // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
@@ -186,6 +186,16 @@
                     );
                 }
 {% endif %}
+{% endif %}
+{% if state.is_final and state.donedata and not state.parent %}
+                // W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
+                // invoking parent's raise_done_invoke can lift it onto
+                // done.invoke.<id>._event.data. Mirrors the C++ AOT
+                // stashDonedataAtFinal contract and Kotlin
+                // StateMachineEngine.stashDonedataAtFinal.
+                if done_data_ok {
+                    engine.stash_donedata_at_final(done_event_data);
+                }
 {% endif %}
 {% if state.is_final and state.parent %}
                 // W3C SCXML 3.7: Generate done.state.{{ state.parent }} event

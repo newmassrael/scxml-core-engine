@@ -68,13 +68,23 @@ pub fn drain_and_raise_child_events<P: StatePolicy>(
 ///
 /// Tries specific `done.invoke.{invoke_id}` first, falls back to generic `done.invoke`.
 /// This handles both event naming patterns at runtime, replacing conditional template logic.
-pub fn raise_done_invoke<P: StatePolicy>(invoke_id: &str, engine: &mut Engine<P>) {
+///
+/// `donedata` is the child's stashed top-level `<final>` payload (from
+/// [`Engine::donedata_at_final`](crate::Engine::donedata_at_final)). It is
+/// lifted onto `_event.data` per W3C SCXML 5.5 + 6.3.1. Pass an empty string
+/// when the child has no `<donedata>`.
+pub fn raise_done_invoke<P: StatePolicy>(
+    invoke_id: &str,
+    donedata: String,
+    engine: &mut Engine<P>,
+) {
     let specific = format!("done.invoke.{}", invoke_id);
     let event = P::get_event_from_name(&specific)
         .or_else(|| P::get_event_from_name("done.invoke"));
     if let Some(ev) = event {
         let mut meta = EventWithMetadata::new(ev);
         meta.metadata.invoke_id = invoke_id.to_string();
+        meta.metadata.data = donedata;
         engine.raise_external_with_meta(meta);
     }
 }

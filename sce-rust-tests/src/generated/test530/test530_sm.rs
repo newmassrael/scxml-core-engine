@@ -360,8 +360,15 @@ impl Test530Policy {
                 // W3C SCXML 6.4: Check if child completed during initialize
                 if self.child_invoke_0.as_ref().map_or(false, |c| c.is_in_final_state()) {
                     self.pending_done_invoke_invoke_0 = true;
+                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+                    // done.invoke.<id>._event.data.
+                    let donedata = self.child_invoke_0
+                        .as_ref()
+                        .map(|c| c.donedata_at_final().to_string())
+                        .unwrap_or_default();
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "_invoke_0",
+                        donedata,
                         engine,
                     );
                 }
@@ -389,8 +396,12 @@ impl Test530Policy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_invoke_0 {
                     self.pending_done_invoke_invoke_0 = true;
+                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+                    // done.invoke.<id>._event.data.
+                    let donedata = child.donedata_at_final().to_string();
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "_invoke_0",
+                        donedata,
                         engine,
                     );
                 }

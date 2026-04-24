@@ -158,6 +158,15 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) on_http_send: Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse>>>,
     /// W3C SCXML 6.2: Delayed event scheduler.
     pub(crate) scheduler: PullScheduler<P::Event>,
+    /// W3C SCXML 5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
+    /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
+    ///
+    /// Mirrors the C++ AOT `stashDonedataAtFinal` / `donedataAtFinal()` contract
+    /// and the Kotlin `StateMachineEngine.donedataAtFinal` field. Populated by
+    /// generated `execute_entry_actions` code on a child's top-level final and
+    /// read by the parent's [`helpers::invoke_processing::raise_done_invoke`]
+    /// before emitting `done.invoke.<id>`.
+    pub(crate) donedata_at_final: String,
 }
 
 impl<P: StatePolicy> Engine<P> {
@@ -180,6 +189,7 @@ impl<P: StatePolicy> Engine<P> {
             completion_callback: None,
             on_http_send: None,
             scheduler: PullScheduler::new(),
+            donedata_at_final: String::new(),
         }
     }
 
@@ -437,6 +447,24 @@ impl<P: StatePolicy> Engine<P> {
     /// W3C SCXML 3.3: Whether the current state is a top-level final state.
     pub fn is_in_final_state(&self) -> bool {
         P::is_final_state(self.current_state)
+    }
+
+    /// W3C SCXML 5.5 + 6.3.1: Stash the donedata payload evaluated on a
+    /// top-level `<final>` so the invoking parent can lift it onto
+    /// `done.invoke.<id>._event.data`.
+    ///
+    /// Called from generated `execute_entry_actions` code on a child engine
+    /// (1:1 port of the C++ AOT `stashDonedataAtFinal` / Kotlin
+    /// `StateMachineEngine.stashDonedataAtFinal` contract).
+    pub fn stash_donedata_at_final(&mut self, data: String) {
+        self.donedata_at_final = data;
+    }
+
+    /// W3C SCXML 5.5 + 6.3.1: Read the donedata payload stashed by a
+    /// top-level `<final>` on this engine. Returns an empty string when the
+    /// final had no `<donedata>`, matching C++ AOT / Kotlin semantics.
+    pub fn donedata_at_final(&self) -> &str {
+        &self.donedata_at_final
     }
 
     /// Access the inner policy (read-only).

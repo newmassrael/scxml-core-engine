@@ -218,8 +218,17 @@ impl Test347Policy {
                 // W3C SCXML 6.4: Check if child completed during initialize (test 236)
                 if self.child_child.as_ref().map_or(false, |c| c.is_in_final_state()) {
                     self.pending_done_invoke_child = true;
+                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+                    // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+                    // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+                    // + EventMetadataHelper::createDoneInvokeEvent).
+                    let donedata = self.child_child
+                        .as_ref()
+                        .map(|c| c.donedata_at_final().to_string())
+                        .unwrap_or_default();
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "child",
+                        donedata,
                         engine,
                     );
                 }
@@ -254,8 +263,12 @@ impl Test347Policy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_child {
                     self.pending_done_invoke_child = true;
+                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+                    // done.invoke.<id>._event.data.
+                    let donedata = child.donedata_at_final().to_string();
                     sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
                         "child",
+                        donedata,
                         engine,
                     );
                 }
