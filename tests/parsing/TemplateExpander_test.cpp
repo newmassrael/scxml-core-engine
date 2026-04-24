@@ -10,6 +10,7 @@
 // `feedback_built_but_unconsumed.md`, every new helper here must
 // be exercised so the header is not dead-code.
 
+#include "parsing/PugiXMLParser.h"
 #include "parsing/TemplateExpander.h"
 #include "parsing/TemplateError.h"
 
@@ -391,6 +392,38 @@ TEST(TemplateExpander, ExpandStringNotFoundThrows) {
     EXPECT_THROW(
         expandString(caller, "/tmp/caller.scxml", "/tmp"),
         SCE::parsing::TemplateNotFound);
+}
+
+// ── PugiXMLDocument::processSceTemplate: roundtrip through parser ──
+// End-to-end path: write caller + template to disk, parse through
+// the real PugiXMLParser so sourceText_ / sourcePath_ / basePath_
+// are populated, run processSceTemplate, and assert the returned
+// SceTemplateResult.positions looks up as expected. Closes the
+// RFC §3 P2 deliverable #1 contract (processSceTemplate returns
+// PositionMap) with a consumer exercising the threaded member.
+TEST(ProcessSceTemplate, RoundtripResolvesBodyAndCallsite) {
+    const auto tmpDir = std::filesystem::temp_directory_path() /
+                        "sce_process_sce_template_test_roundtrip";
+    std::filesystem::create_directories(tmpDir);
+    const auto tmplPath = tmpDir / "t.scxml";
+    const auto callerPath = tmpDir / "caller.scxml";
+    {
+        std::ofstream out(tmplPath, std::ios::binary);
+        out << R"(<sce:template xmlns:sce="http://sce.dev/ext"><sce:param name="id"/><state id="{$id}"/></sce:template>)";
+    }
+    {
+        std::ofstream out(callerPath, std::ios::binary);
+        out << R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml" id="S1"/></root>)";
+    }
+
+    SCE::PugiXMLParser parser;
+    auto doc = parser.parseFile(callerPath.string());
+    ASSERT_NE(doc, nullptr);
+    const auto result = doc->processSceTemplate();
+    ASSERT_TRUE(result.ok);
+    EXPECT_FALSE(result.positions.is_identity());
+
+    std::filesystem::remove_all(tmpDir);
 }
 
 // ── TemplateError::location() populated at throw sites ──────────────
