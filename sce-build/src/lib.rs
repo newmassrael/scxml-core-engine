@@ -1348,6 +1348,34 @@ fn collect_scxml_remote_peers(
             }
         }
     }
+
+    // SCE_MESH.md §9.6.6 rule 3 — synth-side inbound resolution.
+    // The parser rewrites inline `<content>` invokes to
+    // `src="#<synth>"` in the **in-memory** model only; the parent's
+    // on-disk SCXML still carries inline `<content>` with no `src=`
+    // attribute, so the regex scan above cannot observe the rewrite
+    // when `resolved_name` *is* the synth. Invert via the reserved
+    // `__sce_synth_invoke__` infix: the parent is the prefix, declared
+    // as a topology machine by the rule-3 override, and must be on a
+    // different partition for the remote-mesh shape to apply (matching
+    // the classifier's own cross-partition condition at
+    // `classify_remote_scxml_invokes`).
+    if let Some((parent_candidate, _)) =
+        resolved_name.rsplit_once(crate::mesh::deploy::SYNTH_INVOKE_INFIX)
+    {
+        if !parent_candidate.is_empty()
+            && deploy_cfg.device_for_machine(parent_candidate).is_some()
+        {
+            let self_partition =
+                mesh::partitions::partition_for_machine(deploy_cfg, resolved_name);
+            let parent_partition =
+                mesh::partitions::partition_for_machine(deploy_cfg, parent_candidate);
+            if self_partition != parent_partition {
+                inbound.insert(parent_candidate.to_string());
+            }
+        }
+    }
+
     model.scxml_remote_inbound_peers = inbound.into_iter().collect();
     // SCE_MESH.md §9.6 — codegen-shape seam. When at least one sibling
     // invokes this machine remotely, the generated SM must be
@@ -2587,6 +2615,218 @@ partitions:
             info.remote_mesh_target.is_none(),
             "default-inheritance synth must stay local; got {:?}",
             info.remote_mesh_target,
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// §9.6.6 rule 3 override — peer-collection layer. The parser
+    /// rewrites inline `<content>` in-memory only, so the on-disk
+    /// parent.scxml still carries inline content with no `src=`
+    /// attribute. The synth-side inbound scan therefore needs the
+    /// `__sce_synth_invoke__` infix inversion to recover its parent
+    /// as an inbound peer; this test pins that contract by running
+    /// `collect_scxml_remote_peers` from **both** sides of the same
+    /// override fixture used by `synth_invoke_override_flagged_remote`.
+    #[test]
+    fn synth_invoke_override_wires_both_peer_sides() {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_synth_peers_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    platform: linux-x86_64
+    machines:
+      parent:
+        source: parent.scxml
+      parent__sce_synth_invoke__inv0:
+        source: parent__sce_synth_invoke__inv0.scxml
+partitions:
+  p_main:
+    machines: [parent]
+    contains:
+      invokes:
+        - { machine: parent, invoke: inv0 }
+  p_remote:
+    machines: [parent__sce_synth_invoke__inv0]
+    contains:
+      invokes:
+        - { machine: parent__sce_synth_invoke__inv0, invoke: unused }
+"##;
+        let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" id="inv0">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done">
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"##;
+
+        let deploy_path = tmp.join("deploy.yaml");
+        fs::write(&deploy_path, deploy).unwrap();
+        fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
+
+        // Parse parent — side-effect writes the synth SCXML sibling.
+        let mut parent_model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent with inline content");
+
+        let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must admit override");
+
+        classify_remote_scxml_invokes(&mut parent_model, &cfg, "parent");
+        collect_scxml_remote_peers(&mut parent_model, &cfg, "parent", &deploy_path);
+
+        assert_eq!(
+            parent_model.scxml_remote_outbound_peers,
+            vec!["parent__sce_synth_invoke__inv0".to_string()],
+            "parent must list synth as outbound peer",
+        );
+        assert!(
+            parent_model.scxml_remote_inbound_peers.is_empty(),
+            "synth does not invoke back into parent; inbound must stay empty (got {:?})",
+            parent_model.scxml_remote_inbound_peers,
+        );
+
+        // Now the synth side. Parse the parser-emitted synth SCXML
+        // directly; it contains only `<final>` so the model has no
+        // invokes of its own. The inbound scan across siblings would
+        // miss the parent (parent.scxml still has inline content, no
+        // `src=` attribute), so the §9.6.6 rule-3 infix inversion is
+        // what produces the correct inbound peer set.
+        let synth_src = tmp.join("parent__sce_synth_invoke__inv0.scxml");
+        assert!(synth_src.exists(), "parser must have written the synth sibling");
+        let mut synth_model = parser::SCXMLParser::new()
+            .parse_file(synth_src.to_str().unwrap())
+            .expect("parse synth");
+
+        classify_remote_scxml_invokes(
+            &mut synth_model,
+            &cfg,
+            "parent__sce_synth_invoke__inv0",
+        );
+        collect_scxml_remote_peers(
+            &mut synth_model,
+            &cfg,
+            "parent__sce_synth_invoke__inv0",
+            &deploy_path,
+        );
+
+        assert!(
+            synth_model.scxml_remote_outbound_peers.is_empty(),
+            "synth body has no invokes; outbound must be empty (got {:?})",
+            synth_model.scxml_remote_outbound_peers,
+        );
+        assert_eq!(
+            synth_model.scxml_remote_inbound_peers,
+            vec!["parent".to_string()],
+            "synth must recognize its parent as an inbound peer via the \
+             __sce_synth_invoke__ infix inversion (rule-3 override)",
+        );
+        assert!(
+            synth_model.is_remote_invoke_target,
+            "synth with a cross-partition parent must emit WorkerSessionHost",
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// §9.6.6 rule 3 default (same partition) — peer-collection layer.
+    /// The synth inherits the parent's partition, classifier keeps the
+    /// invoke local, and the peer collection must NOT wire the parent
+    /// as a mesh inbound peer either. Otherwise the synth would emit a
+    /// WorkerSessionHost for a partner that never publishes wire-14,
+    /// corrupting the local child-session path shared with W3C
+    /// test191/192/253.
+    #[test]
+    fn synth_invoke_default_does_not_wire_parent_inbound() {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_synth_peers_local_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent:
+        source: parent.scxml
+partitions:
+  p_main:
+    machines: [parent]
+    contains:
+      invokes:
+        - { machine: parent, invoke: inv0 }
+"##;
+        let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" id="inv0">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done">
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"##;
+
+        let deploy_path = tmp.join("deploy.yaml");
+        fs::write(&deploy_path, deploy).unwrap();
+        fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
+
+        parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent with inline content");
+
+        let synth_src = tmp.join("parent__sce_synth_invoke__inv0.scxml");
+        let mut synth_model = parser::SCXMLParser::new()
+            .parse_file(synth_src.to_str().unwrap())
+            .expect("parse synth");
+
+        let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must parse");
+
+        classify_remote_scxml_invokes(
+            &mut synth_model,
+            &cfg,
+            "parent__sce_synth_invoke__inv0",
+        );
+        collect_scxml_remote_peers(
+            &mut synth_model,
+            &cfg,
+            "parent__sce_synth_invoke__inv0",
+            &deploy_path,
+        );
+
+        assert!(
+            synth_model.scxml_remote_inbound_peers.is_empty(),
+            "same-partition synth must NOT wire parent as inbound peer; got {:?}",
+            synth_model.scxml_remote_inbound_peers,
+        );
+        assert!(
+            !synth_model.is_remote_invoke_target,
+            "same-partition synth must keep is_remote_invoke_target=false \
+             to preserve the local child-session shape",
         );
 
         let _ = fs::remove_dir_all(&tmp);

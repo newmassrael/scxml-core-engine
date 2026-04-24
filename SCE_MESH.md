@@ -1520,6 +1520,8 @@ Per W3C §6.4, `<invoke>` may carry the child machine's SCXML inline via `<conte
 3. The synthesized machine is placed into the same partition as the parent by default. `deploy.yaml` `partitions:` may explicitly reassign it to a different partition (enabling distributed inline invoke).
 4. AOT codegen produces a state machine class for the synthesized machine identical to named peers.
 
+Peer enumeration for the synthesized machine follows the reserved infix. The parser rewrites inline `<content>` to `src="#<synth>"` **only in the in-memory model** — the parent's on-disk SCXML still carries inline `<content>` with no `src=` attribute, so the sibling-file regex that resolves `scxml_remote_inbound_peers` for named peers cannot observe the rewrite when the synthesized machine is the codegen target. `sce-build` closes this by inverting the `__sce_synth_invoke__` infix: when `resolved_name` matches the infix and the extracted parent id is a declared topology machine with a distinct partition per rule 3, the parent is added to the synthesized machine's inbound peer list. Same-partition synthesized machines stay off the mesh inbound set (per rule 3 default) and the local child-session shape is preserved.
+
 At runtime, the rewritten `<invoke src="#<parent>__sce_synth_invoke__<invoke_id>">` resolves through the normal remote invoke path. The author's intent ("inline content") is preserved — the child is semantically the inline SCXML — but the execution path is the same as named-peer invoke.
 
 Deploy.yaml override example:
