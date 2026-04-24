@@ -63,7 +63,12 @@ using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
 namespace detail {
 
 /// Parse `host:port` (IPv4 only). Returns false on malformed input or a
-/// port outside [1, 65535]. Caller is responsible for ensuring the host
+/// port outside [0, 65535]. Port 0 is the BSD-sockets sentinel that asks
+/// the kernel to pick an ephemeral port at bind() time; listen-side
+/// callers read the assigned port back via `getsockname` on the bound
+/// socket. On the connect side a literal `:0` parses but ::connect then
+/// fails cleanly (no peer listens on 0), so Client::connect returns false
+/// without a silent fault. Caller is responsible for ensuring the host
 /// portion is an IPv4 dotted quad — the harness reference transport is
 /// loopback-only by design (SCE_MESH.md §16.8.3).
 ///
@@ -81,7 +86,7 @@ inline bool parse_endpoint(const std::string& endpoint, sockaddr_in& out) {
     int port = 0;
     auto [parse_end, ec] = std::from_chars(port_begin, port_end, port);
     if (ec != std::errc{} || parse_end != port_end) return false;
-    if (port < 1 || port > 65535) return false;
+    if (port < 0 || port > 65535) return false;
     std::string host = endpoint.substr(0, colon);
     std::memset(&out, 0, sizeof(out));
     out.sin_family = AF_INET;

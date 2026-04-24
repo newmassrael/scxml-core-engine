@@ -108,13 +108,34 @@ int main() {
             std::fprintf(stderr, "FAIL: parse_endpoint accepted trailing whitespace\n");
             return 102;
         }
-        if (SCE::Mesh::CustomTcp::detail::parse_endpoint("127.0.0.1:0", addr)) {
-            std::fprintf(stderr, "FAIL: parse_endpoint accepted port 0\n");
-            return 103;
+        // Port 0 is the BSD-sockets ephemeral-port sentinel. parse_endpoint
+        // must surface it as sin_port=0 so that Server's bind() delegates
+        // port assignment to the kernel and Server::local_endpoint() reads
+        // the actual port back. A future regression that re-introduces the
+        // strict [1, 65535] check would fire here.
+        {
+            sockaddr_in ephem{};
+            if (!SCE::Mesh::CustomTcp::detail::parse_endpoint("127.0.0.1:0", ephem)) {
+                std::fprintf(stderr, "FAIL: parse_endpoint rejected ephemeral port 0\n");
+                return 103;
+            }
+            if (ntohs(ephem.sin_port) != 0) {
+                std::fprintf(stderr,
+                             "FAIL: parse_endpoint accepted :0 but sin_port=%u\n",
+                             ntohs(ephem.sin_port));
+                return 103;
+            }
+        }
+        // Negative ports still rejected — from_chars parses "-1" into an int
+        // successfully, so the `port < 0` guard is what actually protects
+        // against the sin_port=htons(uint16_t(-1)) reinterpretation.
+        if (SCE::Mesh::CustomTcp::detail::parse_endpoint("127.0.0.1:-1", addr)) {
+            std::fprintf(stderr, "FAIL: parse_endpoint accepted negative port\n");
+            return 104;
         }
         if (SCE::Mesh::CustomTcp::detail::parse_endpoint("127.0.0.1:65536", addr)) {
             std::fprintf(stderr, "FAIL: parse_endpoint accepted port out of range\n");
-            return 104;
+            return 105;
         }
     }
 
