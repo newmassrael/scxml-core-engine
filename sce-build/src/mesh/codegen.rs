@@ -815,6 +815,7 @@ pub fn generate_mesh(
     partition_wire21_inbound: &[String],
     scxml_remote_outbound_peers: &[crate::model::ScxmlRemotePeerBinding],
     scxml_remote_inbound_peers: &[crate::model::ScxmlRemotePeerBinding],
+    someip_invoke_service_ids: &BTreeMap<String, u16>,
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -862,6 +863,7 @@ pub fn generate_mesh(
             partition_wire21_inbound,
             scxml_remote_outbound_peers,
             scxml_remote_inbound_peers,
+            someip_invoke_service_ids,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -994,6 +996,7 @@ fn generate_cpp_mesh(
     partition_wire21_inbound: &[String],
     scxml_remote_outbound_peers: &[crate::model::ScxmlRemotePeerBinding],
     scxml_remote_inbound_peers: &[crate::model::ScxmlRemotePeerBinding],
+    someip_invoke_service_ids: &BTreeMap<String, u16>,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -1434,6 +1437,45 @@ fn generate_cpp_mesh(
         })
         .collect();
 
+    // SCE Mesh RFC F.X-1: per-target SOMEIP service ID constants. Self is
+    // present iff this machine is a §9.6 SOMEIP scxml-invoke participant
+    // (the deploy-wide assigner already filtered on participation). Peers
+    // are listed for every §9.6 SOMEIP outbound + inbound peer the codegen
+    // sees on this machine; the template emits one named constant per
+    // entry (`SCE_SOMEIP_SERVICE_PEER_<peer_name_upper>`) and a single
+    // `SCE_SOMEIP_SERVICE_SELF`. Replaces the legacy
+    // `serviceIdForMachine(...)` constexpr calls in the template.
+    let someip_invoke_service_id_self: Option<u16> =
+        someip_invoke_service_ids.get(machine_name).copied();
+    let someip_invoke_service_ids_peers: Vec<serde_json::Value> = {
+        let mut peer_names: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for peer in scxml_remote_outbound_peers
+            .iter()
+            .chain(scxml_remote_inbound_peers.iter())
+        {
+            if peer.transport.as_deref() == Some("someip") {
+                peer_names.insert(peer.name.as_str());
+            }
+        }
+        peer_names
+            .into_iter()
+            .filter_map(|name| {
+                someip_invoke_service_ids
+                    .get(name)
+                    .map(|sid| {
+                        serde_json::json!({
+                            "name": name,
+                            "name_upper": name.to_ascii_uppercase(),
+                            "service_id_hex": format!("{sid:#06x}"),
+                        })
+                    })
+            })
+            .collect()
+    };
+    let someip_invoke_service_id_self_hex: Option<String> =
+        someip_invoke_service_id_self.map(|sid| format!("{sid:#06x}"));
+
     let ctx = minijinja::context! {
         machine_name => machine_name,
         machine_pascal => machine_pascal,
@@ -1460,6 +1502,8 @@ fn generate_cpp_mesh(
         partition_wire21_inbound_sources => wire21_inbound_sources,
         scxml_remote_outbound_peers => scxml_remote_outbound_peers,
         scxml_remote_inbound_peers => scxml_remote_inbound_peers,
+        someip_invoke_service_id_self_hex => someip_invoke_service_id_self_hex,
+        someip_invoke_service_ids_peers => someip_invoke_service_ids_peers,
     };
 
     let code = tmpl

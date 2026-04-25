@@ -476,6 +476,21 @@ using {{ target.target_pascal }}ShmChannel = SCE::Mesh::ShmChannel<
 
 {% endif %}
 {% if "someip" in transport_types %}
+{# ── SCE Mesh RFC F.X-1: §9.6 SOMEIP scxml-invoke per-machine service IDs ──
+   The hybrid (counter + optional author-pin) allocator runs once per build
+   over the full deploy participant set and produces stable per-machine IDs
+   in the SCE-reserved invoke sub-range [0x8100, 0x817F]. These constants
+   replace the legacy `SCE::Mesh::Someip::serviceIdForMachine(...)` constexpr
+   calls — the IDs are now baked into the generated header, fully visible
+   in wire-trace decoders, and validated at deploy time rather than at C++
+   compile time via FNV-1a hash. The upper half [0x8180, 0x81FF] of the
+   SCE-reserved range is reserved for §16.4 region-liveness (F.X-3). #}
+{% if someip_invoke_service_id_self_hex %}
+inline constexpr vsomeip::service_t SCE_SOMEIP_SERVICE_SELF = {{ someip_invoke_service_id_self_hex }};
+{% endif %}
+{% for peer in someip_invoke_service_ids_peers %}
+inline constexpr vsomeip::service_t SCE_SOMEIP_SERVICE_PEER_{{ peer.name_upper }} = {{ peer.service_id_hex }};
+{% endfor %}
 {% for target in targets if target.state.kind == "someip" %}
 static constexpr vsomeip::service_t SOMEIP_SERVICE_{{ target.target_snake | upper }} = {{ target.state.service.service_id }};
 static constexpr vsomeip::instance_t SOMEIP_INSTANCE_{{ target.target_snake | upper }} = {{ target.state.service.instance_id }};
@@ -1604,7 +1619,7 @@ struct TransportRouter {
 {%-   if peer.transport == "custom_tcp" %}
 {%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
 {%-   elif peer.transport == "someip" %}
-{%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ machine_name ~ "_scxml_invoke_app_, SCE::Mesh::Someip::serviceIdForMachine(\"" ~ machine_name ~ "\"), SCE::Mesh::Someip::serviceIdForMachine(\"" ~ peer.name ~ "\"))"] %}
+{%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ machine_name ~ "_scxml_invoke_app_, SCE_SOMEIP_SERVICE_SELF, SCE_SOMEIP_SERVICE_PEER_" ~ (peer.name | upper) ~ ")"] %}
 {%-   elif peer.transport != "zenoh" %}
 {%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(P2C_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
 {%-     set ns.parts = ns.parts + ["c2p_from_" ~ peer.name ~ "_(C2P_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
@@ -1614,7 +1629,7 @@ struct TransportRouter {
 {%-   if peer.transport == "custom_tcp" %}
 {%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
 {%-   elif peer.transport == "someip" %}
-{%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ machine_name ~ "_scxml_invoke_app_, SCE::Mesh::Someip::serviceIdForMachine(\"" ~ machine_name ~ "\"), SCE::Mesh::Someip::serviceIdForMachine(\"" ~ peer.name ~ "\"))"] %}
+{%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ machine_name ~ "_scxml_invoke_app_, SCE_SOMEIP_SERVICE_SELF, SCE_SOMEIP_SERVICE_PEER_" ~ (peer.name | upper) ~ ")"] %}
 {%-   elif peer.transport != "zenoh" %}
 {%-     set ns.parts = ns.parts + ["p2c_from_" ~ peer.name ~ "_(P2C_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
 {%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(C2P_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}

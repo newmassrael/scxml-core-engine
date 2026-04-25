@@ -7,7 +7,7 @@
   ],
   "services": [
     {
-      "service": "0x81f4",
+      "service": "0x8100",
       "instance": "0x0001",
       "unreliable": "0",
       "reliable": { "port": "30599", "enable-magic-cookies": "false" }

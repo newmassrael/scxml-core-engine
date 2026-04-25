@@ -2074,6 +2074,15 @@ pub fn compile_mesh_transport(
     let partition_wire21_inbound = model.partition_wire21_inbound_sources.clone();
     let scxml_remote_outbound_peers = model.scxml_remote_outbound_peers.clone();
     let scxml_remote_inbound_peers = model.scxml_remote_inbound_peers.clone();
+    // SCE Mesh RFC F.X-1: compute the deploy-wide §9.6 SOMEIP scxml-invoke
+    // service ID map once. The validator already ran inside
+    // `parse_deploy_str` above, so any overflow / pin / collision error
+    // would have surfaced there; reaching this point means the deploy is
+    // assignable and the function returns Ok. Codegen reads self's ID and
+    // each peer's ID from this map to emit per-target constants instead of
+    // `serviceIdForMachine(...)` constexpr calls.
+    let someip_invoke_service_ids =
+        mesh::deploy::assign_someip_invoke_service_ids(&deploy_cfg)?;
     let output = mesh::codegen::generate_mesh(
         &model.name,
         &resolved,
@@ -2090,6 +2099,7 @@ pub fn compile_mesh_transport(
         &partition_wire21_inbound,
         &scxml_remote_outbound_peers,
         &scxml_remote_inbound_peers,
+        &someip_invoke_service_ids,
         language,
         &template_base,
     )?;

@@ -1993,34 +1993,36 @@ fn validate_machine_name_uniqueness(cfg: &DeployConfig) -> Result<(), DeployErro
 /// `validate_scxml_invoke_transport`'s shape) — operators fix one
 /// collision, re-run to surface the next.
 /// SCE Mesh RFC F.X-1 — hybrid (counter + optional author-pin) §9.6 SOMEIP
-/// scxml-invoke service ID validator. Replaces
-/// [`validate_someip_scxml_invoke_service_id_collisions`]'s FNV-collision
-/// shape with three operationally-distinct rejection codes:
+/// scxml-invoke service ID assignment. Returns the assignment map for use
+/// by codegen; errors are converted to [`DeployError`] variants on the way
+/// out so the validator and the codegen call site share one source of
+/// truth.
 ///
+/// **Participant projection.** A machine is a participant iff it (a)
+/// declares `bindings["#X"].transport: someip` for a declared peer `X`
+/// (excluding internal targets and dangling references) or (b) is named as
+/// the peer `X` in such a binding from another machine. Mirrors the legacy
+/// [`validate_someip_scxml_invoke_service_id_collisions`] projection so the
+/// two validators see the same set during the F.X-1 → F.X-3 coexistence
+/// window. Same conservative single-domain assumption — multi-OEM
+/// `vsomeip.json` `network:` boundaries are a separate landing.
+///
+/// **Rejection shapes** (each maps to a typed [`DeployError`] variant):
 /// 1. **Overflow** — participant count > 128 (the invoke sub-range ceiling
 ///    under subsystem range partitioning).
-/// 2. **Pin out-of-range** — author-pinned `someip_service_id:` falls outside
-///    the §9.6 invoke sub-range `[0x8100, 0x817F]` (the upper half of the
-///    SCE-reserved range is reserved for §16.4 region-liveness).
+/// 2. **Pin out-of-range** — author-pinned `someip_service_id:` falls
+///    outside the §9.6 invoke sub-range `[0x8100, 0x817F]` (the upper half
+///    of the SCE-reserved range is reserved for §16.4 region-liveness).
 /// 3. **Pin-vs-pin collision** — two or more machines pin the same value.
 ///
 /// Pin-vs-auto collision is impossible by construction:
 /// [`crate::mesh::transport::someip::assign_invoke_service_ids`]'s counter
 /// skips slots already claimed by pins.
-///
-/// The participant projection mirrors
-/// [`validate_someip_scxml_invoke_service_id_collisions`]: a machine is a
-/// participant iff it (a) declares `bindings["#X"].transport: someip` for a
-/// declared peer `X` (excluding internal targets and dangling references)
-/// or (b) is named as the peer `X` in such a binding from another machine.
-/// Same conservative single-domain assumption — multi-OEM `vsomeip.json`
-/// `network:` boundaries are a separate landing.
-fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), DeployError> {
+pub(crate) fn assign_someip_invoke_service_ids(
+    cfg: &DeployConfig,
+) -> Result<std::collections::BTreeMap<String, u16>, DeployError> {
     use crate::mesh::transport::someip::{assign_invoke_service_ids, AssignInvokeServiceIdError};
 
-    // Same participant projection as the legacy collision validator.
-    // Sharing the projection between the two validators avoids a drift
-    // window where one rejects a deploy the other accepts.
     let declared_machines: std::collections::HashSet<&str> = cfg
         .topology
         .values()
@@ -2066,10 +2068,8 @@ fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), De
         participants_with_pins.insert(name.clone(), pin);
     }
 
-    // Run the assigner. Non-error → success; map each error variant to
-    // the matching DeployError variant for diagnostic continuity.
     match assign_invoke_service_ids(&participants_with_pins) {
-        Ok(_) => Ok(()),
+        Ok(map) => Ok(map),
         Err(AssignInvokeServiceIdError::Overflow {
             participant_count,
             ceiling,
@@ -2096,6 +2096,13 @@ fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), De
             pinned_id,
         }),
     }
+}
+
+/// Parse-time validator wrapper around [`assign_someip_invoke_service_ids`].
+/// Discards the assignment map; codegen calls the assigner directly to
+/// obtain the same map without re-running the participant projection.
+fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), DeployError> {
+    assign_someip_invoke_service_ids(cfg).map(|_| ())
 }
 
 fn validate_someip_scxml_invoke_service_id_collisions(

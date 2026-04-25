@@ -9,19 +9,19 @@
   ],
   "services": [
     {
-      "service": "0x8128",
+      "service": "0x8103",
       "instance": "0x0001",
       "unreliable": "0",
       "reliable": { "port": "30586", "enable-magic-cookies": "false" }
     },
     {
-      "service": "0x81ec",
+      "service": "0x8101",
       "instance": "0x0001",
       "unreliable": "0",
       "reliable": { "port": "30587", "enable-magic-cookies": "false" }
     },
     {
-      "service": "0x8120",
+      "service": "0x8102",
       "instance": "0x0001",
       "unreliable": "0",
       "reliable": { "port": "30588", "enable-magic-cookies": "false" }

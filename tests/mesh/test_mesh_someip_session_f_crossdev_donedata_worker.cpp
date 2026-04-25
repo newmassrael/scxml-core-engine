@@ -15,14 +15,16 @@
 // so service offers go out as three distinct (service-id, instance)
 // pairs over the same SD multicast group.
 //
-// Service IDs (FNV-1a hash of machine name | 0x8100 per
-// SomeipScxmlInvokeEndpoint::serviceIdForMachine):
-//   worker_session_f_donedata_param   → 0x8128 (reliable port 30586)
-//   worker_session_f_donedata_content → 0x81ec (reliable port 30587)
-//   worker_session_f_donedata_nested  → 0x8120 (reliable port 30588)
-// No collision in this 4-machine set; deploy-time validator §9.6 4c+
-// will catch collisions in larger fixtures (≥16 machines, birthday
-// paradox window).
+// Service IDs (RFC F.X-1 hybrid counter + author-pin allocator, lex-sorted
+// across all §9.6 SOMEIP scxml-invoke participants in this deploy):
+//   parent_session_f_donedata          → 0x8100 (parent-side service)
+//   worker_session_f_donedata_content  → 0x8101 (reliable port 30587)
+//   worker_session_f_donedata_nested   → 0x8102 (reliable port 30588)
+//   worker_session_f_donedata_param    → 0x8103 (reliable port 30586)
+// Counter scheme is collision-free up to the 128-slot ceiling of the
+// invoke sub-range [0x8100, 0x817F]; the deploy-time validator surfaces
+// overflow / pin-out-of-range / pin-vs-pin collisions explicitly rather
+// than the FNV-1a low-byte birthday-paradox shape that preceded RFC F.X-1.
 
 #include "worker_session_f_donedata_param_sm.h"
 #include "worker_session_f_donedata_param_transport.h"
