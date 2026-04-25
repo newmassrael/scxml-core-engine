@@ -56,8 +56,24 @@ if [[ -z "$PARENT_NS" || -z "$WORKER_NS" || -z "$WORKER_BIN" || -z "$PARENT_BIN"
 fi
 
 if [[ $EUID -ne 0 ]]; then
-    echo "two_host_fixture: skipping — needs root for 'ip netns exec' "\
-"(rerun ctest under sudo, or set up passwordless sudo for ip)" >&2
+    # Self-elevate when passwordless sudo is configured. After
+    # `sudo visudo` adds `<user> ALL=(ALL) NOPASSWD: ALL`, plain
+    # `ctest` runs as the regular user and the orchestrator re-execs
+    # itself under sudo here so worker/parent spawning, stderr
+    # parsing, and SIGTERM cleanup all run under the same root UID
+    # (signaling a root child from non-root would silently fail at
+    # teardown). `sudo -n` exits non-zero if a password would be
+    # prompted, which falls through to the skip path below.
+    if sudo -n true 2>/dev/null; then
+        exec sudo -E "$0" "$@"
+    fi
+    echo "two_host_fixture: skipping — needs root for 'ip netns exec'." >&2
+    echo "two_host_fixture:   Recommended: configure passwordless sudo once:" >&2
+    echo "two_host_fixture:     sudo visudo" >&2
+    echo "two_host_fixture:     # Add: $USER ALL=(ALL) NOPASSWD: ALL" >&2
+    echo "two_host_fixture:   After that, plain 'ctest' works without sudo." >&2
+    echo "two_host_fixture:   Alternative: rerun the whole test under sudo:" >&2
+    echo "two_host_fixture:     sudo ctest -R mesh_.*_scxml_invoke_crossdev" >&2
     exit 77
 fi
 

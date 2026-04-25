@@ -85,10 +85,17 @@ sce mesh netns ready:
   $WORKER_NS: $WORKER_IP on $VETH_W
 
 build with -DSCE_ENABLE_NETNS_TESTS=ON to register the §9.6 two-host
-fixtures (mesh_someip_scxml_invoke_crossdev,
-mesh_zenoh_scxml_invoke_crossdev). ctest must run as root or under
-passwordless sudo so each test binary can `ip netns exec` into its
-namespace; otherwise the orchestrator skips with code 77.
+fixtures (mesh_someip_scxml_invoke_crossdev, mesh_zenoh_scxml_invoke_crossdev).
+
+For sudoless ctest runs, configure passwordless sudo once:
+  sudo visudo
+  # Add: ${SUDO_USER:-$USER} ALL=(ALL) NOPASSWD: ALL
+After that, plain 'ctest -R mesh_.*_scxml_invoke_crossdev' works as the
+regular user — the orchestrator self-elevates only when needed and skips
+gracefully (code 77 = ctest "Skipped") when neither root nor passwordless
+sudo is available, so a fresh checkout never sees a Failed result here.
+Alternative without sudoers config: rerun the whole test under sudo:
+  sudo ctest -R mesh_.*_scxml_invoke_crossdev
 
 teardown:
   sudo $(dirname "$(readlink -f "$0")")/cleanup_crossdev_netns.sh

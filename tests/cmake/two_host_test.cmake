@@ -5,11 +5,17 @@
 # stack (SOME/IP-SD multicast, Zenoh peer-mesh discovery) can register
 # without each test reimplementing the netns / handshake orchestration.
 #
-# Prerequisites (one-time, must run before ctest):
+# Prerequisites (one-time per machine reboot, must run before ctest):
 #   sudo tests/mesh/setup_crossdev_netns.sh
 #
-# Without that setup the orchestrator exits 77, which ctest reports as
-# `Skipped` thanks to the SKIP_RETURN_CODE property set below.
+# For sudoless ctest runs (recommended), configure passwordless sudo once:
+#   sudo visudo
+#   # Add: <user> ALL=(ALL) NOPASSWD: ALL
+# After that, plain `ctest` runs as the regular user — the orchestrator
+# self-elevates only when needed via `sudo -E`. Without either passwordless
+# sudo or a root invocation (`sudo ctest`), the orchestrator exits 77,
+# which ctest reports as `Skipped` thanks to the SKIP_RETURN_CODE property
+# set below — so a fresh non-root checkout never sees a Failed result.
 #
 # Usage:
 #   include(${PROJECT_SOURCE_DIR}/tests/cmake/two_host_test.cmake)
