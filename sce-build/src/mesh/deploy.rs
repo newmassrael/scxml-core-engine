@@ -745,6 +745,75 @@ pub struct MachineConfig {
     /// `BACKPRESSURE_DROP` (§16.7 row 9). See [`OutboundBufferConfig`].
     #[serde(default)]
     pub outbound_buffer: Option<OutboundBufferConfig>,
+    /// Author-pinned §9.6 SOMEIP scxml-invoke service ID (RFC F.X-1
+    /// hybrid allocator). Optional — when present, the hybrid allocator
+    /// reserves this ID for the machine and skips it during counter
+    /// auto-assignment. Absent ⇒ counter auto-assigns from the lowest
+    /// unreserved slot in lex order.
+    ///
+    /// **Range constraint**: must lie inside the §9.6 invoke sub-range
+    /// `[0x8100, 0x817F]` — the upper half of the SCE-reserved 256-slot
+    /// space is reserved for §16.4 region-liveness (RFC F.X-3).
+    /// [`crate::mesh::transport::someip::assign_invoke_service_ids`]
+    /// rejects out-of-range pins with
+    /// [`DeployError::SomeipScxmlInvokeServiceIdPinOutOfRange`].
+    ///
+    /// **YAML grammar**: accepts either an integer literal (`33029` or
+    /// YAML 1.1 hex `0x8105`) or a quoted hex string (`"0x8105"`). The
+    /// string form is preferred for readability; both round-trip to the
+    /// same `u16`.
+    ///
+    /// Use case: pin the IDs of long-lived participants whose Wireshark
+    /// captures or cross-team contracts depend on a stable service ID.
+    /// New auto-assigned participants will not shift pinned ones.
+    #[serde(default, deserialize_with = "deserialize_someip_service_id")]
+    pub someip_service_id: Option<u16>,
+}
+
+/// Custom deserializer for [`MachineConfig::someip_service_id`].
+///
+/// Accepts both YAML integer literals (`33029`, or YAML 1.1 hex `0x8105`
+/// which parses as `Int(33029)`) and quoted hex strings (`"0x8105"`).
+/// The latter form is preferred for readability — strings are unambiguous
+/// across YAML versions whereas the `0x` prefix is YAML 1.1-only.
+fn deserialize_someip_service_id<'de, D>(deserializer: D) -> Result<Option<u16>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum HexOrInt {
+        Int(u16),
+        Hex(String),
+    }
+
+    let opt = Option::<HexOrInt>::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(HexOrInt::Int(n)) => Ok(Some(n)),
+        Some(HexOrInt::Hex(s)) => {
+            // Accept either `0x8105` or `0X8105`; reject anything else
+            // so author typos like `8105` (decimal-looking but intended
+            // as hex) surface at parse time.
+            let trimmed = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
+            {
+                rest
+            } else {
+                return Err(serde::de::Error::custom(format!(
+                    "someip_service_id: hex string '{s}' must start with `0x` \
+                     (e.g. `\"0x8105\"`); raw decimal integers are also accepted \
+                     (e.g. `33029`) but bare hex strings without the prefix are \
+                     rejected to avoid `0x8105` vs `8105` confusion"
+                )));
+            };
+            u16::from_str_radix(trimmed, 16).map(Some).map_err(|e| {
+                serde::de::Error::custom(format!(
+                    "someip_service_id: cannot parse hex literal '{s}' as u16: {e} \
+                     (expected `0x8100`-style hex inside [0x0000, 0xFFFF])"
+                ))
+            })
+        }
+    }
 }
 
 impl MachineConfig {
@@ -1102,6 +1171,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_discovery_not_supported(&cfg)?;
     validate_synth_invoke_infix(&cfg)?;
     validate_partitions_schema(&cfg)?;
+    validate_someip_scxml_invoke_service_ids(&cfg)?;
     validate_someip_scxml_invoke_service_id_collisions(&cfg)?;
 
     Ok(cfg)
@@ -1922,6 +1992,112 @@ fn validate_machine_name_uniqueness(cfg: &DeployConfig) -> Result<(), DeployErro
 /// returns at the first colliding group (consistent with
 /// `validate_scxml_invoke_transport`'s shape) — operators fix one
 /// collision, re-run to surface the next.
+/// SCE Mesh RFC F.X-1 — hybrid (counter + optional author-pin) §9.6 SOMEIP
+/// scxml-invoke service ID validator. Replaces
+/// [`validate_someip_scxml_invoke_service_id_collisions`]'s FNV-collision
+/// shape with three operationally-distinct rejection codes:
+///
+/// 1. **Overflow** — participant count > 128 (the invoke sub-range ceiling
+///    under subsystem range partitioning).
+/// 2. **Pin out-of-range** — author-pinned `someip_service_id:` falls outside
+///    the §9.6 invoke sub-range `[0x8100, 0x817F]` (the upper half of the
+///    SCE-reserved range is reserved for §16.4 region-liveness).
+/// 3. **Pin-vs-pin collision** — two or more machines pin the same value.
+///
+/// Pin-vs-auto collision is impossible by construction:
+/// [`crate::mesh::transport::someip::assign_invoke_service_ids`]'s counter
+/// skips slots already claimed by pins.
+///
+/// The participant projection mirrors
+/// [`validate_someip_scxml_invoke_service_id_collisions`]: a machine is a
+/// participant iff it (a) declares `bindings["#X"].transport: someip` for a
+/// declared peer `X` (excluding internal targets and dangling references)
+/// or (b) is named as the peer `X` in such a binding from another machine.
+/// Same conservative single-domain assumption — multi-OEM `vsomeip.json`
+/// `network:` boundaries are a separate landing.
+fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use crate::mesh::transport::someip::{assign_invoke_service_ids, AssignInvokeServiceIdError};
+
+    // Same participant projection as the legacy collision validator.
+    // Sharing the projection between the two validators avoids a drift
+    // window where one rejects a deploy the other accepts.
+    let declared_machines: std::collections::HashSet<&str> = cfg
+        .topology
+        .values()
+        .flat_map(|d| d.machines.keys().map(|k| k.as_str()))
+        .collect();
+
+    let mut participants: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine_cfg) in &device.machines {
+            for (target_id, binding) in &machine_cfg.bindings {
+                if binding.transport != "someip" {
+                    continue;
+                }
+                if target_id.is_internal() {
+                    continue;
+                }
+                let peer = target_id.name();
+                if !declared_machines.contains(peer) {
+                    continue;
+                }
+                participants.insert(machine_name.clone());
+                participants.insert(peer.to_string());
+            }
+        }
+    }
+
+    // Build the (machine_name → optional pin) map the assigner consumes.
+    // A non-participant machine's `someip_service_id:` (if any) is ignored
+    // — the field carries no meaning for machines that do not register a
+    // §9.6 service. Surfacing a "pin on non-participant" rejection would
+    // duplicate the upstream "binding refers to non-existent peer" check,
+    // so silent ignore is the right shape (consistent with the participant
+    // projection the legacy validator uses).
+    let mut participants_with_pins: std::collections::BTreeMap<String, Option<u16>> =
+        std::collections::BTreeMap::new();
+    for name in &participants {
+        let pin = cfg
+            .topology
+            .values()
+            .find_map(|d| d.machines.get(name))
+            .and_then(|m| m.someip_service_id);
+        participants_with_pins.insert(name.clone(), pin);
+    }
+
+    // Run the assigner. Non-error → success; map each error variant to
+    // the matching DeployError variant for diagnostic continuity.
+    match assign_invoke_service_ids(&participants_with_pins) {
+        Ok(_) => Ok(()),
+        Err(AssignInvokeServiceIdError::Overflow {
+            participant_count,
+            ceiling,
+        }) => Err(DeployError::SomeipScxmlInvokeServiceIdOverflow {
+            participant_count,
+            ceiling,
+        }),
+        Err(AssignInvokeServiceIdError::PinOutOfRange {
+            machine,
+            pinned_id,
+            range_lo,
+            range_hi,
+        }) => Err(DeployError::SomeipScxmlInvokeServiceIdPinOutOfRange {
+            machine,
+            pinned_id,
+            range_lo,
+            range_hi,
+        }),
+        Err(AssignInvokeServiceIdError::PinCollision {
+            machines,
+            pinned_id,
+        }) => Err(DeployError::SomeipScxmlInvokeServiceIdPinCollision {
+            machines,
+            pinned_id,
+        }),
+    }
+}
+
 fn validate_someip_scxml_invoke_service_id_collisions(
     cfg: &DeployConfig,
 ) -> Result<(), DeployError> {
@@ -4387,5 +4563,224 @@ topology:
 
         parse_deploy_str(&yaml)
             .expect("zenoh-bound colliding pair must not pollute someip collision domain");
+    }
+
+    // ── RFC F.X-1: hybrid (counter + author-pin) service ID validator ──
+
+    #[test]
+    fn someip_service_id_pin_yaml_string_form_parses() {
+        // Quoted hex string form: explicit, YAML-version-independent.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        someip_service_id: "0x8105"
+        bindings:
+          "#worker":
+            transport: someip
+      worker:
+        source: worker.scxml
+"##;
+        let cfg = parse_deploy_str(yaml).expect("string-form pin must parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        assert_eq!(machine.someip_service_id, Some(0x8105));
+    }
+
+    #[test]
+    fn someip_service_id_pin_yaml_int_form_parses() {
+        // Raw decimal integer — equivalent to the string form, accepted
+        // for ergonomics where authors prefer numeric YAML values.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        someip_service_id: 33029
+        bindings:
+          "#worker":
+            transport: someip
+      worker:
+        source: worker.scxml
+"##;
+        let cfg = parse_deploy_str(yaml).expect("int-form pin must parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        assert_eq!(machine.someip_service_id, Some(33029)); // 0x8105
+    }
+
+    #[test]
+    fn someip_service_id_pin_yaml_bare_decimal_string_rejected() {
+        // `"8105"` is ambiguous (could be intended as 8105 decimal or
+        // 0x8105 hex). The deserializer rejects bare hex strings — author
+        // must either use the integer form or the explicit `0x` prefix.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        someip_service_id: "8105"
+        bindings:
+          "#worker":
+            transport: someip
+      worker:
+        source: worker.scxml
+"##;
+        let result = parse_deploy_str(yaml);
+        match result {
+            Err(DeployError::Yaml(reason)) => {
+                assert!(
+                    reason.contains("must start with `0x`"),
+                    "bare-string rejection must explain the prefix requirement: {reason}"
+                );
+            }
+            other => panic!("expected Yaml error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn someip_service_id_pin_in_range_accepted() {
+        // Pin inside [0x8100, 0x817F] — must round-trip through the
+        // hybrid validator without rejection.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        someip_service_id: "0x817F"
+        bindings:
+          "#worker":
+            transport: someip
+      worker:
+        source: worker.scxml
+"##;
+        parse_deploy_str(yaml).expect("ceiling-edge pin must be accepted");
+    }
+
+    #[test]
+    fn someip_service_id_pin_above_range_rejected() {
+        // 0x8180 is the F.X-3 region-liveness range floor — out-of-range
+        // for invoke pins.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        someip_service_id: "0x8180"
+        bindings:
+          "#worker":
+            transport: someip
+      worker:
+        source: worker.scxml
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::SomeipScxmlInvokeServiceIdPinOutOfRange {
+                machine,
+                pinned_id,
+                range_lo,
+                range_hi,
+            }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(pinned_id, 0x8180);
+                assert_eq!(range_lo, 0x8100);
+                assert_eq!(range_hi, 0x817F);
+            }
+            other => panic!("expected SomeipScxmlInvokeServiceIdPinOutOfRange, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn someip_service_id_pin_below_range_rejected() {
+        // 0x80FF is one below the SCE-reserved range floor — collides
+        // with OEM-owned [0x0000, 0x80FF] space.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        someip_service_id: "0x80FF"
+        bindings:
+          "#worker":
+            transport: someip
+      worker:
+        source: worker.scxml
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::SomeipScxmlInvokeServiceIdPinOutOfRange {
+                machine,
+                pinned_id,
+                ..
+            }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(pinned_id, 0x80FF);
+            }
+            other => panic!("expected SomeipScxmlInvokeServiceIdPinOutOfRange, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn someip_service_id_pin_collision_rejected() {
+        // Two participating machines pin the same value — author error,
+        // operator must repick one pin.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        someip_service_id: "0x8105"
+        bindings:
+          "#worker":
+            transport: someip
+      worker:
+        source: worker.scxml
+        someip_service_id: "0x8105"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::SomeipScxmlInvokeServiceIdPinCollision {
+                machines,
+                pinned_id,
+            }) => {
+                assert_eq!(pinned_id, 0x8105);
+                // BTreeMap lex order: brake < worker.
+                assert_eq!(machines, vec!["brake".to_string(), "worker".to_string()]);
+            }
+            other => panic!("expected SomeipScxmlInvokeServiceIdPinCollision, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn someip_service_id_pin_on_non_participant_silently_ignored() {
+        // A machine with `someip_service_id:` but no SOMEIP binding is not
+        // a §9.6 invoke participant. The pin carries no meaning and the
+        // validator silently ignores it — matching the participant
+        // projection of the legacy collision validator. The participant
+        // projection (zero participants here) keeps the validator from
+        // surfacing a "pin on non-participant" rejection that would
+        // duplicate upstream binding-shape checks.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        someip_service_id: "0x8180"
+"##;
+        // 0x8180 would be out-of-range for an invoke participant, but
+        // brake is not a participant (no SOMEIP binding). Accept.
+        parse_deploy_str(yaml).expect("non-participant pin must be silently ignored");
     }
 }

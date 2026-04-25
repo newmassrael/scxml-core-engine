@@ -597,6 +597,65 @@ pub enum DeployError {
         machines: Vec<String>,
     },
 
+    /// §9.6 SOMEIP scxml-invoke participant count exceeds the
+    /// hybrid-allocator sub-range ceiling (RFC F.X-1). Subsystem range
+    /// partitioning gives invoke 128 slots in `[0x8100, 0x817F]`; the upper
+    /// half of the SCE-reserved range is reserved for §16.4 region-liveness
+    /// (F.X-3). Beyond 128 §9.6 SOMEIP participants, the hybrid counter +
+    /// pin allocator cannot fit them inside the sub-range — operator must
+    /// either reduce the participant count or wait on the multi-domain
+    /// landing (today's single-domain assumption is the conservative
+    /// trade).
+    #[error("§9.6 SOME/IP scxml-invoke service-ID overflow: \
+             {participant_count} participants exceed the {ceiling}-slot \
+             sub-range ceiling [0x8100, 0x817F] (RFC F.X-1 subsystem range \
+             partitioning reserves [0x8180, 0x81FF] for §16.4 region-liveness). \
+             Reduce the §9.6 SOMEIP participant count or split deploy.yaml \
+             across multi-OEM domains (multi-domain support is a separate \
+             landing).")]
+    SomeipScxmlInvokeServiceIdOverflow {
+        participant_count: usize,
+        ceiling: usize,
+    },
+
+    /// A machine pinned `someip_service_id:` outside the §9.6 invoke
+    /// sub-range `[0x8100, 0x817F]`. Pins outside the sub-range either
+    /// collide with the F.X-3 region-liveness reservation (`[0x8180,
+    /// 0x81FF]`) or escape the SCE-reserved range entirely
+    /// (`[0x0000, 0x80FF]` / `[0x8200, 0xFFFF]` are OEM-owned). Operator
+    /// fix: choose a pin inside the sub-range, or remove the pin to let
+    /// the counter auto-assign.
+    #[error("machine '{machine}': pinned `someip_service_id: {pinned_id:#06x}` \
+             is outside the §9.6 SOMEIP scxml-invoke sub-range \
+             [{range_lo:#06x}, {range_hi:#06x}] (RFC F.X-1). The upper half of \
+             the SCE-reserved range is reserved for §16.4 region-liveness; pins \
+             outside the SCE-reserved range collide with OEM-owned service \
+             space. Pick a value inside [{range_lo:#06x}, {range_hi:#06x}] \
+             or drop the pin to use the auto-assigner.")]
+    SomeipScxmlInvokeServiceIdPinOutOfRange {
+        machine: String,
+        pinned_id: u16,
+        range_lo: u16,
+        range_hi: u16,
+    },
+
+    /// Two or more machines pinned the same `someip_service_id:` — author
+    /// error, deterministic conflict at parse time. Operator fix: choose a
+    /// distinct pin for one of the listed machines, or drop one pin to let
+    /// the counter auto-assign.
+    #[error("§9.6 SOME/IP scxml-invoke service-ID pin collision at \
+             {pinned_id:#06x}: machines [{}] all pin the same value via \
+             deploy.yaml `someip_service_id:`. Each pin must be unique \
+             inside the [0x8100, 0x817F] sub-range. Repick the pin on one \
+             of the listed machines or drop a pin to fall back to the \
+             counter auto-assigner.",
+             .machines.iter().map(|m| format!("'{m}'"))
+                 .collect::<Vec<_>>().join(", "))]
+    SomeipScxmlInvokeServiceIdPinCollision {
+        machines: Vec<String>,
+        pinned_id: u16,
+    },
+
     /// A partition declared `barrier_timeout_ms:` with a value that
     /// makes the distributed parallel-final barrier (SCE_MESH.md
     /// §16.5) meaningless. Today the sole rejected value is `0`: a
@@ -1655,6 +1714,63 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 peer_device.clone(),
                 failure.to_string(),
             ],
+        },
+        DeployError::SomeipScxmlInvokeServiceIdOverflow {
+            participant_count,
+            ceiling,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySomeipScxmlInvokeServiceIdOverflow,
+            stage: Stage::MeshDeploy,
+            // Participant count is the violation site. Hex would be
+            // misleading (it's not an ID); raw decimal pinpoints the
+            // operator's "how many did I declare" question.
+            actual: Some(participant_count.to_string()),
+            expected: None,
+            // No mechanical fix: operator either reduces the count or
+            // waits on multi-domain landing. Same shape as
+            // MeshDeploySomeipScxmlInvokeServiceIdCollision.
+            fix: None,
+            key_fragments: vec![participant_count.to_string(), ceiling.to_string()],
+        },
+        DeployError::SomeipScxmlInvokeServiceIdPinOutOfRange {
+            machine,
+            pinned_id,
+            range_lo,
+            range_hi,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange,
+            stage: Stage::MeshDeploy,
+            // Pinned ID names the violation site at the routing-layer
+            // key. Hex format mirrors SCXML_INVOKE_SERVICE_BASE.
+            actual: Some(format!("{pinned_id:#06x}")),
+            expected: None,
+            // No mechanical fix variant fits — operator picks any value
+            // inside the sub-range, no closed candidate set.
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                format!("{pinned_id:#06x}"),
+                format!("{range_lo:#06x}"),
+                format!("{range_hi:#06x}"),
+            ],
+        },
+        DeployError::SomeipScxmlInvokeServiceIdPinCollision {
+            machines,
+            pinned_id,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySomeipScxmlInvokeServiceIdPinCollision,
+            stage: Stage::MeshDeploy,
+            actual: Some(format!("{pinned_id:#06x}")),
+            expected: None,
+            // Same "rename, no closed candidates" shape as the legacy
+            // MeshDeploySomeipScxmlInvokeServiceIdCollision diagnostic
+            // — operator picks any non-colliding value.
+            fix: None,
+            key_fragments: {
+                let mut k = vec![format!("{pinned_id:#06x}")];
+                k.extend(machines.iter().cloned());
+                k
+            },
         },
         DeployError::SomeipScxmlInvokeServiceIdCollision {
             service_id,

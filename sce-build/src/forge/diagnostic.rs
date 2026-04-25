@@ -490,6 +490,12 @@ pub enum DiagnosticCode {
     MeshDeployScxmlInvokeCrossDeviceTransport,
     #[serde(rename = "mesh/deploy-someip-scxml-invoke-service-id-collision")]
     MeshDeploySomeipScxmlInvokeServiceIdCollision,
+    #[serde(rename = "mesh/deploy-someip-scxml-invoke-service-id-overflow")]
+    MeshDeploySomeipScxmlInvokeServiceIdOverflow,
+    #[serde(rename = "mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range")]
+    MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange,
+    #[serde(rename = "mesh/deploy-someip-scxml-invoke-service-id-pin-collision")]
+    MeshDeploySomeipScxmlInvokeServiceIdPinCollision,
     #[serde(rename = "mesh/deploy-partition-barrier-timeout-invalid")]
     MeshDeployPartitionBarrierTimeoutInvalid,
     #[serde(rename = "mesh/partition-parallel-root-undesignated")]
@@ -717,6 +723,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPartitionTransportBindingUnsupported,
         MeshDeployScxmlInvokeCrossDeviceTransport,
         MeshDeploySomeipScxmlInvokeServiceIdCollision,
+        MeshDeploySomeipScxmlInvokeServiceIdOverflow,
+        MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange,
+        MeshDeploySomeipScxmlInvokeServiceIdPinCollision,
         MeshDeployPartitionBarrierTimeoutInvalid,
         MeshPartitionParallelRootUndesignated,
         MeshPartitionParallelRootAmbiguous,
@@ -888,6 +897,11 @@ impl DiagnosticCode {
 
             // ── Mesh §9.6 SOME/IP service-ID collision (SCE_MESH.md §9.6 Session 4c) ──
             MeshDeploySomeipScxmlInvokeServiceIdCollision => Some("SCE Mesh §9.6"),
+
+            // ── Mesh §9.6 SOME/IP service-ID hybrid allocator (RFC F.X-1) ──
+            MeshDeploySomeipScxmlInvokeServiceIdOverflow
+            | MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange
+            | MeshDeploySomeipScxmlInvokeServiceIdPinCollision => Some("SCE Mesh §9.6"),
 
             // ── Mesh binding placeholder + server pool (SCE_MESH.md §14.4) ──
             MeshDeployPoolNotSupportedByTransport
@@ -1122,6 +1136,9 @@ impl DiagnosticCode {
             MeshDeployPartitionTransportBindingUnsupported => "mesh/deploy-partition-transport-binding-unsupported",
             MeshDeployScxmlInvokeCrossDeviceTransport => "mesh/deploy-scxml-invoke-cross-device-transport",
             MeshDeploySomeipScxmlInvokeServiceIdCollision => "mesh/deploy-someip-scxml-invoke-service-id-collision",
+            MeshDeploySomeipScxmlInvokeServiceIdOverflow => "mesh/deploy-someip-scxml-invoke-service-id-overflow",
+            MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange => "mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range",
+            MeshDeploySomeipScxmlInvokeServiceIdPinCollision => "mesh/deploy-someip-scxml-invoke-service-id-pin-collision",
             MeshDeployPartitionBarrierTimeoutInvalid => "mesh/deploy-partition-barrier-timeout-invalid",
             MeshPartitionParallelRootUndesignated => "mesh/partition-parallel-root-undesignated",
             MeshPartitionParallelRootAmbiguous => "mesh/partition-parallel-root-ambiguous",
@@ -3079,6 +3096,41 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:54c2cb110d8cb37b","code":"mesh/deploy-someip-scxml-invoke-service-id-collision","stage":"mesh-deploy","spec":"SCE Mesh §9.6","message":"§9.6 SOME/IP scxml-invoke service-ID collision at 0x812f: machines ['alpha', 'beta'] all hash to the same low-byte service ID under SCE::Mesh::Someip::serviceIdForMachine. The §9.6 dedicated `<machine>_scxml_invoke_app_` registers vsomeip services in the SCE-reserved range [0x8100, 0x8200), and a duplicate (application, service) registration would silently mis-route inbound wire traffic to whichever application registered first. Rename any one of the listed machines so its FNV-1a low byte differs.","actual":"0x812f"}"#,
             ),
             (
+                "mesh/deploy-someip-scxml-invoke-service-id-overflow",
+                DeployError::SomeipScxmlInvokeServiceIdOverflow {
+                    participant_count: 129,
+                    ceiling: 128,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:e5d3768d0e062066","code":"mesh/deploy-someip-scxml-invoke-service-id-overflow","stage":"mesh-deploy","spec":"SCE Mesh §9.6","message":"§9.6 SOME/IP scxml-invoke service-ID overflow: 129 participants exceed the 128-slot sub-range ceiling [0x8100, 0x817F] (RFC F.X-1 subsystem range partitioning reserves [0x8180, 0x81FF] for §16.4 region-liveness). Reduce the §9.6 SOMEIP participant count or split deploy.yaml across multi-OEM domains (multi-domain support is a separate landing).","actual":"129"}"#,
+            ),
+            (
+                "mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range",
+                DeployError::SomeipScxmlInvokeServiceIdPinOutOfRange {
+                    machine: "brake".into(),
+                    pinned_id: 0x8180,
+                    range_lo: 0x8100,
+                    range_hi: 0x817F,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:31a71109b709256a","code":"mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range","stage":"mesh-deploy","spec":"SCE Mesh §9.6","message":"machine 'brake': pinned `someip_service_id: 0x8180` is outside the §9.6 SOMEIP scxml-invoke sub-range [0x8100, 0x817f] (RFC F.X-1). The upper half of the SCE-reserved range is reserved for §16.4 region-liveness; pins outside the SCE-reserved range collide with OEM-owned service space. Pick a value inside [0x8100, 0x817f] or drop the pin to use the auto-assigner.","actual":"0x8180"}"#,
+            ),
+            (
+                "mesh/deploy-someip-scxml-invoke-service-id-pin-collision",
+                DeployError::SomeipScxmlInvokeServiceIdPinCollision {
+                    machines: vec!["alpha".into(), "beta".into()],
+                    pinned_id: 0x8105,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:aad388fcf85f5fd0","code":"mesh/deploy-someip-scxml-invoke-service-id-pin-collision","stage":"mesh-deploy","spec":"SCE Mesh §9.6","message":"§9.6 SOME/IP scxml-invoke service-ID pin collision at 0x8105: machines ['alpha', 'beta'] all pin the same value via deploy.yaml `someip_service_id:`. Each pin must be unique inside the [0x8100, 0x817F] sub-range. Repick the pin on one of the listed machines or drop a pin to fall back to the counter auto-assigner.","actual":"0x8105"}"#,
+            ),
+            (
                 "mesh/deploy-partition-barrier-timeout-invalid",
                 DeployError::PartitionBarrierTimeoutInvalid {
                     partition: "motor_left".into(),
@@ -3911,6 +3963,9 @@ mod tests {
             | MeshDeployPartitionTransportBindingUnsupported
             | MeshDeployScxmlInvokeCrossDeviceTransport
             | MeshDeploySomeipScxmlInvokeServiceIdCollision
+            | MeshDeploySomeipScxmlInvokeServiceIdOverflow
+            | MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange
+            | MeshDeploySomeipScxmlInvokeServiceIdPinCollision
             | MeshDeployPartitionBarrierTimeoutInvalid
             | MeshPartitionParallelRootUndesignated
             | MeshPartitionParallelRootAmbiguous
@@ -4218,6 +4273,9 @@ mod tests {
                 | MeshDeployPartitionTransportBindingUnsupported
                 | MeshDeployScxmlInvokeCrossDeviceTransport
                 | MeshDeploySomeipScxmlInvokeServiceIdCollision
+                | MeshDeploySomeipScxmlInvokeServiceIdOverflow
+                | MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange
+                | MeshDeploySomeipScxmlInvokeServiceIdPinCollision
                 | MeshDeployPartitionBarrierTimeoutInvalid
                 | MeshPartitionParallelRootUndesignated
                 | MeshPartitionParallelRootAmbiguous
@@ -4261,9 +4319,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            142,
+            145,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 142 distinct variants to match the DiagnosticCode \
+             expected 145 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

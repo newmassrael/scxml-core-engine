@@ -63,6 +63,23 @@
 /// constexpr in `SomeipScxmlInvokeEndpoint.h`.
 pub const SCXML_INVOKE_SERVICE_BASE: u16 = 0x8100;
 
+/// Inclusive ceiling of the §9.6 scxml-invoke service ID sub-range under the
+/// hybrid (counter + optional pin) allocator (RFC F.X-1). The sub-range is
+/// `[0x8100, 0x817F]` — 128 slots. The upper half `[0x8180, 0x81FF]` of the
+/// SCE-reserved 256-slot space is reserved for the §16.4 region-liveness
+/// landing (F.X-3); subsystem range partitioning gives F.X-1 invoke IDs
+/// stability across F.X-3's later landing without requiring author pins.
+pub const SCXML_INVOKE_SERVICE_CEILING: u16 = 0x817F;
+
+/// Number of slots in the §9.6 invoke sub-range (`SCXML_INVOKE_SERVICE_CEILING -
+/// SCXML_INVOKE_SERVICE_BASE + 1`). Used as the overflow ceiling by
+/// [`assign_invoke_service_ids`] and named in the
+/// [`crate::mesh::error::DeployError::SomeipScxmlInvokeServiceIdOverflow`]
+/// diagnostic so operators see the exact bound their participant count
+/// crossed.
+pub const SCXML_INVOKE_SERVICE_RANGE_SIZE: usize =
+    (SCXML_INVOKE_SERVICE_CEILING - SCXML_INVOKE_SERVICE_BASE + 1) as usize;
+
 /// Single-instance MVP for §9.6 endpoints. Mirror of the C++
 /// `SCXML_INVOKE_INSTANCE_ID` constexpr. Multi-instance pool support for
 /// §9.6 endpoints would require lifting §14.4 Gap 7 plumbing into the
@@ -116,6 +133,140 @@ pub const fn service_id_for_machine(name: &str) -> u16 {
         i += 1;
     }
     SCXML_INVOKE_SERVICE_BASE | ((hash & 0xFF) as u16)
+}
+
+// ── Hybrid (counter + optional pin) service ID assigner ────────────────────
+
+/// Errors from the hybrid §9.6 SOMEIP scxml-invoke service ID assigner
+/// ([`assign_invoke_service_ids`]). Each variant carries the operator-facing
+/// payload needed to reach a clear deploy.yaml fix; the deploy-layer
+/// validator
+/// ([`crate::mesh::deploy::validate_someip_scxml_invoke_service_ids`])
+/// converts these into [`crate::mesh::error::DeployError`] variants of the
+/// same shape so the diagnostic chain stays typed end-to-end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssignInvokeServiceIdError {
+    /// Total participant count exceeds [`SCXML_INVOKE_SERVICE_RANGE_SIZE`].
+    /// Counter scheme is collision-free up to the ceiling, so the only
+    /// overflow shape is "too many participants".
+    Overflow {
+        participant_count: usize,
+        ceiling: usize,
+    },
+    /// A pinned ID falls outside the invoke sub-range
+    /// `[SCXML_INVOKE_SERVICE_BASE, SCXML_INVOKE_SERVICE_CEILING]`. Pins
+    /// outside the sub-range would either collide with the reserved
+    /// liveness range (F.X-3) or with OEM-owned `[0x0000, 0x80FF]` /
+    /// `[0x8200, 0xFFFF]` space.
+    PinOutOfRange {
+        machine: String,
+        pinned_id: u16,
+        range_lo: u16,
+        range_hi: u16,
+    },
+    /// Two or more machines pinned the same ID. Author error — operator
+    /// fix is to repick one of the pins.
+    PinCollision {
+        machines: Vec<String>,
+        pinned_id: u16,
+    },
+}
+
+/// Hybrid (counter + optional author-pin) assigner for §9.6 SOMEIP
+/// scxml-invoke service IDs. Per RFC F.X-1
+/// (`claudedocs/rfc-someip-service-id-counter.md`).
+///
+/// **Input.** `participants` maps each canonical participant's machine name
+/// to its optional pin from deploy.yaml `someip_service_id:`. The map's keys
+/// ARE the canonical participant set — the caller (deploy layer) is
+/// responsible for collecting them from the deploy.yaml structure (every
+/// machine that declares a peer-shape `bindings["#X"].transport: someip` for
+/// a declared peer `X`, plus the named peers themselves; same definition as
+/// the legacy 4c collision validator's participant projection).
+///
+/// **Output.** A map from each participant's machine name to its assigned
+/// service ID. Pinned machines get their pinned ID; un-pinned machines get
+/// the lowest unreserved slot in lex order starting from
+/// [`SCXML_INVOKE_SERVICE_BASE`]. The output is collision-free by
+/// construction: pinned and auto-assigned slots are disjoint because the
+/// auto-assignment counter skips slots already claimed by pins.
+///
+/// **Determinism.** The assignment is fully deterministic given a fixed
+/// participant set: `BTreeMap` iteration is lex-sorted, so re-running the
+/// assigner against the same input always produces the same output. Re-runs
+/// across deploy.yaml edits that don't change the *participant set* (e.g.
+/// reordering the YAML, renaming a non-participant) preserve the
+/// assignment.
+pub fn assign_invoke_service_ids(
+    participants: &std::collections::BTreeMap<String, Option<u16>>,
+) -> Result<std::collections::BTreeMap<String, u16>, AssignInvokeServiceIdError> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // 1. Overflow gate. Counter scheme cannot fit more than RANGE_SIZE
+    //    participants regardless of pin shape, so reject up front. The
+    //    pin checks below assume the participant count is feasible.
+    if participants.len() > SCXML_INVOKE_SERVICE_RANGE_SIZE {
+        return Err(AssignInvokeServiceIdError::Overflow {
+            participant_count: participants.len(),
+            ceiling: SCXML_INVOKE_SERVICE_RANGE_SIZE,
+        });
+    }
+
+    // 2. Pin range + collision validation. Reject any pin outside the
+    //    invoke sub-range; group remaining pins by id to detect duplicates.
+    //    BTreeMap keeps the diagnostic deterministic for byte-stable
+    //    error fixtures.
+    let mut by_pin: BTreeMap<u16, Vec<String>> = BTreeMap::new();
+    for (name, maybe_pin) in participants.iter() {
+        if let Some(pin) = maybe_pin {
+            if *pin < SCXML_INVOKE_SERVICE_BASE || *pin > SCXML_INVOKE_SERVICE_CEILING {
+                return Err(AssignInvokeServiceIdError::PinOutOfRange {
+                    machine: name.clone(),
+                    pinned_id: *pin,
+                    range_lo: SCXML_INVOKE_SERVICE_BASE,
+                    range_hi: SCXML_INVOKE_SERVICE_CEILING,
+                });
+            }
+            by_pin.entry(*pin).or_default().push(name.clone());
+        }
+    }
+    for (pinned_id, machines) in by_pin.iter() {
+        if machines.len() >= 2 {
+            return Err(AssignInvokeServiceIdError::PinCollision {
+                machines: machines.clone(),
+                pinned_id: *pinned_id,
+            });
+        }
+    }
+
+    // 3. Reserved set: every pin claims its slot. Counter must skip these.
+    let reserved: BTreeSet<u16> = by_pin.keys().copied().collect();
+
+    // 4. Walk participants in lex order. Pinned → use the pin verbatim.
+    //    Un-pinned → consume the lowest unreserved slot. The participant-
+    //    count overflow gate above guarantees the counter never escapes
+    //    the sub-range: total claims = participants.len() <= RANGE_SIZE,
+    //    and reserved + auto = participants.len() (disjoint), so the
+    //    auto-assignment cannot collide with any pin or run off the end.
+    let mut out: BTreeMap<String, u16> = BTreeMap::new();
+    let mut next_slot: u16 = SCXML_INVOKE_SERVICE_BASE;
+    for (name, maybe_pin) in participants.iter() {
+        if let Some(pin) = maybe_pin {
+            out.insert(name.clone(), *pin);
+            continue;
+        }
+        while reserved.contains(&next_slot) {
+            next_slot += 1;
+        }
+        debug_assert!(
+            next_slot <= SCXML_INVOKE_SERVICE_CEILING,
+            "auto-assignment escaped invoke sub-range — overflow gate or pin-reserve invariant broken"
+        );
+        out.insert(name.clone(), next_slot);
+        next_slot += 1;
+    }
+
+    Ok(out)
 }
 
 // ── Test-only collision discovery helper ───────────────────────────────────
@@ -309,5 +460,199 @@ mod tests {
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(sorted.len(), 7, "method id collision: {methods:?}");
+    }
+
+    // ── Hybrid assigner tests (RFC F.X-1) ──────────────────────────────────
+
+    use std::collections::BTreeMap;
+
+    fn p(entries: &[(&str, Option<u16>)]) -> BTreeMap<String, Option<u16>> {
+        entries.iter().map(|(n, p)| (n.to_string(), *p)).collect()
+    }
+
+    #[test]
+    fn assigner_empty_set_returns_empty_map() {
+        let out = assign_invoke_service_ids(&p(&[])).expect("empty must succeed");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn assigner_all_unpinned_walks_counter_from_base() {
+        // Lex order: alpha, bravo, charlie. IDs 0x8100, 0x8101, 0x8102.
+        let out = assign_invoke_service_ids(&p(&[
+            ("bravo", None),
+            ("alpha", None),
+            ("charlie", None),
+        ]))
+        .expect("unpinned-only must succeed");
+        assert_eq!(out.get("alpha").copied(), Some(0x8100));
+        assert_eq!(out.get("bravo").copied(), Some(0x8101));
+        assert_eq!(out.get("charlie").copied(), Some(0x8102));
+    }
+
+    #[test]
+    fn assigner_all_pinned_uses_pins_verbatim() {
+        let out = assign_invoke_service_ids(&p(&[
+            ("alpha", Some(0x8123)),
+            ("bravo", Some(0x817F)),
+        ]))
+        .expect("all-pinned must succeed");
+        assert_eq!(out.get("alpha").copied(), Some(0x8123));
+        assert_eq!(out.get("bravo").copied(), Some(0x817F));
+    }
+
+    #[test]
+    fn assigner_mix_skips_pinned_slots() {
+        // alpha pins 0x8101 (would be bravo's natural slot). Counter must
+        // skip 0x8101: alpha=0x8101 (pin), bravo=0x8100, charlie=0x8102,
+        // delta=0x8103. Lex order: alpha, bravo, charlie, delta.
+        let out = assign_invoke_service_ids(&p(&[
+            ("alpha", Some(0x8101)),
+            ("bravo", None),
+            ("charlie", None),
+            ("delta", None),
+        ]))
+        .expect("mixed must succeed");
+        assert_eq!(out.get("alpha").copied(), Some(0x8101));
+        assert_eq!(out.get("bravo").copied(), Some(0x8100));
+        assert_eq!(out.get("charlie").copied(), Some(0x8102));
+        assert_eq!(out.get("delta").copied(), Some(0x8103));
+    }
+
+    #[test]
+    fn assigner_is_deterministic_under_yaml_reordering() {
+        // Same participant set in two different insertion orders into
+        // BTreeMap must produce identical output. (BTreeMap iteration is
+        // lex-sorted, so this is a property of the assigner using the
+        // BTree order rather than the call-site order.)
+        let a = p(&[("alpha", None), ("bravo", None), ("charlie", None)]);
+        let b = p(&[("charlie", None), ("alpha", None), ("bravo", None)]);
+        assert_eq!(
+            assign_invoke_service_ids(&a).unwrap(),
+            assign_invoke_service_ids(&b).unwrap()
+        );
+    }
+
+    #[test]
+    fn assigner_overflow_rejects_at_ceiling_plus_one() {
+        // 129 unpinned participants — one over the 128-slot ceiling. Reject.
+        let mut input: BTreeMap<String, Option<u16>> = BTreeMap::new();
+        for i in 0..(SCXML_INVOKE_SERVICE_RANGE_SIZE + 1) {
+            input.insert(format!("m{i:04}"), None);
+        }
+        match assign_invoke_service_ids(&input) {
+            Err(AssignInvokeServiceIdError::Overflow {
+                participant_count,
+                ceiling,
+            }) => {
+                assert_eq!(participant_count, SCXML_INVOKE_SERVICE_RANGE_SIZE + 1);
+                assert_eq!(ceiling, SCXML_INVOKE_SERVICE_RANGE_SIZE);
+            }
+            other => panic!("expected Overflow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assigner_overflow_at_ceiling_exactly_succeeds() {
+        // 128 participants — exactly fills the range, no overflow.
+        let mut input: BTreeMap<String, Option<u16>> = BTreeMap::new();
+        for i in 0..SCXML_INVOKE_SERVICE_RANGE_SIZE {
+            input.insert(format!("m{i:04}"), None);
+        }
+        let out = assign_invoke_service_ids(&input).expect("exact-fill must succeed");
+        assert_eq!(out.len(), SCXML_INVOKE_SERVICE_RANGE_SIZE);
+        // Highest assigned ID equals the ceiling.
+        let max = *out.values().max().unwrap();
+        assert_eq!(max, SCXML_INVOKE_SERVICE_CEILING);
+    }
+
+    #[test]
+    fn assigner_pin_below_range_rejected() {
+        let out = assign_invoke_service_ids(&p(&[("alpha", Some(0x80FF))]));
+        match out {
+            Err(AssignInvokeServiceIdError::PinOutOfRange {
+                machine,
+                pinned_id,
+                range_lo,
+                range_hi,
+            }) => {
+                assert_eq!(machine, "alpha");
+                assert_eq!(pinned_id, 0x80FF);
+                assert_eq!(range_lo, SCXML_INVOKE_SERVICE_BASE);
+                assert_eq!(range_hi, SCXML_INVOKE_SERVICE_CEILING);
+            }
+            other => panic!("expected PinOutOfRange (below), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assigner_pin_above_range_rejected() {
+        // 0x8180 is the first slot of the F.X-3 liveness range — out of
+        // range for invoke participants.
+        let out = assign_invoke_service_ids(&p(&[("alpha", Some(0x8180))]));
+        match out {
+            Err(AssignInvokeServiceIdError::PinOutOfRange {
+                machine,
+                pinned_id,
+                range_lo,
+                range_hi,
+            }) => {
+                assert_eq!(machine, "alpha");
+                assert_eq!(pinned_id, 0x8180);
+                assert_eq!(range_lo, SCXML_INVOKE_SERVICE_BASE);
+                assert_eq!(range_hi, SCXML_INVOKE_SERVICE_CEILING);
+            }
+            other => panic!("expected PinOutOfRange (above), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assigner_pin_collision_rejected() {
+        // Two machines pin the same ID — operator error.
+        let out = assign_invoke_service_ids(&p(&[
+            ("alpha", Some(0x8105)),
+            ("bravo", Some(0x8105)),
+        ]));
+        match out {
+            Err(AssignInvokeServiceIdError::PinCollision {
+                machines,
+                pinned_id,
+            }) => {
+                assert_eq!(pinned_id, 0x8105);
+                // Order is BTreeMap lex (alpha < bravo).
+                assert_eq!(machines, vec!["alpha".to_string(), "bravo".to_string()]);
+            }
+            other => panic!("expected PinCollision, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assigner_unpinned_does_not_collide_with_pinned() {
+        // Stress: 128 participants total, half pinned at the high end,
+        // half un-pinned. Auto must fill the low end without colliding.
+        let mut input: BTreeMap<String, Option<u16>> = BTreeMap::new();
+        // 64 pins occupying the upper half of the range.
+        for i in 0..64 {
+            input.insert(
+                format!("p{i:03}"),
+                Some(SCXML_INVOKE_SERVICE_BASE + 64 + i as u16),
+            );
+        }
+        // 64 un-pinned participants.
+        for i in 0..64 {
+            input.insert(format!("a{i:03}"), None);
+        }
+        let out = assign_invoke_service_ids(&input).expect("128-participant mix must succeed");
+        assert_eq!(out.len(), 128);
+        // All assignments unique (collision-free invariant).
+        let mut ids: Vec<u16> = out.values().copied().collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), 128, "auto-assignment collided with a pin");
+        // All assignments inside the sub-range.
+        for sid in out.values() {
+            assert!(*sid >= SCXML_INVOKE_SERVICE_BASE);
+            assert!(*sid <= SCXML_INVOKE_SERVICE_CEILING);
+        }
     }
 }
