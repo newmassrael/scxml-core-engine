@@ -11,10 +11,14 @@
      otherwise inert — the test drives liveliness directly through
      zenoh and never walks brake's own state graph.
 
-     `<send target="#peer">` forces `"zenoh" in transport_types` so
-     the generated router emits the Zenoh session + liveliness token
-     + subscriber pair. The send is never actually exercised in the
-     test.
+     `<send target="#peer">` forces the binding's transport into
+     `transport_types` so the generated router emits the per-transport
+     plumbing the §16.4 liveness emit relies on (Zenoh: session +
+     liveliness token + subscriber pair gated by has_zenoh_liveliness;
+     SomeIP RFC F.X-3: vsomeip include + consolidated SCE app
+     `<machine>_<partition>_sce_app_` gated by "someip" in
+     transport_types). The send is never actually exercised in either
+     test — TestSenderEngine does not run `left_idle`'s onentry.
 
      `<transition event="error.communication">` is required by
      `reject_liveliness_without_handler`: any machine declaring

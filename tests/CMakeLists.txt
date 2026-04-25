@@ -3756,6 +3756,150 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
                 RESOURCE_LOCK sce_mesh_someip_crossdev_netns)
         endif()
 
+        # ── §16.4 region-partition liveness (RFC F.X-3 SOMEIP) ───────
+        # Sibling to mesh_zenoh_region_liveness_verification (Zenoh row
+        # 13). Stage A-C of RFC F.X-3 wired the codegen path
+        # (assigner → DeployError variants → DiagnosticCode variants →
+        # template SOMEIP-side liveness emit on the F.X-2 consolidated
+        # SCE app); Stage D lands the live netns fixture proving the
+        # row-13 raise survives the cross-host SOMEIP-SD multicast +
+        # vsomeip routing-manager STOP_OFFER round-trip. Reuses
+        # brake_region_liveness.scxml + peer_region_liveness.scxml
+        # verbatim (per RFC §4) — the SCXML layer is transport-agnostic;
+        # only deploy.yaml swaps the wire and the partition split is
+        # identical to the Zenoh fixture.
+        #
+        # The codegen + compile-verification pair is always-on (inside
+        # the vsomeip3 gate) so a regression in the §16.4 SOMEIP
+        # template branch surfaces in fresh checkouts too. The runtime
+        # two-host fixture below is netns-gated.
+        set(MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_region_liveness_generated")
+
+        foreach(part brake_left_part brake_right_part)
+            add_custom_command(
+                OUTPUT "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}/brake_region_liveness_sm.h"
+                       "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}/brake_region_liveness_transport.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                        "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_region_liveness.scxml"
+                        -l cpp -o "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}"
+                        --deploy "${MESH_TEST_DIR}/deploy_someip_region_liveness.yaml"
+                        --partition ${part}
+                        --write-deps
+                        "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}/brake_region_liveness_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/brake_region_liveness.scxml"
+                        "${MESH_TEST_DIR}/peer_region_liveness.scxml"
+                        "${MESH_TEST_DIR}/deploy_someip_region_liveness.yaml"
+                        "${MESH_TEST_DIR}/vsomeip_someip_region_liveness_codegen.json"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}/brake_region_liveness_sm.h.d"
+                COMMENT "Mesh §16.4 SOMEIP region liveness: Generating ${part}/brake_region_liveness_{sm,transport}.h"
+                VERBATIM
+            )
+        endforeach()
+
+        # Per-partition compile-verification binaries. Two binaries are
+        # required because both --partition outputs share the
+        # `SCE::Generated::brake_region_liveness::` namespace — including
+        # both `_transport.h` files in one TU would ODR-violate every
+        # inline definition. SCE_LIVENESS_PARTITION_{LEFT,RIGHT} drives
+        # the per-partition `static_assert` block in the test source so
+        # the lex-sorted counter assignments (left → 0x8180, right →
+        # 0x8181) are byte-pinned at compile time.
+        add_executable(mesh_someip_region_liveness_left_compile_test
+            mesh/test_mesh_someip_region_liveness_compile.cpp
+            "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part/brake_region_liveness_sm.h"
+            "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part/brake_region_liveness_transport.h")
+        target_include_directories(mesh_someip_region_liveness_left_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part"
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+        target_link_libraries(mesh_someip_region_liveness_left_compile_test
+            PRIVATE sce_runtime sce_mesh_common vsomeip3)
+        target_compile_definitions(mesh_someip_region_liveness_left_compile_test
+            PRIVATE SCE_LIVENESS_PARTITION_LEFT)
+        target_compile_features(mesh_someip_region_liveness_left_compile_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_region_liveness_left_compile_test)
+        add_test(NAME mesh_someip_region_liveness_left_compile
+                 COMMAND mesh_someip_region_liveness_left_compile_test)
+        set_tests_properties(mesh_someip_region_liveness_left_compile PROPERTIES TIMEOUT 5)
+
+        add_executable(mesh_someip_region_liveness_right_compile_test
+            mesh/test_mesh_someip_region_liveness_compile.cpp
+            "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part/brake_region_liveness_sm.h"
+            "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part/brake_region_liveness_transport.h")
+        target_include_directories(mesh_someip_region_liveness_right_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part"
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+        target_link_libraries(mesh_someip_region_liveness_right_compile_test
+            PRIVATE sce_runtime sce_mesh_common vsomeip3)
+        target_compile_definitions(mesh_someip_region_liveness_right_compile_test
+            PRIVATE SCE_LIVENESS_PARTITION_RIGHT)
+        target_compile_features(mesh_someip_region_liveness_right_compile_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_region_liveness_right_compile_test)
+        add_test(NAME mesh_someip_region_liveness_right_compile
+                 COMMAND mesh_someip_region_liveness_right_compile_test)
+        set_tests_properties(mesh_someip_region_liveness_right_compile PROPERTIES TIMEOUT 5)
+
+        if(SCE_ENABLE_NETNS_TESTS)
+            include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/two_host_test.cmake)
+
+            add_executable(mesh_someip_region_liveness_parent
+                mesh/test_mesh_someip_region_liveness_parent.cpp
+                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part/brake_region_liveness_sm.h"
+                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part/brake_region_liveness_transport.h")
+            target_include_directories(mesh_someip_region_liveness_parent
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part"
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+            target_link_libraries(mesh_someip_region_liveness_parent
+                PRIVATE sce_runtime sce_mesh_common vsomeip3)
+            target_compile_definitions(mesh_someip_region_liveness_parent
+                PRIVATE VSOMEIP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_someip_region_liveness_left.json")
+            target_compile_features(mesh_someip_region_liveness_parent PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_someip_region_liveness_parent)
+
+            add_executable(mesh_someip_region_liveness_worker
+                mesh/test_mesh_someip_region_liveness_worker.cpp
+                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part/brake_region_liveness_sm.h"
+                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part/brake_region_liveness_transport.h")
+            target_include_directories(mesh_someip_region_liveness_worker
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part"
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+            target_link_libraries(mesh_someip_region_liveness_worker
+                PRIVATE sce_runtime sce_mesh_common vsomeip3)
+            target_compile_definitions(mesh_someip_region_liveness_worker
+                PRIVATE VSOMEIP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_someip_region_liveness_right.json")
+            target_compile_features(mesh_someip_region_liveness_worker PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_someip_region_liveness_worker)
+
+            sce_register_two_host_mesh_test(
+                NAME    mesh_someip_region_liveness_verification
+                WORKER  mesh_someip_region_liveness_worker
+                PARENT  mesh_someip_region_liveness_parent
+                TIMEOUT 30)
+            # RESOURCE_LOCK shared with mesh_someip_scxml_invoke_crossdev
+            # (5b) and mesh_someip_session_f_crossdev_donedata (5c) per
+            # `feedback_someip_netns_lock_sharing.md`: every SOMEIP netns
+            # fixture binds its RM into the same sce-mesh-{parent,worker}
+            # netns + multicast group (224.244.224.245:30490). Distinct
+            # `network` fields keep /tmp UNIX socket paths apart, but the
+            # multicast group is shared by netns design — running two such
+            # fixtures in parallel under `ctest -j` cross-pollutes their
+            # SD offer/find traffic and one parent never converges within
+            # its deadline. Sharing the lock is the textbook resolution.
+            set_tests_properties(mesh_someip_region_liveness_verification PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}"
+                RESOURCE_LOCK sce_mesh_someip_crossdev_netns)
+        endif()
+
         # ── Session I: engine-driven RPC/FieldRead over SOME/IP ──────
         # Sibling to mesh_someip_runtime — binds the real motor_someip_multi
         # SM to TransportRouter and drives it with a step() pump so the

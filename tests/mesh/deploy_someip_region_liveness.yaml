@@ -1,0 +1,93 @@
+# SCE Mesh §16.4 / §16.7 row 13 (REGION_PARTITIONED) E2E fixture (SOME/IP).
+#
+# Sister to deploy_zenoh_region_liveness.yaml. RFC F.X-3 lands the SOME/IP
+# row 13 emission path that the Zenoh fixture (`6c59ca18`) shipped first.
+# Reuses brake_region_liveness.scxml + peer_region_liveness.scxml verbatim
+# — the SCXML layer is transport-agnostic; only deploy.yaml swaps the wire.
+#
+# Single ECU `ecu_brake` hosts brake_region_liveness with a SOME/IP binding
+# to the stub `peer` machine on `ecu_peer`. The `liveliness:` opt-in turns
+# on per-partition liveness service offers + sibling availability handlers
+# in the SCE-reserved liveness sub-range `[0x8180, 0x81FF]` (RFC F.X-1 D2).
+#
+# `partitions:` splits brake_region_liveness's two `<parallel>` regions
+# across `brake_left_part` + `brake_right_part`. Both partitions are
+# compiled as real SCE binaries (mirror of donedata 5c shape, distinct
+# from Zenoh region-liveness which simulates the sibling with a raw zenoh
+# peer); the test driver runs them in two netns and observes the surviving
+# partition's `error.communication / REGION_PARTITIONED` raise after the
+# sibling's vsomeip routing manager exits and SOMEIP-SD propagates the
+# `available=false` edge.
+#
+# Service ID assignment (RFC F.X-3 D2 lex-sorted counter from
+# `SCXML_LIVENESS_SERVICE_BASE = 0x8180`, no pins in this fixture):
+#   brake_region_liveness__P__brake_left_part  → 0x8180 (port 30571)
+#   brake_region_liveness__P__brake_right_part → 0x8181 (port 30572)
+# Ports 30571/30572 are distinct from the §9.6 5b lifecycle (30556/30568)
+# and 5c donedata (30586..30599) bands; SD multicast group + port
+# (224.244.224.245:30490) are shared by netns design, so this fixture
+# joins the existing `sce_mesh_someip_crossdev_netns` ctest RESOURCE_LOCK
+# (per `feedback_someip_netns_lock_sharing.md`: same netns + multicast
+# group must serialize at ctest level even with distinct unicast ports).
+#
+# Peer participation (RFC F.X-3 D11): peer's transport.h is NOT compiled.
+# `peer_region_liveness` exists only so brake's `#peer` binding resolves
+# at codegen time and so event coverage sees a receiver for brake's
+# `event.ping`. The two-host netns harness spawns only the two brake
+# partition binaries; the test driver never instantiates peer.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      someip:
+        config: vsomeip_someip_region_liveness_codegen.json
+    machines:
+      brake_region_liveness:
+        source: brake_region_liveness.scxml
+        bindings:
+          # `<send target="#peer" event="event.ping"/>` lives in the
+          # left region and is dead at runtime (TestSenderEngine never
+          # walks brake's onentry). The OEM-style binding (service +
+          # events) is supplied so codegen-time external resolution
+          # produces concrete (service-id, method-id) constants for
+          # the dead branch — the only purpose is to load `someip`
+          # into `transport_types` so the vsomeip include + the
+          # consolidated SCE app field declaration the §16.4
+          # liveness emit depends on (`<machine>_<partition>_sce_app_`)
+          # both fire. `peer_svc` resolves through
+          # vsomeip_someip_region_liveness_codegen.json (codegen-only;
+          # the runtime vsomeip configs `*_left.json` / `*_right.json`
+          # do not need to repeat it because no traffic ever flows on
+          # the dead branch).
+          "#peer":
+            transport: someip
+            service: peer_svc
+            events:
+              "event.ping":
+                method: ping
+        liveliness:
+          lease_ms: 200
+  ecu_peer:
+    machines:
+      peer:
+        source: peer_region_liveness.scxml
+
+partitions:
+  brake_left_part:
+    machines: [brake_region_liveness]
+    contains:
+      parallel_regions:
+        - { machine: brake_region_liveness, region: left }
+    # §14 rule 12: exactly one claimant per distributed <parallel>. Test
+    # never walks the completion barrier (it drives liveness directly via
+    # vsomeip SD), so `barrier_timeout_ms:` is deliberately absent —
+    # W3C normative infinity keeps the barrier silent and the reason
+    # code under observation is row 13 REGION_PARTITIONED, not row 6
+    # PARALLEL_BARRIER_TIMEOUT.
+    hosts_parallel_roots:
+      - { machine: brake_region_liveness, parallel: root }
+  brake_right_part:
+    machines: [brake_region_liveness]
+    contains:
+      parallel_regions:
+        - { machine: brake_region_liveness, region: right }

@@ -111,6 +111,22 @@ struct TestSenderEngine {
                                           const std::string&)>;
     MeshSendCb mesh_send_cb_;
     void setMeshSendCallback(MeshSendCb cb) { mesh_send_cb_ = std::move(cb); }
+
+    // SCE_MESH.md §16.5 wire-21: codegen installs this in the
+    // TransportRouter ctor for any partition that hosts a region of a
+    // distributed `<parallel>` and has at least one outbound wire-21
+    // route to a sibling partition (i.e. partitions that are NOT the
+    // parallel-root host). The callback is invoked from the engine's
+    // ParallelRegionDone emit path, which TestSenderEngine never
+    // exercises (no state graph driven), so a no-op store is enough
+    // to satisfy the template instantiation. Real engines override
+    // through state_machine.jinja2's emitted definition.
+    using ParallelRegionDoneCb =
+        std::function<bool(const SCE::Mesh::MeshEnvelope&)>;
+    ParallelRegionDoneCb parallel_region_done_cb_;
+    void setParallelRegionDoneCallback(ParallelRegionDoneCb cb) {
+        parallel_region_done_cb_ = std::move(cb);
+    }
 };
 
 // ── Envelope factory ─────────────────────────────────────────────────

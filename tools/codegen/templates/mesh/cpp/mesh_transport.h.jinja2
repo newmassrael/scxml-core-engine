@@ -349,7 +349,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <algorithm>
 #include <charconv>
 {% endif %}
-{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list or someip_liveness_service_id_self_hex %}
 // SCE_MESH.md §9.6.2 Session 4b — ScxmlInvokeEndpoint helper for
 // cross-device `<invoke type="scxml" src="#peer">` SOME/IP traffic.
 // Runs on the consolidated SCE-namespaced `<machine>[_<partition>]_sce_app_`
@@ -358,8 +358,10 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 // range 0x8100..0x81FF never shares an application with OEM services). All
 // SCE-reserved subsystems on this binary share the same SCE app; defense-
 // in-depth try-catch at the vsomeip → SCE callback boundary
-// (`SCE::Mesh::Someip::invokeReceiveSafely`) prevents one subsystem's
-// handler from starving siblings via an escaped exception.
+// (`SCE::Mesh::Someip::invokeReceiveSafely` for §9.6 invoke,
+// `SCE::Mesh::Someip::availabilityChangeSafely` for §16.4 region-
+// liveness — RFC F.X-3 D8) prevents one subsystem's handler from
+// starving siblings via an escaped exception.
 #include "mesh/transports/SomeipScxmlInvokeEndpoint.h"
 #include <vector>
 {% endif %}

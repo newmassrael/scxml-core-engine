@@ -1,0 +1,16 @@
+{
+  "_comment": "SCE Mesh §16.4 / RFC F.X-3 Stage D — codegen-time vsomeip metadata. NOT loaded at runtime; the per-binary configs `vsomeip_someip_region_liveness_left.json` / `*_right.json` provide the live SCE app + offered liveness service + SD timings the routing manager actually uses. This file only supplies the `peer_svc` service-name → numeric-ID mapping that brake's OEM-style `#peer` binding (transport: someip + service: peer_svc + events:) needs to resolve at codegen time. The dead `<send target=\"#peer\">` in brake's left region never fires (TestSenderEngine bypasses onentry), so peer_svc carries no runtime traffic; it exists purely so the codegen emits `someip` into transport_types and the vsomeip include + consolidated SCE app field both fire. Service ID 0x9000 is well outside the SCE-reserved invoke (0x8100..0x817F) and liveness (0x8180..0x81FF) ranges so no collision is possible.",
+  "applications": [
+    { "name": "brake_region_liveness_sce_codegen_placeholder" }
+  ],
+  "services": [
+    {
+      "name": "peer_svc",
+      "service": "0x9000",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "ping", "method": "0x0001" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "_comment": "SCE Mesh §16.4 / RFC F.X-3 Stage D — runtime vsomeip config for the brake_right_part SCE binary (sce-mesh-worker netns, 172.16.10.2). Mirror of the left-side config: hosts `brake_region_liveness_brake_right_part_sce` (F.X-2 consolidated SCE app), offers service 0x8181 on reliable port 30572, and the codegen-emitted register_availability_handler observes the sibling left binary's 0x8180. Same SD multicast group + pinned timings as the left side.",
+  "network": "sce_someip_region_liveness_right",
+  "unicast": "172.16.10.2",
+  "routing": "brake_region_liveness_brake_right_part_sce",
+  "applications": [
+    { "name": "brake_region_liveness_brake_right_part_sce", "id": "0x9302" }
+  ],
+  "services": [
+    {
+      "service": "0x8181",
+      "instance": "0x0001",
+      "unreliable": "0",
+      "reliable": { "port": "30572", "enable-magic-cookies": "false" }
+    }
+  ],
+  "service-discovery": {
+    "enable": "true",
+    "multicast": "224.244.224.245",
+    "port": "30490",
+    "protocol": "udp",
+    "initial_delay_min": "10",
+    "initial_delay_max": "50",
+    "repetitions_base_delay": "100",
+    "repetitions_max": "3",
+    "ttl": "5",
+    "cyclic_offer_delay": "500"
+  }
+}
