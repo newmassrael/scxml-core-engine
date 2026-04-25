@@ -27,27 +27,35 @@
 //! A future "one app per machine, multiplex SCE + OEM services" alternative
 //! would violate (1) by design and is rejected for this system.
 //!
-//! ## What this Rust module owns (RFC F.X-1)
+//! ## What this Rust module owns (RFC F.X-1, RFC F.X-3)
 //!
-//! The hybrid (counter + optional author-pin) allocator
-//! ([`assign_invoke_service_ids`]) is the source of truth for §9.6 SOMEIP
-//! scxml-invoke service IDs. It is invoked once per build by
-//! [`crate::mesh::deploy::assign_someip_invoke_service_ids`] over the full
-//! deploy participant set, producing a deterministic
-//! `BTreeMap<machine_name, service_id>` that codegen consumes via
-//! `mesh::codegen` and emits as named constants in the generated
-//! `<machine>_transport.h` (`SCE_SOMEIP_SERVICE_SELF` and
-//! `SCE_SOMEIP_SERVICE_PEER_<peer_name>`). The deploy-time validator
-//! ([`crate::mesh::deploy::validate_someip_scxml_invoke_service_ids`])
-//! shares this assignment to reject overflow / pin-out-of-range /
-//! pin-vs-pin-collision configurations at parse time.
+//! Two parallel hybrid (counter + optional author-pin) allocators occupy
+//! disjoint sub-ranges of the SCE-reserved §9.6 256-slot space:
+//!
+//! - [`assign_invoke_service_ids`] (RFC F.X-1) — `[0x8100, 0x817F]`.
+//!   Source of truth for §9.6 SOMEIP scxml-invoke service IDs. Invoked
+//!   once per build by [`crate::mesh::deploy::assign_someip_invoke_service_ids`]
+//!   over the full deploy participant set; produces a deterministic
+//!   `BTreeMap<machine_name, service_id>` that codegen consumes via
+//!   `mesh::codegen` and emits as named constants in the generated
+//!   `<machine>_transport.h` (`SCE_SOMEIP_SERVICE_SELF` and
+//!   `SCE_SOMEIP_SERVICE_PEER_<peer_name>`). The deploy-time validator
+//!   ([`crate::mesh::deploy::validate_someip_scxml_invoke_service_ids`])
+//!   shares this assignment to reject overflow / pin-out-of-range /
+//!   pin-vs-pin-collision configurations at parse time.
+//! - [`assign_liveness_service_ids`] (RFC F.X-3) — `[0x8180, 0x81FF]`.
+//!   Source of truth for §16.4 region-partition liveness service IDs.
+//!   Same hybrid pattern, disjoint range, partition-keyed participants
+//!   (`<machine>__P__<partition>`). The deploy-time validator
+//!   ([`crate::mesh::deploy::validate_someip_liveness_service_ids`])
+//!   surfaces overflow / pin-out-of-range / pin-vs-pin-collision with
+//!   the same three-shape diagnostic family as F.X-1.
 //!
 //! The legacy FNV-1a-low-byte derivation
 //! (`service_id_for_machine` constexpr / `serviceIdForMachine` C++ helper)
-//! has been deleted: the counter scheme is collision-free up to the
-//! 128-slot ceiling of the §9.6 invoke sub-range `[0x8100, 0x817F]`, and
-//! the upper half `[0x8180, 0x81FF]` is reserved for the §16.4
-//! region-liveness landing (RFC F.X-3).
+//! has been deleted: the counter scheme is collision-free up to each
+//! sub-range's 128-slot ceiling, and the disjoint partition gives
+//! cross-subsystem stability without requiring author pins.
 
 // ── SCE-reserved §9.6 namespace constants ───────────────────────────────────
 
@@ -73,6 +81,28 @@ pub const SCXML_INVOKE_SERVICE_CEILING: u16 = 0x817F;
 /// crossed.
 pub const SCXML_INVOKE_SERVICE_RANGE_SIZE: usize =
     (SCXML_INVOKE_SERVICE_CEILING - SCXML_INVOKE_SERVICE_BASE + 1) as usize;
+
+/// Base of the SCE-reserved §16.4 region-partition liveness service ID
+/// sub-range (RFC F.X-3). The upper half of the SCE-reserved 256-slot
+/// space, disjoint from [`SCXML_INVOKE_SERVICE_BASE`]'s lower half so
+/// liveness participants never shift invoke participants' auto-assigned
+/// slots when the deploy participant set changes.
+pub const SCXML_LIVENESS_SERVICE_BASE: u16 = 0x8180;
+
+/// Inclusive ceiling of the §16.4 region-partition liveness service ID
+/// sub-range under the hybrid (counter + optional pin) allocator
+/// (RFC F.X-3). The sub-range is `[0x8180, 0x81FF]` — 128 slots.
+pub const SCXML_LIVENESS_SERVICE_CEILING: u16 = 0x81FF;
+
+/// Number of slots in the §16.4 liveness sub-range
+/// (`SCXML_LIVENESS_SERVICE_CEILING - SCXML_LIVENESS_SERVICE_BASE + 1`).
+/// Used as the overflow ceiling by [`assign_liveness_service_ids`] and
+/// named in the
+/// [`crate::mesh::error::DeployError::SomeipLivenessServiceIdOverflow`]
+/// diagnostic so operators see the exact bound their participant count
+/// crossed.
+pub const SCXML_LIVENESS_SERVICE_RANGE_SIZE: usize =
+    (SCXML_LIVENESS_SERVICE_CEILING - SCXML_LIVENESS_SERVICE_BASE + 1) as usize;
 
 /// Single-instance MVP for §9.6 endpoints. Mirror of the C++
 /// `SCXML_INVOKE_INSTANCE_ID` constexpr. Multi-instance pool support for
@@ -223,6 +253,146 @@ pub fn assign_invoke_service_ids(
             "auto-assignment escaped invoke sub-range — overflow gate or pin-reserve invariant broken"
         );
         out.insert(name.clone(), next_slot);
+        next_slot += 1;
+    }
+
+    Ok(out)
+}
+
+// ── Hybrid (counter + optional pin) §16.4 region-liveness assigner ─────────
+
+/// Errors from the hybrid §16.4 region-partition liveness service ID
+/// assigner ([`assign_liveness_service_ids`]). Each variant carries the
+/// operator-facing payload needed to reach a clear deploy.yaml fix; the
+/// deploy-layer validator
+/// ([`crate::mesh::deploy::validate_someip_liveness_service_ids`])
+/// converts these into [`crate::mesh::error::DeployError`] variants of the
+/// same shape so the diagnostic chain stays typed end-to-end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssignLivenessServiceIdError {
+    /// Total participant count exceeds [`SCXML_LIVENESS_SERVICE_RANGE_SIZE`].
+    /// Counter scheme is collision-free up to the ceiling, so the only
+    /// overflow shape is "too many participants".
+    Overflow {
+        participant_count: usize,
+        ceiling: usize,
+    },
+    /// A pinned ID falls outside the liveness sub-range
+    /// `[SCXML_LIVENESS_SERVICE_BASE, SCXML_LIVENESS_SERVICE_CEILING]`.
+    /// Pins outside the sub-range would either collide with the reserved
+    /// invoke range (F.X-1) or with OEM-owned `[0x0000, 0x80FF]` /
+    /// `[0x8200, 0xFFFF]` space.
+    PinOutOfRange {
+        partition_key: String,
+        pinned_id: u16,
+        range_lo: u16,
+        range_hi: u16,
+    },
+    /// Two or more partitions pinned the same ID. Author error — operator
+    /// fix is to repick one of the pins.
+    PinCollision {
+        partition_keys: Vec<String>,
+        pinned_id: u16,
+    },
+}
+
+/// Hybrid (counter + optional author-pin) assigner for §16.4 region-partition
+/// liveness service IDs. Per RFC F.X-3
+/// (`claudedocs/rfc-someip-region-liveness.md`).
+///
+/// **Input.** `participants` maps each canonical liveness participant key
+/// (`<machine>__P__<partition>`, see RFC F.X-3 D2) to its optional pin from
+/// deploy.yaml `someip_liveness_service_id:` (per-partition, see D3). The
+/// map's keys ARE the canonical participant set — the caller (deploy layer)
+/// is responsible for collecting them from every partition belonging to a
+/// machine that opts into `liveliness:` and uses SOME/IP transport.
+///
+/// **Output.** A map from each participant key to its assigned service ID.
+/// Pinned partitions get their pinned ID; un-pinned partitions get the
+/// lowest unreserved slot in lex order starting from
+/// [`SCXML_LIVENESS_SERVICE_BASE`]. The output is collision-free by
+/// construction — pinned slots are reserved before the counter advances,
+/// and the overflow gate up front guarantees the counter never escapes
+/// the sub-range.
+///
+/// **Determinism.** The output depends only on the keys + pin values of the
+/// participant set: `BTreeMap` iteration is lex-sorted, so re-running the
+/// assigner against the same input always produces the same output.
+/// Re-runs across deploy.yaml edits that don't change the *participant set*
+/// (e.g. reordering the YAML, renaming a non-participant) preserve the
+/// assignment.
+///
+/// **Why a separate function from [`assign_invoke_service_ids`]?** RFC F.X-3
+/// D2 reverse-default 1 — measured ROI rejects generic extraction at this
+/// stack height (two callsites, retro-churn dominates net saving). A third
+/// SCE-reserved subsystem would be the natural trigger to extract a shared
+/// `mesh::someip::range_alloc` helper covering all three.
+pub fn assign_liveness_service_ids(
+    participants: &std::collections::BTreeMap<String, Option<u16>>,
+) -> Result<std::collections::BTreeMap<String, u16>, AssignLivenessServiceIdError> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // 1. Overflow gate. Counter scheme cannot fit more than RANGE_SIZE
+    //    participants regardless of pin shape, so reject up front. The
+    //    pin checks below assume the participant count is feasible.
+    if participants.len() > SCXML_LIVENESS_SERVICE_RANGE_SIZE {
+        return Err(AssignLivenessServiceIdError::Overflow {
+            participant_count: participants.len(),
+            ceiling: SCXML_LIVENESS_SERVICE_RANGE_SIZE,
+        });
+    }
+
+    // 2. Pin range + collision validation. Reject any pin outside the
+    //    liveness sub-range; group remaining pins by id to detect
+    //    duplicates. BTreeMap keeps the diagnostic deterministic for
+    //    byte-stable error fixtures.
+    let mut by_pin: BTreeMap<u16, Vec<String>> = BTreeMap::new();
+    for (key, maybe_pin) in participants.iter() {
+        if let Some(pin) = maybe_pin {
+            if *pin < SCXML_LIVENESS_SERVICE_BASE || *pin > SCXML_LIVENESS_SERVICE_CEILING {
+                return Err(AssignLivenessServiceIdError::PinOutOfRange {
+                    partition_key: key.clone(),
+                    pinned_id: *pin,
+                    range_lo: SCXML_LIVENESS_SERVICE_BASE,
+                    range_hi: SCXML_LIVENESS_SERVICE_CEILING,
+                });
+            }
+            by_pin.entry(*pin).or_default().push(key.clone());
+        }
+    }
+    for (pinned_id, keys) in by_pin.iter() {
+        if keys.len() >= 2 {
+            return Err(AssignLivenessServiceIdError::PinCollision {
+                partition_keys: keys.clone(),
+                pinned_id: *pinned_id,
+            });
+        }
+    }
+
+    // 3. Reserved set: every pin claims its slot. Counter must skip these.
+    let reserved: BTreeSet<u16> = by_pin.keys().copied().collect();
+
+    // 4. Walk participants in lex order. Pinned → use the pin verbatim.
+    //    Un-pinned → consume the lowest unreserved slot. The participant-
+    //    count overflow gate above guarantees the counter never escapes
+    //    the sub-range: total claims = participants.len() <= RANGE_SIZE,
+    //    and reserved + auto = participants.len() (disjoint), so the
+    //    auto-assignment cannot collide with any pin or run off the end.
+    let mut out: BTreeMap<String, u16> = BTreeMap::new();
+    let mut next_slot: u16 = SCXML_LIVENESS_SERVICE_BASE;
+    for (key, maybe_pin) in participants.iter() {
+        if let Some(pin) = maybe_pin {
+            out.insert(key.clone(), *pin);
+            continue;
+        }
+        while reserved.contains(&next_slot) {
+            next_slot += 1;
+        }
+        debug_assert!(
+            next_slot <= SCXML_LIVENESS_SERVICE_CEILING,
+            "auto-assignment escaped liveness sub-range — overflow gate or pin-reserve invariant broken"
+        );
+        out.insert(key.clone(), next_slot);
         next_slot += 1;
     }
 
@@ -463,5 +633,193 @@ mod tests {
             assert!(*sid >= SCXML_INVOKE_SERVICE_BASE);
             assert!(*sid <= SCXML_INVOKE_SERVICE_CEILING);
         }
+    }
+
+    // ── §16.4 region-liveness assigner (RFC F.X-3) ──────────────────────
+
+    fn lp(entries: &[(&str, Option<u16>)]) -> BTreeMap<String, Option<u16>> {
+        entries
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect()
+    }
+
+    #[test]
+    fn liveness_constants_partition_invoke_subrange() {
+        // RFC F.X-3 D1: invoke and liveness sub-ranges are disjoint
+        // halves of the SCE-reserved 256-slot space.
+        assert_eq!(SCXML_INVOKE_SERVICE_CEILING + 1, SCXML_LIVENESS_SERVICE_BASE);
+        assert_eq!(
+            SCXML_LIVENESS_SERVICE_RANGE_SIZE, 128,
+            "F.X-3 reserves a 128-slot sub-range mirroring F.X-1"
+        );
+        assert_eq!(SCXML_LIVENESS_SERVICE_BASE, 0x8180);
+        assert_eq!(SCXML_LIVENESS_SERVICE_CEILING, 0x81FF);
+    }
+
+    #[test]
+    fn liveness_assigner_empty_input_succeeds() {
+        let out = assign_liveness_service_ids(&lp(&[])).expect("empty must succeed");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn liveness_assigner_unpinned_lex_counter_from_base() {
+        // Three un-pinned partitions; lex order = (alpha__P__l,
+        // alpha__P__r, beta__P__top). Each gets the next slot from
+        // the liveness base.
+        let out = assign_liveness_service_ids(&lp(&[
+            ("alpha__P__l", None),
+            ("alpha__P__r", None),
+            ("beta__P__top", None),
+        ]))
+        .expect("unpinned must succeed");
+        assert_eq!(out["alpha__P__l"], SCXML_LIVENESS_SERVICE_BASE);
+        assert_eq!(out["alpha__P__r"], SCXML_LIVENESS_SERVICE_BASE + 1);
+        assert_eq!(out["beta__P__top"], SCXML_LIVENESS_SERVICE_BASE + 2);
+    }
+
+    #[test]
+    fn liveness_assigner_pinned_keeps_pin_unpinned_skips_reserved() {
+        // alpha pinned at 0x8181 — auto must skip 0x8181 when filling
+        // around it, taking 0x8180 then 0x8182.
+        let out = assign_liveness_service_ids(&lp(&[
+            ("alpha__P__l", Some(0x8181)),
+            ("beta__P__l", None),
+            ("gamma__P__l", None),
+        ]))
+        .expect("pin + auto mix must succeed");
+        assert_eq!(out["alpha__P__l"], 0x8181);
+        assert_eq!(out["beta__P__l"], 0x8180);
+        assert_eq!(out["gamma__P__l"], 0x8182);
+    }
+
+    #[test]
+    fn liveness_assigner_is_deterministic_across_runs() {
+        // Same input → same output across two distinct invocations.
+        let a = lp(&[
+            ("zoo__P__r", Some(0x819F)),
+            ("alpha__P__l", None),
+            ("mid__P__l", Some(0x8190)),
+            ("beta__P__l", None),
+        ]);
+        let b = a.clone();
+        assert_eq!(
+            assign_liveness_service_ids(&a).unwrap(),
+            assign_liveness_service_ids(&b).unwrap()
+        );
+    }
+
+    #[test]
+    fn liveness_assigner_overflow_at_one_over_ceiling() {
+        let mut input: BTreeMap<String, Option<u16>> = BTreeMap::new();
+        for i in 0..(SCXML_LIVENESS_SERVICE_RANGE_SIZE + 1) {
+            input.insert(format!("m{i:03}__P__l"), None);
+        }
+        match assign_liveness_service_ids(&input) {
+            Err(AssignLivenessServiceIdError::Overflow {
+                participant_count,
+                ceiling,
+            }) => {
+                assert_eq!(participant_count, SCXML_LIVENESS_SERVICE_RANGE_SIZE + 1);
+                assert_eq!(ceiling, SCXML_LIVENESS_SERVICE_RANGE_SIZE);
+            }
+            other => panic!("expected Overflow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn liveness_assigner_exact_fill_succeeds() {
+        let mut input: BTreeMap<String, Option<u16>> = BTreeMap::new();
+        for i in 0..SCXML_LIVENESS_SERVICE_RANGE_SIZE {
+            input.insert(format!("m{i:03}__P__l"), None);
+        }
+        let out = assign_liveness_service_ids(&input).expect("exact-fill must succeed");
+        assert_eq!(out.len(), SCXML_LIVENESS_SERVICE_RANGE_SIZE);
+        let max = *out.values().max().unwrap();
+        assert_eq!(max, SCXML_LIVENESS_SERVICE_CEILING);
+    }
+
+    #[test]
+    fn liveness_assigner_pin_below_range_rejected() {
+        // 0x817F is the highest invoke slot; pinning it as a liveness
+        // ID is out-of-range for this allocator.
+        let out = assign_liveness_service_ids(&lp(&[("alpha__P__l", Some(0x817F))]));
+        match out {
+            Err(AssignLivenessServiceIdError::PinOutOfRange {
+                partition_key,
+                pinned_id,
+                range_lo,
+                range_hi,
+            }) => {
+                assert_eq!(partition_key, "alpha__P__l");
+                assert_eq!(pinned_id, 0x817F);
+                assert_eq!(range_lo, SCXML_LIVENESS_SERVICE_BASE);
+                assert_eq!(range_hi, SCXML_LIVENESS_SERVICE_CEILING);
+            }
+            other => panic!("expected PinOutOfRange (below), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn liveness_assigner_pin_above_range_rejected() {
+        // 0x8200 is the first slot beyond the SCE-reserved range.
+        let out = assign_liveness_service_ids(&lp(&[("alpha__P__l", Some(0x8200))]));
+        match out {
+            Err(AssignLivenessServiceIdError::PinOutOfRange {
+                partition_key,
+                pinned_id,
+                range_lo,
+                range_hi,
+            }) => {
+                assert_eq!(partition_key, "alpha__P__l");
+                assert_eq!(pinned_id, 0x8200);
+                assert_eq!(range_lo, SCXML_LIVENESS_SERVICE_BASE);
+                assert_eq!(range_hi, SCXML_LIVENESS_SERVICE_CEILING);
+            }
+            other => panic!("expected PinOutOfRange (above), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn liveness_assigner_pin_collision_rejected() {
+        let out = assign_liveness_service_ids(&lp(&[
+            ("alpha__P__l", Some(0x8185)),
+            ("beta__P__r", Some(0x8185)),
+            ("gamma__P__t", None),
+        ]));
+        match out {
+            Err(AssignLivenessServiceIdError::PinCollision {
+                partition_keys,
+                pinned_id,
+            }) => {
+                assert_eq!(partition_keys, vec!["alpha__P__l", "beta__P__r"]);
+                assert_eq!(pinned_id, 0x8185);
+            }
+            other => panic!("expected PinCollision, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn liveness_assigner_disjoint_from_invoke_under_same_keys() {
+        // Cross-subsystem invariant: the same key fed to both
+        // allocators yields IDs from disjoint ranges. This is the
+        // F.X-1 D2 / F.X-3 D1 collision-free property pinned in code.
+        let invoke_input = lp(&[("alpha", None), ("beta", None)]);
+        let liveness_input = lp(&[("alpha__P__l", None), ("alpha__P__r", None)]);
+        let invoke_out = assign_invoke_service_ids(&invoke_input).unwrap();
+        let liveness_out = assign_liveness_service_ids(&liveness_input).unwrap();
+        for &iid in invoke_out.values() {
+            assert!(iid <= SCXML_INVOKE_SERVICE_CEILING);
+        }
+        for &lid in liveness_out.values() {
+            assert!(lid >= SCXML_LIVENESS_SERVICE_BASE);
+        }
+        // Empty intersection is the load-bearing assertion.
+        let invoke_set: std::collections::HashSet<u16> =
+            invoke_out.values().copied().collect();
+        let liveness_set: std::collections::HashSet<u16> =
+            liveness_out.values().copied().collect();
+        assert!(invoke_set.is_disjoint(&liveness_set));
     }
 }
