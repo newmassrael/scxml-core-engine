@@ -1,0 +1,58 @@
+# SCE Mesh §9.6 Session 5c — Zenoh donedata two-host fixture.
+#
+# Sister to deploy_session_f_crossdev_donedata.yaml.in (custom_tcp 2-process)
+# and deploy_scxml_invoke_zenoh_crossdev.yaml (Session 5b lifecycle). Reuses
+# the SAME parent + worker SCXMLs as the shm/custom_tcp baseline because
+# §9.6's transport-axis abstraction promises "transport changes are
+# invisible at the SCXML layer" — if the donedata round-trip behaves
+# differently on Zenoh than on custom_tcp, that is a transport-axis
+# regression, not a SCXML semantics one.
+#
+# Parent ECU listens at tcp/172.16.10.1:17450 (one port up from Session 5b
+# lifecycle's 17449). Worker ECU connects to that same address; the three
+# worker machines (param / content / nested) each open their own Zenoh
+# peer session inside the worker process and the codegen-derived
+# Publisher/Subscriber topics fan them out across the peer-mesh once the
+# TCP link is established.
+#
+# Coverage vs Session 5b lifecycle: 5b proves wire-14/15/18 lifecycle
+# survives the netns boundary with a trivial-final child. 5c proves the
+# `<donedata>` payload (param object, primitive content, nested
+# object/array/integer) survives the same boundary — that is, that
+# `_event.data` is decoded equivalently on both sides after a real
+# Zenoh TCP round-trip. Wire-byte equivalence is not asserted (Zenoh's
+# CDR-ish framing differs per transport per SCE_MESH.md §9.6.2); the
+# parent SCXML's three sequential conds guard the decoded payload only.
+#
+# Port 17450 + dedicated RESOURCE_LOCK (zenoh_invoke_crossdev_donedata_port_17450)
+# keep parallel ctest runs of 5b lifecycle / 5c donedata from racing on
+# the same listen socket.
+version: "1.0"
+topology:
+  ecu_parent:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/172.16.10.1:17450"]
+    machines:
+      parent_session_f_donedata:
+        source: parent_session_f_donedata.scxml
+        bindings:
+          "#worker_session_f_donedata_param":
+            transport: zenoh
+          "#worker_session_f_donedata_content":
+            transport: zenoh
+          "#worker_session_f_donedata_nested":
+            transport: zenoh
+  ecu_worker:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/172.16.10.1:17450"]
+    machines:
+      worker_session_f_donedata_param:
+        source: worker_session_f_donedata_param.scxml
+      worker_session_f_donedata_content:
+        source: worker_session_f_donedata_content.scxml
+      worker_session_f_donedata_nested:
+        source: worker_session_f_donedata_nested.scxml

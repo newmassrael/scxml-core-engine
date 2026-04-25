@@ -4153,6 +4153,90 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
                 TIMEOUT 60)
             set_tests_properties(mesh_zenoh_scxml_invoke_crossdev PROPERTIES
                 RESOURCE_LOCK zenoh_invoke_crossdev_port_17449)
+
+            # ── Session 5c: two-host Zenoh donedata crossdev ─────────
+            # Sister to mesh_session_f_crossdev_donedata (custom_tcp
+            # 2-process) and mesh_zenoh_scxml_invoke_crossdev (5b
+            # lifecycle). Reuses parent_session_f_donedata.scxml +
+            # worker_session_f_donedata_{param,content,nested}.scxml
+            # verbatim — the ONLY axis that changes is the deploy.yaml
+            # rebinding peers onto Zenoh, which is the textbook §9.6
+            # transport-axis abstraction proof. Reaching State::Pass
+            # implies all three donedata shapes (param object, primitive
+            # content, nested object/array/integer) survived a real
+            # netns + veth + Zenoh TCP round-trip with semantically
+            # equivalent decoded `_event.data` to the shm baseline.
+            #
+            # Distinct port (17450) + dedicated RESOURCE_LOCK from the
+            # 5b lifecycle (17449) so parallel ctest runs don't race.
+            set(MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR
+                "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_session_f_crossdev_donedata_generated")
+
+            set(MESH_ZENOH_CROSSDEV_DONEDATA_SCXMLS
+                parent_session_f_donedata
+                worker_session_f_donedata_param
+                worker_session_f_donedata_content
+                worker_session_f_donedata_nested)
+
+            set(MESH_ZENOH_CROSSDEV_DONEDATA_SCXML_DEPS
+                "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml")
+
+            foreach(machine ${MESH_ZENOH_CROSSDEV_DONEDATA_SCXMLS})
+                add_custom_command(
+                    OUTPUT "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h"
+                            "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_transport.h"
+                    COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                    COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${machine}.scxml"
+                            -l cpp -o "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                            --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata_zenoh_crossdev.yaml"
+                            --write-deps "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
+                    DEPENDS ${MESH_ZENOH_CROSSDEV_DONEDATA_SCXML_DEPS}
+                            "${MESH_TEST_DIR}/deploy_session_f_donedata_zenoh_crossdev.yaml"
+                            "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    DEPFILE "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
+                    COMMENT "Mesh §9.6 Session 5c Zenoh donedata: Generating ${machine}_{sm,transport}.h"
+                    VERBATIM
+                )
+            endforeach()
+
+            add_executable(mesh_zenoh_session_f_crossdev_donedata_worker
+                mesh/test_mesh_zenoh_session_f_crossdev_donedata_worker.cpp
+                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
+                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
+                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
+                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
+                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
+                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h")
+            target_include_directories(mesh_zenoh_session_f_crossdev_donedata_worker
+                PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
+                        ${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR})
+            target_link_libraries(mesh_zenoh_session_f_crossdev_donedata_worker
+                PRIVATE sce_runtime sce_mesh_common zenohcxx::zenohc)
+            target_compile_features(mesh_zenoh_session_f_crossdev_donedata_worker PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_zenoh_session_f_crossdev_donedata_worker)
+
+            add_executable(mesh_zenoh_session_f_crossdev_donedata_parent
+                mesh/test_mesh_zenoh_session_f_crossdev_donedata_parent.cpp
+                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
+                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h")
+            target_include_directories(mesh_zenoh_session_f_crossdev_donedata_parent
+                PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
+                        ${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR})
+            target_link_libraries(mesh_zenoh_session_f_crossdev_donedata_parent
+                PRIVATE sce_runtime sce_mesh_common zenohcxx::zenohc)
+            target_compile_features(mesh_zenoh_session_f_crossdev_donedata_parent PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_zenoh_session_f_crossdev_donedata_parent)
+
+            sce_register_two_host_mesh_test(
+                NAME    mesh_zenoh_session_f_crossdev_donedata
+                WORKER  mesh_zenoh_session_f_crossdev_donedata_worker
+                PARENT  mesh_zenoh_session_f_crossdev_donedata_parent
+                TIMEOUT 60)
+            set_tests_properties(mesh_zenoh_session_f_crossdev_donedata PROPERTIES
+                RESOURCE_LOCK zenoh_invoke_crossdev_donedata_port_17450)
         endif()
 
         # ── Base zenoh EventSubscribe runtime E2E ─────────────────────
