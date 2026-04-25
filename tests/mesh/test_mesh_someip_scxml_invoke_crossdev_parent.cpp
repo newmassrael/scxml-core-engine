@@ -50,11 +50,20 @@ int main() {
         return 1;
     }
 
-    // The orchestrator (run_two_host_fixture.sh) waits for the worker's
-    // LISTEN_READY plus a 500 ms SOME/IP-SD convergence settle before
-    // launching this binary, so by the time we get here the worker's
-    // OfferService has already reached this routing manager. Calling
-    // initialize() emits wire-14 InvokeStart on the wire.
+    // SD-convergence window. The orchestrator's 500 ms only covers the
+    // worker → parent direction (worker's SD has been advertising its
+    // Offer since orchestrator pre-launch). This sleep covers the
+    // parent → worker direction: parent's RM needs to multicast its
+    // own Offer + receive the worker's Offer + match its pending
+    // request_service before the wire-14 send below has a routing
+    // target. vsomeip default `initial_delay_max` alone is up to 100 ms
+    // on the first SD broadcast; round-trip discovery + service-link
+    // setup adds more. The 1-process Session 4b roundtrip absorbs the
+    // same convergence with 500 ms after both routers init() — we use
+    // the same budget here since the bidirectional discovery has the
+    // same physics whether the routers share a process or share a wire.
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
     parent.initialize();
 
     using State = SCE::Generated::scxml_invoke_someip_crossdev_parent::State;
