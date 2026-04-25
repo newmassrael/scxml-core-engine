@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 Session 5b SOME/IP scxml-invoke two-host roundtrip — worker.
+     Trivial-final child mirroring scxml_invoke_someip_worker.scxml: the
+     initial state is itself a `<final>`, so the engine reaches it during
+     its initial macrostep and WorkerSessionHost::onWire14 sees
+     isFinal()==true immediately after initialize(), publishing wire-15
+     InvokeStarted + wire-18 InvokeDone in a single pump tick. Same shortest
+     success path as the 1-process Session 4b fixture, just exercised over
+     a real network stack via netns + veth + SOME/IP-SD. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="done"
+       name="scxml_invoke_someip_crossdev_worker">
+    <final id="done"/>
+</scxml>

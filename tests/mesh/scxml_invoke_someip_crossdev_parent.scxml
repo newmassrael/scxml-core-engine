@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 Session 5b SOME/IP scxml-invoke two-host roundtrip — parent.
+     Sister to scxml_invoke_someip_parent.scxml (Session 4b 1-process), but
+     bound to a deploy.yaml that splits parent and worker onto distinct
+     ECUs (deploy_scxml_invoke_someip_crossdev.yaml). Body is identical to
+     the 1-process variant: on entry of `waiting` the codegen emits wire-14
+     InvokeStart via scxml_invoke_to_scxml_invoke_someip_crossdev_worker_,
+     and done.invoke / error.execution drive the final transitions. The
+     transport difference is invisible at the SCXML layer — that is the
+     whole point of §9.6's transport-axis abstraction. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting"
+       name="scxml_invoke_someip_crossdev_parent">
+    <state id="waiting">
+        <invoke type="scxml" src="#scxml_invoke_someip_crossdev_worker" id="remote_inv"/>
+        <transition event="done.invoke" target="pass"/>
+        <transition event="done.invoke.remote_inv" target="pass"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

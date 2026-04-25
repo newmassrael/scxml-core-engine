@@ -1,0 +1,14 @@
+{
+  "network": "sce_scxml_invoke_someip_crossdev_parent",
+  "unicast": "172.16.10.1",
+  "routing": "scxml_invoke_someip_crossdev_parent_scxml_invoke",
+  "applications": [
+    { "name": "scxml_invoke_someip_crossdev_parent_scxml_invoke", "id": "0x9101" }
+  ],
+  "service-discovery": {
+    "enable": "true",
+    "multicast": "224.244.224.245",
+    "port": "30490",
+    "protocol": "udp"
+  }
+}

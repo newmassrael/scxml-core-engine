@@ -3507,6 +3507,114 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             TIMEOUT 30
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_scxml_invoke.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
+        # ── Session 5b: two-host SOME/IP scxml-invoke crossdev ───────
+        # Parent and worker run in distinct Linux netns wired by veth,
+        # each with its own vsomeip routing manager + unicast IP. They
+        # discover each other through SOME/IP-SD multicast, exercising
+        # the wire-14/15/18 lifecycle across a real network stack —
+        # what the 1-process Session 4b roundtrip cannot cover because
+        # loopback alone does not route multicast or expose distinct
+        # routing-manager identities.
+        #
+        # Gated on SCE_ENABLE_NETNS_TESTS because the orchestrator
+        # (run_two_host_fixture.sh) needs root + the netns from
+        # setup_crossdev_netns.sh; without those it would fail in a
+        # fresh checkout. Default OFF keeps `cmake .. && ctest` green
+        # for non-root developers.
+        if(SCE_ENABLE_NETNS_TESTS)
+            include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/two_host_test.cmake)
+
+            set(MESH_SOMEIP_CROSSDEV_OUTPUT_DIR
+                "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_scxml_invoke_crossdev_generated")
+
+            add_custom_command(
+                OUTPUT "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_sm.h"
+                       "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_transport.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_parent.scxml"
+                        -l cpp -o "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
+                        --write-deps "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_parent.scxml"
+                        "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_worker.scxml"
+                        "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_sm.h.d"
+                COMMENT "Mesh §9.6 Session 5b: Generating scxml_invoke_someip_crossdev_parent_{sm,transport}.h"
+                VERBATIM
+            )
+
+            add_custom_command(
+                OUTPUT "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_sm.h"
+                       "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_transport.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_worker.scxml"
+                        -l cpp -o "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
+                        --write-deps "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_parent.scxml"
+                        "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_worker.scxml"
+                        "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_sm.h.d"
+                COMMENT "Mesh §9.6 Session 5b: Generating scxml_invoke_someip_crossdev_worker_{sm,transport}.h"
+                VERBATIM
+            )
+
+            add_executable(mesh_someip_scxml_invoke_crossdev_parent
+                mesh/test_mesh_someip_scxml_invoke_crossdev_parent.cpp
+                "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_sm.h"
+                "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_transport.h"
+            )
+            target_include_directories(mesh_someip_scxml_invoke_crossdev_parent
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    ${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+            )
+            target_link_libraries(mesh_someip_scxml_invoke_crossdev_parent
+                PRIVATE sce_runtime sce_mesh_common vsomeip3)
+            # VSOMEIP_CONFIG_PATH baked into the binary because ctest's
+            # ENVIRONMENT property cannot vary by side and the two halves
+            # need distinct vsomeip.json (parent on 172.16.10.1, worker
+            # on 172.16.10.2).
+            target_compile_definitions(mesh_someip_scxml_invoke_crossdev_parent
+                PRIVATE VSOMEIP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_scxml_invoke_crossdev_parent.json")
+            target_compile_features(mesh_someip_scxml_invoke_crossdev_parent PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_someip_scxml_invoke_crossdev_parent)
+
+            add_executable(mesh_someip_scxml_invoke_crossdev_worker
+                mesh/test_mesh_someip_scxml_invoke_crossdev_worker.cpp
+                "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_sm.h"
+                "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_transport.h"
+            )
+            target_include_directories(mesh_someip_scxml_invoke_crossdev_worker
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    ${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+            )
+            target_link_libraries(mesh_someip_scxml_invoke_crossdev_worker
+                PRIVATE sce_runtime sce_mesh_common vsomeip3)
+            target_compile_definitions(mesh_someip_scxml_invoke_crossdev_worker
+                PRIVATE VSOMEIP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_scxml_invoke_crossdev_worker.json")
+            target_compile_features(mesh_someip_scxml_invoke_crossdev_worker PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_someip_scxml_invoke_crossdev_worker)
+
+            sce_register_two_host_mesh_test(
+                NAME    mesh_someip_scxml_invoke_crossdev
+                WORKER  mesh_someip_scxml_invoke_crossdev_worker
+                PARENT  mesh_someip_scxml_invoke_crossdev_parent
+                TIMEOUT 60)
+            # vsomeip routing-manager UNIX sockets live in /tmp, which is
+            # shared across netns. Distinct `network` fields per side keep
+            # paths apart, but two parallel runs of *this* fixture would
+            # still race on the same paths — serialise via RESOURCE_LOCK.
+            set_tests_properties(mesh_someip_scxml_invoke_crossdev PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}"
+                RESOURCE_LOCK sce_mesh_someip_crossdev_netns)
+        endif()
+
         # ── Session I: engine-driven RPC/FieldRead over SOME/IP ──────
         # Sibling to mesh_someip_runtime — binds the real motor_someip_multi
         # SM to TransportRouter and drives it with a step() pump so the

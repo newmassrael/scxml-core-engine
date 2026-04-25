@@ -1,0 +1,31 @@
+# SCE Mesh §9.6 Session 5b — SOME/IP scxml-invoke two-host fixture.
+#
+# Parent and worker live on distinct ECUs (`ecu_parent`, `ecu_worker`),
+# which is what the cross-device classifier looks for to mark the peer
+# binding as cross-device and route §9.6 lifecycle through the
+# SomeipScxmlInvokeEndpoint over a real wire. The 1-process Session 4b
+# variant (deploy_scxml_invoke_someip.yaml) collocates both machines on
+# `ecu1` so the same code path is exercised but everything stays in
+# one routing-manager + one socket namespace.
+#
+# At runtime each side opens its own vsomeip routing manager (parent =
+# vsomeip_scxml_invoke_crossdev_parent.json on 172.16.10.1, worker =
+# vsomeip_scxml_invoke_crossdev_worker.json on 172.16.10.2) and the two
+# discover each other through SOME/IP-SD multicast over the veth pair
+# created by setup_crossdev_netns.sh. No `transports.someip.application_name`
+# field is declared here: §9.6 scxml-invoke uses a codegen-derived app
+# name (`<machine>_scxml_invoke`) so the SCE-reserved identity is
+# decoupled from any OEM <send> target configuration.
+version: "1.0"
+topology:
+  ecu_parent:
+    machines:
+      scxml_invoke_someip_crossdev_parent:
+        source: scxml_invoke_someip_crossdev_parent.scxml
+        bindings:
+          "#scxml_invoke_someip_crossdev_worker":
+            transport: someip
+  ecu_worker:
+    machines:
+      scxml_invoke_someip_crossdev_worker:
+        source: scxml_invoke_someip_crossdev_worker.scxml
