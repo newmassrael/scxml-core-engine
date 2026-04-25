@@ -4204,4 +4204,188 @@ topology:
             other => panic!("expected PartitionSynthInfixCollision, got {other:?}"),
         }
     }
+
+    // ── §9.6 Session 4c: SOME/IP service-ID collision validator ──
+
+    /// Adversarial fixture: an actual colliding pair (computed at runtime
+    /// via `find_colliding_pair`, not a hard-coded magic pair) wired into
+    /// a deploy.yaml whose §9.6 someip participant set is exactly those
+    /// two names. The validator must reject; the diagnostic carries the
+    /// shared service ID and the colliding machine names sorted.
+    ///
+    /// "Computed at runtime" is the key property — the test does not pin
+    /// any specific FNV output. If a future drift in the FNV constants
+    /// changes which short alphanumerics collide, `find_colliding_pair`
+    /// re-discovers a new colliding pair and the test still exercises
+    /// the validator with a real collision. The drift is caught
+    /// independently by the pinned-hash tests in `transport::someip`.
+    #[test]
+    fn someip_service_id_collision_rejected_via_adversarial_pair() {
+        use crate::mesh::transport::someip::{find_colliding_pair, service_id_for_machine};
+        let (a, b) = find_colliding_pair()
+            .expect("FNV-1a low-byte projection must collide in 4-char alphanumeric");
+        let expected_service_id = service_id_for_machine(&a);
+        // Sanity — `find_colliding_pair`'s contract is "same service ID".
+        assert_eq!(expected_service_id, service_id_for_machine(&b));
+
+        // Wire `a` and `b` as someip §9.6 peers on separate ECUs. `a`
+        // declares `bindings["#b"].transport: someip` so both names
+        // enter the participant set under the validator's structural
+        // walk; the SCXML side is irrelevant at this layer.
+        let yaml = format!(
+            r##"version: "1.0"
+topology:
+  ecu_alpha:
+    machines:
+      {a}:
+        source: {a}.scxml
+        bindings:
+          "#{b}":
+            transport: someip
+  ecu_beta:
+    machines:
+      {b}:
+        source: {b}.scxml
+"##
+        );
+
+        let err = parse_deploy_str(&yaml)
+            .expect_err("colliding §9.6 someip participant pair must be rejected");
+        match err {
+            crate::mesh::error::DeployError::SomeipScxmlInvokeServiceIdCollision {
+                service_id,
+                machines,
+            } => {
+                assert_eq!(service_id, expected_service_id);
+                // Machine list is sorted (BTreeSet → BTreeMap iteration);
+                // the lex-smaller name lands first regardless of which
+                // side carried the binding declaration.
+                let mut sorted = vec![a.clone(), b.clone()];
+                sorted.sort();
+                assert_eq!(machines, sorted);
+            }
+            other => panic!("expected SomeipScxmlInvokeServiceIdCollision, got {other:?}"),
+        }
+    }
+
+    /// The 4-machine fixture set used across `tests/mesh` (parent /
+    /// worker / motor / brake) is collision-free under the pinned FNV
+    /// hashes documented in `transport::someip`. The validator must
+    /// accept this set even though every machine declares an outbound
+    /// `transport: someip` binding to one of the others — the §9.6
+    /// participant union is `{parent, worker, motor, brake}` and the
+    /// pinned hashes (0x81fd / 0x8157 / 0x8172 / 0x8130) are all
+    /// distinct.
+    ///
+    /// This guards the validator's `< 2` early return is not
+    /// over-applied: collision check fires when the participant set
+    /// has size ≥ 2 (it does, size 4) and the per-service-ID grouping
+    /// must produce no group of size ≥ 2.
+    #[test]
+    fn someip_collision_free_set_accepted() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu_a:
+    machines:
+      parent:
+        source: parent.scxml
+        bindings:
+          "#worker":
+            transport: someip
+  ecu_b:
+    machines:
+      worker:
+        source: worker.scxml
+        bindings:
+          "#motor":
+            transport: someip
+  ecu_c:
+    machines:
+      motor:
+        source: motor.scxml
+        bindings:
+          "#brake":
+            transport: someip
+  ecu_d:
+    machines:
+      brake:
+        source: brake.scxml
+"##;
+        let cfg = parse_deploy_str(yaml).expect("collision-free 4-machine set must accept");
+        // Sanity: the participant set is exactly the four declared machines.
+        assert_eq!(cfg.topology.len(), 4);
+    }
+
+    /// Single §9.6 someip participant (one machine references one peer)
+    /// has participant-set size 2, so the validator does run; but the
+    /// two pinned names parent/worker hash to distinct service IDs. To
+    /// exercise the literal "single-participant short-circuit", we use
+    /// a deploy with no someip bindings at all: the participant set is
+    /// empty, the validator's `< 2` early return fires, and the
+    /// deployment is accepted.
+    #[test]
+    fn no_someip_bindings_short_circuits_collision_check() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+      motor:
+        source: motor.scxml
+"##;
+        parse_deploy_str(yaml)
+            .expect("zero §9.6 someip participants must short-circuit collision check");
+    }
+
+    /// Mixed transports (zenoh + someip in the same deploy) must keep
+    /// collision domains separate: only someip participants enter the
+    /// FNV check, zenoh peers are ignored. Even if the zenoh-bound
+    /// names happen to FNV-collide, the validator must accept because
+    /// they never register a §9.6 someip service ID.
+    #[test]
+    fn zenoh_peers_excluded_from_someip_collision_domain() {
+        use crate::mesh::transport::someip::{find_colliding_pair, service_id_for_machine};
+        let (a, b) = find_colliding_pair()
+            .expect("FNV-1a low-byte projection must collide in 4-char alphanumeric");
+        // Sanity: pair really collides.
+        assert_eq!(service_id_for_machine(&a), service_id_for_machine(&b));
+
+        // Deploy `a`, `b` as zenoh peers (not someip). Plus one someip
+        // participant (parent → worker over someip) which is
+        // collision-free against itself / vacuously safe alone with
+        // its single peer pair. The zenoh pair must NOT enter the
+        // someip collision domain.
+        let yaml = format!(
+            r##"version: "1.0"
+topology:
+  ecu_a:
+    machines:
+      {a}:
+        source: {a}.scxml
+        bindings:
+          "#{b}":
+            transport: zenoh
+      parent:
+        source: parent.scxml
+        bindings:
+          "#worker":
+            transport: someip
+  ecu_b:
+    machines:
+      {b}:
+        source: {b}.scxml
+      worker:
+        source: worker.scxml
+"##
+        );
+
+        parse_deploy_str(&yaml)
+            .expect("zenoh-bound colliding pair must not pollute someip collision domain");
+    }
 }
