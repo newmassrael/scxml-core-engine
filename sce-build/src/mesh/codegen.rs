@@ -1235,6 +1235,21 @@ fn generate_cpp_mesh(
         transport_types.insert("custom_tcp");
     }
 
+    // SCE_MESH.md §9.6 Session 4b: scxml-remote invoke peers that opted
+    // into someip demand the ScxmlInvokeEndpoint helper + the shared
+    // `<machine>_scxml_invoke_app_` vsomeip application, which is
+    // orthogonal to any per-`<send>`-target someip application emitted
+    // from `targets`. Add the variant so the template's `{% if "someip"
+    // in transport_types %}` gate fires for the include block even when
+    // no `<send>` target selected someip on this machine.
+    if scxml_remote_outbound_peers
+        .iter()
+        .chain(scxml_remote_inbound_peers.iter())
+        .any(|p| p.transport.as_deref() == Some("someip"))
+    {
+        transport_types.insert("someip");
+    }
+
     // SCE_MESH.md §10.5: per-binding dedup decision drives machine-level
     // emission. A receiver emits the runtime DedupRouter iff at least one
     // inbound path on the machine actually needs runtime dedup — that's

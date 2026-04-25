@@ -347,6 +347,16 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <algorithm>
 #include <charconv>
 {% endif %}
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+// SCE_MESH.md §9.6.2 Session 4b — ScxmlInvokeEndpoint helper for
+// cross-device `<invoke type="scxml" src="#peer">` SOME/IP traffic.
+// Runs on a dedicated `<machine>_scxml_invoke_app_` vsomeip application
+// distinct from any per-`<send>`-target someip application, preserving
+// the §13 OEM boundary (SCE-reserved service range 0x8100..0x81FF never
+// shares an application with OEM services).
+#include "mesh/transports/SomeipScxmlInvokeEndpoint.h"
+#include <vector>
+{% endif %}
 {% endif %}
 {% if "zenoh" in transport_types %}
 #include <functional>
@@ -785,7 +795,16 @@ struct TransportRouter {
     // §9.6 custom_tcp outbound: single `Client` for wire-14/17/19 send;
     // inbound wire-15/16/18/20 arrive via the device-shared server.
     SCE::Mesh::CustomTcp::Client p2c_to_{{ peer.name }}_;
-{%   elif peer.transport != "someip" %}
+{%   elif peer.transport == "someip" %}
+    // §9.6 Session 4b SOME/IP outbound: ScxmlInvokeEndpoint dispatches
+    // wire-14/17/19 via `methodForPattern` (MT_REQUEST_NO_RETURN) and
+    // registers per-wire receive handlers so inbound wire-15/16/18/20
+    // from the peer fire the endpoint's ReceiveCallback. Parent-side
+    // inbound dispatches inline in the receive callback via
+    // `dispatchToSession`, mirroring the custom_tcp outbound pattern
+    // where parent-side replies bypass the worker's staging queue.
+    SCE::Mesh::Someip::ScxmlInvokeEndpoint scxml_invoke_to_{{ peer.name }}_;
+{%   else %}
     SCE::Mesh::ShmChannel<> p2c_to_{{ peer.name }}_;
     SCE::Mesh::ShmChannel<> c2p_from_{{ peer.name }}_;
 {%   endif %}
@@ -801,11 +820,34 @@ struct TransportRouter {
     SCE::Mesh::CustomTcp::Client c2p_to_{{ peer.name }}_;
     std::mutex tcp_invoke_inbound_mutex_{{ peer.name }}_;
     std::vector<SCE::Mesh::MeshEnvelope> tcp_invoke_inbound_queue_{{ peer.name }}_;
-{%   elif peer.transport != "someip" %}
+{%   elif peer.transport == "someip" %}
+    // §9.6 Session 4b SOME/IP inbound: ScxmlInvokeEndpoint handles
+    // wire-15/16/18/20 outbound and wire-14/17/19 inbound. The receive
+    // callback stages inbound envelopes in `someip_invoke_inbound_queue_`
+    // under a mutex so the worker's pump thread drains them on its
+    // cadence — same single-threaded WorkerSessionHost contract the
+    // custom_tcp inbound pattern relies on (§14.4 callback-thread
+    // dispatch convention applied to the worker boundary).
+    SCE::Mesh::Someip::ScxmlInvokeEndpoint scxml_invoke_to_{{ peer.name }}_;
+    std::mutex someip_invoke_inbound_mutex_{{ peer.name }}_;
+    std::vector<SCE::Mesh::MeshEnvelope> someip_invoke_inbound_queue_{{ peer.name }}_;
+{%   else %}
     SCE::Mesh::ShmChannel<> p2c_from_{{ peer.name }}_;
     SCE::Mesh::ShmChannel<> c2p_to_{{ peer.name }}_;
 {%   endif %}
 {% endfor %}
+{#- SCE_MESH.md §9.6.2 Session 4b machine-level SOME/IP scxml-invoke app.
+    One `<machine>_scxml_invoke_app_` per TransportRouter shared across
+    every §9.6 someip peer on this machine. Dedicated application keeps
+    SCE-reserved services (0x8100..0x81FF) out of the per-`<send>`-target
+    `<machine>_server_` / `{target}_app_` applications owned by OEM
+    vsomeip.json entries (§13 OEM boundary). The paired thread hosts
+    `app_->start()`'s dispatch loop — spawned in `init()` after every
+    endpoint has been started so no message is lost to a missing handler. #}
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+    std::shared_ptr<vsomeip::application> {{ machine_name }}_scxml_invoke_app_;
+    std::thread {{ machine_name }}_scxml_invoke_thread_;
+{% endif %}
 
 {% if scxml_remote_inbound_peers %}
     /// SCE_MESH.md §9.6 WorkerSessionHost — child session registry and
@@ -1514,10 +1556,19 @@ struct TransportRouter {
         a no-op here — inbound dispatch goes through the device-shared
         `custom_tcp_server_` (Session 2 commit 2 installs the pattern
         switch). #}
+{#- SCE_MESH.md §9.6.2 Session 4b machine-level SOME/IP scxml-invoke
+    vsomeip application: one per machine, created BEFORE the per-peer
+    endpoints because their ctor stores a shared_ptr copy. Follows the
+    same declaration-before-use ordering as `server_app_` below. #}
+{%- if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+{%-   set ns.parts = ns.parts + [machine_name ~ "_scxml_invoke_app_(vsomeip::runtime::get()->create_application(\"" ~ machine_name ~ "_scxml_invoke\"))"] %}
+{%- endif %}
 {%- for peer in scxml_remote_outbound_peers %}
 {%-   if peer.transport == "custom_tcp" %}
 {%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
-{%-   elif peer.transport != "someip" %}
+{%-   elif peer.transport == "someip" %}
+{%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ machine_name ~ "_scxml_invoke_app_, SCE::Mesh::Someip::serviceIdForMachine(\"" ~ machine_name ~ "\"), SCE::Mesh::Someip::serviceIdForMachine(\"" ~ peer.name ~ "\"))"] %}
+{%-   else %}
 {%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(P2C_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
 {%-     set ns.parts = ns.parts + ["c2p_from_" ~ peer.name ~ "_(C2P_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
 {%-   endif %}
@@ -1525,7 +1576,9 @@ struct TransportRouter {
 {%- for peer in scxml_remote_inbound_peers %}
 {%-   if peer.transport == "custom_tcp" %}
 {%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
-{%-   elif peer.transport != "someip" %}
+{%-   elif peer.transport == "someip" %}
+{%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ machine_name ~ "_scxml_invoke_app_, SCE::Mesh::Someip::serviceIdForMachine(\"" ~ machine_name ~ "\"), SCE::Mesh::Someip::serviceIdForMachine(\"" ~ peer.name ~ "\"))"] %}
+{%-   else %}
 {%-     set ns.parts = ns.parts + ["p2c_from_" ~ peer.name ~ "_(P2C_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
 {%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(C2P_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
 {%-   endif %}
@@ -1800,7 +1853,11 @@ struct TransportRouter {
                     env.routing_id = routing_id_;
 {% for peer in scxml_remote_outbound_peers %}
                     if (target == "{{ peer.name }}") {
+{%   if peer.transport == "someip" %}
+                        return scxml_invoke_to_{{ peer.name }}_.send(env);
+{%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
+{%   endif %}
                     }
 {% endfor %}
                     return false;  // unknown peer — caller falls through to local raise
@@ -1837,7 +1894,11 @@ struct TransportRouter {
                     env.routing_id = routing_id_;
 {% for peer in scxml_remote_outbound_peers %}
                     if (target == "{{ peer.name }}") {
+{%   if peer.transport == "someip" %}
+                        return scxml_invoke_to_{{ peer.name }}_.send(env);
+{%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
+{%   endif %}
                     }
 {% endfor %}
                     return false;
@@ -1856,7 +1917,11 @@ struct TransportRouter {
                     env.routing_id = routing_id_;
 {% for peer in scxml_remote_outbound_peers %}
                     if (target == "{{ peer.name }}") {
+{%   if peer.transport == "someip" %}
+                        return scxml_invoke_to_{{ peer.name }}_.send(env);
+{%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
+{%   endif %}
                     }
 {% endfor %}
                     return false;
@@ -1976,6 +2041,43 @@ struct TransportRouter {
             }
         }
 {% endfor %}
+{# §9.6 someip inbound: wire-14/17/19 arrived via the dedicated
+   `<machine>_scxml_invoke_app_` vsomeip callback thread and are staged
+   in per-peer `someip_invoke_inbound_queue_` under a mutex — same
+   single-threaded `WorkerSessionHost` contract the custom_tcp drain
+   above relies on. `swap` minimises lock hold time so the vsomeip
+   callback thread is not blocked during pattern dispatch. Reply
+   wire-15/16/18/20 publish through `scxml_invoke_to_<peer>_.send`
+   rather than a shm/tcp channel — the publisher lambda below resolves
+   per-peer by transport. #}
+{% for peer in scxml_remote_inbound_peers if peer.transport == "someip" %}
+        {
+            std::vector<SCE::Mesh::MeshEnvelope> drained;
+            {
+                std::scoped_lock lk(someip_invoke_inbound_mutex_{{ peer.name }}_);
+                drained.swap(someip_invoke_inbound_queue_{{ peer.name }}_);
+            }
+            for (const auto& in : drained) {
+                switch (in.pattern) {
+                case SCE::Mesh::PatternKind::InvokeStart:
+                    worker_session_host_.onWire14(in,
+                        [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
+                            return scxml_invoke_to_{{ peer.name }}_.send(env);
+                        });
+                    break;
+                case SCE::Mesh::PatternKind::ParentEvent:
+                    worker_session_host_.onWire17(in);
+                    break;
+                case SCE::Mesh::PatternKind::InvokeCancel:
+                    worker_session_host_.onWire19(in);
+                    break;
+                default:
+                    break;  // Endpoint receive callback filters by pattern already
+                }
+                ++total;
+            }
+        }
+{% endfor %}
         // After inbound drain, tick active child sessions. Each tick may
         // publish further wire-16 (via the adapter's send callback) or
         // detect `<final>` and emit wire-18. Publisher resolution by
@@ -1985,7 +2087,11 @@ struct TransportRouter {
 {% for peer in scxml_remote_inbound_peers %}
                 if (parent_peer == "{{ peer.name }}") {
                     return [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
+{%   if peer.transport == "someip" %}
+                        return scxml_invoke_to_{{ peer.name }}_.send(env);
+{%   else %}
                         return c2p_to_{{ peer.name }}_.send(env);
+{%   endif %}
                     };
                 }
 {% endfor %}
@@ -2133,6 +2239,83 @@ struct TransportRouter {
 {% endif %}
         {{ target.target_snake }}_thread_ = std::thread([this]{ {{ target.target_snake }}_app_->start(); });
 {% endfor %}
+{#- SCE_MESH.md §9.6.2 Session 4b SOME/IP scxml-invoke app init: runs on
+    the dedicated `<machine>_scxml_invoke_app_` distinct from the per-
+    `<send>`-target applications iterated above (§13 OEM boundary). Each
+    §9.6 peer's `ScxmlInvokeEndpoint` needs its `setReceiveHandler`
+    installed BEFORE `start()` so no wire-14/17/19 arrival is lost to a
+    missing handler; pattern-by-pattern dispatch mirrors the
+    `custom_tcp_server_` receive callback (§14.4 thread-safe
+    `dispatchToSession` for parent-side inbound, mutex-guarded staging
+    for worker-side inbound). #}
+{%- set someip_invoke_outbound_peers = scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list %}
+{%- set someip_invoke_inbound_peers = scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+{% if someip_invoke_outbound_peers or someip_invoke_inbound_peers %}
+        if (!{{ machine_name }}_scxml_invoke_app_ ||
+            !{{ machine_name }}_scxml_invoke_app_->init()) {
+            shutdown();
+            return false;
+        }
+{% for peer in someip_invoke_outbound_peers %}
+        // §9.6 SOME/IP outbound peer `{{ peer.name }}` — parent-side
+        // dispatch: inbound wire-15/16/18/20 arrive on the vsomeip
+        // callback thread and route directly into `dispatchToSession`
+        // (§14.4 thread-safe contract). Misrouted wire-14/17/19 from a
+        // peer that should not be producing them are dropped silently —
+        // a sender-side bug, not a receiver hazard.
+        scxml_invoke_to_{{ peer.name }}_.setReceiveHandler(
+            [this](const SCE::Mesh::MeshEnvelope& env) {
+                switch (env.pattern) {
+                case SCE::Mesh::PatternKind::InvokeStarted:
+                case SCE::Mesh::PatternKind::ChildEvent:
+                case SCE::Mesh::PatternKind::InvokeDone:
+                case SCE::Mesh::PatternKind::InvokeError:
+                    (void)this->dispatchToSession(env, 0);
+                    return;
+                default:
+                    return;
+                }
+            });
+        if (!scxml_invoke_to_{{ peer.name }}_.start()) {
+            shutdown();
+            return false;
+        }
+{% endfor %}
+{% for peer in someip_invoke_inbound_peers %}
+        // §9.6 SOME/IP inbound peer `{{ peer.name }}` — worker-side
+        // dispatch: stage wire-14/17/19 under `someip_invoke_inbound_
+        // mutex_` so the pump thread observes a consistent snapshot of
+        // the child-session map (§14.4 callback-thread dispatch
+        // convention). Wrong-source envelopes (a sibling peer misrouting
+        // to us) and misrouted wire-15/16/18/20 are dropped.
+        scxml_invoke_to_{{ peer.name }}_.setReceiveHandler(
+            [this](const SCE::Mesh::MeshEnvelope& env) {
+                if (env.source != "{{ peer.name }}") return;
+                switch (env.pattern) {
+                case SCE::Mesh::PatternKind::InvokeStart:
+                case SCE::Mesh::PatternKind::ParentEvent:
+                case SCE::Mesh::PatternKind::InvokeCancel: {
+                    std::scoped_lock lk(someip_invoke_inbound_mutex_{{ peer.name }}_);
+                    someip_invoke_inbound_queue_{{ peer.name }}_.push_back(env);
+                    return;
+                }
+                default:
+                    return;
+                }
+            });
+        if (!scxml_invoke_to_{{ peer.name }}_.start()) {
+            shutdown();
+            return false;
+        }
+{% endfor %}
+        // Dedicated dispatch thread for the §9.6 scxml-invoke app —
+        // distinct from any per-`<send>`-target `{target}_thread_`
+        // above so a handler exception stays contained in the §9.6
+        // callback thread and cannot block safety-relevant `<send>`
+        // traffic (§14.4 failure-isolation rationale).
+        {{ machine_name }}_scxml_invoke_thread_ =
+            std::thread([this]{ {{ machine_name }}_scxml_invoke_app_->start(); });
+{% endif %}
 {% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
         // custom_tcp device-shared server: bind+listen happens in the
         // ctor; failure surfaces as `valid() == false`. Inbound envelopes
@@ -2832,6 +3015,16 @@ struct TransportRouter {
 {% if has_server_someip %}
         if (server_app_) server_app_->stop();
         if (server_thread_.joinable()) server_thread_.join();
+{% endif %}
+{#- SCE_MESH.md §9.6.2 Session 4b SOME/IP scxml-invoke app teardown.
+    Parallel to the per-`<send>`-target loop above — the dedicated §9.6
+    application on this machine is owned separately and torn down
+    independently. Idempotent via shared_ptr reset + joinable() guard
+    so dtor-via-shutdown does not touch an already-joined thread. #}
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+        if ({{ machine_name }}_scxml_invoke_app_) {{ machine_name }}_scxml_invoke_app_->stop();
+        if ({{ machine_name }}_scxml_invoke_thread_.joinable()) {{ machine_name }}_scxml_invoke_thread_.join();
+        {{ machine_name }}_scxml_invoke_app_.reset();
 {% endif %}
 {% if has_server_zenoh %}
 {% if has_server_query_timeout %}
