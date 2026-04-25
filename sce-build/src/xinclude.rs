@@ -565,10 +565,12 @@ mod tests {
 
     #[test]
     fn xinclude_depth_matches_runtime() {
-        // Guards against silent drift from
-        // sce/include/parsing/PugiXMLParser.h:69. If the runtime
-        // changes the limit, update `MAX_XINCLUDE_DEPTH` here in
-        // the same commit.
+        // Guards against silent drift of the Rust-side constant
+        // value. Two-way agreement against the C++ header is
+        // enforced separately by `cpp_xinclude_expander_matches_rust_shape`
+        // below (Phase X B3) — that test reads
+        // `sce/include/parsing/XIncludeExpander.h` via `include_str!`
+        // and asserts the literal matches.
         assert_eq!(MAX_XINCLUDE_DEPTH, 10);
     }
 
@@ -784,5 +786,103 @@ mod tests {
         let main_path = write(tmp.path(), "main.xml", main_src);
         let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap_err();
         assert_eq!(err.1.row, 2);
+    }
+
+    /// Drift test pinning the C++ `XIncludeExpander` API shape
+    /// against the Rust `expand` return type and constants. Phase X
+    /// B3 deliverable — see
+    /// `claudedocs/rfc-sce-template-phase-x.md` §3 B3. Follows the
+    /// `cpp_origin_shape_matches_rust` pattern in
+    /// `sce-build/src/position_map.rs::tests`: read the
+    /// authoritative C++ header via `include_str!` at test compile
+    /// time and regex-scan the declarations.
+    ///
+    /// What this test pins:
+    ///
+    ///   * `MAX_XINCLUDE_DEPTH = N` literal in the C++ header
+    ///     matches the Rust constant value.
+    ///   * `struct XIncludeExpandResult` declares two fields: one
+    ///     string-typed named `expanded_text` (mirrors Rust's
+    ///     `String`), one `PositionMap`-typed named `positions`.
+    ///   * The `expandStringX` free function declaration names its
+    ///     three parameters (`content`, `selfPath`, `baseDir`)
+    ///     mirroring Rust's `expand(content, self_path, base_dir)`.
+    ///
+    /// What this test does NOT pin: parameter types (so a
+    /// `string_view` ↔ `string` swap stays allowed), member-init
+    /// braces, internal helper signatures, error-class hierarchy.
+    /// Those are covered by the C++ unit tests in
+    /// `tests/parsing/XIncludeExpander_test.cpp` and the
+    /// production wiring test there.
+    ///
+    /// Load-bearing: rename `XIncludeExpandResult::positions` to
+    /// `coords` in the C++ header → this test reds with the
+    /// missing-struct-shape assertion below.
+    #[test]
+    fn cpp_xinclude_expander_matches_rust_shape() {
+        let hdr = include_str!("../../sce/include/parsing/XIncludeExpander.h");
+
+        // ── Constant agreement: MAX_XINCLUDE_DEPTH ──────────────
+        let depth_re = regex::Regex::new(
+            r"constexpr\s+unsigned\s+MAX_XINCLUDE_DEPTH\s*=\s*(\d+)\s*;",
+        )
+        .expect("MAX_XINCLUDE_DEPTH regex must compile");
+        let cap = depth_re.captures(hdr).expect(
+            "sce/include/parsing/XIncludeExpander.h must declare \
+             `constexpr unsigned MAX_XINCLUDE_DEPTH = N;`",
+        );
+        let cpp_depth: u32 = cap[1]
+            .parse()
+            .expect("MAX_XINCLUDE_DEPTH literal must parse as u32");
+        assert_eq!(
+            cpp_depth, MAX_XINCLUDE_DEPTH,
+            "C++ MAX_XINCLUDE_DEPTH ({cpp_depth}) must match Rust \
+             MAX_XINCLUDE_DEPTH ({}). Update both in the same commit.",
+            MAX_XINCLUDE_DEPTH
+        );
+
+        // ── Result-struct shape: expanded_text + positions ──────
+        // String family allowlist — std::string (current) +
+        // std::string_view kept open for a future portability swap.
+        let string_family = r"(?:std::string|std::string_view)";
+        let map_family = r"PositionMap";
+        let result_re = regex::Regex::new(&format!(
+            r"struct\s+XIncludeExpandResult\s*\{{\s*{s}\s+expanded_text\s*(?:\{{[^}}]*\}})?\s*;\s*{m}\s+positions\s*(?:\{{[^}}]*\}})?\s*;\s*\}}\s*;",
+            s = string_family,
+            m = map_family,
+        ))
+        .expect("XIncludeExpandResult regex must compile");
+
+        assert!(
+            result_re.is_match(hdr),
+            "sce/include/parsing/XIncludeExpander.h must declare \
+             `struct XIncludeExpandResult {{ <string-family> \
+             expanded_text; PositionMap positions; }};` matching \
+             Rust's `(String, PositionMap)` return tuple from \
+             `xinclude::expand`. If the field order or type family \
+             changed, update this drift test in the same commit. \
+             String family allowlist: {s}.",
+            s = string_family,
+        );
+
+        // ── Entry-point declaration: parameter names ────────────
+        // Loose match on parameter types so `std::string_view` →
+        // `std::string` portability swaps do not red the test.
+        // Strict match on the three names: `content`, `selfPath`,
+        // `baseDir` — those name the Rust-side contract bytes.
+        let entry_re = regex::Regex::new(
+            r"XIncludeExpandResult\s+expandStringX\s*\([^)]*\bcontent\b[^)]*\bselfPath\b[^)]*\bbaseDir\b[^)]*\)\s*;",
+        )
+        .expect("expandStringX regex must compile");
+
+        assert!(
+            entry_re.is_match(hdr),
+            "sce/include/parsing/XIncludeExpander.h must declare \
+             `XIncludeExpandResult expandStringX(... content ..., \
+             ... selfPath ..., ... baseDir ...);` mirroring Rust's \
+             `expand(content, self_path, base_dir)` call shape. If \
+             the parameter names changed, update this drift test in \
+             the same commit."
+        );
     }
 }
