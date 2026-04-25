@@ -1,0 +1,44 @@
+# SCE Mesh §9.6 Session 5b — Zenoh scxml-invoke two-host fixture.
+#
+# Parent and worker live on distinct ECUs (`ecu_parent` / `ecu_worker`),
+# each binding its own Zenoh peer session. The parent ECU listens at
+# tcp/172.16.10.1:17449; the worker ECU connects to that same address.
+# This is the textbook "two ECUs on one Ethernet segment" topology —
+# parent owns the listen socket, worker dials in, the §9.6 scxml-invoke
+# Publishers / Subscribers fan out through the peer-mesh once the TCP
+# link is established.
+#
+# Distinct from the Session 5 1-process fixture (deploy_scxml_invoke_zenoh.yaml)
+# in two ways:
+#   * Two ECUs instead of one → cross-device classifier emits the Zenoh
+#     ScxmlInvokeEndpoint reachability path for the peer binding.
+#   * Real IPs (172.16.10.x from setup_crossdev_netns.sh) instead of
+#     loopback. A relay session is unnecessary because the parent IS
+#     the listen anchor; Zenoh's connect retry handles worker-comes-up-
+#     first races without an external rendezvous endpoint.
+#
+# Port 17449 is distinct from the 1-process fixture's 17448 so parallel
+# ctest runs of the two fixtures don't serialise on the same port lock.
+# CMake registers a RESOURCE_LOCK named after the port so a future
+# fixture reusing 17449 is forced to coordinate with this one.
+version: "1.0"
+topology:
+  ecu_parent:
+    transports:
+      zenoh:
+        mode: peer
+        listen: ["tcp/172.16.10.1:17449"]
+    machines:
+      scxml_invoke_zenoh_crossdev_parent:
+        source: scxml_invoke_zenoh_crossdev_parent.scxml
+        bindings:
+          "#scxml_invoke_zenoh_crossdev_worker":
+            transport: zenoh
+  ecu_worker:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/172.16.10.1:17449"]
+    machines:
+      scxml_invoke_zenoh_crossdev_worker:
+        source: scxml_invoke_zenoh_crossdev_worker.scxml

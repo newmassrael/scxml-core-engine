@@ -4060,6 +4060,101 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             RESOURCE_LOCK zenoh_invoke_port_17448
         )
 
+        # ── Session 5b: two-host Zenoh scxml-invoke crossdev ─────────
+        # Parent and worker run in distinct Linux netns wired by veth,
+        # each opening its own Zenoh peer session. Parent ECU listens
+        # at tcp/172.16.10.1:17449; worker ECU connects to that
+        # address. The §9.6 wire-14/15/18 lifecycle is exercised
+        # across a real network stack — what the 1-process Session 5
+        # roundtrip cannot cover because loopback collapses the
+        # peer-mesh routing fabric Zenoh's TCP transport relies on.
+        #
+        # Distinct port (17449) from the 1-process fixture (17448) +
+        # dedicated RESOURCE_LOCK so parallel ctest runs of the two
+        # zenoh fixtures don't serialise on the same listen socket.
+        # Gated on SCE_ENABLE_NETNS_TESTS (same opt-in as the someip
+        # crossdev) — ctest skips with code 77 in non-root checkouts.
+        if(SCE_ENABLE_NETNS_TESTS)
+            include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/two_host_test.cmake)
+
+            set(MESH_ZENOH_CROSSDEV_OUTPUT_DIR
+                "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_scxml_invoke_crossdev_generated")
+
+            add_custom_command(
+                OUTPUT "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_sm.h"
+                       "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_transport.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_parent.scxml"
+                        -l cpp -o "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
+                        --write-deps "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_parent.scxml"
+                        "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_worker.scxml"
+                        "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_sm.h.d"
+                COMMENT "Mesh §9.6 Session 5b: Generating scxml_invoke_zenoh_crossdev_parent_{sm,transport}.h"
+                VERBATIM
+            )
+
+            add_custom_command(
+                OUTPUT "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_sm.h"
+                       "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_transport.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_worker.scxml"
+                        -l cpp -o "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
+                        --write-deps "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_parent.scxml"
+                        "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_worker.scxml"
+                        "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_sm.h.d"
+                COMMENT "Mesh §9.6 Session 5b: Generating scxml_invoke_zenoh_crossdev_worker_{sm,transport}.h"
+                VERBATIM
+            )
+
+            add_executable(mesh_zenoh_scxml_invoke_crossdev_parent
+                mesh/test_mesh_zenoh_scxml_invoke_crossdev_parent.cpp
+                "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_sm.h"
+                "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_transport.h"
+            )
+            target_include_directories(mesh_zenoh_scxml_invoke_crossdev_parent
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    ${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+            )
+            target_link_libraries(mesh_zenoh_scxml_invoke_crossdev_parent
+                PRIVATE sce_runtime sce_mesh_common zenohcxx::zenohc)
+            target_compile_features(mesh_zenoh_scxml_invoke_crossdev_parent PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_zenoh_scxml_invoke_crossdev_parent)
+
+            add_executable(mesh_zenoh_scxml_invoke_crossdev_worker
+                mesh/test_mesh_zenoh_scxml_invoke_crossdev_worker.cpp
+                "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_sm.h"
+                "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_transport.h"
+            )
+            target_include_directories(mesh_zenoh_scxml_invoke_crossdev_worker
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    ${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+            )
+            target_link_libraries(mesh_zenoh_scxml_invoke_crossdev_worker
+                PRIVATE sce_runtime sce_mesh_common zenohcxx::zenohc)
+            target_compile_features(mesh_zenoh_scxml_invoke_crossdev_worker PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_zenoh_scxml_invoke_crossdev_worker)
+
+            sce_register_two_host_mesh_test(
+                NAME    mesh_zenoh_scxml_invoke_crossdev
+                WORKER  mesh_zenoh_scxml_invoke_crossdev_worker
+                PARENT  mesh_zenoh_scxml_invoke_crossdev_parent
+                TIMEOUT 60)
+            set_tests_properties(mesh_zenoh_scxml_invoke_crossdev PROPERTIES
+                RESOURCE_LOCK zenoh_invoke_crossdev_port_17449)
+        endif()
+
         # ── Base zenoh EventSubscribe runtime E2E ─────────────────────
         # Closes the gap flagged by next_session_cleanup_small.md Item 2:
         # the base zenoh codegen path had no EventSubscribe runtime
