@@ -45,3 +45,26 @@ target_compile_features(template_expander_test PRIVATE cxx_std_17)
 apply_sce_test_policies(template_expander_test)
 
 add_test(NAME TemplateExpanderTests COMMAND template_expander_test)
+
+# Phase X B1 — XIncludeExpander unit tests.
+# Standing consumer for `parsing/XIncludeExpander.h` while
+# Phase X B2 swaps `PugiXMLDocument::processXInclude` to use it
+# (per `feedback_built_but_unconsumed.md`).
+add_executable(xinclude_expander_test
+    XIncludeExpander_test.cpp
+)
+
+target_link_libraries(xinclude_expander_test
+    PRIVATE
+        sce_runtime
+        sce_core
+        GTest::GTest
+        GTest::Main
+        pthread
+)
+
+target_compile_features(xinclude_expander_test PRIVATE cxx_std_17)
+
+apply_sce_test_policies(xinclude_expander_test)
+
+add_test(NAME XIncludeExpanderTests COMMAND xinclude_expander_test)
