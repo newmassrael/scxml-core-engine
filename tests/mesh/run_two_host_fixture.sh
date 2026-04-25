@@ -46,6 +46,33 @@
 
 set -uo pipefail
 
+# Sudoers probe handshake. The orchestrator below probes whether
+# `sudo <self> --probe-sudo` runs without a password prompt; that is the
+# only reliable test for "is THIS script in the user's NOPASSWD list?"
+# (sudo -ln returns 0 for any authorized command, NOPASSWD or not, when
+# the user has `(ALL:ALL) ALL` — which is the common dev-box default —
+# so the simpler probe over-reports passwordless coverage). Reaching
+# this branch under sudo means the entry exists; we exit 0 and the probe
+# falls through to the real `exec sudo` self-elevation.
+if [[ "${1:-}" == "--probe-sudo" ]]; then
+    exit 0
+fi
+
+# Restore env vars that crossed the sudo boundary as `--preserved-env-*`
+# args. Sudo's default `env_reset` strips most variables; `sudo -E`
+# would preserve them but requires `SETENV:` in the user's NOPASSWD
+# entry, which would force the sudoers line broader than the tc8-harness
+# pattern it mirrors. Forwarding via explicit args keeps the sudoers
+# line minimal — orchestrator owns env preservation policy. Currently
+# only LD_LIBRARY_PATH (vsomeip3 / zenohcxx runtime lib lookup) needs
+# this; future env additions append more `--preserved-env-NAME=value`
+# flags below.
+while [[ "${1:-}" == --preserved-env-* ]]; do
+    pe_var="${1#--preserved-env-}"
+    export "${pe_var%%=*}=${pe_var#*=}"
+    shift
+done
+
 PARENT_NS="${1:-}"
 WORKER_NS="${2:-}"
 WORKER_BIN="${3:-}"
@@ -56,23 +83,41 @@ if [[ -z "$PARENT_NS" || -z "$WORKER_NS" || -z "$WORKER_BIN" || -z "$PARENT_BIN"
 fi
 
 if [[ $EUID -ne 0 ]]; then
-    # Self-elevate when passwordless sudo is configured. After
-    # `sudo visudo` adds `<user> ALL=(ALL) NOPASSWD: ALL`, plain
-    # `ctest` runs as the regular user and the orchestrator re-execs
-    # itself under sudo here so worker/parent spawning, stderr
-    # parsing, and SIGTERM cleanup all run under the same root UID
-    # (signaling a root child from non-root would silently fail at
-    # teardown). `sudo -n` exits non-zero if a password would be
-    # prompted, which falls through to the skip path below.
-    if sudo -n true 2>/dev/null; then
-        exec sudo -E "$0" "$@"
+    # Self-elevate when passwordless sudo is configured for *this
+    # script*. The probe is `sudo -n <self> --probe-sudo` because:
+    #   * `sudo -n true` requires NOPASSWD: ALL — silently misses the
+    #     narrow path-specific style the tc8-harness sister harness uses
+    #     (NOPASSWD: <list of specific scripts>), the recommended
+    #     least-privilege configuration on a dev box.
+    #   * `sudo -ln <self>` returns 0 for any authorized command when
+    #     the user has `(ALL:ALL) ALL` (the default after `sudo visudo`),
+    #     not just for NOPASSWD-covered ones — so it over-reports
+    #     coverage and the actual `exec sudo` then trips on a password
+    #     prompt at runtime.
+    # The probe handshake at the top of this script returns 0 immediately
+    # for `--probe-sudo`, so reaching it under `sudo -n` means NOPASSWD
+    # is in effect and the real self-exec below will succeed without
+    # prompting.
+    SELF="$(readlink -f "$0")"
+    if sudo -n "$SELF" --probe-sudo >/dev/null 2>&1; then
+        # Drop -E (would require SETENV: in sudoers, broader than the
+        # tc8-harness narrow style we mirror). Forward LD_LIBRARY_PATH
+        # explicitly so vsomeip3 / zenohcxx runtime libs still load
+        # under the elevated process; the receiver loop at the top of
+        # this script re-exports the var before falling through to the
+        # real argument parsing.
+        exec sudo "$SELF" \
+            "--preserved-env-LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}" \
+            "$@"
     fi
+    SCRIPT_DIR="$(dirname "$SELF")"
     echo "two_host_fixture: skipping — needs root for 'ip netns exec'." >&2
-    echo "two_host_fixture:   Recommended: configure passwordless sudo once:" >&2
+    echo "two_host_fixture:   Recommended (narrow scope, tc8-harness style):" >&2
     echo "two_host_fixture:     sudo visudo" >&2
-    echo "two_host_fixture:     # Add: $USER ALL=(ALL) NOPASSWD: ALL" >&2
+    echo "two_host_fixture:     # Add (one line):" >&2
+    echo "two_host_fixture:     $USER ALL=(ALL) NOPASSWD: $SCRIPT_DIR/run_two_host_fixture.sh, $SCRIPT_DIR/setup_crossdev_netns.sh, $SCRIPT_DIR/cleanup_crossdev_netns.sh" >&2
     echo "two_host_fixture:   After that, plain 'ctest' works without sudo." >&2
-    echo "two_host_fixture:   Alternative: rerun the whole test under sudo:" >&2
+    echo "two_host_fixture:   Alternative without sudoers config:" >&2
     echo "two_host_fixture:     sudo ctest -R mesh_.*_scxml_invoke_crossdev" >&2
     exit 77
 fi

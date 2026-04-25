@@ -288,6 +288,20 @@ public:
         // independent method call from the peer back to us, not a
         // SOME/IP response. SCE_MESH.md §9.6.2 Session 4b L1393.
         request->set_message_type(vsomeip::message_type_e::MT_REQUEST_NO_RETURN);
+        // vsomeip's `message_base_impl` defaults `is_reliable_` to false,
+        // which routes outbound traffic to the UDP endpoint of the remote
+        // service. §9.6 ScxmlInvokeEndpoint declares its service with a
+        // `reliable.port` only (no UDP), so without this set_reliable(true)
+        // the routing manager calls `find_or_create_remote_client(svc, inst,
+        // false)`, finds no UDP endpoint in `remote_service_info_`, and
+        // logs "Routing info for remote service could not be found!". The
+        // 1-process Session 4b roundtrip happens to work without this flag
+        // because in-process routing dispatches via local IPC regardless of
+        // reliability, but the cross-host SD-driven path requires the TCP
+        // selection here. Mirror the wire-14/15/18 framing requirement
+        // (§9.6.2: "no resend protocol on staging queues") by always
+        // demanding the reliable transport variant.
+        request->set_reliable(true);
 
         auto buf = SCE::Mesh::encodeEnvelope(env);
         if (buf.empty()) return false;

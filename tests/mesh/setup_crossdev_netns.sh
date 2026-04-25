@@ -79,6 +79,7 @@ ip -n "$WORKER_NS" route add "$MCAST_ROUTE" dev "$VETH_W"
 ip netns exec "$PARENT_NS" ping -c 1 -W 1 "${WORKER_IP%/*}" >/dev/null \
     || die "parent ($PARENT_NS) → worker (${WORKER_IP%/*}) ping failed"
 
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 cat <<INFO
 sce mesh netns ready:
   $PARENT_NS: $PARENT_IP on $VETH_P
@@ -87,16 +88,18 @@ sce mesh netns ready:
 build with -DSCE_ENABLE_NETNS_TESTS=ON to register the §9.6 two-host
 fixtures (mesh_someip_scxml_invoke_crossdev, mesh_zenoh_scxml_invoke_crossdev).
 
-For sudoless ctest runs, configure passwordless sudo once:
+For sudoless ctest runs, configure passwordless sudo once with the
+narrow-scope tc8-harness-style entry (recommended, least privilege):
   sudo visudo
-  # Add: ${SUDO_USER:-$USER} ALL=(ALL) NOPASSWD: ALL
+  # Add (one line):
+  ${SUDO_USER:-$USER} ALL=(ALL) NOPASSWD: $SCRIPT_DIR/run_two_host_fixture.sh, $SCRIPT_DIR/setup_crossdev_netns.sh, $SCRIPT_DIR/cleanup_crossdev_netns.sh
 After that, plain 'ctest -R mesh_.*_scxml_invoke_crossdev' works as the
-regular user — the orchestrator self-elevates only when needed and skips
-gracefully (code 77 = ctest "Skipped") when neither root nor passwordless
-sudo is available, so a fresh checkout never sees a Failed result here.
+regular user — the orchestrator probes 'sudo -ln <self>' and self-execs
+under sudo when this script is in NOPASSWD; otherwise it skips with code
+77 (ctest "Skipped") so a fresh checkout never sees a Failed result.
 Alternative without sudoers config: rerun the whole test under sudo:
   sudo ctest -R mesh_.*_scxml_invoke_crossdev
 
 teardown:
-  sudo $(dirname "$(readlink -f "$0")")/cleanup_crossdev_netns.sh
+  sudo $SCRIPT_DIR/cleanup_crossdev_netns.sh
 INFO

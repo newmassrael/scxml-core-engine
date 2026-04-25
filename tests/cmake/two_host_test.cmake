@@ -8,14 +8,19 @@
 # Prerequisites (one-time per machine reboot, must run before ctest):
 #   sudo tests/mesh/setup_crossdev_netns.sh
 #
-# For sudoless ctest runs (recommended), configure passwordless sudo once:
+# For sudoless ctest runs (recommended, narrow scope matching the
+# tc8-harness style on the same dev box), configure passwordless sudo
+# once for the §9.6 scripts only:
 #   sudo visudo
-#   # Add: <user> ALL=(ALL) NOPASSWD: ALL
+#   # Add (one line):
+#   <user> ALL=(ALL) NOPASSWD: <repo>/tests/mesh/run_two_host_fixture.sh, \
+#                              <repo>/tests/mesh/setup_crossdev_netns.sh, \
+#                              <repo>/tests/mesh/cleanup_crossdev_netns.sh
 # After that, plain `ctest` runs as the regular user — the orchestrator
-# self-elevates only when needed via `sudo -E`. Without either passwordless
-# sudo or a root invocation (`sudo ctest`), the orchestrator exits 77,
-# which ctest reports as `Skipped` thanks to the SKIP_RETURN_CODE property
-# set below — so a fresh non-root checkout never sees a Failed result.
+# probes `sudo -ln <self>` and self-execs under sudo when allowed. Without
+# either NOPASSWD coverage or a root invocation (`sudo ctest`), it exits
+# 77, which ctest reports as `Skipped` via the SKIP_RETURN_CODE property
+# below — so a fresh non-root checkout never sees a Failed result.
 #
 # Usage:
 #   include(${PROJECT_SOURCE_DIR}/tests/cmake/two_host_test.cmake)
