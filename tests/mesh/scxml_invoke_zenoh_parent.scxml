@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.6 Session 5 Zenoh scxml-invoke roundtrip — parent.
+     Declared in deploy_scxml_invoke_zenoh.yaml, which binds peer
+     `scxml_invoke_zenoh_worker` to transport: zenoh. On entry of
+     `waiting`, codegen emits wire-14 InvokeStart via
+     `scxml_invoke_to_scxml_invoke_zenoh_worker_->send(env)` — the
+     ScxmlInvokeEndpoint Publisher on key
+     `sce/scxml_invoke/p2c/scxml_invoke_zenoh_parent/scxml_invoke_zenoh_worker`
+     dispatches with CongestionControl::Block. The worker's trivial-
+     final child enters its final state during initialize(), so its
+     WorkerSessionHost emits wire-15 InvokeStarted then wire-18
+     InvokeDone on its own endpoint; our parent endpoint's receive
+     callback dispatches both inline via `dispatchToSession` (§14.4
+     thread-safe contract on the Zenoh runtime callback thread) and
+     done.invoke.remote_inv lands on the parent's external queue. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting"
+       name="scxml_invoke_zenoh_parent">
+    <state id="waiting">
+        <invoke type="scxml" src="#scxml_invoke_zenoh_worker" id="remote_inv"/>
+        <transition event="done.invoke" target="pass"/>
+        <transition event="done.invoke.remote_inv" target="pass"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

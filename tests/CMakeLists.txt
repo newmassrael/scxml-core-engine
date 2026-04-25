@@ -3849,6 +3849,88 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             RESOURCE_LOCK zenoh_multi_port_17447
         )
 
+        # ── §9.6 Session 5: Zenoh scxml-invoke roundtrip ─────────────
+        # Single-process proof that the §9.6 wire-14/20 lifecycle
+        # travels over Zenoh. Parent + worker each open their own
+        # zenoh::Session sharing it with no `<send>` zenoh target
+        # (the codegen inserts "zenoh" into transport_types when a
+        # §9.6 zenoh peer exists, which fires the existing zenoh.hxx
+        # include block + zenoh::Session::open init() block). The
+        # fixture trivial-final child reaches `<final>` during
+        # initialize(), so the worker emits wire-15 + wire-18 in
+        # the same pump tick and the parent reaches State::Pass via
+        # done.invoke.remote_inv. The shared port 17448 is
+        # serialised through ctest RESOURCE_LOCK
+        # zenoh_invoke_port_17448 (distinct from
+        # zenoh_multi_port_17447 used by the `<send>` zenoh tests).
+        set(MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_scxml_invoke_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_sm.h"
+                   "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_zenoh_parent.scxml"
+                    -l cpp -o "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
+                    --write-deps "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/scxml_invoke_zenoh_parent.scxml"
+                    "${MESH_TEST_DIR}/scxml_invoke_zenoh_worker.scxml"
+                    "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_sm.h.d"
+            COMMENT "Mesh §9.6 Session 5: Generating scxml_invoke_zenoh_parent_{sm,transport}.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_sm.h"
+                   "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_zenoh_worker.scxml"
+                    -l cpp -o "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
+                    --write-deps "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/scxml_invoke_zenoh_parent.scxml"
+                    "${MESH_TEST_DIR}/scxml_invoke_zenoh_worker.scxml"
+                    "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_sm.h.d"
+            COMMENT "Mesh §9.6 Session 5: Generating scxml_invoke_zenoh_worker_{sm,transport}.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_scxml_invoke_roundtrip_test
+            mesh/test_mesh_zenoh_scxml_invoke_roundtrip.cpp
+            "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_sm.h"
+            "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_transport.h"
+            "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_sm.h"
+            "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_scxml_invoke_roundtrip_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_zenoh_scxml_invoke_roundtrip_test
+            PRIVATE
+                sce_runtime
+                sce_mesh_common
+                zenohcxx::zenohc
+        )
+
+        target_compile_features(mesh_zenoh_scxml_invoke_roundtrip_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_scxml_invoke_roundtrip_test)
+        add_test(NAME mesh_zenoh_scxml_invoke_roundtrip
+                 COMMAND mesh_zenoh_scxml_invoke_roundtrip_test)
+        set_tests_properties(mesh_zenoh_scxml_invoke_roundtrip PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_invoke_port_17448
+        )
+
         # ── Base zenoh EventSubscribe runtime E2E ─────────────────────
         # Closes the gap flagged by next_session_cleanup_small.md Item 2:
         # the base zenoh codegen path had no EventSubscribe runtime
