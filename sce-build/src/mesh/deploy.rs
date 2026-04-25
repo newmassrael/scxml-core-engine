@@ -1172,7 +1172,6 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_synth_invoke_infix(&cfg)?;
     validate_partitions_schema(&cfg)?;
     validate_someip_scxml_invoke_service_ids(&cfg)?;
-    validate_someip_scxml_invoke_service_id_collisions(&cfg)?;
 
     Ok(cfg)
 }
@@ -1927,71 +1926,6 @@ fn validate_machine_name_uniqueness(cfg: &DeployConfig) -> Result<(), DeployErro
     Ok(())
 }
 
-/// SCE_MESH.md §9.6 Session 4c — reject deployments whose §9.6 SOME/IP
-/// scxml-invoke participants hash to the same FNV-1a low-byte service ID
-/// in the SCE-reserved range `[0x8100, 0x81FF]`.
-///
-/// **Why this validator exists.** The §9.6 dedicated
-/// `<machine>_scxml_invoke_app_` registers a vsomeip service with ID
-/// derived from `crate::mesh::transport::someip::service_id_for_machine`
-/// (FNV-1a 32-bit, low byte ORed with the SCE-reserved base). The 256-ID
-/// projection is a known MVP boundary documented at
-/// `mesh::transport::someip::service_id_for_machine`. The birthday
-/// paradox crosses 50% near 16 machines, so a real deployment can hit a
-/// collision long before "256 §9.6 someip peers" is reached. Without
-/// this check, the colliding `(application, service)` registration is
-/// silently routed by vsomeip's routing manager to whichever
-/// application registered the duplicate ID first, and the operator sees
-/// no log signal — wire-14/15/16/17/18/19/20 envelopes go to the wrong
-/// peer with no exception.
-///
-/// **Participant definition (structural, deploy.yaml-only).** A machine
-/// `M` participates iff either:
-/// * `M.bindings` contains a peer-shape entry `#X` whose
-///   `transport == "someip"`, where `X` is itself declared in
-///   `topology.*.machines`; OR
-/// * `M` is named as the peer `X` in such an entry from any other
-///   machine.
-///
-/// Internal targets (`#_parent`, `#_child`) are excluded — they never
-/// register a service ID. Dangling `#X` (peer not declared anywhere) is
-/// excluded too: an upstream validator will reject the dangling
-/// reference, and double-counting it here would surface the wrong code
-/// for the same root cause.
-///
-/// **Deliberate over-reach.** Pure deploy.yaml structure cannot tell
-/// "this machine has a `<send>` target on someip" from "this machine
-/// uses §9.6 `<invoke type=\"scxml\">` over someip" — both produce the
-/// same `bindings["#X"].transport: someip` shape. Treating the former as
-/// a participant is a *false-positive risk*: a machine with only OEM
-/// `<send>` someip bindings does not actually register a §9.6 FNV
-/// service ID at codegen, so its FNV hash slot is unused. Why we
-/// accept this anyway:
-/// 1. The cost of false-positive is operator-actionable (rename one
-///    machine, re-FNV).
-/// 2. The cost of false-negative is silent runtime mis-routing on a
-///    deployed system — debugging the wrong-receiver behavior requires
-///    on-device reproduction.
-/// 3. Realistically a machine that uses someip for `<send>` will likely
-///    also use it for `<invoke type="scxml">` if the latter is wired,
-///    so the false-positive rate trends toward 0.
-///
-/// **Multi-domain debt.** Today every §9.6 someip participant in the
-/// deploy is treated as one collision domain. SCE does not yet model
-/// multi-OEM `vsomeip.json` `network:` boundaries that could in
-/// principle host disjoint SCE-reserved ID spaces. When such federation
-/// lands the validator must accept the per-domain shape; until then the
-/// single-domain assumption is the conservative trade.
-///
-/// **Algorithm.** Walk the deploy, collect participants into a sorted
-/// set, group by `service_id_for_machine`, return the first
-/// collision-bearing group as `SomeipScxmlInvokeServiceIdCollision`.
-/// Determinism: `BTreeMap` iteration + sorted machine list inside each
-/// diagnostic group, so the byte-stable golden hash on the first
-/// collision is reproducible across machines and runs. The validator
-/// returns at the first colliding group (consistent with
-/// `validate_scxml_invoke_transport`'s shape) — operators fix one
-/// collision, re-run to surface the next.
 /// SCE Mesh RFC F.X-1 — hybrid (counter + optional author-pin) §9.6 SOMEIP
 /// scxml-invoke service ID assignment. Returns the assignment map for use
 /// by codegen; errors are converted to [`DeployError`] variants on the way
@@ -2103,76 +2037,6 @@ pub(crate) fn assign_someip_invoke_service_ids(
 /// obtain the same map without re-running the participant projection.
 fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), DeployError> {
     assign_someip_invoke_service_ids(cfg).map(|_| ())
-}
-
-fn validate_someip_scxml_invoke_service_id_collisions(
-    cfg: &DeployConfig,
-) -> Result<(), DeployError> {
-    use crate::mesh::transport::someip::service_id_for_machine;
-
-    // All declared machine names — used to filter out dangling `#X`
-    // peer references (those produce a different diagnostic upstream
-    // and double-counting them would attribute the wrong code).
-    let declared_machines: std::collections::HashSet<&str> = cfg
-        .topology
-        .values()
-        .flat_map(|d| d.machines.keys().map(|k| k.as_str()))
-        .collect();
-
-    // Participants ordered by name (BTreeSet → deterministic iteration
-    // for the diagnostic id hash + machine list).
-    let mut participants: std::collections::BTreeSet<String> =
-        std::collections::BTreeSet::new();
-
-    for device in cfg.topology.values() {
-        for (machine_name, machine_cfg) in &device.machines {
-            for (target_id, binding) in &machine_cfg.bindings {
-                if binding.transport != "someip" {
-                    continue;
-                }
-                if target_id.is_internal() {
-                    // `#_parent` / `#_child` never register a service ID.
-                    continue;
-                }
-                let peer = target_id.name();
-                if !declared_machines.contains(peer) {
-                    // Dangling reference — let the upstream validator
-                    // surface the absence under its own code.
-                    continue;
-                }
-                participants.insert(machine_name.clone());
-                participants.insert(peer.to_string());
-            }
-        }
-    }
-
-    if participants.len() < 2 {
-        // Single-participant set (or empty) cannot collide.
-        return Ok(());
-    }
-
-    // Group by service ID. `BTreeMap` for deterministic iteration; the
-    // first colliding service ID encountered (in numeric order) is the
-    // one we surface so re-runs after a partial fix continue to make
-    // forward progress through the violation set in the same order.
-    let mut by_service_id: std::collections::BTreeMap<u16, Vec<String>> =
-        std::collections::BTreeMap::new();
-    for name in &participants {
-        let svc = service_id_for_machine(name);
-        by_service_id.entry(svc).or_default().push(name.clone());
-    }
-    for (service_id, machines) in by_service_id {
-        if machines.len() >= 2 {
-            // `participants` was sorted by `BTreeSet`, so per-group
-            // order is already lex-sorted; no additional sort needed.
-            return Err(DeployError::SomeipScxmlInvokeServiceIdCollision {
-                service_id,
-                machines,
-            });
-        }
-    }
-
-    Ok(())
 }
 
 // ── Helpers for topology/codegen ────────────────────────────
@@ -4388,82 +4252,19 @@ topology:
         }
     }
 
-    // ── §9.6 Session 4c: SOME/IP service-ID collision validator ──
-
-    /// Adversarial fixture: an actual colliding pair (computed at runtime
-    /// via `find_colliding_pair`, not a hard-coded magic pair) wired into
-    /// a deploy.yaml whose §9.6 someip participant set is exactly those
-    /// two names. The validator must reject; the diagnostic carries the
-    /// shared service ID and the colliding machine names sorted.
-    ///
-    /// "Computed at runtime" is the key property — the test does not pin
-    /// any specific FNV output. If a future drift in the FNV constants
-    /// changes which short alphanumerics collide, `find_colliding_pair`
-    /// re-discovers a new colliding pair and the test still exercises
-    /// the validator with a real collision. The drift is caught
-    /// independently by the pinned-hash tests in `transport::someip`.
-    #[test]
-    fn someip_service_id_collision_rejected_via_adversarial_pair() {
-        use crate::mesh::transport::someip::{find_colliding_pair, service_id_for_machine};
-        let (a, b) = find_colliding_pair()
-            .expect("FNV-1a low-byte projection must collide in 4-char alphanumeric");
-        let expected_service_id = service_id_for_machine(&a);
-        // Sanity — `find_colliding_pair`'s contract is "same service ID".
-        assert_eq!(expected_service_id, service_id_for_machine(&b));
-
-        // Wire `a` and `b` as someip §9.6 peers on separate ECUs. `a`
-        // declares `bindings["#b"].transport: someip` so both names
-        // enter the participant set under the validator's structural
-        // walk; the SCXML side is irrelevant at this layer.
-        let yaml = format!(
-            r##"version: "1.0"
-topology:
-  ecu_alpha:
-    machines:
-      {a}:
-        source: {a}.scxml
-        bindings:
-          "#{b}":
-            transport: someip
-  ecu_beta:
-    machines:
-      {b}:
-        source: {b}.scxml
-"##
-        );
-
-        let err = parse_deploy_str(&yaml)
-            .expect_err("colliding §9.6 someip participant pair must be rejected");
-        match err {
-            crate::mesh::error::DeployError::SomeipScxmlInvokeServiceIdCollision {
-                service_id,
-                machines,
-            } => {
-                assert_eq!(service_id, expected_service_id);
-                // Machine list is sorted (BTreeSet → BTreeMap iteration);
-                // the lex-smaller name lands first regardless of which
-                // side carried the binding declaration.
-                let mut sorted = vec![a.clone(), b.clone()];
-                sorted.sort();
-                assert_eq!(machines, sorted);
-            }
-            other => panic!("expected SomeipScxmlInvokeServiceIdCollision, got {other:?}"),
-        }
-    }
+    // ── §9.6 Session 4c legacy validator tests removed under RFC F.X-1.
+    //    The counter scheme is collision-free by construction; the
+    //    `someip_service_id_*` tests below cover the F.X-1 rejection
+    //    shapes (overflow / pin-out-of-range / pin-vs-pin collision).
 
     /// The 4-machine fixture set used across `tests/mesh` (parent /
-    /// worker / motor / brake) is collision-free under the pinned FNV
-    /// hashes documented in `transport::someip`. The validator must
-    /// accept this set even though every machine declares an outbound
-    /// `transport: someip` binding to one of the others — the §9.6
-    /// participant union is `{parent, worker, motor, brake}` and the
-    /// pinned hashes (0x81fd / 0x8157 / 0x8172 / 0x8130) are all
-    /// distinct.
-    ///
-    /// This guards the validator's `< 2` early return is not
-    /// over-applied: collision check fires when the participant set
-    /// has size ≥ 2 (it does, size 4) and the per-service-ID grouping
-    /// must produce no group of size ≥ 2.
+    /// worker / motor / brake) must accept under the F.X-1 hybrid
+    /// allocator: lex-sorted counter assigns brake=0x8100, motor=0x8101,
+    /// parent=0x8102, worker=0x8103 (all distinct, well under the
+    /// 128-slot ceiling). Accept regardless of which machine declares
+    /// the outbound binding to whom — the §9.6 participant union is
+    /// `{parent, worker, motor, brake}` and the counter assignment is
+    /// collision-free by construction.
     #[test]
     fn someip_collision_free_set_accepted() {
         let yaml = r##"
@@ -4524,52 +4325,6 @@ topology:
 "##;
         parse_deploy_str(yaml)
             .expect("zero §9.6 someip participants must short-circuit collision check");
-    }
-
-    /// Mixed transports (zenoh + someip in the same deploy) must keep
-    /// collision domains separate: only someip participants enter the
-    /// FNV check, zenoh peers are ignored. Even if the zenoh-bound
-    /// names happen to FNV-collide, the validator must accept because
-    /// they never register a §9.6 someip service ID.
-    #[test]
-    fn zenoh_peers_excluded_from_someip_collision_domain() {
-        use crate::mesh::transport::someip::{find_colliding_pair, service_id_for_machine};
-        let (a, b) = find_colliding_pair()
-            .expect("FNV-1a low-byte projection must collide in 4-char alphanumeric");
-        // Sanity: pair really collides.
-        assert_eq!(service_id_for_machine(&a), service_id_for_machine(&b));
-
-        // Deploy `a`, `b` as zenoh peers (not someip). Plus one someip
-        // participant (parent → worker over someip) which is
-        // collision-free against itself / vacuously safe alone with
-        // its single peer pair. The zenoh pair must NOT enter the
-        // someip collision domain.
-        let yaml = format!(
-            r##"version: "1.0"
-topology:
-  ecu_a:
-    machines:
-      {a}:
-        source: {a}.scxml
-        bindings:
-          "#{b}":
-            transport: zenoh
-      parent:
-        source: parent.scxml
-        bindings:
-          "#worker":
-            transport: someip
-  ecu_b:
-    machines:
-      {b}:
-        source: {b}.scxml
-      worker:
-        source: worker.scxml
-"##
-        );
-
-        parse_deploy_str(&yaml)
-            .expect("zenoh-bound colliding pair must not pollute someip collision domain");
     }
 
     // ── RFC F.X-1: hybrid (counter + author-pin) service ID validator ──

@@ -121,7 +121,6 @@
         "mesh/deploy-partition-pool-machine",
         "mesh/deploy-partition-transport-binding-unsupported",
         "mesh/deploy-scxml-invoke-cross-device-transport",
-        "mesh/deploy-someip-scxml-invoke-service-id-collision",
         "mesh/deploy-someip-scxml-invoke-service-id-overflow",
         "mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range",
         "mesh/deploy-someip-scxml-invoke-service-id-pin-collision",

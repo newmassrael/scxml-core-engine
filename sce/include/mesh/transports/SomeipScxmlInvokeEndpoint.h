@@ -40,9 +40,13 @@
 //     and wire-15 (C→P InvokeStarted) carry no request/response coupling at
 //     the SOME/IP layer; the round-trip is two unrelated method calls.
 //   * Payload: canonical CBOR MeshEnvelope (encodeEnvelope/decodeEnvelope).
-//   * Service IDs: per-machine, derived from machine name via FNV-1a 32-bit
-//     hash, low byte ORed with SCXML_INVOKE_SERVICE_BASE (0x8100). 256-machine
-//     MVP — collision detection deferred to validator (§9.6 4c+ candidate).
+//   * Service IDs: per-machine, produced at build time by the RFC F.X-1
+//     hybrid (counter + optional author-pin) allocator in `sce-build` and
+//     emitted as named constants (`SCE_SOMEIP_SERVICE_SELF`,
+//     `SCE_SOMEIP_SERVICE_PEER_<peer_name>`) in the generated
+//     `<machine>_transport.h`. 128-slot ceiling within sub-range
+//     [0x8100, 0x817F]; deploy-time validator rejects overflow / pin out
+//     of range / pin collision before codegen.
 //   * Instance: 0x0001 (single-instance MVP — SOME/IP server pool support is
 //     scoped to ordinary `<send>` paths via §14.4 Gap 7 and is not extended
 //     to §9.6 endpoints in this session).
@@ -91,12 +95,25 @@ namespace SCE::Mesh::Someip {
 
 /// Base of the SCE-reserved §9.6 scxml-invoke service ID range.
 /// SCE-managed services occupy `[SCXML_INVOKE_SERVICE_BASE,
-/// SCXML_INVOKE_SERVICE_BASE + 0x100)` (0x8100..0x81FF). OEM services
-/// are required to stay outside this range — collision is a deploy-time
-/// configuration error, not a SCE-side hazard. Per-machine service ID
-/// is derived from the machine name via `serviceIdForMachine`.
+/// SCXML_INVOKE_SERVICE_BASE + 0x80)` (0x8100..0x817F) under RFC F.X-1
+/// subsystem range partitioning; the upper half `[0x8180, 0x81FF]` is
+/// reserved for the §16.4 region-liveness landing (RFC F.X-3). OEM
+/// services are required to stay outside the full SCE-reserved
+/// `[0x8100, 0x81FF]` range — collision is a deploy-time configuration
+/// error, not a SCE-side hazard. Per-machine service IDs are produced
+/// by the codegen-time hybrid (counter + optional author-pin) allocator
+/// in `sce-build` and emitted as named constants
+/// (`SCE_SOMEIP_SERVICE_SELF`, `SCE_SOMEIP_SERVICE_PEER_<peer_name>`)
+/// in the generated `<machine>_transport.h`.
 inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_BASE =
     static_cast<vsomeip::service_t>(0x8100);
+
+/// Inclusive ceiling of the §9.6 invoke sub-range under RFC F.X-1.
+/// `[SCXML_INVOKE_SERVICE_BASE, SCXML_INVOKE_SERVICE_CEILING]` is the
+/// allocator's output domain — 128 slots; the upper half of the
+/// SCE-reserved range is reserved for §16.4 region-liveness.
+inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_CEILING =
+    static_cast<vsomeip::service_t>(0x817F);
 
 /// Single-instance MVP for §9.6 endpoints. Extending §9.6 to multi-
 /// instance pool requires lifting §14.4 Gap 7 plumbing into the helper
@@ -114,25 +131,6 @@ inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT   = 0
 inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE    = 0x0018;
 inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL  = 0x0019;
 inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR   = 0x0020;
-
-/// Compile-time per-machine service ID derivation. FNV-1a 32-bit hash of
-/// the machine name, low 8 bits ORed with the SCE-reserved base — yields
-/// 256 distinct IDs in [0x8100, 0x81FF]. Collisions begin near 16 machines
-/// (birthday paradox) and a deploy-time validator (§9.6 4c+) will reject
-/// collisions; in this MVP session no collision check is wired. Pure
-/// constexpr so the codegen template can fold service IDs at compile time
-/// when emitting offer_service / request_service calls.
-constexpr vsomeip::service_t serviceIdForMachine(std::string_view machine_name) noexcept {
-    constexpr uint32_t kFnv1aOffset = 0x811c9dc5u;
-    constexpr uint32_t kFnv1aPrime  = 0x01000193u;
-    uint32_t hash = kFnv1aOffset;
-    for (auto c : machine_name) {
-        hash ^= static_cast<uint8_t>(c);
-        hash *= kFnv1aPrime;
-    }
-    return static_cast<vsomeip::service_t>(
-        SCXML_INVOKE_SERVICE_BASE | static_cast<vsomeip::service_t>(hash & 0xFFu));
-}
 
 /// Maps a §9.6 wire pattern to its SOME/IP method ID. Returns 0 for any
 /// `PatternKind` outside the wire-14..20 range — codegen filters before
@@ -206,13 +204,15 @@ class ScxmlInvokeEndpoint {
 public:
     /// @param app       Shared vsomeip application for this machine (owned
     ///                  by codegen as `<machine>_scxml_invoke_app_`).
-    /// @param own_svc   Service ID this endpoint OFFERS — derived from the
-    ///                  local machine's name via `serviceIdForMachine`.
-    ///                  Inbound messages from the peer arrive at
+    /// @param own_svc   Service ID this endpoint OFFERS — read by codegen
+    ///                  from the generated `SCE_SOMEIP_SERVICE_SELF`
+    ///                  constant (RFC F.X-1 allocator output). Inbound
+    ///                  messages from the peer arrive at
     ///                  `(own_svc, INSTANCE_ID, METHOD_WIRE_*)`.
-    /// @param peer_svc  Service ID this endpoint REQUESTS — derived from
-    ///                  the peer machine's name. Outbound messages dispatch
-    ///                  to `(peer_svc, INSTANCE_ID, METHOD_WIRE_*)`.
+    /// @param peer_svc  Service ID this endpoint REQUESTS — read by codegen
+    ///                  from the generated `SCE_SOMEIP_SERVICE_PEER_<peer>`
+    ///                  constant. Outbound messages dispatch to
+    ///                  `(peer_svc, INSTANCE_ID, METHOD_WIRE_*)`.
     ///
     /// Argument order (`app`, `own_svc`, `peer_svc`) follows the offer-
     /// before-request lifecycle: `start()` calls `offer_service(own_svc)`

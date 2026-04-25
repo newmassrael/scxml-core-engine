@@ -16,11 +16,12 @@
 //      prefix (`SCXML_INVOKE_KEY_PREFIX = "sce/scxml_invoke"`), not
 //      via session identity, so an OEM zenoh.json5 cannot collide with
 //      §9.6 traffic regardless of which session carries it.
-//   2. No 256-ID hashing or service_id collision domain. SOME/IP's
-//      `serviceIdForMachine` FNV-low-byte mapping required a dedicated
-//      application to keep its 256-machine MVP boundary observable on
-//      its own routing tuple; Zenoh routes by full key-expression with
-//      no analogous bounded namespace, so collision validation is moot.
+//   2. No 128-ID counter or service_id collision domain. SOME/IP's
+//      RFC F.X-1 hybrid (counter + author-pin) allocator carves out a
+//      bounded sub-range [0x8100, 0x817F] whose ceiling is observable
+//      on its own routing tuple; Zenoh routes by full key-expression
+//      with no analogous bounded namespace, so the parallel allocator
+//      is unnecessary.
 //      Method ID BCD-style `methodForPattern` mapping is also absent —
 //      direction is encoded in the key-expression (`p2c/...` vs
 //      `c2p/...`), and pattern dispatch happens off the CBOR

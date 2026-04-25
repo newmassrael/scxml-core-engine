@@ -12,11 +12,12 @@
 //!      identifier whose registration must stay outside SCE-named spaces.
 //!      The SCE-reserved §9.6 namespace is carved out via key-expression
 //!      prefix ([`SCXML_INVOKE_KEY_PREFIX`]), not via session identity.
-//!   2. **No 256-ID hashing or service_id collision domain.** SOME/IP's
-//!      `serviceIdForMachine` FNV-low-byte mapping required a dedicated
-//!      application to keep its 256-machine MVP boundary observable on its
-//!      own routing tuple; Zenoh routes by full key-expression with no
-//!      analogous bounded namespace, so collision validation is moot.
+//!   2. **No 128-ID counter or service_id collision domain.** SOME/IP's
+//!      RFC F.X-1 hybrid (counter + author-pin) allocator carves out a
+//!      bounded sub-range `[0x8100, 0x817F]` whose ceiling is observable
+//!      on its own routing tuple; Zenoh routes by full key-expression
+//!      with no analogous bounded namespace, so the parallel allocator
+//!      is unnecessary.
 //!   3. **Failure isolation.** A §9.6 peer disconnect surfaces on the same
 //!      Zenoh runtime callback thread as `<send>` traffic — sharing the
 //!      session matches the existing `zenoh_subscribers_` map that already

@@ -488,8 +488,6 @@ pub enum DiagnosticCode {
     MeshDeployPartitionTransportBindingUnsupported,
     #[serde(rename = "mesh/deploy-scxml-invoke-cross-device-transport")]
     MeshDeployScxmlInvokeCrossDeviceTransport,
-    #[serde(rename = "mesh/deploy-someip-scxml-invoke-service-id-collision")]
-    MeshDeploySomeipScxmlInvokeServiceIdCollision,
     #[serde(rename = "mesh/deploy-someip-scxml-invoke-service-id-overflow")]
     MeshDeploySomeipScxmlInvokeServiceIdOverflow,
     #[serde(rename = "mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range")]
@@ -722,7 +720,6 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPartitionPoolMachine,
         MeshDeployPartitionTransportBindingUnsupported,
         MeshDeployScxmlInvokeCrossDeviceTransport,
-        MeshDeploySomeipScxmlInvokeServiceIdCollision,
         MeshDeploySomeipScxmlInvokeServiceIdOverflow,
         MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange,
         MeshDeploySomeipScxmlInvokeServiceIdPinCollision,
@@ -894,9 +891,6 @@ impl DiagnosticCode {
 
             // ── Mesh cross-device scxml-remote transport (SCE_MESH.md §9.6 L1393) ──
             MeshDeployScxmlInvokeCrossDeviceTransport => Some("SCE Mesh §9.6 L1393"),
-
-            // ── Mesh §9.6 SOME/IP service-ID collision (SCE_MESH.md §9.6 Session 4c) ──
-            MeshDeploySomeipScxmlInvokeServiceIdCollision => Some("SCE Mesh §9.6"),
 
             // ── Mesh §9.6 SOME/IP service-ID hybrid allocator (RFC F.X-1) ──
             MeshDeploySomeipScxmlInvokeServiceIdOverflow
@@ -1135,7 +1129,6 @@ impl DiagnosticCode {
             MeshDeployPartitionPoolMachine => "mesh/deploy-partition-pool-machine",
             MeshDeployPartitionTransportBindingUnsupported => "mesh/deploy-partition-transport-binding-unsupported",
             MeshDeployScxmlInvokeCrossDeviceTransport => "mesh/deploy-scxml-invoke-cross-device-transport",
-            MeshDeploySomeipScxmlInvokeServiceIdCollision => "mesh/deploy-someip-scxml-invoke-service-id-collision",
             MeshDeploySomeipScxmlInvokeServiceIdOverflow => "mesh/deploy-someip-scxml-invoke-service-id-overflow",
             MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange => "mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range",
             MeshDeploySomeipScxmlInvokeServiceIdPinCollision => "mesh/deploy-someip-scxml-invoke-service-id-pin-collision",
@@ -3085,17 +3078,6 @@ mod tests {
                 r##"{"v":1,"id":"fnv1a:612c7ce1ce735e8d","code":"mesh/deploy-scxml-invoke-cross-device-transport","stage":"mesh-deploy","spec":"SCE Mesh §9.6 L1393","message":"machine 'parent_x' (device 'ecu_a') → `<invoke type=\"scxml\" src=\"#worker_y\">` on device 'ecu_b': parent declares no `bindings[\"#<peer>\"]` entry for the cross-device peer. SCE Mesh §9.6 L1393 requires each cross-device scxml-remote peer to declare its transport on `machines.parent_x.bindings[\"#worker_y\"].transport`, and that transport must be both capable of crossing devices AND wired by the Session F C++ dispatch.","actual":"parent_x/worker_y"}"##,
             ),
             (
-                "mesh/deploy-someip-scxml-invoke-service-id-collision",
-                DeployError::SomeipScxmlInvokeServiceIdCollision {
-                    service_id: 0x812f,
-                    machines: vec!["alpha".into(), "beta".into()],
-                }
-                .into(),
-                // Hash placeholder — patched by byte-stability assertion
-                // on first run; shape + message are the contract.
-                r#"{"v":1,"id":"fnv1a:54c2cb110d8cb37b","code":"mesh/deploy-someip-scxml-invoke-service-id-collision","stage":"mesh-deploy","spec":"SCE Mesh §9.6","message":"§9.6 SOME/IP scxml-invoke service-ID collision at 0x812f: machines ['alpha', 'beta'] all hash to the same low-byte service ID under SCE::Mesh::Someip::serviceIdForMachine. The §9.6 dedicated `<machine>_scxml_invoke_app_` registers vsomeip services in the SCE-reserved range [0x8100, 0x8200), and a duplicate (application, service) registration would silently mis-route inbound wire traffic to whichever application registered first. Rename any one of the listed machines so its FNV-1a low byte differs.","actual":"0x812f"}"#,
-            ),
-            (
                 "mesh/deploy-someip-scxml-invoke-service-id-overflow",
                 DeployError::SomeipScxmlInvokeServiceIdOverflow {
                     participant_count: 129,
@@ -3962,7 +3944,6 @@ mod tests {
             | MeshDeployPartitionPoolMachine
             | MeshDeployPartitionTransportBindingUnsupported
             | MeshDeployScxmlInvokeCrossDeviceTransport
-            | MeshDeploySomeipScxmlInvokeServiceIdCollision
             | MeshDeploySomeipScxmlInvokeServiceIdOverflow
             | MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange
             | MeshDeploySomeipScxmlInvokeServiceIdPinCollision
@@ -4272,7 +4253,6 @@ mod tests {
                 | MeshDeployPartitionPoolMachine
                 | MeshDeployPartitionTransportBindingUnsupported
                 | MeshDeployScxmlInvokeCrossDeviceTransport
-                | MeshDeploySomeipScxmlInvokeServiceIdCollision
                 | MeshDeploySomeipScxmlInvokeServiceIdOverflow
                 | MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange
                 | MeshDeploySomeipScxmlInvokeServiceIdPinCollision
@@ -4319,9 +4299,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            145,
+            144,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 145 distinct variants to match the DiagnosticCode \
+             expected 144 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

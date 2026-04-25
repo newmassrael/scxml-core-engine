@@ -378,7 +378,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (145 codes)
+## Appendix — `DiagnosticCode` index (144 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -483,7 +483,6 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-partition-pool-machine` | Mesh Deploy |
 | `mesh/deploy-partition-transport-binding-unsupported` | Mesh Deploy |
 | `mesh/deploy-scxml-invoke-cross-device-transport` | Mesh Deploy |
-| `mesh/deploy-someip-scxml-invoke-service-id-collision` | Mesh Deploy |
 | `mesh/deploy-someip-scxml-invoke-service-id-overflow` | Mesh Deploy |
 | `mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range` | Mesh Deploy |
 | `mesh/deploy-someip-scxml-invoke-service-id-pin-collision` | Mesh Deploy |

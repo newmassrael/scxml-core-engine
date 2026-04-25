@@ -104,9 +104,11 @@ pub fn resolve_external_bindings(
     // SCE_MESH.md §9.6 Session 4b: a someip binding whose target name is a
     // declared machine in the topology is a scxml-invoke peer binding, not
     // an OEM `<send>` target. It needs no vsomeip.json name resolution —
-    // the service IDs are derived from machine names via
-    // `SomeipScxmlInvokeEndpoint::serviceIdForMachine`. Cache the set once;
-    // the per-binding loop below skips external resolution for matches.
+    // the service IDs are produced by the RFC F.X-1 hybrid (counter +
+    // author-pin) allocator at codegen time and emitted as named
+    // constants in the generated `<machine>_transport.h`. Cache the set
+    // once; the per-binding loop below skips external resolution for
+    // matches.
     let declared_machines: std::collections::HashSet<&str> = deploy_cfg
         .topology
         .values()
