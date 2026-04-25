@@ -220,6 +220,30 @@ inline void invokeReceiveSafely(const ReceiveCallback& on_receive,
     }
 }
 
+/// RFC F.X-3 D8: sibling D8 boundary for §16.4 region-partition
+/// liveness. vsomeip's `register_availability_handler` fires on a
+/// callback thread distinct from the one [`invokeReceiveSafely`] guards;
+/// both threads belong to the consolidated SCE app's callback pool, so
+/// an exception escaping either entry blocks every SCE-reserved
+/// subsystem sharing that pool. The call shape differs (availability
+/// handlers carry no envelope — codegen wraps the SCE-side dispatch in
+/// a void lambda that captures the partition identity it is observing),
+/// hence a separate helper that takes a nullary callable.
+///
+/// Same `noexcept` + log-and-return contract as `invokeReceiveSafely`,
+/// so a §16.4 raise that throws under memory pressure (e.g. allocating
+/// the `CommunicationError` payload) does not propagate into vsomeip.
+inline void availabilityChangeSafely(const std::function<void()>& on_change) noexcept {
+    if (!on_change) return;
+    try {
+        on_change();
+    } catch (const std::exception& ex) {
+        SCE_LOG_ERROR("§16.4 SOMEIP region-liveness handler exception: {}", ex.what());
+    } catch (...) {
+        SCE_LOG_ERROR("§16.4 SOMEIP region-liveness handler exception (unknown type)");
+    }
+}
+
 /// Per-peer §9.6 SOME/IP endpoint. Offers the local machine's service so
 /// the peer can dispatch wire envelopes to us (`offer_service` +
 /// `register_message_handler`), and requests the peer's service so we can

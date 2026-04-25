@@ -284,13 +284,15 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 
 {# Joint emission gate for the `raiseCommunicationError` helper
    (SCE_MESH.md §10.10.1). Ordering-path raises (MISSING_SEQUENCE /
-   ORDERING_GAP via the ordering tick), liveliness-path raises
-   (PEER_PARTITIONED via the liveliness subscriber), and §10.10
-   OutboundBuffer-path raises (BACKPRESSURE_DROP via admit overflow)
+   ORDERING_GAP via the ordering tick), Zenoh liveliness-path raises
+   (PEER_PARTITIONED / REGION_PARTITIONED via the liveliness
+   subscriber), §10.10 OutboundBuffer-path raises (BACKPRESSURE_DROP
+   via admit overflow), and SomeIP region-liveness raises
+   (REGION_PARTITIONED via `register_availability_handler`, RFC F.X-3)
    all share this helper, so it and its include live behind a single
    flag rather than each caller gate. Keeps `raiseCommunicationError`
    a single definition regardless of which callers fire. #}
-{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer %}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex %}
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
@@ -494,6 +496,20 @@ inline constexpr vsomeip::service_t SCE_SOMEIP_SERVICE_SELF = {{ someip_invoke_s
 {% endif %}
 {% for peer in someip_invoke_service_ids_peers %}
 inline constexpr vsomeip::service_t SCE_SOMEIP_SERVICE_PEER_{{ peer.name_upper }} = {{ peer.service_id_hex }};
+{% endfor %}
+{# SCE Mesh RFC F.X-3: per-target SOMEIP region-liveness service ID
+   constants ([0x8180, 0x81FF] disjoint sub-range from F.X-1 invoke).
+   Self is the partition's own liveness service (offered to siblings);
+   peers are sibling partitions of the same machine that this binary
+   subscribes to via `register_availability_handler`. The single-instance
+   ID `0x0001` matches §9.6 invoke (`SCXML_INVOKE_INSTANCE_ID`); §16.4
+   does not need multi-instance encoding. #}
+{% if someip_liveness_service_id_self_hex %}
+inline constexpr vsomeip::service_t SCE_LIVENESS_SERVICE_SELF = {{ someip_liveness_service_id_self_hex }};
+inline constexpr vsomeip::instance_t SCE_LIVENESS_INSTANCE = 0x0001;
+{% endif %}
+{% for peer in someip_liveness_service_ids_peers %}
+inline constexpr vsomeip::service_t SCE_LIVENESS_SERVICE_PEER_{{ peer.partition_upper }} = {{ peer.service_id_hex }};
 {% endfor %}
 {% for target in targets if target.state.kind == "someip" %}
 static constexpr vsomeip::service_t SOMEIP_SERVICE_{{ target.target_snake | upper }} = {{ target.state.service.service_id }};
@@ -830,7 +846,7 @@ struct TransportRouter {
     shared_ptr. The paired thread hosts `app_->start()`'s dispatch loop
     — spawned in `init()` after every endpoint has been started so no
     message is lost to a missing handler. #}
-{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list or someip_liveness_service_id_self_hex %}
     std::shared_ptr<vsomeip::application> {{ someip_sce_app_field }};
     std::thread {{ someip_sce_app_thread }};
 {% endif %}
@@ -1616,7 +1632,7 @@ struct TransportRouter {
     vsomeip application: one per machine, created BEFORE the per-peer
     endpoints because their ctor stores a shared_ptr copy. Follows the
     same declaration-before-use ordering as `server_app_` below. #}
-{%- if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+{%- if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list or someip_liveness_service_id_self_hex %}
 {%-   set ns.parts = ns.parts + [someip_sce_app_field ~ "(vsomeip::runtime::get()->create_application(\"" ~ someip_sce_app_vsomeip_name ~ "\"))"] %}
 {%- endif %}
 {%- for peer in scxml_remote_outbound_peers %}
@@ -2352,7 +2368,7 @@ struct TransportRouter {
     for worker-side inbound). #}
 {%- set someip_invoke_outbound_peers = scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list %}
 {%- set someip_invoke_inbound_peers = scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
-{% if someip_invoke_outbound_peers or someip_invoke_inbound_peers %}
+{% if someip_invoke_outbound_peers or someip_invoke_inbound_peers or someip_liveness_service_id_self_hex %}
         if (!{{ someip_sce_app_field }} ||
             !{{ someip_sce_app_field }}->init()) {
             shutdown();
@@ -2410,11 +2426,47 @@ struct TransportRouter {
             return false;
         }
 {% endfor %}
-        // Dedicated dispatch thread for the §9.6 scxml-invoke app —
-        // distinct from any per-`<send>`-target `{target}_thread_`
-        // above so a handler exception stays contained in the §9.6
-        // callback thread and cannot block safety-relevant `<send>`
-        // traffic (§14.4 failure-isolation rationale).
+{% if someip_liveness_service_id_self_hex %}
+        // SCE Mesh §16.4 / §16.7 row 13 (REGION_PARTITIONED, RFC F.X-3).
+        // Offer this partition's liveness service so sibling partitions'
+        // `register_availability_handler` can observe it; subscribe to
+        // every sibling's liveness service so this binary can raise
+        // `error.communication / REGION_PARTITIONED` when a sibling's
+        // SCE app exits and vsomeip's routing manager fires
+        // `available=false` over Service Discovery. Both calls run BEFORE
+        // start() — vsomeip stages offers and availability subscriptions
+        // until start() flushes them, so post-start registration would
+        // miss the initial peer-availability anchor edge.
+        {{ someip_sce_app_field }}->offer_service(
+            SCE::Generated::{{ machine_name }}::SCE_LIVENESS_SERVICE_SELF,
+            SCE::Generated::{{ machine_name }}::SCE_LIVENESS_INSTANCE);
+{%   for peer in someip_liveness_service_ids_peers %}
+        {{ someip_sce_app_field }}->register_availability_handler(
+            SCE::Generated::{{ machine_name }}::SCE_LIVENESS_SERVICE_PEER_{{ peer.partition_upper }},
+            SCE::Generated::{{ machine_name }}::SCE_LIVENESS_INSTANCE,
+            [this](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
+                // Only the loss edge raises (REGION_PARTITIONED);
+                // initial NOT_AVAILABLE→AVAILABLE is steady-state setup,
+                // not a partition-death event.
+                if (is_available) return;
+                SCE::Mesh::Someip::availabilityChangeSafely(
+                    [this]() {
+                        SCE::Mesh::CommunicationError err;
+                        err.reason = "REGION_PARTITIONED";
+                        err.machine = "{{ machine_name }}";
+                        err.partition = "{{ peer.partition }}";
+                        raiseCommunicationError(std::move(err));
+                    });
+            });
+{%   endfor %}
+{% endif %}
+        // Dedicated dispatch thread for the consolidated SCE app —
+        // hosts every SCE-reserved subsystem's callbacks (RFC F.X-2:
+        // §9.6 scxml-invoke + RFC F.X-3: §16.4 region-liveness) on a
+        // single thread, distinct from any per-`<send>`-target
+        // `{target}_thread_` above so a handler exception stays
+        // contained in the SCE callback thread and cannot block
+        // safety-relevant `<send>` traffic.
         {{ someip_sce_app_thread }} =
             std::thread([this]{ {{ someip_sce_app_field }}->start(); });
 {% endif %}
@@ -3211,7 +3263,7 @@ struct TransportRouter {
     application on this machine is owned separately and torn down
     independently. Idempotent via shared_ptr reset + joinable() guard
     so dtor-via-shutdown does not touch an already-joined thread. #}
-{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list %}
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list or someip_liveness_service_id_self_hex %}
         if ({{ someip_sce_app_field }}) {{ someip_sce_app_field }}->stop();
         if ({{ someip_sce_app_thread }}.joinable()) {{ someip_sce_app_thread }}.join();
         {{ someip_sce_app_field }}.reset();
