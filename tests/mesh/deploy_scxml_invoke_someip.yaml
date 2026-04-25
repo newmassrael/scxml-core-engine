@@ -1,0 +1,26 @@
+# SCE Mesh §9.6 Session 4b — SOME/IP scxml-invoke single-process fixture.
+#
+# Two machines (parent + worker) on one device (ecu1). The parent's
+# `<invoke type="scxml" src="#scxml_invoke_someip_worker"/>` peer binding
+# declares `transport: someip`, so the codegen emits per-machine
+# `<machine>_scxml_invoke_app_` vsomeip applications (§9.6.2 Session 4b
+# ScxmlInvokeEndpoint). These applications are distinct from the per-
+# `<send>`-target applications emitted for ordinary SOME/IP method/event
+# bindings — §13 OEM boundary: SCE-reserved services 0x8100..0x81FF never
+# share an application with OEM-declared vsomeip.json services.
+#
+# No `transports.someip.application_name` field is declared here: §9.6
+# scxml-invoke uses a codegen-derived app name (`<machine>_scxml_invoke`)
+# so the two applications carry SCE-owned identities regardless of any
+# OEM <send> target configuration.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      scxml_invoke_someip_parent:
+        source: scxml_invoke_someip_parent.scxml
+        bindings:
+          "#scxml_invoke_someip_worker":
+            transport: someip
+      scxml_invoke_someip_worker:
+        source: scxml_invoke_someip_worker.scxml

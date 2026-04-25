@@ -3409,6 +3409,83 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             TIMEOUT 30
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_runtime.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
+        # ── §9.6 Session 4b: SOME/IP scxml-invoke roundtrip ──────────
+        # Single-process proof that the §9.6 wire-14/20 lifecycle
+        # travels over SOME/IP. Parent + worker each instantiate a
+        # dedicated `<machine>_scxml_invoke_app_` vsomeip application
+        # (§13 OEM boundary: SCE-reserved services 0x8100..0x81FF
+        # never share an application with OEM <send> targets). The
+        # fixture trivial-final child reaches `<final>` during
+        # initialize(), so the worker emits wire-15 + wire-18 in the
+        # same pump tick and the parent reaches State::Pass via
+        # done.invoke.remote_inv.
+        set(MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_scxml_invoke_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_sm.h"
+                   "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_someip_parent.scxml"
+                    -l cpp -o "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
+                    --write-deps "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/scxml_invoke_someip_parent.scxml"
+                    "${MESH_TEST_DIR}/scxml_invoke_someip_worker.scxml"
+                    "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_sm.h.d"
+            COMMENT "Mesh §9.6 Session 4b: Generating scxml_invoke_someip_parent_{sm,transport}.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_sm.h"
+                   "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_someip_worker.scxml"
+                    -l cpp -o "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
+                    --write-deps "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/scxml_invoke_someip_parent.scxml"
+                    "${MESH_TEST_DIR}/scxml_invoke_someip_worker.scxml"
+                    "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_sm.h.d"
+            COMMENT "Mesh §9.6 Session 4b: Generating scxml_invoke_someip_worker_{sm,transport}.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_scxml_invoke_roundtrip_test
+            mesh/test_mesh_someip_scxml_invoke_roundtrip.cpp
+            "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_sm.h"
+            "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_transport.h"
+            "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_sm.h"
+            "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_transport.h"
+        )
+
+        target_include_directories(mesh_someip_scxml_invoke_roundtrip_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_scxml_invoke_roundtrip_test
+            PRIVATE
+                sce_runtime
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_scxml_invoke_roundtrip_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_scxml_invoke_roundtrip_test)
+        add_test(NAME mesh_someip_scxml_invoke_roundtrip
+                 COMMAND mesh_someip_scxml_invoke_roundtrip_test)
+        set_tests_properties(mesh_someip_scxml_invoke_roundtrip PROPERTIES
+            TIMEOUT 30
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_scxml_invoke.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
         # ── Session I: engine-driven RPC/FieldRead over SOME/IP ──────
         # Sibling to mesh_someip_runtime — binds the real motor_someip_multi
         # SM to TransportRouter and drives it with a step() pump so the

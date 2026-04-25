@@ -101,6 +101,18 @@ pub fn resolve_external_bindings(
     // by many bindings and there's no value in parsing it more than once.
     let mut someip_cache: HashMap<String, (PathBuf, VsomeipConfig)> = HashMap::new();
 
+    // SCE_MESH.md §9.6 Session 4b: a someip binding whose target name is a
+    // declared machine in the topology is a scxml-invoke peer binding, not
+    // an OEM `<send>` target. It needs no vsomeip.json name resolution —
+    // the service IDs are derived from machine names via
+    // `SomeipScxmlInvokeEndpoint::serviceIdForMachine`. Cache the set once;
+    // the per-binding loop below skips external resolution for matches.
+    let declared_machines: std::collections::HashSet<&str> = deploy_cfg
+        .topology
+        .values()
+        .flat_map(|d| d.machines.keys().map(String::as_str))
+        .collect();
+
     // HashMap iteration is non-deterministic within a device, which is fine
     // here because we batch all unresolved names before erroring.
     for (device_name, device) in deploy_cfg.topology.iter() {
@@ -135,6 +147,23 @@ pub fn resolve_external_bindings(
                         target,
                         binding,
                     )?;
+                    continue;
+                }
+
+                // SCE_MESH.md §9.6 Session 4b: a someip binding with NO
+                // OEM-resolvable fields (no `service`, no flat event
+                // sugar, no `events:` block) whose target names a
+                // declared machine is a §9.6 scxml-invoke peer binding.
+                // Skip external resolution — service IDs are derived
+                // from machine names by SomeipScxmlInvokeEndpoint, not
+                // looked up against vsomeip.json. An ordinary `<send>`
+                // binding to a service always carries `service:` or
+                // `events:`, so this skip does not shadow OEM resolution
+                // even when a machine and service share a name.
+                if !binding_uses_named_references(binding)
+                    && binding.events.is_empty()
+                    && declared_machines.contains(target.name())
+                {
                     continue;
                 }
 
