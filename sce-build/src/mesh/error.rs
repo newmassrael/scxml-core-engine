@@ -547,6 +547,56 @@ pub enum DeployError {
         failure: ScxmlInvokeCrossDeviceFailure,
     },
 
+    /// Two or more §9.6 SOME/IP scxml-invoke participants whose names
+    /// hash to the same low-byte service ID under
+    /// [`crate::mesh::transport::someip::service_id_for_machine`]. The
+    /// generated `<machine>_scxml_invoke_app_` would register
+    /// `serviceIdForMachine(name)` for each participant; vsomeip's
+    /// `(application, service)` registration would silently route
+    /// inbound wire-14/15/16/17/18/19/20 messages to whichever
+    /// application registered the duplicate ID first, producing
+    /// non-deterministic peer-mismatch behavior with no log signal.
+    ///
+    /// **Participants** are computed structurally from the deploy.yaml:
+    /// any machine that declares `bindings["#<peer>"].transport: someip`
+    /// for a peer-shape target plus the named peer itself. Internal
+    /// targets (`#_parent`, `#_child`) and dangling references (peer
+    /// not declared anywhere in `topology.*.machines`) are excluded
+    /// because they cannot register a service ID at codegen time.
+    ///
+    /// The conservative side of this definition: a machine with an
+    /// OEM `<send>` someip binding but no §9.6 `<invoke type="scxml">`
+    /// is still counted as a participant (we cannot tell at deploy
+    /// parse time whether the SCXML actually fires a §9.6 invoke).
+    /// The cost of a false-positive is operator-actionable (rename
+    /// one machine), strictly better than the silent mis-routing
+    /// false-negative that the validator exists to prevent.
+    ///
+    /// **Multi-domain debt**: today every §9.6 someip participant is
+    /// treated as one collision domain — SCE does not yet model
+    /// multi-OEM `vsomeip.json` `network:` boundaries that could
+    /// in principle host disjoint SCE-reserved ID spaces. When
+    /// such federation lands the validator must accept the per-domain
+    /// shape; until then, conservative single-domain rejection is
+    /// the correct trade.
+    #[error("§9.6 SOME/IP scxml-invoke service-ID collision at \
+             {service_id:#06x}: machines [{}] all hash to the same \
+             low-byte service ID under \
+             SCE::Mesh::Someip::serviceIdForMachine. The \
+             §9.6 dedicated `<machine>_scxml_invoke_app_` registers \
+             vsomeip services in the SCE-reserved range \
+             [0x8100, 0x8200), and a duplicate (application, service) \
+             registration would silently mis-route inbound wire \
+             traffic to whichever application registered first. \
+             Rename any one of the listed machines so its FNV-1a \
+             low byte differs.",
+             .machines.iter().map(|m| format!("'{m}'"))
+                 .collect::<Vec<_>>().join(", "))]
+    SomeipScxmlInvokeServiceIdCollision {
+        service_id: u16,
+        machines: Vec<String>,
+    },
+
     /// A partition declared `barrier_timeout_ms:` with a value that
     /// makes the distributed parallel-final barrier (SCE_MESH.md
     /// §16.5) meaningless. Today the sole rejected value is `0`: a
@@ -1605,6 +1655,45 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 peer_device.clone(),
                 failure.to_string(),
             ],
+        },
+        DeployError::SomeipScxmlInvokeServiceIdCollision {
+            service_id,
+            machines,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySomeipScxmlInvokeServiceIdCollision,
+            stage: Stage::MeshDeploy,
+            // The colliding service ID names the violation site at the
+            // routing-layer key vsomeip dispatches on. Hex format mirrors
+            // the SCE-reserved range constant `SCXML_INVOKE_SERVICE_BASE`
+            // declared in transport::someip and the C++ helper, so an
+            // operator can grep across both diagnostic and source.
+            actual: Some(format!("{service_id:#06x}")),
+            // No grammar-level expectation; the machine-name set already
+            // names the violation completely and the per-name structural
+            // shape (e.g. lowercase identifier) is enforced upstream by
+            // YAML parse rules.
+            expected: None,
+            // No mechanical fix variant in `SCE_ERROR_CONTRACT.md` §3.1
+            // fits the rename here: `rename_duplicate` semantically
+            // means "duplicate id" but the names ARE distinct, they only
+            // hash-collide; `replace_one_of` requires a closed candidate
+            // set, but ANY non-colliding name works (re-FNV the rename).
+            // The repair is operator judgement — pick any of the listed
+            // machines, rename it to anything that does not re-collide.
+            // Same shape as `MeshDeployDuplicateMachine` and
+            // `MeshDeployPartitionSynthInfixCollision`, which are also
+            // "rename, no closed candidates" by construction.
+            fix: None,
+            // `key_fragments` feed the fnv1a id hash. Service ID + every
+            // machine name keeps the diagnostic id stable per collision
+            // group — two distinct collision groups in the same deploy
+            // (different service IDs / different machine sets) get
+            // distinct ids without re-hashing the entire deploy.
+            key_fragments: {
+                let mut k = vec![format!("{service_id:#06x}")];
+                k.extend(machines.iter().cloned());
+                k
+            },
         },
         DeployError::PartitionBarrierTimeoutInvalid {
             partition,

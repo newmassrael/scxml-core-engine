@@ -1102,6 +1102,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_discovery_not_supported(&cfg)?;
     validate_synth_invoke_infix(&cfg)?;
     validate_partitions_schema(&cfg)?;
+    validate_someip_scxml_invoke_service_id_collisions(&cfg)?;
 
     Ok(cfg)
 }
@@ -1853,6 +1854,141 @@ fn validate_machine_name_uniqueness(cfg: &DeployConfig) -> Result<(), DeployErro
             });
         }
     }
+    Ok(())
+}
+
+/// SCE_MESH.md §9.6 Session 4c — reject deployments whose §9.6 SOME/IP
+/// scxml-invoke participants hash to the same FNV-1a low-byte service ID
+/// in the SCE-reserved range `[0x8100, 0x81FF]`.
+///
+/// **Why this validator exists.** The §9.6 dedicated
+/// `<machine>_scxml_invoke_app_` registers a vsomeip service with ID
+/// derived from `crate::mesh::transport::someip::service_id_for_machine`
+/// (FNV-1a 32-bit, low byte ORed with the SCE-reserved base). The 256-ID
+/// projection is a known MVP boundary documented at
+/// `mesh::transport::someip::service_id_for_machine`. The birthday
+/// paradox crosses 50% near 16 machines, so a real deployment can hit a
+/// collision long before "256 §9.6 someip peers" is reached. Without
+/// this check, the colliding `(application, service)` registration is
+/// silently routed by vsomeip's routing manager to whichever
+/// application registered the duplicate ID first, and the operator sees
+/// no log signal — wire-14/15/16/17/18/19/20 envelopes go to the wrong
+/// peer with no exception.
+///
+/// **Participant definition (structural, deploy.yaml-only).** A machine
+/// `M` participates iff either:
+/// * `M.bindings` contains a peer-shape entry `#X` whose
+///   `transport == "someip"`, where `X` is itself declared in
+///   `topology.*.machines`; OR
+/// * `M` is named as the peer `X` in such an entry from any other
+///   machine.
+///
+/// Internal targets (`#_parent`, `#_child`) are excluded — they never
+/// register a service ID. Dangling `#X` (peer not declared anywhere) is
+/// excluded too: an upstream validator will reject the dangling
+/// reference, and double-counting it here would surface the wrong code
+/// for the same root cause.
+///
+/// **Deliberate over-reach.** Pure deploy.yaml structure cannot tell
+/// "this machine has a `<send>` target on someip" from "this machine
+/// uses §9.6 `<invoke type=\"scxml\">` over someip" — both produce the
+/// same `bindings["#X"].transport: someip` shape. Treating the former as
+/// a participant is a *false-positive risk*: a machine with only OEM
+/// `<send>` someip bindings does not actually register a §9.6 FNV
+/// service ID at codegen, so its FNV hash slot is unused. Why we
+/// accept this anyway:
+/// 1. The cost of false-positive is operator-actionable (rename one
+///    machine, re-FNV).
+/// 2. The cost of false-negative is silent runtime mis-routing on a
+///    deployed system — debugging the wrong-receiver behavior requires
+///    on-device reproduction.
+/// 3. Realistically a machine that uses someip for `<send>` will likely
+///    also use it for `<invoke type="scxml">` if the latter is wired,
+///    so the false-positive rate trends toward 0.
+///
+/// **Multi-domain debt.** Today every §9.6 someip participant in the
+/// deploy is treated as one collision domain. SCE does not yet model
+/// multi-OEM `vsomeip.json` `network:` boundaries that could in
+/// principle host disjoint SCE-reserved ID spaces. When such federation
+/// lands the validator must accept the per-domain shape; until then the
+/// single-domain assumption is the conservative trade.
+///
+/// **Algorithm.** Walk the deploy, collect participants into a sorted
+/// set, group by `service_id_for_machine`, return the first
+/// collision-bearing group as `SomeipScxmlInvokeServiceIdCollision`.
+/// Determinism: `BTreeMap` iteration + sorted machine list inside each
+/// diagnostic group, so the byte-stable golden hash on the first
+/// collision is reproducible across machines and runs. The validator
+/// returns at the first colliding group (consistent with
+/// `validate_scxml_invoke_transport`'s shape) — operators fix one
+/// collision, re-run to surface the next.
+fn validate_someip_scxml_invoke_service_id_collisions(
+    cfg: &DeployConfig,
+) -> Result<(), DeployError> {
+    use crate::mesh::transport::someip::service_id_for_machine;
+
+    // All declared machine names — used to filter out dangling `#X`
+    // peer references (those produce a different diagnostic upstream
+    // and double-counting them would attribute the wrong code).
+    let declared_machines: std::collections::HashSet<&str> = cfg
+        .topology
+        .values()
+        .flat_map(|d| d.machines.keys().map(|k| k.as_str()))
+        .collect();
+
+    // Participants ordered by name (BTreeSet → deterministic iteration
+    // for the diagnostic id hash + machine list).
+    let mut participants: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+
+    for device in cfg.topology.values() {
+        for (machine_name, machine_cfg) in &device.machines {
+            for (target_id, binding) in &machine_cfg.bindings {
+                if binding.transport != "someip" {
+                    continue;
+                }
+                if target_id.is_internal() {
+                    // `#_parent` / `#_child` never register a service ID.
+                    continue;
+                }
+                let peer = target_id.name();
+                if !declared_machines.contains(peer) {
+                    // Dangling reference — let the upstream validator
+                    // surface the absence under its own code.
+                    continue;
+                }
+                participants.insert(machine_name.clone());
+                participants.insert(peer.to_string());
+            }
+        }
+    }
+
+    if participants.len() < 2 {
+        // Single-participant set (or empty) cannot collide.
+        return Ok(());
+    }
+
+    // Group by service ID. `BTreeMap` for deterministic iteration; the
+    // first colliding service ID encountered (in numeric order) is the
+    // one we surface so re-runs after a partial fix continue to make
+    // forward progress through the violation set in the same order.
+    let mut by_service_id: std::collections::BTreeMap<u16, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for name in &participants {
+        let svc = service_id_for_machine(name);
+        by_service_id.entry(svc).or_default().push(name.clone());
+    }
+    for (service_id, machines) in by_service_id {
+        if machines.len() >= 2 {
+            // `participants` was sorted by `BTreeSet`, so per-group
+            // order is already lex-sorted; no additional sort needed.
+            return Err(DeployError::SomeipScxmlInvokeServiceIdCollision {
+                service_id,
+                machines,
+            });
+        }
+    }
+
     Ok(())
 }
 
