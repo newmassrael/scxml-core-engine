@@ -1,0 +1,28 @@
+{
+  "network": "sce_session_f_donedata_someip_crossdev_parent",
+  "unicast": "172.16.10.1",
+  "routing": "parent_session_f_donedata_scxml_invoke",
+  "applications": [
+    { "name": "parent_session_f_donedata_scxml_invoke", "id": "0x9201" }
+  ],
+  "services": [
+    {
+      "service": "0x81f4",
+      "instance": "0x0001",
+      "unreliable": "0",
+      "reliable": { "port": "30599", "enable-magic-cookies": "false" }
+    }
+  ],
+  "service-discovery": {
+    "enable": "true",
+    "multicast": "224.244.224.245",
+    "port": "30490",
+    "protocol": "udp",
+    "initial_delay_min": "10",
+    "initial_delay_max": "50",
+    "repetitions_base_delay": "100",
+    "repetitions_max": "3",
+    "ttl": "5",
+    "cyclic_offer_delay": "500"
+  }
+}

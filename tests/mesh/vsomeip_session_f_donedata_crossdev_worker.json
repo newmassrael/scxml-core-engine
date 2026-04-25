@@ -1,0 +1,42 @@
+{
+  "network": "sce_session_f_donedata_someip_crossdev_worker",
+  "unicast": "172.16.10.2",
+  "routing": "worker_session_f_donedata_content_scxml_invoke",
+  "applications": [
+    { "name": "worker_session_f_donedata_param_scxml_invoke",   "id": "0x9202" },
+    { "name": "worker_session_f_donedata_content_scxml_invoke", "id": "0x9203" },
+    { "name": "worker_session_f_donedata_nested_scxml_invoke",  "id": "0x9204" }
+  ],
+  "services": [
+    {
+      "service": "0x8128",
+      "instance": "0x0001",
+      "unreliable": "0",
+      "reliable": { "port": "30586", "enable-magic-cookies": "false" }
+    },
+    {
+      "service": "0x81ec",
+      "instance": "0x0001",
+      "unreliable": "0",
+      "reliable": { "port": "30587", "enable-magic-cookies": "false" }
+    },
+    {
+      "service": "0x8120",
+      "instance": "0x0001",
+      "unreliable": "0",
+      "reliable": { "port": "30588", "enable-magic-cookies": "false" }
+    }
+  ],
+  "service-discovery": {
+    "enable": "true",
+    "multicast": "224.244.224.245",
+    "port": "30490",
+    "protocol": "udp",
+    "initial_delay_min": "10",
+    "initial_delay_max": "50",
+    "repetitions_base_delay": "100",
+    "repetitions_max": "3",
+    "ttl": "5",
+    "cyclic_offer_delay": "500"
+  }
+}

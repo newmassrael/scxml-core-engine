@@ -1,0 +1,47 @@
+# SCE Mesh §9.6 Session 5c — SOME/IP donedata two-host fixture.
+#
+# Sister to deploy_session_f_donedata_zenoh_crossdev.yaml (Session 5c
+# Zenoh) and deploy_scxml_invoke_someip_crossdev.yaml (Session 5b SOME/IP
+# lifecycle). Reuses parent_session_f_donedata.scxml + three worker
+# SCXMLs verbatim — same §9.6 transport-axis abstraction principle as
+# the Zenoh donedata fixture: transport changes are invisible at the
+# SCXML layer, so swapping `transport: zenoh` for `transport: someip`
+# under the same SCXMLs is the textbook way to verify the donedata
+# round-trip behaves identically over a different wire.
+#
+# Cross-device classifier requirement: parent and worker live on
+# distinct ECUs (`ecu_parent`, `ecu_worker`) so the §9.6 codegen marks
+# the peer bindings as cross-device and routes wire-14/15/18 through
+# SomeipScxmlInvokeEndpoint over the real veth pair.
+#
+# vsomeip multi-application stress: the worker process hosts THREE
+# vsomeip applications (one per worker machine — codegen-derived
+# `<machine>_scxml_invoke` names). vsomeip 3.x supports multiple
+# applications per process: one is the routing manager
+# (alphabetically-first by codegen convention →
+# `worker_session_f_donedata_content_scxml_invoke`), the other two
+# are routing-manager-clients sharing the same RM. This is the first
+# fixture in SCE that exercises this multi-app shape live across
+# netns; if the routing manager mishandles offer multiplexing the
+# regression surfaces here as a failed wire-14 dispatch.
+version: "1.0"
+topology:
+  ecu_parent:
+    machines:
+      parent_session_f_donedata:
+        source: parent_session_f_donedata.scxml
+        bindings:
+          "#worker_session_f_donedata_param":
+            transport: someip
+          "#worker_session_f_donedata_content":
+            transport: someip
+          "#worker_session_f_donedata_nested":
+            transport: someip
+  ecu_worker:
+    machines:
+      worker_session_f_donedata_param:
+        source: worker_session_f_donedata_param.scxml
+      worker_session_f_donedata_content:
+        source: worker_session_f_donedata_content.scxml
+      worker_session_f_donedata_nested:
+        source: worker_session_f_donedata_nested.scxml

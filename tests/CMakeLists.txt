@@ -3613,6 +3613,121 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             set_tests_properties(mesh_someip_scxml_invoke_crossdev PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}"
                 RESOURCE_LOCK sce_mesh_someip_crossdev_netns)
+
+            # ── Session 5c: two-host SOME/IP donedata crossdev ───────
+            # Sister to mesh_zenoh_session_f_crossdev_donedata (Session
+            # 5c Zenoh) and mesh_someip_scxml_invoke_crossdev (5b
+            # lifecycle). Reuses parent_session_f_donedata.scxml + the
+            # three worker SCXMLs verbatim — same §9.6 transport-axis
+            # abstraction proof as the Zenoh donedata fixture, but over
+            # SOMEIP-SD multicast + vsomeip routing-manager instead of
+            # Zenoh's TCP gossip.
+            #
+            # Worker process hosts THREE vsomeip applications (one per
+            # worker machine, codegen-derived `<machine>_scxml_invoke`
+            # names). Worker-side `routing` field selects
+            # `worker_session_f_donedata_content_scxml_invoke` as the
+            # routing-manager owner; the other two run as RM-clients.
+            # First fixture in SCE that exercises this multi-app shape
+            # live across netns — if vsomeip mishandles RM-client
+            # multiplexing the regression surfaces here.
+            #
+            # Service IDs are FNV-1a hashes per machine | 0x8100:
+            #   parent: 0x81f4 / port 30599
+            #   worker param: 0x8128 / port 30586
+            #   worker content: 0x81ec / port 30587
+            #   worker nested: 0x8120 / port 30588
+            # Distinct from 5b lifecycle (worker port 30556, parent
+            # 30568) so /tmp socket churn between the two fixtures
+            # under parallel ctest doesn't cross-contaminate.
+            set(MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR
+                "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_session_f_crossdev_donedata_generated")
+
+            set(MESH_SOMEIP_CROSSDEV_DONEDATA_SCXMLS
+                parent_session_f_donedata
+                worker_session_f_donedata_param
+                worker_session_f_donedata_content
+                worker_session_f_donedata_nested)
+
+            set(MESH_SOMEIP_CROSSDEV_DONEDATA_SCXML_DEPS
+                "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml")
+
+            foreach(machine ${MESH_SOMEIP_CROSSDEV_DONEDATA_SCXMLS})
+                add_custom_command(
+                    OUTPUT "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h"
+                            "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_transport.h"
+                    COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                    COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${machine}.scxml"
+                            -l cpp -o "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                            --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata_someip_crossdev.yaml"
+                            --write-deps "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
+                    DEPENDS ${MESH_SOMEIP_CROSSDEV_DONEDATA_SCXML_DEPS}
+                            "${MESH_TEST_DIR}/deploy_session_f_donedata_someip_crossdev.yaml"
+                            "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    DEPFILE "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
+                    COMMENT "Mesh §9.6 Session 5c SOME/IP donedata: Generating ${machine}_{sm,transport}.h"
+                    VERBATIM
+                )
+            endforeach()
+
+            add_executable(mesh_someip_session_f_crossdev_donedata_worker
+                mesh/test_mesh_someip_session_f_crossdev_donedata_worker.cpp
+                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
+                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
+                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
+                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
+                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
+                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h")
+            target_include_directories(mesh_someip_session_f_crossdev_donedata_worker
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    ${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+            target_link_libraries(mesh_someip_session_f_crossdev_donedata_worker
+                PRIVATE sce_runtime sce_mesh_common vsomeip3)
+            target_compile_definitions(mesh_someip_session_f_crossdev_donedata_worker
+                PRIVATE VSOMEIP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_session_f_donedata_crossdev_worker.json")
+            target_compile_features(mesh_someip_session_f_crossdev_donedata_worker PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_someip_session_f_crossdev_donedata_worker)
+
+            add_executable(mesh_someip_session_f_crossdev_donedata_parent
+                mesh/test_mesh_someip_session_f_crossdev_donedata_parent.cpp
+                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
+                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h")
+            target_include_directories(mesh_someip_session_f_crossdev_donedata_parent
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    ${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+            target_link_libraries(mesh_someip_session_f_crossdev_donedata_parent
+                PRIVATE sce_runtime sce_mesh_common vsomeip3)
+            target_compile_definitions(mesh_someip_session_f_crossdev_donedata_parent
+                PRIVATE VSOMEIP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_session_f_donedata_crossdev_parent.json")
+            target_compile_features(mesh_someip_session_f_crossdev_donedata_parent PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_someip_session_f_crossdev_donedata_parent)
+
+            sce_register_two_host_mesh_test(
+                NAME    mesh_someip_session_f_crossdev_donedata
+                WORKER  mesh_someip_session_f_crossdev_donedata_worker
+                PARENT  mesh_someip_session_f_crossdev_donedata_parent
+                TIMEOUT 60)
+            # Share RESOURCE_LOCK with mesh_someip_scxml_invoke_crossdev
+            # (5b lifecycle): both fixtures bind their parent RM to the
+            # SAME netns + SAME SD multicast group (224.244.224.245:30490).
+            # Distinct `network` fields keep /tmp UNIX socket paths apart,
+            # but the multicast group is shared by netns design — running
+            # 5b and 5c in parallel under ctest -j cross-pollutes their SD
+            # offer/find traffic and one parent never converges within its
+            # 20 s deadline. Distinct RESOURCE_LOCK names had this exact
+            # symptom in initial validation; sharing the lock serialises
+            # them at ctest level which is the textbook resolution for
+            # multicast-group sharing across fixtures.
+            set_tests_properties(mesh_someip_session_f_crossdev_donedata PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}"
+                RESOURCE_LOCK sce_mesh_someip_crossdev_netns)
         endif()
 
         # ── Session I: engine-driven RPC/FieldRead over SOME/IP ──────
