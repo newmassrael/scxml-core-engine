@@ -1238,11 +1238,27 @@ fn validate_scxml_invoke_transport(
                         }
                     })
                 }
+                Some(t) if t == "someip" => {
+                    // SCE_MESH.md §9.6 L1393 Session 4b: someip
+                    // scxml-remote is wired. `vsomeip.json` OEM
+                    // boundary validation belongs to §13 topology
+                    // configuration (vsomeip_config validator + the
+                    // OEM's own deploy pipeline), so we do not
+                    // re-check applications[*] here — duplicating
+                    // that validation would fracture the §13
+                    // ownership boundary. The per-machine
+                    // `<machine>_scxml_invoke_app_` is created
+                    // unconditionally at codegen time; deploy-time
+                    // failures surface through vsomeip runtime init
+                    // returning false (TransportRouter::init → false
+                    // propagates to the caller).
+                    None
+                }
                 Some(t) => {
-                    // Structurally capable (someip / zenoh / dds /
-                    // can) but the C++ wire-14/20 dispatch has not
-                    // landed yet. Mirrors `partition-wire21-custom-
-                    // tcp-unimplemented`: build-time rejection beats
+                    // Structurally capable (zenoh / dds / can) but
+                    // the C++ wire-14/20 dispatch has not landed yet.
+                    // Mirrors `partition-wire21-custom-tcp-
+                    // unimplemented`: build-time rejection beats
                     // runtime silent fallback.
                     Some(mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired {
                         transport: t.clone(),
@@ -3272,6 +3288,25 @@ topology:
         fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
         fs::write(tmp.join("worker.scxml"), worker_scxml).unwrap();
         (tmp, deploy_path)
+    }
+
+    /// Cross-device peer with `bindings["#worker"].transport: someip` —
+    /// SCE_MESH.md §9.6 Session 4b: someip is wired for scxml-invoke
+    /// cross-device. Unlike custom_tcp, someip has no listen/endpoint
+    /// gate on the SCE side (vsomeip.json OEM boundary owns that per
+    /// §13). The classifier must accept the binding without reaching
+    /// into topology.transports.someip.
+    #[test]
+    fn cross_device_someip_accepted() {
+        use std::fs;
+        let bindings = "        bindings:\n          \"#worker\":\n            transport: someip\n";
+        let (tmp, deploy_path) = setup_cross_device_deployment("someip", bindings);
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent");
+        inject_partition_context_for(&mut model, &deploy_path, None)
+            .expect("cross-device someip scxml-invoke must accept — §9.6 Session 4b wired");
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     /// Cross-device peer with `bindings["#worker"].transport: custom_tcp`
