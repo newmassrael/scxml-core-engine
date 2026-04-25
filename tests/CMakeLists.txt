@@ -1202,6 +1202,27 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     set(MESH_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mesh")
     set(MESH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_generated")
 
+    # Opt-in for §9.6 two-host fixtures that require Linux network
+    # namespaces + a veth pair (mesh_someip_scxml_invoke_crossdev,
+    # mesh_zenoh_scxml_invoke_crossdev). These exercise SOME/IP-SD
+    # multicast and Zenoh peer-mesh discovery across a real network
+    # stack — loopback alone cannot route multicast, and a single
+    # routing table cannot reproduce the production "two ECUs on one
+    # wire" topology the cross-device classifier targets.
+    #
+    # When ON, ctest registers the two-host fixtures via the helper in
+    # tests/cmake/two_host_test.cmake. The orchestrator
+    # (tests/mesh/run_two_host_fixture.sh) needs the netns to exist and
+    # the test runner to have CAP_NET_ADMIN — otherwise it skips with
+    # SKIP_RETURN_CODE 77 (Skipped, not Failed).
+    #
+    # One-time setup before turning this option on:
+    #   sudo tests/mesh/setup_crossdev_netns.sh
+    option(SCE_ENABLE_NETNS_TESTS
+        "Register §9.6 two-host fixtures requiring sce-mesh-{parent,worker} netns; \
+run tests/mesh/setup_crossdev_netns.sh as root before enabling"
+        OFF)
+
     # Jinja2 template consumed by sce-codegen --deploy. Listed in the
     # DEPENDS of every *_transport.h custom_command so template edits
     # trigger re-codegen without manually deleting cached headers.
