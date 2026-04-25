@@ -16,10 +16,10 @@
 #
 # vsomeip multi-application stress: the worker process hosts THREE
 # vsomeip applications (one per worker machine — codegen-derived
-# `<machine>_scxml_invoke` names). vsomeip 3.x supports multiple
+# `<machine>_sce` names per RFC F.X-2). vsomeip 3.x supports multiple
 # applications per process: one is the routing manager
 # (alphabetically-first by codegen convention →
-# `worker_session_f_donedata_content_scxml_invoke`), the other two
+# `worker_session_f_donedata_content_sce`), the other two
 # are routing-manager-clients sharing the same RM. This is the first
 # fixture in SCE that exercises this multi-app shape live across
 # netns; if the routing manager mishandles offer multiplexing the

@@ -1246,9 +1246,9 @@ fn validate_scxml_invoke_transport(
                     // OEM's own deploy pipeline), so we do not
                     // re-check applications[*] here — duplicating
                     // that validation would fracture the §13
-                    // ownership boundary. The per-machine
-                    // `<machine>_scxml_invoke_app_` is created
-                    // unconditionally at codegen time; deploy-time
+                    // ownership boundary. The consolidated SCE app
+                    // `<machine>[_<partition>]_sce_app_` (RFC F.X-2)
+                    // is created unconditionally at codegen time; deploy-time
                     // failures surface through vsomeip runtime init
                     // returning false (TransportRouter::init → false
                     // propagates to the caller).

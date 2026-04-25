@@ -1,9 +1,9 @@
 {
   "network": "sce_session_f_donedata_someip_crossdev_parent",
   "unicast": "172.16.10.1",
-  "routing": "parent_session_f_donedata_scxml_invoke",
+  "routing": "parent_session_f_donedata_sce",
   "applications": [
-    { "name": "parent_session_f_donedata_scxml_invoke", "id": "0x9201" }
+    { "name": "parent_session_f_donedata_sce", "id": "0x9201" }
   ],
   "services": [
     {

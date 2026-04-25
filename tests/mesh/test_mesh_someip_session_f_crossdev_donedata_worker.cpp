@@ -8,7 +8,7 @@
 // mirroring the custom_tcp + zenoh donedata fixtures' three-router
 // shape. vsomeip 3.x supports multiple applications per process; one
 // of them runs the routing manager (selected by config's `routing`
-// field — `worker_session_f_donedata_content_scxml_invoke` here, the
+// field — `worker_session_f_donedata_content_sce` here, the
 // alphabetically-middle name) and the other two are routing-manager-
 // clients sharing the same RM. Each TransportRouter creates its own
 // SomeipScxmlInvokeEndpoint with its own vsomeip::application instance

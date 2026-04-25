@@ -8,7 +8,7 @@
 // mirroring the custom_tcp 2-process donedata fixture's three-router
 // shape. Each TransportRouter opens its own Zenoh peer session that
 // connects to tcp/172.16.10.1:17450; their codegen-derived
-// `<machine>_scxml_invoke` Subscriber declarations all propagate to the
+// codegen-derived Zenoh Subscriber declarations all propagate to the
 // parent peer once the TCP link establishes. The pump loop drains
 // incoming wire-14 envelopes; the codegen-side WorkerSessionHost
 // instantiates the trivial-final + donedata child in response, observes

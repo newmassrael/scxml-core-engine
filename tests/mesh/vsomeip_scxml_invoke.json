@@ -1,10 +1,10 @@
 {
   "network": "sce_scxml_invoke_someip",
   "unicast": "127.0.0.1",
-  "routing": "scxml_invoke_someip_parent_scxml_invoke",
+  "routing": "scxml_invoke_someip_parent_sce",
   "applications": [
-    { "name": "scxml_invoke_someip_parent_scxml_invoke", "id": "0x9101" },
-    { "name": "scxml_invoke_someip_worker_scxml_invoke", "id": "0x9102" }
+    { "name": "scxml_invoke_someip_parent_sce", "id": "0x9101" },
+    { "name": "scxml_invoke_someip_worker_sce", "id": "0x9102" }
   ],
   "service-discovery": {
     "enable": "false"

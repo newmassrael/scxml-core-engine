@@ -5,7 +5,7 @@
      `waiting`, codegen emits wire-14 InvokeStart via
      `scxml_invoke_to_scxml_invoke_someip_worker_.send(env)` — the
      ScxmlInvokeEndpoint dispatches a MT_REQUEST_NO_RETURN with method
-     0x0014 over the dedicated `<machine>_scxml_invoke_app_` vsomeip
+     0x0014 over the consolidated `<machine>[_<partition>]_sce_app_` vsomeip
      application. The worker's trivial-final child enters its final
      state during initialize(), so its WorkerSessionHost emits wire-15
      InvokeStarted then wire-18 InvokeDone on its own endpoint; our

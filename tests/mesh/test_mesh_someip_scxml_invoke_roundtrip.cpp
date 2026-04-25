@@ -9,11 +9,11 @@
 //   wire-15 InvokeStarted (worker → parent, method 0x0015)
 //   wire-18 InvokeDone    (worker → parent, method 0x0018)
 //
-// Both TransportRouters run in one process. Each instantiates a
-// dedicated `<machine>_scxml_invoke_app_` vsomeip application
-// distinct from any per-`<send>`-target application (§13 OEM
-// boundary). vsomeip.json names parent's app as the routing manager,
-// so the worker's client application attaches through it; the
+// Both TransportRouters run in one process. Each instantiates the
+// consolidated `<machine>[_<partition>]_sce_app_` vsomeip application
+// (RFC F.X-2) distinct from any per-`<send>`-target application
+// (§13 OEM boundary). vsomeip.json names parent's app as the routing
+// manager, so the worker's client application attaches through it; the
 // ctor order below initialises parent fully before worker connects.
 //
 // VSOMEIP_CONFIGURATION points to vsomeip_scxml_invoke.json (SD
@@ -36,7 +36,7 @@ int main() {
     SCE::Test::Mesh::wipe_stale_vsomeip_sockets();
 
     // Parent carries the routing manager identity
-    // (`scxml_invoke_someip_parent_scxml_invoke`, per
+    // (`scxml_invoke_someip_parent_sce`, per
     // vsomeip_scxml_invoke.json's `routing` field). Its app must be
     // inited and its dispatch thread started before worker's
     // `create_application` attaches — mirrors the mesh_someip_runtime

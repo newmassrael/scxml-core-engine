@@ -11,7 +11,7 @@
 //!   1. **§13 OEM boundary protection.** `vsomeip.json applications[*]` is
 //!      OEM-owned territory. SCE does not register SCE-reserved services
 //!      (`0x8100..0x81FF`, see [`SCXML_INVOKE_SERVICE_BASE`]) inside an
-//!      OEM-declared application. A dedicated `<machine>_scxml_invoke_app_`
+//!      OEM-declared application. The consolidated `<machine>[_<partition>]_sce_app_`
 //!      keeps SCE registrations on an SCE-named application that the OEM
 //!      explicitly declares for that purpose.
 //!   2. **Failure isolation.** A §9.6 peer disconnect or handler exception

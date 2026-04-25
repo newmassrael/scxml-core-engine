@@ -5,7 +5,7 @@
 # declares `transport: zenoh`, so the codegen emits per-peer
 # `std::optional<SCE::Mesh::Zenoh::ScxmlInvokeEndpoint> scxml_invoke_to_<peer>_`
 # (§9.6.2 Session 5). Unlike the SOME/IP §9.6 fixture, there is no
-# dedicated `<machine>_scxml_invoke_app_` — Zenoh has no §13 OEM
+# SCE-namespaced `<machine>[_<partition>]_sce_app_` — Zenoh has no §13 OEM
 # boundary equivalent that would require a separate session.
 # Instead, every endpoint shares the device-wide `zenoh_session_`
 # and the SCE-reserved §9.6 namespace is carved out via the

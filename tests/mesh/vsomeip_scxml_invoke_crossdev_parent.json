@@ -1,9 +1,9 @@
 {
   "network": "sce_scxml_invoke_someip_crossdev_parent",
   "unicast": "172.16.10.1",
-  "routing": "scxml_invoke_someip_crossdev_parent_scxml_invoke",
+  "routing": "scxml_invoke_someip_crossdev_parent_sce",
   "applications": [
-    { "name": "scxml_invoke_someip_crossdev_parent_scxml_invoke", "id": "0x9101" }
+    { "name": "scxml_invoke_someip_crossdev_parent_sce", "id": "0x9101" }
   ],
   "services": [
     {

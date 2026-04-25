@@ -1,11 +1,11 @@
 {
   "network": "sce_session_f_donedata_someip_crossdev_worker",
   "unicast": "172.16.10.2",
-  "routing": "worker_session_f_donedata_content_scxml_invoke",
+  "routing": "worker_session_f_donedata_content_sce",
   "applications": [
-    { "name": "worker_session_f_donedata_param_scxml_invoke",   "id": "0x9202" },
-    { "name": "worker_session_f_donedata_content_scxml_invoke", "id": "0x9203" },
-    { "name": "worker_session_f_donedata_nested_scxml_invoke",  "id": "0x9204" }
+    { "name": "worker_session_f_donedata_param_sce",   "id": "0x9202" },
+    { "name": "worker_session_f_donedata_content_sce", "id": "0x9203" },
+    { "name": "worker_session_f_donedata_nested_sce",  "id": "0x9204" }
   ],
   "services": [
     {

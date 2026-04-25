@@ -1240,7 +1240,7 @@ fn generate_cpp_mesh(
 
     // SCE_MESH.md §9.6 Session 4b: scxml-remote invoke peers that opted
     // into someip demand the ScxmlInvokeEndpoint helper + the shared
-    // `<machine>_scxml_invoke_app_` vsomeip application, which is
+    // SCE app `<machine>[_<partition>]_sce_app_` (RFC F.X-2), which is
     // orthogonal to any per-`<send>`-target someip application emitted
     // from `targets`. Add the variant so the template's `{% if "someip"
     // in transport_types %}` gate fires for the include block even when
@@ -1437,6 +1437,21 @@ fn generate_cpp_mesh(
         })
         .collect();
 
+    // SCE Mesh RFC F.X-2: per-binary SCE-namespaced vsomeip Application
+    // identity. Replaces the legacy `<machine>_scxml_invoke_app_` per-
+    // subsystem app with a single `<machine>[_<partition>]_sce_app_` per
+    // partition binary. The optional partition infix closes the latent
+    // collision where two partition binaries of the same machine would
+    // otherwise both call `create_application("<machine>_scxml_invoke")`
+    // and clash on vsomeip's routing-manager application-name uniqueness.
+    // F.X-3 onwards, additional SCE-reserved subsystems (region-liveness,
+    // future) register on the same app — see SomeipScxmlInvokeEndpoint.h's
+    // §13 docstring for the SCE-vs-OEM rationale that survives
+    // consolidation.
+    let someip_sce_app_vsomeip_name = sce_app_vsomeip_name(machine_name, partition_self_name);
+    let someip_sce_app_field = format!("{someip_sce_app_vsomeip_name}_app_");
+    let someip_sce_app_thread = format!("{someip_sce_app_vsomeip_name}_thread_");
+
     // SCE Mesh RFC F.X-1: per-target SOMEIP service ID constants. Self is
     // present iff this machine is a §9.6 SOMEIP scxml-invoke participant
     // (the deploy-wide assigner already filtered on participation). Peers
@@ -1504,6 +1519,9 @@ fn generate_cpp_mesh(
         scxml_remote_inbound_peers => scxml_remote_inbound_peers,
         someip_invoke_service_id_self_hex => someip_invoke_service_id_self_hex,
         someip_invoke_service_ids_peers => someip_invoke_service_ids_peers,
+        someip_sce_app_field => someip_sce_app_field,
+        someip_sce_app_thread => someip_sce_app_thread,
+        someip_sce_app_vsomeip_name => someip_sce_app_vsomeip_name,
     };
 
     let code = tmpl
@@ -1515,12 +1533,72 @@ fn generate_cpp_mesh(
     })
 }
 
+/// SCE Mesh RFC F.X-2: compute the per-binary SCE-namespaced vsomeip
+/// Application name. Non-partitioned binaries get `<machine>_sce`;
+/// partitioned binaries get `<machine>_<partition>_sce`. The partition
+/// infix closes the latent collision where two partition binaries of the
+/// same machine would otherwise both call
+/// `create_application("<machine>_scxml_invoke")` and clash on vsomeip's
+/// routing-manager application-name uniqueness.
+///
+/// Free function (rather than inlined into the codegen body) so the
+/// naming rule is unit-testable in isolation — see the
+/// `sce_app_vsomeip_name_*` tests in this module.
+fn sce_app_vsomeip_name(machine_name: &str, partition_self_name: Option<&str>) -> String {
+    match partition_self_name {
+        Some(part) => format!("{machine_name}_{part}_sce"),
+        None => format!("{machine_name}_sce"),
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::mesh::deploy::ZenohMode;
+
+    // ── RFC F.X-2 sce_app_vsomeip_name ──────────────────────
+
+    #[test]
+    fn sce_app_vsomeip_name_non_partitioned() {
+        // Without `--partition`, the SCE app is named `<machine>_sce`
+        // — single binary per machine, no infix needed. The `_sce`
+        // suffix is RFC F.X-2's generic SCE-namespace marker (the
+        // app hosts every SCE-reserved subsystem, not just §9.6 invoke).
+        assert_eq!(sce_app_vsomeip_name("brake", None), "brake_sce");
+        assert_eq!(
+            sce_app_vsomeip_name("scxml_invoke_someip_parent", None),
+            "scxml_invoke_someip_parent_sce"
+        );
+    }
+
+    #[test]
+    fn sce_app_vsomeip_name_partitioned_includes_partition_infix() {
+        // RFC F.X-2 D2: the partition infix is the latent-bug fix —
+        // without it, two partition binaries of the same machine would
+        // both call `create_application("<machine>_scxml_invoke")` and
+        // clash on vsomeip routing-manager application-name uniqueness.
+        assert_eq!(
+            sce_app_vsomeip_name("brake", Some("brake_left_part")),
+            "brake_brake_left_part_sce"
+        );
+        assert_eq!(
+            sce_app_vsomeip_name("engine_controller", Some("upper_half")),
+            "engine_controller_upper_half_sce"
+        );
+    }
+
+    #[test]
+    fn sce_app_vsomeip_name_partitioned_distinct_per_partition() {
+        // Two distinct partition names of the same machine produce two
+        // distinct vsomeip app names — the property the latent-bug fix
+        // hinges on. Without distinct names, the routing manager rejects
+        // the second `create_application` call at runtime.
+        let left = sce_app_vsomeip_name("brake", Some("left"));
+        let right = sce_app_vsomeip_name("brake", Some("right"));
+        assert_ne!(left, right);
+    }
 
     // ── cpp_string_literal ───────────────────────────────────
 

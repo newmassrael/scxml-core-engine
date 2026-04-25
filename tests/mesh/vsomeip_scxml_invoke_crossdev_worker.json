@@ -1,9 +1,9 @@
 {
   "network": "sce_scxml_invoke_someip_crossdev_worker",
   "unicast": "172.16.10.2",
-  "routing": "scxml_invoke_someip_crossdev_worker_scxml_invoke",
+  "routing": "scxml_invoke_someip_crossdev_worker_sce",
   "applications": [
-    { "name": "scxml_invoke_someip_crossdev_worker_scxml_invoke", "id": "0x9102" }
+    { "name": "scxml_invoke_someip_crossdev_worker_sce", "id": "0x9102" }
   ],
   "services": [
     {

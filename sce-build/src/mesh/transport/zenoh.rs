@@ -5,7 +5,7 @@
 //! §9.6 cross-device `<invoke type="scxml" src="#peer">` traffic on Zenoh
 //! rides the SAME `zenoh_session_` that ordinary `<send>` zenoh targets use,
 //! not a dedicated one. The Session 4b SOME/IP rationale for a dedicated
-//! `<machine>_scxml_invoke_app_` does NOT carry over:
+//! `<machine>[_<partition>]_sce_app_` does NOT carry over:
 //!
 //!   1. **No §13 OEM boundary on the Zenoh side.** `vsomeip.json applications[*]`
 //!      is OEM-owned territory; Zenoh has no equivalent OEM-allocated

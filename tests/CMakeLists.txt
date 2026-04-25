@@ -3507,6 +3507,32 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             TIMEOUT 30
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_scxml_invoke.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
+        # ── RFC F.X-2 D8: invokeReceiveSafely boundary ───────────────
+        # Defense-in-depth try-catch at the vsomeip → SCE callback
+        # boundary inside the consolidated SCE-namespaced app. The test
+        # invokes `SCE::Mesh::Someip::invokeReceiveSafely` directly with
+        # throwing/non-throwing callbacks — no vsomeip runtime needed,
+        # so it gates only on the vsomeip3 headers (already established
+        # by the surrounding `if(vsomeip3_FOUND)` block).
+        add_executable(mesh_someip_invoke_receive_safely_test
+            mesh/test_mesh_someip_invoke_receive_safely.cpp
+        )
+        target_include_directories(mesh_someip_invoke_receive_safely_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+        )
+        target_link_libraries(mesh_someip_invoke_receive_safely_test
+            PRIVATE
+                sce_runtime
+                sce_mesh_common
+                vsomeip3
+        )
+        target_compile_features(mesh_someip_invoke_receive_safely_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_invoke_receive_safely_test)
+        add_test(NAME mesh_someip_invoke_receive_safely
+                 COMMAND mesh_someip_invoke_receive_safely_test)
+        set_tests_properties(mesh_someip_invoke_receive_safely PROPERTIES TIMEOUT 10)
+
         # ── Session 5b: two-host SOME/IP scxml-invoke crossdev ───────
         # Parent and worker run in distinct Linux netns wired by veth,
         # each with its own vsomeip routing manager + unicast IP. They

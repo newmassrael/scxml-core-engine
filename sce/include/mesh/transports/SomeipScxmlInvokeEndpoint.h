@@ -3,35 +3,49 @@
 //
 // SCE Mesh §9.6.2 Session 4b — SOME/IP cross-device scxml-invoke endpoint.
 //
-// ─── Why a dedicated vsomeip application (Split design rationale) ──────────
-// This helper runs §9.6 cross-device <invoke type="scxml" src="#peer"> traffic
-// on a vsomeip application that is SEPARATE from the per-`<send>`-target
-// applications generated for ordinary SOME/IP method/event/field bindings.
-// The split is intentional and textbook for the SCE architecture, not
-// pragmatic incrementalism:
+// ─── Why a dedicated SCE-namespaced vsomeip application (RFC F.X-2) ────────
+// This helper runs §9.6 cross-device <invoke type="scxml" src="#peer">
+// traffic on a vsomeip application named `<machine>[_<partition>]_sce` that
+// is SEPARATE from the per-`<send>`-target applications generated for
+// ordinary SOME/IP method/event/field bindings. The split is the
+// SCE-vs-OEM boundary, not a per-subsystem split inside SCE: every
+// SCE-reserved subsystem on this binary (today §9.6 invoke; F.X-3
+// onwards: region-liveness; possible future SCE subsystems) shares the
+// single `<machine>[_<partition>]_sce` app. Three rationales survive
+// consolidation under RFC F.X-2:
 //
 //   1. §13 OEM boundary protection. vsomeip.json `applications[*]` is OEM-
 //      owned territory. SCE does not register SCE-reserved services
-//      (0x8100..0x81FF, see SCXML_INVOKE_SERVICE_BASE) inside an OEM-declared
-//      application. A dedicated `<machine>_scxml_invoke_app_` keeps SCE's
-//      service registrations on an SCE-named application that the OEM
-//      explicitly declares for that purpose, preserving the bidirectional
-//      contract.
-//   2. Failure isolation. A §9.6 peer disconnect or handler exception is
-//      contained inside the dedicated application's callback thread and
-//      cannot block the `<send>` SOME/IP path that may carry safety-relevant
-//      traffic (e.g. brake control). vsomeip's routing_manager dispatches
-//      per (application, service) tuple, so the two applications are also
-//      isolated at the routing layer.
+//      (0x8100..0x81FF, see SCXML_INVOKE_SERVICE_BASE) inside an OEM-
+//      declared application. The SCE-named `<machine>[_<partition>]_sce`
+//      keeps SCE's service registrations on an SCE-named application that
+//      the OEM explicitly declares for that purpose, preserving the
+//      bidirectional contract.
+//   2. Failure isolation against `<send>` traffic. A §9.6 peer disconnect
+//      or handler exception is contained inside the SCE app's callback
+//      thread and cannot block the `<send>` SOME/IP path that may carry
+//      safety-relevant traffic (e.g. brake control). vsomeip's
+//      routing_manager dispatches per (application, service) tuple, so
+//      the SCE app and each `<send>` target's app are isolated at the
+//      routing layer. Inside the SCE app, sibling SCE-reserved subsystems
+//      share one callback thread — defense-in-depth try-catch at the
+//      vsomeip → SCE callback boundary (`invokeReceiveSafely` below)
+//      prevents one subsystem's handler from starving siblings via an
+//      escaped exception.
 //   3. Service/instance ID responsibility split. SCE-reserved range
-//      (0x8100..0x81FF) collision detection is SCE codegen's responsibility.
-//      OEM service ID collision detection is OEM vsomeip.json's
-//      responsibility. Dedicated applications make the boundary observable
-//      at the routing layer — `(app, service)` tuple lookup naturally
-//      partitions the two responsibility domains.
+//      (0x8100..0x81FF) collision detection is SCE codegen's
+//      responsibility (RFC F.X-1 hybrid allocator). OEM service ID
+//      collision detection is OEM vsomeip.json's responsibility. The
+//      dedicated SCE-namespaced app makes the boundary observable at the
+//      routing layer — `(app, service)` tuple lookup naturally partitions
+//      the two responsibility domains.
 //
-// A future textbook option ("one app per machine, multiplex SCE + OEM
-// services") would violate (1) by design and is rejected for this system.
+// Per-partition naming closes the latent collision where two partition
+// binaries of the same machine would otherwise both call
+// `create_application("<machine>_scxml_invoke")` and clash on vsomeip's
+// routing-manager application-name uniqueness; with
+// `<machine>_<partition>_sce` each partition binary registers a unique
+// SCE app.
 // ──────────────────────────────────────────────────────────────────────────
 //
 // Wire shape (SCE_MESH.md §9.6.2 Session 4b L1393):
@@ -76,10 +90,12 @@
 
 #pragma once
 
+#include "core/LogMacros.h"
 #include "mesh/MeshEnvelope.h"
 #include "mesh/MeshEnvelopeCodec.h"
 #include "mesh/PatternKind.h"
 
+#include <exception>
 #include <vsomeip/vsomeip.hpp>
 
 #include <cstdint>
@@ -176,6 +192,33 @@ static_assert(methodForPattern(PatternKind::ParallelRegionDone) == 0);
 /// `SCE::Mesh::CustomTcp::ReceiveCallback` (SCE_MESH.md §14.4
 /// callback-thread dispatch convention).
 using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
+
+/// RFC F.X-2 D8: defense-in-depth try-catch at the vsomeip → SCE callback
+/// boundary. The consolidated `<machine>[_<partition>]_sce` app hosts every
+/// SCE-reserved subsystem's callbacks on a single vsomeip callback thread;
+/// a callback that lets an exception escape would tear down that thread
+/// and starve sibling subsystems. Catch all exceptions here, log via
+/// `SCE_LOG_ERROR`, and return silently — vsomeip continues dispatching
+/// subsequent envelopes unaffected.
+///
+/// Marked `noexcept` so the compiler enforces "no escape from this
+/// function" at the boundary the caller (vsomeip's runtime thread) sees.
+/// The body's catch-all guarantees noexcept by construction.
+///
+/// Free function (not a member) so the catch boundary is testable in
+/// isolation without requiring a fully-constructed `ScxmlInvokeEndpoint`
+/// or a vsomeip runtime — see the `invoke_receive_safely_*` unit tests.
+inline void invokeReceiveSafely(const ReceiveCallback& on_receive,
+                                const SCE::Mesh::MeshEnvelope& env) noexcept {
+    if (!on_receive) return;
+    try {
+        on_receive(env);
+    } catch (const std::exception& ex) {
+        SCE_LOG_ERROR("§9.6 SOMEIP scxml-invoke handler exception: {}", ex.what());
+    } catch (...) {
+        SCE_LOG_ERROR("§9.6 SOMEIP scxml-invoke handler exception (unknown type)");
+    }
+}
 
 /// Per-peer §9.6 SOME/IP endpoint. Offers the local machine's service so
 /// the peer can dispatch wire envelopes to us (`offer_service` +
@@ -320,7 +363,6 @@ private:
         app_->register_message_handler(
             own_svc_, SCXML_INVOKE_INSTANCE_ID, method,
             [this](const std::shared_ptr<vsomeip::message>& msg) {
-                if (!on_receive_) return;
                 auto payload = msg->get_payload();
                 if (!payload) return;
                 SCE::Mesh::MeshEnvelope env;
@@ -330,7 +372,11 @@ private:
                         env)) {
                     return;  // malformed envelope — drop, defence-in-depth
                 }
-                on_receive_(env);
+                // RFC F.X-2 D8: catch any exception at the vsomeip → SCE
+                // callback boundary. The consolidated SCE app hosts every
+                // SCE-reserved subsystem's callbacks on this thread; an
+                // escaped exception would starve sibling subsystems.
+                invokeReceiveSafely(on_receive_, env);
             });
     }
 

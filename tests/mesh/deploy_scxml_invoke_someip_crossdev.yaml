@@ -14,8 +14,8 @@
 # discover each other through SOME/IP-SD multicast over the veth pair
 # created by setup_crossdev_netns.sh. No `transports.someip.application_name`
 # field is declared here: §9.6 scxml-invoke uses a codegen-derived app
-# name (`<machine>_scxml_invoke`) so the SCE-reserved identity is
-# decoupled from any OEM <send> target configuration.
+# name (`<machine>[_<partition>]_sce`, RFC F.X-2) so the SCE-reserved
+# identity is decoupled from any OEM <send> target configuration.
 version: "1.0"
 topology:
   ecu_parent:

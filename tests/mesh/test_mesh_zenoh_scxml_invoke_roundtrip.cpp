@@ -12,7 +12,7 @@
 // Both TransportRouters run in one process. Each opens its own
 // `zenoh::Session` configured by deploy_scxml_invoke_zenoh.yaml's
 // `transports.zenoh.connect:` block. Unlike the SOME/IP §9.6
-// fixture, there is no dedicated `<machine>_scxml_invoke_app_`:
+// fixture, there is no SCE-namespaced `<machine>[_<partition>]_sce_app_`:
 // Zenoh has no §13 OEM boundary equivalent that would require a
 // separate session. Both endpoints share the device-wide
 // `zenoh_session_` and the SCE-reserved §9.6 namespace is carved
