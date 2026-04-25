@@ -19,6 +19,7 @@
 pub mod custom_tcp;
 pub mod shm;
 pub mod someip;
+pub mod zenoh;
 
 use std::fmt;
 
