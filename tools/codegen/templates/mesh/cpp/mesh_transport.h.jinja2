@@ -552,12 +552,12 @@ static constexpr const char* PARTITION_WIRE21_FROM_{{ r.src_partition_snake | up
        (wire-14/17/19) or `dispatchToSession` (wire-15/16/18/20) by the
        receive callback that Session 2 commit 2 installs. #}
 {% if scxml_remote_outbound_peers or scxml_remote_inbound_peers %}
-{% for peer in scxml_remote_outbound_peers if peer.transport not in ("custom_tcp", "someip") %}
+{% for peer in scxml_remote_outbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh") %}
 // Outbound peer: I am parent, `{{ peer.name }}` is child (shm).
 static constexpr const char* P2C_TO_{{ peer.name | upper }}   = "/sce_p2c_{{ machine_name }}_{{ peer.name }}";
 static constexpr const char* C2P_FROM_{{ peer.name | upper }} = "/sce_c2p_{{ peer.name }}_{{ machine_name }}";
 {% endfor %}
-{% for peer in scxml_remote_inbound_peers if peer.transport not in ("custom_tcp", "someip") %}
+{% for peer in scxml_remote_inbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh") %}
 // Inbound peer: I am child, `{{ peer.name }}` is parent (shm).
 static constexpr const char* P2C_FROM_{{ peer.name | upper }} = "/sce_p2c_{{ peer.name }}_{{ machine_name }}";
 static constexpr const char* C2P_TO_{{ peer.name | upper }}   = "/sce_c2p_{{ machine_name }}_{{ peer.name }}";
@@ -816,7 +816,7 @@ struct TransportRouter {
     // `dispatchToSession`, mirroring the custom_tcp outbound pattern
     // where parent-side replies bypass the worker's staging queue.
     SCE::Mesh::Someip::ScxmlInvokeEndpoint scxml_invoke_to_{{ peer.name }}_;
-{%   else %}
+{%   elif peer.transport != "zenoh" %}
     SCE::Mesh::ShmChannel<> p2c_to_{{ peer.name }}_;
     SCE::Mesh::ShmChannel<> c2p_from_{{ peer.name }}_;
 {%   endif %}
@@ -843,7 +843,7 @@ struct TransportRouter {
     SCE::Mesh::Someip::ScxmlInvokeEndpoint scxml_invoke_to_{{ peer.name }}_;
     std::mutex someip_invoke_inbound_mutex_{{ peer.name }}_;
     std::vector<SCE::Mesh::MeshEnvelope> someip_invoke_inbound_queue_{{ peer.name }}_;
-{%   else %}
+{%   elif peer.transport != "zenoh" %}
     SCE::Mesh::ShmChannel<> p2c_from_{{ peer.name }}_;
     SCE::Mesh::ShmChannel<> c2p_to_{{ peer.name }}_;
 {%   endif %}
@@ -1568,7 +1568,7 @@ struct TransportRouter {
 {%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
 {%-   elif peer.transport == "someip" %}
 {%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ machine_name ~ "_scxml_invoke_app_, SCE::Mesh::Someip::serviceIdForMachine(\"" ~ machine_name ~ "\"), SCE::Mesh::Someip::serviceIdForMachine(\"" ~ peer.name ~ "\"))"] %}
-{%-   else %}
+{%-   elif peer.transport != "zenoh" %}
 {%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(P2C_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
 {%-     set ns.parts = ns.parts + ["c2p_from_" ~ peer.name ~ "_(C2P_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
 {%-   endif %}
@@ -1578,7 +1578,7 @@ struct TransportRouter {
 {%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
 {%-   elif peer.transport == "someip" %}
 {%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ machine_name ~ "_scxml_invoke_app_, SCE::Mesh::Someip::serviceIdForMachine(\"" ~ machine_name ~ "\"), SCE::Mesh::Someip::serviceIdForMachine(\"" ~ peer.name ~ "\"))"] %}
-{%-   else %}
+{%-   elif peer.transport != "zenoh" %}
 {%-     set ns.parts = ns.parts + ["p2c_from_" ~ peer.name ~ "_(P2C_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
 {%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(C2P_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
 {%-   endif %}
@@ -1979,7 +1979,7 @@ struct TransportRouter {
     /// yet at our ctor time (typical startup race).
     std::size_t pumpScxmlInvokeRequests() {
         std::size_t total = 0;
-{% for peer in scxml_remote_inbound_peers if peer.transport not in ("custom_tcp", "someip") %}
+{% for peer in scxml_remote_inbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh") %}
         if (!p2c_from_{{ peer.name }}_.valid()) {
             p2c_from_{{ peer.name }}_ = SCE::Mesh::ShmChannel<>(
                 P2C_FROM_{{ peer.name | upper }},
@@ -2113,7 +2113,7 @@ struct TransportRouter {
     /// Same lazy-reopen as `pumpScxmlInvokeRequests`.
     std::size_t pumpScxmlInvokeReplies() {
         std::size_t total = 0;
-{% for peer in scxml_remote_outbound_peers if peer.transport not in ("custom_tcp", "someip") %}
+{% for peer in scxml_remote_outbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh") %}
         if (!c2p_from_{{ peer.name }}_.valid()) {
             c2p_from_{{ peer.name }}_ = SCE::Mesh::ShmChannel<>(
                 C2P_FROM_{{ peer.name | upper }},
