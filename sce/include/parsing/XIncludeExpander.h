@@ -20,14 +20,15 @@
 // so the C++ Interpreter side and the AOT pipeline produce
 // byte-equivalent post-XInclude documents and identical PositionMap
 // composition. The port is string-level (rather than DOM-mutating
-// like the legacy `PugiXMLDocument::processXIncludeRecursive`)
-// because `SCE::parsing::PositionMap` keys diagnostics to byte
-// offsets in the expanded output — DOM mutation cannot produce a
-// stable byte-offset coordinate space.
+// like the pre-Phase-X path this expander replaces) because
+// `SCE::parsing::PositionMap` keys diagnostics to byte offsets in
+// the expanded output — DOM mutation cannot produce a stable
+// byte-offset coordinate space.
 //
 // Phase X in `claudedocs/rfc-sce-template-phase-x.md` §3 B1 ships
 // this expander; B2 swaps `PugiXMLDocument::processXInclude` to use
-// it; B3 adds the Rust ↔ C++ shape drift test.
+// it (replacing the DOM-mutation `processXIncludeRecursive` path);
+// B3 adds the Rust ↔ C++ shape drift test.
 //
 // Failure model: expander-internal errors (missing href, not-found,
 // cycle, too-deep, malformed) throw `XIncludeExpansionError`. Per
@@ -41,19 +42,19 @@
 namespace SCE::parsing {
 
 // Maximum nesting depth for recursive `<xi:include>` expansion.
-// Mirrors `PugiXMLDocument::MAX_XINCLUDE_DEPTH`
-// (sce/include/parsing/PugiXMLParser.h:131) and Rust
-// `xinclude::MAX_XINCLUDE_DEPTH` (sce-build/src/xinclude.rs:63).
-// Three-way agreement is pinned by the Phase X B3 drift test
-// `cpp_xinclude_expander_matches_rust_shape`; the existing
-// `xinclude_depth_matches_runtime` test pins the Rust side against
-// `PugiXMLParser.h`.
+// Mirrors Rust `xinclude::MAX_XINCLUDE_DEPTH`
+// (sce-build/src/xinclude.rs:63). Phase X B3 adds
+// `cpp_xinclude_expander_matches_rust_shape` to pin two-way
+// agreement of this constant alongside the result-struct shape;
+// the existing Rust-side `xinclude_depth_matches_runtime` test
+// is updated in B3 to verdict against this header rather than the
+// deleted `PugiXMLDocument::MAX_XINCLUDE_DEPTH` static.
 constexpr unsigned MAX_XINCLUDE_DEPTH = 10;
 
 // W3C XInclude 1.0 namespace URI. Element matching is done by local
-// name (`include`) for parity with the pugixml runtime, which is
-// lenient about namespace declarations (PugiXMLParser.cpp:255-256
-// pre-Phase X). Exposed for diagnostic context.
+// name (`include`) for parity with the pre-Phase-X pugixml runtime
+// which was lenient about namespace declarations. Exposed for
+// diagnostic context.
 inline constexpr std::string_view XINCLUDE_NS =
     "http://www.w3.org/2001/XInclude";
 

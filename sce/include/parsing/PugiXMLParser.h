@@ -52,7 +52,7 @@ public:
     explicit PugiXMLDocument(std::shared_ptr<pugi::xml_document> doc);
 
     std::shared_ptr<IXMLElement> getRootElement() override;
-    bool processXInclude() override;
+    XIncludeResult processXInclude() override;
     SceTemplateResult processSceTemplate() override;
     std::string getErrorMessage() const override;
     bool isValid() const override;
@@ -99,9 +99,6 @@ public:
     }
 
 private:
-    bool processXIncludeRecursive(pugi::xml_node node, int depth = 0);
-    std::string resolveFilePath(const std::string &href) const;
-
     // Resolve an `<sce:use template="href">` value against an explicit
     // base directory. Mirrors `resolveFilePath` but takes baseDir as a
     // parameter so the recursive expander can resolve nested
@@ -128,7 +125,6 @@ private:
     std::string basePath_;
     std::string sourcePath_;
     std::string sourceText_;
-    static constexpr int MAX_XINCLUDE_DEPTH = 10;
 };
 
 /**

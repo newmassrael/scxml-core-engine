@@ -36,9 +36,8 @@ struct XIncludeHit {
 };
 
 // True when `child` is an `<xi:include>` / `<include>` element.
-// Lenient on the namespace prefix to match
-// `PugiXMLDocument::processXIncludeRecursive`'s local-name match
-// (sce/src/parsing/PugiXMLParser.cpp:255-256 pre-Phase X) and Rust
+// Lenient on the namespace prefix to match the pre-Phase-X
+// pugixml runtime's local-name match and Rust
 // `collect_includes_into` namespace branch
 // (sce-build/src/xinclude.rs:384-385).
 bool isIncludeElement(const pugi::xml_node &child) {
@@ -182,8 +181,9 @@ RootChildrenRender renderRootChildren(std::string_view expanded,
 }
 
 // Resolve `href` against the same precedence ladder
-// `PugiXMLDocument::resolveFilePath` uses: absolute → base
-// directory → current working directory. Mirrors Rust
+// `PugiXMLDocument::resolveFilePathInBase` uses (and the
+// pre-Phase-X DOM-mutation path used): absolute → base directory →
+// current working directory. Mirrors Rust
 // `sce-build/src/xinclude.rs::resolve_href`. On miss, populates
 // `searched` with the paths tried (so the diagnostic can show
 // where the operator should put the file) and returns an empty

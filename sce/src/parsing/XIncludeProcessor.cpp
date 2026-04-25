@@ -21,7 +21,7 @@ XIncludeProcessor::~XIncludeProcessor() {
 bool XIncludeProcessor::process(std::shared_ptr<IXMLDocument> doc) {
     SCE_LOG_WARN("XIncludeProcessor::process() is deprecated. Use IXMLDocument::processXInclude() instead");
     if (doc) {
-        return doc->processXInclude();
+        return doc->processXInclude().ok;
     }
     return false;
 }

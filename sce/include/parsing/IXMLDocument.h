@@ -10,6 +10,19 @@
 
 namespace SCE {
 
+// Result of `IXMLDocument::processXInclude`. Carries the XInclude-
+// expansion `PositionMap` alongside the success flag so downstream
+// diagnostic emitters can remap in-memory coordinates back to the
+// author's source file (or to a `xi:include`'d fragment file). See
+// `claudedocs/rfc-sce-template-phase-x.md` §3 B2. The PositionMap
+// is identity when `<xi:include>` is absent from the source
+// document and otherwise captures every spliced fragment byte with
+// File-origin attribution to the fragment's source file.
+struct XIncludeResult {
+    bool ok = false;
+    SCE::parsing::PositionMap positions;
+};
+
 // Result of `IXMLDocument::processSceTemplate`. Carries the
 // template-expansion `PositionMap` alongside the success flag so
 // downstream diagnostic emitters can remap in-memory coordinates
@@ -42,13 +55,19 @@ public:
 
     /**
      * @brief Process XInclude directives
-     * @return true on success
+     * @return XIncludeResult { ok, positions }
      *
-     * W3C XInclude: Replaces <xi:include> elements with external content
-     * Uses pugixml's manual XInclude implementation
-     * WASM: Manual implementation using pugixml
+     * W3C XInclude: Replaces <xi:include> elements with external
+     * content via the string-level expander
+     * `SCE::parsing::expandStringX` (mirrors
+     * `sce-build/src/xinclude.rs::expand`). Returns a `PositionMap`
+     * tracking every emitted byte back to its source file so
+     * post-expansion diagnostics can resolve to author-source
+     * (file, row, col) — including bytes that originated in an
+     * `xi:include`'d fragment. See
+     * `claudedocs/rfc-sce-template-phase-x.md` §3 B2.
      */
-    virtual bool processXInclude() = 0;
+    virtual XIncludeResult processXInclude() = 0;
 
     /**
      * @brief Process `<sce:use>` template expansion directives

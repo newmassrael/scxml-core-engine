@@ -7,6 +7,7 @@
 #include "parsing/TemplateConstants.h"
 #include "parsing/TemplateError.h"
 #include "parsing/TemplateExpander.h"
+#include "parsing/XIncludeExpander.h"
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -216,102 +217,87 @@ std::shared_ptr<IXMLElement> PugiXMLDocument::getRootElement() {
     return std::make_shared<PugiXMLElement>(root, doc_);
 }
 
-bool PugiXMLDocument::processXInclude() {
+XIncludeResult PugiXMLDocument::processXInclude() {
+    // String-level `<xi:include>` expansion. Hands the captured
+    // author bytes to `SCE::parsing::expandStringX` (mirrors
+    // `sce-build/src/xinclude.rs::expand` line-for-line), then
+    // reparses the spliced output back into `doc_` so downstream
+    // validation sees the expanded tree. The returned PositionMap
+    // tracks every emitted byte back to FileOrigin entries —
+    // outer-content regions resolve to the host document, fragment
+    // regions resolve to the included file. Phase X RFC §3 B2; see
+    // claudedocs/rfc-sce-template-phase-x.md.
+    XIncludeResult result;
     if (!doc_) {
         errorMessage_ = "Document is null";
-        return false;
+        return result;
+    }
+
+    // Fast path: documents whose captured source contains no
+    // "include" substring bypass the rewrite pipeline. The existing
+    // DOM is preserved (already byte-equivalent to the identity
+    // map) and the returned PositionMap is identity over the
+    // author's source bytes, so subsequent diagnostics resolve to
+    // author (file, row, col) without skew. Mirrors the Rust
+    // expand-fast-path at sce-build/src/xinclude.rs:181 and the
+    // sibling identity-fast-path in processSceTemplate (Phase C P3).
+    if (!sourceText_.empty() &&
+        sourceText_.find("include") == std::string::npos) {
+        result.ok = true;
+        result.positions = SCE::parsing::PositionMap::identity(
+            std::filesystem::path(sourcePath_), sourceText_);
+        return result;
     }
 
     try {
-        // W3C XInclude: Manual implementation for pugixml
-        auto root = doc_->document_element();
-        if (!root) {
-            errorMessage_ = "Document has no root element";
-            return false;
+        // Coordinate-space input: prefer the captured author bytes
+        // when available so PositionMap entries resolve to author
+        // file/row/col directly. parseContent (in-memory) leaves
+        // sourceText_ empty; in that case fall back to serialising
+        // the current DOM through format_raw, accepting that the
+        // serialised coordinates differ from any single author file
+        // (no in-memory source path exists either).
+        std::string content;
+        if (!sourceText_.empty()) {
+            content = sourceText_;
+        } else {
+            std::ostringstream serialised;
+            doc_->save(serialised, "",
+                       pugi::format_raw | pugi::format_no_declaration);
+            content = serialised.str();
         }
 
-        bool success = processXIncludeRecursive(root, 0);
-        if (success) {
-            SCE_LOG_DEBUG("PugiXMLDocument: XInclude processing successful");
-        }
-        return success;
+        SCE::parsing::XIncludeExpandResult expanded =
+            SCE::parsing::expandStringX(content, sourcePath_, basePath_);
 
-    } catch (const std::exception &ex) {
-        errorMessage_ = "XInclude processing failed: " + std::string(ex.what());
+        // Reparse into the same shared_ptr'd document so every
+        // `IXMLElement` the caller has already retrieved continues
+        // to see the expanded tree. Mirrors processSceTemplate's
+        // reset+load_buffer pattern (PugiXMLParser.cpp:406-413).
+        doc_->reset();
+        const auto parseResult = doc_->load_buffer(
+            expanded.expanded_text.data(), expanded.expanded_text.size());
+        if (!parseResult) {
+            errorMessage_ = "Failed to reparse expanded XInclude: " +
+                            std::string(parseResult.description());
+            return result;
+        }
+
+        result.ok = true;
+        result.positions = std::move(expanded.positions);
+        SCE_LOG_DEBUG("PugiXMLDocument: XInclude processing successful");
+        return result;
+    } catch (const SCE::parsing::XIncludeExpansionError &ex) {
+        errorMessage_ =
+            "XInclude processing failed: " + std::string(ex.what());
         SCE_LOG_WARN("PugiXMLDocument: {}", errorMessage_);
-        return false;
+        return result;
+    } catch (const std::exception &ex) {
+        errorMessage_ =
+            "XInclude processing failed: " + std::string(ex.what());
+        SCE_LOG_WARN("PugiXMLDocument: {}", errorMessage_);
+        return result;
     }
-}
-
-bool PugiXMLDocument::processXIncludeRecursive(pugi::xml_node node, int depth) {
-    if (depth >= MAX_XINCLUDE_DEPTH) {
-        SCE_LOG_WARN("PugiXMLDocument: Maximum XInclude depth reached");
-        return false;
-    }
-
-    // Find all xi:include elements
-    std::vector<pugi::xml_node> includeNodes;
-    for (const auto &child : node.children()) {
-        std::string nodeName = child.name();
-        if (nodeName == "include" || nodeName == "xi:include") {
-            includeNodes.push_back(child);
-        } else if (child.type() == pugi::node_element) {
-            // Recursively process children
-            processXIncludeRecursive(child, depth + 1);
-        }
-    }
-
-    // Process each xi:include
-    for (const auto &includeNode : includeNodes) {
-        auto hrefAttr = includeNode.attribute("href");
-        if (!hrefAttr) {
-            SCE_LOG_WARN("PugiXMLDocument: xi:include missing href attribute");
-            continue;
-        }
-
-        std::string href = hrefAttr.value();
-        if (href.empty()) {
-            SCE_LOG_WARN("PugiXMLDocument: xi:include href is empty");
-            continue;
-        }
-
-        // Resolve file path
-        std::string fullPath = resolveFilePath(href);
-        if (fullPath.empty()) {
-            SCE_LOG_ERROR("PugiXMLDocument: Could not resolve file path: {}", href);
-            continue;
-        }
-
-        SCE_LOG_DEBUG("PugiXMLDocument: Loading XInclude: {}", fullPath);
-
-        // Load included document
-        auto includedDoc = std::make_shared<pugi::xml_document>();
-        pugi::xml_parse_result result = includedDoc->load_file(fullPath.c_str());
-
-        if (!result) {
-            SCE_LOG_ERROR("PugiXMLDocument: Failed to parse included file: {} - {}", fullPath, result.description());
-            continue;
-        }
-
-        // Recursively process XIncludes in included document
-        auto includedRoot = includedDoc->document_element();
-        if (includedRoot) {
-            processXIncludeRecursive(includedRoot, depth + 1);
-        }
-
-        // Import all children of included root into parent
-        auto parent = includeNode.parent();
-        if (includedRoot) {
-            for (const auto &child : includedRoot.children()) {
-                parent.insert_copy_before(child, includeNode);
-            }
-        }
-
-        // Remove xi:include node
-        parent.remove_child(includeNode);
-    }
-
-    return true;
 }
 
 SceTemplateResult PugiXMLDocument::processSceTemplate() {
@@ -415,15 +401,6 @@ SceTemplateResult PugiXMLDocument::processSceTemplate() {
     result.ok = true;
     result.positions = std::move(expanded.positions);
     return result;
-}
-
-std::string PugiXMLDocument::resolveFilePath(const std::string &href) const {
-    // Member-bound convenience wrapper around the base-directory
-    // static helper. Used by `processXInclude`; the template
-    // expander routes through `resolveFilePathInBase` directly so
-    // nested recursion can pass a template-local base directory
-    // without mutating `basePath_`.
-    return resolveFilePathInBase(href, basePath_);
 }
 
 std::string PugiXMLDocument::resolveFilePathInBase(const std::string &href,
