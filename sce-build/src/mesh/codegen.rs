@@ -1250,6 +1250,24 @@ fn generate_cpp_mesh(
         transport_types.insert("someip");
     }
 
+    // SCE_MESH.md §9.6 Session 5: scxml-remote invoke peers that opted
+    // into zenoh demand `zenoh_session_` to exist (the per-peer
+    // ScxmlInvokeEndpoint takes a reference to it) and the
+    // `<zenoh.hxx>` include block to fire. Both are gated by the
+    // template's `{% if "zenoh" in transport_types %}`, so add the
+    // variant when no `<send>` target selected zenoh but a §9.6 peer
+    // did. Mirrors the someip insertion above. The same gate also
+    // pulls the existing `zenoh::Session::open(...)` init() block
+    // — the §9.6 endpoint emplace then chains off the session that
+    // block produces.
+    if scxml_remote_outbound_peers
+        .iter()
+        .chain(scxml_remote_inbound_peers.iter())
+        .any(|p| p.transport.as_deref() == Some("zenoh"))
+    {
+        transport_types.insert("zenoh");
+    }
+
     // SCE_MESH.md §10.5: per-binding dedup decision drives machine-level
     // emission. A receiver emits the runtime DedupRouter iff at least one
     // inbound path on the machine actually needs runtime dedup — that's

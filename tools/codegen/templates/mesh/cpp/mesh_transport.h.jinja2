@@ -366,6 +366,19 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <unordered_map>
 #include <utility>
 #include <zenoh.hxx>
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "zenoh") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "zenoh") | list %}
+// SCE_MESH.md §9.6.2 Session 5 — ScxmlInvokeEndpoint helper for
+// cross-device `<invoke type="scxml" src="#peer">` Zenoh traffic.
+// Rides the same `zenoh_session_` that ordinary `<send>` zenoh
+// targets use; the SCE-reserved §9.6 namespace is carved out via
+// the `sce/scxml_invoke/...` key-expression prefix rather than
+// via session identity. `<mutex>` + `<vector>` are pulled in for
+// the worker-side staging queue (mirrors the someip §9.6 +
+// custom_tcp §9.6 staging pattern).
+#include "mesh/transports/ZenohScxmlInvokeEndpoint.h"
+#include <mutex>
+#include <vector>
+{% endif %}
 {% endif %}
 {% if targets | selectattr('pool_plan') | list | length > 0 %}
 // SCE_MESH.md §14.4 pool dispatch: placeholder values travel on
@@ -816,7 +829,19 @@ struct TransportRouter {
     // `dispatchToSession`, mirroring the custom_tcp outbound pattern
     // where parent-side replies bypass the worker's staging queue.
     SCE::Mesh::Someip::ScxmlInvokeEndpoint scxml_invoke_to_{{ peer.name }}_;
-{%   elif peer.transport != "zenoh" %}
+{%   elif peer.transport == "zenoh" %}
+    // §9.6 Session 5 Zenoh outbound: ScxmlInvokeEndpoint dispatches
+    // wire-14/17/19 via the device-shared `zenoh_session_` Publisher
+    // pinned to CongestionControl::Block + Priority::Data. Inbound
+    // wire-15/16/18/20 fire the endpoint's ReceiveCallback on the
+    // Zenoh runtime callback thread; parent-side dispatch happens
+    // inline via `dispatchToSession` (§14.4 thread-safe contract).
+    // Wrapped in std::optional because the endpoint stores a
+    // reference to `zenoh_session_`, which is created in init()
+    // rather than the ctor — emplace happens in init() once the
+    // session is open.
+    std::optional<SCE::Mesh::Zenoh::ScxmlInvokeEndpoint> scxml_invoke_to_{{ peer.name }}_;
+{%   else %}
     SCE::Mesh::ShmChannel<> p2c_to_{{ peer.name }}_;
     SCE::Mesh::ShmChannel<> c2p_from_{{ peer.name }}_;
 {%   endif %}
@@ -843,7 +868,19 @@ struct TransportRouter {
     SCE::Mesh::Someip::ScxmlInvokeEndpoint scxml_invoke_to_{{ peer.name }}_;
     std::mutex someip_invoke_inbound_mutex_{{ peer.name }}_;
     std::vector<SCE::Mesh::MeshEnvelope> someip_invoke_inbound_queue_{{ peer.name }}_;
-{%   elif peer.transport != "zenoh" %}
+{%   elif peer.transport == "zenoh" %}
+    // §9.6 Session 5 Zenoh inbound: ScxmlInvokeEndpoint handles
+    // wire-15/16/18/20 outbound and wire-14/17/19 inbound. The receive
+    // callback stages inbound envelopes in `zenoh_invoke_inbound_queue_`
+    // under a mutex so the worker's pump thread drains them on its
+    // cadence — same single-threaded WorkerSessionHost contract the
+    // someip §9.6 / custom_tcp §9.6 inbound paths rely on (§14.4
+    // callback-thread dispatch convention applied to the worker
+    // boundary).
+    std::optional<SCE::Mesh::Zenoh::ScxmlInvokeEndpoint> scxml_invoke_to_{{ peer.name }}_;
+    std::mutex zenoh_invoke_inbound_mutex_{{ peer.name }}_;
+    std::vector<SCE::Mesh::MeshEnvelope> zenoh_invoke_inbound_queue_{{ peer.name }}_;
+{%   else %}
     SCE::Mesh::ShmChannel<> p2c_from_{{ peer.name }}_;
     SCE::Mesh::ShmChannel<> c2p_to_{{ peer.name }}_;
 {%   endif %}
@@ -1855,6 +1892,8 @@ struct TransportRouter {
                     if (target == "{{ peer.name }}") {
 {%   if peer.transport == "someip" %}
                         return scxml_invoke_to_{{ peer.name }}_.send(env);
+{%   elif peer.transport == "zenoh" %}
+                        return scxml_invoke_to_{{ peer.name }}_->send(env);
 {%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
 {%   endif %}
@@ -1896,6 +1935,8 @@ struct TransportRouter {
                     if (target == "{{ peer.name }}") {
 {%   if peer.transport == "someip" %}
                         return scxml_invoke_to_{{ peer.name }}_.send(env);
+{%   elif peer.transport == "zenoh" %}
+                        return scxml_invoke_to_{{ peer.name }}_->send(env);
 {%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
 {%   endif %}
@@ -1919,6 +1960,8 @@ struct TransportRouter {
                     if (target == "{{ peer.name }}") {
 {%   if peer.transport == "someip" %}
                         return scxml_invoke_to_{{ peer.name }}_.send(env);
+{%   elif peer.transport == "zenoh" %}
+                        return scxml_invoke_to_{{ peer.name }}_->send(env);
 {%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
 {%   endif %}
@@ -2078,6 +2121,43 @@ struct TransportRouter {
             }
         }
 {% endfor %}
+{# §9.6 Session 5 zenoh inbound: wire-14/17/19 arrived via the device-
+   shared `zenoh_session_` Subscriber callback (Zenoh runtime callback
+   thread) and are staged in per-peer `zenoh_invoke_inbound_queue_`
+   under a mutex — same single-threaded `WorkerSessionHost` contract
+   the someip §9.6 drain above relies on. `swap` minimises lock hold
+   time so the runtime callback thread is not blocked during pattern
+   dispatch. Reply wire-15/16/18/20 publish through
+   `scxml_invoke_to_<peer>_->send` rather than a shm/tcp channel — the
+   publisher lambda below resolves per-peer by transport. #}
+{% for peer in scxml_remote_inbound_peers if peer.transport == "zenoh" %}
+        {
+            std::vector<SCE::Mesh::MeshEnvelope> drained;
+            {
+                std::scoped_lock lk(zenoh_invoke_inbound_mutex_{{ peer.name }}_);
+                drained.swap(zenoh_invoke_inbound_queue_{{ peer.name }}_);
+            }
+            for (const auto& in : drained) {
+                switch (in.pattern) {
+                case SCE::Mesh::PatternKind::InvokeStart:
+                    worker_session_host_.onWire14(in,
+                        [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
+                            return scxml_invoke_to_{{ peer.name }}_->send(env);
+                        });
+                    break;
+                case SCE::Mesh::PatternKind::ParentEvent:
+                    worker_session_host_.onWire17(in);
+                    break;
+                case SCE::Mesh::PatternKind::InvokeCancel:
+                    worker_session_host_.onWire19(in);
+                    break;
+                default:
+                    break;  // Endpoint receive callback filters by pattern already
+                }
+                ++total;
+            }
+        }
+{% endfor %}
         // After inbound drain, tick active child sessions. Each tick may
         // publish further wire-16 (via the adapter's send callback) or
         // detect `<final>` and emit wire-18. Publisher resolution by
@@ -2089,6 +2169,8 @@ struct TransportRouter {
                     return [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
 {%   if peer.transport == "someip" %}
                         return scxml_invoke_to_{{ peer.name }}_.send(env);
+{%   elif peer.transport == "zenoh" %}
+                        return scxml_invoke_to_{{ peer.name }}_->send(env);
 {%   else %}
                         return c2p_to_{{ peer.name }}_.send(env);
 {%   endif %}
@@ -2442,6 +2524,94 @@ struct TransportRouter {
             shutdown();
             return false;
         }
+{#- SCE_MESH.md §9.6.2 Session 5 Zenoh scxml-invoke endpoint init: emplace
+    one ScxmlInvokeEndpoint per §9.6 zenoh peer AFTER `zenoh_session_` is
+    open (the endpoint stores a reference to the session). Each peer's
+    `setReceiveHandler` is installed BEFORE `start()` so no inbound
+    sample can fire on the runtime callback thread without a handler in
+    place. `start()` declares the Publisher (Block + Priority::Data)
+    and Subscriber on the peer's key-expressions; ZException from
+    either declare propagates to `init()` returning false through the
+    enclosing try/catch. Pattern dispatch mirrors the someip §9.6
+    init() arm above — parent-side inline `dispatchToSession`,
+    worker-side mutex-guarded staging. #}
+{%- set zenoh_invoke_outbound_peers = scxml_remote_outbound_peers | selectattr("transport", "equalto", "zenoh") | list %}
+{%- set zenoh_invoke_inbound_peers = scxml_remote_inbound_peers | selectattr("transport", "equalto", "zenoh") | list %}
+{% if zenoh_invoke_outbound_peers or zenoh_invoke_inbound_peers %}
+        try {
+{% for peer in zenoh_invoke_outbound_peers %}
+            // §9.6 Zenoh outbound peer `{{ peer.name }}` — I am parent,
+            // peer is child. Publish on P2C(local, peer); subscribe on
+            // C2P(peer, local). Inbound wire-15/16/18/20 dispatch
+            // inline via `dispatchToSession` on the Zenoh runtime
+            // callback thread (§14.4 thread-safe contract). Misrouted
+            // wire-14/17/19 (a peer that should not be producing them)
+            // are dropped silently — sender-side bug, not a receiver
+            // hazard.
+            scxml_invoke_to_{{ peer.name }}_.emplace(
+                zenoh_session_.value(),
+                SCE::Mesh::Zenoh::keyExprP2C("{{ machine_name }}", "{{ peer.name }}"),
+                SCE::Mesh::Zenoh::keyExprC2P("{{ peer.name }}", "{{ machine_name }}"));
+            scxml_invoke_to_{{ peer.name }}_->setReceiveHandler(
+                [this](const SCE::Mesh::MeshEnvelope& env) {
+                    switch (env.pattern) {
+                    case SCE::Mesh::PatternKind::InvokeStarted:
+                    case SCE::Mesh::PatternKind::ChildEvent:
+                    case SCE::Mesh::PatternKind::InvokeDone:
+                    case SCE::Mesh::PatternKind::InvokeError:
+                        (void)this->dispatchToSession(env, 0);
+                        return;
+                    default:
+                        return;
+                    }
+                });
+            if (!scxml_invoke_to_{{ peer.name }}_->start()) {
+                shutdown();
+                return false;
+            }
+{% endfor %}
+{% for peer in zenoh_invoke_inbound_peers %}
+            // §9.6 Zenoh inbound peer `{{ peer.name }}` — I am child,
+            // peer is parent. Publish on C2P(local, peer); subscribe on
+            // P2C(peer, local). Stage wire-14/17/19 under the per-peer
+            // mutex so the pump thread observes a consistent snapshot
+            // of the child-session map (§14.4 callback-thread dispatch
+            // convention). Wrong-source envelopes (a sibling peer
+            // misrouting to us via the Zenoh fabric) and misrouted
+            // wire-15/16/18/20 are dropped.
+            scxml_invoke_to_{{ peer.name }}_.emplace(
+                zenoh_session_.value(),
+                SCE::Mesh::Zenoh::keyExprC2P("{{ machine_name }}", "{{ peer.name }}"),
+                SCE::Mesh::Zenoh::keyExprP2C("{{ peer.name }}", "{{ machine_name }}"));
+            scxml_invoke_to_{{ peer.name }}_->setReceiveHandler(
+                [this](const SCE::Mesh::MeshEnvelope& env) {
+                    if (env.source != "{{ peer.name }}") return;
+                    switch (env.pattern) {
+                    case SCE::Mesh::PatternKind::InvokeStart:
+                    case SCE::Mesh::PatternKind::ParentEvent:
+                    case SCE::Mesh::PatternKind::InvokeCancel: {
+                        std::scoped_lock lk(zenoh_invoke_inbound_mutex_{{ peer.name }}_);
+                        zenoh_invoke_inbound_queue_{{ peer.name }}_.push_back(env);
+                        return;
+                    }
+                    default:
+                        return;
+                    }
+                });
+            if (!scxml_invoke_to_{{ peer.name }}_->start()) {
+                shutdown();
+                return false;
+            }
+{% endfor %}
+        } catch (const zenoh::ZException&) {
+            // declare_publisher / declare_subscriber failed — session
+            // is open but the §9.6 endpoint is not. Fail init so the
+            // caller sees a clean teardown rather than a half-
+            // configured router. `shutdown()` is idempotent.
+            shutdown();
+            return false;
+        }
+{% endif %}
 {% if machine_outbound_buffer %}
 {% for target in targets if target.state.kind == "zenoh" %}
         // SCE Mesh §10.10: declare a Publisher on this target's keyexpr
@@ -3077,6 +3247,19 @@ struct TransportRouter {
         // Drop subscriber handles before closing session (RAII order matters:
         // each ~Subscriber calls into zenoh_session_).
         zenoh_subscribers_.clear();
+{#- SCE_MESH.md §9.6.2 Session 5 zenoh scxml-invoke endpoint teardown.
+    Drop the per-peer `std::optional<ScxmlInvokeEndpoint>` before
+    `zenoh_session_.reset()` for the same RAII reason as
+    `zenoh_subscribers_.clear()` above — the endpoint's Publisher /
+    Subscriber dtors call into the Session, so they MUST run while the
+    session is still alive. Idempotent via `optional::reset` semantics
+    (resetting an already-empty optional is a no-op). #}
+{% for peer in scxml_remote_outbound_peers if peer.transport == "zenoh" %}
+        scxml_invoke_to_{{ peer.name }}_.reset();
+{% endfor %}
+{% for peer in scxml_remote_inbound_peers if peer.transport == "zenoh" %}
+        scxml_invoke_to_{{ peer.name }}_.reset();
+{% endfor %}
         zenoh_session_.reset();
 {% endif %}
 {% if "custom_tcp" in transport_types and custom_tcp_transport and custom_tcp_transport.listen %}
