@@ -1254,9 +1254,24 @@ fn validate_scxml_invoke_transport(
                     // propagates to the caller).
                     None
                 }
+                Some(t) if t == "zenoh" => {
+                    // SCE_MESH.md §9.6 L1393 Session 5: zenoh
+                    // scxml-remote is wired. The §9.6 endpoint
+                    // shares the device-wide `zenoh_session_`
+                    // (Zenoh has no §13 OEM boundary equivalent —
+                    // SCE-reserved namespace is carved out via the
+                    // `sce/scxml_invoke/...` key prefix instead),
+                    // so there is no listen / endpoint gate to
+                    // validate at this layer. Deploy-time session
+                    // failures surface through `zenoh::Session::open`
+                    // throwing `zenoh::ZException`, which the
+                    // template's `try { ... }` block turns into
+                    // `init()` returning false.
+                    None
+                }
                 Some(t) => {
-                    // Structurally capable (zenoh / dds / can) but
-                    // the C++ wire-14/20 dispatch has not landed yet.
+                    // Structurally capable (dds / can) but the C++
+                    // wire-14/20 dispatch has not landed yet.
                     // Mirrors `partition-wire21-custom-tcp-
                     // unimplemented`: build-time rejection beats
                     // runtime silent fallback.
@@ -3199,14 +3214,23 @@ topology:
     /// has not landed for it. Rejected with `TransportUnwired`.
     #[test]
     fn cross_device_capable_transport_unwired_rejected() {
+        // dds is structurally capable for §9.6 (RequestReply / FireForget /
+        // PubSub / FieldAccess in transport.rs) but the codegen template
+        // does not yet emit wire-14/20 dispatch for it (transport.rs
+        // `implemented: false`). The classifier rejects with
+        // `TransportUnwired` so authors see a build-time error instead of
+        // a runtime silent fallback. Mirrors the original assertion's
+        // intent — formerly aimed at zenoh, now aimed at the next
+        // unwired-but-known transport since Session 5 wired zenoh
+        // (§9.6 L1393 Session 5).
         use std::fs;
-        let bindings = "        bindings:\n          \"#worker\":\n            transport: zenoh\n";
-        let (tmp, deploy_path) = setup_cross_device_deployment("zenoh", bindings);
+        let bindings = "        bindings:\n          \"#worker\":\n            transport: dds\n";
+        let (tmp, deploy_path) = setup_cross_device_deployment("dds", bindings);
         let mut model = parser::SCXMLParser::new()
             .parse_file(tmp.join("parent.scxml").to_str().unwrap())
             .expect("parse parent");
         let err = inject_partition_context_for(&mut model, &deploy_path, None)
-            .expect_err("cross-device invoke over zenoh must reject — wire-14/20 not wired for zenoh");
+            .expect_err("cross-device invoke over dds must reject — wire-14/20 not wired for dds");
         match err {
             mesh::error::MeshError::Deploy(
                 mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
@@ -3216,7 +3240,7 @@ topology:
                 },
             ) => {
                 assert_eq!(peer, "worker");
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "dds");
             }
             other => panic!("expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}"),
         }
@@ -3306,6 +3330,26 @@ topology:
             .expect("parse parent");
         inject_partition_context_for(&mut model, &deploy_path, None)
             .expect("cross-device someip scxml-invoke must accept — §9.6 Session 4b wired");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Cross-device peer with `bindings["#worker"].transport: zenoh` —
+    /// SCE_MESH.md §9.6 Session 5: zenoh is wired for scxml-invoke
+    /// cross-device. Like someip, zenoh has no listen/endpoint gate
+    /// on the SCE side at this layer (deploy-time session failures
+    /// surface through `zenoh::Session::open` ZException → init()
+    /// returning false). The classifier must accept the binding
+    /// without reaching into topology.transports.zenoh.
+    #[test]
+    fn cross_device_zenoh_accepted() {
+        use std::fs;
+        let bindings = "        bindings:\n          \"#worker\":\n            transport: zenoh\n";
+        let (tmp, deploy_path) = setup_cross_device_deployment("zenoh", bindings);
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(tmp.join("parent.scxml").to_str().unwrap())
+            .expect("parse parent");
+        inject_partition_context_for(&mut model, &deploy_path, None)
+            .expect("cross-device zenoh scxml-invoke must accept — §9.6 Session 5 wired");
         let _ = fs::remove_dir_all(&tmp);
     }
 
