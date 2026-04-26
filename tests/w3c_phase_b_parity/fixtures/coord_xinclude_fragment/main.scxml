@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phase X D1 coordinate-parity fixture: coord_xinclude_fragment.
+
+  Caller's `<xi:include>` splices `frag.xml` inline. Inside the
+  fragment, `<sce:use template="ghost.scxml"/>` trips
+  `xml/template-not-found` / `SCE::parsing::TemplateNotFound` at
+  the fragment file's coordinates (NOT this file's coordinates).
+
+  Both producers must:
+    - Emit DiagnosticCode `xml/template-not-found` (Rust NDJSON)
+      / throw `SCE::parsing::TemplateNotFound` (C++).
+    - Pin the diagnostic's `location.{file, line, col}` at the
+      `<sce:use>` row/col inside `frag.xml`. The PositionMap
+      composition across the XInclude → template stages traces
+      the diagnostic byte back to its fragment-file origin
+      (Phase X RFC §1 Q2 closes the C++ half of this).
+
+  See claudedocs/rfc-sce-template-phase-x.md §3 D1.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:xi="http://www.w3.org/2001/XInclude"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="s1"
+       name="coord_xinclude_fragment">
+  <state id="s1">
+    <xi:include href="frag.xml"/>
+  </state>
+</scxml>

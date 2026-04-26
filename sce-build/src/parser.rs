@@ -161,11 +161,29 @@ pub fn expand_preprocessors(
         crate::template::expand(&included, scxml_path, base_dir, &xinclude_map).map_err(
             |(err, loc)| {
                 use crate::forge::error::{ForgeError, Located, XmlError};
+                // The template expander stamps `loc` against `included`
+                // (the post-XInclude bytes). Resolving the byte through
+                // `xinclude_map` traces the diagnostic back to the
+                // author file — host or `xi:include`'d fragment — so a
+                // `<sce:use>` failure inside a fragment surfaces with
+                // fragment-file coordinates instead of host-file
+                // post-XInclude coordinates. Phase X RFC §1 Q2; mirrors
+                // the C++ side's `inputMap.lookup` at the useLocation
+                // stamp.
+                let byte = crate::position_map::rowcol_to_offset(
+                    &included, loc.row, loc.col,
+                );
+                let origin = xinclude_map.lookup(byte);
+                let origin_path = origin.file.to_string_lossy().into_owned();
                 Located::new(
                     ForgeError::Xml(XmlError::Template(err)),
-                    scxml_path,
-                    Some(loc.row),
-                    Some(loc.col),
+                    if origin_path.is_empty() {
+                        scxml_path
+                    } else {
+                        origin_path.as_str()
+                    },
+                    Some(origin.row),
+                    Some(origin.col),
                 )
             },
         )?;

@@ -707,7 +707,6 @@ namespace {
 // `SCE::parsing::expandString`, which seeds the cycle stack and the
 // identity input map before calling into this function.
 TemplateExpandResult expandImpl(std::string_view content,
-                                const std::filesystem::path &contentFile,
                                 const std::filesystem::path &baseDir,
                                 std::uint32_t depth,
                                 std::vector<std::filesystem::path> &stack,
@@ -767,10 +766,6 @@ TemplateExpandResult expandImpl(std::string_view content,
         return TemplateExpandResult{std::string(content), inputMap};
     }
 
-    // Identity over `content` provides content-local (row, col)
-    // for `<sce:use>` call-site metadata (Rust `doc_loc` equivalent).
-    const auto identity = PositionMap::identity(contentFile, content);
-
     std::string out;
     out.reserve(content.size());
     PositionMap outMap;
@@ -789,18 +784,17 @@ TemplateExpandResult expandImpl(std::string_view content,
                                             outStart);
         }
 
-        const auto callerPos = identity.lookup(useRange.start);
-        const std::uint32_t callerRow = callerPos.row;
-        const std::uint32_t callerCol = callerPos.col;
-
-        // Caller-file SourcePos for the `<sce:use>` element, used
-        // to populate `TemplateError::location()` at the throw sites
-        // below. Every failure mode that keys to this particular
-        // `<sce:use>` (missing attr, not-found, cycle, read-error,
-        // substitution failure) gets its location stamped to the
-        // same author-source coordinate so diagnostic consumers can
-        // present one pointed line in the caller file.
-        const SourcePos useLocation{contentFile, callerRow, callerCol};
+        // Resolve the `<sce:use>` element's author-source coords
+        // through `inputMap` rather than a content-local identity:
+        // when the byte sits inside an `xi:include`'d fragment the
+        // upstream map carries fragment-file attribution, so
+        // diagnostics correctly resolve to the fragment author file
+        // (Phase X RFC §1 Q2). For the no-XInclude case `inputMap`
+        // is identity over the host content, so the lookup collapses
+        // to the previous behaviour.
+        const SourcePos useLocation = inputMap.lookup(useRange.start);
+        const std::uint32_t callerRow = useLocation.row;
+        const std::uint32_t callerCol = useLocation.col;
 
         const auto templateAttr = useNode.attribute("template");
         const std::string templateHref =
@@ -853,7 +847,7 @@ TemplateExpandResult expandImpl(std::string_view content,
         try {
             substitution = substituteIntoTemplateWithMap(
                 templateText, resolvedPath, templateHref, bindings,
-                contentFile, callerRow, callerCol);
+                useLocation.file, callerRow, callerCol);
         } catch (TemplateError &e) {
             // The `<sce:use>` failure surfaces at the caller site —
             // even when the root cause (malformed template,
@@ -871,9 +865,8 @@ TemplateExpandResult expandImpl(std::string_view content,
         const std::filesystem::path nestedBase = resolvedPath.parent_path();
         TemplateExpandResult nested;
         try {
-            nested = expandImpl(substitution.substituted, resolvedPath,
-                                 nestedBase, depth + 1, stack,
-                                 substitution.positions);
+            nested = expandImpl(substitution.substituted, nestedBase,
+                                 depth + 1, stack, substitution.positions);
         } catch (TemplateError &e) {
             stack.pop_back();
             // Nested failures already carry an inner location when
@@ -941,8 +934,7 @@ TemplateExpandResult expandString(std::string_view content,
         stack.push_back(ec ? selfFile : canon);
     }
 
-    return detail::expandImpl(content, selfFile, baseFile, /*depth=*/0, stack,
-                               upstream);
+    return detail::expandImpl(content, baseFile, /*depth=*/0, stack, upstream);
 }
 
 }  // namespace SCE::parsing

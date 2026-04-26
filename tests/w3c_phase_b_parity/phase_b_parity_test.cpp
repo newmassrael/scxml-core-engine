@@ -804,3 +804,23 @@ TEST(PhaseBParity, CoordNestedCollapse) {
         /*callerNeedle=*/"<sce:use template=\"inner.scxml\"",
         /*expandedNeedle=*/"ZQ42");
 }
+
+// Phase X D1 error-path fixture — `<sce:use template="ghost.scxml"/>`
+// sits inside an `<xi:include>`'d fragment. Both producers raise
+// `xml/template-not-found` / `TemplateNotFound` and both must pin
+// the diagnostic's `location.{file, line, col}` at the fragment
+// file (`frag.xml`), not at `main.scxml`. The PositionMap
+// composition threading through XInclude → template stages
+// resolves the diagnostic byte to its fragment-file origin
+// (Phase X RFC §1 Q2). See claudedocs/rfc-sce-template-phase-x.md
+// §3 D1.
+TEST(PhaseBParity, CoordXIncludeFragment) {
+    runErrorParityFixture(
+        "coord_xinclude_fragment",
+        "xml/template-not-found",
+        "SCE::parsing::TemplateNotFound",
+        [](const SCE::parsing::TemplateError &ex) -> bool {
+            return dynamic_cast<const SCE::parsing::TemplateNotFound *>(&ex) != nullptr;
+        },
+        /*assertCoordinateAgreement=*/true);
+}

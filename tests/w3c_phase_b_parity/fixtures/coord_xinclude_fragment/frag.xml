@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  XInclude'd fragment for the coord_xinclude_fragment fixture.
+  The `<sce:use>` below references a template that does not
+  exist; both producers must surface the diagnostic with the
+  fragment file's row/col here, not the host's. The fragment's
+  root element (`<wrap>`) is stripped by XInclude's
+  render-root-children rule (Rust + C++ mirror), so the splice
+  output is just the `<sce:use>` element line.
+-->
+<wrap xmlns:sce="http://sce.dev/ext">
+  <sce:use template="ghost.scxml"/>
+</wrap>

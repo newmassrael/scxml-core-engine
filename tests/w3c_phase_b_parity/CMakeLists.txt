@@ -168,3 +168,21 @@ add_phase_b_parity_fixture(coord_template_body CoordTemplateBody)
 # counterpart (success path), so the harness drives
 # `expandString` directly through `runCoordinateLookupFixture`.
 add_phase_b_parity_fixture(coord_nested_collapse CoordNestedCollapse)
+
+# ── Phase X D1 coordinate-parity fixture ───────────────────────
+#
+# Closes the xinclude-half of the diagnostic-coordinates
+# unification that Phase C P3 left open. The fixture's
+# `<xi:include>` splices a fragment whose body contains a
+# preprocessor-stage trigger; both producers must point the
+# diagnostic at the fragment file's coordinates, not the host's.
+# See claudedocs/rfc-sce-template-phase-x.md §3 D1.
+
+# D1 error-path fixture — `<sce:use template="ghost.scxml"/>`
+# inside an `<xi:include>`'d fragment trips
+# `xml/template-not-found` / `TemplateNotFound`. Asserts
+# coordinate agreement at the fragment file's `<sce:use>` row/col
+# — proves the upstream PositionMap from `processXInclude`
+# threads through `processSceTemplate`'s expander all the way to
+# the diagnostic stamp.
+add_phase_b_parity_fixture(coord_xinclude_fragment CoordXIncludeFragment)
