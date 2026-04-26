@@ -53,7 +53,8 @@ public:
 
     std::shared_ptr<IXMLElement> getRootElement() override;
     XIncludeResult processXInclude() override;
-    SceTemplateResult processSceTemplate() override;
+    SceTemplateResult processSceTemplate(
+        const SCE::parsing::PositionMap &upstream) override;
     std::string getErrorMessage() const override;
     bool isValid() const override;
 

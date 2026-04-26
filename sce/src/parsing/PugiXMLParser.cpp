@@ -283,6 +283,20 @@ XIncludeResult PugiXMLDocument::processXInclude() {
             return result;
         }
 
+        // Threaded buffer: subsequent `processSceTemplate` operates
+        // on the post-XInclude bytes that `expanded.positions` is
+        // keyed against. Overwriting `sourceText_` here matches the
+        // Rust pipeline shape (`let (included, xinclude_map) =
+        // xinclude::expand(...); template::expand(&included, ...,
+        // &xinclude_map)`) — each stage's input is the previous
+        // stage's output, and the PositionMap stays keyed against
+        // bytes the consumer can actually inspect (Phase X RFC §1
+        // Q2). Without this assignment, the next stage would see
+        // the original author bytes while the upstream map keys
+        // post-XInclude bytes — composition would silently produce
+        // wrong origins for fragment regions.
+        sourceText_ = expanded.expanded_text;
+
         result.ok = true;
         result.positions = std::move(expanded.positions);
         SCE_LOG_DEBUG("PugiXMLDocument: XInclude processing successful");
@@ -300,15 +314,19 @@ XIncludeResult PugiXMLDocument::processXInclude() {
     }
 }
 
-SceTemplateResult PugiXMLDocument::processSceTemplate() {
-    // String-level `<sce:use>` expansion. Serialises the current
-    // (post-XInclude) DOM, hands it to `SCE::parsing::expandString`
-    // which mirrors `sce-build/src/template.rs::expand`, then
-    // reparses the expanded text back into `doc_` so downstream
-    // validation sees the expanded tree. The returned PositionMap
-    // tracks every emitted byte back to File/CallSite origins for
-    // diagnostic remapping (RFC §3 P2, see
-    // claudedocs/rfc-sce-template-phase-c.md).
+SceTemplateResult PugiXMLDocument::processSceTemplate(
+    const SCE::parsing::PositionMap &upstream) {
+    // String-level `<sce:use>` expansion. Operates on the
+    // post-XInclude bytes captured in `sourceText_` (see
+    // `processXInclude` for how that buffer becomes the threaded
+    // post-XInclude content), hands them to
+    // `SCE::parsing::expandString` which mirrors
+    // `sce-build/src/template.rs::expand`, then reparses the
+    // expanded text back into `doc_` so downstream validation sees
+    // the expanded tree. `upstream` is the PositionMap describing
+    // those input bytes — the expander composes it into the output
+    // map so diagnostic byte lookups resolve through both
+    // preprocessor stages (Phase X RFC §1 Q2).
     //
     // Error classification flows through `TemplateError` subtypes
     // thrown by the expander (TemplateMissingAttribute,
@@ -323,45 +341,29 @@ SceTemplateResult PugiXMLDocument::processSceTemplate() {
     }
 
     // Fast path: documents whose captured source contains no
-    // `<sce:use>` bypass serialise/reparse entirely, preserving the
-    // existing DOM pointers. Returns an identity PositionMap over
-    // the author's raw source bytes so diagnostic lookups resolve
-    // to (file, row, col) without a post-normalisation skew.
+    // `<sce:use>` bypass expansion entirely, preserving the existing
+    // DOM pointers. Returns `upstream` unchanged so the threaded
+    // PositionMap continues to describe every byte (whether it
+    // originates in the host document or in an `xi:include`'d
+    // fragment).
     if (!sourceText_.empty() &&
         sourceText_.find("sce:use") == std::string::npos) {
         result.ok = true;
-        result.positions = SCE::parsing::PositionMap::identity(
-            std::filesystem::path(sourcePath_), sourceText_);
+        result.positions = upstream;
         return result;
     }
 
-    // Coordinate space selection for `expandString`'s identity
-    // map. Two cases:
-    //
-    //   (a) `sourceText_` is available AND no `<xi:include>` element
-    //       is present in the author's bytes — then `processXInclude`
-    //       above was a structural no-op, the DOM matches
-    //       `sourceText_` byte-for-byte, and feeding the expander the
-    //       author bytes directly preserves author-source (row, col)
-    //       through every `PositionMap::lookup` downstream. This is
-    //       the path that Phase C P3 coord-parity fixtures depend on
-    //       (see claudedocs/rfc-sce-template-phase-c.md §3 P3).
-    //
-    //   (b) `sourceText_` is unavailable OR the document actually
-    //       uses `<xi:include>` — fall back to serialising the
-    //       post-XInclude DOM through `format_raw`, accepting the
-    //       documented xinclude-fragment coordinate skew (Phase X
-    //       closes this, RFC §3 P2 item #5).
-    //
-    // The check uses substring search rather than DOM traversal to
-    // stay cheap on the hot path; `xi:include` is prefixed with
-    // the reserved XInclude namespace and so no false positives
-    // appear in author content outside of actual include sites.
+    // Coordinate-space input: prefer the captured (post-XInclude)
+    // bytes when available so the upstream PositionMap and
+    // `expandString`'s input share the same byte coordinate space —
+    // `processXInclude` overwrites `sourceText_` with the spliced
+    // bytes on rewrite, so the two stay byte-aligned by
+    // construction. parseContent (in-memory) leaves `sourceText_`
+    // empty; in that case fall back to serialising the current DOM
+    // through `format_raw` (callers are expected to pass an identity
+    // upstream over those bytes).
     std::string content;
-    const bool useAuthorBytes =
-        !sourceText_.empty() &&
-        sourceText_.find("xi:include") == std::string::npos;
-    if (useAuthorBytes) {
+    if (!sourceText_.empty()) {
         content = sourceText_;
     } else {
         std::ostringstream serialised;
@@ -369,20 +371,18 @@ SceTemplateResult PugiXMLDocument::processSceTemplate() {
         content = serialised.str();
     }
 
-    // Secondary fast path: the serialised post-XInclude text may
-    // also lack `<sce:use>` if XInclude neither introduced nor
-    // preserved one. Identity over the serialised bytes gets
-    // PositionMap lookups pointing at the expanded DOM without a
-    // second expander invocation.
+    // Secondary fast path: the captured / serialised post-XInclude
+    // text may also lack `<sce:use>` if XInclude neither introduced
+    // nor preserved one. Threading `upstream` through keeps any
+    // fragment-byte attribution intact.
     if (content.find("sce:use") == std::string::npos) {
         result.ok = true;
-        result.positions = SCE::parsing::PositionMap::identity(
-            std::filesystem::path(sourcePath_), content);
+        result.positions = upstream;
         return result;
     }
 
     auto expanded =
-        SCE::parsing::expandString(content, sourcePath_, basePath_);
+        SCE::parsing::expandString(content, sourcePath_, basePath_, upstream);
 
     // Reparse into the same shared_ptr'd document so every
     // `IXMLElement` the caller has already retrieved continues to

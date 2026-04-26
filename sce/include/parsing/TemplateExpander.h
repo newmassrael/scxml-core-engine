@@ -57,19 +57,28 @@ struct TemplateExpandResult {
 // and trips only once at least one template file has been
 // loaded.
 //
+// `upstream` is the PositionMap describing every byte of `content`
+// — typically the result of an upstream `<xi:include>` expansion.
+// The expander composes `upstream` into its output so a byte
+// emitted from a non-substituted prefix / suffix region resolves
+// back to its origin file even when that origin is an
+// `xi:include`'d fragment (Rust `template::expand`'s `input_map`
+// parameter, Phase X RFC §1 Q2). When the caller has no upstream
+// rewriting to compose against, pass
+// `PositionMap::identity(selfPath, content)`.
+//
 // Successful short-circuit: when `content` contains no `sce:use`
-// substring, returns `{std::string(content),
-// PositionMap::identity(selfPath, content)}` without parsing.
+// substring, returns `{std::string(content), upstream}` without
+// parsing — `upstream` already describes every emitted byte
+// because the output is byte-identical to `content`.
 //
 // Failure modes throw one of the `TemplateError` subtypes defined
 // in `parsing/TemplateError.h`; each subtype maps 1:1 to a Rust
-// `xml/template-*` `DiagnosticCode`. P2 leaves
-// `TemplateError::location()` unpopulated on most throw sites — P5
-// wires `PositionMap::lookup`-derived `SourcePos` values through
-// to the thrown subtype.
+// `xml/template-*` `DiagnosticCode`.
 TemplateExpandResult expandString(std::string_view content,
                                   std::string_view selfPath,
-                                  std::string_view baseDir);
+                                  std::string_view baseDir,
+                                  const PositionMap &upstream);
 
 namespace detail {
 

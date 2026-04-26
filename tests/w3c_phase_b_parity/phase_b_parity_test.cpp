@@ -321,8 +321,8 @@ std::string runCppPreprocessors(const std::string &scxmlPath) {
     sceDoc->setSourcePath(scxmlPath);
     sceDoc->setSourceText(sourceText);
 
-    sceDoc->processXInclude();
-    sceDoc->processSceTemplate();
+    const auto xResult = sceDoc->processXInclude();
+    sceDoc->processSceTemplate(xResult.positions);
 
     return canonicaliseDocument(*pugiDoc);
 }
@@ -543,8 +543,8 @@ void runErrorParityFixture(const std::string &fixtureName,
         }
         sceDoc->setSourcePath(fixturePath);
         sceDoc->setSourceText(sourceText);
-        sceDoc->processXInclude();
-        sceDoc->processSceTemplate();
+        const auto xResult = sceDoc->processXInclude();
+        sceDoc->processSceTemplate(xResult.positions);
     } catch (const SCE::parsing::TemplateError &ex) {
         actualType = typeid(ex).name();
         actualMessage = ex.what();
@@ -644,7 +644,10 @@ void runCoordinateLookupFixture(const std::string &fixtureName,
 
     SCE::parsing::TemplateExpandResult result;
     try {
-        result = SCE::parsing::expandString(source, fixturePath, baseDir);
+        const auto upstream =
+            SCE::parsing::PositionMap::identity(fixturePath, source);
+        result = SCE::parsing::expandString(source, fixturePath, baseDir,
+                                             upstream);
     } catch (const std::exception &ex) {
         FAIL() << "Fixture '" << fixtureName
                << "' unexpectedly failed expansion: " << ex.what();

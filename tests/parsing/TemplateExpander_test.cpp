@@ -161,7 +161,9 @@ TEST(TemplateExpander, CollectTopLevelSceUseRangesMalformedThrows) {
 // ── expandString: fast path returns identity on no `<sce:use>` ──────
 TEST(TemplateExpander, ExpandStringNoSceUseReturnsIdentity) {
     const std::string source = R"(<root><state id="s1"/></root>)";
-    const auto result = expandString(source, "main.scxml", ".");
+    const auto upstream =
+        SCE::parsing::PositionMap::identity("main.scxml", source);
+    const auto result = expandString(source, "main.scxml", ".", upstream);
     EXPECT_EQ(result.expanded_text, source);
     EXPECT_TRUE(result.positions.is_identity());
 }
@@ -323,9 +325,11 @@ TEST(TemplateExpander, ExpandStringSimpleSubstitution) {
     }
     const std::string caller =
         R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml" x="S1"/></root>)";
+    const auto upstream = SCE::parsing::PositionMap::identity(
+        (tmpDir / "caller.scxml").string(), caller);
     const auto result =
         expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string());
+                     tmpDir.string(), upstream);
     EXPECT_FALSE(result.positions.is_identity());
     EXPECT_NE(result.expanded_text.find("<state id=\"S1\"/>"),
               std::string::npos);
@@ -359,9 +363,11 @@ TEST(TemplateExpander, ExpandStringMissingRequiredParamThrows) {
     }
     const std::string caller =
         R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml"/></root>)";
+    const auto upstream = SCE::parsing::PositionMap::identity(
+        (tmpDir / "caller.scxml").string(), caller);
     EXPECT_THROW(
         expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string()),
+                     tmpDir.string(), upstream),
         SCE::parsing::TemplateMissingParam);
     std::filesystem::remove_all(tmpDir);
 }
@@ -378,9 +384,11 @@ TEST(TemplateExpander, ExpandStringUnknownBindingThrows) {
     }
     const std::string caller =
         R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml" x="v" bogus="b"/></root>)";
+    const auto upstream = SCE::parsing::PositionMap::identity(
+        (tmpDir / "caller.scxml").string(), caller);
     EXPECT_THROW(
         expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string()),
+                     tmpDir.string(), upstream),
         SCE::parsing::TemplateUnknownParam);
     std::filesystem::remove_all(tmpDir);
 }
@@ -389,8 +397,10 @@ TEST(TemplateExpander, ExpandStringUnknownBindingThrows) {
 TEST(TemplateExpander, ExpandStringNotFoundThrows) {
     const std::string caller =
         R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="does_not_exist.scxml"/></root>)";
+    const auto upstream =
+        SCE::parsing::PositionMap::identity("/tmp/caller.scxml", caller);
     EXPECT_THROW(
-        expandString(caller, "/tmp/caller.scxml", "/tmp"),
+        expandString(caller, "/tmp/caller.scxml", "/tmp", upstream),
         SCE::parsing::TemplateNotFound);
 }
 
@@ -419,7 +429,9 @@ TEST(ProcessSceTemplate, RoundtripResolvesBodyAndCallsite) {
     SCE::PugiXMLParser parser;
     auto doc = parser.parseFile(callerPath.string());
     ASSERT_NE(doc, nullptr);
-    const auto result = doc->processSceTemplate();
+    const auto xResult = doc->processXInclude();
+    ASSERT_TRUE(xResult.ok);
+    const auto result = doc->processSceTemplate(xResult.positions);
     ASSERT_TRUE(result.ok);
     EXPECT_FALSE(result.positions.is_identity());
 
@@ -438,8 +450,10 @@ TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
         "  <sce:use template=\"does_not_exist.scxml\"/>\n"
         "</root>";
     const std::string callerPath = "/tmp/p2_location_test_caller.scxml";
+    const auto upstream =
+        SCE::parsing::PositionMap::identity(callerPath, callerSource);
     try {
-        expandString(callerSource, callerPath, "/tmp");
+        expandString(callerSource, callerPath, "/tmp", upstream);
         FAIL() << "expected TemplateNotFound";
     } catch (const SCE::parsing::TemplateNotFound &e) {
         const auto &loc = e.location();
@@ -450,4 +464,81 @@ TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
         // (two leading spaces + `<`).
         EXPECT_EQ(loc->col, 3u);
     }
+}
+
+// ── PugiXMLDocument::processSceTemplate threads upstream map ────────
+// Phase X RFC §1 Q2 contract: when a document has an `<xi:include>`
+// but no `<sce:use>`, the upstream PositionMap produced by
+// `processXInclude` must thread through `processSceTemplate`'s
+// fast-path unchanged, so a byte originating in the spliced fragment
+// still resolves to the fragment file after both preprocessor stages
+// have run. Without this passthrough, fragment-byte diagnostics
+// would be wrongly attributed to the host file.
+//
+// Standing-consumer pattern from RFC §1 Q4 condition #1: the test
+// drives the production entry points (`processXInclude` →
+// `processSceTemplate`) end-to-end, not the expander helpers in
+// isolation. Bite: replacing `result.positions = upstream;` in the
+// no-`<sce:use>` fast path with
+// `PositionMap::identity(sourcePath_, sourceText_)` (the pre-Phase-X
+// shape) reds the assertion below — the fragment byte then resolves
+// to `main.xml` instead of `frag.xml`.
+TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
+    const auto tmpDir = std::filesystem::temp_directory_path() /
+                        "sce_process_sce_template_threads_upstream";
+    std::filesystem::create_directories(tmpDir);
+    const auto fragPath = tmpDir / "frag.xml";
+    const auto mainPath = tmpDir / "main.xml";
+    {
+        std::ofstream out(fragPath, std::ios::binary);
+        out << R"(<fragment><state id="leaf"/></fragment>)";
+    }
+    const std::string mainSrc =
+        R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.xml"/></root>)";
+    {
+        std::ofstream out(mainPath, std::ios::binary);
+        out << mainSrc;
+    }
+
+    auto rawDoc = std::make_shared<pugi::xml_document>();
+    ASSERT_TRUE(rawDoc->load_buffer(mainSrc.data(), mainSrc.size()));
+
+    SCE::PugiXMLDocument doc(rawDoc);
+    doc.setSourcePath(mainPath.string());
+    doc.setSourceText(mainSrc);
+    doc.setBasePath(tmpDir.string());
+
+    const auto xResult = doc.processXInclude();
+    ASSERT_TRUE(xResult.ok);
+
+    // Upstream attributes some byte to frag.xml (the spliced
+    // fragment region). Probe to find one — the harness does not
+    // depend on the exact post-XInclude byte layout.
+    std::size_t fragByte = 0;
+    bool foundFragByte = false;
+    for (std::size_t i = 0; i < 4096; ++i) {
+        const auto pos = xResult.positions.lookup(i);
+        if (pos.file.filename() == "frag.xml") {
+            fragByte = i;
+            foundFragByte = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(foundFragByte)
+        << "upstream PositionMap from processXInclude must attribute "
+           "at least one byte to frag.xml";
+
+    const auto tResult = doc.processSceTemplate(xResult.positions);
+    ASSERT_TRUE(tResult.ok);
+
+    const auto upstreamPos = xResult.positions.lookup(fragByte);
+    const auto downstreamPos = tResult.positions.lookup(fragByte);
+    EXPECT_EQ(upstreamPos.file, downstreamPos.file)
+        << "fragment-byte origin must survive processSceTemplate's "
+           "no-`<sce:use>` fast path — Phase X RFC §1 Q2 upstream "
+           "passthrough";
+    EXPECT_EQ(upstreamPos.row, downstreamPos.row);
+    EXPECT_EQ(upstreamPos.col, downstreamPos.col);
+
+    std::filesystem::remove_all(tmpDir);
 }

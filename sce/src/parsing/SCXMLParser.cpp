@@ -75,9 +75,15 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
             return nullptr;
         }
 
-        // Process XIncludes
+        // Process XIncludes. Capture the result so the produced
+        // PositionMap can thread into `processSceTemplate` — Phase X
+        // RFC §1 Q2 unifies post-XInclude and post-template
+        // diagnostic coordinates through a single composed map.
+        // XInclude failure surfacing remains pre-existing behaviour
+        // (silent on the SCXMLParser surface; processSceTemplate
+        // operates on whatever DOM state survived).
         SCE_LOG_DEBUG("Processing XIncludes");
-        doc->processXInclude();
+        auto xincludeResult = doc->processXInclude();
 
         // Process `<sce:use>` template expansion. Each failure
         // mode raises a typed `SCE::parsing::TemplateError`
@@ -89,7 +95,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         // (`TemplateExpander.cpp`). See Phase C P2 §3 P2 in
         // claudedocs/rfc-sce-template-phase-c.md.
         SCE_LOG_DEBUG("Processing sce:template");
-        auto templateResult = doc->processSceTemplate();
+        auto templateResult = doc->processSceTemplate(xincludeResult.positions);
         if (!templateResult.ok) {
             addError("Template expansion failed: " + doc->getErrorMessage());
             return nullptr;
@@ -129,16 +135,19 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
             return nullptr;
         }
 
-        // Process XIncludes
+        // Process XIncludes; capture the produced PositionMap so it
+        // composes into the template stage (Phase X RFC §1 Q2).
+        // XInclude failure surfacing remains pre-existing behaviour
+        // (silent on the SCXMLParser surface).
         SCE_LOG_DEBUG("Processing XIncludes");
-        doc->processXInclude();
+        auto xincludeResult = doc->processXInclude();
 
         // Process `<sce:use>` template expansion. Each failure
         // mode raises a typed `SCE::parsing::TemplateError`
         // subtype caught below so the emitted diagnostic carries
         // the author-source location populated by the expander.
         SCE_LOG_DEBUG("Processing sce:template");
-        auto templateResult = doc->processSceTemplate();
+        auto templateResult = doc->processSceTemplate(xincludeResult.positions);
         if (!templateResult.ok) {
             addError("Template expansion failed: " + doc->getErrorMessage());
             return nullptr;

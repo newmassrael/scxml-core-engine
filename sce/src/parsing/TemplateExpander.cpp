@@ -919,13 +919,15 @@ TemplateExpandResult expandImpl(std::string_view content,
 
 TemplateExpandResult expandString(std::string_view content,
                                   std::string_view selfPath,
-                                  std::string_view baseDir) {
+                                  std::string_view baseDir,
+                                  const PositionMap &upstream) {
     // Fast path — mirrors Rust `expand`'s `if !content.contains("sce:use")`.
+    // Output is byte-identical to `content`, so `upstream` already
+    // describes every emitted byte without recomposition.
     if (content.find("sce:use") == std::string_view::npos) {
         TemplateExpandResult result;
         result.expanded_text.assign(content);
-        result.positions =
-            PositionMap::identity(std::filesystem::path(selfPath), content);
+        result.positions = upstream;
         return result;
     }
 
@@ -939,9 +941,8 @@ TemplateExpandResult expandString(std::string_view content,
         stack.push_back(ec ? selfFile : canon);
     }
 
-    const auto inputMap = PositionMap::identity(selfFile, content);
     return detail::expandImpl(content, selfFile, baseFile, /*depth=*/0, stack,
-                               inputMap);
+                               upstream);
 }
 
 }  // namespace SCE::parsing

@@ -71,7 +71,15 @@ public:
 
     /**
      * @brief Process `<sce:use>` template expansion directives
-     * @return true on success
+     * @param upstream PositionMap describing every byte of the
+     *        post-XInclude document text — typically the
+     *        `XIncludeResult::positions` returned by
+     *        `processXInclude`. The expander composes this map into
+     *        its own output so a diagnostic byte position resolves
+     *        through both preprocessor stages back to the author's
+     *        source file (host or `xi:include`'d fragment), per
+     *        Phase X RFC §1 Q2.
+     * @return SceTemplateResult { ok, positions }
      *
      * Expands `<sce:use template="...">` against `<sce:template>` files
      * sibling to the current document. Mirrors the AOT expander
@@ -86,7 +94,8 @@ public:
      * 1:1 to the Rust `xml/template-*` DiagnosticCode set so the
      * AOT and Interpreter paths surface the same class of failure.
      */
-    virtual SceTemplateResult processSceTemplate() = 0;
+    virtual SceTemplateResult processSceTemplate(
+        const SCE::parsing::PositionMap &upstream) = 0;
 
     /**
      * @brief Get error message if parsing failed
