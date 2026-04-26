@@ -447,12 +447,21 @@ static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t 
             {% for trans in state.transitions %}
             {{ emit_transition_match_check(trans) }} {
             {% if trans.cond %}
-                /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" */
+            {% if model.needs_script_engine %}
+                /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" (lua eval) */
                 bool _trans_pass;
 {{ se.lua_eval_guard(trans.cond, '_trans_pass') }}
                 if (_trans_pass) {
                     {{ emit_transition_body(trans) }}
                 }
+            {% else %}
+                /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" (native C
+                   lower; mirrors cpp process_transition.jinja2 else-branch — C
+                   compiler dead-code-eliminates `if (false)` arms). */
+                if ({{ trans.cond }}) {
+                    {{ emit_transition_body(trans) }}
+                }
+            {% endif %}
             {% else %}
                 {{ emit_transition_body(trans) }}
             {% endif %}
