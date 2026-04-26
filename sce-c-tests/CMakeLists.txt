@@ -29,6 +29,7 @@ set(W3C_C_AOT_TESTS_NEEDS_LUA "")
 sce_generate_static_w3c_c_test(355 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.6: default initial = first child in document order
 sce_generate_static_w3c_c_test(144 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 4.2: raise inserts events at rear of internal queue (FIFO ordering)
 sce_generate_static_w3c_c_test(147 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.3/5.4: if/elseif/else + datamodel assign; ECMAScript-via-Lua
+sce_generate_static_w3c_c_test(150 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.6: <foreach> declares item/index variables; wildcard event="*" transition
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the

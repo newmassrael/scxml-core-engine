@@ -43,6 +43,15 @@
             /* W3C SCXML 5.4: <assign location="{{ action.location }}" expr="{{ action.expr | escape_c }}"> */
 {{ se.lua_assign(action.location, action.expr) }}
         }
+{% elif action.type == 'foreach' %}
+        {
+            /* W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}"{% if action.index %} index="{{ action.index }}"{% endif %}> */
+{% if action.actions and action.actions | length > 0 %}
+#error "C11 backend: <foreach> with body not yet supported (RFC §5.J.1 — needs a fixture-driven second consumer to extend `lua_foreach_no_body` into a body-emitting variant)"
+{% else %}
+{{ se.lua_foreach_no_body(action.array, action.item, action.index) }}
+{% endif %}
+        }
 {% elif action.type == 'if' %}
         {
             /* W3C SCXML 4.3: <if cond="{{ action.cond | escape_c }}"> */
@@ -234,16 +243,16 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
 {# Mirrors the C++ `tryTransitionInState` switch-on-source-state pattern.
    Guarded transitions evaluate `cond` against the Lua datamodel inline
    (no helper/event_matching split — T3 lock-in). Wildcard `event="*"`
-   matching remains deferred until the first fixture whose pass-path
-   depends on it; for current consumers (test147) the document-order
-   `bar` transition fires before the `*` fallback can be checked, so
-   wildcard parsing without runtime dispatch is sufficient. Transitions
+   matches every event except the eventless sentinel `EVENT_NONE`
+   (eventless transitions have no `event` attribute and are checked via
+   `check_eventless_transitions` with `EVENT_NONE` — wildcard must NOT
+   pick up that pass, otherwise it would loop forever). Transitions
    are walked in document order; first match wins (W3C 3.13).            #}
 {% macro emit_transition_match_check(trans) %}
 {% if not trans.event %}
         if (event == {{ model.name | upper }}_EVENT_NONE)
 {% elif trans.event == '*' %}
-        if (false /* W3C 3.13 wildcard event="*" — deferred (see header note) */)
+        if (event != {{ model.name | upper }}_EVENT_NONE)
 {% else %}
         if (event == {{ model.name | upper }}_EVENT_{{ trans.event | upper | replace('.', '_') | replace('-', '_') }})
 {% endif %}

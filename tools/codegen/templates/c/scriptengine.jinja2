@@ -17,6 +17,8 @@
      - lua_destroy_engine()      → close lua_State (idempotent, NULL-safe)
      - lua_assign(loc, expr)     → execute "loc = (transpiled_expr)" chunk
      - lua_eval_guard(cond, var) → set `var` (bool) to truthiness of cond
+     - lua_foreach_no_body(...)  → W3C 4.6 foreach with empty body (var decl
+                                   + iteration item/index without C body)
 
    Every macro takes the Lua state pointer as `sm->L`; the calling
    template owns the surrounding block scope and any per-block error
@@ -34,9 +36,13 @@
         (void)luaL_dostring(sm->L,
             "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})");
         {% elif var.content %}
-        /* W3C SCXML 5.2.2: <data id="{{ var.id }}"> with inline content */
+        /* W3C SCXML 5.2.2: <data id="{{ var.id }}"> inline content (eval as expression).
+           Mirrors `<data expr="...">` — the trimmed text content is treated as
+           an ECMAScript expression and transpiled via `to_lua_expr`. The cpp/rust
+           backends fall back to a string literal on eval failure; the C11 path
+           drops silently for now, matching the rest of this file's E5 policy. */
         (void)luaL_dostring(sm->L,
-            "{{ var.id }} = ('{{ var.content | escape_c }}')");
+            "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})");
         {% endif %}
         {% endfor %}
     }
@@ -69,4 +75,25 @@
         {{ result_var }} = (bool)lua_toboolean(sm->L, -1);
     }
     lua_pop(sm->L, 1);
+{% endmacro %}
+
+{# Emit a body-empty <foreach>: declare item (and optional index) on the Lua
+   datamodel, then iterate through `array` setting item/index each step.
+   W3C SCXML 4.6 mandates that even an empty foreach declares its item /
+   index variables (so a later state can test them via `typeof`).
+   Index is 0-based to mirror cpp `ForeachHelper::setForeachIterationVariables`
+   (size_t i passed verbatim). Non-array `array` values silently drop here;
+   the error.execution raise on type mismatch lands with the first negative
+   fixture. body-bearing foreach (action.actions non-empty) is rejected at
+   the call site with `#error` so a fresh consumer cannot land it silently. #}
+{% macro lua_foreach_no_body(array, item, index) %}
+    (void)luaL_dostring(sm->L,
+        "{{ item }} = nil; "
+        {% if index %}"{{ index }} = nil; "{% endif %}
+        "do local _a = ({{ array | to_lua_expr | escape_c }}); "
+        "if type(_a) == 'table' then "
+        "for _i, _v in ipairs(_a) do "
+        "{{ item }} = _v"
+        {% if index %}"; {{ index }} = _i - 1"{% endif %}
+        " end end end");
 {% endmacro %}
