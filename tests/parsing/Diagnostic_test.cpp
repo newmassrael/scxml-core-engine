@@ -266,6 +266,64 @@ TEST(TemplateErrorWire, IdIsStableAcrossCalls) {
               err.to_json().at("id").get<std::string>());
 }
 
+// ── Canonical-JSON string (RFC §W2 deliverable #3) ────────────────
+
+TEST(TemplateErrorWire, CanonicalJsonStringIsKeyOrderStable) {
+    // `to_canonical_json_string()` must produce the same bytes for
+    // the same diagnostic across calls — that is the contract any
+    // byte-diff consumer relies on. The producer-side
+    // `nlohmann::ordered_json` insertion order is irrelevant after
+    // canonicalisation; re-running on the same object hits std::map
+    // alphabetical order both times.
+    //
+    // Load-bearing bite: change `dump(-1, ' ', false)` in
+    // `Diagnostic.cpp` to `dump(2)` (pretty-print) and this test
+    // stays green for the equality assertion BUT the no-whitespace
+    // assertion below reds with a leading space at every key.
+    const TemplateCycle err(
+        "<sce:use template=\"a.sce-template.xml\">: cycle detected "
+        "(/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml)");
+
+    const std::string a = err.to_canonical_json_string();
+    const std::string b = err.to_canonical_json_string();
+    EXPECT_EQ(a, b);
+
+    // Required v1 fields are present in the canonical string.
+    EXPECT_NE(a.find("\"v\":1"), std::string::npos) << a;
+    EXPECT_NE(a.find("\"code\":\"xml/template-cycle\""),
+              std::string::npos)
+        << a;
+    EXPECT_NE(a.find("\"stage\":\"xml\""), std::string::npos) << a;
+
+    // No-whitespace contract: dump(-1, ' ', false) emits compact
+    // form. A pretty-print regression introduces literal '\n' or
+    // indent spacing.
+    EXPECT_EQ(a.find('\n'), std::string::npos) << a;
+    EXPECT_EQ(a.find("\": "), std::string::npos)
+        << "found ': ' (with space) — canonical dump must be "
+           "compact: " << a;
+}
+
+TEST(TemplateErrorWire, CanonicalJsonStringHasAlphabeticalKeyOrder) {
+    // Producer-side `to_json()` emits keys in insertion order
+    // (v, id, code, stage, message, location). Canonicalisation
+    // re-parses through std::map so the byte stream lands keys
+    // alphabetically — `code`, `id`, `message`, `stage`, `v` for
+    // the location-less subtypes. Pin the alphabetisation by
+    // checking that `code` precedes `v` in the canonical string
+    // (it would not in the producer's insertion order).
+    const TemplateMissingAttribute err(
+        "<sce:use> is missing required 'template' attribute");
+    const std::string canonical = err.to_canonical_json_string();
+
+    const auto code_pos = canonical.find("\"code\":");
+    const auto v_pos = canonical.find("\"v\":");
+    ASSERT_NE(code_pos, std::string::npos) << canonical;
+    ASSERT_NE(v_pos, std::string::npos) << canonical;
+    EXPECT_LT(code_pos, v_pos)
+        << "canonical string did not alphabetise keys: " << canonical;
+}
+
 // ── SCXMLParser boundary flatten (RFC §W1 audit #1 / W2) ──────────
 
 TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTemplateDiagnostic) {

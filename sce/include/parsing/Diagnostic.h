@@ -56,6 +56,18 @@ public:
 
     virtual nlohmann::ordered_json to_json() const = 0;
 
+    // Stable canonical-JSON string for byte-diff parity. Re-parses
+    // `to_json()`'s output through `nlohmann::json` (alphabetical
+    // key order via `std::map`) and dumps with `dump(-1, ' ', false)`
+    // — no whitespace, no key-order coupling to the
+    // `nlohmann::ordered_json` insertion order on the producer side.
+    // Matches the canonicalisation Rust output is expected to round-
+    // trip through for any cross-side byte-diff consumer (RFC §W2
+    // deliverable item #3 / RFC §4 risk row "canonicalisation hides
+    // semantic divergence" — only key order and whitespace are
+    // normalised, never field names or values).
+    std::string to_canonical_json_string() const;
+
     // Polymorphic copy. The boundary flatten in `SCXMLParser::parseFile`
     // catches a typed diagnostic by const-reference (the throw object is
     // owned by the catch frame) and needs to take ownership of an
