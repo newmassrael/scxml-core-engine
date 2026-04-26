@@ -1818,4 +1818,83 @@ mod tests {
             );
         }
     }
+
+    /// W1 (`claudedocs/rfc-sce-diagnostic-wire-unification.md`) makes
+    /// each C++ `Template<Variant>` subtype override
+    /// `Diagnostic::code()` to return its `xml/template-*` wire string.
+    /// The sister test above pins **subtype names** between Rust and
+    /// C++; this one pins the **wire-string return literal** inside
+    /// each subtype's `code()` body so a future rename on either side
+    /// (`xml/template-cycle` → `xml/template-loop`) cannot drift the
+    /// JSON wire contract silently.
+    ///
+    /// The bite: a hand-edit that changes `return "xml/template-cycle"`
+    /// to `return "xml/template-cycleXXX"` in `TemplateError.h` reds
+    /// here with a pointed `does not contain` diff naming the exact
+    /// class and exact missing literal.
+    #[test]
+    fn cpp_template_subtype_code_returns_rust_wire_string() {
+        let rust_to_cpp: &[(&str, &str)] = &[
+            ("xml/template-not-found", "TemplateNotFound"),
+            ("xml/template-read-error", "TemplateReadError"),
+            ("xml/template-malformed", "TemplateMalformed"),
+            ("xml/template-missing-attribute", "TemplateMissingAttribute"),
+            ("xml/template-missing-param", "TemplateMissingParam"),
+            ("xml/template-unknown-param", "TemplateUnknownParam"),
+            ("xml/template-cycle", "TemplateCycle"),
+            ("xml/template-too-deep", "TemplateTooDeep"),
+        ];
+        assert_eq!(rust_to_cpp.len(), 8);
+
+        let hdr = include_str!("../../sce/include/parsing/TemplateError.h");
+
+        for (rust_code, cpp_class) in rust_to_cpp {
+            // Locate the class block. The header's shape (one class per
+            // subtype, each terminated with `};`) keeps a forward
+            // `find("};")` accurate enough for a drift guard; if a
+            // future rewrite nests braces inside a subtype we update
+            // this scanner in the same commit.
+            let class_marker =
+                format!("class {} : public TemplateError", cpp_class);
+            let class_start = hdr.find(&class_marker).unwrap_or_else(|| {
+                panic!(
+                    "class `{}` not found in sce/include/parsing/\
+                     TemplateError.h — drift in subtype naming, see \
+                     `cpp_template_subtypes_match_rust_diagnostic_codes`",
+                    cpp_class
+                )
+            });
+            let body_start =
+                hdr[class_start..].find('{').unwrap() + class_start + 1;
+            let body_end_rel = hdr[body_start..].find("};").unwrap();
+            let body = &hdr[body_start..body_start + body_end_rel];
+
+            let needle = format!("return \"{}\";", rust_code);
+            assert!(
+                body.contains(&needle),
+                "Class `{}` body does not contain `{}` — the C++ \
+                 subtype's `code()` override must return the Rust \
+                 DiagnosticCode wire literal exactly so the JSON wire \
+                 emitted by `to_json()` agrees with `--error-format=\
+                 json`. RFC §W1 / SCE_ERROR_CONTRACT.md §3.",
+                cpp_class, needle
+            );
+        }
+
+        // Sanity-count: the header should declare exactly 8 `code()`
+        // overrides, one per subtype. A 9th appearing without an
+        // expansion of `rust_to_cpp` reds with a count diff rather
+        // than silently passing.
+        let override_count = hdr
+            .matches("std::string_view code() const noexcept override")
+            .count();
+        // 8 subtype overrides + 1 base-class declaration = 9 occurrences.
+        assert_eq!(
+            override_count, 9,
+            "expected 9 `code() const noexcept override` lines in \
+             TemplateError.h (1 pure-virtual on TemplateError + 8 \
+             subtype overrides); found {}",
+            override_count
+        );
+    }
 }
