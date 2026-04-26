@@ -63,7 +63,25 @@
 {% elif action.type == 'foreach' %}
         {
             /* W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}"{% if action.index %} index="{{ action.index }}"{% endif %}> */
-{% if action.actions and action.actions | length > 0 %}
+{% if not action.array or not action.item %}
+            /* W3C SCXML 4.6: missing required `array` or `item` attribute — raise
+               error.execution and skip the body entirely (the body's executable
+               content must NEVER run on an ill-formed foreach). Detected at
+               codegen time because the parser preserves empty attributes verbatim
+               (`unwrap_or("")` in parser.rs); runtime non-table check on a valid
+               array expression that evaluates to a non-list is a separate path
+               that lands with the first fixture forcing it. The
+               EVENT_ERROR_EXECUTION enum value is always present whenever this
+               emit path runs because <foreach> sets needs_script_engine, which
+               injects "error.execution" into model.events via analyzer.rs's
+               apply_script_engine_implications. */
+            {
+                {{ model.name }}_event_with_meta_t evt;
+                memset(&evt, 0, sizeof(evt));
+                evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &evt);
+            }
+{% elif action.actions and action.actions | length > 0 %}
 {{ se.lua_foreach_body_prologue(action.array, action.item, action.index) }}
             for (int _i = 0; _i < _sce_n; ++_i) {
 {{ se.lua_foreach_body_iter(action.item, action.index) }}
