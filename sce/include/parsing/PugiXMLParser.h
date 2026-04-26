@@ -141,10 +141,6 @@ public:
 
     std::shared_ptr<IXMLDocument> parseFile(const std::string &filename) override;
     std::shared_ptr<IXMLDocument> parseContent(const std::string &content) override;
-    std::string getLastError() const override;
-
-private:
-    std::string lastError_;
 };
 
 }  // namespace SCE

@@ -559,12 +559,4 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &con
     return wrappedDoc;
 }
 
-// RFC §W4 D1-C: deprecated. lastError_ is no longer populated by
-// parseFile/parseContent — they throw typed `ParseError` subtypes
-// instead. Returns empty string for source compatibility with
-// any out-of-repo caller still polling this method.
-std::string PugiXMLParser::getLastError() const {
-    return lastError_;
-}
-
 }  // namespace SCE

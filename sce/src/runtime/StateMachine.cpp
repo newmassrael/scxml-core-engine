@@ -634,37 +634,31 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                         "<finalize xmlns=\"http://www.w3.org/2005/07/scxml\">" + finalizeScript + "</finalize>";
 
                     // RFC §W4 D1-C: parseContent throws
-                    // `SCE::parsing::ParseXmlFailed` on malformed
-                    // input; the existing outer `catch (std::exception&)`
-                    // arm at the end of this try block surfaces it as
-                    // an SCE_LOG_ERROR with the typed `what()` text.
-                    // The historical `if (!document || !document->isValid())`
-                    // branch and its `parser->getLastError()` poll are
-                    // dead under typed-throw and removed.
+                    // `SCE::parsing::ParseXmlFailed` on malformed input;
+                    // the outer `catch (std::exception&)` arm catches
+                    // the typed leaf via base-class slicing.
                     auto parser = IXMLParser::create();
                     auto document = parser->parseContent(xmlWrapper);
 
-                    {
-                        auto root = document->getRootElement();
-                        if (!root) {
-                            SCE_LOG_ERROR("StateMachine: No root element in finalize XML");
-                        } else {
-                            // Use ActionParser to parse and execute each action in finalize
-                            ActionParser actionParser(nullptr);
-                            auto children = root->getChildren();
+                    auto root = document->getRootElement();
+                    if (!root) {
+                        SCE_LOG_ERROR("StateMachine: No root element in finalize XML");
+                    } else {
+                        // Use ActionParser to parse and execute each action in finalize
+                        ActionParser actionParser(nullptr);
+                        auto children = root->getChildren();
 
-                            // Create execution context
-                            auto sharedExecutor = std::static_pointer_cast<IActionExecutor>(actionExecutor_);
-                            ExecutionContextImpl context(sharedExecutor, sessionId_);
+                        // Create execution context
+                        auto sharedExecutor = std::static_pointer_cast<IActionExecutor>(actionExecutor_);
+                        ExecutionContextImpl context(sharedExecutor, sessionId_);
 
-                            // Execute each action in finalize
-                            for (const auto &child : children) {
-                                auto action = actionParser.parseActionNode(child);
-                                if (action) {
-                                    bool success = action->execute(context);
-                                    SCE_LOG_DEBUG("StateMachine: Finalize action '{}' executed: {}", child->getName(),
-                                              success);
-                                }
+                        // Execute each action in finalize
+                        for (const auto &child : children) {
+                            auto action = actionParser.parseActionNode(child);
+                            if (action) {
+                                bool success = action->execute(context);
+                                SCE_LOG_DEBUG("StateMachine: Finalize action '{}' executed: {}", child->getName(),
+                                          success);
                             }
                         }
                     }

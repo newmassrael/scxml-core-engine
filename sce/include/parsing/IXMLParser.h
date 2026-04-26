@@ -50,19 +50,6 @@ public:
     virtual std::shared_ptr<IXMLDocument> parseContent(const std::string &content) = 0;
 
     /**
-     * @brief Get last error message
-     * @return Empty string. Deprecated: parser-entry failures are now
-     *         surfaced via typed `SCE::parsing::ParseError` throws on
-     *         `parseFile`/`parseContent`; this poll method is retained
-     *         for source compatibility with any out-of-repo caller and
-     *         will be removed once a deprecation grace period elapses.
-     *         See RFC §W4 D1-C in
-     *         `claudedocs/rfc-sce-diagnostic-wire-unification.md`.
-     */
-    [[deprecated("Catch SCE::parsing::ParseError instead — RFC §W4 D1-C")]]
-    virtual std::string getLastError() const = 0;
-
-    /**
      * @brief Factory method to create platform-specific parser
      * @return Parser instance (PugiXMLParser on all platforms)
      */
