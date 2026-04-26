@@ -48,6 +48,10 @@ sce_generate_static_w3c_c_test(407 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(415 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.7: state machine halts immediately when initial state is a top-level final state
 sce_generate_static_w3c_c_test(445 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.2: <data id> without expr/content is the ECMAScript value undefined (lua nil after transpile)
 sce_generate_static_w3c_c_test(449 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.9: a non-empty string in transition cond is a truthy value (lua_toboolean returns true)
+sce_generate_static_w3c_c_test(278 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: state-local <datamodel> is reachable from outside its lexical scope (default early binding)
+sce_generate_static_w3c_c_test(279 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: early binding (default) initialises state-local <data expr> at startup before its owning state is entered
+sce_generate_static_w3c_c_test(550 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: explicit binding="early" pre-initialises state-local <data expr> from a sibling state's transition cond
+sce_generate_static_w3c_c_test(551 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: early binding initialises state-local <data> with inline content (transpiled to a Lua table literal)
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the

@@ -72,6 +72,30 @@
             "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})");
         {% endif %}
         {% endfor %}
+        {% if model.binding == 'early' %}
+        {# W3C SCXML 5.3 early binding (default per parser.rs:378 unwrap_or("early")):
+           state-local <datamodel> variables initialise at startup so that any
+           state can read them before its own onentry runs. Mirrors the cpp
+           scriptengine_helpers.jinja2 early-binding loop (model.states |
+           dictsort + state.datamodel guard). Late binding emit is deferred
+           until the first late fixture forces it (built-but-unconsumed
+           carve-out — feedback_built_but_unconsumed.md). #}
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.datamodel %}
+        {% for var in state.datamodel %}
+        {% if var.expr %}
+        /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
+        (void)luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})");
+        {% elif var.content %}
+        /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline content. */
+        (void)luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})");
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+        {% endif %}
     }
 {% endmacro %}
 
