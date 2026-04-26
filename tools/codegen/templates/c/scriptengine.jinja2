@@ -73,6 +73,25 @@
         "{{ loc }} = ({{ expr | to_lua_expr | escape_c }})");
 {% endmacro %}
 
+{# In-foreach-body assign variant: same chunk as lua_assign, but the
+   luaL_dostring return value is checked and the enclosing C `for` loop
+   is broken on failure (W3C SCXML 4.6 — first error inside <foreach>
+   body must cease execution of the loop). On error the lua stack carries
+   the chunk's error message; pop it so the next caller sees a clean
+   stack. The surrounding-block-abort half of the W3C sentence (cease
+   "the block that contains it") is deferred until a fixture forces the
+   stricter semantics — test156's pass guard only needs loop break.
+   This emit path is reachable only when emit_action is invoked with
+   `in_foreach=true`; the standalone `lua_assign` path stays silent-drop
+   so existing fixtures (test147 outside <foreach>) are unaffected. #}
+{% macro lua_assign_in_foreach_body(loc, expr) %}
+    if (luaL_dostring(sm->L,
+        "{{ loc }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
+        lua_pop(sm->L, 1);
+        break;
+    }
+{% endmacro %}
+
 {# Emit a bounded block that evaluates `cond` and stores its truthiness in
    `result_var` (must be `bool` and already declared by the caller). The
    chunk returns the value, lua_toboolean lifts it, lua_pop drops the

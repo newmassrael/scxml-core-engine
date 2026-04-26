@@ -31,8 +31,18 @@
    `{ }` scopes so nested <if> chains shadow rather than collide; -Wshadow
    is not enabled in the C11 conformance target so the shadow stays warn-free.
    The caller (execute_entry_actions / execute_exit_actions) supplies the
-   surrounding `case` block — we never emit `case`/`break` ourselves. #}
-{% macro emit_action(action) %}
+   surrounding `case` block — we never emit `case`/`break` ourselves.
+
+   `in_foreach` (default false) flips the <assign> dispatch onto the
+   error-checking variant (`lua_assign_in_foreach_body`) so a failing
+   chunk breaks the enclosing C `for` loop. <if>/<elseif>/<else> propagate
+   their caller's `in_foreach` verbatim, so an <assign> nested inside an
+   <if> nested inside a <foreach> body still reaches the break path.
+   <foreach>'s own sub-action recursion forces `in_foreach=true` — nested
+   <foreach> is intentionally unsupported per scriptengine.jinja2 (lua
+   global `_sce_foreach_arr` collides), and an inner <foreach>'s own body
+   emits its own `for` loop so the outer break is never reached anyway. #}
+{% macro emit_action(action, in_foreach=false) %}
 {% if action.type == 'raise' %}
         {
             /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
@@ -44,7 +54,11 @@
 {% elif action.type == 'assign' %}
         {
             /* W3C SCXML 5.4: <assign location="{{ action.location }}" expr="{{ action.expr | escape_c }}"> */
+{% if in_foreach %}
+{{ se.lua_assign_in_foreach_body(action.location, action.expr) }}
+{% else %}
 {{ se.lua_assign(action.location, action.expr) }}
+{% endif %}
         }
 {% elif action.type == 'foreach' %}
         {
@@ -54,7 +68,7 @@
             for (int _i = 0; _i < _sce_n; ++_i) {
 {{ se.lua_foreach_body_iter(action.item, action.index) }}
                 {% for sub in action.actions %}
-                {{ emit_action(sub) }}
+                {{ emit_action(sub, true) }}
                 {% endfor %}
             }
 {{ se.lua_foreach_body_epilogue() }}
@@ -69,7 +83,7 @@
 {{ se.lua_eval_guard(action.cond, '_if_pass') }}
             if (_if_pass) {
                 {% for sub in action.then_actions %}
-                {{ emit_action(sub) }}
+                {{ emit_action(sub, in_foreach) }}
                 {% endfor %}
             }
 {% for elif in action.elseif_branches %}
@@ -79,7 +93,7 @@
 {{ se.lua_eval_guard(elif.cond, '_elif_pass') }}
                 if (_elif_pass) {
                     {% for sub in elif.actions %}
-                    {{ emit_action(sub) }}
+                    {{ emit_action(sub, in_foreach) }}
                     {% endfor %}
                 }
 {% endfor %}
@@ -87,7 +101,7 @@
             else {
                 /* W3C SCXML 4.3: <else> */
                 {% for sub in action.else_actions %}
-                {{ emit_action(sub) }}
+                {{ emit_action(sub, in_foreach) }}
                 {% endfor %}
             }
 {% endif %}
