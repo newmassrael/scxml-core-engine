@@ -36,6 +36,8 @@ sce_generate_static_w3c_c_test(155 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(156 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.6: error inside <foreach> body breaks the loop after the first iteration
 sce_generate_static_w3c_c_test(152 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.6: ill-formed <foreach> (missing array or item) raises error.execution and skips the body
 sce_generate_static_w3c_c_test(158 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.5: executable content runs in document order (raise event1 before event2)
+sce_generate_static_w3c_c_test(396 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 5.10: _event.name matches the event used to match transitions (first-match-wins via doc order)
+sce_generate_static_w3c_c_test(377 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.13: multi-block onexit handlers execute in document order (event1 before event2)
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the

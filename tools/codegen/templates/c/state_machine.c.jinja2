@@ -458,14 +458,24 @@ void {{ model.name }}_step({{ model.name }}_t *sm) {
 void {{ model.name }}_run({{ model.name }}_t *sm) {
     sm->is_running = true;
     while (sm->is_running && !{{ model.name }}_is_final_state(sm->current_state)) {
-        bool had_pending_events = sm->internal_queue.count > 0u || sm->external_queue.count > 0u;
+        {{ model.name }}_state_t before = sm->current_state;
         {{ model.name }}_step(sm);
-        /* No queued event AND no transition fired this step → quiescence
-           short of a final state. The C++ engine waits on the scheduler
-           here; with no scheduler wired (E1 minimum) the only remaining
-           progress would have come from an eventless transition, and
-           `check_eventless_transitions` already drove that to fixed point. */
-        if (!had_pending_events && !sm->transition_taken) {
+        /* True quiescence: state did not change AND both queues are empty
+           (the latter is the exit/entry-action follow-on path — an
+           eventless transition that fires inside `check_eventless_transitions`
+           can run an <onexit> that <raise>s a fresh event onto the internal
+           queue, leaving the state unchanged from the run-loop's vantage if
+           the eventless block stops there; we must continue so the next
+           step() drains those queued events). The original `transition_taken`
+           flag was unreliable because `process_transition` resets it at
+           every call, so the LAST microstep's verdict (NONE-no-match in
+           the eventless tail) overwrote earlier successful transitions —
+           test377 (W3C 3.13 onexit doc-order) made that misclassification
+           visible by having the run loop break before the queued events
+           could be drained. */
+        if (sm->current_state == before
+            && sm->internal_queue.count == 0u
+            && sm->external_queue.count == 0u) {
             break;
         }
     }
