@@ -3979,6 +3979,58 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             set_tests_properties(mesh_someip_region_liveness_verification PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}"
                 RESOURCE_LOCK sce_mesh_someip_crossdev_netns)
+
+            # ── §16.7 row 8 machine-level liveness (RFC F.X-4) ───────
+            # Sister to mesh_someip_region_liveness_verification above.
+            # Single-partition shape — alpha + beta have NO `partitions:`
+            # block, so the F.X-3 region-liveness axis is silent (zero
+            # row-13 participants under the assigner's narrowed projection)
+            # and ONLY the F.X-4 machine-level axis emits handlers. The
+            # parent driver pins this orthogonality at runtime: a stray
+            # row-13 raise on this trace would be a codegen axis-confusion
+            # regression. RESOURCE_LOCK shared with all SOMEIP netns
+            # fixtures (multicast group + sce-mesh-{parent,worker} netns
+            # are shared by netns design).
+            add_executable(mesh_someip_machine_liveness_parent
+                mesh/test_mesh_someip_machine_liveness_parent.cpp
+                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha/alpha_machine_liveness_sm.h"
+                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha/alpha_machine_liveness_transport.h")
+            target_include_directories(mesh_someip_machine_liveness_parent
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha"
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+            target_link_libraries(mesh_someip_machine_liveness_parent
+                PRIVATE sce_runtime sce_mesh_common vsomeip3)
+            target_compile_definitions(mesh_someip_machine_liveness_parent
+                PRIVATE VSOMEIP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_someip_machine_liveness_alpha.json")
+            target_compile_features(mesh_someip_machine_liveness_parent PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_someip_machine_liveness_parent)
+
+            add_executable(mesh_someip_machine_liveness_worker
+                mesh/test_mesh_someip_machine_liveness_worker.cpp
+                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta/beta_machine_liveness_sm.h"
+                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta/beta_machine_liveness_transport.h")
+            target_include_directories(mesh_someip_machine_liveness_worker
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/sce/include
+                    "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta"
+                    ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+            target_link_libraries(mesh_someip_machine_liveness_worker
+                PRIVATE sce_runtime sce_mesh_common vsomeip3)
+            target_compile_definitions(mesh_someip_machine_liveness_worker
+                PRIVATE VSOMEIP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_someip_machine_liveness_beta.json")
+            target_compile_features(mesh_someip_machine_liveness_worker PRIVATE cxx_std_17)
+            apply_sce_test_policies(mesh_someip_machine_liveness_worker)
+
+            sce_register_two_host_mesh_test(
+                NAME    mesh_someip_machine_liveness_verification
+                WORKER  mesh_someip_machine_liveness_worker
+                PARENT  mesh_someip_machine_liveness_parent
+                TIMEOUT 30)
+            set_tests_properties(mesh_someip_machine_liveness_verification PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}"
+                RESOURCE_LOCK sce_mesh_someip_crossdev_netns)
         endif()
 
         # ── Session I: engine-driven RPC/FieldRead over SOME/IP ──────

@@ -3315,7 +3315,7 @@ struct TransportRouter {
     application on this machine is owned separately and torn down
     independently. Idempotent via shared_ptr reset + joinable() guard
     so dtor-via-shutdown does not touch an already-joined thread. #}
-{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list or someip_liveness_service_id_self_hex %}
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "someip") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "someip") | list or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex %}
         if ({{ someip_sce_app_field }}) {{ someip_sce_app_field }}->stop();
         if ({{ someip_sce_app_thread }}.joinable()) {{ someip_sce_app_thread }}.join();
         {{ someip_sce_app_field }}.reset();

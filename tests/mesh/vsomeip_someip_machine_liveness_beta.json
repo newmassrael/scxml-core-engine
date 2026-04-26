@@ -1,0 +1,29 @@
+{
+  "_comment": "SCE Mesh §16.7 row 8 / RFC F.X-4 Stage D — runtime vsomeip config for the beta_machine_liveness SCE binary (sce-mesh-worker netns, 172.16.10.2). Mirror of the alpha-side config: hosts `beta_machine_liveness_sce` (F.X-2 consolidated SCE app, single-partition shape — no `_<partition>` infix), offers service 0x8281 on reliable port 30672, and the codegen-emitted register_availability_handler observes the peer machine alpha's 0x8280. Same SD multicast group + pinned timings as the alpha side.",
+  "network": "sce_someip_machine_liveness_beta",
+  "unicast": "172.16.10.2",
+  "routing": "beta_machine_liveness_sce",
+  "applications": [
+    { "name": "beta_machine_liveness_sce", "id": "0x9402" }
+  ],
+  "services": [
+    {
+      "service": "0x8281",
+      "instance": "0x0001",
+      "unreliable": "0",
+      "reliable": { "port": "30672", "enable-magic-cookies": "false" }
+    }
+  ],
+  "service-discovery": {
+    "enable": "true",
+    "multicast": "224.244.224.245",
+    "port": "30490",
+    "protocol": "udp",
+    "initial_delay_min": "10",
+    "initial_delay_max": "50",
+    "repetitions_base_delay": "100",
+    "repetitions_max": "3",
+    "ttl": "5",
+    "cyclic_offer_delay": "500"
+  }
+}

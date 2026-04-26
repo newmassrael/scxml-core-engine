@@ -1,0 +1,29 @@
+{
+  "_comment": "SCE Mesh §16.7 row 8 / RFC F.X-4 Stage D — runtime vsomeip config for the alpha_machine_liveness SCE binary (sce-mesh-parent netns, 172.16.10.1). Hosts the consolidated SCE app `alpha_machine_liveness_sce` (RFC F.X-2 single-partition shape, no `_<partition>` infix) which both offers the machine's own §16.7 row 8 liveness service (0x8280, port 30671) and registers the availability handler for the peer machine `beta_machine_liveness`'s liveness service (0x8281). SD over multicast 224.244.224.245:30490 with pinned timings (RFC F.X-3 D9 / `feedback_vsomeip_sd_cross_host.md`): set_reliable(true) is emitted by the codegen template, the `services` block declares the offered service's reliable.port explicitly, and the SD initial_delay / repetitions are tightened to 10..50ms / 100ms × 3 so cross-host convergence completes inside the 500 ms two-host orchestrator settle window instead of the vsomeip default seconds. Distinct port band (30671/30672) from F.X-3 region-liveness (30571/30572) so parallel ctest -j cannot cross-pollute reliable.port bind despite shared SD multicast group (RESOURCE_LOCK serialises at ctest level).",
+  "network": "sce_someip_machine_liveness_alpha",
+  "unicast": "172.16.10.1",
+  "routing": "alpha_machine_liveness_sce",
+  "applications": [
+    { "name": "alpha_machine_liveness_sce", "id": "0x9401" }
+  ],
+  "services": [
+    {
+      "service": "0x8280",
+      "instance": "0x0001",
+      "unreliable": "0",
+      "reliable": { "port": "30671", "enable-magic-cookies": "false" }
+    }
+  ],
+  "service-discovery": {
+    "enable": "true",
+    "multicast": "224.244.224.245",
+    "port": "30490",
+    "protocol": "udp",
+    "initial_delay_min": "10",
+    "initial_delay_max": "50",
+    "repetitions_base_delay": "100",
+    "repetitions_max": "3",
+    "ttl": "5",
+    "cyclic_offer_delay": "500"
+  }
+}
