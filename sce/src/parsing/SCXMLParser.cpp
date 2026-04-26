@@ -288,10 +288,12 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::sh
 
 bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlNode,
                                       std::shared_ptr<SCXMLModel> model) {
-    if (!scxmlNode || !model) {
-        addError("Null scxml node or model");
-        return false;
-    }
+    // RFC §W5 Stage E: removed `if (!scxmlNode || !model)` precondition
+    // guard. Callers (parseAbstractDocument) construct `model` with
+    // `std::make_shared` (never null) and reach this point only after
+    // `getRootElement()` returned a non-null handle and the
+    // `ParseWrongRootElement` check passed (W4 D1-C). The guard was
+    // dead post-W4 — revealed by W5 site inventory.
 
     SCE_LOG_DEBUG("Parsing SCXML root node");
 
@@ -559,18 +561,17 @@ void SCE::SCXMLParser::recordDiagnostic(
 }
 
 bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
-    if (!model) {
-        addError("Null model in validation");
-        return false;
-    }
+    // RFC §W5 Stage E: removed `if (!model)` and `if
+    // (!model->getRootState())` guards. The first is unreachable
+    // because callers construct `model` with `std::make_shared` and
+    // only invoke `validateModel` from the success path of
+    // `parseScxmlNode`. The second is unreachable because
+    // `parseScxmlNode`'s "No state nodes found" throw fires before
+    // any successful state parse — a model that reached
+    // `validateModel` always has a root state. Both guards were dead
+    // post-W4 typed-throw — revealed by W5 site inventory.
 
     SCE_LOG_INFO("Validating SCXML model");
-
-    // 1. Verify root state
-    if (!model->getRootState()) {
-        addError("Model has no root state");
-        return false;
-    }
 
     // Snapshot all declared state ids once for the typed-throw
     // payload's `available` list. Used by `SemanticInitialStateUnknown`
@@ -603,25 +604,21 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
     }
 
     // 3. Validate state relationships
+    //
+    // RFC §W5 Stage E removed the parent/children consistency guard
+    // (previously: "State '<X>' has parent '<Y>' but is not in
+    // parent's children list"). The check was a defensive guard for
+    // an internal model-construction invariant — `StateNode::addChild`
+    // always pairs `setParent` with `getChildren().push_back`, so a
+    // child whose `getParent()` points to a state that doesn't list
+    // it in `getChildren()` could only arise from a model-mutation
+    // bug AFTER parse-time. Such a bug is a programming error, not a
+    // semantic-validation failure; an assertion or invariant test
+    // would catch it more honestly. The guard had no Rust producer
+    // (Rust constructs the model atomically — `parser.rs::parse_states`
+    // attaches state to parent in the same operation) and no
+    // wire-code mapping. Removed per `feedback_silently_broken_hooks.md`.
     for (const auto &state : model->getAllStates()) {
-        // Validate parent state
-        auto parent = state->getParent();
-        if (parent) {
-            bool isChild = false;
-            for (const auto &child : parent->getChildren()) {
-                if (child.get() == state.get()) {
-                    isChild = true;
-                    break;
-                }
-            }
-
-            if (!isChild) {
-                addError("State '" + state->getId() + "' has parent '" + parent->getId() +
-                         "' but is not in parent's children list");
-                return false;
-            }
-        }
-
         // Validate transition target states (W3C SCXML §3.5)
         for (const auto &transition : state->getTransitions()) {
             const auto &targets = transition->getTargets();
