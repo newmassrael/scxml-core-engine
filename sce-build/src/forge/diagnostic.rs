@@ -500,6 +500,12 @@ pub enum DiagnosticCode {
     MeshDeploySomeipLivenessServiceIdPinOutOfRange,
     #[serde(rename = "mesh/deploy-someip-liveness-service-id-pin-collision")]
     MeshDeploySomeipLivenessServiceIdPinCollision,
+    #[serde(rename = "mesh/deploy-someip-machine-liveness-service-id-overflow")]
+    MeshDeploySomeipMachineLivenessServiceIdOverflow,
+    #[serde(rename = "mesh/deploy-someip-machine-liveness-service-id-pin-out-of-range")]
+    MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange,
+    #[serde(rename = "mesh/deploy-someip-machine-liveness-service-id-pin-collision")]
+    MeshDeploySomeipMachineLivenessServiceIdPinCollision,
     #[serde(rename = "mesh/deploy-partition-barrier-timeout-invalid")]
     MeshDeployPartitionBarrierTimeoutInvalid,
     #[serde(rename = "mesh/partition-parallel-root-undesignated")]
@@ -732,6 +738,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeploySomeipLivenessServiceIdOverflow,
         MeshDeploySomeipLivenessServiceIdPinOutOfRange,
         MeshDeploySomeipLivenessServiceIdPinCollision,
+        MeshDeploySomeipMachineLivenessServiceIdOverflow,
+        MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange,
+        MeshDeploySomeipMachineLivenessServiceIdPinCollision,
         MeshDeployPartitionBarrierTimeoutInvalid,
         MeshPartitionParallelRootUndesignated,
         MeshPartitionParallelRootAmbiguous,
@@ -910,6 +919,9 @@ impl DiagnosticCode {
             MeshDeploySomeipLivenessServiceIdOverflow
             | MeshDeploySomeipLivenessServiceIdPinOutOfRange
             | MeshDeploySomeipLivenessServiceIdPinCollision => Some("SCE Mesh §16.4"),
+            MeshDeploySomeipMachineLivenessServiceIdOverflow
+            | MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange
+            | MeshDeploySomeipMachineLivenessServiceIdPinCollision => Some("SCE Mesh §16.7"),
 
             // ── Mesh binding placeholder + server pool (SCE_MESH.md §14.4) ──
             MeshDeployPoolNotSupportedByTransport
@@ -1149,6 +1161,9 @@ impl DiagnosticCode {
             MeshDeploySomeipLivenessServiceIdOverflow => "mesh/deploy-someip-liveness-service-id-overflow",
             MeshDeploySomeipLivenessServiceIdPinOutOfRange => "mesh/deploy-someip-liveness-service-id-pin-out-of-range",
             MeshDeploySomeipLivenessServiceIdPinCollision => "mesh/deploy-someip-liveness-service-id-pin-collision",
+            MeshDeploySomeipMachineLivenessServiceIdOverflow => "mesh/deploy-someip-machine-liveness-service-id-overflow",
+            MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange => "mesh/deploy-someip-machine-liveness-service-id-pin-out-of-range",
+            MeshDeploySomeipMachineLivenessServiceIdPinCollision => "mesh/deploy-someip-machine-liveness-service-id-pin-collision",
             MeshDeployPartitionBarrierTimeoutInvalid => "mesh/deploy-partition-barrier-timeout-invalid",
             MeshPartitionParallelRootUndesignated => "mesh/partition-parallel-root-undesignated",
             MeshPartitionParallelRootAmbiguous => "mesh/partition-parallel-root-ambiguous",
@@ -3168,6 +3183,41 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:48369888c142d0ed","code":"mesh/deploy-someip-liveness-service-id-pin-collision","stage":"mesh-deploy","spec":"SCE Mesh §16.4","message":"§16.4 SOME/IP region-liveness service-ID pin collision at 0x8185: partitions ['alpha__P__l', 'beta__P__r'] all pin the same value via deploy.yaml `someip_liveness_service_id:`. Each pin must be unique inside the [0x8180, 0x81FF] sub-range. Repick the pin on one of the listed partitions or drop a pin to fall back to the counter auto-assigner.","actual":"0x8185"}"#,
             ),
             (
+                "mesh/deploy-someip-machine-liveness-service-id-overflow",
+                DeployError::SomeipMachineLivenessServiceIdOverflow {
+                    participant_count: 129,
+                    ceiling: 128,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:00af94fa6eca6527","code":"mesh/deploy-someip-machine-liveness-service-id-overflow","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"§16.7 row 8 SOME/IP machine-liveness service-ID overflow: 129 machines exceed the 128-slot sub-range ceiling [0x8280, 0x82FF] (RFC F.X-4 subsystem range partitioning reserves a third disjoint 128-slot sub-range for machine-level liveness, disjoint from §9.6 invoke's [0x8100, 0x817F] and §16.4 region-liveness's [0x8180, 0x81FF]). Drop `liveliness:` from some SOME/IP machines, switch them to Zenoh transport, or split deploy.yaml across multi-OEM domains.","actual":"129"}"#,
+            ),
+            (
+                "mesh/deploy-someip-machine-liveness-service-id-pin-out-of-range",
+                DeployError::SomeipMachineLivenessServiceIdPinOutOfRange {
+                    machine: "brake_ctrl".into(),
+                    pinned_id: 0x827F,
+                    range_lo: 0x8280,
+                    range_hi: 0x82FF,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:2262f524a063ef22","code":"mesh/deploy-someip-machine-liveness-service-id-pin-out-of-range","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"machine 'brake_ctrl': pinned `someip_machine_liveness_service_id: 0x827f` is outside the §16.7 row 8 SOME/IP machine-liveness sub-range [0x8280, 0x82ff] (RFC F.X-4). The lower SCE-reserved sub-ranges are reserved for §9.6 scxml-invoke and §16.4 region-liveness; pins outside the SCE-reserved namespace collide with OEM-owned service space. Pick a value inside [0x8280, 0x82ff] or drop the pin to use the auto-assigner.","actual":"0x827f"}"#,
+            ),
+            (
+                "mesh/deploy-someip-machine-liveness-service-id-pin-collision",
+                DeployError::SomeipMachineLivenessServiceIdPinCollision {
+                    machines: vec!["alpha".into(), "beta".into()],
+                    pinned_id: 0x8285,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:4a0d4b54f2c7ffe4","code":"mesh/deploy-someip-machine-liveness-service-id-pin-collision","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"§16.7 row 8 SOME/IP machine-liveness service-ID pin collision at 0x8285: machines ['alpha', 'beta'] all pin the same value via deploy.yaml `someip_machine_liveness_service_id:`. Each pin must be unique inside the [0x8280, 0x82FF] sub-range. Repick the pin on one of the listed machines or drop a pin to fall back to the counter auto-assigner.","actual":"0x8285"}"#,
+            ),
+            (
                 "mesh/deploy-partition-barrier-timeout-invalid",
                 DeployError::PartitionBarrierTimeoutInvalid {
                     partition: "motor_left".into(),
@@ -4005,6 +4055,9 @@ mod tests {
             | MeshDeploySomeipLivenessServiceIdOverflow
             | MeshDeploySomeipLivenessServiceIdPinOutOfRange
             | MeshDeploySomeipLivenessServiceIdPinCollision
+            | MeshDeploySomeipMachineLivenessServiceIdOverflow
+            | MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange
+            | MeshDeploySomeipMachineLivenessServiceIdPinCollision
             | MeshDeployPartitionBarrierTimeoutInvalid
             | MeshPartitionParallelRootUndesignated
             | MeshPartitionParallelRootAmbiguous
@@ -4317,6 +4370,9 @@ mod tests {
                 | MeshDeploySomeipLivenessServiceIdOverflow
                 | MeshDeploySomeipLivenessServiceIdPinOutOfRange
                 | MeshDeploySomeipLivenessServiceIdPinCollision
+                | MeshDeploySomeipMachineLivenessServiceIdOverflow
+                | MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange
+                | MeshDeploySomeipMachineLivenessServiceIdPinCollision
                 | MeshDeployPartitionBarrierTimeoutInvalid
                 | MeshPartitionParallelRootUndesignated
                 | MeshPartitionParallelRootAmbiguous
@@ -4360,9 +4416,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            147,
+            150,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 147 distinct variants to match the DiagnosticCode \
+             expected 150 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

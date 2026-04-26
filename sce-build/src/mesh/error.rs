@@ -660,6 +660,66 @@ pub enum DeployError {
         pinned_id: u16,
     },
 
+    /// More machines opt into §16.7 row 8 SOME/IP machine-level liveness
+    /// (RFC F.X-4) than fit in the F.X-4-reserved sub-range
+    /// `[0x8280, 0x82FF]` (128 slots). Operator fix: drop `liveliness:`
+    /// from a SOME/IP-only machine, switch some machines to Zenoh
+    /// transport (which carries row 8 + row 13 unconditionally), or
+    /// split the deploy across multi-OEM domains.
+    #[error("§16.7 row 8 SOME/IP machine-liveness service-ID overflow: \
+             {participant_count} machines exceed the {ceiling}-slot \
+             sub-range ceiling [0x8280, 0x82FF] (RFC F.X-4 subsystem range \
+             partitioning reserves a third disjoint 128-slot sub-range \
+             for machine-level liveness, disjoint from §9.6 invoke's \
+             [0x8100, 0x817F] and §16.4 region-liveness's [0x8180, 0x81FF]). \
+             Drop `liveliness:` from some SOME/IP machines, switch them \
+             to Zenoh transport, or split deploy.yaml across multi-OEM \
+             domains.")]
+    SomeipMachineLivenessServiceIdOverflow {
+        participant_count: usize,
+        ceiling: usize,
+    },
+
+    /// A machine pinned `someip_machine_liveness_service_id:` outside the
+    /// §16.7 row 8 SOME/IP machine-liveness sub-range `[0x8280, 0x82FF]`
+    /// (RFC F.X-4). Pins below the sub-range collide with F.X-3 region-
+    /// liveness or F.X-1 invoke; pins above escape the SCE-reserved
+    /// namespace into OEM-owned space. Operator fix: choose a pin inside
+    /// the sub-range, or remove the pin to let the counter auto-assign.
+    #[error("machine '{machine}': pinned \
+             `someip_machine_liveness_service_id: {pinned_id:#06x}` is \
+             outside the §16.7 row 8 SOME/IP machine-liveness sub-range \
+             [{range_lo:#06x}, {range_hi:#06x}] (RFC F.X-4). The lower \
+             SCE-reserved sub-ranges are reserved for §9.6 scxml-invoke \
+             and §16.4 region-liveness; pins outside the SCE-reserved \
+             namespace collide with OEM-owned service space. Pick a value \
+             inside [{range_lo:#06x}, {range_hi:#06x}] or drop the pin to \
+             use the auto-assigner.")]
+    SomeipMachineLivenessServiceIdPinOutOfRange {
+        machine: String,
+        pinned_id: u16,
+        range_lo: u16,
+        range_hi: u16,
+    },
+
+    /// Two or more machines pinned the same
+    /// `someip_machine_liveness_service_id:` — author error, deterministic
+    /// conflict at parse time (RFC F.X-4). Operator fix: choose a distinct
+    /// pin for one of the listed machines, or drop one pin to let the
+    /// counter auto-assign.
+    #[error("§16.7 row 8 SOME/IP machine-liveness service-ID pin collision \
+             at {pinned_id:#06x}: machines [{}] all pin the same value via \
+             deploy.yaml `someip_machine_liveness_service_id:`. Each pin \
+             must be unique inside the [0x8280, 0x82FF] sub-range. Repick \
+             the pin on one of the listed machines or drop a pin to fall \
+             back to the counter auto-assigner.",
+             .machines.iter().map(|m| format!("'{m}'"))
+                 .collect::<Vec<_>>().join(", "))]
+    SomeipMachineLivenessServiceIdPinCollision {
+        machines: Vec<String>,
+        pinned_id: u16,
+    },
+
     /// A partition declared `barrier_timeout_ms:` with a value that
     /// makes the distributed parallel-final barrier (SCE_MESH.md
     /// §16.5) meaningless. Today the sole rejected value is `0`: a
@@ -1817,6 +1877,50 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             key_fragments: {
                 let mut k = vec![format!("{pinned_id:#06x}")];
                 k.extend(partition_keys.iter().cloned());
+                k
+            },
+        },
+        DeployError::SomeipMachineLivenessServiceIdOverflow {
+            participant_count,
+            ceiling,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySomeipMachineLivenessServiceIdOverflow,
+            stage: Stage::MeshDeploy,
+            actual: Some(participant_count.to_string()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![participant_count.to_string(), ceiling.to_string()],
+        },
+        DeployError::SomeipMachineLivenessServiceIdPinOutOfRange {
+            machine,
+            pinned_id,
+            range_lo,
+            range_hi,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange,
+            stage: Stage::MeshDeploy,
+            actual: Some(format!("{pinned_id:#06x}")),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                format!("{pinned_id:#06x}"),
+                format!("{range_lo:#06x}"),
+                format!("{range_hi:#06x}"),
+            ],
+        },
+        DeployError::SomeipMachineLivenessServiceIdPinCollision {
+            machines,
+            pinned_id,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySomeipMachineLivenessServiceIdPinCollision,
+            stage: Stage::MeshDeploy,
+            actual: Some(format!("{pinned_id:#06x}")),
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut k = vec![format!("{pinned_id:#06x}")];
+                k.extend(machines.iter().cloned());
                 k
             },
         },

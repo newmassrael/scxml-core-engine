@@ -104,6 +104,29 @@ pub const SCXML_LIVENESS_SERVICE_CEILING: u16 = 0x81FF;
 pub const SCXML_LIVENESS_SERVICE_RANGE_SIZE: usize =
     (SCXML_LIVENESS_SERVICE_CEILING - SCXML_LIVENESS_SERVICE_BASE + 1) as usize;
 
+/// Base of the SCE-reserved §16.7 row 8 machine-level liveness service ID
+/// sub-range (RFC F.X-4). Disjoint from F.X-1 invoke (`[0x8100, 0x817F]`)
+/// and F.X-3 region-liveness (`[0x8180, 0x81FF]`); the gap `[0x8200, 0x827F]`
+/// is reserved as documented headroom for a future fourth SCE subsystem
+/// (heartbeat / server-pool liveness / etc.) so F.X-4's commit does not
+/// have to predict where that axis goes.
+pub const SCXML_MACHINE_LIVENESS_SERVICE_BASE: u16 = 0x8280;
+
+/// Inclusive ceiling of the §16.7 row 8 machine-level liveness service ID
+/// sub-range under the hybrid (counter + optional pin) allocator
+/// (RFC F.X-4). The sub-range is `[0x8280, 0x82FF]` — 128 slots.
+pub const SCXML_MACHINE_LIVENESS_SERVICE_CEILING: u16 = 0x82FF;
+
+/// Number of slots in the §16.7 row 8 machine-liveness sub-range
+/// (`SCXML_MACHINE_LIVENESS_SERVICE_CEILING - SCXML_MACHINE_LIVENESS_SERVICE_BASE + 1`).
+/// Used as the overflow ceiling by [`assign_machine_liveness_service_ids`]
+/// and named in the
+/// [`crate::mesh::error::DeployError::SomeipMachineLivenessServiceIdOverflow`]
+/// diagnostic so operators see the exact bound their participant count
+/// crossed.
+pub const SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE: usize =
+    (SCXML_MACHINE_LIVENESS_SERVICE_CEILING - SCXML_MACHINE_LIVENESS_SERVICE_BASE + 1) as usize;
+
 /// Single-instance MVP for §9.6 endpoints. Mirror of the C++
 /// `SCXML_INVOKE_INSTANCE_ID` constexpr. Multi-instance pool support for
 /// §9.6 endpoints would require lifting §14.4 Gap 7 plumbing into the
@@ -366,11 +389,9 @@ pub enum AssignLivenessServiceIdError {
 /// (e.g. reordering the YAML, renaming a non-participant) preserve the
 /// assignment.
 ///
-/// **Why a separate function from [`assign_invoke_service_ids`]?** RFC F.X-3
-/// D2 reverse-default 1 — measured ROI rejects generic extraction at this
-/// stack height (two callsites, retro-churn dominates net saving). A third
-/// SCE-reserved subsystem would be the natural trigger to extract a shared
-/// `mesh::someip::range_alloc` helper covering all three.
+/// **Body shared with F.X-1 + F.X-4.** RFC F.X-4 D2 extracted [`range_alloc`]
+/// at the third-consumer threshold; this function is now a thin wrapper
+/// passing F.X-3's range constants + per-subsystem error constructors.
 pub fn assign_liveness_service_ids(
     participants: &std::collections::BTreeMap<String, Option<u16>>,
 ) -> Result<std::collections::BTreeMap<String, u16>, AssignLivenessServiceIdError> {
@@ -392,6 +413,88 @@ pub fn assign_liveness_service_ids(
         },
         |partition_keys, pinned_id| AssignLivenessServiceIdError::PinCollision {
             partition_keys,
+            pinned_id,
+        },
+    )
+}
+
+// ── Hybrid (counter + optional pin) §16.7 row 8 machine-liveness assigner ──
+
+/// Errors from the hybrid §16.7 row 8 machine-level liveness service ID
+/// assigner ([`assign_machine_liveness_service_ids`]). Each variant carries
+/// the operator-facing payload needed to reach a clear deploy.yaml fix; the
+/// deploy-layer validator
+/// ([`crate::mesh::deploy::validate_someip_machine_liveness_service_ids`])
+/// converts these into [`crate::mesh::error::DeployError`] variants of the
+/// same shape so the diagnostic chain stays typed end-to-end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssignMachineLivenessServiceIdError {
+    /// Total participant count exceeds [`SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE`].
+    /// Counter scheme is collision-free up to the ceiling, so the only
+    /// overflow shape is "too many participants".
+    Overflow {
+        participant_count: usize,
+        ceiling: usize,
+    },
+    /// A pinned ID falls outside the machine-liveness sub-range
+    /// `[SCXML_MACHINE_LIVENESS_SERVICE_BASE, SCXML_MACHINE_LIVENESS_SERVICE_CEILING]`.
+    /// Pins below the sub-range collide with the F.X-3 region-liveness
+    /// reservation or the F.X-1 invoke reservation; pins above escape the
+    /// SCE-reserved namespace into OEM-owned space.
+    PinOutOfRange {
+        machine: String,
+        pinned_id: u16,
+        range_lo: u16,
+        range_hi: u16,
+    },
+    /// Two or more machines pinned the same ID. Author error — operator
+    /// fix is to repick one of the pins.
+    PinCollision {
+        machines: Vec<String>,
+        pinned_id: u16,
+    },
+}
+
+/// Hybrid (counter + optional author-pin) assigner for §16.7 row 8
+/// machine-level liveness service IDs. Per RFC F.X-4
+/// (`claudedocs/rfc-someip-machine-liveness.md`).
+///
+/// **Input.** `participants` maps each canonical liveness participant key
+/// (the machine name `<machine>`, see RFC F.X-4 D1) to its optional pin
+/// from deploy.yaml `someip_machine_liveness_service_id:` (per-machine,
+/// see D3). The map's keys ARE the canonical participant set — the caller
+/// (deploy layer) is responsible for collecting them from every machine
+/// that opts into `liveliness:` and uses SOME/IP transport.
+///
+/// **Output.** A map from each machine name to its assigned service ID in
+/// the F.X-4 sub-range `[0x8280, 0x82FF]`. Disjoint from the F.X-1 invoke
+/// sub-range and the F.X-3 region-liveness sub-range by construction.
+///
+/// **Body shared with F.X-1 + F.X-3.** Thin wrapper over [`range_alloc`]
+/// (RFC F.X-4 D2) — same allocator body as the other two SOMEIP
+/// service-ID subsystems with F.X-4's range constants + per-subsystem
+/// error constructors.
+pub fn assign_machine_liveness_service_ids(
+    participants: &std::collections::BTreeMap<String, Option<u16>>,
+) -> Result<std::collections::BTreeMap<String, u16>, AssignMachineLivenessServiceIdError> {
+    range_alloc(
+        participants,
+        SCXML_MACHINE_LIVENESS_SERVICE_BASE,
+        SCXML_MACHINE_LIVENESS_SERVICE_CEILING,
+        |participant_count, ceiling| AssignMachineLivenessServiceIdError::Overflow {
+            participant_count,
+            ceiling,
+        },
+        |machine, pinned_id, range_lo, range_hi| {
+            AssignMachineLivenessServiceIdError::PinOutOfRange {
+                machine,
+                pinned_id,
+                range_lo,
+                range_hi,
+            }
+        },
+        |machines, pinned_id| AssignMachineLivenessServiceIdError::PinCollision {
+            machines,
             pinned_id,
         },
     )
@@ -819,5 +922,171 @@ mod tests {
         let liveness_set: std::collections::HashSet<u16> =
             liveness_out.values().copied().collect();
         assert!(invoke_set.is_disjoint(&liveness_set));
+    }
+
+    // ── §16.7 row 8 machine-liveness assigner (RFC F.X-4) ──────────────
+
+    #[test]
+    fn machine_liveness_constants_disjoint_from_invoke_and_region() {
+        // RFC F.X-4 D1: machine-liveness sub-range is disjoint from both
+        // F.X-1 invoke and F.X-3 region-liveness. The 128-slot gap
+        // [0x8200, 0x827F] is documented headroom for a future fourth
+        // SCE subsystem.
+        assert_eq!(SCXML_MACHINE_LIVENESS_SERVICE_BASE, 0x8280);
+        assert_eq!(SCXML_MACHINE_LIVENESS_SERVICE_CEILING, 0x82FF);
+        assert_eq!(SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE, 128);
+        // Disjoint from F.X-1 invoke [0x8100, 0x817F].
+        assert!(SCXML_MACHINE_LIVENESS_SERVICE_BASE > SCXML_INVOKE_SERVICE_CEILING);
+        // Disjoint from F.X-3 region-liveness [0x8180, 0x81FF].
+        assert!(SCXML_MACHINE_LIVENESS_SERVICE_BASE > SCXML_LIVENESS_SERVICE_CEILING);
+        // Documented gap [0x8200, 0x827F] for future fourth subsystem
+        // (RFC F.X-4 D1) — not contiguous with F.X-3.
+        assert_eq!(SCXML_LIVENESS_SERVICE_CEILING + 1, 0x8200);
+        assert_eq!(SCXML_MACHINE_LIVENESS_SERVICE_BASE - 1, 0x827F);
+    }
+
+    #[test]
+    fn machine_liveness_assigner_empty_input_succeeds() {
+        let out = assign_machine_liveness_service_ids(&p(&[])).expect("empty must succeed");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn machine_liveness_assigner_unpinned_lex_counter_from_base() {
+        let out = assign_machine_liveness_service_ids(&p(&[
+            ("zoo", None),
+            ("alpha", None),
+            ("mid", None),
+        ]))
+        .expect("unpinned must succeed");
+        assert_eq!(out["alpha"], SCXML_MACHINE_LIVENESS_SERVICE_BASE);
+        assert_eq!(out["mid"], SCXML_MACHINE_LIVENESS_SERVICE_BASE + 1);
+        assert_eq!(out["zoo"], SCXML_MACHINE_LIVENESS_SERVICE_BASE + 2);
+    }
+
+    #[test]
+    fn machine_liveness_assigner_pinned_keeps_pin_unpinned_skips_reserved() {
+        // alpha pinned at 0x8281 — auto must skip 0x8281, taking 0x8280
+        // for beta then 0x8282 for gamma.
+        let out = assign_machine_liveness_service_ids(&p(&[
+            ("alpha", Some(0x8281)),
+            ("beta", None),
+            ("gamma", None),
+        ]))
+        .expect("pin + auto mix must succeed");
+        assert_eq!(out["alpha"], 0x8281);
+        assert_eq!(out["beta"], 0x8280);
+        assert_eq!(out["gamma"], 0x8282);
+    }
+
+    #[test]
+    fn machine_liveness_assigner_overflow_at_one_over_ceiling() {
+        let mut input: std::collections::BTreeMap<String, Option<u16>> =
+            std::collections::BTreeMap::new();
+        for i in 0..(SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE + 1) {
+            input.insert(format!("m{i:03}"), None);
+        }
+        match assign_machine_liveness_service_ids(&input) {
+            Err(AssignMachineLivenessServiceIdError::Overflow {
+                participant_count,
+                ceiling,
+            }) => {
+                assert_eq!(participant_count, SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE + 1);
+                assert_eq!(ceiling, SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE);
+            }
+            other => panic!("expected Overflow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn machine_liveness_assigner_exact_fill_succeeds() {
+        let mut input: std::collections::BTreeMap<String, Option<u16>> =
+            std::collections::BTreeMap::new();
+        for i in 0..SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE {
+            input.insert(format!("m{i:03}"), None);
+        }
+        let out = assign_machine_liveness_service_ids(&input).expect("exact-fill must succeed");
+        assert_eq!(out.len(), SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE);
+        let max = *out.values().max().unwrap();
+        assert_eq!(max, SCXML_MACHINE_LIVENESS_SERVICE_CEILING);
+    }
+
+    #[test]
+    fn machine_liveness_assigner_pin_below_range_rejected() {
+        // 0x827F is the last slot of the documented gap; pinning it as
+        // a machine-liveness ID is out-of-range.
+        let out = assign_machine_liveness_service_ids(&p(&[("alpha", Some(0x827F))]));
+        match out {
+            Err(AssignMachineLivenessServiceIdError::PinOutOfRange {
+                machine,
+                pinned_id,
+                range_lo,
+                range_hi,
+            }) => {
+                assert_eq!(machine, "alpha");
+                assert_eq!(pinned_id, 0x827F);
+                assert_eq!(range_lo, SCXML_MACHINE_LIVENESS_SERVICE_BASE);
+                assert_eq!(range_hi, SCXML_MACHINE_LIVENESS_SERVICE_CEILING);
+            }
+            other => panic!("expected PinOutOfRange (below), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn machine_liveness_assigner_pin_above_range_rejected() {
+        // 0x8300 is the first slot beyond the F.X-4 sub-range.
+        let out = assign_machine_liveness_service_ids(&p(&[("alpha", Some(0x8300))]));
+        match out {
+            Err(AssignMachineLivenessServiceIdError::PinOutOfRange {
+                machine,
+                pinned_id,
+                range_lo,
+                range_hi,
+            }) => {
+                assert_eq!(machine, "alpha");
+                assert_eq!(pinned_id, 0x8300);
+                assert_eq!(range_lo, SCXML_MACHINE_LIVENESS_SERVICE_BASE);
+                assert_eq!(range_hi, SCXML_MACHINE_LIVENESS_SERVICE_CEILING);
+            }
+            other => panic!("expected PinOutOfRange (above), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn machine_liveness_assigner_pin_collision_rejected() {
+        let out = assign_machine_liveness_service_ids(&p(&[
+            ("alpha", Some(0x8285)),
+            ("beta", Some(0x8285)),
+        ]));
+        match out {
+            Err(AssignMachineLivenessServiceIdError::PinCollision {
+                machines,
+                pinned_id,
+            }) => {
+                assert_eq!(machines, vec!["alpha".to_string(), "beta".to_string()]);
+                assert_eq!(pinned_id, 0x8285);
+            }
+            other => panic!("expected PinCollision, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn three_subsystem_allocators_yield_disjoint_id_sets() {
+        // RFC F.X-4 D1 cross-subsystem disjointness invariant for the
+        // three allocators. Same machine name fed into all three yields
+        // three distinct IDs from three disjoint sub-ranges.
+        let invoke = assign_invoke_service_ids(&p(&[("alpha", None)])).unwrap();
+        let region = assign_liveness_service_ids(&p(&[("alpha__P__l", None)])).unwrap();
+        let machine = assign_machine_liveness_service_ids(&p(&[("alpha", None)])).unwrap();
+        let invoke_id = invoke["alpha"];
+        let region_id = region["alpha__P__l"];
+        let machine_id = machine["alpha"];
+        assert!(invoke_id <= SCXML_INVOKE_SERVICE_CEILING);
+        assert!((SCXML_LIVENESS_SERVICE_BASE..=SCXML_LIVENESS_SERVICE_CEILING).contains(&region_id));
+        assert!((SCXML_MACHINE_LIVENESS_SERVICE_BASE..=SCXML_MACHINE_LIVENESS_SERVICE_CEILING).contains(&machine_id));
+        // Pairwise distinct.
+        assert_ne!(invoke_id, region_id);
+        assert_ne!(invoke_id, machine_id);
+        assert_ne!(region_id, machine_id);
     }
 }

@@ -830,6 +830,25 @@ pub struct MachineConfig {
     /// New auto-assigned participants will not shift pinned ones.
     #[serde(default, deserialize_with = "deserialize_someip_service_id")]
     pub someip_service_id: Option<u16>,
+
+    /// Optional author-pin for the §16.7 row 8 SOME/IP machine-level
+    /// liveness service ID, validated against the F.X-4 sub-range
+    /// `[0x8280, 0x82FF]`. Symmetric with [`MachineConfig::someip_service_id`]
+    /// at the per-machine block (the participant key for machine-liveness
+    /// is `<machine>`, not `<machine>__P__<partition>`).
+    ///
+    /// `None` → the F.X-4 hybrid allocator
+    /// ([`crate::mesh::transport::someip::assign_machine_liveness_service_ids`])
+    /// auto-assigns the lowest unreserved slot in lex order.
+    /// `Some(id)` → the allocator validates the pin is inside the sub-range
+    /// and disjoint from any other machine's pin; out-of-range / collision
+    /// raise the matching `DeployError::SomeipMachineLivenessServiceIdPin*`
+    /// at parse time.
+    ///
+    /// **YAML grammar**: same as `someip_service_id` — integer literal or
+    /// quoted hex string (preferred). Per RFC F.X-4 D3.
+    #[serde(default, deserialize_with = "deserialize_someip_machine_liveness_service_id")]
+    pub someip_machine_liveness_service_id: Option<u16>,
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].
@@ -872,6 +891,47 @@ where
                 serde::de::Error::custom(format!(
                     "someip_service_id: cannot parse hex literal '{s}' as u16: {e} \
                      (expected `0x8100`-style hex inside [0x0000, 0xFFFF])"
+                ))
+            })
+        }
+    }
+}
+
+/// Custom deserializer for [`MachineConfig::someip_machine_liveness_service_id`].
+/// Parallel to [`deserialize_someip_service_id`] for §16.7 row 8 SOME/IP
+/// machine-level liveness pins (RFC F.X-4 D3).
+fn deserialize_someip_machine_liveness_service_id<'de, D>(
+    deserializer: D,
+) -> Result<Option<u16>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum HexOrInt {
+        Int(u16),
+        Hex(String),
+    }
+
+    let opt = Option::<HexOrInt>::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(HexOrInt::Int(n)) => Ok(Some(n)),
+        Some(HexOrInt::Hex(s)) => {
+            let trimmed = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
+            {
+                rest
+            } else {
+                return Err(serde::de::Error::custom(format!(
+                    "someip_machine_liveness_service_id: hex string '{s}' must start with `0x` \
+                     (e.g. `\"0x8280\"`); raw decimal integers are also accepted but bare hex \
+                     strings without the prefix are rejected to avoid confusion"
+                )));
+            };
+            u16::from_str_radix(trimmed, 16).map(Some).map_err(|e| {
+                serde::de::Error::custom(format!(
+                    "someip_machine_liveness_service_id: cannot parse hex literal '{s}' as u16: \
+                     {e} (expected `0x8280`-style hex inside [0x0000, 0xFFFF])"
                 ))
             })
         }
@@ -1235,6 +1295,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_partitions_schema(&cfg)?;
     validate_someip_scxml_invoke_service_ids(&cfg)?;
     validate_someip_liveness_service_ids(&cfg)?;
+    validate_someip_machine_liveness_service_ids(&cfg)?;
 
     Ok(cfg)
 }
@@ -1576,21 +1637,21 @@ fn validate_ordering_timings(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// but the codegen template emitted zero observer code, leaving the
 /// handler unreachable (`feedback_silently_broken_hooks`).
 ///
-/// **Acceptance shapes:**
+/// **Acceptance shapes (post-RFC F.X-4):**
 /// - **Zenoh transport (any partition shape).** `sce/live/<machine>` and
 ///   per-partition `sce/live/<machine>/<partition>` tokens are emitted
 ///   on every Zenoh binding; row 8 + row 13 always reachable.
-/// - **SomeIP transport AND machine appears in a `partitions:` block
-///   with ≥2 sibling partitions** (RFC F.X-3). vsomeip
-///   `register_availability_handler` per-partition fires row 13
-///   `REGION_PARTITIONED`; row 8 SomeIP path remains deferred to F.X-4
-///   (memory `mesh_session_status_e2_in_progress.md`).
+/// - **SomeIP transport (any partition shape).** Under F.X-4 D4-shape-1
+///   every SOMEIP `liveliness:` opt-in implicitly enables row 8
+///   machine-level emission via the F.X-4 sub-range `[0x8280, 0x82FF]`
+///   (vsomeip `register_availability_handler` on the machine-level
+///   service). Row 13 region-liveness additionally fires when the
+///   machine appears across ≥2 sibling partitions (RFC F.X-3); single-
+///   partition machines are valid because row 8 alone keeps the silent-
+///   broken window closed.
 ///
 /// **Rejection shapes:**
 /// - Lease value invalid (any transport).
-/// - SomeIP transport AND machine has no partition declaration —
-///   single-process SomeIP has no orthogonal axis for "sibling partition
-///   death", so the row-13 handler would never fire.
 /// - Neither Zenoh nor SomeIP transport — no observer code emitted at
 ///   all.
 fn validate_liveliness(cfg: &DeployConfig) -> Result<(), DeployError> {
@@ -1617,41 +1678,23 @@ fn validate_liveliness(cfg: &DeployConfig) -> Result<(), DeployError> {
             continue;
         }
         if has_someip {
-            // SomeIP path requires ≥2 partitions of this machine for
-            // row 13 emission; without that, the availability_handler
-            // would have no sibling partition to subscribe to and the
-            // emission gate would compile zero observer code.
-            let sibling_partition_count = cfg
-                .partitions
-                .as_ref()
-                .map(|m| {
-                    m.iter()
-                        .filter(|(_, p)| p.machines.iter().any(|n| n == machine_name))
-                        .count()
-                })
-                .unwrap_or(0);
-            if sibling_partition_count >= 2 {
-                continue;
-            }
-            return Err(DeployError::InvalidLiveliness {
-                machine: machine_name.to_string(),
-                reason: format!(
-                    "machine has SomeIP transport but only {sibling_partition_count} \
-                     partition(s) in the `partitions:` block; SomeIP region-partition \
-                     liveness (SCE_MESH.md §16.4 / §16.7 row 13, RFC F.X-3) requires \
-                     ≥2 sibling partitions of the same machine for `register_availability_handler` \
-                     to have a peer to observe. Either declare the machine across \
-                     ≥2 partitions, add a Zenoh binding/server (which covers row 8 \
-                     + row 13 unconditionally), or drop `liveliness:`"
-                ),
-            });
+            // RFC F.X-4 D4-shape-1: every SOMEIP `liveliness:` opt-in
+            // is implicitly accepted because machine-level emission
+            // (row 8) is automatic. Partition count only affects whether
+            // row 13 (region-liveness) ALSO fires; a single-partition
+            // machine still has row 8 coverage and the
+            // reject_liveliness_without_handler gate ensures the SCXML
+            // carries an `error.communication` transition. The
+            // silent-broken window is closed.
+            continue;
         }
         return Err(DeployError::InvalidLiveliness {
             machine: machine_name.to_string(),
             reason: "machine has neither Zenoh nor SomeIP transport; `liveliness:` \
                      requires at least one `transport: zenoh` (any partition shape) \
-                     or `transport: someip` (with ≥2 partitions of this machine, \
-                     RFC F.X-3) — add a compatible binding/server or drop `liveliness:`"
+                     or `transport: someip` (any partition shape, RFC F.X-4 covers \
+                     row 8 unconditionally) — add a compatible binding/server or \
+                     drop `liveliness:`"
                 .to_string(),
         });
     }
@@ -2192,11 +2235,15 @@ pub(crate) fn assign_someip_liveness_service_ids(
 ) -> Result<std::collections::BTreeMap<String, u16>, DeployError> {
     use crate::mesh::transport::someip::{assign_liveness_service_ids, AssignLivenessServiceIdError};
 
-    // 1. Identify SomeIP-transport machines that opt into `liveliness:`.
-    //    These are the candidate machines whose partitions become
-    //    participants. validate_liveliness has already gated single-
-    //    partition cases out; we only see machines that pass the F.X-3
-    //    acceptance shape (SomeIP + ≥2 sibling partitions + liveliness).
+    // 1. Identify SomeIP-transport machines that opt into `liveliness:`
+    //    AND appear across ≥2 sibling partitions. Region-liveness (row 13)
+    //    is partition-axis-keyed; a machine in a single partition has no
+    //    sibling for `register_availability_handler` to observe. This
+    //    self-contained projection check no longer relies on
+    //    `validate_liveliness` to gate single-partition out — RFC F.X-4
+    //    D4 loosened that gate to accept single-partition SOMEIP
+    //    (row 8 covers it), so the F.X-3 assigner explicitly narrows to
+    //    its own row-13 scope here.
     let mut someip_liveness_machines: std::collections::BTreeSet<&str> =
         std::collections::BTreeSet::new();
     for device in cfg.topology.values() {
@@ -2211,6 +2258,20 @@ pub(crate) fn assign_someip_liveness_service_ids(
             // Zenoh; the F.X-3 SomeIP path activates only when SomeIP
             // is the sole transport carrying the liveness signal.
             if machine_uses_zenoh_transport(machine_cfg) {
+                continue;
+            }
+            // ≥2 partition gate (row-13-specific; row 8 has no such
+            // requirement under RFC F.X-4).
+            let sibling_partition_count = cfg
+                .partitions
+                .as_ref()
+                .map(|m| {
+                    m.iter()
+                        .filter(|(_, p)| p.machines.iter().any(|n| n == machine_name))
+                        .count()
+                })
+                .unwrap_or(0);
+            if sibling_partition_count < 2 {
                 continue;
             }
             someip_liveness_machines.insert(machine_name.as_str());
@@ -2269,6 +2330,107 @@ pub(crate) fn assign_someip_liveness_service_ids(
 /// obtain the same map without re-running the participant projection.
 fn validate_someip_liveness_service_ids(cfg: &DeployConfig) -> Result<(), DeployError> {
     assign_someip_liveness_service_ids(cfg).map(|_| ())
+}
+
+/// Walk the deploy participant set for §16.7 row 8 SOME/IP machine-level
+/// liveness, collect each SOME/IP `liveliness:`-opt-in machine as a
+/// participant keyed on `<machine>`, gather per-machine pins from
+/// `someip_machine_liveness_service_id:`, and run the F.X-4 hybrid
+/// allocator
+/// ([`crate::mesh::transport::someip::assign_machine_liveness_service_ids`]).
+/// Returns the deterministic
+/// `BTreeMap<machine_name, vsomeip::service_t>` codegen consumes for the
+/// §16.7 SOMEIP machine-level liveness path.
+///
+/// **Participant projection (RFC F.X-4 D4-shape-1).** Every machine that
+/// (a) declares `liveliness:` AND (b) uses SOME/IP transport AND (c) does
+/// NOT use Zenoh transport (Zenoh covers row 8 unconditionally via the
+/// 2-segment `sce/live/<machine>` token) is a participant. Critically,
+/// **partition count is irrelevant for machine-level liveness** —
+/// single-partition SOME/IP machines that opt into `liveliness:` are
+/// valid F.X-4 participants and must reach codegen. This is the explicit
+/// difference from F.X-3's region-liveness participant projection (which
+/// requires ≥2 sibling partitions).
+///
+/// **Rejection shapes** (each maps to a typed [`DeployError`] variant):
+/// 1. **Overflow** — participant count > 128 (the F.X-4 sub-range
+///    ceiling, RFC F.X-4 D1).
+/// 2. **Pin out-of-range** — author-pinned
+///    `someip_machine_liveness_service_id:` falls outside the §16.7
+///    SOME/IP machine-liveness sub-range `[0x8280, 0x82FF]`.
+/// 3. **Pin-vs-pin collision** — two or more machines pin the same value.
+///
+/// Pin-vs-auto collision is impossible by construction (assigner counter
+/// skips reserved slots).
+pub(crate) fn assign_someip_machine_liveness_service_ids(
+    cfg: &DeployConfig,
+) -> Result<std::collections::BTreeMap<String, u16>, DeployError> {
+    use crate::mesh::transport::someip::{
+        assign_machine_liveness_service_ids, AssignMachineLivenessServiceIdError,
+    };
+
+    // BTreeMap insertion preserves lex order so the assigner's
+    // deterministic output is stable across deploy.yaml edits that
+    // don't change the participant set.
+    let mut participants_with_pins: std::collections::BTreeMap<String, Option<u16>> =
+        std::collections::BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine_cfg) in &device.machines {
+            if machine_cfg.liveliness.is_none() {
+                continue;
+            }
+            if !machine_uses_someip_transport(machine_cfg) {
+                continue;
+            }
+            // A machine using both Zenoh and SomeIP routes liveness over
+            // Zenoh; the F.X-4 SomeIP path activates only when SomeIP
+            // is the sole transport carrying the liveness signal.
+            if machine_uses_zenoh_transport(machine_cfg) {
+                continue;
+            }
+            participants_with_pins.insert(
+                machine_name.clone(),
+                machine_cfg.someip_machine_liveness_service_id,
+            );
+        }
+    }
+
+    match assign_machine_liveness_service_ids(&participants_with_pins) {
+        Ok(map) => Ok(map),
+        Err(AssignMachineLivenessServiceIdError::Overflow {
+            participant_count,
+            ceiling,
+        }) => Err(DeployError::SomeipMachineLivenessServiceIdOverflow {
+            participant_count,
+            ceiling,
+        }),
+        Err(AssignMachineLivenessServiceIdError::PinOutOfRange {
+            machine,
+            pinned_id,
+            range_lo,
+            range_hi,
+        }) => Err(DeployError::SomeipMachineLivenessServiceIdPinOutOfRange {
+            machine,
+            pinned_id,
+            range_lo,
+            range_hi,
+        }),
+        Err(AssignMachineLivenessServiceIdError::PinCollision {
+            machines,
+            pinned_id,
+        }) => Err(DeployError::SomeipMachineLivenessServiceIdPinCollision {
+            machines,
+            pinned_id,
+        }),
+    }
+}
+
+/// Parse-time validator wrapper around
+/// [`assign_someip_machine_liveness_service_ids`]. Discards the assignment
+/// map; codegen calls the assigner directly to obtain the same map without
+/// re-running the participant projection.
+fn validate_someip_machine_liveness_service_ids(cfg: &DeployConfig) -> Result<(), DeployError> {
+    assign_someip_machine_liveness_service_ids(cfg).map(|_| ())
 }
 
 // ── Helpers for topology/codegen ────────────────────────────
@@ -3006,14 +3168,15 @@ topology:
     }
 
     #[test]
-    fn liveliness_someip_only_machine_rejected() {
-        // SomeIP-only machine + `liveliness:` is the silent-broken case
-        // that motivated this check: the codegen template gates
-        // liveliness emission on `"zenoh" in transport_types`, so the
-        // handler required by `reject_liveliness_without_handler` would
-        // compile but never fire. Must reject at parse time with a
-        // reason naming Zenoh specifically so the author can decide to
-        // either add a Zenoh binding or drop the section.
+    fn liveliness_someip_only_machine_accepted_under_fx4() {
+        // RFC F.X-4 D4-shape-1: SomeIP-only machine + `liveliness:` is
+        // accepted because every SOMEIP `liveliness:` opt-in implicitly
+        // enables row 8 machine-level emission (vsomeip
+        // `register_availability_handler` on the F.X-4 machine-level
+        // service ID in [0x8280, 0x82FF]). The silent-broken window from
+        // F.X-3's deferral state is closed; partition count is irrelevant
+        // for row-8 coverage. The pre-F.X-4 rejection branch ("SomeIP +
+        // liveliness needs Zenoh") is gone.
         let yaml = r##"
 version: "1.0"
 topology:
@@ -3033,20 +3196,19 @@ topology:
         liveliness:
           lease_ms: 200
 "##;
-        match parse_deploy_str(yaml) {
-            Err(DeployError::InvalidLiveliness { machine, reason }) => {
-                assert_eq!(machine, "brake");
-                assert!(
-                    reason.contains("Zenoh"),
-                    "reason must name Zenoh specifically so the fix is discoverable: {reason}"
-                );
-                assert!(
-                    reason.contains("SomeIP") || reason.contains("deferred"),
-                    "reason should mention SomeIP deferral so authors know this is not a bug: {reason}"
-                );
-            }
-            other => panic!("expected InvalidLiveliness (transport-compat), got {other:?}"),
-        }
+        let cfg = parse_deploy_str(yaml).expect("F.X-4 D4-shape-1 accepts SomeIP + liveliness");
+        // Machine-level liveness allocator must include `brake` in the
+        // F.X-4 sub-range [0x8280, 0x82FF] — the load-bearing positive
+        // assertion that distinguishes "accepted" from "silently no-op".
+        let machine_ids =
+            assign_someip_machine_liveness_service_ids(&cfg).expect("assigner must succeed");
+        let brake_id = *machine_ids
+            .get("brake")
+            .expect("brake must be a machine-liveness participant under F.X-4 D4-shape-1");
+        assert!(
+            (0x8280..=0x82FF).contains(&brake_id),
+            "brake machine-liveness ID must land in F.X-4 sub-range: got {brake_id:#06x}"
+        );
     }
 
     #[test]
@@ -3174,9 +3336,12 @@ partitions:
     }
 
     #[test]
-    fn liveliness_someip_with_single_partition_rejected() {
-        // RFC F.X-3 D6 rejection: SomeIP + only 1 partition has no
-        // sibling for register_availability_handler to observe.
+    fn liveliness_someip_with_single_partition_accepted_under_fx4() {
+        // RFC F.X-4 D4-shape-1: SomeIP + single partition + liveliness
+        // is now valid because row 8 machine-level emission covers the
+        // single-process case. F.X-3's "≥2 sibling partitions required"
+        // branch only applied to row 13 (region-liveness); row 8 has no
+        // such requirement under F.X-4.
         let yaml = r##"
 version: "1.0"
 topology:
@@ -3202,16 +3367,24 @@ partitions:
       parallel_regions:
         - { machine: brake, region: r_left }
 "##;
-        match parse_deploy_str(yaml) {
-            Err(DeployError::InvalidLiveliness { machine, reason }) => {
-                assert_eq!(machine, "brake");
-                assert!(
-                    reason.contains("≥2 sibling partitions"),
-                    "single-partition rejection must cite the sibling-count requirement: {reason}"
-                );
-            }
-            other => panic!("expected InvalidLiveliness (single partition), got {other:?}"),
-        }
+        let cfg = parse_deploy_str(yaml).expect("F.X-4 D4-shape-1 accepts single-partition SOMEIP");
+        // The F.X-4 machine-level allocator includes `brake` regardless
+        // of partition count.
+        let machine_ids =
+            assign_someip_machine_liveness_service_ids(&cfg).expect("assigner must succeed");
+        assert!(
+            machine_ids.contains_key("brake"),
+            "single-partition SOMEIP machine must still be a row-8 participant"
+        );
+        // Region-liveness allocator filters by partition count under
+        // F.X-3's existing semantics: with only 1 partition, there is
+        // no row-13 participant.
+        let region_ids =
+            assign_someip_liveness_service_ids(&cfg).expect("assigner must succeed");
+        assert!(
+            region_ids.is_empty(),
+            "single-partition machine must not generate row-13 region-liveness participants: {region_ids:?}"
+        );
     }
 
     #[test]
@@ -3364,9 +3537,14 @@ partitions:
     }
 
     #[test]
-    fn liveliness_someip_no_partitions_keeps_rejection() {
-        // F.X-3 D6 reverse-default: SomeIP + no `partitions:` block at
-        // all must keep the rejection (no silent no-op).
+    fn liveliness_someip_no_partitions_accepted_under_fx4() {
+        // RFC F.X-4 D4-shape-1: SomeIP + no `partitions:` block at all
+        // is accepted because row 8 machine-level emission covers
+        // non-partitioned machines. The F.X-3 "no partitions" rejection
+        // branch is gone — the silent-broken window stays closed
+        // because handler-gate (`reject_liveliness_without_handler`)
+        // requires `error.communication`, and machine-level emission
+        // ensures it fires.
         let yaml = r##"
 version: "1.0"
 topology:
@@ -3386,12 +3564,13 @@ topology:
         liveliness:
           lease_ms: 200
 "##;
-        match parse_deploy_str(yaml) {
-            Err(DeployError::InvalidLiveliness { machine, .. }) => {
-                assert_eq!(machine, "brake");
-            }
-            other => panic!("expected InvalidLiveliness (no partitions), got {other:?}"),
-        }
+        let cfg = parse_deploy_str(yaml).expect("F.X-4 D4-shape-1 accepts no-partitions SOMEIP");
+        let machine_ids =
+            assign_someip_machine_liveness_service_ids(&cfg).expect("assigner must succeed");
+        assert!(
+            machine_ids.contains_key("brake"),
+            "no-partitions SOMEIP machine must be a row-8 participant"
+        );
     }
 
     #[test]
