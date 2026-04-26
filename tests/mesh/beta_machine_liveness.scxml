@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §16.7 row 8 (PEER_PARTITIONED) E2E fixture — beta machine.
+     Mirror of alpha_machine_liveness.scxml; subscribes to alpha's
+     machine-level liveness service. The two machines symmetrically
+     observe each other's row-8 axis. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="beta_machine_liveness" initial="idle">
+    <state id="idle">
+        <onentry>
+            <send target="#alpha_machine_liveness" event="event.ping"/>
+        </onentry>
+        <transition event="event.ping" target="idle"/>
+        <transition event="error.communication" target="peer_loss"/>
+    </state>
+    <final id="peer_loss"/>
+</scxml>

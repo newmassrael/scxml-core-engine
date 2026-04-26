@@ -3845,6 +3845,87 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
                  COMMAND mesh_someip_region_liveness_right_compile_test)
         set_tests_properties(mesh_someip_region_liveness_right_compile PROPERTIES TIMEOUT 5)
 
+        # ── §16.7 row 8 machine-level liveness (RFC F.X-4 SOMEIP) ────
+        # Sister to mesh_someip_region_liveness above (RFC F.X-3 row 13).
+        # F.X-4 D1 carves a third disjoint SCE-internal sub-range
+        # [0x8280, 0x82FF] for machine-level liveness; the
+        # `register_availability_handler` shape mirrors F.X-3 but on
+        # per-machine service IDs (vs F.X-3's per-partition keys), so
+        # single-partition SOMEIP machines that opt into `liveliness:`
+        # are now valid under D4-shape-1 implicit machine-level emit.
+        # Stage C lands the compile-verification gate; Stage D adds the
+        # netns-runtime fixture (kill peer SCE app → SCXML observes
+        # `error.communication / PEER_PARTITIONED`).
+        set(MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_machine_liveness_generated")
+
+        foreach(machine_id alpha beta)
+            set(machine_name ${machine_id}_machine_liveness)
+            add_custom_command(
+                OUTPUT "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}/${machine_name}_sm.h"
+                       "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}/${machine_name}_transport.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                        "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${machine_name}.scxml"
+                        -l cpp -o "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}"
+                        --deploy "${MESH_TEST_DIR}/deploy_someip_machine_liveness.yaml"
+                        --write-deps
+                        "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}/${machine_name}_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/alpha_machine_liveness.scxml"
+                        "${MESH_TEST_DIR}/beta_machine_liveness.scxml"
+                        "${MESH_TEST_DIR}/deploy_someip_machine_liveness.yaml"
+                        "${MESH_TEST_DIR}/vsomeip_someip_machine_liveness_codegen.json"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}/${machine_name}_sm.h.d"
+                COMMENT "Mesh §16.7 SOMEIP machine liveness: Generating ${machine_id}/${machine_name}_{sm,transport}.h"
+                VERBATIM
+            )
+        endforeach()
+
+        # Per-machine compile-verification binaries. Two binaries are
+        # required because each machine's generated files live under its
+        # own `SCE::Generated::<machine>::` namespace; SCE_F4_MACHINE_*
+        # macros drive the per-machine `static_assert` block in the test
+        # source so the lex-sorted counter assignments (alpha → 0x8280,
+        # beta → 0x8281) are byte-pinned at compile time.
+        add_executable(mesh_someip_machine_liveness_alpha_compile_test
+            mesh/test_mesh_someip_machine_liveness_compile.cpp
+            "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha/alpha_machine_liveness_sm.h"
+            "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha/alpha_machine_liveness_transport.h")
+        target_include_directories(mesh_someip_machine_liveness_alpha_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha"
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+        target_link_libraries(mesh_someip_machine_liveness_alpha_compile_test
+            PRIVATE sce_runtime sce_mesh_common vsomeip3)
+        target_compile_definitions(mesh_someip_machine_liveness_alpha_compile_test
+            PRIVATE SCE_F4_MACHINE_ALPHA)
+        target_compile_features(mesh_someip_machine_liveness_alpha_compile_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_machine_liveness_alpha_compile_test)
+        add_test(NAME mesh_someip_machine_liveness_alpha_compile
+                 COMMAND mesh_someip_machine_liveness_alpha_compile_test)
+        set_tests_properties(mesh_someip_machine_liveness_alpha_compile PROPERTIES TIMEOUT 5)
+
+        add_executable(mesh_someip_machine_liveness_beta_compile_test
+            mesh/test_mesh_someip_machine_liveness_compile.cpp
+            "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta/beta_machine_liveness_sm.h"
+            "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta/beta_machine_liveness_transport.h")
+        target_include_directories(mesh_someip_machine_liveness_beta_compile_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta"
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh)
+        target_link_libraries(mesh_someip_machine_liveness_beta_compile_test
+            PRIVATE sce_runtime sce_mesh_common vsomeip3)
+        target_compile_definitions(mesh_someip_machine_liveness_beta_compile_test
+            PRIVATE SCE_F4_MACHINE_BETA)
+        target_compile_features(mesh_someip_machine_liveness_beta_compile_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_machine_liveness_beta_compile_test)
+        add_test(NAME mesh_someip_machine_liveness_beta_compile
+                 COMMAND mesh_someip_machine_liveness_beta_compile_test)
+        set_tests_properties(mesh_someip_machine_liveness_beta_compile PROPERTIES TIMEOUT 5)
+
         if(SCE_ENABLE_NETNS_TESTS)
             include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/two_host_test.cmake)
 

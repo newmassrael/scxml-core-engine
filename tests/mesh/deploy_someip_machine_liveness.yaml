@@ -1,0 +1,66 @@
+# SCE Mesh §16.7 / §16.4 / row 8 (PEER_PARTITIONED) E2E fixture (SOME/IP).
+#
+# RFC F.X-4 lands the SOME/IP row 8 emission path (machine-level
+# liveness) symmetric to the Zenoh `sce/live/<machine>` 2-segment token
+# pattern. Two single-partition machines opt into `liveliness:`, each
+# offers its own machine-level liveness service in the F.X-4-reserved
+# sub-range [0x8280, 0x82FF], and each subscribes to the peer's via
+# vsomeip's `register_availability_handler`. Killing one machine's SCE
+# app process tree drops the offer; the survivor raises
+# `error.communication / PEER_PARTITIONED` with `target=<peer_machine>`.
+#
+# Service ID assignment (RFC F.X-4 D2 lex-sorted counter from
+# `SCXML_MACHINE_LIVENESS_SERVICE_BASE = 0x8280`, no pins in this fixture):
+#   alpha_machine_liveness → 0x8280
+#   beta_machine_liveness  → 0x8281
+#
+# Peer participation (RFC F.X-3 D11 carry-over): each machine names the
+# OTHER machine as `#peer` so codegen-time external resolution produces
+# concrete (service-id, method-id) constants for the dead branch — the
+# only purpose is to load `someip` into `transport_types` so the vsomeip
+# include + consolidated SCE app field declaration the §16.7 row 8
+# liveness emit depends on (`<machine>_sce_app_`) both fire. peer_svc
+# resolves through vsomeip_someip_machine_liveness_codegen.json
+# (codegen-only); the runtime vsomeip configs `*_alpha.json` / `*_beta.json`
+# do not need to repeat it because no traffic ever flows on the dead
+# branch.
+#
+# Single-partition shape is the load-bearing F.X-4 D4-shape-1 acceptance:
+# both machines have NO `partitions:` block, so the F.X-3 region-liveness
+# axis is silent (zero row-13 participants) and ONLY the F.X-4
+# machine-level axis emits constants + handlers. This isolates the row 8
+# wire shape from row 13 in the compile-verification fixture.
+version: "1.0"
+topology:
+  ecu_alpha:
+    transports:
+      someip:
+        config: vsomeip_someip_machine_liveness_codegen.json
+    machines:
+      alpha_machine_liveness:
+        source: alpha_machine_liveness.scxml
+        bindings:
+          "#beta_machine_liveness":
+            transport: someip
+            service: peer_svc
+            events:
+              "event.ping":
+                method: ping
+        liveliness:
+          lease_ms: 200
+  ecu_beta:
+    transports:
+      someip:
+        config: vsomeip_someip_machine_liveness_codegen.json
+    machines:
+      beta_machine_liveness:
+        source: beta_machine_liveness.scxml
+        bindings:
+          "#alpha_machine_liveness":
+            transport: someip
+            service: peer_svc
+            events:
+              "event.ping":
+                method: ping
+        liveliness:
+          lease_ms: 200

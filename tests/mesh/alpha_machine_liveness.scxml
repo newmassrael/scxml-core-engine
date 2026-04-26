@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §16.7 row 8 (PEER_PARTITIONED) E2E fixture — alpha machine.
+     Sister to beta_machine_liveness.scxml; both are single-partition
+     SOME/IP machines that opt into `liveliness:` (RFC F.X-4 D4-shape-1).
+     alpha subscribes to beta's machine-level liveness service in
+     [0x8280, 0x82FF] and raises `error.communication / PEER_PARTITIONED`
+     when beta's SCE app exits over SOMEIP-SD.
+
+     `<send target="#beta">` forces the SOMEIP transport into
+     `transport_types` so the codegen emits the vsomeip include +
+     consolidated SCE app field the §16.7 row 8 liveness emit depends on
+     (`<machine>_sce_app_`). The send is never exercised — alpha drives
+     liveness directly through vsomeip's routing manager, not through
+     onentry traffic.
+
+     `<transition event="error.communication">` is required by
+     `reject_liveliness_without_handler`: any machine declaring
+     `liveliness:` without an observable handler is silently broken
+     (`feedback_silently_broken_hooks`). The handler routes to
+     `peer_loss` so the live netns fixture (Stage D) can observe the
+     row 8 raise. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="alpha_machine_liveness" initial="idle">
+    <state id="idle">
+        <onentry>
+            <send target="#beta_machine_liveness" event="event.ping"/>
+        </onentry>
+        <transition event="event.ping" target="idle"/>
+        <transition event="error.communication" target="peer_loss"/>
+    </state>
+    <final id="peer_loss"/>
+</scxml>

@@ -10,13 +10,14 @@
 // ordinary SOME/IP method/event/field bindings. The split is the
 // SCE-vs-OEM boundary, not a per-subsystem split inside SCE: every
 // SCE-reserved subsystem on this binary (today §9.6 invoke; F.X-3
-// onwards: region-liveness; possible future SCE subsystems) shares the
-// single `<machine>[_<partition>]_sce` app. Three rationales survive
-// consolidation under RFC F.X-2:
+// region-liveness; F.X-4 row 8 machine-level liveness; possible future
+// SCE subsystems) shares the single `<machine>[_<partition>]_sce` app.
+// Three rationales survive consolidation under RFC F.X-2:
 //
 //   1. §13 OEM boundary protection. vsomeip.json `applications[*]` is OEM-
 //      owned territory. SCE does not register SCE-reserved services
-//      (0x8100..0x81FF, see SCXML_INVOKE_SERVICE_BASE) inside an OEM-
+//      (0x8100..0x81FF + 0x8280..0x82FF — see SCXML_INVOKE_SERVICE_BASE
+//      and the F.X-4 machine-liveness reservation) inside an OEM-
 //      declared application. The SCE-named `<machine>[_<partition>]_sce`
 //      keeps SCE's service registrations on an SCE-named application that
 //      the OEM explicitly declares for that purpose, preserving the
@@ -33,9 +34,12 @@
 //      prevents one subsystem's handler from starving siblings via an
 //      escaped exception.
 //   3. Service/instance ID responsibility split. SCE-reserved range
-//      (0x8100..0x81FF) collision detection is SCE codegen's
-//      responsibility (RFC F.X-1 hybrid allocator). OEM service ID
-//      collision detection is OEM vsomeip.json's responsibility. The
+//      (0x8100..0x81FF for §9.6 invoke + §16.4 region-liveness;
+//      0x8280..0x82FF for §16.7 row 8 machine-liveness, RFC F.X-4)
+//      collision detection is SCE codegen's responsibility (RFC F.X-1
+//      hybrid allocator extracted at F.X-4 D2 to share across all three
+//      sub-ranges). OEM service ID collision detection is OEM
+//      vsomeip.json's responsibility. The
 //      dedicated SCE-namespaced app makes the boundary observable at the
 //      routing layer — `(app, service)` tuple lookup naturally partitions
 //      the two responsibility domains.
@@ -113,14 +117,19 @@ namespace SCE::Mesh::Someip {
 /// SCE-managed services occupy `[SCXML_INVOKE_SERVICE_BASE,
 /// SCXML_INVOKE_SERVICE_BASE + 0x80)` (0x8100..0x817F) under RFC F.X-1
 /// subsystem range partitioning; the upper half `[0x8180, 0x81FF]` is
-/// reserved for the §16.4 region-liveness landing (RFC F.X-3). OEM
-/// services are required to stay outside the full SCE-reserved
-/// `[0x8100, 0x81FF]` range — collision is a deploy-time configuration
-/// error, not a SCE-side hazard. Per-machine service IDs are produced
-/// by the codegen-time hybrid (counter + optional author-pin) allocator
-/// in `sce-build` and emitted as named constants
-/// (`SCE_SOMEIP_SERVICE_SELF`, `SCE_SOMEIP_SERVICE_PEER_<peer_name>`)
-/// in the generated `<machine>_transport.h`.
+/// the §16.4 region-liveness sub-range (RFC F.X-3) and the disjoint
+/// `[0x8280, 0x82FF]` sub-range is the §16.7 row 8 machine-liveness
+/// sub-range (RFC F.X-4) with an intentional `[0x8200, 0x827F]` gap
+/// reserved for a future fourth SCE subsystem. OEM services are
+/// required to stay outside the full SCE-reserved namespace
+/// (`[0x8100, 0x81FF] ∪ [0x8280, 0x82FF]`) — collision is a deploy-time
+/// configuration error, not a SCE-side hazard. Per-machine service IDs
+/// are produced by the codegen-time hybrid (counter + optional author-
+/// pin) allocator in `sce-build` (`mesh::someip::range_alloc` extracted
+/// at F.X-4 D2) and emitted as named constants
+/// (`SCE_SOMEIP_SERVICE_SELF`, `SCE_SOMEIP_SERVICE_PEER_<peer_name>`,
+/// `SCE_LIVENESS_SERVICE_*`, `SCE_MACHINE_LIVENESS_SERVICE_*`) in the
+/// generated `<machine>_transport.h`.
 inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_BASE =
     static_cast<vsomeip::service_t>(0x8100);
 
@@ -220,19 +229,24 @@ inline void invokeReceiveSafely(const ReceiveCallback& on_receive,
     }
 }
 
-/// RFC F.X-3 D8: sibling D8 boundary for §16.4 region-partition
-/// liveness. vsomeip's `register_availability_handler` fires on a
-/// callback thread distinct from the one [`invokeReceiveSafely`] guards;
-/// both threads belong to the consolidated SCE app's callback pool, so
-/// an exception escaping either entry blocks every SCE-reserved
-/// subsystem sharing that pool. The call shape differs (availability
-/// handlers carry no envelope — codegen wraps the SCE-side dispatch in
-/// a void lambda that captures the partition identity it is observing),
-/// hence a separate helper that takes a nullary callable.
+/// RFC F.X-3 D8: D8 boundary for `register_availability_handler`-driven
+/// raises. Today serves both §16.4 region-partition liveness (row 13
+/// REGION_PARTITIONED) and §16.7 row 8 machine-level liveness
+/// (PEER_PARTITIONED, RFC F.X-4) — the helper is reason-agnostic and
+/// callers wrap whichever raise their availability handler emits.
+/// vsomeip's `register_availability_handler` fires on a callback thread
+/// distinct from the one [`invokeReceiveSafely`] guards; both threads
+/// belong to the consolidated SCE app's callback pool, so an exception
+/// escaping either entry blocks every SCE-reserved subsystem sharing
+/// that pool. The call shape differs (availability handlers carry no
+/// envelope — codegen wraps the SCE-side dispatch in a void lambda that
+/// captures the participant identity it is observing), hence a separate
+/// helper that takes a nullary callable.
 ///
 /// Same `noexcept` + log-and-return contract as `invokeReceiveSafely`,
-/// so a §16.4 raise that throws under memory pressure (e.g. allocating
-/// the `CommunicationError` payload) does not propagate into vsomeip.
+/// so a §16.4 / §16.7 raise that throws under memory pressure (e.g.
+/// allocating the `CommunicationError` payload) does not propagate into
+/// vsomeip.
 inline void availabilityChangeSafely(const std::function<void()>& on_change) noexcept {
     if (!on_change) return;
     try {

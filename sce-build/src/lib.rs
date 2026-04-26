@@ -2094,6 +2094,17 @@ pub fn compile_mesh_transport(
     // `SCE_LIVENESS_SERVICE_PEER_<sibling_partition>`).
     let someip_liveness_service_ids =
         mesh::deploy::assign_someip_liveness_service_ids(&deploy_cfg)?;
+    // RFC F.X-4: §16.7 row 8 SOME/IP machine-level liveness service IDs
+    // live in the disjoint [0x8280, 0x82FF] sub-range. The deploy
+    // validator already ran inside `parse_deploy_str` above, so any
+    // overflow / pin / collision error would have surfaced there;
+    // reaching this point means the deploy is assignable. Codegen reads
+    // self's machine-keyed liveness ID and each peer machine's ID from
+    // this map to emit per-target constants
+    // (`SCE_MACHINE_LIVENESS_SERVICE_SELF` and
+    // `SCE_MACHINE_LIVENESS_SERVICE_PEER_<peer_machine>`).
+    let someip_machine_liveness_service_ids =
+        mesh::deploy::assign_someip_machine_liveness_service_ids(&deploy_cfg)?;
     let output = mesh::codegen::generate_mesh(
         &model.name,
         &resolved,
@@ -2112,6 +2123,7 @@ pub fn compile_mesh_transport(
         &scxml_remote_inbound_peers,
         &someip_invoke_service_ids,
         &someip_liveness_service_ids,
+        &someip_machine_liveness_service_ids,
         language,
         &template_base,
     )?;

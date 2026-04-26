@@ -817,6 +817,7 @@ pub fn generate_mesh(
     scxml_remote_inbound_peers: &[crate::model::ScxmlRemotePeerBinding],
     someip_invoke_service_ids: &BTreeMap<String, u16>,
     someip_liveness_service_ids: &BTreeMap<String, u16>,
+    someip_machine_liveness_service_ids: &BTreeMap<String, u16>,
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -866,6 +867,7 @@ pub fn generate_mesh(
             scxml_remote_inbound_peers,
             someip_invoke_service_ids,
             someip_liveness_service_ids,
+            someip_machine_liveness_service_ids,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -1000,6 +1002,7 @@ fn generate_cpp_mesh(
     scxml_remote_inbound_peers: &[crate::model::ScxmlRemotePeerBinding],
     someip_invoke_service_ids: &BTreeMap<String, u16>,
     someip_liveness_service_ids: &BTreeMap<String, u16>,
+    someip_machine_liveness_service_ids: &BTreeMap<String, u16>,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -1531,6 +1534,34 @@ fn generate_cpp_mesh(
             .collect()
     };
 
+    // SCE Mesh RFC F.X-4: per-target SOMEIP machine-level liveness
+    // service ID constants ([0x8280, 0x82FF] disjoint sub-range from
+    // F.X-1 invoke + F.X-3 region-liveness). Self is present iff this
+    // machine opts into SOMEIP machine-level liveness emission (every
+    // partition binary of a SOMEIP `liveliness:`-opt-in machine offers
+    // the same machine-level service per RFC F.X-4 D5
+    // emit-from-every-partition). Peers are every other machine in the
+    // deploy that also opts in; codegen emits one named constant per
+    // entry (`SCE_MACHINE_LIVENESS_SERVICE_PEER_<peer_machine_upper>`)
+    // and a single `SCE_MACHINE_LIVENESS_SERVICE_SELF`.
+    let someip_machine_liveness_service_id_self_hex: Option<String> =
+        someip_machine_liveness_service_ids
+            .get(machine_name)
+            .map(|sid| format!("{sid:#06x}"));
+    let someip_machine_liveness_service_ids_peers: Vec<serde_json::Value> = {
+        someip_machine_liveness_service_ids
+            .iter()
+            .filter(|(peer_machine, _)| peer_machine.as_str() != machine_name)
+            .map(|(peer_machine, sid)| {
+                serde_json::json!({
+                    "machine": peer_machine,
+                    "machine_upper": peer_machine.to_ascii_uppercase(),
+                    "service_id_hex": format!("{sid:#06x}"),
+                })
+            })
+            .collect()
+    };
+
     let ctx = minijinja::context! {
         machine_name => machine_name,
         machine_pascal => machine_pascal,
@@ -1561,6 +1592,8 @@ fn generate_cpp_mesh(
         someip_invoke_service_ids_peers => someip_invoke_service_ids_peers,
         someip_liveness_service_id_self_hex => someip_liveness_service_id_self_hex,
         someip_liveness_service_ids_peers => someip_liveness_service_ids_peers,
+        someip_machine_liveness_service_id_self_hex => someip_machine_liveness_service_id_self_hex,
+        someip_machine_liveness_service_ids_peers => someip_machine_liveness_service_ids_peers,
         someip_sce_app_field => someip_sce_app_field,
         someip_sce_app_thread => someip_sce_app_thread,
         someip_sce_app_vsomeip_name => someip_sce_app_vsomeip_name,
