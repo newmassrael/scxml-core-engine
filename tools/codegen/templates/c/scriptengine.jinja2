@@ -57,6 +57,21 @@
             "  if type(v) == 'string' then return #v > 0 end\n"
             "  return true\n"
             "end");
+        /* W3C SCXML 5.10: `_sessionid` is a read-only system variable bound
+           on startup. The C++ runtime carries a per-instance UUID (set via
+           `LuaEngine::setupSystemVariables`); the C11 backend is AOT-only
+           so we bake a deterministic per-machine value derived from
+           `model.name`. The W3C requirement is that `_sessionid` is bound
+           (non-nil) and remains the same value through the session — both
+           hold for any non-empty deterministic string. Read-only behaviour
+           is enforced at codegen time in `state_machine.c.jinja2`'s
+           emit_action assign branch (any <assign location="_sessionid">
+           lowers to error.execution rather than a luaL_dostring), so the
+           Lua state itself never sees a re-binding attempt. _name and
+           _ioprocessors land with their first consuming fixture
+           (built-but-unconsumed carve-out per feedback_built_but_unconsumed.md). */
+        (void)luaL_dostring(sm->L,
+            "_sessionid = '{{ model.name | escape_c }}_session'");
         {% for var in model.variables %}
         {% if var.expr %}
         /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}">.
