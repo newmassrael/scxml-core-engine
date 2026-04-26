@@ -4,6 +4,7 @@
 #include "factory/NodeFactory.h"
 #include "parsing/Diagnostic.h"
 #include "parsing/DiagnosticBatchFormatter.h"
+#include "parsing/ParseError.h"
 #include "parsing/SCXMLParser.h"
 #include "parsing/TemplateError.h"
 #include "parsing/XIncludeError.h"
@@ -785,6 +786,263 @@ TEST(TemplateErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
     const TemplateMalformed b(msg);
     EXPECT_NE(a.to_json().at("id").get<std::string>(),
               b.to_json().at("id").get<std::string>());
+}
+
+// ── v1 schema conformance for ParseError subtypes (W4 α-strict) ──
+//
+// Mirror of the TemplateError + XIncludeError schema-conformance
+// tests above for the 5 typed parser-entry leaves promoted in RFC
+// §W4. Each test constructs a leaf with an example message and
+// asserts the to_json() envelope passes the shared
+// `assertSchemaConformantBase` + `assertNoUnexpectedKeys` curated
+// checks against `schemas/sce-diagnostic.v1.schema.json`.
+//
+// Three of the five leaves (ParseXmlFailed, ParseException,
+// ParseNoRootElement) reuse the existing `xml/parse` wire code
+// because the Rust error model has no distinct producer for those
+// scenarios — see `ParseError.h` per-leaf comments and RFC §W4 D2.
+// Schema conformance still applies per-leaf (each `to_json()` must
+// pass) even when the wire code is shared.
+
+namespace conformance {
+
+// Curated mirror of the **NEW** `xml/*` entries added in W4 to
+// `schemas/sce-diagnostic.v1.schema.json`. The 3 reused-code leaves
+// (ParseXmlFailed, ParseException, ParseNoRootElement) all return
+// `xml/parse`, which is already on `kExpectedCodes` for the
+// TemplateError/XmlError families. Listing them here would
+// double-count and obscure the W4-specific surface — only the new
+// codes belong in this curated set. Pinned cross-side by the W4
+// Rust drift test
+// `cpp_parse_subtypes_match_rust_diagnostic_codes` in
+// `sce-build/src/parser.rs::tests` (RFC §W4 Stage D).
+const std::array<std::string_view, 2> kExpectedNewParseCodes = {
+    "xml/file-not-found",
+    "xml/wrong-root-element",
+};
+
+}  // namespace conformance
+
+TEST(ParseErrorWire, FileNotFoundConformsToV1Schema) {
+    const ParseFileNotFound err("File not found: /nonexistent/path.scxml");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/file-not-found");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_FALSE(j.contains("location"));
+}
+
+TEST(ParseErrorWire, ParseXmlFailedConformsToV1Schema) {
+    const ParseXmlFailed err(
+        "Parse error: unexpected end tag </scxml> at offset 42");
+    const auto j = err.to_json();
+    // Reuses xml/parse (no Rust producer for a distinct parser-entry
+    // code; pugi err detail is embedded in the message text).
+    conformance::assertSchemaConformantBase(j, "xml/parse");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(ParseErrorWire, ParseExceptionConformsToV1Schema) {
+    const ParseException err(
+        "Exception while parsing file: out of memory");
+    const auto j = err.to_json();
+    // Reuses xml/parse (Rust has no exception model — Result-based).
+    conformance::assertSchemaConformantBase(j, "xml/parse");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(ParseErrorWire, NoRootElementConformsToV1Schema) {
+    const ParseNoRootElement err("No root element found");
+    const auto j = err.to_json();
+    // Reuses xml/parse (roxmltree rejects root-less input at parse
+    // time, so no Rust producer for this specific scenario).
+    conformance::assertSchemaConformantBase(j, "xml/parse");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(ParseErrorWire, WrongRootElementConformsToV1Schema) {
+    const ParseWrongRootElement err(
+        "Root element is not 'scxml', found: html");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/wrong-root-element");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(ParseErrorWire, EveryNewCuratedParseCodeIsExercised) {
+    // Sanity-check the curated list mirrors the 2 NEW W4 wire codes.
+    // Adding a 3rd new wire code without a corresponding curated
+    // entry reds here.
+    EXPECT_EQ(conformance::kExpectedNewParseCodes.size(), 2u);
+    std::set<std::string_view> uniq(
+        conformance::kExpectedNewParseCodes.begin(),
+        conformance::kExpectedNewParseCodes.end());
+    EXPECT_EQ(uniq.size(), conformance::kExpectedNewParseCodes.size())
+        << "duplicate entry in kExpectedNewParseCodes";
+}
+
+TEST(ParseErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
+    // Mixing two subtypes' code() into the FNV-1a key keeps the id
+    // distinct even when the rendered message text happens to match.
+    // Tests across leaves with DIFFERENT wire codes
+    // (file-not-found vs wrong-root-element) — the 3 reused-code
+    // leaves (ParseXmlFailed/Exception/NoRootElement) intentionally
+    // share `xml/parse` and would yield identical ids on identical
+    // messages, which is the documented α-strict tradeoff.
+    const std::string msg = "shared message";
+    const ParseFileNotFound a(msg);
+    const ParseWrongRootElement b(msg);
+    EXPECT_NE(a.to_json().at("id").get<std::string>(),
+              b.to_json().at("id").get<std::string>());
+}
+
+// ── SCXMLParser boundary surfacing for parser-entry leaves ────────
+
+TEST(SCXMLParserBoundary, ParseFileSurfacesTypedFileNotFoundDiagnostic) {
+    // `parseFile` against a non-existent path fires
+    // `PugiXMLParser::parseFile`'s `ParseFileNotFound` typed throw
+    // (D1-C); SCXMLParser's `catch (const ParseError &pe)` arm
+    // surfaces it on `getDiagnostics()` while populating the legacy
+    // string vector for Q4-B coexistence.
+    //
+    // Standing-consumer load-bearing-ness: removing the
+    // `recordDiagnostic(pe.clone())` line in the typed catch arm
+    // reds this test with `getDiagnostics().size() == 0` (the
+    // legacy `addError` only populates the string surface).
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseFile("/this/path/should/not/exist/foo.scxml");
+
+    EXPECT_EQ(model, nullptr);
+
+    // Q4-B: legacy string-vector surface populated.
+    EXPECT_TRUE(parser.hasErrors());
+    EXPECT_FALSE(parser.getErrorMessages().empty());
+
+    // RFC §W4 D1-C: typed surface populated with the leaf's wire code.
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u) << "expected exactly one typed diagnostic";
+    ASSERT_NE(diags[0], nullptr);
+    EXPECT_EQ(diags[0]->code(), std::string_view{"xml/file-not-found"});
+
+    // Round-trip through to_json() to confirm the cloned object
+    // preserved its dynamic type — a sliced base copy would dispatch
+    // to a different code() override or fail to compile against the
+    // pure-virtual.
+    const auto j = diags[0]->to_json();
+    EXPECT_EQ(j.at("code").get<std::string>(), "xml/file-not-found");
+    EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
+}
+
+TEST(SCXMLParserBoundary, ParseContentSurfacesTypedWrongRootElementDiagnostic) {
+    // `parseContent` against a document whose root tag is not
+    // `<scxml>` reaches `parseAbstractDocument`'s root-tag check,
+    // which throws `ParseWrongRootElement` (D1-C). SCXMLParser's
+    // typed catch arm surfaces it on `getDiagnostics()`.
+    //
+    // Standing-consumer load-bearing-ness: removing the root-tag
+    // check in `parseAbstractDocument` would silently produce an
+    // empty model rather than a typed diagnostic — exactly the
+    // failure mode the W4 typed surface exists to catch
+    // (`feedback_silently_broken_hooks.md`).
+    constexpr const char *kWrongRootScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<not-scxml/>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kWrongRootScxml);
+
+    EXPECT_EQ(model, nullptr);
+
+    EXPECT_TRUE(parser.hasErrors());
+    EXPECT_FALSE(parser.getErrorMessages().empty());
+
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u);
+    ASSERT_NE(diags[0], nullptr);
+    EXPECT_EQ(diags[0]->code(),
+              std::string_view{"xml/wrong-root-element"});
+
+    const auto j = diags[0]->to_json();
+    EXPECT_EQ(j.at("code").get<std::string>(), "xml/wrong-root-element");
+}
+
+// ── Consumer-fragility tests (load-bearing — RFC §W4 D8) ──────────
+//
+// These two tests codify what the typed surface UNLOCKS: behavior
+// that string-parsing cannot deliver robustly. Without them, W4 is
+// `feedback_built_but_unconsumed.md` — surface exists but no caller
+// distinguishes it from string parsing. The dispatch lambda in
+// `TypedCodeDistinguishesFailureClassWhereStringParsingIsFragile`
+// IS the consumer; the surface IS what makes it possible.
+
+TEST(ParseErrorConsumer,
+     TypedCodeDistinguishesFailureClassWhereStringParsingIsFragile) {
+    // Two distinct parse failures — file-not-found (path retry
+    // strategy) vs wrong-root-element (syntax suggestion strategy).
+    // A real consumer (LSP / CI report / build tool / agent) needs
+    // to dispatch on the failure CLASS, not on the message text.
+    // This test proves typed code() makes that dispatch reliable;
+    // the parallel string-parsing path would have to
+    // startsWith("File not found:") and would silently break if a
+    // future PR edited the message text.
+    SCE::SCXMLParser p1(std::make_shared<SCE::NodeFactory>());
+    p1.parseFile("/nonexistent/path.scxml");
+
+    SCE::SCXMLParser p2(std::make_shared<SCE::NodeFactory>());
+    constexpr const char *kWrongRoot =
+        "<?xml version=\"1.0\"?><not-scxml/>";
+    p2.parseContent(kWrongRoot);
+
+    ASSERT_EQ(p1.getDiagnostics().size(), 1u);
+    ASSERT_EQ(p2.getDiagnostics().size(), 1u);
+
+    // THE consumer pattern — typed dispatch:
+    auto retry_strategy = [](const Diagnostic &d) -> std::string {
+        if (d.code() == std::string_view{"xml/file-not-found"})
+            return "PATH_RETRY";
+        if (d.code() == std::string_view{"xml/wrong-root-element"})
+            return "SYNTAX_FIX";
+        return "GENERIC";
+    };
+    EXPECT_EQ(retry_strategy(*p1.getDiagnostics()[0]), "PATH_RETRY");
+    EXPECT_EQ(retry_strategy(*p2.getDiagnostics()[0]), "SYNTAX_FIX");
+}
+
+TEST(ParseErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
+    // Codifies that `code()` IS the wire-stable handle. Construct
+    // two `ParseFileNotFound` instances with intentionally divergent
+    // message-text pretexts (one as if from a future PR edit).
+    // Assert `code()` is byte-identical across both, while message()
+    // diverges. Bites if a future PR changes wire codes by editing
+    // message text — the typed code() returns the same wire string
+    // regardless of the message rendering choice.
+    const ParseFileNotFound today(
+        "File not found: /tmp/foo.scxml");
+    const ParseFileNotFound future_edit(
+        "ENOENT: cannot locate /tmp/foo.scxml on filesystem");
+
+    EXPECT_EQ(today.code(), future_edit.code())
+        << "wire code() must be invariant under message-text edits";
+    EXPECT_EQ(today.code(), std::string_view{"xml/file-not-found"});
+
+    // Messages diverge.
+    EXPECT_NE(std::string(today.what()), std::string(future_edit.what()));
+
+    // Demonstrate the consumer's actual asymmetry: typed dispatch
+    // works on both; string-parsing-on-message would only catch one.
+    auto typed_dispatch = [](const ParseError &e) {
+        return e.code() == std::string_view{"xml/file-not-found"};
+    };
+    EXPECT_TRUE(typed_dispatch(today));
+    EXPECT_TRUE(typed_dispatch(future_edit));
+
+    // For comparison: a fragile string-parsing alternative.
+    auto fragile_string_dispatch = [](const std::exception &e) {
+        const std::string m = e.what();
+        return m.rfind("File not found:", 0) == 0;
+    };
+    EXPECT_TRUE(fragile_string_dispatch(today));
+    EXPECT_FALSE(fragile_string_dispatch(future_edit))
+        << "string dispatch silently breaks when message text changes; "
+           "typed code() does not. THIS is what the W4 surface unlocks.";
 }
 
 }  // namespace

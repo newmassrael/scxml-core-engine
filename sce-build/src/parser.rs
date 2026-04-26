@@ -5042,4 +5042,181 @@ mod tests {
             panic!("expected SchemaValidation variant");
         }
     }
+
+    // ── RFC §W4 Stage D: ParseError cross-side drift tests ────────
+    //
+    // Sister tests to W3's `cpp_xinclude_subtypes_match_rust_diagnostic_codes`
+    // and `cpp_xinclude_subtype_code_returns_rust_wire_string` in
+    // `sce-build/src/xinclude.rs`. α-strict scope: 2 NEW wire codes
+    // (`xml/file-not-found`, `xml/wrong-root-element`) have full Rust
+    // producers in this module's `parse_file` / `parse_impl`; the
+    // other 3 C++ ParseError leaves (ParseXmlFailed, ParseException,
+    // ParseNoRootElement) reuse the existing `xml/parse` wire code
+    // because the Rust error model has no distinct producer for those
+    // scenarios — Result-based, no exceptions, roxmltree always-has-
+    // root.
+
+    /// Pin the 1:1 mapping between Rust `XmlError::FileNotFound` /
+    /// `WrongRootElement` variants, the `xml/*` `DiagnosticCode`s
+    /// they emit, and the C++ `SCE::parsing::Parse<Variant>` subtypes
+    /// declared in `sce/include/parsing/ParseError.h`. Also asserts
+    /// the 3 reused-code leaves exist (they share `xml/parse` so they
+    /// don't need a Rust XmlError variant — the wire-share is α-strict
+    /// design per RFC §W4 D2).
+    ///
+    /// A commit on any one side that fails to update the other two is
+    /// the drift this test catches.
+    #[test]
+    fn cpp_parse_subtypes_match_rust_diagnostic_codes() {
+        // The 2 NEW W4 wire codes paired with their C++ class names.
+        let rust_to_cpp_new: &[(&str, &str)] = &[
+            ("xml/file-not-found", "ParseFileNotFound"),
+            ("xml/wrong-root-element", "ParseWrongRootElement"),
+        ];
+        assert_eq!(
+            rust_to_cpp_new.len(),
+            2,
+            "Expected 2 NEW α-strict wire codes; update if scope grew"
+        );
+
+        // The 3 reused-code leaves (no Rust XmlError variant by α-strict
+        // design — see ParseError.h per-leaf comments). They still must
+        // exist as ParseError subclasses to compile.
+        let reused_code_cpp: &[&str] =
+            &["ParseXmlFailed", "ParseException", "ParseNoRootElement"];
+
+        let expected_cpp: BTreeSet<&str> = rust_to_cpp_new
+            .iter()
+            .map(|(_, cpp)| *cpp)
+            .chain(reused_code_cpp.iter().copied())
+            .collect();
+        assert_eq!(
+            expected_cpp.len(),
+            5,
+            "Expected 5 distinct ParseError subtypes (α-strict)"
+        );
+
+        let hdr = include_str!("../../sce/include/parsing/ParseError.h");
+        let re = regex::Regex::new(
+            r"class\s+(Parse\w+)\s*:\s*public\s+ParseError\b",
+        )
+        .unwrap();
+        let mut found: BTreeSet<String> = BTreeSet::new();
+        for captures in re.captures_iter(hdr) {
+            found.insert(captures[1].to_string());
+        }
+
+        assert!(
+            !found.is_empty(),
+            "sce/include/parsing/ParseError.h must declare at least \
+             one `class Parse<Variant> : public ParseError` — if the \
+             declaration shape changed, update this drift test in the \
+             same commit"
+        );
+
+        let found_refs: BTreeSet<&str> =
+            found.iter().map(|s| s.as_str()).collect();
+        assert_eq!(
+            found_refs, expected_cpp,
+            "ParseError subtype drift: C++ header = {:?}, expected \
+             (α-strict 5 leaves: 2 NEW-code + 3 reused-code) = {:?}. \
+             Change both sides in the same commit — see RFC §W4 \
+             (claudedocs/rfc-sce-diagnostic-wire-unification.md).",
+            found_refs, expected_cpp
+        );
+
+        // Cross-check: every NEW Rust `DiagnosticCode` slash-path
+        // MUST be spelled as the `serde(rename = \"...\")` literal in
+        // `sce-build/src/forge/diagnostic.rs`. Catches a future
+        // rename of the wire string on the Rust side without a C++
+        // counter-edit.
+        let diag = include_str!("forge/diagnostic.rs");
+        for (rust_code, cpp_name) in rust_to_cpp_new {
+            let needle = format!("\"{}\"", rust_code);
+            assert!(
+                diag.contains(&needle),
+                "DiagnosticCode `{}` (paired with C++ `{}`) is not \
+                 declared as a `serde(rename)` literal in \
+                 sce-build/src/forge/diagnostic.rs. Keep the wire \
+                 name, the Rust variant, and the C++ subtype in \
+                 sync — see RFC §W4.",
+                rust_code, cpp_name
+            );
+        }
+    }
+
+    /// Pin the wire-string return literal inside each C++
+    /// `Parse<Variant>` subtype's `code()` body. RFC §W4 makes the
+    /// 2 NEW-code leaves return their distinct `xml/*` strings while
+    /// the 3 reused-code leaves all return `\"xml/parse\"` — both
+    /// halves are pinned so a future rename on either side cannot
+    /// drift the JSON wire contract silently.
+    ///
+    /// The bite: changing `return \"xml/file-not-found\"` to
+    /// `return \"xml/file-not-foundXXX\"` in `ParseError.h` reds here
+    /// with a pointed `does not contain` diff naming the exact class
+    /// and exact missing literal.
+    #[test]
+    fn cpp_parse_subtype_code_returns_rust_wire_string() {
+        // Pair every C++ class with its expected wire string. 2 leaves
+        // get NEW codes; 3 share `xml/parse`.
+        let class_to_code: &[(&str, &str)] = &[
+            ("ParseFileNotFound", "xml/file-not-found"),
+            ("ParseWrongRootElement", "xml/wrong-root-element"),
+            ("ParseXmlFailed", "xml/parse"),
+            ("ParseException", "xml/parse"),
+            ("ParseNoRootElement", "xml/parse"),
+        ];
+        assert_eq!(class_to_code.len(), 5, "α-strict 5-leaf inventory");
+
+        let hdr = include_str!("../../sce/include/parsing/ParseError.h");
+
+        for (cpp_class, expected_code) in class_to_code {
+            // Locate the class block. The header's shape (one class
+            // per subtype, each terminated with `};`) keeps a forward
+            // `find(\"};\")` accurate enough for a drift guard; if a
+            // future rewrite nests braces inside a subtype we update
+            // this scanner in the same commit.
+            let class_marker =
+                format!("class {} : public ParseError", cpp_class);
+            let class_start = hdr.find(&class_marker).unwrap_or_else(|| {
+                panic!(
+                    "class `{}` not found in sce/include/parsing/\
+                     ParseError.h — drift in subtype naming, see \
+                     `cpp_parse_subtypes_match_rust_diagnostic_codes`",
+                    cpp_class
+                )
+            });
+            let body_start =
+                hdr[class_start..].find('{').unwrap() + class_start + 1;
+            let body_end_rel = hdr[body_start..].find("};").unwrap();
+            let body = &hdr[body_start..body_start + body_end_rel];
+
+            let needle = format!("return \"{}\";", expected_code);
+            assert!(
+                body.contains(&needle),
+                "Class `{}` body does not contain `{}` — the C++ \
+                 subtype's `code()` override must return the expected \
+                 wire literal exactly so the JSON wire emitted by \
+                 `to_json()` agrees with `--error-format=json`. RFC \
+                 §W4 / SCE_ERROR_CONTRACT.md §3.",
+                cpp_class, needle
+            );
+        }
+
+        // Sanity-count: the header should declare exactly 5 `code()`
+        // overrides on leaves + 1 pure-virtual on the base = 6
+        // occurrences. A 6th leaf (or a missing one) reds with a
+        // count diff rather than silently passing.
+        let override_count = hdr
+            .matches("std::string_view code() const noexcept override")
+            .count();
+        assert_eq!(
+            override_count, 6,
+            "expected 6 `code() const noexcept override` lines in \
+             ParseError.h (1 pure-virtual on ParseError + 5 subtype \
+             overrides); found {}",
+            override_count
+        );
+    }
 }
