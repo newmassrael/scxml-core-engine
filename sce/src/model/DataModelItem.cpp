@@ -80,7 +80,10 @@ void SCE::DataModelItem::addContent(const std::string &content) {
                 auto parser = IXMLParser::create();
                 auto tempDoc = parser->parseContent(content);
 
-                if (tempDoc && tempDoc->isValid() && tempDoc->getRootElement()) {
+                // Under W4 D1-C parseContent throws on failure, so a
+                // returned wrapper is non-null and valid by construction;
+                // only the rootElement check is load-bearing here.
+                if (tempDoc->getRootElement()) {
                     // Get root element
                     auto root = xmlContent_->getRootElement();
                     if (root) {
@@ -109,8 +112,11 @@ void SCE::DataModelItem::addContent(const std::string &content) {
 }
 
 const std::string &SCE::DataModelItem::getContent() const {
-    // Serialize XML to string if XML content exists and content_ is empty
-    if (xmlContent_ && xmlContent_->isValid() && content_.empty()) {
+    // Serialize XML to string if XML content exists and content_ is empty.
+    // Class invariant under W4 D1-C: xmlContent_ != null implies the
+    // wrapper is valid (setXmlContent's catch arm resets on parser
+    // throw), so the legacy isValid() guard is dropped.
+    if (xmlContent_ && content_.empty()) {
         static std::string serialized;
         serialized.clear();
 
@@ -166,16 +172,10 @@ void SCE::DataModelItem::setXmlContent(const std::string &content) {
         // Parse XML using platform-appropriate parser
         auto parser = IXMLParser::create();
         xmlContent_ = parser->parseContent(content);
-
-        if (xmlContent_ && xmlContent_->isValid()) {
-            // Clear content_ if parsing succeeds (regenerate in getContent() if needed)
-            content_ = "";
-        }
-        // RFC §W4.5: the previous `else` branch polled
-        // `xmlContent_->getErrorMessage()` for failure surfacing; under
-        // W4 D1-C the parser throws on failure rather than returning
-        // a non-valid wrapper, so the branch was dead. The catch arm
-        // below handles all parse failures.
+        // Under W4 D1-C, parseContent throws on failure, so reaching
+        // this point guarantees a valid wrapper. Clear content_; it
+        // regenerates in getContent() if needed.
+        content_ = "";
     } catch (const std::exception &ex) {
         SCE_LOG_ERROR("Failed to parse XML content: {}", ex.what());
         xmlContent_.reset();
@@ -185,7 +185,7 @@ void SCE::DataModelItem::setXmlContent(const std::string &content) {
 }
 
 std::shared_ptr<SCE::IXMLElement> SCE::DataModelItem::getXmlContent() const {
-    if (xmlContent_ && xmlContent_->isValid()) {
+    if (xmlContent_) {
         return xmlContent_->getRootElement();
     }
     return nullptr;
@@ -196,11 +196,11 @@ const std::vector<std::string> &SCE::DataModelItem::getContentItems() const {
 }
 
 bool SCE::DataModelItem::isXmlContent() const {
-    return xmlContent_ != nullptr && xmlContent_->isValid();
+    return xmlContent_ != nullptr;
 }
 
 std::optional<std::string> SCE::DataModelItem::queryXPath(const std::string &xpath) const {
-    if (!xmlContent_ || !xmlContent_->isValid()) {
+    if (!xmlContent_) {
         return std::nullopt;
     }
 
