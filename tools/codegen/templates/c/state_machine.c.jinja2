@@ -539,6 +539,37 @@ void {{ model.name }}_raise_external({{ model.name }}_t *sm,
 
 /* ── RTC core (mirrors StaticExecutionEngine<Policy>::*) ──────────── */
 
+{# W3C SCXML 5.10: Snapshot the dequeued event into the `_event` lua
+   table so onentry/onexit/transition cond expressions can read
+   `_event.name`. Mirrors the C++ `LuaEngine::setCurrentEvent` overload
+   that pushes a fresh table on every dequeue. The C11 backend has the
+   compile-time-known set of event names available, so the dispatch is a
+   switch on the enum — no runtime enum→string lookup table is carried.
+   Only `.name` is populated in this milestone; the other W3C 5.10.1
+   metadata fields (.data/.type/.sendid/.origin/.origintype/.invokeid)
+   land with the first fixture that reads them (built-but-unconsumed
+   carve-out per feedback_built_but_unconsumed.md). The helper is
+   emitted only when the fixture uses the script engine; datamodel-less
+   fixtures have no lua_State and no consumer for _event. The (void)
+   casts keep the helper warning-free under -Wextra when the fixture
+   declares no events (then both the switch and the parameters fall
+   through unused). #}
+{% if model.needs_script_engine %}
+static void set_current_event(lua_State *L, {{ model.name }}_event_t e) {
+    (void)L;
+    (void)e;
+    switch (e) {
+    {% for event_name in model.events | sort %}
+    case {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}:
+        (void)luaL_dostring(L, "_event = {name = '{{ event_name | escape_c }}'}");
+        break;
+    {% endfor %}
+    default:
+        break;
+    }
+}
+{% endif %}
+
 /* W3C SCXML 6.2: Drain internal then external queue. The C++ engine
    delegates to `EventProcessingAlgorithms::processInternalEventQueue`
    with a lambda; here that lambda is inlined as the loop body. The
@@ -551,6 +582,9 @@ static void process_event_queues({{ model.name }}_t *sm) {
     while (event_queue_pop(&sm->internal_queue, &evt)) {
         strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
         sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+        {% if model.needs_script_engine %}
+        set_current_event(sm->L, evt.event);
+        {% endif %}
 
         if ({{ model.name }}_is_final_state(sm->current_state)) {
             return;
@@ -565,6 +599,9 @@ static void process_event_queues({{ model.name }}_t *sm) {
     while (event_queue_pop(&sm->external_queue, &evt)) {
         strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
         sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+        {% if model.needs_script_engine %}
+        set_current_event(sm->L, evt.event);
+        {% endif %}
 
         if ({{ model.name }}_is_final_state(sm->current_state)) {
             return;

@@ -59,6 +59,8 @@ sce_generate_static_w3c_c_test(487 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(503 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 3.13: targetless transition runs its body assign without exiting/re-entering the source state
 sce_generate_static_w3c_c_test(505 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 3.13: internal transition (target is proper descendant of source) runs body without exiting source state
 sce_generate_static_w3c_c_test(506 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 3.13: type="internal" transition whose target is NOT a proper descendant behaves as external (analyzer downgrade)
+sce_generate_static_w3c_c_test(318 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: _event.name stays bound across onexit and entry into the next state
+sce_generate_static_w3c_c_test(319 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: _event is unbound (lua nil) until the first event has been dequeued
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
