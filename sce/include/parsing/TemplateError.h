@@ -3,11 +3,15 @@
 
 #pragma once
 
+#include "parsing/Diagnostic.h"
 #include "parsing/PositionMap.h"
+
+#include <nlohmann/json.hpp>
 
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace SCE::parsing {
@@ -26,29 +30,17 @@ namespace SCE::parsing {
 // or renames a variant on one side without updating the other
 // surfaces as red rather than silent cross-language drift.
 //
-// Catch policy: `SCXMLParser::parseFile` and `parseContent`
-// already catch `std::exception` broadly — `TemplateError` is a
-// `std::runtime_error` subclass, so existing catch sites collect
-// the message via `addError` without additional plumbing until a
-// future adapter distinguishes subtypes by rtti.
+// W1 (`claudedocs/rfc-sce-diagnostic-wire-unification.md`) makes
+// `TemplateError` implement `SCE::parsing::Diagnostic`. Each subtype
+// overrides `code()` with its `xml/template-*` wire string; the
+// shared base contributes `location()` (the Phase C P2 SourcePos)
+// and `to_json()` (the v1 schema NDJSON record). Subtype field
+// shape is unchanged — the existing message-string ctor stays the
+// throw-site API.
 
-class TemplateError : public std::runtime_error {
+class TemplateError : public std::runtime_error, public Diagnostic {
 public:
     using std::runtime_error::runtime_error;
-
-    // Author-source location where this error was raised, when the
-    // expander's throw site has enough context to derive one.
-    // Populated by `sce/src/parsing/TemplateExpander.cpp` throw sites
-    // via `PositionMap::lookup` against the caller source; failure
-    // modes without a keyed byte (e.g. `TemplateTooDeep`) leave this
-    // as `std::nullopt`. Consumers that present diagnostics to the
-    // author (e.g. the logging adapter in `SCXMLParser::parseFile`)
-    // read this to report `(file, row, col)` instead of the
-    // post-expansion in-memory offsets. Phase C P2 per
-    // `claudedocs/rfc-sce-template-phase-c.md` §3 P2 deliverable #4.
-    const std::optional<SourcePos> &location() const noexcept {
-        return location_;
-    }
 
     // Attach a `SourcePos` to this error. Called by expander throw
     // sites just before `throw`; the compose-and-throw idiom keeps
@@ -58,6 +50,22 @@ public:
     void setLocation(SourcePos pos) {
         location_ = std::move(pos);
     }
+
+    // `Diagnostic` interface. Subtypes override `code()` with their
+    // `xml/template-*` wire string; `location()` and `to_json()` are
+    // shared on the base because every template diagnostic carries
+    // the same envelope (stage = "xml", id derived through the same
+    // canonical key shape, message read from `runtime_error::what()`).
+    //
+    // `location()` here also serves the existing
+    // `TemplateExpander::run` / `SCXMLParser::parseFile` callers that
+    // bind `const auto &loc = *err.location();` — Phase C P2 plumbing,
+    // unchanged on the consumer side.
+    std::string_view code() const noexcept override = 0;
+    const std::optional<SourcePos> &location() const noexcept override {
+        return location_;
+    }
+    nlohmann::ordered_json to_json() const override;
 
 private:
     std::optional<SourcePos> location_;
@@ -75,6 +83,9 @@ private:
 class TemplateUnknownParam : public TemplateError {
 public:
     using TemplateError::TemplateError;
+    std::string_view code() const noexcept override {
+        return "xml/template-unknown-param";
+    }
 };
 
 // `<sce:use>` omitted a `<sce:param required="true">` that the
@@ -85,6 +96,9 @@ public:
 class TemplateMissingParam : public TemplateError {
 public:
     using TemplateError::TemplateError;
+    std::string_view code() const noexcept override {
+        return "xml/template-missing-param";
+    }
 };
 
 // A cycle was detected in the template inclusion graph — expanding
@@ -100,6 +114,9 @@ public:
 class TemplateCycle : public TemplateError {
 public:
     using TemplateError::TemplateError;
+    std::string_view code() const noexcept override {
+        return "xml/template-cycle";
+    }
 };
 
 // Recursion exceeded
@@ -114,6 +131,9 @@ public:
 class TemplateTooDeep : public TemplateError {
 public:
     using TemplateError::TemplateError;
+    std::string_view code() const noexcept override {
+        return "xml/template-too-deep";
+    }
 };
 
 // `<sce:use template="...">` named a file that could not be
@@ -127,6 +147,9 @@ public:
 class TemplateNotFound : public TemplateError {
 public:
     using TemplateError::TemplateError;
+    std::string_view code() const noexcept override {
+        return "xml/template-not-found";
+    }
 };
 
 // Resolved template file exists but could not be read —
@@ -140,6 +163,9 @@ public:
 class TemplateReadError : public TemplateError {
 public:
     using TemplateError::TemplateError;
+    std::string_view code() const noexcept override {
+        return "xml/template-read-error";
+    }
 };
 
 // Template file was read but either (a) is not well-formed XML,
@@ -158,6 +184,9 @@ public:
 class TemplateMalformed : public TemplateError {
 public:
     using TemplateError::TemplateError;
+    std::string_view code() const noexcept override {
+        return "xml/template-malformed";
+    }
 };
 
 // `<sce:use>` is missing the required `template` attribute, or
@@ -175,6 +204,9 @@ public:
 class TemplateMissingAttribute : public TemplateError {
 public:
     using TemplateError::TemplateError;
+    std::string_view code() const noexcept override {
+        return "xml/template-missing-attribute";
+    }
 };
 
 }  // namespace SCE::parsing

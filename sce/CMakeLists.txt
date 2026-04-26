@@ -420,6 +420,7 @@ add_library(sce_runtime
     src/parsing/DoneDataParser.cpp
     src/parsing/ParsingCommon.cpp
     src/parsing/PositionMap.cpp
+    src/parsing/TemplateError.cpp
     src/parsing/TemplateExpander.cpp
     src/parsing/XIncludeExpander.cpp
     src/parsing/XmlSerializationHelper.cpp

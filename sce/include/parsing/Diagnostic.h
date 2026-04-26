@@ -47,7 +47,11 @@ public:
 
     virtual std::string_view code() const noexcept = 0;
 
-    virtual std::optional<SourcePos> location() const noexcept = 0;
+    // Const-ref return matches the existing `TemplateError::location()`
+    // accessor (Phase C P2) so callers like `SCXMLParser::parseFile`
+    // can continue binding `const auto &loc = *diag.location();`
+    // without touching a temporary's storage.
+    virtual const std::optional<SourcePos> &location() const noexcept = 0;
 
     virtual nlohmann::ordered_json to_json() const = 0;
 };

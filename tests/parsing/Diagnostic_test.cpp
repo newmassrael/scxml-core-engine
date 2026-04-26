@@ -24,8 +24,9 @@ public:
         return "xml/template-cycle";
     }
 
-    std::optional<SourcePos> location() const noexcept override {
-        return std::nullopt;
+    const std::optional<SourcePos> &location() const noexcept override {
+        static const std::optional<SourcePos> kNone;
+        return kNone;
     }
 
     nlohmann::ordered_json to_json() const override {
