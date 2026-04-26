@@ -294,3 +294,66 @@ function(sce_generate_static_w3c_test_batch OUTPUT_DIR)
     set(W3C_AOT_TESTS ${W3C_AOT_TESTS} PARENT_SCOPE)
     set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
 endfunction()
+
+# sce_generate_static_w3c_c_test: Generate C11 code for a single W3C test
+#
+# RFC §5.J.1 sibling of `sce_generate_static_w3c_test`. Produces a `.h` + `.c`
+# pair under OUTPUT_DIR via `sce-codegen -l c11`. Sub-state-machine and
+# child-invoke discovery are deferred — the C11 emitter ships the eventless /
+# datamodel-less subset only, which has no `<invoke>` surface to recurse into.
+# When invoke support lands (E4) this function will mirror the C++ version's
+# sub-TXML loop.
+#
+function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
+    # Accumulate test number into W3C_C_AOT_TESTS so the caller can iterate.
+    list(APPEND W3C_C_AOT_TESTS ${TEST_NUM})
+    set(W3C_C_AOT_TESTS ${W3C_C_AOT_TESTS} PARENT_SCOPE)
+
+    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
+    set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
+    set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
+    set(GENERATED_HEADER "${OUTPUT_DIR}/test${TEST_NUM}_sm.h")
+    set(GENERATED_SOURCE "${OUTPUT_DIR}/test${TEST_NUM}_sm.c")
+
+    # Allow either `resources/${N}/test${N}.scxml` (already-converted SCXML)
+    # or `resources/${N}/test${N}.txml` (TXML pending conversion). Most W3C
+    # fixtures ship as TXML; the SCXML path catches a small set of hand-edited
+    # documents (e.g. test513 in C++).
+    set(RESOURCE_SCXML "${RESOURCE_DIR}/test${TEST_NUM}.scxml")
+    if(EXISTS "${RESOURCE_SCXML}")
+        add_custom_command(
+            OUTPUT "${SCXML_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
+            DEPENDS "${RESOURCE_SCXML}"
+            COMMENT "Using existing SCXML: test${TEST_NUM}.scxml (C11)"
+            VERBATIM
+        )
+    elseif(EXISTS "${TXML_FILE}")
+        add_custom_command(
+            OUTPUT "${SCXML_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+            COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
+            COMMAND "${SCE_CODEGEN}" fix-scxml-name "${SCXML_FILE}" "test${TEST_NUM}"
+            DEPENDS txml-converter "${TXML_FILE}"
+            COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml (C11)"
+            VERBATIM
+        )
+    else()
+        message(WARNING "Neither TXML nor SCXML found for test${TEST_NUM} — Skipping")
+        return()
+    endif()
+
+    add_custom_command(
+        OUTPUT "${GENERATED_HEADER}" "${GENERATED_SOURCE}"
+        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}"
+        DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}"
+        COMMENT "Generating C11 code: test${TEST_NUM}_sm.{h,c}"
+        VERBATIM
+    )
+
+    list(APPEND GENERATED_W3C_C_HEADERS "${GENERATED_HEADER}")
+    list(APPEND GENERATED_W3C_C_SOURCES "${GENERATED_SOURCE}")
+    set(GENERATED_W3C_C_HEADERS ${GENERATED_W3C_C_HEADERS} PARENT_SCOPE)
+    set(GENERATED_W3C_C_SOURCES ${GENERATED_W3C_C_SOURCES} PARENT_SCOPE)
+endfunction()

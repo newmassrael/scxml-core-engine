@@ -199,6 +199,10 @@ option(BUILD_TESTS "Build the tests" ON)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    # RFC §5.J.1 — C11 backend conformance harness, sibling of the
+    # C++ tests/ tree. Lives at the repo root next to sce-c-runtime
+    # so the C-only translation units stay isolated from C++ link.
+    add_subdirectory(sce-c-tests)
 endif()
 
 # Example build option (enabled by default)
