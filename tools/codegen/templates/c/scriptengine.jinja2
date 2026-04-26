@@ -82,6 +82,17 @@
            is invoked. */
         (void)luaL_dostring(sm->L,
             "_name = '{{ model.scxml_name | default('') | escape_c }}'");
+        /* W3C SCXML 5.10: `_ioprocessors` is a table of supported I/O
+           processor descriptors (cpp `LuaEngine.cpp` populates the
+           `scxml` slot with `{location = '<EventProcessor URI>'}` plus
+           any extra processors injected at session setup). The C11
+           backend has no <send>/<invoke> consumer yet, so we register
+           an empty table — non-nil so W3C 5.10's typeof check still
+           passes, and the read-only enforcement rejects any reassign
+           before it reaches the lua state. Per-processor entries land
+           when the first <send target="#_ioprocessors..."> fixture
+           forces them (built-but-unconsumed carve-out). */
+        (void)luaL_dostring(sm->L, "_ioprocessors = {}");
         {% for var in model.variables %}
         {% if var.expr %}
         /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}">.
