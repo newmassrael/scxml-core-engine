@@ -299,15 +299,27 @@ endfunction()
 #
 # RFC §5.J.1 sibling of `sce_generate_static_w3c_test`. Produces a `.h` + `.c`
 # pair under OUTPUT_DIR via `sce-codegen -l c11`. Sub-state-machine and
-# child-invoke discovery are deferred — the C11 emitter ships the eventless /
-# datamodel-less subset only, which has no `<invoke>` surface to recurse into.
-# When invoke support lands (E4) this function will mirror the C++ version's
-# sub-TXML loop.
+# child-invoke discovery are deferred — the C11 emitter ships the
+# datamodel-less + ECMAScript-via-Lua subset, which has no `<invoke>`
+# surface to recurse into. When invoke support lands the function will
+# mirror the C++ version's sub-TXML loop.
+#
+# Optional flag NEEDS_LUA: append the test to W3C_C_AOT_TESTS_NEEDS_LUA so
+# the caller can conditionally `target_link_libraries(... lua54)` only for
+# fixtures whose codegen embedded `luaL_dostring` calls. Datamodel-less
+# fixtures (e.g. test355, test144) leave Lua out of the link entirely so
+# the MCU footprint stays minimal for the watching-zenoh consumer.
 #
 function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
+    cmake_parse_arguments(_SWCT "NEEDS_LUA" "" "" ${ARGN})
+
     # Accumulate test number into W3C_C_AOT_TESTS so the caller can iterate.
     list(APPEND W3C_C_AOT_TESTS ${TEST_NUM})
     set(W3C_C_AOT_TESTS ${W3C_C_AOT_TESTS} PARENT_SCOPE)
+    if(_SWCT_NEEDS_LUA)
+        list(APPEND W3C_C_AOT_TESTS_NEEDS_LUA ${TEST_NUM})
+        set(W3C_C_AOT_TESTS_NEEDS_LUA ${W3C_C_AOT_TESTS_NEEDS_LUA} PARENT_SCOPE)
+    endif()
 
     set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
     set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")

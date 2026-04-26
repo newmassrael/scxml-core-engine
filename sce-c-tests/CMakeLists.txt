@@ -24,13 +24,17 @@ file(MAKE_DIRECTORY "${SCE_C_GENERATED_DIR}")
 # Each entry both (a) drives sce-codegen via the macro below and
 # (b) lines up with `aot_tests/test_<NUM>.c` for the per-fixture runner.
 set(W3C_C_AOT_TESTS "")
+set(W3C_C_AOT_TESTS_NEEDS_LUA "")
 
 sce_generate_static_w3c_c_test(355 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.6: default initial = first child in document order
 sce_generate_static_w3c_c_test(144 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 4.2: raise inserts events at rear of internal queue (FIFO ordering)
+sce_generate_static_w3c_c_test(147 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.3/5.4: if/elseif/else + datamodel assign; ECMAScript-via-Lua
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
-# compiler's default standard.
+# compiler's default standard. Lua54 is linked only into fixtures flagged
+# NEEDS_LUA so datamodel-less fixtures preserve their MCU-relevant
+# zero-deps profile.
 foreach(TEST_NUM ${W3C_C_AOT_TESTS})
     set(_runner "${CMAKE_CURRENT_SOURCE_DIR}/aot_tests/test_${TEST_NUM}.c")
     set(_generated "${SCE_C_GENERATED_DIR}/test${TEST_NUM}_sm.c")
@@ -39,6 +43,9 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
     add_executable(${_target} ${_runner} ${_generated})
     target_link_libraries(${_target} PRIVATE sce_c_runtime)
     target_include_directories(${_target} PRIVATE "${SCE_C_GENERATED_DIR}")
+    if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_LUA)
+        target_link_libraries(${_target} PRIVATE lua54)
+    endif()
     set_target_properties(${_target} PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON
