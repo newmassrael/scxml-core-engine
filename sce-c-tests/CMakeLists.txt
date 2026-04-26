@@ -31,6 +31,7 @@ sce_generate_static_w3c_c_test(144 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 4.2: r
 sce_generate_static_w3c_c_test(147 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.3/5.4: if/elseif/else + datamodel assign; ECMAScript-via-Lua
 sce_generate_static_w3c_c_test(150 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.6: <foreach> declares item/index variables; wildcard event="*" transition
 sce_generate_static_w3c_c_test(151 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.6: <foreach> declares fresh index variable when previously undeclared
+sce_generate_static_w3c_c_test(153 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.6: <foreach> walks elements in document order ([1,2,3] strictly increasing)
 sce_generate_static_w3c_c_test(155 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.6: <foreach> body executes per-element; sums [1,2,3] to 6
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
