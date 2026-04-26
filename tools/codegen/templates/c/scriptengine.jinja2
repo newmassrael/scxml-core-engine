@@ -59,17 +59,31 @@
             "end");
         {% for var in model.variables %}
         {% if var.expr %}
-        /* W3C SCXML 5.2.2: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
-        (void)luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})");
+        /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}">.
+           On expression failure the data element is left undefined (lua nil)
+           and error.execution is queued so the SM can react. memset on the
+           SM struct in `_init` zero-initialised both queues before this
+           loop runs, so direct enqueue is safe at this point. */
+        if (luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
+            lua_pop(sm->L, 1);
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+        }
         {% elif var.content %}
-        /* W3C SCXML 5.2.2: <data id="{{ var.id }}"> inline content (eval as expression).
+        /* W3C SCXML 5.3: <data id="{{ var.id }}"> inline content (eval as expression).
            Mirrors `<data expr="...">` — the trimmed text content is treated as
-           an ECMAScript expression and transpiled via `to_lua_expr`. The cpp/rust
-           backends fall back to a string literal on eval failure; the C11 path
-           drops silently for now, matching the rest of this file's E5 policy. */
-        (void)luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})");
+           an ECMAScript expression and transpiled via `to_lua_expr`. */
+        if (luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
+            lua_pop(sm->L, 1);
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+        }
         {% endif %}
         {% endfor %}
         {% if model.binding == 'early' %}
@@ -79,7 +93,12 @@
            scriptengine_helpers.jinja2 early-binding loop (model.states |
            dictsort + state.datamodel guard). Late binding emit is deferred
            until the first late fixture forces it (built-but-unconsumed
-           carve-out — feedback_built_but_unconsumed.md). #}
+           carve-out — feedback_built_but_unconsumed.md).
+           Init-failure error.execution raise is also deferred here — the
+           top-level loop above lifts to the rc-checked shape because
+           test277 forces it, but no current fixture has a state-local
+           <data> with an illegal expr. The first such fixture will lift
+           this loop's emit to mirror the top-level shape verbatim. #}
         {% for state_id, state in model.states | dictsort %}
         {% if state.datamodel %}
         {% for var in state.datamodel %}
@@ -107,12 +126,29 @@
 {% endmacro %}
 
 {# Emit a bounded block that assigns `loc = (expr)` via luaL_dostring.
-   Errors are silently dropped at this slice — error.execution raise on
-   guard/assign failure lands with the first fixture that depends on it
-   (W3C SCXML 5.3 error semantics). #}
+   On chunk failure (illegal location, illegal expression, type error)
+   the macro pops the lua error message off the stack and enqueues an
+   `error.execution` event onto the SM's internal queue — W3C SCXML 5.4
+   mandates that an unsuccessful <assign> raise this event so the
+   surrounding state's `transition event="error.execution"` can fire.
+   The raise emit shape is identical to the <raise> action emit in
+   `state_machine.c.jinja2::emit_action`; `_err_evt` is declared inside
+   the inner if-block scope so concurrent <assign>s in the same onentry
+   block do not collide. The EVENT_ERROR_EXECUTION enum value is always
+   present whenever this path runs — `analyzer.rs::apply_script_engine_implications`
+   injects "error.execution" into model.events for every fixture that
+   sets needs_script_engine, and any fixture using <assign> does. The
+   guard/eval failure on cond expressions remains silent-drop until a
+   negative-cond fixture forces it. #}
 {% macro lua_assign(loc, expr) %}
-    (void)luaL_dostring(sm->L,
-        "{{ loc }} = ({{ expr | to_lua_expr | escape_c }})");
+    if (luaL_dostring(sm->L,
+        "{{ loc }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
+        lua_pop(sm->L, 1);
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
+    }
 {% endmacro %}
 
 {# In-foreach-body assign variant: same chunk as lua_assign, but the

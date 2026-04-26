@@ -293,7 +293,18 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
 {% macro emit_transition_match_check(trans) %}
 {% if not trans.event %}
         if (event == {{ model.name | upper }}_EVENT_NONE)
-{% elif trans.event == '*' %}
+{% elif trans.event == '*' or trans.event == '.*' or trans.event == '_*' %}
+        {# W3C SCXML 5.9.3 wildcard: '*' is the spec form; '.*' and '_*'
+           are SCE-recognised synonyms in line with analyzer.rs (the same
+           three forms register as `has_wildcard`) and parser.rs (the
+           same three forms bypass event-name validation). They all
+           collapse to "match every non-NONE event" — eventless
+           transitions are dispatched separately via EVENT_NONE so the
+           wildcard must NOT pick them up, otherwise check_eventless_transitions
+           would loop forever. Prefix-suffix wildcards (e.g. "foo.*")
+           remain deferred until a fixture forces the prefix-match
+           emit shape (cpp/rust use precomputed enum lists or runtime
+           string matching; C11 will land that with its first consumer). #}
         if (event != {{ model.name | upper }}_EVENT_NONE)
 {% else %}
         if (event == {{ model.name | upper }}_EVENT_{{ trans.event | upper | replace('.', '_') | replace('-', '_') }})

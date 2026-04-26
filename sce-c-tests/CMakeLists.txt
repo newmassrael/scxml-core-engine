@@ -52,6 +52,10 @@ sce_generate_static_w3c_c_test(278 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(279 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: early binding (default) initialises state-local <data expr> at startup before its owning state is entered
 sce_generate_static_w3c_c_test(550 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: explicit binding="early" pre-initialises state-local <data expr> from a sibling state's transition cond
 sce_generate_static_w3c_c_test(551 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: early binding initialises state-local <data> with inline content (transpiled to a Lua table literal)
+sce_generate_static_w3c_c_test(277 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: <data expr> with an illegal expression raises error.execution at init and leaves the location undefined for later assignment
+sce_generate_static_w3c_c_test(286 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.4: <assign> with an empty location attribute fails the lua chunk and raises error.execution
+sce_generate_static_w3c_c_test(312 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.4: <assign> with an illegal expression raises error.execution before the surrounding onentry's later actions queue
+sce_generate_static_w3c_c_test(487 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.4: <assign> targeting an undefined data variable with an illegal expression raises error.execution
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
