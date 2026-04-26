@@ -869,12 +869,12 @@ TemplateExpandResult expandImpl(std::string_view content,
                                  depth + 1, stack, substitution.positions);
         } catch (TemplateError &e) {
             stack.pop_back();
-            // Nested failures already carry an inner location when
-            // available; fall back to the caller's `<sce:use>` only
-            // when nothing downstream set one.
-            if (!e.location().has_value()) {
-                e.setLocation(useLocation);
-            }
+            // Depth-1 collapse (RFC §6.3 Q3): every nested-template
+            // failure surfaces at the outer `<sce:use>` callsite the
+            // operator can see, even if the inner expansion stamped
+            // its own leaf location. Mirrors Rust template.rs's
+            // `.map_err(|(err, _)| (remap_nested(err, ...), loc))`.
+            e.setLocation(useLocation);
             throw;
         } catch (...) {
             stack.pop_back();

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  XInclude'd fragment for the coord_xinclude_template_combined
+  fixture. Calls into `t.scxml`; the nested template body is
+  what carries the failing `<sce:use>` so the diagnostic skips
+  past this fragment to the leaf file.
+-->
+<wrap xmlns:sce="http://sce.dev/ext">
+  <sce:use template="t.scxml"/>
+</wrap>

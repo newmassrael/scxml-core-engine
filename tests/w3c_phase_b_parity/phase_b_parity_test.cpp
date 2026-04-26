@@ -824,3 +824,25 @@ TEST(PhaseBParity, CoordXIncludeFragment) {
         },
         /*assertCoordinateAgreement=*/true);
 }
+
+// Phase X D2 error-path fixture — chains XInclude and template
+// expansion: `<xi:include>` splices `frag.xml`, which contains
+// `<sce:use template="t.scxml"/>`, whose body contains a nested
+// `<sce:use template="ghost.scxml"/>`. The diagnostic surfaces at
+// the OUTER callsite (frag.xml's `<sce:use>` row/col) per RFC
+// §6.3 Q3 depth-1 collapse: nested-template failures restamp to
+// the call site the operator can see. The fixture pins the
+// composition chain (xinclude_map → substitution.positions →
+// inner expandImpl) AND the depth-1 restamp at the recursive-
+// expandImpl catch — both must agree across producers. See
+// claudedocs/rfc-sce-template-phase-x.md §3 D2.
+TEST(PhaseBParity, CoordXIncludeTemplateCombined) {
+    runErrorParityFixture(
+        "coord_xinclude_template_combined",
+        "xml/template-not-found",
+        "SCE::parsing::TemplateNotFound",
+        [](const SCE::parsing::TemplateError &ex) -> bool {
+            return dynamic_cast<const SCE::parsing::TemplateNotFound *>(&ex) != nullptr;
+        },
+        /*assertCoordinateAgreement=*/true);
+}

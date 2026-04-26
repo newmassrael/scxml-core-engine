@@ -186,3 +186,12 @@ add_phase_b_parity_fixture(coord_nested_collapse CoordNestedCollapse)
 # threads through `processSceTemplate`'s expander all the way to
 # the diagnostic stamp.
 add_phase_b_parity_fixture(coord_xinclude_fragment CoordXIncludeFragment)
+
+# D2 error-path fixture — chains both preprocessor stages:
+# `<xi:include>` splices `frag.xml`, which contains
+# `<sce:use template="t.scxml"/>`, whose body contains a nested
+# `<sce:use template="ghost.scxml"/>`. Asserts coordinate
+# agreement at the leaf file `t.scxml` — proves the full
+# xinclude_map → substitution.positions → inner expandImpl
+# composition chain preserves leaf-file attribution.
+add_phase_b_parity_fixture(coord_xinclude_template_combined CoordXIncludeTemplateCombined)

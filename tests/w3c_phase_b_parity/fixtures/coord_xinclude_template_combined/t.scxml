@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Leaf template for the coord_xinclude_template_combined fixture.
+  Body contains a nested `<sce:use template="ghost.scxml"/>` whose
+  target does not exist; both producers must surface the diagnostic
+  with this file's row/col, proving the composition chain
+  xinclude_map → substitution.positions → inner expandImpl
+  preserves leaf-file attribution all the way to the throw stamp.
+-->
+<sce:template xmlns="http://www.w3.org/2005/07/scxml"
+              xmlns:sce="http://sce.dev/ext"
+              name="coord_xinclude_template_combined_t">
+  <state id="leaf">
+    <sce:use template="ghost.scxml"/>
+  </state>
+</sce:template>
