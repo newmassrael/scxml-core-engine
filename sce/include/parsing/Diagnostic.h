@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 
 // Abstract base for typed diagnostics emitted on the SCE wire.
@@ -79,5 +80,27 @@ public:
     // RFC §W1 audit finding #1 closure (W2 deliverable).
     virtual std::unique_ptr<Diagnostic> clone() const = 0;
 };
+
+// Content-addressed FNV-1a 64-bit id shared between every concrete
+// `Diagnostic` subtype's `to_json()` impl. Mirrors
+// `sce-build/src/forge/diagnostic.rs::Fnv1a64` byte-for-byte (same
+// OFFSET / PRIME constants, byte-XOR-then-multiply inner loop) so C++
+// and Rust producers share an id namespace. The canonical key shape is
+//
+//     code | stage | file_or_empty <0x1f> messageFragment
+//
+// matching `compute_id` in the same Rust module. Returned string
+// satisfies the schema's `^fnv1a:[0-9a-f]{16}$` pattern.
+//
+// Note: the Rust producer feeds *structured* `key_fragments` into the
+// hash (template/param/declared etc.), while the C++ producer in W1+W3
+// derives its key from the rendered message text — schema-valid but not
+// byte-equivalent to Rust's id for the same logical error. Lifting
+// structured fields onto the C++ subtypes is W3+ scope (RFC §1 Q5)
+// and would be the only way to make ids byte-match across sides.
+std::string
+computeFnv1aDiagnosticId(std::string_view code, std::string_view stage,
+                         std::string_view file,
+                         std::string_view messageFragment);
 
 }  // namespace SCE::parsing
