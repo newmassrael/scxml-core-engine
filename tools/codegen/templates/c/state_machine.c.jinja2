@@ -10,10 +10,74 @@
    (jinja2 inline) per c11_design_decisions.md.                            #}
 
 {% include 'license_header.jinja2' %}
+{% import 'c/scriptengine.jinja2' as se %}
 
 #include "{{ model.name }}_sm.h"
 
 #include <string.h>
+
+{# RFC §5.J.1: recursive action emitter. Mirrors the C++ tree's
+   `actions/<type>.jinja2` include dispatch but inlines every variant in
+   one local macro so the C11 backend stays a two-template tree (header
+   + source) until a second consumer fixture justifies splitting. The
+   macro is recursive: <if>'s then_actions / elseif.actions / else_actions
+   call back into emit_action, so nested <if>/<assign>/<raise> chains
+   render in one pass.
+
+   `bool _if_pass`/`_elif_pass` are intentionally declared inside per-block
+   `{ }` scopes so nested <if> chains shadow rather than collide; -Wshadow
+   is not enabled in the C11 conformance target so the shadow stays warn-free.
+   The caller (execute_entry_actions / execute_exit_actions) supplies the
+   surrounding `case` block — we never emit `case`/`break` ourselves. #}
+{% macro emit_action(action) %}
+{% if action.type == 'raise' %}
+        {
+            /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
+            {{ model.name }}_event_with_meta_t evt;
+            memset(&evt, 0, sizeof(evt));
+            evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise(sm, &evt);
+        }
+{% elif action.type == 'assign' %}
+        {
+            /* W3C SCXML 5.4: <assign location="{{ action.location }}" expr="{{ action.expr | escape_c }}"> */
+{{ se.lua_assign(action.location, action.expr) }}
+        }
+{% elif action.type == 'if' %}
+        {
+            /* W3C SCXML 4.3: <if cond="{{ action.cond | escape_c }}"> */
+            bool _if_pass;
+{{ se.lua_eval_guard(action.cond, '_if_pass') }}
+            if (_if_pass) {
+                {% for sub in action.then_actions %}
+                {{ emit_action(sub) }}
+                {% endfor %}
+            }
+{% for elif in action.elseif_branches %}
+            else {
+                /* W3C SCXML 4.3: <elseif cond="{{ elif.cond | escape_c }}"> */
+                bool _elif_pass;
+{{ se.lua_eval_guard(elif.cond, '_elif_pass') }}
+                if (_elif_pass) {
+                    {% for sub in elif.actions %}
+                    {{ emit_action(sub) }}
+                    {% endfor %}
+                }
+{% endfor %}
+{% if action.else_actions %}
+            else {
+                /* W3C SCXML 4.3: <else> */
+                {% for sub in action.else_actions %}
+                {{ emit_action(sub) }}
+                {% endfor %}
+            }
+{% endif %}
+{% for elif in action.elseif_branches %}
+            }
+{% endfor %}
+        }
+{% endif %}
+{% endmacro %}
 
 /* ── Local helpers: bounded event queue (FIFO circular buffer) ────── */
 {# C++ `EventQueueManager<EventWithMetadata>` is a class template parameterised
@@ -111,15 +175,15 @@ static SCE_C_UNUSED {{ model.name }}_state_t state_get_initial_child({{ model.na
 
 /* ── W3C SCXML 5.9: Action execution (per-state, document-order) ──── */
 {# Mirrors the C++ entry_exit_actions.jinja2 dispatch: each `<onentry>` /
-   `<onexit>` block lowers to the `actions/{type}.jinja2` body for every
-   action it contains. C11 inlines the action body directly (no
+   `<onexit>` block lowers via the `emit_action` macro defined above for
+   every action it contains. C11 inlines the action body directly (no
    `std::function` wrapper, no EntryExitHelper delegation) — T3 lock-in
    per c11_design_decisions.md.
 
-   This jinja2 macro shifts new action.type bodies into separate
-   `c/helpers/actions_*.jinja2` includes only when a second consumer
-   appears; until then the inline branch keeps the diff small and the
-   activation site explicit.                                              #}
+   The macro splits into per-action-type `c/actions/<type>.jinja2`
+   includes only when a second consumer appears; until then keeping all
+   variants in one local macro keeps the diff small and the activation
+   site explicit.                                                          #}
 static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
     (void)sm;
     switch (s) {
@@ -129,15 +193,7 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
         {% for block in state.on_entry_blocks %}
         /* Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }} */
         {% for action in block %}
-        {% if action.type == 'raise' %}
-        {
-            /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
-            {{ model.name }}_event_with_meta_t evt;
-            memset(&evt, 0, sizeof(evt));
-            evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {{ model.name }}_raise(sm, &evt);
-        }
-        {% endif %}
+        {{ emit_action(action) }}
         {% endfor %}
         {% endfor %}
         break;
@@ -158,15 +214,7 @@ static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_
         {% for block in state.on_exit_blocks %}
         /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} */
         {% for action in block %}
-        {% if action.type == 'raise' %}
-        {
-            /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
-            {{ model.name }}_event_with_meta_t evt;
-            memset(&evt, 0, sizeof(evt));
-            evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            {{ model.name }}_raise(sm, &evt);
-        }
-        {% endif %}
+        {{ emit_action(action) }}
         {% endfor %}
         {% endfor %}
         break;
@@ -184,10 +232,34 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
 
 /* ── W3C SCXML 3.13: Transition processing ────────────────────────── */
 {# Mirrors the C++ `tryTransitionInState` switch-on-source-state pattern.
-   E1 minimum supports unconditional eventless transitions and unguarded
-   event-name matches only. Guard expressions and `In()` predicates land
-   in E2 with the helpers/event_matching + helpers/guard ports. Transitions
-   are walked in document order; the first match wins (W3C 3.13). #}
+   Guarded transitions evaluate `cond` against the Lua datamodel inline
+   (no helper/event_matching split — T3 lock-in). Wildcard `event="*"`
+   matching remains deferred until the first fixture whose pass-path
+   depends on it; for current consumers (test147) the document-order
+   `bar` transition fires before the `*` fallback can be checked, so
+   wildcard parsing without runtime dispatch is sufficient. Transitions
+   are walked in document order; first match wins (W3C 3.13).            #}
+{% macro emit_transition_match_check(trans) %}
+{% if not trans.event %}
+        if (event == {{ model.name | upper }}_EVENT_NONE)
+{% elif trans.event == '*' %}
+        if (false /* W3C 3.13 wildcard event="*" — deferred (see header note) */)
+{% else %}
+        if (event == {{ model.name | upper }}_EVENT_{{ trans.event | upper | replace('.', '_') | replace('-', '_') }})
+{% endif %}
+{% endmacro %}
+
+{% macro emit_transition_body(trans) %}
+            sm->policy.last_transition_source_state = sm->current_state;
+            sm->policy.last_transition_is_internal = {{ 'true' if trans.is_internal else 'false' }};
+            sm->policy.last_transition_is_targetless = {{ 'true' if not trans.target else 'false' }};
+            {% if trans.target %}
+            sm->current_state = {{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }};
+            {% endif %}
+            sm->transition_taken = true;
+            return true;
+{% endmacro %}
+
 static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t event) {
     sm->transition_taken = false;
     switch (sm->current_state) {
@@ -195,32 +267,18 @@ static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t 
     {% if state.transitions %}
     case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% for trans in state.transitions %}
-        {% if not trans.event %}
-        if (event == {{ model.name | upper }}_EVENT_NONE) {
-            sm->policy.last_transition_source_state = sm->current_state;
-            sm->policy.last_transition_is_internal = {{ 'true' if trans.is_internal else 'false' }};
-            sm->policy.last_transition_is_targetless = {{ 'true' if not trans.target else 'false' }};
-            {% if trans.target %}
-            sm->current_state = {{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }};
-            {% endif %}
-            sm->transition_taken = true;
-            return true;
-        }
-        {% elif trans.event == '*' %}
-        /* Wildcard event="*" transition deferred until first consumer fixture
-           lands the EventMatchingHelper port (process_transition.jinja2). */
+        {{ emit_transition_match_check(trans) }} {
+        {% if trans.cond %}
+            /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" */
+            bool _trans_pass;
+{{ se.lua_eval_guard(trans.cond, '_trans_pass') }}
+            if (_trans_pass) {
+                {{ emit_transition_body(trans) }}
+            }
         {% else %}
-        if (event == {{ model.name | upper }}_EVENT_{{ trans.event | upper | replace('.', '_') | replace('-', '_') }}) {
-            sm->policy.last_transition_source_state = sm->current_state;
-            sm->policy.last_transition_is_internal = {{ 'true' if trans.is_internal else 'false' }};
-            sm->policy.last_transition_is_targetless = {{ 'true' if not trans.target else 'false' }};
-            {% if trans.target %}
-            sm->current_state = {{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }};
-            {% endif %}
-            sm->transition_taken = true;
-            return true;
-        }
+            {{ emit_transition_body(trans) }}
         {% endif %}
+        }
         {% endfor %}
         break;
     }
@@ -365,6 +423,11 @@ void {{ model.name }}_run({{ model.name }}_t *sm) {
 
 void {{ model.name }}_init({{ model.name }}_t *sm) {
     memset(sm, 0, sizeof(*sm));
+    {% if model.needs_script_engine %}
+    /* W3C SCXML 5.10: Open Lua engine and seed datamodel before any
+       <onentry> body runs (those bodies may reference datamodel vars). */
+{{ se.lua_init_engine() }}
+    {% endif %}
     sm->current_state = {{ model.name }}_initial_state();
     execute_entry_actions(sm, sm->current_state);
     /* W3C 3.6: initial state may be compound — descend to its initial leaf. */
@@ -378,6 +441,14 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
         execute_entry_actions(sm, child);
         cursor = child;
     }
+}
+
+void {{ model.name }}_destroy({{ model.name }}_t *sm) {
+    {% if model.needs_script_engine %}
+{{ se.lua_destroy_engine() }}
+    {% else %}
+    (void)sm;
+    {% endif %}
 }
 
 {{ model.name }}_state_t {{ model.name }}_get_current_state(const {{ model.name }}_t *sm) {

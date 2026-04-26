@@ -1,0 +1,72 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.J.1 — C11 script-engine helpers (lua_State* direct, no abstraction).
+
+   The C++/Rust/Go/Kotlin backends route script execution through an
+   IScriptEngine interface (ScriptEngineProvider in C++/Rust/Go,
+   ScriptEngineHost in Kotlin) so that a fixture-level test harness can
+   swap a mock engine. The C11 backend is AOT-only and bare-metal-bound:
+   the embedded target runs Lua 5.4 directly with no allocator hook, no
+   futures, no virtual dispatch. So this template emits raw lua C API
+   calls inline, and the abstraction layer that the other backends carry
+   never appears in the generated `_sm.c`.
+
+   Macros exported:
+     - lua_init_engine()         → create lua_State, openlibs, init datamodel
+     - lua_destroy_engine()      → close lua_State (idempotent, NULL-safe)
+     - lua_assign(loc, expr)     → execute "loc = (transpiled_expr)" chunk
+     - lua_eval_guard(cond, var) → set `var` (bool) to truthiness of cond
+
+   Every macro takes the Lua state pointer as `sm->L`; the calling
+   template owns the surrounding block scope and any per-block error
+   handling. T3 lock-in (jinja2 inline) per c11_design_decisions.md —
+   no helper class, no shared .c file. #}
+
+{% macro lua_init_engine() %}
+    /* W3C SCXML 5.10: Open Lua state and register standard libraries. */
+    sm->L = luaL_newstate();
+    if (sm->L != NULL) {
+        luaL_openlibs(sm->L);
+        {% for var in model.variables %}
+        {% if var.expr %}
+        /* W3C SCXML 5.2.2: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
+        (void)luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})");
+        {% elif var.content %}
+        /* W3C SCXML 5.2.2: <data id="{{ var.id }}"> with inline content */
+        (void)luaL_dostring(sm->L,
+            "{{ var.id }} = ('{{ var.content | escape_c }}')");
+        {% endif %}
+        {% endfor %}
+    }
+{% endmacro %}
+
+{% macro lua_destroy_engine() %}
+    if (sm->L != NULL) {
+        lua_close(sm->L);
+        sm->L = NULL;
+    }
+{% endmacro %}
+
+{# Emit a bounded block that assigns `loc = (expr)` via luaL_dostring.
+   Errors are silently dropped at this slice — error.execution raise on
+   guard/assign failure lands with the first fixture that depends on it
+   (W3C SCXML 5.3 error semantics). #}
+{% macro lua_assign(loc, expr) %}
+    (void)luaL_dostring(sm->L,
+        "{{ loc }} = ({{ expr | to_lua_expr | escape_c }})");
+{% endmacro %}
+
+{# Emit a bounded block that evaluates `cond` and stores its truthiness in
+   `result_var` (must be `bool` and already declared by the caller). The
+   chunk returns the value, lua_toboolean lifts it, lua_pop drops the
+   stack slot. Same drop-on-error policy as lua_assign for now. #}
+{% macro lua_eval_guard(cond, result_var) %}
+    {{ result_var }} = false;
+    if (luaL_dostring(sm->L,
+        "return ({{ cond | to_lua_guard | escape_c }})") == 0) {
+        {{ result_var }} = (bool)lua_toboolean(sm->L, -1);
+    }
+    lua_pop(sm->L, 1);
+{% endmacro %}

@@ -21,6 +21,17 @@
 
 #include "sce/types.h"
 
+{% if model.needs_script_engine %}
+/* RFC §5.J.1: C11 backend embeds Lua 5.4 directly (no abstraction layer).
+   The state machine struct owns the lua_State* lifecycle — opened by
+   _init, closed by _destroy. ECMAScript datamodel expressions are
+   transpiled to Lua at codegen time via the to_lua_expr/guard filters
+   and embedded as C string literals passed to luaL_dostring. */
+#include "lua.h"
+#include "lualib.h"
+#include "lauxlib.h"
+{% endif %}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -95,6 +106,9 @@ typedef struct {{ model.name }} {
     char current_event_invoke_id[SCE_MAX_ID_LEN];
     void (*completion_callback)(void *user_data);
     void *completion_callback_user_data;
+    {% if model.needs_script_engine %}
+    lua_State *L;                                    /* W3C 5.10: ECMAScript datamodel */
+    {% endif %}
 } {{ model.name }}_t;
 
 /* ── Public API ───────────────────────────────────────────────────── */
@@ -102,6 +116,13 @@ typedef struct {{ model.name }} {
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
    Must be called once before {{ model.name }}_step / {{ model.name }}_run. */
 void {{ model.name }}_init({{ model.name }}_t *sm);
+
+/* W3C SCXML 5.10: Tear down any owned datamodel resources. Idempotent —
+   safe to call once per _init or zero times if the caller treats the
+   instance as bump-allocated. NULL-safe inside (lua_State* is checked).
+   Always present in the public API so callers can call uniformly across
+   datamodel-using and datamodel-less fixtures. */
+void {{ model.name }}_destroy({{ model.name }}_t *sm);
 
 /* W3C SCXML 6.2: Single macrostep — drain queues, run eventless E* loop. */
 void {{ model.name }}_step({{ model.name }}_t *sm);

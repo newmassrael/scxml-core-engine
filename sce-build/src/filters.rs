@@ -526,17 +526,26 @@ fn escape_cpp(text: String) -> String {
 /// Register all C11-specific filters on the minijinja environment.
 /// RFC §5.J.1 (watching-zenoh consumer / MCU AOT backend).
 ///
-/// Eventless / datamodel-less templates rely on jinja2 built-ins
-/// (`upper`, `replace`, `sort`, `dictsort`) plus the shared invoke
-/// selector filters; no `escape_c` consumer exists yet because the
-/// minimum templates emit no `<send>` payload literals. The escape
-/// filter lands together with its first jinja2 consumer (entry/exit
-/// action emission) so the registration cannot drift into "built but
-/// unconsumed" state.
+/// `escape_c` shares the C++/Rust escape rule set (backslash, double
+/// quote, newline, carriage return, tab); C11 string literals follow
+/// the same escape grammar so we can route the filter to `escape_rust`
+/// with no behavioural change. The Lua expression family is registered
+/// here (not just on Rust/Go) because the C11 backend transpiles
+/// ECMAScript expressions to Lua at codegen time and embeds the result
+/// as a C string literal passed through `luaL_dostring`.
 pub fn register_c11_filters(env: &mut minijinja::Environment) {
     register_invoke_filters(env);
+    env.add_filter("escape_c", escape_c);
+    env.add_filter("to_lua_expr", to_lua_expr);
+    env.add_filter("to_lua_guard", to_lua_guard);
+    env.add_filter("to_lua_script", to_lua_script);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
+}
+
+/// Escape C string literals (identical escaping rules to Rust/C++).
+fn escape_c(text: String) -> String {
+    escape_rust(text)
 }
 
 // ── Kotlin filters ───────────────────────────────────────────────
