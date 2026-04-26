@@ -9,6 +9,7 @@
 #include "parsing/IXMLParser.h"
 #include "parsing/ParseError.h"
 #include "parsing/ParsingCommon.h"
+#include "parsing/SemanticError.h"
 #include "parsing/TemplateError.h"
 #include "parsing/XIncludeError.h"
 
@@ -130,6 +131,16 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         addError(msg);
         recordDiagnostic(xie.clone());
         return nullptr;
+    } catch (const SCE::parsing::SemanticError &se) {
+        // RFC §W5 D5: SCXML semantic-validation throws (parseScxmlNode
+        // top-level-script + no-states; validateModel initial-state +
+        // transition-target + compound-state-initial) surface here.
+        // Q4-B coexistence: legacy `addError` populates
+        // `getErrorMessages()` while `recordDiagnostic` populates the
+        // typed `getDiagnostics()` surface consumers dispatch on.
+        addError(se.what());
+        recordDiagnostic(se.clone());
+        return nullptr;
     } catch (const std::exception &ex) {
         // RFC §W4 D1-C: wrap unexpected std::exception as typed
         // `ParseException` so the typed surface stays populated even
@@ -202,6 +213,17 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         }
         addError(msg);
         recordDiagnostic(xie.clone());
+        return nullptr;
+    } catch (const SCE::parsing::SemanticError &se) {
+        // RFC §W5 D5: SCXML semantic-validation throws (parseScxmlNode
+        // top-level-script + no-states; validateModel initial-state +
+        // transition-target + compound-state-initial) surface here.
+        // Q4-B coexistence: legacy `addError` populates
+        // `getErrorMessages()` while `recordDiagnostic` populates the
+        // typed `getDiagnostics()` surface consumers dispatch on.
+        // Mirror of the parseFile arm above.
+        addError(se.what());
+        recordDiagnostic(se.clone());
         return nullptr;
     } catch (const std::exception &ex) {
         // RFC §W4 D1-C: wrap unexpected std::exception as typed
@@ -361,15 +383,22 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
             } else {
                 std::string errorDetail = "Top-level script element #" + std::to_string(i + 1) + " cannot be loaded";
 
+                std::optional<std::string> srcOpt;
                 if (scriptElements[i]->hasAttribute("src")) {
                     std::string srcValue = scriptElements[i]->getAttribute("src");
                     errorDetail += " (src: \"" + Log::sanitize(srcValue) + "\")";
+                    srcOpt = std::move(srcValue);
                 }
                 errorDetail += " - document rejected per W3C SCXML 5.8";
 
                 SCE_LOG_ERROR("Failed to parse top-level script element #{} (W3C SCXML 5.8)", i + 1);
-                addError(errorDetail);
-                return false;
+                // RFC §W5 D5: typed-throw replaces addError + return-false
+                // so the parser-entry catch arm can record both the legacy
+                // string and the typed Diagnostic in one site.
+                throw SCE::parsing::SemanticTopLevelScriptUnloaded(
+                    std::move(errorDetail),
+                    /*index=*/std::optional<std::size_t>{i + 1},
+                    /*src=*/std::move(srcOpt));
             }
         }
 
@@ -390,8 +419,11 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
     rootStateElements.insert(rootStateElements.end(), finalElements.begin(), finalElements.end());
 
     if (rootStateElements.empty()) {
-        addError("No state nodes found in SCXML document");
-        return false;
+        // RFC §W5 D5: typed-throw — folded onto `validation/empty-collection`
+        // per W4 D4 fold (concept identity with forge "kind requires at
+        // least one X").
+        throw SCE::parsing::SemanticNoStates(
+            "No state nodes found in SCXML document");
     }
 
     SCE_LOG_INFO("Found {} root state nodes", rootStateElements.size());
@@ -534,21 +566,38 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
 
     SCE_LOG_INFO("Validating SCXML model");
 
-    bool isValid = true;
-
     // 1. Verify root state
     if (!model->getRootState()) {
         addError("Model has no root state");
         return false;
     }
 
-    // 2. Validate initial states
+    // Snapshot all declared state ids once for the typed-throw
+    // payload's `available` list. Used by `SemanticInitialStateUnknown`
+    // and `SemanticTransitionTargetUnknown` so consumers receive a
+    // structured `fix.candidates` list (RFC §W5 D2 fold of forge
+    // `validation/invalid-reference`).
+    std::vector<std::string> availableStateIds;
+    availableStateIds.reserve(model->getAllStates().size());
+    for (const auto &s : model->getAllStates()) {
+        availableStateIds.push_back(s->getId());
+    }
+
+    // 2. Validate initial states (W3C SCXML §3.3 — root-level initial)
     const auto &initialStates = model->getInitialStates();
     if (!initialStates.empty()) {
         for (const auto &initialStateId : initialStates) {
             if (!model->findStateById(initialStateId)) {
-                addError("Initial state '" + initialStateId + "' not found");
-                isValid = false;
+                // RFC §W5 D5 typed-throw — fail-fast on the first bad
+                // id (W4 D1-C invariant: a single semantic error
+                // terminates the parse, paralleling the parser-entry
+                // ParseError catch arm).
+                throw SCE::parsing::SemanticInitialStateUnknown(
+                    "Initial state '" + initialStateId + "' not found",
+                    initialStateId,
+                    SCE::parsing::SemanticInitialStateUnknown::Scope::DocumentRoot,
+                    /*parent_id=*/std::string{},
+                    availableStateIds);
             }
         }
     }
@@ -569,43 +618,53 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
             if (!isChild) {
                 addError("State '" + state->getId() + "' has parent '" + parent->getId() +
                          "' but is not in parent's children list");
-                isValid = false;
+                return false;
             }
         }
 
-        // Validate transition target states
+        // Validate transition target states (W3C SCXML §3.5)
         for (const auto &transition : state->getTransitions()) {
             const auto &targets = transition->getTargets();
             for (const auto &target : targets) {
                 if (!target.empty() && !model->findStateById(target)) {
-                    addError("Transition in state '" + state->getId() + "' references non-existent target state '" +
-                             target + "'");
-                    isValid = false;
+                    // RFC §W5 D5 typed-throw — folded onto
+                    // `validation/invalid-reference` (concept identity
+                    // with forge `ValidationError::InvalidReference`).
+                    throw SCE::parsing::SemanticTransitionTargetUnknown(
+                        "Transition in state '" + state->getId() +
+                            "' references non-existent target state '" +
+                            target + "'",
+                        state->getId(),
+                        target,
+                        availableStateIds);
                 }
             }
         }
 
-        // W3C SCXML 3.3: Validate initial state(s)
+        // W3C SCXML 3.3: Validate compound-state initial state(s)
         if (!state->getInitialState().empty() && state->getChildren().size() > 0) {
             std::istringstream iss(state->getInitialState());
             std::string initialStateId;
-            bool allInitialStatesFound = true;
-
             while (iss >> initialStateId) {
                 if (!model->findStateById(initialStateId)) {
-                    addError("State '" + state->getId() + "' references non-existent initial state '" + initialStateId +
-                             "'");
-                    allInitialStatesFound = false;
+                    // Same wire code as root-level (RFC §W5 D2 — one
+                    // C++ leaf covers both scopes), payload `Scope`
+                    // discriminates root vs compound for in-process
+                    // typed dispatch.
+                    throw SCE::parsing::SemanticInitialStateUnknown(
+                        "State '" + state->getId() +
+                            "' references non-existent initial state '" +
+                            initialStateId + "'",
+                        initialStateId,
+                        SCE::parsing::SemanticInitialStateUnknown::Scope::CompoundState,
+                        /*parent_id=*/state->getId(),
+                        availableStateIds);
                 }
-            }
-
-            if (!allInitialStatesFound) {
-                isValid = false;
             }
         }
     }
 
-    // 4. Validate guards
+    // 4. Validate guards (warning-only — does not throw)
     for (const auto &guard : model->getGuards()) {
         if (!GuardUtils::isConditionExpression(guard->getTargetState()) &&
             !model->findStateById(guard->getTargetState())) {
@@ -614,13 +673,8 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
         }
     }
 
-    if (isValid) {
-        SCE_LOG_INFO("Model validation successful");
-    } else {
-        SCE_LOG_INFO("Model validation completed with errors");
-    }
-
-    return isValid;
+    SCE_LOG_INFO("Model validation successful");
+    return true;
 }
 
 void SCE::SCXMLParser::addSystemVariables(std::shared_ptr<SCXMLModel> model) {

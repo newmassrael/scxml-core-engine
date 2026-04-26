@@ -1330,5 +1330,181 @@ TEST(SemanticErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
     EXPECT_NE(std::string(today.what()), std::string(future_edit.what()));
 }
 
+// ── SCXMLParser boundary surfacing for SemanticError leaves (W5) ──
+//
+// Mirror of W4's `SCXMLParserBoundary.ParseFileSurfacesTypedFileNotFoundDiagnostic`
+// pattern: feed a doc that trips each W5 throw site; verify
+// (a) `parseContent` returns nullptr,
+// (b) Q4-B legacy `getErrorMessages()` is populated,
+// (c) typed `getDiagnostics()` carries the expected wire `code()`.
+//
+// Standing-consumer load-bearing-ness: the catch-arm pair
+// (`addError` + `recordDiagnostic`) added in `SCXMLParser.cpp`'s
+// `catch (const SCE::parsing::SemanticError &se)` is the sole site
+// that bridges the typed throw to both surfaces. Removing
+// `recordDiagnostic(se.clone())` reds the
+// `getDiagnostics().size() == 1u` assertion below; removing
+// `addError(se.what())` reds Q4-B coexistence.
+
+TEST(SCXMLParserBoundary, ParseContentSurfacesTypedInitialStateUnknownDiagnostic) {
+    constexpr const char *kBrokenScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       version=\"1.0\""
+        "       initial=\"nope\""
+        "       name=\"boundary_w5_initial\">"
+        "  <state id=\"s1\"/>"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kBrokenScxml);
+
+    EXPECT_EQ(model, nullptr);
+    EXPECT_TRUE(parser.hasErrors());
+    EXPECT_FALSE(parser.getErrorMessages().empty());
+
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u);
+    ASSERT_NE(diags[0], nullptr);
+    EXPECT_EQ(diags[0]->code(),
+              std::string_view{"validation/invalid-reference"});
+
+    const auto j = diags[0]->to_json();
+    EXPECT_EQ(j.at("code").get<std::string>(), "validation/invalid-reference");
+    EXPECT_EQ(j.at("stage").get<std::string>(), "validation");
+    EXPECT_EQ(j.at("actual").get<std::string>(), "nope");
+}
+
+TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTransitionTargetUnknownDiagnostic) {
+    constexpr const char *kBrokenScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       version=\"1.0\""
+        "       initial=\"s1\""
+        "       name=\"boundary_w5_target\">"
+        "  <state id=\"s1\">"
+        "    <transition event=\"go\" target=\"ghost\"/>"
+        "  </state>"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kBrokenScxml);
+
+    EXPECT_EQ(model, nullptr);
+    EXPECT_TRUE(parser.hasErrors());
+
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u);
+    EXPECT_EQ(diags[0]->code(),
+              std::string_view{"validation/invalid-reference"});
+    EXPECT_EQ(diags[0]->to_json().at("actual").get<std::string>(), "ghost");
+}
+
+TEST(SCXMLParserBoundary, ParseContentSurfacesTypedCompoundInitialUnknownDiagnostic) {
+    // RFC §W5 D2 fold: compound-state initial uses the SAME wire code
+    // (`validation/invalid-reference`) as document-root initial. The
+    // typed leaf carries `Scope::CompoundState` for in-process typed
+    // dispatch consumers; wire consumers see one branch.
+    constexpr const char *kBrokenScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       version=\"1.0\""
+        "       initial=\"outer\""
+        "       name=\"boundary_w5_compound\">"
+        "  <state id=\"outer\" initial=\"missing\">"
+        "    <state id=\"inner\"/>"
+        "  </state>"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kBrokenScxml);
+
+    EXPECT_EQ(model, nullptr);
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u);
+    EXPECT_EQ(diags[0]->code(),
+              std::string_view{"validation/invalid-reference"});
+    EXPECT_EQ(diags[0]->to_json().at("actual").get<std::string>(), "missing");
+
+    // In-process typed dispatch — confirm scope is CompoundState.
+    const auto *typed =
+        dynamic_cast<const SemanticInitialStateUnknown *>(diags[0].get());
+    ASSERT_NE(typed, nullptr) << "diagnostic must preserve dynamic type";
+    EXPECT_EQ(typed->scope(),
+              SemanticInitialStateUnknown::Scope::CompoundState);
+    EXPECT_EQ(typed->parentId(), "outer");
+}
+
+TEST(SCXMLParserBoundary, ParseContentSurfacesTypedNoStatesDiagnostic) {
+    // Doc with no top-level state/parallel/final children. W3C SCXML
+    // §3.2 requires at least one — folded onto
+    // `validation/empty-collection` per RFC §W5 D2.
+    constexpr const char *kBrokenScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       version=\"1.0\""
+        "       name=\"boundary_w5_no_states\">"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kBrokenScxml);
+
+    EXPECT_EQ(model, nullptr);
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u);
+    EXPECT_EQ(diags[0]->code(),
+              std::string_view{"validation/empty-collection"});
+}
+
+TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnostic) {
+    // Top-level `<script src="..."/>` referencing a non-existent file
+    // — `FileLoadingHelper::loadExternalScript` fails, `ActionParser`
+    // returns nullptr, `parseScxmlNode` throws
+    // `SemanticTopLevelScriptUnloaded`. This is the C++-side trigger
+    // for the 1 NEW wire code RFC §W5 introduces.
+    //
+    // Note: empty `<script/>` does NOT trigger the throw on C++ —
+    // `ActionParser` returns a ScriptAction with empty content (the
+    // C++ side doesn't enforce W3C §5.8's "empty script rejected"
+    // rule at parse time; that path is Rust-only via
+    // `analyzer::can_generate_static`'s `document_rejected` branch).
+    // C++ behaviour mirrors the typed surface for the file-load
+    // failure case which IS pinned here.
+    constexpr const char *kBrokenScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       version=\"1.0\""
+        "       initial=\"s1\""
+        "       datamodel=\"ecmascript\""
+        "       name=\"boundary_w5_script\">"
+        "  <script src=\"/this/path/should/not/exist/missing.js\"/>"
+        "  <state id=\"s1\"/>"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kBrokenScxml);
+
+    EXPECT_EQ(model, nullptr);
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u);
+    EXPECT_EQ(diags[0]->code(),
+              std::string_view{"scxml/top-level-script-unloaded"});
+
+    const auto j = diags[0]->to_json();
+    EXPECT_EQ(j.at("spec").get<std::string>(), "W3C SCXML §5.8");
+    EXPECT_EQ(j.at("stage").get<std::string>(), "validation");
+
+    // In-process typed dispatch — confirm payload preserved through
+    // catch-arm `clone()`. Index is 1-based per W3C SCXML §5.8
+    // ordinal.
+    const auto *typed =
+        dynamic_cast<const SemanticTopLevelScriptUnloaded *>(diags[0].get());
+    ASSERT_NE(typed, nullptr) << "diagnostic must preserve dynamic type";
+    ASSERT_TRUE(typed->index().has_value());
+    EXPECT_EQ(*typed->index(), 1u);
+    ASSERT_TRUE(typed->src().has_value());
+    EXPECT_EQ(*typed->src(), "/this/path/should/not/exist/missing.js");
+}
+
 }  // namespace
 }  // namespace SCE::parsing

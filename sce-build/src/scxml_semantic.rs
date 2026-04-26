@@ -303,4 +303,165 @@ mod tests {
         assert_eq!(single_code(&scxml_err), single_code(&forge_err));
         assert_eq!(single_code(&forge_err), "validation/empty-collection");
     }
+
+    // ── RFC §W5 Stage C: SemanticError cross-side drift tests ──────
+    //
+    // Sister tests to W4's `cpp_parse_subtypes_match_rust_diagnostic_codes`
+    // and `cpp_parse_subtype_code_returns_rust_wire_string` in
+    // `sce-build/src/parser.rs`. RFC §W5 D2 inventory: 4 C++ leaves,
+    // 3 fold onto existing `validation/*` wire codes (REUSE), 1
+    // introduces `scxml/top-level-script-unloaded` (NEW). Cross-side
+    // drift is caught when a commit edits one side without updating
+    // the other.
+
+    /// Pin the 4 C++ `Semantic<Variant>` leaves declared in
+    /// `sce/include/parsing/SemanticError.h` against the W5 leaf
+    /// inventory. Adding a new leaf on the C++ side without a
+    /// corresponding Rust `ScxmlSemanticError` variant (or vice
+    /// versa) reds this test.
+    #[test]
+    fn cpp_scxml_semantic_subtypes_match_rust_diagnostic_codes() {
+        use std::collections::BTreeSet;
+
+        // RFC §W5 D2 inventory: 1 NEW + 3 REUSED = 4 leaves total.
+        let rust_to_cpp: &[(&str, &str)] = &[
+            ("validation/invalid-reference", "SemanticInitialStateUnknown"),
+            (
+                "validation/invalid-reference",
+                "SemanticTransitionTargetUnknown",
+            ),
+            ("validation/empty-collection", "SemanticNoStates"),
+            (
+                "scxml/top-level-script-unloaded",
+                "SemanticTopLevelScriptUnloaded",
+            ),
+        ];
+        assert_eq!(
+            rust_to_cpp.len(),
+            4,
+            "Expected 4 W5 leaves (RFC §W5 D2 inventory: 1 NEW + 3 REUSED)"
+        );
+
+        let expected_cpp: BTreeSet<&str> =
+            rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
+        assert_eq!(
+            expected_cpp.len(),
+            4,
+            "Expected 4 distinct SemanticError subtypes"
+        );
+
+        let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
+        let re = regex::Regex::new(
+            r"class\s+(Semantic\w+)\s*:\s*public\s+SemanticError\b",
+        )
+        .unwrap();
+        let mut found: BTreeSet<String> = BTreeSet::new();
+        for captures in re.captures_iter(hdr) {
+            found.insert(captures[1].to_string());
+        }
+
+        assert!(
+            !found.is_empty(),
+            "sce/include/parsing/SemanticError.h must declare at least \
+             one `class Semantic<Variant> : public SemanticError` — if \
+             the declaration shape changed, update this drift test in \
+             the same commit"
+        );
+
+        let found_refs: BTreeSet<&str> =
+            found.iter().map(|s| s.as_str()).collect();
+        assert_eq!(
+            found_refs, expected_cpp,
+            "SemanticError subtype drift: C++ header = {:?}, expected \
+             (RFC §W5 D2 inventory) = {:?}. Change both sides in the \
+             same commit — see RFC §W5 \
+             (claudedocs/rfc-sce-diagnostic-wire-unification.md).",
+            found_refs, expected_cpp
+        );
+
+        // Cross-check: the NEW W5 wire code is spelled as the
+        // `serde(rename = "...")` literal in
+        // `sce-build/src/forge/diagnostic.rs`. Catches a future
+        // rename of the wire string on the Rust side without a C++
+        // counter-edit.
+        let diag = include_str!("forge/diagnostic.rs");
+        let needle = "\"scxml/top-level-script-unloaded\"";
+        assert!(
+            diag.contains(needle),
+            "DiagnosticCode `scxml/top-level-script-unloaded` (paired \
+             with C++ `SemanticTopLevelScriptUnloaded`) is not declared \
+             as a `serde(rename)` literal in \
+             sce-build/src/forge/diagnostic.rs. Keep the wire name, the \
+             Rust variant, and the C++ subtype in sync — see RFC §W5."
+        );
+    }
+
+    /// Pin the wire-string return literal inside each C++
+    /// `Semantic<Variant>` subtype's `code()` body. The 1 NEW leaf
+    /// returns `scxml/top-level-script-unloaded`; the 3 reused-code
+    /// leaves return their respective folded `validation/*` strings.
+    /// A rename on either side without a matching counter-edit reds
+    /// here with a pointed `does not contain` diff.
+    #[test]
+    fn cpp_scxml_semantic_subtype_code_returns_rust_wire_string() {
+        let class_to_code: &[(&str, &str)] = &[
+            (
+                "SemanticInitialStateUnknown",
+                "validation/invalid-reference",
+            ),
+            (
+                "SemanticTransitionTargetUnknown",
+                "validation/invalid-reference",
+            ),
+            ("SemanticNoStates", "validation/empty-collection"),
+            (
+                "SemanticTopLevelScriptUnloaded",
+                "scxml/top-level-script-unloaded",
+            ),
+        ];
+        assert_eq!(class_to_code.len(), 4);
+
+        let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
+
+        for (cpp_class, expected_code) in class_to_code {
+            let class_marker =
+                format!("class {} : public SemanticError", cpp_class);
+            let class_start = hdr.find(&class_marker).unwrap_or_else(|| {
+                panic!(
+                    "class `{}` not found in \
+                     sce/include/parsing/SemanticError.h — drift in \
+                     subtype naming, see \
+                     `cpp_scxml_semantic_subtypes_match_rust_diagnostic_codes`",
+                    cpp_class
+                )
+            });
+            // Body bounds: from this class's `{` to the start of the
+            // next `class ... : public SemanticError` declaration (or
+            // end of header). Some leaves contain nested types
+            // (`enum class Scope`) whose `};` would confuse a naive
+            // find-next-`};` scanner; bounding by sibling-class
+            // boundary skips the nesting issue.
+            let body_start =
+                hdr[class_start..].find('{').unwrap() + class_start + 1;
+            // Bound by next `class Semantic` declaration (or EOF). The
+            // `\nclass Semantic` prefix avoids matching nested `enum
+            // class` keywords inside this leaf's body.
+            let next_class_offset = hdr[body_start..]
+                .find("\nclass Semantic")
+                .map(|rel| body_start + rel)
+                .unwrap_or(hdr.len());
+            let body = &hdr[body_start..next_class_offset];
+
+            let needle = format!("return \"{}\";", expected_code);
+            assert!(
+                body.contains(&needle),
+                "Class `{}` body does not contain `{}` — the C++ \
+                 subtype's `code()` override must return the expected \
+                 wire string. Update both sides in the same commit \
+                 (RFC §W5 D2).",
+                cpp_class,
+                needle
+            );
+        }
+    }
 }
