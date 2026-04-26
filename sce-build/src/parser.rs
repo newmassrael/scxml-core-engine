@@ -215,17 +215,37 @@ impl SCXMLParser {
         &mut self,
         scxml_path: &str,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        use crate::forge::error::{ForgeError, Located};
+        use crate::forge::error::{ForgeError, Located, XmlError};
         let content = std::fs::read_to_string(scxml_path).map_err(|e| {
-            Located::new(
-                ForgeError::Io {
-                    path: Path::new(scxml_path).to_path_buf(),
-                    source: e,
-                },
-                scxml_path,
-                None,
-                None,
-            )
+            // RFC §W4 D2: distinguish "file not found" from generic
+            // I/O failure so the wire surface can route the
+            // parser-entry retry strategy. Other I/O failures
+            // (permission denied, busy, etc.) keep flowing through
+            // `ForgeError::Io` so the distinction stays semantically
+            // meaningful — the dispatch lambda in
+            // `Diagnostic_test.cpp::ParseErrorConsumer` keys on
+            // `xml/file-not-found` for path-retry, not on a generic
+            // I/O bucket.
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Located::new(
+                    ForgeError::Xml(XmlError::FileNotFound {
+                        path: scxml_path.to_string(),
+                    }),
+                    scxml_path,
+                    None,
+                    None,
+                )
+            } else {
+                Located::new(
+                    ForgeError::Io {
+                        path: Path::new(scxml_path).to_path_buf(),
+                        source: e,
+                    },
+                    scxml_path,
+                    None,
+                    None,
+                )
+            }
         })?;
         let name = Path::new(scxml_path)
             .file_stem()
@@ -317,6 +337,25 @@ impl SCXMLParser {
             )
         })?;
         let root = doc.root_element();
+
+        // RFC §W4 D2: catch the previously-silent failure mode where
+        // the SCXML pipeline is asked to compile a non-SCXML document
+        // (root tag isn't `<scxml>`). Without this check, `parse_states`
+        // walks an unrecognised tree and yields an empty model — a
+        // `feedback_silently_broken_hooks.md` situation. The
+        // `classify_document` router upstream sends `<sce:codec>` etc.
+        // to the Forge pipeline before they reach here, so this guard
+        // only fires for genuinely-misclassified or hand-mangled input.
+        if root.tag_name().name() != "scxml" {
+            return Err(Located::new(
+                ForgeError::Xml(XmlError::WrongRootElement {
+                    found: root.tag_name().name().to_string(),
+                }),
+                diag_label,
+                None,
+                None,
+            ));
+        }
 
         // W3C SCXML 3.6: Get initial attribute
         let mut initial = root.attribute("initial").unwrap_or("").to_string();

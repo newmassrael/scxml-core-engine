@@ -268,6 +268,20 @@ pub enum DiagnosticCode {
     XmlParse,
     #[serde(rename = "xml/schema-validation")]
     XmlSchemaValidation,
+    // ── Top-level parser-entry errors (RFC §W4 α-strict). The two
+    //    codes here have full Rust producers in
+    //    `crate::parser::SCXMLParser` (parse_file ErrorKind::NotFound
+    //    branch + parse_impl root-tag check). Mirrored in C++ by
+    //    `SCE::parsing::ParseFileNotFound` and `ParseWrongRootElement`
+    //    (`sce/include/parsing/ParseError.h`). The other 3 C++
+    //    parser-entry leaves (ParseXmlFailed, ParseException,
+    //    ParseNoRootElement) reuse `xml/parse` because the Rust error
+    //    model has no distinct producer (Result-based, no exceptions,
+    //    roxmltree always-has-root). ──────────────────────────────
+    #[serde(rename = "xml/file-not-found")]
+    XmlFileNotFound,
+    #[serde(rename = "xml/wrong-root-element")]
+    XmlWrongRootElement,
     // ── XInclude preprocessing (runs before roxmltree; C++ runtime
     //    parity with PugiXMLDocument::processXInclude). Split by
     //    repair shape so agents can dispatch: missing-href gets a
@@ -627,6 +641,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Xml
         XmlParse,
         XmlSchemaValidation,
+        XmlFileNotFound,
+        XmlWrongRootElement,
         XmlXIncludeMissingHref,
         XmlXIncludeNotFound,
         XmlXIncludeReadError,
@@ -973,6 +989,8 @@ impl DiagnosticCode {
             // the wire format honest; the message still carries the
             // repair guidance.
             XmlParse
+            | XmlFileNotFound
+            | XmlWrongRootElement
             | XmlXIncludeMissingHref
             | XmlXIncludeNotFound
             | XmlXIncludeReadError
@@ -1058,6 +1076,8 @@ impl DiagnosticCode {
         match self {
             XmlParse => "xml/parse",
             XmlSchemaValidation => "xml/schema-validation",
+            XmlFileNotFound => "xml/file-not-found",
+            XmlWrongRootElement => "xml/wrong-root-element",
             XmlXIncludeMissingHref => "xml/xinclude-missing-href",
             XmlXIncludeNotFound => "xml/xinclude-not-found",
             XmlXIncludeReadError => "xml/xinclude-read-error",
@@ -1387,6 +1407,27 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: Vec::new(),
+        },
+        // Top-level parser-entry errors (RFC §W4 α-strict). `actual`
+        // carries the offending path / found tag-name so repair tools
+        // can act without parsing the message text; `key_fragments`
+        // tie the FNV-1a id to the same payload so two runs against
+        // the same broken input yield the same identifier.
+        XmlError::FileNotFound { path } => DiagnosticPayload {
+            code: DiagnosticCode::XmlFileNotFound,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(path.clone()),
+            fix: None,
+            key_fragments: vec![path.clone()],
+        },
+        XmlError::WrongRootElement { found } => DiagnosticPayload {
+            code: DiagnosticCode::XmlWrongRootElement,
+            stage: Stage::Xml,
+            expected: Some(vec!["scxml".to_string()]),
+            actual: Some(found.clone()),
+            fix: None,
+            key_fragments: vec![found.clone()],
         },
         // XInclude failure modes. The leaf variant drives the code —
         // agents can dispatch without text parsing. `actual` carries
@@ -2312,6 +2353,20 @@ mod tests {
                 "forge/xml-parse",
                 ForgeError::Xml(XmlError::Parse("unexpected end tag </scxml>".into())),
                 r#"{"v":1,"id":"fnv1a:16e2e2901e2b9b96","code":"xml/parse","stage":"xml","message":"XML parse error: unexpected end tag </scxml>"}"#,
+            ),
+            (
+                "forge/xml-file-not-found",
+                ForgeError::Xml(XmlError::FileNotFound {
+                    path: "/nonexistent/path.scxml".into(),
+                }),
+                r#"{"v":1,"id":"fnv1a:b4a2c55cf61bb593","code":"xml/file-not-found","stage":"xml","message":"SCXML file not found: /nonexistent/path.scxml","actual":"/nonexistent/path.scxml"}"#,
+            ),
+            (
+                "forge/xml-wrong-root-element",
+                ForgeError::Xml(XmlError::WrongRootElement {
+                    found: "html".into(),
+                }),
+                r#"{"v":1,"id":"fnv1a:648ce2d13ccab5eb","code":"xml/wrong-root-element","stage":"xml","message":"Root element is not <scxml>, found: <html>","expected":["scxml"],"actual":"html"}"#,
             ),
             (
                 "forge/missing-element",
@@ -3961,6 +4016,8 @@ mod tests {
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
             | XmlSchemaValidation
+            | XmlFileNotFound
+            | XmlWrongRootElement
             | XmlXIncludeMissingHref
             | XmlXIncludeNotFound
             | XmlXIncludeReadError
@@ -4306,6 +4363,7 @@ mod tests {
             use DiagnosticCode::*;
             match code {
                 XmlParse | XmlSchemaValidation
+                | XmlFileNotFound | XmlWrongRootElement
                 | XmlXIncludeMissingHref | XmlXIncludeNotFound | XmlXIncludeReadError
                 | XmlXIncludeCycle | XmlXIncludeTooDeep | XmlXIncludeMalformed
                 | XmlXIncludeUnsupported
@@ -4416,9 +4474,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            150,
+            152,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 150 distinct variants to match the DiagnosticCode \
+             expected 152 distinct variants to match the DiagnosticCode \
              enum.",
         );
     }

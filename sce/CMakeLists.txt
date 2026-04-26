@@ -422,6 +422,7 @@ add_library(sce_runtime
     src/parsing/Diagnostic.cpp
     src/parsing/DiagnosticBatchFormatter.cpp
     src/parsing/PositionMap.cpp
+    src/parsing/ParseError.cpp
     src/parsing/TemplateError.cpp
     src/parsing/TemplateExpander.cpp
     src/parsing/XIncludeError.cpp

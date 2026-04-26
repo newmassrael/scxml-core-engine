@@ -24,6 +24,8 @@
       "enum": [
         "xml/parse",
         "xml/schema-validation",
+        "xml/file-not-found",
+        "xml/wrong-root-element",
         "xml/xinclude-missing-href",
         "xml/xinclude-not-found",
         "xml/xinclude-read-error",

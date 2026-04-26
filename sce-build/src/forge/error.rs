@@ -131,6 +131,32 @@ pub enum XmlError {
     #[error("{0}")]
     SchemaValidation(#[from] crate::forge::xsd_validator::XsdErrors),
 
+    /// SCXML source file not found at the resolved path. Distinct
+    /// from generic `ForgeError::Io` so the wire dispatch can surface
+    /// the parser-entry retry strategy (PATH_RETRY) without re-parsing
+    /// `io::Error::kind()`. Raised by [`crate::parser::SCXMLParser::parse_file`]
+    /// when `std::fs::read_to_string` returns
+    /// `io::ErrorKind::NotFound`; other I/O failures (permission
+    /// denied, etc.) keep flowing through `ForgeError::Io` so the
+    /// distinction stays semantically meaningful.
+    ///
+    /// Mirrors C++ `SCE::parsing::ParseFileNotFound` (RFC §W4 D2).
+    #[error("SCXML file not found: {path}")]
+    FileNotFound { path: String },
+
+    /// Document parsed as well-formed XML but the root element is not
+    /// `<scxml>`. Catches a previously-silent failure mode where a
+    /// non-SCXML document (after `classify_document` routed it into
+    /// the SCXML pipeline) would parse to an empty model with
+    /// downstream `parse_states` finding nothing to walk. Raised by
+    /// [`crate::parser::SCXMLParser::parse_impl`] immediately after
+    /// `roxmltree::Document::parse` succeeds, before any structural
+    /// parsing.
+    ///
+    /// Mirrors C++ `SCE::parsing::ParseWrongRootElement` (RFC §W4 D2).
+    #[error("Root element is not <scxml>, found: <{found}>")]
+    WrongRootElement { found: String },
+
     /// W3C XInclude preprocessing failure. The Rust AOT pipeline
     /// rejects XInclude failures that the C++ runtime would warn
     /// and skip — the two parsers must yield the same effective
