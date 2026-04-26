@@ -420,6 +420,7 @@ add_library(sce_runtime
     src/parsing/DoneDataParser.cpp
     src/parsing/ParsingCommon.cpp
     src/parsing/Diagnostic.cpp
+    src/parsing/DiagnosticBatchFormatter.cpp
     src/parsing/PositionMap.cpp
     src/parsing/TemplateError.cpp
     src/parsing/TemplateExpander.cpp

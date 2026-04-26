@@ -3,6 +3,7 @@
 
 #include "factory/NodeFactory.h"
 #include "parsing/Diagnostic.h"
+#include "parsing/DiagnosticBatchFormatter.h"
 #include "parsing/SCXMLParser.h"
 #include "parsing/TemplateError.h"
 
@@ -13,8 +14,11 @@
 #include <optional>
 #include <regex>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 // Standing consumer for `SCE::parsing::Diagnostic` and the concrete
 // `TemplateError` refit (RFC §W1 commit-series). Two layers:
@@ -322,6 +326,102 @@ TEST(TemplateErrorWire, CanonicalJsonStringHasAlphabeticalKeyOrder) {
     ASSERT_NE(v_pos, std::string::npos) << canonical;
     EXPECT_LT(code_pos, v_pos)
         << "canonical string did not alphabetise keys: " << canonical;
+}
+
+// ── Batch NDJSON formatter (RFC §W2 deliverable #2) ───────────────
+
+TEST(TemplateErrorWire,
+     BatchFormatterEmitsOneRecordPerDiagnosticAsNdjson) {
+    // Three subtypes share a vector. `emit_json_diagnostics` writes
+    // one JSON record per line, '\n'-delimited, no array wrapper.
+    // The reader parses each line with `nlohmann::json::parse` and
+    // confirms required v1 fields.
+    //
+    // Load-bearing bite: change the trailing '\n' to ',' in
+    // `DiagnosticBatchFormatter.cpp` and the per-line parse below
+    // reds with `nlohmann::json::parse_error` on line 2 (the comma
+    // glues two records into a single malformed line).
+    std::vector<std::unique_ptr<Diagnostic>> diags;
+    diags.push_back(std::make_unique<TemplateCycle>(
+        "<sce:use template=\"a.sce-template.xml\">: cycle detected"));
+    diags.push_back(std::make_unique<TemplateMalformed>(
+        "<sce:use template=\"bad.sce-template.xml\">: malformed"));
+    diags.push_back(std::make_unique<TemplateMissingAttribute>(
+        "<sce:use> is missing required 'template' attribute"));
+
+    std::ostringstream oss;
+    emit_json_diagnostics(diags, oss);
+
+    const std::string ndjson = oss.str();
+    ASSERT_FALSE(ndjson.empty());
+    EXPECT_EQ(ndjson.back(), '\n')
+        << "NDJSON must end on the trailing record's newline: "
+        << ndjson;
+
+    // Split on '\n'; with a trailing '\n' there are 3 record lines
+    // plus one empty trailing fragment after the last delimiter.
+    std::vector<std::string> lines;
+    std::string current;
+    for (char c : ndjson) {
+        if (c == '\n') {
+            lines.push_back(std::move(current));
+            current.clear();
+        } else {
+            current += c;
+        }
+    }
+    if (!current.empty()) {
+        lines.push_back(std::move(current));
+    }
+
+    ASSERT_EQ(lines.size(), 3u) << ndjson;
+
+    static const std::array<std::string_view, 3> kExpectedCodes = {
+        "xml/template-cycle",
+        "xml/template-malformed",
+        "xml/template-missing-attribute",
+    };
+
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        const std::string &line = lines[i];
+        nlohmann::json parsed;
+        ASSERT_NO_THROW(parsed = nlohmann::json::parse(line))
+            << "line " << i << " failed to parse: " << line;
+        conformance::assertSchemaConformantBase(parsed,
+                                                kExpectedCodes[i]);
+        conformance::assertNoUnexpectedKeys(parsed);
+    }
+}
+
+TEST(TemplateErrorWire, BatchFormatterSkipsNullEntries) {
+    // Defensive: a hand-assembled vector with a null entry must
+    // not corrupt the line-based reader. The skip is documented
+    // in `DiagnosticBatchFormatter.cpp`.
+    std::vector<std::unique_ptr<Diagnostic>> diags;
+    diags.push_back(std::make_unique<TemplateCycle>("cycle"));
+    diags.push_back(nullptr);
+    diags.push_back(std::make_unique<TemplateMalformed>("malformed"));
+
+    std::ostringstream oss;
+    emit_json_diagnostics(diags, oss);
+
+    const std::string ndjson = oss.str();
+    std::size_t newlines = 0;
+    for (char c : ndjson) {
+        if (c == '\n') {
+            ++newlines;
+        }
+    }
+    EXPECT_EQ(newlines, 2u)
+        << "null entry must be skipped, not emitted as empty line: "
+        << ndjson;
+}
+
+TEST(TemplateErrorWire, BatchFormatterEmptyVectorWritesNothing) {
+    std::vector<std::unique_ptr<Diagnostic>> diags;
+    std::ostringstream oss;
+    emit_json_diagnostics(diags, oss);
+    EXPECT_TRUE(oss.str().empty());
 }
 
 // ── SCXMLParser boundary flatten (RFC §W1 audit #1 / W2) ──────────
