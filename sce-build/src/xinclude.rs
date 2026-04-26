@@ -885,4 +885,168 @@ mod tests {
              the same commit."
         );
     }
+
+    /// Pin the 1:1 mapping between Rust `XIncludeError` variants,
+    /// the `xml/xinclude-*` `DiagnosticCode`s they emit, and the C++
+    /// `SCE::parsing::XInclude<Variant>` subtypes declared in
+    /// `sce/include/parsing/XIncludeError.h`. RFC §W3 milestone in
+    /// `claudedocs/rfc-sce-diagnostic-wire-unification.md`.
+    ///
+    /// Mirrors the W1 sister test
+    /// `cpp_template_subtypes_match_rust_diagnostic_codes` in
+    /// `sce-build/src/template.rs::tests`. A commit on any one side
+    /// that fails to update the other two is the drift this test
+    /// catches.
+    #[test]
+    fn cpp_xinclude_subtypes_match_rust_diagnostic_codes() {
+        use std::collections::BTreeSet;
+
+        // Authoritative Rust ground truth — the 7 xml/xinclude-*
+        // `DiagnosticCode`s, paired with the C++ class name that must
+        // exist in the header. Table-form so an audit reading this
+        // test sees exactly which Rust variant maps to which C++
+        // class without having to walk two files in parallel.
+        let rust_to_cpp: &[(&str, &str)] = &[
+            ("xml/xinclude-missing-href", "XIncludeMissingHref"),
+            ("xml/xinclude-not-found", "XIncludeNotFound"),
+            ("xml/xinclude-read-error", "XIncludeReadError"),
+            ("xml/xinclude-cycle", "XIncludeCycle"),
+            ("xml/xinclude-too-deep", "XIncludeTooDeep"),
+            ("xml/xinclude-malformed", "XIncludeMalformed"),
+            ("xml/xinclude-unsupported", "XIncludeUnsupported"),
+        ];
+        assert_eq!(
+            rust_to_cpp.len(),
+            7,
+            "Expected 7-way mapping; update rust_to_cpp if the \
+             DiagnosticCode set grew or shrank"
+        );
+        let expected_cpp: BTreeSet<&str> =
+            rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
+
+        let hdr = include_str!("../../sce/include/parsing/XIncludeError.h");
+        let re = regex::Regex::new(
+            r"class\s+(XInclude\w+)\s*:\s*public\s+XIncludeExpansionError\b",
+        )
+        .unwrap();
+        let mut found: BTreeSet<String> = BTreeSet::new();
+        for captures in re.captures_iter(hdr) {
+            found.insert(captures[1].to_string());
+        }
+
+        assert!(
+            !found.is_empty(),
+            "sce/include/parsing/XIncludeError.h must declare at \
+             least one `class XInclude<Variant> : public \
+             XIncludeExpansionError` — if the declaration shape \
+             changed, update this drift test in the same commit"
+        );
+
+        let found_refs: BTreeSet<&str> =
+            found.iter().map(|s| s.as_str()).collect();
+        assert_eq!(
+            found_refs, expected_cpp,
+            "XIncludeError subtype drift: C++ header = {:?}, \
+             expected (from DiagnosticCode mapping) = {:?}. Change \
+             both sides in the same commit — see RFC §W3 \
+             (claudedocs/rfc-sce-diagnostic-wire-unification.md).",
+            found_refs, expected_cpp
+        );
+
+        // Cross-check: every Rust `DiagnosticCode` name MUST be
+        // spelled as the `serde(rename = "...")` literal in
+        // `sce-build/src/forge/diagnostic.rs`. If a future edit
+        // renames a code, this assertion fails with a pointed diff
+        // rather than the drift travelling silently through JSON
+        // wire contracts.
+        let diag = include_str!("forge/diagnostic.rs");
+        for (rust_code, cpp_name) in rust_to_cpp {
+            let needle = format!("\"{}\"", rust_code);
+            assert!(
+                diag.contains(&needle),
+                "DiagnosticCode `{}` (paired with C++ `{}`) is not \
+                 declared as a `serde(rename)` literal in \
+                 sce-build/src/forge/diagnostic.rs. Keep the wire \
+                 name, the Rust variant, and the C++ subtype in \
+                 sync — see RFC §W3.",
+                rust_code, cpp_name
+            );
+        }
+    }
+
+    /// Pin the wire-string return literal inside each C++
+    /// `XInclude<Variant>` subtype's `code()` body. RFC §W3 makes
+    /// each subtype override `Diagnostic::code()` to return its
+    /// `xml/xinclude-*` wire string; the sister test above pins
+    /// **subtype names** between Rust and C++; this one pins the
+    /// **wire-string return literal** so a future rename on either
+    /// side cannot drift the JSON wire contract silently.
+    ///
+    /// The bite: changing `return "xml/xinclude-cycle"` to
+    /// `return "xml/xinclude-cycleXXX"` in `XIncludeError.h` reds
+    /// here with a pointed `does not contain` diff naming the exact
+    /// class and exact missing literal.
+    #[test]
+    fn cpp_xinclude_subtype_code_returns_rust_wire_string() {
+        let rust_to_cpp: &[(&str, &str)] = &[
+            ("xml/xinclude-missing-href", "XIncludeMissingHref"),
+            ("xml/xinclude-not-found", "XIncludeNotFound"),
+            ("xml/xinclude-read-error", "XIncludeReadError"),
+            ("xml/xinclude-cycle", "XIncludeCycle"),
+            ("xml/xinclude-too-deep", "XIncludeTooDeep"),
+            ("xml/xinclude-malformed", "XIncludeMalformed"),
+            ("xml/xinclude-unsupported", "XIncludeUnsupported"),
+        ];
+        assert_eq!(rust_to_cpp.len(), 7);
+
+        let hdr = include_str!("../../sce/include/parsing/XIncludeError.h");
+
+        for (rust_code, cpp_class) in rust_to_cpp {
+            // Locate the class block. The header's shape (one class
+            // per subtype, each terminated with `};`) keeps a forward
+            // `find("};")` accurate enough for a drift guard; if a
+            // future rewrite nests braces inside a subtype we update
+            // this scanner in the same commit.
+            let class_marker =
+                format!("class {} : public XIncludeExpansionError", cpp_class);
+            let class_start = hdr.find(&class_marker).unwrap_or_else(|| {
+                panic!(
+                    "class `{}` not found in sce/include/parsing/\
+                     XIncludeError.h — drift in subtype naming, see \
+                     `cpp_xinclude_subtypes_match_rust_diagnostic_codes`",
+                    cpp_class
+                )
+            });
+            let body_start =
+                hdr[class_start..].find('{').unwrap() + class_start + 1;
+            let body_end_rel = hdr[body_start..].find("};").unwrap();
+            let body = &hdr[body_start..body_start + body_end_rel];
+
+            let needle = format!("return \"{}\";", rust_code);
+            assert!(
+                body.contains(&needle),
+                "Class `{}` body does not contain `{}` — the C++ \
+                 subtype's `code()` override must return the Rust \
+                 DiagnosticCode wire literal exactly so the JSON \
+                 wire emitted by `to_json()` agrees with \
+                 `--error-format=json`. RFC §W3 / SCE_ERROR_CONTRACT.md §3.",
+                cpp_class, needle
+            );
+        }
+
+        // Sanity-count: the header should declare exactly 7 `code()`
+        // overrides on leaves + 1 pure-virtual on the base = 8
+        // occurrences. An 8th leaf (or a missing one) reds with a
+        // count diff rather than silently passing.
+        let override_count = hdr
+            .matches("std::string_view code() const noexcept override")
+            .count();
+        assert_eq!(
+            override_count, 8,
+            "expected 8 `code() const noexcept override` lines in \
+             XIncludeError.h (1 pure-virtual on \
+             XIncludeExpansionError + 7 subtype overrides); found {}",
+            override_count
+        );
+    }
 }
