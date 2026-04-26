@@ -68,3 +68,26 @@ target_compile_features(xinclude_expander_test PRIVATE cxx_std_17)
 apply_sce_test_policies(xinclude_expander_test)
 
 add_test(NAME XIncludeExpanderTests COMMAND xinclude_expander_test)
+
+# RFC §W1 — Diagnostic abstract base interface.
+# Standing consumer for `parsing/Diagnostic.h` while the concrete
+# `TemplateError` refit lands in the next W1 commit (per
+# `feedback_built_but_unconsumed.md`).
+add_executable(diagnostic_test
+    Diagnostic_test.cpp
+)
+
+target_link_libraries(diagnostic_test
+    PRIVATE
+        sce_runtime
+        sce_core
+        GTest::GTest
+        GTest::Main
+        pthread
+)
+
+target_compile_features(diagnostic_test PRIVATE cxx_std_17)
+
+apply_sce_test_policies(diagnostic_test)
+
+add_test(NAME DiagnosticTests COMMAND diagnostic_test)
