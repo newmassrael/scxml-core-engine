@@ -15,6 +15,9 @@
 #include "{{ model.name }}_sm.h"
 
 #include <string.h>
+{% if model.needs_script_engine %}
+#include <stdio.h>  /* snprintf for body-bearing <foreach> per-iter set */
+{% endif %}
 
 {# RFC §5.J.1: recursive action emitter. Mirrors the C++ tree's
    `actions/<type>.jinja2` include dispatch but inlines every variant in
@@ -47,7 +50,14 @@
         {
             /* W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}"{% if action.index %} index="{{ action.index }}"{% endif %}> */
 {% if action.actions and action.actions | length > 0 %}
-#error "C11 backend: <foreach> with body not yet supported (RFC §5.J.1 — needs a fixture-driven second consumer to extend `lua_foreach_no_body` into a body-emitting variant)"
+{{ se.lua_foreach_body_prologue(action.array, action.item, action.index) }}
+            for (int _i = 0; _i < _sce_n; ++_i) {
+{{ se.lua_foreach_body_iter(action.item, action.index) }}
+                {% for sub in action.actions %}
+                {{ emit_action(sub) }}
+                {% endfor %}
+            }
+{{ se.lua_foreach_body_epilogue() }}
 {% else %}
 {{ se.lua_foreach_no_body(action.array, action.item, action.index) }}
 {% endif %}

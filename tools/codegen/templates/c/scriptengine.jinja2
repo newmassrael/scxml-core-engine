@@ -19,6 +19,15 @@
      - lua_eval_guard(cond, var) → set `var` (bool) to truthiness of cond
      - lua_foreach_no_body(...)  → W3C 4.6 foreach with empty body (var decl
                                    + iteration item/index without C body)
+     - lua_foreach_body_prologue / _iter / _epilogue → W3C 4.6 foreach with
+                                   a C-side body. Prologue caches the array
+                                   on lua global `_sce_foreach_arr` and
+                                   exposes its length on C local `_sce_n`;
+                                   _iter sets item/index for one iteration;
+                                   _epilogue clears the cache. Nested foreach
+                                   is intentionally left unsupported — the
+                                   fixed lua global name would collide; the
+                                   first nested fixture forces unique-id work.
 
    Every macro takes the Lua state pointer as `sm->L`; the calling
    template owns the surrounding block scope and any per-block error
@@ -96,4 +105,44 @@
         "{{ item }} = _v"
         {% if index %}"; {{ index }} = _i - 1"{% endif %}
         " end end end");
+{% endmacro %}
+
+{# Body-bearing foreach prologue: stash the array on `_sce_foreach_arr` and
+   the length on local `_sce_n`. Returns -1 for non-table values so the C
+   loop is skipped (W3C 4.6 — error.execution raise on illegal array lands
+   with the first negative fixture). Caller declares the C-local `_sce_n`. #}
+{% macro lua_foreach_body_prologue(array, item, index) %}
+    int _sce_n = -1;
+    if (luaL_dostring(sm->L,
+        "_sce_foreach_arr = ({{ array | to_lua_expr | escape_c }}); "
+        "if type(_sce_foreach_arr) == 'table' then return #_sce_foreach_arr "
+        "else return -1 end") == 0) {
+        _sce_n = (int)lua_tointeger(sm->L, -1);
+    }
+    lua_pop(sm->L, 1);
+    /* W3C 4.6: declare item / index on the datamodel even for empty arrays. */
+    (void)luaL_dostring(sm->L,
+        "{{ item }} = nil"
+        {% if index %}"; {{ index }} = nil"{% endif %});
+{% endmacro %}
+
+{# Per-iteration update: set item to `_sce_foreach_arr[_i+1]` (lua is
+   1-based, W3C index is 0-based; the C loop counter `_i` is the W3C
+   index). Variable names come from the fixture; the snprintf buffer is
+   sized for the W3C corpus (≤ 32-char identifiers). #}
+{% macro lua_foreach_body_iter(item, index) %}
+    {
+        char _sce_buf[96];
+        (void)snprintf(_sce_buf, sizeof(_sce_buf),
+            "{{ item }} = _sce_foreach_arr[%d]"
+            {% if index %}"; {{ index }} = %d"{% endif %},
+            _i + 1{% if index %}, _i{% endif %});
+        (void)luaL_dostring(sm->L, _sce_buf);
+    }
+{% endmacro %}
+
+{# Tear down the cached array global so a sibling foreach in the same
+   onentry block does not pick up a stale reference. #}
+{% macro lua_foreach_body_epilogue() %}
+    (void)luaL_dostring(sm->L, "_sce_foreach_arr = nil");
 {% endmacro %}
