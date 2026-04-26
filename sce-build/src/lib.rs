@@ -279,15 +279,10 @@ pub fn compile_from_string_lang_typed(
             ),
             scxml_name,
         )),
-        generator::Language::C11 => Err(locate_codegen_error(
-            forge::error::GenerateError::InvalidConfig(
-                "C11 statechart codegen is not yet implemented (RFC \u{00A7}5.J.1, Phase A5 — \
-                 watching-zenoh consumer). Foundation enum + dispatch arms are in place; \
-                 per-kind emitters land in M2+ (lookup vertical slice first)."
-                    .into(),
-            ),
-            scxml_name,
-        )),
+        generator::Language::C11 => {
+            generator::generate_c11_with_templates(&model, templates, scxml_name)
+                .map_err(|e| locate_codegen_error(e, scxml_name))
+        }
     }
 }
 
@@ -346,15 +341,8 @@ pub fn compile_scxml_lang_typed(
             ),
             scxml_path,
         )),
-        generator::Language::C11 => Err(locate_codegen_error(
-            forge::error::GenerateError::InvalidConfig(
-                "C11 statechart codegen is not yet implemented (RFC \u{00A7}5.J.1, Phase A5 — \
-                 watching-zenoh consumer). Foundation enum + dispatch arms are in place; \
-                 per-kind emitters land in M2+ (lookup vertical slice first)."
-                    .into(),
-            ),
-            scxml_path,
-        )),
+        generator::Language::C11 => generator::generate_c11(&model, template_dir, input_stem)
+            .map_err(|e| locate_codegen_error(e, scxml_path)),
     }
 }
 
@@ -376,10 +364,13 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
         generator::Language::Kotlin => "kotlin",
         generator::Language::Go => "go",
         generator::Language::Python => "python",
-        // RFC §5.J.1: dedicated C11 template tree. Statechart-side
-        // location parallels the other backend roots; the forge-side
-        // counterpart lives at `tools/codegen/templates/forge/c/`.
-        generator::Language::C11 => "c",
+        // RFC §5.J.1: C11 statechart templates live at
+        // `<root>/c/state_machine.{h,c}.jinja2`, but every backend
+        // shares `license_header.jinja2` at the root. Returning the
+        // root (matching the C++ arm) lets `load_templates` walk both
+        // layers in one pass so `{% include 'license_header.jinja2' %}`
+        // resolves to the SSoT copy without duplicating it under c/.
+        generator::Language::C11 => "",
     };
     let base = find_template_base();
     if subdir.is_empty() {
@@ -2342,66 +2333,113 @@ mod tests {
 
     // ── C11 backend foundation (RFC §5.J.1, M1) ─────────────────
     //
-    // The M1 milestone introduces `Language::C11` as an enum variant
-    // and routes every entry point to a typed `InvalidConfig` error
-    // instead of the M2+ emitter. These tests pin the boundary so a
-    // future regression where someone silently routes C11 through a
-    // permissive arm (e.g. by accident in a `Cpp | C11` group) trips
-    // a test rather than producing nonsensical output.
+    // M2 (this commit) replaces the M1 InvalidConfig boundary with a
+    // working emitter for the minimum vertical slice (test355 — flat,
+    // datamodel-less, eventless). The M1 tests pinned that the boundary
+    // *rejected* C11; the M2 tests pin that the same boundary now
+    // *accepts* C11 and produces a `.h` + `.c` pair, so a future
+    // regression that re-routes C11 through `InvalidConfig` (e.g. by
+    // grouping it with Python in a fall-through arm) still trips a test.
     //
     // Sister tests for FromStr live in `generator::tests`.
 
     #[test]
-    fn compile_from_string_lang_c11_returns_typed_invalid_config() {
-        use forge::error::{ForgeError, GenerateError};
+    fn compile_from_string_lang_c11_emits_h_and_c_pair() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="null" name="c11_probe" initial="s">
   <state id="s"/>
 </scxml>"##;
-        let result = compile_from_string_lang_typed(
+        // Resolve the template root the same way `find_template_dir_for(C11)`
+        // does so this test runs from any cargo invocation directory.
+        let template_dir = find_template_dir_for(generator::Language::C11);
+        let templates: Vec<(String, String)> =
+            collect_templates_for_test(&template_dir);
+        let template_refs: Vec<(&str, &str)> = templates
+            .iter()
+            .map(|(n, c)| (n.as_str(), c.as_str()))
+            .collect();
+        let out = compile_from_string_lang_typed(
             scxml,
             "c11_probe",
-            &[],
+            &template_refs,
             generator::Language::C11,
+        )
+        .expect("C11 statechart codegen must succeed for the minimum fixture");
+        // Pair shape: `<stem>_sm.h` + `<stem>_sm.c`, both non-empty.
+        let names: Vec<&str> = out.files.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(
+            names.contains(&"c11_probe_sm.h"),
+            "C11 output must include c11_probe_sm.h: {names:?}"
         );
-        let err = match result {
-            Err(e) => e,
-            Ok(_) => panic!("C11 statechart must surface InvalidConfig until M3+ landed"),
-        };
-        match err.error {
-            ForgeError::Generate(GenerateError::InvalidConfig(msg)) => {
-                assert!(
-                    msg.contains("C11") && msg.contains("not yet implemented"),
-                    "InvalidConfig message must name C11 and mark unimplemented: {msg}"
-                );
-                assert!(
-                    msg.contains("\u{00A7}5.J.1"),
-                    "InvalidConfig message must reference RFC \u{00A7}5.J.1: {msg}"
-                );
-            }
-            other => panic!(
-                "expected ForgeError::Generate(InvalidConfig), got {other:?}"
-            ),
+        assert!(
+            names.contains(&"c11_probe_sm.c"),
+            "C11 output must include c11_probe_sm.c: {names:?}"
+        );
+        for (name, body) in &out.files {
+            assert!(!body.is_empty(), "C11 emitted empty body for {name}");
         }
     }
 
+    /// Walk the template directory recursively and collect every `.jinja2`
+    /// into `(relative_name, content)` pairs — the same shape that
+    /// `compile_from_string_lang_typed` expects for the WASM-compatible
+    /// path. Test-only helper so we exercise the string-template path
+    /// without spawning a separate test for the filesystem path.
+    fn collect_templates_for_test(base: &std::path::Path) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        fn walk(
+            base: &std::path::Path,
+            cur: &std::path::Path,
+            out: &mut Vec<(String, String)>,
+        ) {
+            for entry in std::fs::read_dir(cur).expect("read template dir") {
+                let entry = entry.expect("dir entry");
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(base, &path, out);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2")
+                {
+                    let rel = path.strip_prefix(base).expect("strip prefix");
+                    let name = rel.to_string_lossy().replace('\\', "/");
+                    let content =
+                        std::fs::read_to_string(&path).expect("read template");
+                    out.push((name, content));
+                }
+            }
+        }
+        walk(base, base, &mut out);
+        out
+    }
+
     #[test]
-    fn find_template_dir_for_c11_targets_dedicated_subdir() {
+    fn find_template_dir_for_c11_returns_template_root() {
         let dir = find_template_dir_for(generator::Language::C11);
-        // Dedicated `c/` subdirectory keeps the C11 template tree
-        // separate from C++ (which lives at the root). M2+ populates
-        // it; M1 ships a placeholder sentinel only.
-        assert!(
-            dir.ends_with("c"),
-            "C11 template dir must end with 'c': {}",
-            dir.display()
-        );
-        // The directory itself exists in M1 (sentinel placeholder).
+        // M2 land: `find_template_dir_for(C11)` returns the shared
+        // template root (matching the C++ arm) so `load_templates`
+        // walks both `<root>/c/state_machine.{h,c}.jinja2` and the
+        // root-level shared templates (`license_header.jinja2`,
+        // `actions/*.jinja2`) in one pass.
         assert!(
             dir.exists(),
-            "M1 ships forge/c/ as an empty directory with a sentinel: {}",
+            "C11 template root must exist: {}",
             dir.display()
+        );
+        let c_subdir = dir.join("c");
+        assert!(
+            c_subdir.exists(),
+            "C11 templates must live under <root>/c/: {}",
+            c_subdir.display()
+        );
+        assert!(
+            c_subdir.join("state_machine.h.jinja2").exists(),
+            "C11 must ship state_machine.h.jinja2 at <root>/c/: {}",
+            c_subdir.display()
+        );
+        assert!(
+            c_subdir.join("state_machine.c.jinja2").exists(),
+            "C11 must ship state_machine.c.jinja2 at <root>/c/: {}",
+            c_subdir.display()
         );
     }
 

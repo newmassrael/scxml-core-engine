@@ -1,0 +1,334 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.J.1 — C11 statechart implementation (paired with state_machine.h.jinja2).
+   The C++ codegen splits its output across `_sm.h` (Policy struct + SM
+   class shell) and `_sm.inl` (Policy method bodies, textually included
+   from inside the struct). C11 has no in-class definitions, so the
+   policy methods, the RTC core, and the queue helpers all land in this
+   single translation unit alongside the per-fixture data layout. T3
+   (jinja2 inline) per c11_design_decisions.md.                            #}
+
+{% include 'license_header.jinja2' %}
+
+#include "{{ model.name }}_sm.h"
+
+#include <string.h>
+
+/* ── Local helpers: bounded event queue (FIFO circular buffer) ────── */
+{# C++ `EventQueueManager<EventWithMetadata>` is a class template parameterised
+   on capacity-via-policy; the C11 backend instead bakes a per-fixture
+   circular buffer with `SCE_MAX_EVENTS` slots. Overflow drops silently —
+   matching the C++ behaviour when the underlying queue rejects a push.    #}
+static void event_queue_push({{ model.name }}_event_queue_t *q,
+                             const {{ model.name }}_event_with_meta_t *evt) {
+    if (q->count >= (uint16_t)SCE_MAX_EVENTS) {
+        return;
+    }
+    q->buf[q->tail] = *evt;
+    q->tail = (uint16_t)((q->tail + 1u) % (uint16_t)SCE_MAX_EVENTS);
+    q->count = (uint16_t)(q->count + 1u);
+}
+
+static bool event_queue_pop({{ model.name }}_event_queue_t *q,
+                            {{ model.name }}_event_with_meta_t *out) {
+    if (q->count == 0u) {
+        return false;
+    }
+    *out = q->buf[q->head];
+    q->head = (uint16_t)((q->head + 1u) % (uint16_t)SCE_MAX_EVENTS);
+    q->count = (uint16_t)(q->count - 1u);
+    return true;
+}
+
+/* ── W3C SCXML 3.3: Static state policy ───────────────────────────── */
+
+{{ model.name }}_state_t {{ model.name }}_initial_state(void) {
+    return {{ model.name | upper }}_STATE_{{ (model.initial_leaf if model.initial_leaf else model.initial) | upper | replace('-', '_') | replace('.', '_') }};
+}
+
+bool {{ model.name }}_is_final_state({{ model.name }}_state_t s) {
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.is_final %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        return true;
+    {% endif %}
+    {% endfor %}
+    default:
+        return false;
+    }
+}
+
+/* W3C SCXML 3.3: Parent state mapping. `*has_parent` distinguishes "root
+   state, no parent" from "self-parent" (which never occurs in well-formed
+   SCXML but the contract is still explicit so callers do not need a
+   sentinel value baked into the State enum). */
+static SCE_C_UNUSED {{ model.name }}_state_t state_get_parent({{ model.name }}_state_t s, bool *has_parent) {
+    *has_parent = true;
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.parent %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        return {{ model.name | upper }}_STATE_{{ state.parent | upper | replace('-', '_') | replace('.', '_') }};
+    {% endif %}
+    {% endfor %}
+    default:
+        *has_parent = false;
+        return s;
+    }
+}
+
+/* W3C SCXML 3.3: Compound-state predicate (true if state has an
+   `initial` attribute or non-empty `<initial>` child). */
+static SCE_C_UNUSED bool state_is_compound({{ model.name }}_state_t s) {
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.initial %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        return true;
+    {% endif %}
+    {% endfor %}
+    default:
+        return false;
+    }
+}
+
+/* W3C SCXML 3.6: Initial child of a compound state. Returns the state
+   itself if not compound (callers loop until `child == self` for descend). */
+static SCE_C_UNUSED {{ model.name }}_state_t state_get_initial_child({{ model.name }}_state_t s) {
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.initial_children and state.initial_children | length > 0 %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        return {{ model.name | upper }}_STATE_{{ state.initial_children[0] | upper | replace('-', '_') | replace('.', '_') }};
+    {% endif %}
+    {% endfor %}
+    default:
+        return s;
+    }
+}
+
+/* ── W3C SCXML 5.9: Action execution stubs (E1 minimum) ───────────── */
+{# E1 emits action stubs only — no `<onentry>` / `<onexit>` / executable
+   content rendering. Compound state entry/exit chains are walked, but
+   the per-state hooks are intentionally empty so the `feedback_silently_broken_hooks`
+   warning does not apply: a fixture with non-empty action blocks would
+   not be in the E1 W3C category (datamodel-less, eventless-only). E3
+   replaces these stubs with the entry_exit_actions.jinja2 port.          #}
+static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
+    (void)sm;
+    (void)s;
+}
+
+static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
+    (void)sm;
+    (void)s;
+}
+
+static void execute_transition_actions({{ model.name }}_t *sm) {
+    (void)sm;
+}
+
+/* ── W3C SCXML 3.13: Transition processing ────────────────────────── */
+{# Mirrors the C++ `tryTransitionInState` switch-on-source-state pattern.
+   E1 minimum supports unconditional eventless transitions and unguarded
+   event-name matches only. Guard expressions and `In()` predicates land
+   in E2 with the helpers/event_matching + helpers/guard ports. Transitions
+   are walked in document order; the first match wins (W3C 3.13). #}
+static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t event) {
+    sm->transition_taken = false;
+    switch (sm->current_state) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.transitions %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+        {% for trans in state.transitions %}
+        {% if not trans.event %}
+        if (event == {{ model.name | upper }}_EVENT_NONE) {
+            sm->policy.last_transition_source_state = sm->current_state;
+            sm->policy.last_transition_is_internal = {{ 'true' if trans.is_internal else 'false' }};
+            sm->policy.last_transition_is_targetless = {{ 'true' if not trans.target else 'false' }};
+            {% if trans.target %}
+            sm->current_state = {{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }};
+            {% endif %}
+            sm->transition_taken = true;
+            return true;
+        }
+        {% else %}
+        if (event == {{ model.name | upper }}_EVENT_{{ trans.event | upper | replace('.', '_') | replace('-', '_') }}) {
+            sm->policy.last_transition_source_state = sm->current_state;
+            sm->policy.last_transition_is_internal = {{ 'true' if trans.is_internal else 'false' }};
+            sm->policy.last_transition_is_targetless = {{ 'true' if not trans.target else 'false' }};
+            {% if trans.target %}
+            sm->current_state = {{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }};
+            {% endif %}
+            sm->transition_taken = true;
+            return true;
+        }
+        {% endif %}
+        {% endfor %}
+        break;
+    }
+    {% endif %}
+    {% endfor %}
+    default:
+        break;
+    }
+    return false;
+}
+
+/* W3C SCXML 3.13: Hierarchical exit/entry sequence around a transition.
+   E1 minimum collapses the C++ `HierarchicalStateHelper::findLCA` + exit
+   chain to: (a) targetless → transition action only; (b) internal →
+   transition action + entry chain only; (c) external → exit source +
+   transition action + entry chain. Compound-state descend after entry
+   walks `initial_children[0]` until a leaf state is reached.
+
+   Full LCA / multi-level exit chains for hierarchical fixtures land in
+   E3 alongside helpers/state_entry.jinja2. */
+static void handle_hierarchical_transition({{ model.name }}_t *sm,
+                                           {{ model.name }}_state_t old_state,
+                                           {{ model.name }}_state_t new_state) {
+    if (sm->policy.last_transition_is_targetless) {
+        execute_transition_actions(sm);
+        return;
+    }
+    if (!sm->policy.last_transition_is_internal) {
+        execute_exit_actions(sm, old_state);
+    }
+    execute_transition_actions(sm);
+    execute_entry_actions(sm, new_state);
+
+    /* W3C 3.6: descend into compound state's initial child until a leaf. */
+    {{ model.name }}_state_t cursor = sm->current_state;
+    while (state_is_compound(cursor)) {
+        {{ model.name }}_state_t child = state_get_initial_child(cursor);
+        if (child == cursor) {
+            break;
+        }
+        sm->current_state = child;
+        execute_entry_actions(sm, child);
+        cursor = child;
+    }
+}
+
+/* ── W3C SCXML 6.2: External-facing raise APIs ────────────────────── */
+
+void {{ model.name }}_raise({{ model.name }}_t *sm,
+                            const {{ model.name }}_event_with_meta_t *evt) {
+    event_queue_push(&sm->internal_queue, evt);
+}
+
+void {{ model.name }}_raise_external({{ model.name }}_t *sm,
+                                     const {{ model.name }}_event_with_meta_t *evt) {
+    event_queue_push(&sm->external_queue, evt);
+}
+
+/* ── RTC core (mirrors StaticExecutionEngine<Policy>::*) ──────────── */
+
+/* W3C SCXML 6.2: Drain internal then external queue. The C++ engine
+   delegates to `EventProcessingAlgorithms::processInternalEventQueue`
+   with a lambda; here that lambda is inlined as the loop body. The
+   external pass mirrors the internal one in E1 — finalize / autoforward
+   hooks (HasFinalize / HasAutoforward constexpr branches in C++) are
+   deferred until E4 lands the invoke surface. */
+static void process_event_queues({{ model.name }}_t *sm) {
+    {{ model.name }}_event_with_meta_t evt;
+
+    while (event_queue_pop(&sm->internal_queue, &evt)) {
+        strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
+        sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+
+        if ({{ model.name }}_is_final_state(sm->current_state)) {
+            return;
+        }
+
+        {{ model.name }}_state_t old = sm->current_state;
+        if (process_transition(sm, evt.event)) {
+            handle_hierarchical_transition(sm, old, sm->current_state);
+        }
+    }
+
+    while (event_queue_pop(&sm->external_queue, &evt)) {
+        strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
+        sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+
+        if ({{ model.name }}_is_final_state(sm->current_state)) {
+            return;
+        }
+
+        {{ model.name }}_state_t old = sm->current_state;
+        if (process_transition(sm, evt.event)) {
+            handle_hierarchical_transition(sm, old, sm->current_state);
+        }
+    }
+}
+
+/* W3C SCXML 6.2 (Appendix D, eventless microstep loop):
+   Repeat eventless transitions until the configuration stops changing or
+   a top-level final state is reached. The 100-iteration ceiling mirrors
+   the C++ guard against pathological cycles (`MAX_ITERATIONS`). */
+static void check_eventless_transitions({{ model.name }}_t *sm) {
+    int iter = 0;
+    while (iter < 100) {
+        if ({{ model.name }}_is_final_state(sm->current_state)) {
+            return;
+        }
+        {{ model.name }}_state_t old = sm->current_state;
+        if (!process_transition(sm, {{ model.name | upper }}_EVENT_NONE)) {
+            return;
+        }
+        handle_hierarchical_transition(sm, old, sm->current_state);
+        iter++;
+    }
+}
+
+void {{ model.name }}_step({{ model.name }}_t *sm) {
+    process_event_queues(sm);
+    check_eventless_transitions(sm);
+    if ({{ model.name }}_is_final_state(sm->current_state) && sm->completion_callback != NULL) {
+        sm->completion_callback(sm->completion_callback_user_data);
+    }
+}
+
+void {{ model.name }}_run({{ model.name }}_t *sm) {
+    sm->is_running = true;
+    while (sm->is_running && !{{ model.name }}_is_final_state(sm->current_state)) {
+        bool had_pending_events = sm->internal_queue.count > 0u || sm->external_queue.count > 0u;
+        {{ model.name }}_step(sm);
+        /* No queued event AND no transition fired this step → quiescence
+           short of a final state. The C++ engine waits on the scheduler
+           here; with no scheduler wired (E1 minimum) the only remaining
+           progress would have come from an eventless transition, and
+           `check_eventless_transitions` already drove that to fixed point. */
+        if (!had_pending_events && !sm->transition_taken) {
+            break;
+        }
+    }
+    sm->is_running = false;
+}
+
+void {{ model.name }}_init({{ model.name }}_t *sm) {
+    memset(sm, 0, sizeof(*sm));
+    sm->current_state = {{ model.name }}_initial_state();
+    execute_entry_actions(sm, sm->current_state);
+    /* W3C 3.6: initial state may be compound — descend to its initial leaf. */
+    {{ model.name }}_state_t cursor = sm->current_state;
+    while (state_is_compound(cursor)) {
+        {{ model.name }}_state_t child = state_get_initial_child(cursor);
+        if (child == cursor) {
+            break;
+        }
+        sm->current_state = child;
+        execute_entry_actions(sm, child);
+        cursor = child;
+    }
+}
+
+{{ model.name }}_state_t {{ model.name }}_get_current_state(const {{ model.name }}_t *sm) {
+    return sm->current_state;
+}
+
+bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm) {
+    return {{ model.name }}_is_final_state(sm->current_state);
+}

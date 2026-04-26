@@ -351,6 +351,82 @@ fn render_cpp(
     })
 }
 
+// ── C11 generator ────────────────────────────────────────────────
+//
+// RFC §5.J.1 — watching-zenoh consumer (MCU AOT backend). Mirrors the
+// C++ pair-render shape (`generate_cpp` above) but emits a `.h` + `.c`
+// translation unit instead of `.h` + `.inl` because C11 has no in-class
+// definitions to hide behind a textual include.
+//
+// Mesh patterns are out-of-scope for C11 per the RFC — we still call
+// the mesh-shape rejectors so an SCXML carrying mesh markings fails
+// loud here rather than producing a half-rendered translation unit.
+
+/// Generate C11 code from an analyzed SCXMLModel (filesystem-based).
+pub fn generate_c11(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    input_stem: &str,
+) -> Result<GeneratedOutput, GenerateError> {
+    let mut env = new_env();
+    load_templates(&mut env, template_dir)?;
+    filters::register_c11_filters(&mut env);
+    render_c11(&env, model, input_stem)
+}
+
+/// Generate C11 code using pre-loaded template strings (WASM-compatible).
+pub fn generate_c11_with_templates(
+    model: &SCXMLModel,
+    templates: &[(&str, &str)],
+    input_stem: &str,
+) -> Result<GeneratedOutput, GenerateError> {
+    let mut env = new_env();
+    load_template_strings(&mut env, templates)?;
+    filters::register_c11_filters(&mut env);
+    render_c11(&env, model, input_stem)
+}
+
+fn render_c11(
+    env: &Environment,
+    model: &SCXMLModel,
+    input_stem: &str,
+) -> Result<GeneratedOutput, GenerateError> {
+    reject_barrier_timeout_without_handler(model)?;
+    reject_liveliness_without_handler(model)?;
+    let base_path = model.scxml_base_path.clone();
+
+    let header_tmpl = env
+        .get_template("c/state_machine.h.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
+    let source_tmpl = env
+        .get_template("c/state_machine.c.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
+
+    let model_val = minijinja::Value::from_serialize(model);
+    let license_val = minijinja::Value::from_serialize(&license_config());
+
+    let header_ctx = minijinja::context! {
+        model => &model_val,
+        base_path => &base_path,
+        license_config => &license_val,
+    };
+    let source_ctx = minijinja::context! {
+        model => &model_val,
+        base_path => &base_path,
+        license_config => &license_val,
+    };
+
+    let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;
+    let source_code = source_tmpl.render(source_ctx).map_err(render_error)?;
+
+    Ok(GeneratedOutput {
+        files: vec![
+            (format!("{input_stem}_sm.h"), header_code),
+            (format!("{input_stem}_sm.c"), source_code),
+        ],
+    })
+}
+
 // ── Kotlin generator ─────────────────────────────────────────────
 
 /// Generate Kotlin code from an analyzed SCXMLModel (filesystem-based).

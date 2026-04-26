@@ -37,4 +37,33 @@
 #define SCE_MAX_PARALLEL_REGIONS 4
 #endif
 
+// W3C SCXML 5.10 _event.data — generated event records reserve a fixed
+// payload slot so the entire EventWithMetadata is value-typed and queue
+// storage is statically reservable. The default sizes datamodel-less and
+// short JSON payloads; fixtures that carry longer SCXML <send> data
+// override per build.
+#ifndef SCE_MAX_DATA_LEN
+#define SCE_MAX_DATA_LEN 256
+#endif
+
+// W3C SCXML 5.10 _event.type — bounded by the spec's enumerated values
+// ("internal", "external", "platform"). 16 bytes leaves headroom for any
+// future additions without requiring a per-fixture override.
+#ifndef SCE_MAX_EVENT_TYPE_LEN
+#define SCE_MAX_EVENT_TYPE_LEN 16
+#endif
+
+// Static helpers (state hierarchy queries, history filters, …) are
+// emitted unconditionally so generated code stays compilable as fixtures
+// climb the W3C category ladder. The flat / datamodel-less subset used
+// by the simplest fixtures does not call every helper, so wrap each one
+// with this attribute to keep `-Wall -Wunused-function` clean. Resolves
+// to nothing on toolchains that lack the GNU attribute, where the
+// warning is unlikely to be treated as an error anyway.
+#if defined(__GNUC__) || defined(__clang__)
+#define SCE_C_UNUSED __attribute__((unused))
+#else
+#define SCE_C_UNUSED
+#endif
+
 #endif  // SCE_TYPES_H

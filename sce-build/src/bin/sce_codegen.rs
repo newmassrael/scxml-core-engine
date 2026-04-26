@@ -821,18 +821,8 @@ fn cmd_generate(
                 "",
             )
         }
-        Language::C11 => {
-            // RFC §5.J.1: C11 statechart codegen lands in M3+. The M1
-            // foundation accepts `--lang c11` so downstream build
-            // pipelines can wire the flag now; until M3 the CLI surfaces
-            // a typed UnsupportedLanguage exit with the RFC reference.
-            error_format.emit_and_exit(
-                &CliError::UnsupportedLanguage {
-                    lang: "C11 statechart (RFC §5.J.1, Phase A5 — M3+)".into(),
-                },
-                "",
-            )
-        }
+        Language::C11 => sce_build::generator::generate_c11(&model, &template_dir, input_stem)
+            .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
     };
 
     let out_path = Path::new(output_dir);

@@ -521,6 +521,24 @@ fn escape_cpp(text: String) -> String {
     escape_rust(text)
 }
 
+// ── C11 filters ─────────────────────────────────────────────────
+
+/// Register all C11-specific filters on the minijinja environment.
+/// RFC §5.J.1 (watching-zenoh consumer / MCU AOT backend).
+///
+/// Eventless / datamodel-less templates rely on jinja2 built-ins
+/// (`upper`, `replace`, `sort`, `dictsort`) plus the shared invoke
+/// selector filters; no `escape_c` consumer exists yet because the
+/// minimum templates emit no `<send>` payload literals. The escape
+/// filter lands together with its first jinja2 consumer (entry/exit
+/// action emission) so the registration cannot drift into "built but
+/// unconsumed" state.
+pub fn register_c11_filters(env: &mut minijinja::Environment) {
+    register_invoke_filters(env);
+    env.add_filter("split", filter_split);
+    env.add_filter("slice_from", filter_slice_from);
+}
+
 // ── Kotlin filters ───────────────────────────────────────────────
 
 /// Register all Kotlin-specific filters on the minijinja environment.

@@ -1,0 +1,136 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.J.1 — C11 statechart header (paired with state_machine.c.jinja2).
+   Mirrors the C++ state_machine.jinja2 structure with C11 idioms:
+     - namespace SCE::Generated::{name}  →  prefix `{name}_` on every symbol
+     - enum class State                  →  enum {name}_state_e + UPPER_SNAKE constants
+     - template<Policy> + base class     →  flat struct + free functions
+     - std::vector / std::optional / std::string  →  static arrays + bool out-params + char[N]
+   Capacity defaults come from sce-c-runtime/include/sce/types.h
+   (overridable per fixture via -DSCE_MAX_*=N).                              #}
+
+{% include 'license_header.jinja2' %}
+
+#ifndef SCE_GENERATED_{{ model.name | upper }}_SM_H
+#define SCE_GENERATED_{{ model.name | upper }}_SM_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "sce/types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ── W3C SCXML 3.3: State enumeration ─────────────────────────────── */
+enum {{ model.name }}_state_e {
+    {% for state_name in model.states | sort %}
+    {{ model.name | upper }}_STATE_{{ state_name | upper | replace('-', '_') | replace('.', '_') }}{{ "," if not loop.last }}
+    {% endfor %}
+};
+typedef enum {{ model.name }}_state_e {{ model.name }}_state_t;
+
+/* ── W3C SCXML 6.2: Event enumeration ─────────────────────────────── */
+{# `_NONE` is the scheduler-polling default (W3C 6.2). Enumerated first so
+   the underlying integer is 0, matching the C++ `Event::NONE` semantics
+   (`process_transition.jinja2` peers compare against the unset event with
+   the zero literal). #}
+enum {{ model.name }}_event_e {
+    {{ model.name | upper }}_EVENT_NONE{{ "," if model.events }}
+    {% for event_name in model.events | sort %}
+    {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ "," if not loop.last }}
+    {% endfor %}
+};
+typedef enum {{ model.name }}_event_e {{ model.name }}_event_t;
+
+/* ── W3C SCXML 5.10: Event with metadata ──────────────────────────── */
+{# Mirrors `StaticExecutionEngine<P>::EventWithMetadata` (sce/include/static).
+   Strings are bounded char arrays sized via `sce/types.h` so the entire
+   event record is value-typed and queue storage is statically reservable. #}
+typedef struct {{ model.name }}_event_with_meta {
+    {{ model.name }}_event_t event;
+    char data[SCE_MAX_DATA_LEN];
+    char origin[SCE_MAX_ID_LEN];
+    char send_id[SCE_MAX_ID_LEN];
+    char type[SCE_MAX_EVENT_TYPE_LEN];
+    char origin_type[SCE_MAX_ID_LEN];
+    char invoke_id[SCE_MAX_ID_LEN];
+    char target[SCE_MAX_ID_LEN];
+} {{ model.name }}_event_with_meta_t;
+
+/* ── Internal/external event queues — circular buffer ─────────────── */
+typedef struct {{ model.name }}_event_queue {
+    {{ model.name }}_event_with_meta_t buf[SCE_MAX_EVENTS];
+    uint16_t head;
+    uint16_t tail;
+    uint16_t count;
+} {{ model.name }}_event_queue_t;
+
+/* ── Policy state (datamodel + transition tracking) ───────────────── */
+{# C++ `{name}Policy` mutable members. E1 minimum keeps only the
+   transition-tracking trio that `AOT_EXECUTE_TRANSITION` always writes.
+   Datamodel variables, history slots, invoke tables, and parallel
+   active-state vectors join in E2-E5 as their owning fixture lands. #}
+typedef struct {{ model.name }}_policy {
+    {{ model.name }}_state_t last_transition_source_state;
+    bool last_transition_is_internal;
+    bool last_transition_is_targetless;
+} {{ model.name }}_policy_t;
+
+/* ── State machine instance ───────────────────────────────────────── */
+{# Equivalent to `class {name} : StaticExecutionEngine<{name}Policy>` —
+   in C11 the engine and policy fields are flattened into a single
+   instance struct (the C++ template instantiates a per-fixture base
+   class anyway, so there is no shared base layout to share).             #}
+typedef struct {{ model.name }} {
+    {{ model.name }}_state_t current_state;
+    {{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
+    {{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
+    {{ model.name }}_policy_t policy;
+    bool is_running;
+    bool transition_taken;
+    char current_event_invoke_id[SCE_MAX_ID_LEN];
+    void (*completion_callback)(void *user_data);
+    void *completion_callback_user_data;
+} {{ model.name }}_t;
+
+/* ── Public API ───────────────────────────────────────────────────── */
+
+/* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
+   Must be called once before {{ model.name }}_step / {{ model.name }}_run. */
+void {{ model.name }}_init({{ model.name }}_t *sm);
+
+/* W3C SCXML 6.2: Single macrostep — drain queues, run eventless E* loop. */
+void {{ model.name }}_step({{ model.name }}_t *sm);
+
+/* W3C SCXML 6.2: Drive the SM until a top-level final state is reached. */
+void {{ model.name }}_run({{ model.name }}_t *sm);
+
+/* W3C SCXML 5.3: Enqueue an event onto the internal (high-priority) queue. */
+void {{ model.name }}_raise({{ model.name }}_t *sm,
+                            const {{ model.name }}_event_with_meta_t *evt);
+
+/* W3C SCXML 6.2: Enqueue an event onto the external (low-priority) queue. */
+void {{ model.name }}_raise_external({{ model.name }}_t *sm,
+                                     const {{ model.name }}_event_with_meta_t *evt);
+
+/* Query helpers. */
+{{ model.name }}_state_t {{ model.name }}_get_current_state(const {{ model.name }}_t *sm);
+bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm);
+
+/* W3C SCXML 3.3: Compile-time policy queries (mirror C++ `*Policy::*`). */
+{{ model.name }}_state_t {{ model.name }}_initial_state(void);
+bool {{ model.name }}_is_final_state({{ model.name }}_state_t s);
+
+/* ── Compile-time invariants ──────────────────────────────────────── */
+_Static_assert(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
+_Static_assert(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  /* SCE_GENERATED_{{ model.name | upper }}_SM_H */
