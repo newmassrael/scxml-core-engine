@@ -38,6 +38,11 @@ sce_generate_static_w3c_c_test(152 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(158 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.5: executable content runs in document order (raise event1 before event2)
 sce_generate_static_w3c_c_test(396 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 5.10: _event.name matches the event used to match transitions (first-match-wins via doc order)
 sce_generate_static_w3c_c_test(377 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.13: multi-block onexit handlers execute in document order (event1 before event2)
+sce_generate_static_w3c_c_test(148 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.3: <else> clause executes when <if>/<elseif> evaluate false
+sce_generate_static_w3c_c_test(149 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 4.3: neither <if> nor <elseif> executes when both conditions are false
+sce_generate_static_w3c_c_test(280 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.2: late-binding defers data variable initialization until its owning state is entered
+sce_generate_static_w3c_c_test(287 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.3: legal value may be assigned to a valid datamodel location
+sce_generate_static_w3c_c_test(309 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.9: a non-boolean transition cond evaluates to false
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
