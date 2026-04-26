@@ -89,6 +89,13 @@ typedef struct {{ model.name }}_policy {
     {{ model.name }}_state_t last_transition_source_state;
     bool last_transition_is_internal;
     bool last_transition_is_targetless;
+    /* W3C SCXML 3.13: Transition body actions are deferred to
+       execute_transition_actions so they run between the exit and entry
+       chains (mirrors the C++ `lastTransitionIndex_` member used by
+       `process_transition.jinja2`'s deferred dispatch). The pair
+       (source_state, index) keys into the per-state switch the macro
+       emits for fixtures that carry transition body actions. */
+    uint16_t last_transition_index;
 } {{ model.name }}_policy_t;
 
 /* ── State machine instance ───────────────────────────────────────── */

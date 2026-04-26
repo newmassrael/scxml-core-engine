@@ -56,6 +56,9 @@ sce_generate_static_w3c_c_test(277 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(286 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.4: <assign> with an empty location attribute fails the lua chunk and raises error.execution
 sce_generate_static_w3c_c_test(312 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.4: <assign> with an illegal expression raises error.execution before the surrounding onentry's later actions queue
 sce_generate_static_w3c_c_test(487 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.4: <assign> targeting an undefined data variable with an illegal expression raises error.execution
+sce_generate_static_w3c_c_test(503 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 3.13: targetless transition runs its body assign without exiting/re-entering the source state
+sce_generate_static_w3c_c_test(505 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 3.13: internal transition (target is proper descendant of source) runs body without exiting source state
+sce_generate_static_w3c_c_test(506 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 3.13: type="internal" transition whose target is NOT a proper descendant behaves as external (analyzer downgrade)
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
