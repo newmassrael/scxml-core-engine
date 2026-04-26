@@ -424,6 +424,7 @@ add_library(sce_runtime
     src/parsing/PositionMap.cpp
     src/parsing/TemplateError.cpp
     src/parsing/TemplateExpander.cpp
+    src/parsing/XIncludeError.cpp
     src/parsing/XIncludeExpander.cpp
     src/parsing/XmlSerializationHelper.cpp
 

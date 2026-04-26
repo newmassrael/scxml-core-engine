@@ -114,7 +114,7 @@ RootChildrenRender renderRootChildren(std::string_view expanded,
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(expanded.data(), expanded.size());
     if (!parseResult) {
-        throw XIncludeExpansionError(
+        throw XIncludeMalformed(
             "<xi:include href=\"" + std::string(href) +
             "\">: included file is malformed: " + parseResult.description());
     }
@@ -248,14 +248,14 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node,
     if (parseAttr) {
         const std::string mode = parseAttr.value();
         if (!mode.empty() && mode != "xml") {
-            throw XIncludeExpansionError(
+            throw XIncludeUnsupported(
                 "<xi:include href=\"" + std::string(href) +
                 "\">: unsupported feature: parse=\"" + mode +
                 "\" (only parse=\"xml\" is supported)");
         }
     }
     if (node.attribute("xpointer")) {
-        throw XIncludeExpansionError(
+        throw XIncludeUnsupported(
             "<xi:include href=\"" + std::string(href) +
             "\">: unsupported feature: xpointer selection is not implemented");
     }
@@ -265,7 +265,7 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node,
         }
         const std::string n = child.name();
         if (n == "fallback" || n == "xi:fallback") {
-            throw XIncludeExpansionError(
+            throw XIncludeUnsupported(
                 "<xi:include href=\"" + std::string(href) +
                 "\">: unsupported feature: <xi:fallback> alternative content "
                 "is not implemented");
@@ -273,13 +273,13 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node,
     }
 }
 
-// Read the full text of `path`. Throws `XIncludeExpansionError`
-// with the offending href baked into the message on read failure.
+// Read the full text of `path`. Throws `XIncludeReadError` with
+// the offending href baked into the message on read failure.
 std::string readFragmentText(const std::filesystem::path &path,
                              std::string_view href) {
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
-        throw XIncludeExpansionError(
+        throw XIncludeReadError(
             "<xi:include href=\"" + std::string(href) +
             "\">: cannot read file: " + path.string());
     }
@@ -297,7 +297,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
                                 unsigned depth,
                                 std::vector<std::filesystem::path> &stack) {
     if (depth >= MAX_XINCLUDE_DEPTH) {
-        throw XIncludeExpansionError(
+        throw XIncludeTooDeep(
             "<xi:include> nesting exceeds depth limit of " +
             std::to_string(MAX_XINCLUDE_DEPTH));
     }
@@ -305,7 +305,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(content.data(), content.size());
     if (!parseResult) {
-        throw XIncludeExpansionError(
+        throw XIncludeMalformed(
             std::string("<xi:include> source document is malformed: ") +
             parseResult.description());
     }
@@ -352,7 +352,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
         const auto hrefAttr = node.attribute("href");
         const std::string href = hrefAttr ? hrefAttr.value() : std::string();
         if (href.empty()) {
-            throw XIncludeExpansionError(
+            throw XIncludeMissingHref(
                 "<xi:include> missing or empty `href` attribute");
         }
 
@@ -368,7 +368,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
                 }
                 trail.append(entry);
             }
-            throw XIncludeExpansionError(
+            throw XIncludeNotFound(
                 "<xi:include href=\"" + href +
                 "\">: file not found (searched: " + trail + ")");
         }
@@ -383,7 +383,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
         }
         for (const auto &entry : stack) {
             if (entry == canon) {
-                throw XIncludeExpansionError(
+                throw XIncludeCycle(
                     "<xi:include href=\"" + href +
                     "\">: cycle detected (" + renderCycleChain(stack, canon) +
                     ")");

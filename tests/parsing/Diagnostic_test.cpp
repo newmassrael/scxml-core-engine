@@ -278,26 +278,23 @@ TEST(TemplateErrorWire, IdIsStableAcrossCalls) {
 // `schemas/sce-diagnostic.v1.schema.json` lines 27-32 and
 // `sce-build/src/forge/diagnostic.rs::DiagnosticCode::Xml*`).
 //
-// Today the C++ side raises a single monolithic
-// `SCE::parsing::XIncludeExpansionError` (no `code()`, no `to_json()`,
-// no Diagnostic interface). The probes below catch that monolithic
-// type and assert the message text carries the operator-actionable
-// fragments that the Rust wire codes' fields capture (e.g. the
-// offending `href`, the cycle chain). The wire-promotion milestone
-// in `claudedocs/rfc-sce-diagnostic-wire-unification.md` §W3 splits
-// this hierarchy into typed subtypes implementing `Diagnostic`
-// (mirroring the W1 TemplateError refit); these probes are the
-// load-bearing wire-shape consumers that pin the contract from
-// before the typed surface exists. See RFC §W3 trigger conditions.
+// W3 (`claudedocs/rfc-sce-diagnostic-wire-unification.md`) promotes
+// `XIncludeExpansionError` to implement `SCE::parsing::Diagnostic`
+// with 7 typed leaf subtypes — `XIncludeMissingHref`,
+// `XIncludeNotFound`, `XIncludeReadError`, `XIncludeCycle`,
+// `XIncludeTooDeep`, `XIncludeMalformed`, `XIncludeUnsupported`.
+// Catching by base reference still works (the leaf is-a
+// `XIncludeExpansionError`); the additional `EXPECT_EQ(e.code(), ...)`
+// probe asserts virtual dispatch lands on the right leaf so a
+// future throw-site rewrite that picks the wrong subtype reds here.
 
 TEST(XIncludeErrorWire, MissingHrefCarriesActionableFragmentInMessage) {
     // Mirrors Rust `xml/xinclude-missing-href`. Both the missing-href
     // and empty-href shapes collapse onto the same Rust code (the
-    // empty string never resolves), so a single C++ subtype is
-    // expected when typed promotion lands. Today both shapes raise
-    // the monolithic `XIncludeExpansionError`; the message names
-    // the missing attribute so an operator/agent can dispatch the
-    // repair without re-parsing the call site.
+    // empty string never resolves), so a single C++ subtype handles
+    // both — `XIncludeMissingHref`. The message names the missing
+    // attribute so an operator/agent can dispatch the repair without
+    // re-parsing the call site.
     const std::string src =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>)";
     try {
@@ -306,6 +303,8 @@ TEST(XIncludeErrorWire, MissingHrefCarriesActionableFragmentInMessage) {
     } catch (const SCE::parsing::XIncludeExpansionError &e) {
         const std::string what = e.what();
         EXPECT_NE(what.find("href"), std::string::npos) << what;
+        EXPECT_EQ(e.code(),
+                  std::string_view{"xml/xinclude-missing-href"});
     }
 }
 
@@ -318,6 +317,8 @@ TEST(XIncludeErrorWire, EmptyHrefCarriesActionableFragmentInMessage) {
     } catch (const SCE::parsing::XIncludeExpansionError &e) {
         const std::string what = e.what();
         EXPECT_NE(what.find("href"), std::string::npos) << what;
+        EXPECT_EQ(e.code(),
+                  std::string_view{"xml/xinclude-missing-href"});
     }
 }
 

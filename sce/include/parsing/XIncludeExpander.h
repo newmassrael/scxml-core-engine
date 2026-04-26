@@ -4,13 +4,13 @@
 #pragma once
 
 #include "parsing/PositionMap.h"
+#include "parsing/XIncludeError.h"
 
 #include <pugixml.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -31,13 +31,15 @@
 // B3 adds the Rust ↔ C++ shape drift test.
 //
 // Failure model: expander-internal errors (missing href, not-found,
-// cycle, too-deep, malformed) throw `XIncludeExpansionError`. Per
-// Phase X RFC §1 Q3 these stay outside the typed `Diagnostic`
-// family promotion (W3 territory) — `processXInclude` catches and
-// records via the existing `errorMessage_` / `addError(string)`
-// surface. Phase X exclusively addresses *post-expansion* coord
-// remap; expander-internal errors already report at pre-expansion
-// outer-document coordinates.
+// cycle, too-deep, malformed, unsupported feature, read failure)
+// throw a typed `XIncludeExpansionError` subtype declared in
+// `parsing/XIncludeError.h` — each subtype mirrors a Rust
+// `XIncludeError` variant and overrides `Diagnostic::code()` with
+// the matching `xml/xinclude-*` wire string. Catch sites can bind
+// `XIncludeExpansionError const &` for the legacy string surface
+// or upcast through `Diagnostic` for the typed surface; both work
+// against any subtype. RFC §W3 in
+// `claudedocs/rfc-sce-diagnostic-wire-unification.md`.
 
 namespace SCE::parsing {
 
@@ -68,16 +70,6 @@ struct XIncludeExpandResult {
     PositionMap positions;
 };
 
-// Failure raised by the XInclude expander. Phase X RFC §1 Q3 keeps
-// the expander on `std::runtime_error` derivative (no typed family
-// promotion) — W3 milestone in the wire-unification RFC promotes
-// `xml/xinclude-*` later under its own consumer signal. Until then
-// `processXInclude` catches and forwards via `addError(string)`.
-class XIncludeExpansionError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
-};
-
 // String-level `<xi:include>` expansion entry point. Mirrors
 // `sce-build/src/xinclude.rs::expand` structurally.
 //
@@ -94,11 +86,14 @@ public:
 // substring, returns `{std::string(content),
 // PositionMap::identity(selfPath, content)}` without parsing.
 //
-// Failure modes throw `XIncludeExpansionError` carrying a
-// diagnostic-ready message (href, search trail, cycle chain,
-// depth limit). Pre-expansion (row, col) of the offending
-// `<xi:include>` is currently embedded in the message text only;
-// typed location surfacing is deferred to W3.
+// Failure modes throw a typed `XIncludeExpansionError` subtype
+// (`XIncludeMissingHref`, `XIncludeNotFound`, `XIncludeReadError`,
+// `XIncludeCycle`, `XIncludeTooDeep`, `XIncludeMalformed`,
+// `XIncludeUnsupported`) carrying a diagnostic-ready message
+// (href, search trail, cycle chain, depth limit). Pre-expansion
+// (row, col) of the offending `<xi:include>` is currently embedded
+// in the message text only; typed location stamping is deferred
+// behind a separate consumer signal.
 XIncludeExpandResult expandStringX(std::string_view content,
                                    std::string_view selfPath,
                                    std::string_view baseDir);
