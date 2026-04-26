@@ -65,13 +65,23 @@
            (non-nil) and remains the same value through the session — both
            hold for any non-empty deterministic string. Read-only behaviour
            is enforced at codegen time in `state_machine.c.jinja2`'s
-           emit_action assign branch (any <assign location="_sessionid">
-           lowers to error.execution rather than a luaL_dostring), so the
-           Lua state itself never sees a re-binding attempt. _name and
-           _ioprocessors land with their first consuming fixture
-           (built-but-unconsumed carve-out per feedback_built_but_unconsumed.md). */
+           emit_action assign branch (any <assign location> targeting a
+           reserved system variable lowers to error.execution rather than
+           a luaL_dostring), so the Lua state itself never sees a
+           re-binding attempt. _ioprocessors lands with its first
+           consuming fixture (built-but-unconsumed carve-out per
+           feedback_built_but_unconsumed.md). */
         (void)luaL_dostring(sm->L,
             "_sessionid = '{{ model.name | escape_c }}_session'");
+        /* W3C SCXML 5.10: `_name` is the SCXML element's `name` attribute
+           (cpp `LuaEngine.cpp` calls this `sessionName`). Empty string
+           when the SCXML omits the attribute — still a valid Lua string
+           and therefore "bound" per W3C 5.10's typeof check. Same
+           read-only enforcement as _sessionid: the codegen-time assign
+           guard rejects <assign location="_name"> before any luaL_dostring
+           is invoked. */
+        (void)luaL_dostring(sm->L,
+            "_name = '{{ model.scxml_name | default('') | escape_c }}'");
         {% for var in model.variables %}
         {% if var.expr %}
         /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}">.

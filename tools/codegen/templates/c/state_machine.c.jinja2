@@ -54,19 +54,18 @@
 {% elif action.type == 'assign' %}
         {
             /* W3C SCXML 5.4: <assign location="{{ action.location }}" expr="{{ action.expr | escape_c }}"> */
-{% if action.location in ['_sessionid'] %}
+{% if action.location in ['_sessionid', '_name'] %}
             /* W3C SCXML 5.10: assignment to read-only system variable
                '{{ action.location }}' is illegal — raise error.execution
                and skip the lua chunk entirely so the system variable's
                binding remains unchanged for the rest of the session.
                System-var registration in scriptengine.jinja2 declares
                which names land on this branch; the list extends as
-               additional system-var fixtures (test324 _name, test326
-               _ioprocessors) force their entries. The
-               EVENT_ERROR_EXECUTION enum value is always present
-               whenever this path runs because <assign> sets
-               needs_script_engine, which injects "error.execution" into
-               model.events via analyzer.rs. */
+               additional system-var fixtures (test326 _ioprocessors)
+               force their entries. The EVENT_ERROR_EXECUTION enum value
+               is always present whenever this path runs because <assign>
+               sets needs_script_engine, which injects "error.execution"
+               into model.events via analyzer.rs. */
             {{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
             _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;

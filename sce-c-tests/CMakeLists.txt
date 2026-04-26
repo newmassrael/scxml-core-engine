@@ -63,6 +63,8 @@ sce_generate_static_w3c_c_test(318 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(319 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: _event is unbound (lua nil) until the first event has been dequeued
 sce_generate_static_w3c_c_test(321 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: _sessionid is bound on startup (typeof Var1 !== 'undefined' after Var1 = _sessionid)
 sce_generate_static_w3c_c_test(322 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: assignment to _sessionid raises error.execution and leaves the binding unchanged
+sce_generate_static_w3c_c_test(323 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: _name is bound on startup (datamodel <data expr="_name"> followed by typeof check)
+sce_generate_static_w3c_c_test(324 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: _name remains bound through the session — assignment to _name does not change the binding
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
