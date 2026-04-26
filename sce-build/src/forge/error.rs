@@ -113,6 +113,18 @@ pub enum ForgeError {
     #[error(transparent)]
     Generate(#[from] GenerateError),
 
+    /// SCXML semantic-validation failures — distinct from forge
+    /// `ValidationError` because the rules come from W3C SCXML §3
+    /// reference resolution, not forge-document structure rules.
+    /// RFC §W5 D2 keeps `ScxmlSemanticError` as a parallel enum
+    /// outside `forge::*` but routes it through `ForgeError` so the
+    /// `Located<ForgeError>` plumbing and JSON wire layer apply
+    /// uniformly. Wire codes mostly REUSE existing `validation/*`
+    /// per W4 D4 fold (concept identity); only `TopLevelScriptUnloaded`
+    /// is W3C-SCXML-specific and gets its own `scxml/*` code.
+    #[error(transparent)]
+    Scxml(#[from] crate::scxml_semantic::ScxmlSemanticError),
+
     #[error("I/O error on {path}: {source}")]
     Io {
         path: PathBuf,
@@ -500,6 +512,11 @@ impl ForgeError {
             ForgeError::Import(_) => 5,
             ForgeError::Manifest(_) => 6,
             ForgeError::Generate(_) => 7,
+            // RFC §W5 D2: SCXML semantic-validation shares the
+            // forge-validation exit code (3) — both are post-parse
+            // semantic-stage rejections; the wire `code` distinguishes
+            // forge vs SCXML failures, the exit code does not.
+            ForgeError::Scxml(_) => 3,
             ForgeError::Io { .. } => 8,
         }
     }

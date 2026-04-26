@@ -1,0 +1,306 @@
+//! SCXML semantic-validation errors (RFC §W5 producer side).
+//!
+//! W3C SCXML §3 reference-resolution and §5.8 top-level-script
+//! rejection failures detected after the document parses
+//! successfully but before the model can be code-generated.
+//!
+//! Architectural note: these errors are deliberately separated
+//! from `forge::error::ValidationError`. The forge enum is scoped
+//! to forge-document structure rules (codec/transform/procedure
+//! kinds, sce:context handling, etc.) per its file-level doc; SCXML
+//! semantic rules come from a different specification (W3C SCXML)
+//! with different repair surfaces. RFC §W5 D4 documents the
+//! decision to keep these enums parallel rather than generalize
+//! `ValidationError` to admit non-forge document kinds.
+//!
+//! Wire-code mapping (RFC §W5 D2 — W4 D4 fold precedent):
+//! - [`ScxmlSemanticError::InitialStateUnknown`] →
+//!   `validation/invalid-reference` (REUSE — concept identity
+//!   with forge `ValidationError::InvalidReference`)
+//! - [`ScxmlSemanticError::TransitionTargetUnknown`] →
+//!   `validation/invalid-reference` (REUSE)
+//! - [`ScxmlSemanticError::NoStates`] →
+//!   `validation/empty-collection` (REUSE)
+//! - [`ScxmlSemanticError::TopLevelScriptUnloaded`] →
+//!   `scxml/top-level-script-unloaded` (NEW — W3C SCXML §5.8 has
+//!   no forge analog)
+
+use thiserror::Error;
+
+/// Disambiguates the document scope for an unresolved `initial`
+/// attribute. The wire code is the same
+/// (`validation/invalid-reference`) for both, but consumers
+/// constructing repair guidance benefit from knowing whether the
+/// rename surface is the document root or a compound state's
+/// children.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InitialStateScope {
+    /// `<scxml initial="...">` references an undeclared state.
+    DocumentRoot,
+    /// `<state initial="..." id="<parent>">` references a state
+    /// not in `<parent>`'s direct children. `parent_id` carries the
+    /// owning state so repair tools can scope candidate suggestions.
+    CompoundState { parent_id: String },
+}
+
+impl std::fmt::Display for InitialStateScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InitialStateScope::DocumentRoot => write!(f, "document root"),
+            InitialStateScope::CompoundState { parent_id } => {
+                write!(f, "state '{parent_id}'")
+            }
+        }
+    }
+}
+
+/// SCXML post-parse semantic failures.
+///
+/// Each variant maps to a stable wire `DiagnosticCode` via
+/// [`crate::forge::diagnostic::scxml_semantic_fields`]. The mapping
+/// is intentional — three of the four variants reuse forge
+/// `validation/*` codes per the W4 D4 fold precedent (concept
+/// identity over namespace duplication).
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ScxmlSemanticError {
+    /// `initial` attribute names a state that is not declared.
+    /// Covers both root-level (`<scxml initial="X">`) and compound
+    /// state (`<state id="P" initial="X">`) cases — `scope`
+    /// distinguishes. Mirrors C++
+    /// `SCE::parsing::SemanticInitialStateUnknown` (RFC §W5 D1).
+    #[error("Initial state '{state_id}' not found ({scope})")]
+    InitialStateUnknown {
+        state_id: String,
+        scope: InitialStateScope,
+        /// All declared state ids — used for repair-candidate
+        /// suggestions. Empty when the model has no states (caller
+        /// should emit [`ScxmlSemanticError::NoStates`] instead).
+        available: Vec<String>,
+    },
+
+    /// `<transition target="X">` references a state that is not
+    /// declared. Mirrors C++ `SemanticTransitionTargetUnknown`.
+    #[error("Transition in state '{state}' references non-existent target state '{target}'")]
+    TransitionTargetUnknown {
+        /// Owning state id (the `<state>` containing the bad
+        /// `<transition>`).
+        state: String,
+        /// Unresolved target id.
+        target: String,
+        /// All declared state ids — used for repair candidates.
+        available: Vec<String>,
+    },
+
+    /// SCXML document has no top-level `<state>`, `<parallel>`, or
+    /// `<final>`. W3C SCXML §3.2 requires at least one root state.
+    /// Mirrors C++ `SemanticNoStates`.
+    #[error("No state nodes found in SCXML document")]
+    NoStates,
+
+    /// Top-level `<script>` element either (a) has empty content
+    /// AND empty `src`, or (b) has `src` but the file failed to
+    /// load. W3C SCXML §5.8 mandates document rejection in either
+    /// case.
+    ///
+    /// Payload fields are optional because the producer site
+    /// (`SCXMLParser::parse_global_scripts` setting
+    /// `model.document_rejected = true`) doesn't currently capture
+    /// the index/src of the failing script. Future expansion
+    /// (W6+) may plumb the detail through. C++ side captures both
+    /// via `SemanticTopLevelScriptUnloaded(index, src)`. Wire-code
+    /// dispatch is sufficient for test-as-consumer drift pinning;
+    /// payload-detail asymmetry is acceptable per RFC §W5 anti-pattern
+    /// #5 ("NEW wire code count > NEW Rust producer count" — both
+    /// sides emit the same wire code).
+    ///
+    /// Mirrors C++ `SemanticTopLevelScriptUnloaded`.
+    #[error("Top-level <script> rejected per W3C SCXML 5.8")]
+    TopLevelScriptUnloaded {
+        /// 1-based script element index (None when producer site
+        /// doesn't capture it; analyzer.rs path always emits None).
+        index: Option<usize>,
+        /// `src` attribute value when known (None for empty-script
+        /// rejection or analyzer.rs path).
+        src: Option<String>,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+    use crate::forge::error::ForgeError;
+
+    fn single_code(err: &ForgeError) -> &'static str {
+        let diags = err.to_diagnostics();
+        assert_eq!(diags.len(), 1, "expected single diagnostic, got {}", diags.len());
+        diags[0].code.as_str()
+    }
+
+    /// Each variant must map to its declared wire code. RFC §W5 D2
+    /// mapping is load-bearing for the W4 D4 fold precedent — fold
+    /// claims must be testable at the variant level, not just at
+    /// the catalog level.
+    #[test]
+    fn initial_state_unknown_emits_validation_invalid_reference() {
+        let err: ForgeError = ScxmlSemanticError::InitialStateUnknown {
+            state_id: "armed".into(),
+            scope: InitialStateScope::DocumentRoot,
+            available: vec!["idle".into(), "running".into()],
+        }
+        .into();
+        assert_eq!(single_code(&err), "validation/invalid-reference");
+    }
+
+    #[test]
+    fn initial_state_unknown_compound_scope_emits_same_code() {
+        // The compound-state vs document-root distinction lives in
+        // payload, not in the wire code — both surfaces map to the
+        // same `validation/invalid-reference` per RFC §W5 D2 (one
+        // C++ leaf `SemanticInitialStateUnknown` covers both).
+        let err: ForgeError = ScxmlSemanticError::InitialStateUnknown {
+            state_id: "deep".into(),
+            scope: InitialStateScope::CompoundState {
+                parent_id: "outer".into(),
+            },
+            available: vec!["a".into(), "b".into()],
+        }
+        .into();
+        assert_eq!(single_code(&err), "validation/invalid-reference");
+    }
+
+    #[test]
+    fn transition_target_unknown_emits_validation_invalid_reference() {
+        let err: ForgeError = ScxmlSemanticError::TransitionTargetUnknown {
+            state: "active".into(),
+            target: "ghost".into(),
+            available: vec!["idle".into()],
+        }
+        .into();
+        assert_eq!(single_code(&err), "validation/invalid-reference");
+    }
+
+    #[test]
+    fn no_states_emits_validation_empty_collection() {
+        let err: ForgeError = ScxmlSemanticError::NoStates.into();
+        assert_eq!(single_code(&err), "validation/empty-collection");
+    }
+
+    #[test]
+    fn top_level_script_unloaded_emits_scxml_top_level_script_unloaded() {
+        // The 1 NEW wire code RFC §W5 D2 introduces. Analyzer-path
+        // emits with both fields None; parser-path (future
+        // expansion) emits with index/src populated.
+        let err: ForgeError = ScxmlSemanticError::TopLevelScriptUnloaded {
+            index: None,
+            src: None,
+        }
+        .into();
+        assert_eq!(single_code(&err), "scxml/top-level-script-unloaded");
+    }
+
+    #[test]
+    fn top_level_script_unloaded_with_detail_keeps_same_code() {
+        // Payload variation MUST NOT change wire code — α-strict
+        // invariant. C++ side emits with detail; Rust analyzer path
+        // emits without; the drift test (`cpp_scxml_semantic_*`)
+        // pins both sides agree on the code, not on the payload
+        // shape. RFC §W5 anti-pattern #5.
+        let err: ForgeError = ScxmlSemanticError::TopLevelScriptUnloaded {
+            index: Some(2),
+            src: Some("scripts/init.js".into()),
+        }
+        .into();
+        assert_eq!(single_code(&err), "scxml/top-level-script-unloaded");
+    }
+
+    /// Drift guard: every `ScxmlSemanticError` variant must be
+    /// reachable from `ForgeError::Scxml` via `From`. Without this,
+    /// adding a variant could leave an orphan path that the
+    /// `forge_error_fields` exhaustive match never sees.
+    #[test]
+    fn every_variant_routes_through_forge_error() {
+        let variants: Vec<ScxmlSemanticError> = vec![
+            ScxmlSemanticError::InitialStateUnknown {
+                state_id: "x".into(),
+                scope: InitialStateScope::DocumentRoot,
+                available: vec![],
+            },
+            ScxmlSemanticError::TransitionTargetUnknown {
+                state: "s".into(),
+                target: "t".into(),
+                available: vec![],
+            },
+            ScxmlSemanticError::NoStates,
+            ScxmlSemanticError::TopLevelScriptUnloaded {
+                index: None,
+                src: None,
+            },
+        ];
+        for v in variants {
+            let err: ForgeError = v.into();
+            // Just constructing the From conversion is the test —
+            // adding a new variant without a From impl fails to
+            // compile.
+            let _ = err.to_diagnostics();
+        }
+    }
+
+    /// W4 D4 fold success criterion (applied symmetrically to W5):
+    /// SCXML semantic failures and forge validation failures must
+    /// share the SAME wire code when the concept is identical.
+    /// A consumer dispatching on `validation/invalid-reference`
+    /// receives both `ValidationError::InvalidReference` (forge)
+    /// and `ScxmlSemanticError::InitialStateUnknown`/
+    /// `TransitionTargetUnknown` (SCXML) — confirming the fold is
+    /// honest at the wire level.
+    #[test]
+    fn fold_invariant_holds_for_invalid_reference() {
+        use crate::forge::error::ValidationError;
+        use crate::forge::model::ForgeKind;
+
+        let scxml_err: ForgeError = ScxmlSemanticError::TransitionTargetUnknown {
+            state: "active".into(),
+            target: "ghost".into(),
+            available: vec![],
+        }
+        .into();
+
+        let forge_err: ForgeError = ValidationError::InvalidReference {
+            kind: ForgeKind::Statechart,
+            what: "transition target".into(),
+            name: "ghost".into(),
+            available: "active, idle".into(),
+        }
+        .into();
+
+        assert_eq!(single_code(&scxml_err), single_code(&forge_err));
+        assert_eq!(single_code(&forge_err), "validation/invalid-reference");
+
+        // The same DiagnosticCode value (compile-time constant)
+        // means consumer dispatch tables only need one entry per
+        // wire code, not one per (doc-kind, code) pair.
+        let _ = DiagnosticCode::ValidationInvalidReference;
+    }
+
+    /// W5 D6 cross-side parity: when a consumer dispatches on
+    /// `code()`, SCXML and forge documents should produce the same
+    /// branch for the same conceptual failure. This test pins that
+    /// invariant by wire-code equality across enums.
+    #[test]
+    fn fold_invariant_holds_for_empty_collection() {
+        use crate::forge::error::ValidationError;
+        use crate::forge::model::ForgeKind;
+
+        let scxml_err: ForgeError = ScxmlSemanticError::NoStates.into();
+
+        let forge_err: ForgeError = ValidationError::EmptyCollection {
+            kind: ForgeKind::Codec,
+            what: "field".into(),
+        }
+        .into();
+
+        assert_eq!(single_code(&scxml_err), single_code(&forge_err));
+        assert_eq!(single_code(&forge_err), "validation/empty-collection");
+    }
+}

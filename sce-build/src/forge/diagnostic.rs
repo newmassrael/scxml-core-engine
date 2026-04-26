@@ -375,6 +375,16 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/removed-attribute")]
     ValidationRemovedAttribute,
 
+    // ── SCXML semantic-validation (RFC §W5). Three of the four
+    //    SCXML semantic failures fold into existing `validation/*`
+    //    codes per the W4 D4 fold precedent — concept identity:
+    //    "name does not resolve to declared symbol" is the same
+    //    failure shape regardless of which document type produces
+    //    it. Only this code is W3C-SCXML-specific (top-level
+    //    `<script>` rejection per §5.8 has no forge analog). ──
+    #[serde(rename = "scxml/top-level-script-unloaded")]
+    ScxmlTopLevelScriptUnloaded,
+
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
     #[serde(rename = "expression/lex")]
@@ -682,6 +692,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
         ValidationRemovedAttribute,
+        // SCXML semantic (RFC §W5)
+        ScxmlTopLevelScriptUnloaded,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -892,6 +904,9 @@ impl DiagnosticCode {
             ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget => Some("SCE Mesh §9.5"),
+
+            // ── SCXML §5.8 top-level script (RFC §W5) ─────────────
+            ScxmlTopLevelScriptUnloaded => Some("W3C SCXML §5.8"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1116,6 +1131,7 @@ impl DiagnosticCode {
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
             ValidationRemovedAttribute => "validation/removed-attribute",
+            ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
@@ -1377,6 +1393,7 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
         ForgeError::Import(e) => import_fields(e),
         ForgeError::Manifest(e) => manifest_fields(e),
         ForgeError::Generate(e) => generate_fields(e),
+        ForgeError::Scxml(e) => scxml_semantic_fields(e),
         ForgeError::Io { path, .. } => DiagnosticPayload {
             code: DiagnosticCode::IoFilesystem,
             stage: Stage::Io,
@@ -2059,6 +2076,120 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
     }
 }
 
+/// SCXML semantic-validation field mapping (RFC §W5 D2).
+///
+/// Three of the four variants reuse existing `validation/*` wire codes
+/// per the W4 D4 fold precedent — concept identity over namespace
+/// duplication. Only `TopLevelScriptUnloaded` introduces a NEW wire
+/// code (`scxml/top-level-script-unloaded`) because W3C SCXML §5.8
+/// has no forge analog.
+///
+/// Stage stays `Stage::Validation` for all four (RFC §W5 D2 reverse-
+/// reverse-default): SCXML semantic-validation IS post-parse semantic
+/// validation, the same analytical stage as forge `validation/*`. A
+/// future production consumer that needs separate-stage routing can
+/// drive the addition of `Stage::ScxmlSemantic` then; pre-emptive
+/// addition violates `feedback_built_but_unconsumed.md`.
+fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> DiagnosticPayload {
+    use crate::scxml_semantic::{InitialStateScope, ScxmlSemanticError};
+    match e {
+        ScxmlSemanticError::InitialStateUnknown {
+            state_id,
+            scope,
+            available,
+        } => DiagnosticPayload {
+            // REUSE — same wire code as forge `ValidationError::InvalidReference`.
+            // Concept identity: "name X did not resolve to declared symbol Y".
+            code: DiagnosticCode::ValidationInvalidReference,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(state_id.clone()),
+            fix: if available.is_empty() {
+                None
+            } else {
+                Some(Fix::ReplaceOneOf {
+                    candidates: available.clone(),
+                })
+            },
+            // key_fragments: scope-string + "state" + state_id keeps
+            // root-vs-compound distinction in the content-hash id so
+            // two different sites referencing the same bad id yield
+            // distinct fnv1a ids. Mirrors forge `InvalidReference`'s
+            // `[kind, what, name]` layout.
+            key_fragments: vec![
+                match scope {
+                    InitialStateScope::DocumentRoot => "scxml-root".to_string(),
+                    InitialStateScope::CompoundState { parent_id } => {
+                        format!("scxml-compound:{parent_id}")
+                    }
+                },
+                "initial-state".to_string(),
+                state_id.clone(),
+            ],
+        },
+        ScxmlSemanticError::TransitionTargetUnknown {
+            state,
+            target,
+            available,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationInvalidReference,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(target.clone()),
+            fix: if available.is_empty() {
+                None
+            } else {
+                Some(Fix::ReplaceOneOf {
+                    candidates: available.clone(),
+                })
+            },
+            // The owning state goes into `key_fragments[0]` so a
+            // document with the same bad target appearing in two
+            // different states yields two distinct ids.
+            key_fragments: vec![
+                format!("scxml-state:{state}"),
+                "transition-target".to_string(),
+                target.clone(),
+            ],
+        },
+        ScxmlSemanticError::NoStates => DiagnosticPayload {
+            // REUSE — same wire code as forge `ValidationError::EmptyCollection`.
+            // Concept identity: "kind requires at least one X".
+            code: DiagnosticCode::ValidationEmptyCollection,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec!["scxml".to_string(), "state".to_string()],
+        },
+        ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => DiagnosticPayload {
+            // NEW — W3C SCXML §5.8 has no forge analog. The 1 NEW
+            // wire code RFC §W5 D2 introduces.
+            code: DiagnosticCode::ScxmlTopLevelScriptUnloaded,
+            stage: Stage::Validation,
+            expected: None,
+            // `actual` carries the failing src (when known) so repair
+            // tools can locate the offending element. Empty when
+            // analyzer.rs path emits without parser-captured detail.
+            actual: src.clone(),
+            fix: None,
+            // Index + src in key_fragments keep two failing scripts
+            // in the same document distinguishable in the content-hash
+            // id. Both can be empty (analyzer path).
+            key_fragments: {
+                let mut k = Vec::new();
+                if let Some(i) = index {
+                    k.push(i.to_string());
+                }
+                if let Some(s) = src {
+                    k.push(s.clone());
+                }
+                k
+            },
+        },
+    }
+}
+
 // ── Helpers ────────────────────────────────────────────────────
 
 /// Split a human-readable "expected" list ("foo, bar | baz") into a
@@ -2590,6 +2721,21 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:79f17de8d89256c7","code":"validation/removed-attribute","stage":"validation","spec":"SCE Mesh §13","message":"deprecated attribute sce:qos on <send event=\"brake.activate\"> was removed in SCE Mesh §13 path B; pattern is now inferred from event-name conventions and RPC reply pairing from topology structure. Remove the attribute.","actual":"sce:qos","fix":{"kind":"remove_fields","location":"<send event=\"brake.activate\">","fields":["sce:qos"]}}"#,
+            ),
+            (
+                // RFC §W5: SCXML semantic family — TopLevelScriptUnloaded
+                // is the 1 NEW wire code (others reuse `validation/*`).
+                // Golden uses the parser-path shape (index + src
+                // populated) so the wire payload exercises both
+                // optional fields. Analyzer-path emits with both
+                // None — covered by the unit test in scxml_semantic.rs.
+                "forge/scxml-top-level-script-unloaded",
+                crate::scxml_semantic::ScxmlSemanticError::TopLevelScriptUnloaded {
+                    index: Some(2),
+                    src: Some("init.js".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:60cc8f4eef6d11ca","code":"scxml/top-level-script-unloaded","stage":"validation","spec":"W3C SCXML §5.8","message":"Top-level <script> rejected per W3C SCXML 5.8","actual":"init.js"}"#,
             ),
             (
                 "forge/expression-empty",
@@ -4051,6 +4197,7 @@ mod tests {
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
+            | ScxmlTopLevelScriptUnloaded
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -4385,6 +4532,7 @@ mod tests {
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
+                | ScxmlTopLevelScriptUnloaded
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
@@ -4474,10 +4622,10 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            152,
+            153,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 152 distinct variants to match the DiagnosticCode \
-             enum.",
+             expected 153 distinct variants to match the DiagnosticCode \
+             enum (RFC §W5 added ScxmlTopLevelScriptUnloaded; 152 → 153).",
         );
     }
 

@@ -204,21 +204,20 @@ fn json_mode_covers_cli_boundary_errors() {
     );
 }
 
-/// Statechart that the static AOT generator cannot express — the
-/// document carries `<state initial="missing_target">`, tripping
-/// `analyzer::can_generate_static`. Before this path was routed
-/// through the typed diagnostic channel, the reject fired as
-/// `cli/dynamic-features` (Stage::Cli, exit 20) — a CLI-boundary
-/// code for a semantic analyzer verdict. Post-fix it emits
-/// `validation/dynamic-features` (Stage::Validation, exit 3), so
-/// agents can key repair routing on the analyzer, not on the shell.
+/// `<scxml initial="X">` where `X` is not declared. Pre-W5 this
+/// reject was mis-classified as `validation/dynamic-features`
+/// (the analyzer treated all three precondition failures as
+/// "dynamic features"). RFC §W5 D3 splits the precondition channel:
+/// "initial names undeclared state" is a hard semantic violation
+/// (the Interpreter would also reject), and now correctly emits
+/// `validation/invalid-reference` via
+/// `ScxmlSemanticError::InitialStateUnknown`. The fold reuses an
+/// existing forge wire code (W4 D4 fold precedent) — concept
+/// identity: "name X did not resolve to declared symbol Y".
 #[test]
-fn json_mode_dynamic_features_routes_through_validation_stage() {
-    let dir = ScratchDir::new("dynamic-features");
+fn json_mode_undeclared_initial_routes_through_invalid_reference() {
+    let dir = ScratchDir::new("undeclared-initial");
     let path = dir.path().join("dyn.scxml");
-    // `initial` names a state that is not declared — the analyzer
-    // rejects with "initial state attribute names a state that is
-    // not declared".
     let body = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0"
@@ -229,20 +228,41 @@ fn json_mode_dynamic_features_routes_through_validation_stage() {
 "#;
     std::fs::write(&path, body).expect("write fixture");
     let out = run_generate(&sce_codegen_bin(), &path, "json");
-    assert!(!out.status.success(), "dynamic-features must fail");
+    assert!(!out.status.success(), "undeclared initial must fail");
     assert_eq!(
         out.status.code(),
         Some(3),
-        "validation stage must exit 3, not cli/20",
+        "validation stage must exit 3 (W5 keeps validation exit code for SCXML semantic), not cli/20",
     );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let line = stderr.trim_end().lines().next().expect("at least one ndjson line");
     let parsed: serde_json::Value =
-        serde_json::from_str(line).expect("dynamic-features line must be JSON");
-    assert_eq!(parsed["code"], "validation/dynamic-features");
+        serde_json::from_str(line).expect("invalid-reference line must be JSON");
+    assert_eq!(parsed["code"], "validation/invalid-reference");
     assert_eq!(parsed["stage"], "validation");
-    assert_eq!(parsed["actual"], "initial state attribute names a state that is not declared");
+    assert_eq!(parsed["actual"], "nope");
+    // The `fix.candidates` list should include the available state ids
+    // so a repair tool can propose `nope → s1`.
+    let fix = &parsed["fix"];
+    assert_eq!(fix["kind"], "replace_one_of");
+    let candidates = fix["candidates"]
+        .as_array()
+        .expect("fix.candidates must be an array");
+    assert!(
+        candidates.iter().any(|v| v == "s1"),
+        "fix.candidates must include 's1' (the only declared state): {line}"
+    );
 }
+
+// "No initial attribute" classification (genuine DynamicFeatures —
+// runtime default resolution required) cannot be reached at the
+// integration boundary because `parser.rs` auto-defaults
+// `model.initial` to the first child state's id (W3C SCXML §3.3
+// default applied at parse time). The classification is pinned at
+// the analyzer-unit level instead — see
+// `analyzer::tests::no_initial_attribute_keeps_dynamic_features`.
+// W5 D3 invariant: the genuine DynamicFeatures path stays the
+// fallback for codegen limitations, not for semantic violations.
 
 /// Write a document with an `sce:kind` value outside the XSD enum.
 ///

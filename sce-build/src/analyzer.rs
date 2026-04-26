@@ -474,20 +474,61 @@ fn compute_scxml_base_path(scxml_path: &str) -> String {
 /// Check if model can be statically code-generated.
 ///
 /// Returns `Ok(())` when every precondition the static generator relies
-/// on is met. The `Err` arm names *which* precondition failed —
-/// callers funnel the reason into `ValidationError::DynamicFeatures`
-/// so upstream agents see the exact blocker, not a generic
-/// "dynamic features" message that buries the repair signal.
+/// on is met. The `Err` arm carries a typed [`ForgeError`] naming
+/// *which* precondition failed.
 ///
-/// Reasons are `&'static str` because the set is closed (three today)
-/// and the strings flow through the diagnostic layer unchanged —
-/// owning them would allocate per call without adding information.
-pub fn can_generate_static(model: &SCXMLModel) -> Result<(), &'static str> {
+/// RFC §W5 D3 refit splits the prior single-reason channel
+/// (`ValidationError::DynamicFeatures` for all three reasons) into
+/// stage-correct typed surfaces:
+///
+/// - **Top-level `<script>` rejected (W3C SCXML §5.8)** →
+///   [`ScxmlSemanticError::TopLevelScriptUnloaded`]
+///   (`scxml/top-level-script-unloaded`). Hard semantic violation;
+///   the Interpreter would also reject. Mis-classified prior to W5
+///   as `validation/dynamic-features` — corrected here.
+///
+/// - **No initial-state attribute** (runtime default resolution
+///   required) → [`ValidationError::DynamicFeatures`]
+///   (`validation/dynamic-features`). Genuine "dynamic feature":
+///   runtime CAN resolve via §3.3 default; static generator cannot.
+///   Stays in DynamicFeatures (correctly classified).
+///
+/// - **Initial-state names undeclared state** →
+///   [`ScxmlSemanticError::InitialStateUnknown`]
+///   (`validation/invalid-reference`). Hard semantic violation.
+///   Mis-classified prior to W5 — corrected here.
+///
+/// [`ForgeError`]: crate::forge::error::ForgeError
+/// [`ScxmlSemanticError::TopLevelScriptUnloaded`]: crate::scxml_semantic::ScxmlSemanticError::TopLevelScriptUnloaded
+/// [`ScxmlSemanticError::InitialStateUnknown`]: crate::scxml_semantic::ScxmlSemanticError::InitialStateUnknown
+/// [`ValidationError::DynamicFeatures`]: crate::forge::error::ValidationError::DynamicFeatures
+pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error::ForgeError> {
+    use crate::forge::error::{ForgeError, ValidationError};
+    use crate::scxml_semantic::{InitialStateScope, ScxmlSemanticError};
+
     if model.document_rejected {
-        return Err("document rejected by W3C SCXML 5.8");
+        // Analyzer path doesn't have the failing script's index/src
+        // (parse_global_scripts sets `model.document_rejected = true`
+        // without preserving the metadata). Both fields stay None;
+        // C++ side captures detail at parser-throw time. The drift
+        // test pins both surfaces emit the same wire code.
+        return Err(ForgeError::Scxml(
+            ScxmlSemanticError::TopLevelScriptUnloaded {
+                index: None,
+                src: None,
+            },
+        ));
     }
     if model.initial.is_empty() {
-        return Err("no initial state (runtime default resolution required)");
+        // Genuine dynamic-feature: runtime default resolution per
+        // W3C SCXML §3.3 picks the first child; static generator
+        // has no equivalent fallback. The Interpreter would NOT
+        // reject this document — it's a codegen-pipeline limitation,
+        // not a semantic violation.
+        return Err(ForgeError::Validation(ValidationError::DynamicFeatures {
+            name: model.name.clone(),
+            reason: "no initial state (runtime default resolution required)".to_string(),
+        }));
     }
     let initial_states: Vec<&str> = model.initial.split_whitespace().collect();
     let all_known = if initial_states.len() > 1 {
@@ -498,7 +539,17 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), &'static str> {
         model.states.contains_key(&model.initial)
     };
     if !all_known {
-        return Err("initial state attribute names a state that is not declared");
+        // Hard semantic violation: an Interpreter would also reject
+        // because §3.3 cannot resolve a non-existent state id. The
+        // available list feeds the structured `ReplaceOneOf` fix.
+        let available: Vec<String> = model.states.keys().cloned().collect();
+        return Err(ForgeError::Scxml(
+            ScxmlSemanticError::InitialStateUnknown {
+                state_id: model.initial.clone(),
+                scope: InitialStateScope::DocumentRoot,
+                available,
+            },
+        ));
     }
     Ok(())
 }
@@ -624,4 +675,141 @@ pub fn compute_parallel_descendants(model: &SCXMLModel) -> BTreeMap<String, Vec<
     }
 
     parallel_descendants
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::error::{ForgeError, ValidationError};
+    use crate::scxml_semantic::{InitialStateScope, ScxmlSemanticError};
+
+    fn empty_model() -> SCXMLModel {
+        SCXMLModel {
+            name: "probe".into(),
+            ..Default::default()
+        }
+    }
+
+    /// RFC §W5 D3 split, branch #2: "no initial attribute" stays
+    /// classified as `ValidationError::DynamicFeatures` because the
+    /// Interpreter CAN resolve via §3.3 default; only the static
+    /// generator cannot. Genuine codegen limitation, not a semantic
+    /// violation. Triggered at the analyzer level by setting
+    /// `model.initial = ""` directly (`parser.rs` auto-defaults to
+    /// the first child state, so this path is unreachable through
+    /// normal parsing — pinning it here keeps the classification
+    /// intact for any future caller that doesn't go through
+    /// `parser.rs`).
+    #[test]
+    fn no_initial_attribute_keeps_dynamic_features() {
+        let mut model = empty_model();
+        model.initial = String::new();
+        // states map non-empty so we don't hit document_rejected first
+        model
+            .states
+            .insert("s1".into(), Default::default());
+
+        let err = can_generate_static(&model)
+            .expect_err("no initial attribute must surface a precondition failure");
+        match err {
+            ForgeError::Validation(ValidationError::DynamicFeatures { name, reason }) => {
+                assert_eq!(name, "probe");
+                assert_eq!(reason, "no initial state (runtime default resolution required)");
+            }
+            other => panic!(
+                "expected ValidationError::DynamicFeatures for no-initial path, got: {other:?}"
+            ),
+        }
+    }
+
+    /// RFC §W5 D3 split, branch #3: "initial names undeclared state"
+    /// is a hard semantic violation — the Interpreter would also
+    /// reject. W5 corrects the prior mis-classification (was
+    /// DynamicFeatures, now `ScxmlSemanticError::InitialStateUnknown`
+    /// → `validation/invalid-reference`).
+    #[test]
+    fn undeclared_initial_routes_to_scxml_semantic() {
+        let mut model = empty_model();
+        model.initial = "nope".into();
+        model
+            .states
+            .insert("s1".into(), Default::default());
+
+        let err = can_generate_static(&model)
+            .expect_err("undeclared initial must reject");
+        match err {
+            ForgeError::Scxml(ScxmlSemanticError::InitialStateUnknown {
+                state_id,
+                scope,
+                available,
+            }) => {
+                assert_eq!(state_id, "nope");
+                assert!(matches!(scope, InitialStateScope::DocumentRoot));
+                assert_eq!(available, vec!["s1".to_string()]);
+            }
+            other => panic!(
+                "expected ScxmlSemanticError::InitialStateUnknown, got: {other:?}"
+            ),
+        }
+    }
+
+    /// RFC §W5 D3 split, branch #1: top-level `<script>` rejected
+    /// per W3C SCXML §5.8 is a hard semantic violation, not a
+    /// codegen limitation. `model.document_rejected = true` is the
+    /// signal `parse_global_scripts` sets when it encounters a
+    /// failing script.
+    #[test]
+    fn document_rejected_routes_to_top_level_script_unloaded() {
+        let mut model = empty_model();
+        model.document_rejected = true;
+
+        let err = can_generate_static(&model)
+            .expect_err("document_rejected must surface a typed error");
+        match err {
+            ForgeError::Scxml(ScxmlSemanticError::TopLevelScriptUnloaded { index, src }) => {
+                // Analyzer path doesn't have the failing script's
+                // metadata — both fields stay None per RFC §W5 D2
+                // payload-asymmetry note.
+                assert!(index.is_none());
+                assert!(src.is_none());
+            }
+            other => panic!(
+                "expected ScxmlSemanticError::TopLevelScriptUnloaded, got: {other:?}"
+            ),
+        }
+    }
+
+    /// W4 D4 fold success criterion at the analyzer level: when the
+    /// analyzer routes a precondition failure to a `ScxmlSemanticError`
+    /// variant, the resulting wire `code` MUST match what the
+    /// matching forge `ValidationError` variant would emit for the
+    /// same conceptual failure. Locks the cross-document-type
+    /// concept identity that motivates RFC §W5 D2 fold.
+    #[test]
+    fn analyzer_emitted_codes_obey_fold_invariant() {
+        use crate::forge::diagnostic::ToDiagnostics;
+        use crate::forge::model::ForgeKind;
+
+        let mut model = empty_model();
+        model.initial = "nope".into();
+        model
+            .states
+            .insert("s1".into(), Default::default());
+        let scxml_err = can_generate_static(&model).expect_err("undeclared");
+        let scxml_diags = scxml_err.to_diagnostics();
+        assert_eq!(scxml_diags.len(), 1);
+        assert_eq!(scxml_diags[0].code.as_str(), "validation/invalid-reference");
+
+        // Symmetric forge case: a forge document referencing an
+        // undeclared symbol emits the same wire code.
+        let forge_err: ForgeError = ValidationError::InvalidReference {
+            kind: ForgeKind::Statechart,
+            what: "transition target".into(),
+            name: "nope".into(),
+            available: "a, b".into(),
+        }
+        .into();
+        let forge_diags = forge_err.to_diagnostics();
+        assert_eq!(forge_diags[0].code.as_str(), scxml_diags[0].code.as_str());
+    }
 }

@@ -697,17 +697,14 @@ fn cmd_generate(
         return;
     }
 
-    if let Err(reason) = analyzer::can_generate_static(&model) {
-        let located = sce_build::forge::error::Located::new(
-            sce_build::forge::error::ValidationError::DynamicFeatures {
-                name: model.name.clone(),
-                reason: reason.to_string(),
-            }
-            .into(),
-            scxml_path,
-            None,
-            None,
-        );
+    if let Err(err) = analyzer::can_generate_static(&model) {
+        // RFC §W5 D3: `can_generate_static` returns the
+        // correctly-classified ForgeError directly — `ScxmlSemanticError`
+        // for hard semantic violations (top-level script rejected,
+        // initial-state names undeclared) and `ValidationDynamicFeatures`
+        // for genuine codegen limitations (no initial attribute).
+        let located =
+            sce_build::forge::error::Located::new(err, scxml_path, None, None);
         error_format.emit_and_exit(&located, "");
     }
 

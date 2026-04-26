@@ -38,6 +38,7 @@ pub mod xinclude;
 /// for the expansion semantics and error model.
 pub mod template;
 pub mod analyzer;
+pub mod scxml_semantic;
 pub mod script_engine_analyzer;
 pub mod filters;
 pub mod generator;
@@ -125,23 +126,15 @@ fn compile_model_from_string(
 pub type CompileError = forge::error::Located<forge::error::ForgeError>;
 
 /// Promote the `analyzer::can_generate_static` precondition into a
-/// typed `ValidationError::DynamicFeatures` diagnostic. The `reason`
-/// the analyzer returned flows through verbatim so the wire record
-/// names the exact blocker.
+/// `Located<ForgeError>` for the wire layer. RFC §W5 D3 refit:
+/// `can_generate_static` itself now returns the correctly-classified
+/// `ForgeError` (split between `ValidationDynamicFeatures` for genuine
+/// codegen limitations and `ScxmlSemanticError::*` for hard semantic
+/// violations); this helper just stamps the source location.
 fn guard_static_generatable(model: &SCXMLModel, source_name: &str) -> Result<(), CompileError> {
-    use forge::error::{Located, ValidationError};
-    analyzer::can_generate_static(model).map_err(|reason| {
-        Located::new(
-            ValidationError::DynamicFeatures {
-                name: model.name.clone(),
-                reason: reason.to_string(),
-            }
-            .into(),
-            source_name,
-            None,
-            None,
-        )
-    })
+    use forge::error::Located;
+    analyzer::can_generate_static(model)
+        .map_err(|err| Located::new(err, source_name, None, None))
 }
 
 /// Resolve SCXML source path to project-relative path.
@@ -2263,9 +2256,14 @@ mod tests {
     /// shim) and in-process Rust callers (typed).
     #[test]
     fn typed_entry_exposes_structured_validation_error() {
-        use forge::error::{ForgeError, ValidationError};
-        // `initial="nope"` names a non-existent state — analyzer
-        // rejects with DynamicFeatures carrying the specific blocker.
+        use forge::error::ForgeError;
+        use scxml_semantic::{InitialStateScope, ScxmlSemanticError};
+        // `initial="nope"` names a non-existent state — RFC §W5 D3
+        // refit: this is a hard semantic violation, NOT a "dynamic
+        // feature". Pre-W5 surface routed through
+        // `ValidationError::DynamicFeatures`; W5 splits to
+        // `ScxmlSemanticError::InitialStateUnknown` mapping to the
+        // existing `validation/invalid-reference` wire code.
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="nope" name="typed_probe">
     <state id="s1"/>
@@ -2275,10 +2273,14 @@ mod tests {
         assert!(
             matches!(
                 err.error,
-                ForgeError::Validation(ValidationError::DynamicFeatures { ref name, .. })
-                    if name == "typed_probe",
+                ForgeError::Scxml(ScxmlSemanticError::InitialStateUnknown {
+                    ref state_id,
+                    scope: InitialStateScope::DocumentRoot,
+                    ..
+                }) if state_id == "nope",
             ),
-            "expected ValidationError::DynamicFeatures(name=\"typed_probe\"), got: {:?}",
+            "expected ScxmlSemanticError::InitialStateUnknown(state_id=\"nope\", scope=DocumentRoot), \
+             got: {:?}",
             err.error,
         );
     }

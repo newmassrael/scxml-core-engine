@@ -64,6 +64,7 @@
         "validation/mesh-rpc-missing-target",
         "validation/mesh-rpc-duplicate-target",
         "validation/removed-attribute",
+        "scxml/top-level-script-unloaded",
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",

@@ -440,6 +440,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |
 | `validation/removed-attribute` | Validation |
+| `scxml/top-level-script-unloaded` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
 | `expression/unsupported-construct` | Expression |
