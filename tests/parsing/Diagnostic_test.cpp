@@ -477,6 +477,69 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTemplateDiagnostic) {
     EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
 }
 
+TEST(SCXMLParserBoundary, EndToEndParseGetDiagnosticsEmitNdjson) {
+    // Full pipeline:
+    //   parseContent (broken `<sce:use/>`)
+    //     → SCXMLParser::getDiagnostics() (typed surface)
+    //     → emit_json_diagnostics (batch NDJSON)
+    //     → nlohmann::json::parse per line
+    //     → assert code matches `xml/template-missing-attribute`.
+    //
+    // Q4-B coexistence: legacy `getErrorMessages()` is also
+    // populated. RFC §W2 deliverable plus §W1 audit #1 closure
+    // composed in one fixture.
+    //
+    // Load-bearing bite: drop the `<sce:use/>` line from the
+    // fixture (pasted as `<state id=\"s1\"/>`) and the
+    // `getDiagnostics().size() == 1` assertion below reds with
+    // "expected at least one diagnostic, got 0".
+    constexpr const char *kBrokenScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       xmlns:sce=\"http://sce.dev/ext\""
+        "       version=\"1.0\""
+        "       initial=\"s1\""
+        "       name=\"e2e_test\">"
+        "  <state id=\"s1\">"
+        "    <sce:use/>"
+        "  </state>"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kBrokenScxml);
+    ASSERT_EQ(model, nullptr);
+
+    // Q4-B: legacy string-vector surface is populated.
+    EXPECT_TRUE(parser.hasErrors());
+    EXPECT_FALSE(parser.getErrorMessages().empty());
+
+    // Typed surface via the boundary flatten.
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_GE(diags.size(), 1u)
+        << "expected at least one typed diagnostic from SCXMLParser";
+
+    // Run the typed vector through the batch formatter.
+    std::ostringstream oss;
+    emit_json_diagnostics(diags, oss);
+    const std::string ndjson = oss.str();
+    ASSERT_FALSE(ndjson.empty());
+
+    // Parse the first line as a v1 schema record. With one
+    // diagnostic emitted, `lines[0]` is the only record.
+    const auto firstNewline = ndjson.find('\n');
+    ASSERT_NE(firstNewline, std::string::npos)
+        << "NDJSON output is missing line delimiter: " << ndjson;
+    const std::string firstLine = ndjson.substr(0, firstNewline);
+
+    nlohmann::json parsed;
+    ASSERT_NO_THROW(parsed = nlohmann::json::parse(firstLine))
+        << firstLine;
+
+    conformance::assertSchemaConformantBase(
+        parsed, "xml/template-missing-attribute");
+    conformance::assertNoUnexpectedKeys(parsed);
+}
+
 TEST(SCXMLParserBoundary, GetDiagnosticsEmptyOnSuccessfulParse) {
     // Successful parse leaves `diagnostics_` empty — the typed
     // surface is opt-in and must not accumulate noise on the
