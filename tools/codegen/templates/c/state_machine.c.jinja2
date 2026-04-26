@@ -109,21 +109,73 @@ static SCE_C_UNUSED {{ model.name }}_state_t state_get_initial_child({{ model.na
     }
 }
 
-/* ── W3C SCXML 5.9: Action execution stubs (E1 minimum) ───────────── */
-{# E1 emits action stubs only — no `<onentry>` / `<onexit>` / executable
-   content rendering. Compound state entry/exit chains are walked, but
-   the per-state hooks are intentionally empty so the `feedback_silently_broken_hooks`
-   warning does not apply: a fixture with non-empty action blocks would
-   not be in the E1 W3C category (datamodel-less, eventless-only). E3
-   replaces these stubs with the entry_exit_actions.jinja2 port.          #}
+/* ── W3C SCXML 5.9: Action execution (per-state, document-order) ──── */
+{# Mirrors the C++ entry_exit_actions.jinja2 dispatch: each `<onentry>` /
+   `<onexit>` block lowers to the `actions/{type}.jinja2` body for every
+   action it contains. C11 inlines the action body directly (no
+   `std::function` wrapper, no EntryExitHelper delegation) — T3 lock-in
+   per c11_design_decisions.md.
+
+   This jinja2 macro shifts new action.type bodies into separate
+   `c/helpers/actions_*.jinja2` includes only when a second consumer
+   appears; until then the inline branch keeps the diff small and the
+   activation site explicit.                                              #}
 static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
     (void)sm;
-    (void)s;
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.on_entry_blocks %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+        {% for block in state.on_entry_blocks %}
+        /* Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }} */
+        {% for action in block %}
+        {% if action.type == 'raise' %}
+        {
+            /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
+            {{ model.name }}_event_with_meta_t evt;
+            memset(&evt, 0, sizeof(evt));
+            evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise(sm, &evt);
+        }
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+        break;
+    }
+    {% endif %}
+    {% endfor %}
+    default:
+        break;
+    }
 }
 
 static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
     (void)sm;
-    (void)s;
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.on_exit_blocks %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+        {% for block in state.on_exit_blocks %}
+        /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} */
+        {% for action in block %}
+        {% if action.type == 'raise' %}
+        {
+            /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
+            {{ model.name }}_event_with_meta_t evt;
+            memset(&evt, 0, sizeof(evt));
+            evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise(sm, &evt);
+        }
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+        break;
+    }
+    {% endif %}
+    {% endfor %}
+    default:
+        break;
+    }
 }
 
 static void execute_transition_actions({{ model.name }}_t *sm) {
@@ -154,6 +206,9 @@ static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t 
             sm->transition_taken = true;
             return true;
         }
+        {% elif trans.event == '*' %}
+        /* Wildcard event="*" transition deferred until first consumer fixture
+           lands the EventMatchingHelper port (process_transition.jinja2). */
         {% else %}
         if (event == {{ model.name | upper }}_EVENT_{{ trans.event | upper | replace('.', '_') | replace('-', '_') }}) {
             sm->policy.last_transition_source_state = sm->current_state;
