@@ -6,6 +6,7 @@
 #include "parsing/DiagnosticBatchFormatter.h"
 #include "parsing/ParseError.h"
 #include "parsing/SCXMLParser.h"
+#include "parsing/SemanticError.h"
 #include "parsing/TemplateError.h"
 #include "parsing/XIncludeError.h"
 #include "parsing/XIncludeExpander.h"
@@ -1043,6 +1044,290 @@ TEST(ParseErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
     EXPECT_FALSE(fragile_string_dispatch(future_edit))
         << "string dispatch silently breaks when message text changes; "
            "typed code() does not. THIS is what the W4 surface unlocks.";
+}
+
+// ── RFC §W5: SCXML semantic-validation typed family ───────────────
+//
+// Wire-code conformance and ID-stability tests mirror the W4
+// `ParseErrorWire` block. Stage assertion is inlined ("validation"
+// instead of "xml") because the shared `assertSchemaConformantBase`
+// helper hardcodes stage="xml" for the W3/W4 parser-entry family.
+//
+// Three of the four subtypes REUSE existing `validation/*` wire
+// codes per the W4 D4 fold precedent (concept identity); only
+// `SemanticTopLevelScriptUnloaded` introduces a NEW wire code with
+// a `spec` field anchor (W3C SCXML §5.8). Each leaf test exercises
+// both the schema envelope and the leaf-specific payload extras
+// (`actual`, `fix.candidates`, `spec`) where they apply.
+
+namespace semantic_conformance {
+
+// W5 variant of the schema-conformance helper. `stage` is fixed to
+// "validation" because all four SemanticError leaves share that
+// stage (RFC §W5 D2).
+void assertSemanticBase(const nlohmann::ordered_json &j,
+                        std::string_view expectedCode) {
+    ASSERT_TRUE(j.contains("v")) << j.dump();
+    ASSERT_TRUE(j.contains("id")) << j.dump();
+    ASSERT_TRUE(j.contains("code")) << j.dump();
+    ASSERT_TRUE(j.contains("stage")) << j.dump();
+    ASSERT_TRUE(j.contains("message")) << j.dump();
+
+    EXPECT_EQ(j.at("v").get<int>(), 1);
+    EXPECT_EQ(j.at("code").get<std::string>(), std::string{expectedCode});
+    EXPECT_EQ(j.at("stage").get<std::string>(), "validation");
+    EXPECT_FALSE(j.at("message").get<std::string>().empty());
+    // Reuse the W4 helper's id regex via the existing matchesIdRegex
+    // visible from the conformance:: namespace.
+    EXPECT_TRUE(conformance::matchesIdRegex(j.at("id").get<std::string>()))
+        << "id '" << j.at("id").get<std::string>()
+        << "' does not match ^fnv1a:[0-9a-f]{16}$";
+}
+
+}  // namespace semantic_conformance
+
+TEST(SemanticErrorWire, InitialStateUnknownConformsToV1Schema) {
+    // Folded onto `validation/invalid-reference` per RFC §W5 D2 — the
+    // same wire code forge `ValidationError::InvalidReference` emits.
+    // Test pins the fold: a consumer dispatching on
+    // `validation/invalid-reference` MUST see this leaf's payload
+    // identical to the forge counterpart's payload shape.
+    const SemanticInitialStateUnknown err(
+        "Initial state 'nope' not found",
+        /*state_id=*/"nope",
+        SemanticInitialStateUnknown::Scope::DocumentRoot,
+        /*parent_id=*/"",
+        /*available=*/{"s1", "s2"});
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/invalid-reference");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("actual").get<std::string>(), "nope");
+    ASSERT_TRUE(j.contains("fix"));
+    EXPECT_EQ(j.at("fix").at("kind").get<std::string>(), "replace_one_of");
+    const auto candidates = j.at("fix").at("candidates");
+    ASSERT_TRUE(candidates.is_array());
+    EXPECT_EQ(candidates.size(), 2u);
+    EXPECT_EQ(candidates[0].get<std::string>(), "s1");
+    EXPECT_EQ(candidates[1].get<std::string>(), "s2");
+}
+
+TEST(SemanticErrorWire, InitialStateUnknownEmptyAvailableSuppressesFix) {
+    // When the model has zero declared states, the candidate list is
+    // empty and `fix` MUST be omitted (no point suggesting a
+    // `replace_one_of` with no choices). Mirrors Rust
+    // `scxml_semantic_fields` behaviour: `if available.is_empty()
+    // { None } else { Some(Fix::ReplaceOneOf {...}) }`.
+    const SemanticInitialStateUnknown err(
+        "Initial state 'nope' not found",
+        /*state_id=*/"nope",
+        SemanticInitialStateUnknown::Scope::DocumentRoot,
+        /*parent_id=*/"",
+        /*available=*/{});
+    const auto j = err.to_json();
+    EXPECT_FALSE(j.contains("fix"));
+    EXPECT_EQ(j.at("actual").get<std::string>(), "nope");
+}
+
+TEST(SemanticErrorWire, TransitionTargetUnknownConformsToV1Schema) {
+    const SemanticTransitionTargetUnknown err(
+        "Transition in state 'active' references non-existent target state 'ghost'",
+        /*state=*/"active",
+        /*target=*/"ghost",
+        /*available=*/{"idle", "active"});
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/invalid-reference");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("actual").get<std::string>(), "ghost");
+    ASSERT_TRUE(j.contains("fix"));
+    EXPECT_EQ(j.at("fix").at("candidates").size(), 2u);
+}
+
+TEST(SemanticErrorWire, NoStatesConformsToV1Schema) {
+    const SemanticNoStates err("No state nodes found in SCXML document");
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/empty-collection");
+    conformance::assertNoUnexpectedKeys(j);
+    // No payload extras — Rust counterpart emits no `actual` or `fix`
+    // for `validation/empty-collection` either.
+    EXPECT_FALSE(j.contains("actual"));
+    EXPECT_FALSE(j.contains("fix"));
+}
+
+TEST(SemanticErrorWire, TopLevelScriptUnloadedConformsToV1Schema) {
+    // The 1 NEW wire code RFC §W5 D2 introduces. Carries `spec` field
+    // ("W3C SCXML §5.8") because the code has a spec_anchor on the
+    // Rust side; key ordering is (v, id, code, stage, spec, message,
+    // location?, actual?) per the schema's canonical order.
+    const SemanticTopLevelScriptUnloaded err(
+        "Top-level <script> rejected per W3C SCXML 5.8",
+        /*index=*/std::optional<std::size_t>{2},
+        /*src=*/std::optional<std::string>{"init.js"});
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "scxml/top-level-script-unloaded");
+    conformance::assertNoUnexpectedKeys(j);
+    ASSERT_TRUE(j.contains("spec"));
+    EXPECT_EQ(j.at("spec").get<std::string>(), "W3C SCXML §5.8");
+    ASSERT_TRUE(j.contains("actual"));
+    EXPECT_EQ(j.at("actual").get<std::string>(), "init.js");
+}
+
+TEST(SemanticErrorWire, TopLevelScriptUnloadedAnalyzerPathOmitsActual) {
+    // Analyzer-path producer (Rust `analyzer::can_generate_static`)
+    // emits with both `index` and `src` as None — wire output omits
+    // `actual` but keeps `spec` and the wire `code`. Pins payload
+    // asymmetry symmetric across producers (RFC §W5 anti-pattern #5:
+    // "NEW wire code count > NEW Rust producer count" — both sides
+    // emit the same code; payload detail varies).
+    const SemanticTopLevelScriptUnloaded err(
+        "Top-level <script> rejected per W3C SCXML 5.8",
+        /*index=*/std::nullopt,
+        /*src=*/std::nullopt);
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "scxml/top-level-script-unloaded");
+    EXPECT_FALSE(j.contains("actual"));
+    EXPECT_TRUE(j.contains("spec"));
+}
+
+TEST(SemanticErrorWire, IdDistinguishesScopeOnInitialStateUnknown) {
+    // Two `SemanticInitialStateUnknown` instances with the SAME
+    // unresolved id but DIFFERENT scope (root vs compound) must yield
+    // distinct content-hash ids — otherwise a document with the bug
+    // at both the root and a compound state would look like one
+    // failure to consumers. The id derives from the message text
+    // (which differs across scopes when the throw-site message
+    // includes the parent state's id), which is the W4 D4 idiom
+    // applied here.
+    const SemanticInitialStateUnknown root(
+        "Initial state 'X' not found",
+        "X",
+        SemanticInitialStateUnknown::Scope::DocumentRoot,
+        "",
+        {});
+    const SemanticInitialStateUnknown compound(
+        "State 'parent' references non-existent initial state 'X'",
+        "X",
+        SemanticInitialStateUnknown::Scope::CompoundState,
+        "parent",
+        {});
+    EXPECT_NE(root.to_json().at("id").get<std::string>(),
+              compound.to_json().at("id").get<std::string>())
+        << "root vs compound scope must yield distinct ids";
+}
+
+TEST(SemanticErrorWire, IdDiffersAcrossDifferentWireCodes) {
+    // Cross-leaf id distinctness when wire codes differ — same as the
+    // `ParseErrorWire::IdDiffersAcrossSubtypesWithSameMessage` W4
+    // precedent. Leaves that share `validation/invalid-reference`
+    // (InitialStateUnknown vs TransitionTargetUnknown) intentionally
+    // collide on id when message+payload match — the documented
+    // α-strict tradeoff for the fold.
+    const std::string msg = "shared message";
+    const SemanticInitialStateUnknown a(
+        msg, "x", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticNoStates b(msg);
+    EXPECT_NE(a.to_json().at("id").get<std::string>(),
+              b.to_json().at("id").get<std::string>())
+        << "different wire codes must yield distinct ids even with shared message";
+}
+
+// ── Test-as-consumer fragility tests (RFC §W5 D6) ─────────────────
+//
+// Mirror W4's `ParseErrorConsumer.TypedCodeDistinguishesFailureClass*`
+// tests: a hypothetical consumer dispatching on `code()` MUST be able
+// to distinguish W5's failure class from any other semantic class
+// using only the wire code. For the 3 fold-reused codes, the test
+// also pins that the fold honest at the consumer level — a consumer
+// branching on `validation/invalid-reference` receives both forge
+// ValidationError::InvalidReference AND SCXML
+// SemanticInitialStateUnknown / SemanticTransitionTargetUnknown
+// uniformly.
+
+TEST(SemanticErrorConsumer,
+     TypedCodeDistinguishesFailureClassInitialStateUnknown) {
+    const SemanticInitialStateUnknown err(
+        "Initial state 'nope' not found", "nope",
+        SemanticInitialStateUnknown::Scope::DocumentRoot, "", {"s1"});
+    auto dispatch = [](const SemanticError &e) {
+        return e.code() == std::string_view{"validation/invalid-reference"};
+    };
+    EXPECT_TRUE(dispatch(err));
+
+    // Round-trip via the SemanticError base reference confirms the
+    // dynamic type's `code()` survives polymorphic erasure (a sliced
+    // base copy would dispatch to the pure-virtual override).
+    const SemanticError &base = err;
+    EXPECT_EQ(base.code(), std::string_view{"validation/invalid-reference"});
+}
+
+TEST(SemanticErrorConsumer,
+     TypedCodeDistinguishesFailureClassTransitionTargetUnknown) {
+    const SemanticTransitionTargetUnknown err(
+        "Transition in state 'a' references non-existent target state 'b'",
+        "a", "b", {"a", "c"});
+    auto dispatch = [](const SemanticError &e) {
+        return e.code() == std::string_view{"validation/invalid-reference"};
+    };
+    EXPECT_TRUE(dispatch(err));
+}
+
+TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassNoStates) {
+    const SemanticNoStates err("No state nodes found in SCXML document");
+    auto dispatch = [](const SemanticError &e) {
+        return e.code() == std::string_view{"validation/empty-collection"};
+    };
+    EXPECT_TRUE(dispatch(err));
+}
+
+TEST(SemanticErrorConsumer,
+     TypedCodeDistinguishesFailureClassTopLevelScriptUnloaded) {
+    const SemanticTopLevelScriptUnloaded err(
+        "Top-level <script> rejected per W3C SCXML 5.8", std::nullopt,
+        std::nullopt);
+    auto dispatch = [](const SemanticError &e) {
+        return e.code() ==
+               std::string_view{"scxml/top-level-script-unloaded"};
+    };
+    EXPECT_TRUE(dispatch(err));
+}
+
+TEST(SemanticErrorConsumer, FoldHonestAtConsumerLevel) {
+    // A consumer branching on `validation/invalid-reference` MUST
+    // receive both the forge surface (where ValidationError emits
+    // the same code) AND the SCXML surface uniformly. This pins the
+    // W4 D4 fold success criterion at the consumer level, applied
+    // symmetrically to W5: same wire code = same consumer branch =
+    // same repair logic, regardless of producing document type.
+    //
+    // For W5 the test focuses on the SCXML half: both
+    // SemanticInitialStateUnknown and SemanticTransitionTargetUnknown
+    // emit `validation/invalid-reference` — a single consumer branch
+    // handles both. (The forge half is pinned by Rust's
+    // `fold_invariant_holds_for_invalid_reference` test in
+    // `sce-build/src/scxml_semantic.rs`.)
+    const SemanticInitialStateUnknown a(
+        "msg", "id", SemanticInitialStateUnknown::Scope::DocumentRoot, "",
+        {});
+    const SemanticTransitionTargetUnknown b("msg", "s", "t", {});
+    EXPECT_EQ(a.code(), b.code())
+        << "fold reuses `validation/invalid-reference` for both leaves";
+    EXPECT_EQ(a.code(),
+              std::string_view{"validation/invalid-reference"});
+}
+
+TEST(SemanticErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
+    // Mirrors W4's `ParseErrorConsumer.TypedCodeStableUnderMessageTextEdit`.
+    // Two leaves with intentionally divergent message text must
+    // still share `code()` — agents dispatching on the wire code do
+    // not break when the message text changes (e.g. localization,
+    // refinement of the human-readable wording).
+    const SemanticInitialStateUnknown today(
+        "Initial state 'X' not found",
+        "X", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticInitialStateUnknown future_edit(
+        "scxml semantic check: cannot resolve initial=\"X\" to a declared state",
+        "X", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    EXPECT_EQ(today.code(), future_edit.code());
+    EXPECT_NE(std::string(today.what()), std::string(future_edit.what()));
 }
 
 }  // namespace
