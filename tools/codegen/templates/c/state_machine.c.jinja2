@@ -312,6 +312,9 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
 {% endmacro %}
 
 static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t event) {
+    (void)event;  /* used only inside the per-state switch arms; suppress
+                     -Wunused-parameter when no state declares any
+                     transitions (e.g. test415: top-level final-only). */
     sm->transition_taken = false;
     switch (sm->current_state) {
     {% for state_id, state in model.states | dictsort %}
