@@ -301,11 +301,17 @@ XIncludeResult PugiXMLDocument::processXInclude() {
         result.positions = std::move(expanded.positions);
         SCE_LOG_DEBUG("PugiXMLDocument: XInclude processing successful");
         return result;
-    } catch (const SCE::parsing::XIncludeExpansionError &ex) {
-        errorMessage_ =
-            "XInclude processing failed: " + std::string(ex.what());
-        SCE_LOG_WARN("PugiXMLDocument: {}", errorMessage_);
-        return result;
+    } catch (const SCE::parsing::XIncludeExpansionError &) {
+        // RFC §W3-5: typed XInclude diagnostics propagate to
+        // `SCXMLParser::parseFile` / `parseContent`'s typed catch
+        // arm so `getDiagnostics()` surfaces the leaf with its
+        // `xml/xinclude-*` code(). The legacy `errorMessage_`
+        // surface is populated by `addError()` in the parser's
+        // catch arm (Q4-B coexistence). Re-throw rather than
+        // record-and-swallow because the typed object's dynamic
+        // type carries the leaf's `code()` override; rebuilding
+        // it from the rendered message text would be lossy.
+        throw;
     } catch (const std::exception &ex) {
         errorMessage_ =
             "XInclude processing failed: " + std::string(ex.what());

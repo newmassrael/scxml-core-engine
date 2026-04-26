@@ -9,6 +9,7 @@
 #include "parsing/IXMLParser.h"
 #include "parsing/ParsingCommon.h"
 #include "parsing/TemplateError.h"
+#include "parsing/XIncludeError.h"
 
 #include "parsing/IXMLElement.h"
 
@@ -116,6 +117,21 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         addError(msg);
         recordDiagnostic(tpl.clone());
         return nullptr;
+    } catch (const SCE::parsing::XIncludeExpansionError &xie) {
+        // RFC §W3-5: re-thrown by `PugiXMLDocument::processXInclude`
+        // so the typed leaf reaches `getDiagnostics()` with its
+        // `xml/xinclude-*` `code()` intact. `addError` populates the
+        // legacy string surface for Q4-B coexistence, paralleling
+        // the W2 TemplateError arm above.
+        std::string msg = "XInclude processing failed: " + std::string(xie.what());
+        if (xie.location().has_value()) {
+            const auto &loc = *xie.location();
+            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) +
+                   ":" + std::to_string(loc.col);
+        }
+        addError(msg);
+        recordDiagnostic(xie.clone());
+        return nullptr;
     } catch (const std::exception &ex) {
         addError("Exception while parsing file: " + std::string(ex.what()));
         return nullptr;
@@ -168,6 +184,20 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         }
         addError(msg);
         recordDiagnostic(tpl.clone());
+        return nullptr;
+    } catch (const SCE::parsing::XIncludeExpansionError &xie) {
+        // RFC §W3-5: re-thrown by `PugiXMLDocument::processXInclude`
+        // so the typed leaf reaches `getDiagnostics()` with its
+        // `xml/xinclude-*` `code()` intact. `addError` populates the
+        // legacy string surface for Q4-B coexistence.
+        std::string msg = "XInclude processing failed: " + std::string(xie.what());
+        if (xie.location().has_value()) {
+            const auto &loc = *xie.location();
+            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) +
+                   ":" + std::to_string(loc.col);
+        }
+        addError(msg);
+        recordDiagnostic(xie.clone());
         return nullptr;
     } catch (const std::exception &ex) {
         addError("Exception while parsing content: " + std::string(ex.what()));

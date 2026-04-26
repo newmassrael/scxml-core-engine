@@ -705,6 +705,56 @@ TEST(SCXMLParserBoundary, EndToEndParseGetDiagnosticsEmitNdjson) {
     conformance::assertNoUnexpectedKeys(parsed);
 }
 
+TEST(SCXMLParserBoundary, ParseContentSurfacesTypedXIncludeDiagnostic) {
+    // Mirrors the TemplateError sister test above for the W3-5
+    // boundary surfacing. `<xi:include/>` without `href` fires
+    // `XIncludeMissingHref` from `expandStringX`; the typed
+    // exception is re-thrown by `PugiXMLDocument::processXInclude`
+    // and caught by `SCXMLParser::parseContent`'s typed catch arm
+    // ahead of the existing `std::exception&` fallback.
+    //
+    // Standing-consumer load-bearing-ness: removing the
+    // `recordDiagnostic(xie.clone())` call in the typed catch arm
+    // reds this test with `getDiagnostics().size() == 0` because
+    // the legacy `addError` only populates the string surface.
+    constexpr const char *kBrokenScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       xmlns:xi=\"http://www.w3.org/2001/XInclude\""
+        "       version=\"1.0\""
+        "       initial=\"s1\""
+        "       name=\"xinc_missing_href_test\">"
+        "  <state id=\"s1\">"
+        "    <xi:include/>"
+        "  </state>"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kBrokenScxml);
+
+    EXPECT_EQ(model, nullptr);
+
+    // Q4-B: legacy string-vector surface remains populated.
+    EXPECT_TRUE(parser.hasErrors());
+    EXPECT_FALSE(parser.getErrorMessages().empty());
+
+    // RFC §W3-5: typed surface populated with the leaf's wire code.
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u) << "expected exactly one typed diagnostic";
+    ASSERT_NE(diags[0], nullptr);
+    EXPECT_EQ(diags[0]->code(),
+              std::string_view{"xml/xinclude-missing-href"});
+
+    // Round-trip through to_json() to confirm the cloned object
+    // preserved its dynamic type — a sliced base copy would dispatch
+    // to a different code() override or fail to compile against the
+    // pure-virtual.
+    const auto j = diags[0]->to_json();
+    EXPECT_EQ(j.at("code").get<std::string>(),
+              "xml/xinclude-missing-href");
+    EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
+}
+
 TEST(SCXMLParserBoundary, GetDiagnosticsEmptyOnSuccessfulParse) {
     // Successful parse leaves `diagnostics_` empty — the typed
     // surface is opt-in and must not accumulate noise on the
