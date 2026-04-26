@@ -4,6 +4,7 @@
 #include "parsing/PugiXMLParser.h"
 #include "core/LogMacros.h"
 #include "parsing/IXMLElement.h"
+#include "parsing/ParseError.h"
 #include "parsing/TemplateConstants.h"
 #include "parsing/TemplateError.h"
 #include "parsing/TemplateExpander.h"
@@ -461,105 +462,107 @@ bool PugiXMLDocument::isValid() const {
 // PugiXMLParser implementation
 // ============================================================================
 
+// RFC §W4 D1-C: typed-throw replaces the historical nullptr-return
+// + lastError_ poll. Callers (SCXMLParser::parseFile / parseContent)
+// observe parser-entry failures via typed `SCE::parsing::ParseError`
+// subtypes caught at the parser boundary. `lastError_` is no longer
+// populated; `getLastError()` returns empty for backward source
+// compatibility (the symbol still exists for any out-of-repo direct
+// caller, but the typed surface is now the contract).
 std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filename) {
-    try {
-        // Check if file exists
-        if (!std::filesystem::exists(filename)) {
-            lastError_ = "File not found: " + filename;
-            SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
-            return nullptr;
-        }
-
-        SCE_LOG_INFO("PugiXMLParser: Parsing file: {}", filename);
-
-        // Read the file into an in-memory buffer first so the
-        // `PugiXMLDocument` wrapper can stash the exact bytes pugixml
-        // parsed — `processSceTemplate` needs a stable view of the
-        // author's source text to build a `SCE::parsing::PositionMap`
-        // identity entry (RFC §3 P2). `load_buffer` parses directly
-        // out of that buffer without a second file read, keeping the
-        // cached `sourceText_` byte-identical to what pugixml saw.
-        std::ifstream in(filename, std::ios::binary);
-        if (!in) {
-            lastError_ = "Cannot open file: " + filename;
-            SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
-            return nullptr;
-        }
-        std::ostringstream buffer;
-        buffer << in.rdbuf();
-        std::string sourceText = buffer.str();
-
-        auto doc = std::make_shared<pugi::xml_document>();
-        pugi::xml_parse_result result =
-            doc->load_buffer(sourceText.data(), sourceText.size());
-
-        if (!result) {
-            lastError_ = "Parse error: " + std::string(result.description());
-            SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
-            return nullptr;
-        }
-
-        // Create document wrapper with base path + source path +
-        // source text. Base path feeds `<xi:include>` / `<sce:use
-        // template>` resolution; source path seeds the
-        // cycle-detection stack in `processSceTemplate` so a top-level
-        // document that references itself via `<sce:use
-        // template="self.scxml"/>` is caught before loading the
-        // template file a second time; source text seeds the
-        // PositionMap identity entry so post-expansion diagnostics
-        // can be remapped to (file, row, col) in the author's
-        // source. Mirrors Rust's `sce-build/src/template.rs::expand
-        // (content, self_path, ...)` plumbing at the parser boundary
-        // so the C++ runtime has the same self-reference +
-        // coordinate-remap plumbing as the AOT expander.
-        auto wrappedDoc = std::make_shared<PugiXMLDocument>(doc);
-        std::filesystem::path filePath(filename);
-        wrappedDoc->setBasePath(filePath.parent_path().string());
-        wrappedDoc->setSourcePath(filename);
-        wrappedDoc->setSourceText(sourceText);
-
-        return wrappedDoc;
-
-    } catch (const std::exception &ex) {
-        lastError_ = "Exception while parsing file: " + std::string(ex.what());
-        SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
-        return nullptr;
+    // Check if file exists
+    if (!std::filesystem::exists(filename)) {
+        SCE_LOG_ERROR("PugiXMLParser: File not found: {}", filename);
+        throw SCE::parsing::ParseFileNotFound("File not found: " + filename);
     }
+
+    SCE_LOG_INFO("PugiXMLParser: Parsing file: {}", filename);
+
+    // Read the file into an in-memory buffer first so the
+    // `PugiXMLDocument` wrapper can stash the exact bytes pugixml
+    // parsed — `processSceTemplate` needs a stable view of the
+    // author's source text to build a `SCE::parsing::PositionMap`
+    // identity entry (RFC §3 P2). `load_buffer` parses directly
+    // out of that buffer without a second file read, keeping the
+    // cached `sourceText_` byte-identical to what pugixml saw.
+    std::ifstream in(filename, std::ios::binary);
+    if (!in) {
+        // Distinct from filesystem::exists==false (ParseFileNotFound):
+        // file exists but could not be opened (permission denied,
+        // I/O failure). Reuses ParseFileNotFound because no Rust
+        // producer distinguishes this case either — the wire still
+        // routes through xml/file-not-found with a refined message.
+        SCE_LOG_ERROR("PugiXMLParser: Cannot open file: {}", filename);
+        throw SCE::parsing::ParseFileNotFound("Cannot open file: " + filename);
+    }
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    std::string sourceText = buffer.str();
+
+    auto doc = std::make_shared<pugi::xml_document>();
+    pugi::xml_parse_result result =
+        doc->load_buffer(sourceText.data(), sourceText.size());
+
+    if (!result) {
+        const std::string msg =
+            "Parse error: " + std::string(result.description());
+        SCE_LOG_ERROR("PugiXMLParser: {}", msg);
+        throw SCE::parsing::ParseXmlFailed(msg);
+    }
+
+    // Create document wrapper with base path + source path +
+    // source text. Base path feeds `<xi:include>` / `<sce:use
+    // template>` resolution; source path seeds the
+    // cycle-detection stack in `processSceTemplate` so a top-level
+    // document that references itself via `<sce:use
+    // template="self.scxml"/>` is caught before loading the
+    // template file a second time; source text seeds the
+    // PositionMap identity entry so post-expansion diagnostics
+    // can be remapped to (file, row, col) in the author's
+    // source. Mirrors Rust's `sce-build/src/template.rs::expand
+    // (content, self_path, ...)` plumbing at the parser boundary
+    // so the C++ runtime has the same self-reference +
+    // coordinate-remap plumbing as the AOT expander.
+    auto wrappedDoc = std::make_shared<PugiXMLDocument>(doc);
+    std::filesystem::path filePath(filename);
+    wrappedDoc->setBasePath(filePath.parent_path().string());
+    wrappedDoc->setSourcePath(filename);
+    wrappedDoc->setSourceText(sourceText);
+
+    return wrappedDoc;
 }
 
 std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &content) {
-    try {
-        SCE_LOG_INFO("PugiXMLParser: Parsing content");
+    SCE_LOG_INFO("PugiXMLParser: Parsing content");
 
-        // Parse from string using pugixml
-        auto doc = std::make_shared<pugi::xml_document>();
-        pugi::xml_parse_result result = doc->load_string(content.c_str());
+    // Parse from string using pugixml
+    auto doc = std::make_shared<pugi::xml_document>();
+    pugi::xml_parse_result result = doc->load_string(content.c_str());
 
-        if (!result) {
-            lastError_ = "Parse error: " + std::string(result.description());
-            SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
-            return nullptr;
-        }
-
-        // Capture the caller's content verbatim so `processSceTemplate`
-        // can build a PositionMap identity entry keyed by the same
-        // bytes pugixml parsed. `parseContent` does not receive a
-        // source path (in-memory documents are anonymous), so only
-        // sourceText_ is set; the absent sourcePath_ leaves cycle
-        // detection dormant until a nested template load introduces
-        // a real path into the stack.
-        auto wrappedDoc = std::make_shared<PugiXMLDocument>(doc);
-        wrappedDoc->setSourceText(content);
-
-        return wrappedDoc;
-
-    } catch (const std::exception &ex) {
-        lastError_ = "Exception while parsing content: " + std::string(ex.what());
-        SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
-        return nullptr;
+    if (!result) {
+        const std::string msg =
+            "Parse error: " + std::string(result.description());
+        SCE_LOG_ERROR("PugiXMLParser: {}", msg);
+        throw SCE::parsing::ParseXmlFailed(msg);
     }
+
+    // Capture the caller's content verbatim so `processSceTemplate`
+    // can build a PositionMap identity entry keyed by the same
+    // bytes pugixml parsed. `parseContent` does not receive a
+    // source path (in-memory documents are anonymous), so only
+    // sourceText_ is set; the absent sourcePath_ leaves cycle
+    // detection dormant until a nested template load introduces
+    // a real path into the stack.
+    auto wrappedDoc = std::make_shared<PugiXMLDocument>(doc);
+    wrappedDoc->setSourceText(content);
+
+    return wrappedDoc;
 }
 
+// RFC §W4 D1-C: deprecated. lastError_ is no longer populated by
+// parseFile/parseContent — they throw typed `ParseError` subtypes
+// instead. Returns empty string for source compatibility with
+// any out-of-repo caller still polling this method.
 std::string PugiXMLParser::getLastError() const {
     return lastError_;
 }

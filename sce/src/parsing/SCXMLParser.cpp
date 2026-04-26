@@ -7,6 +7,7 @@
 #include "core/LogMacros.h"
 #include "parsing/Diagnostic.h"
 #include "parsing/IXMLParser.h"
+#include "parsing/ParseError.h"
 #include "parsing/ParsingCommon.h"
 #include "parsing/TemplateError.h"
 #include "parsing/XIncludeError.h"
@@ -55,12 +56,6 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         // Initialize parsing state
         initParsing();
 
-        // Check if file exists
-        if (!std::filesystem::exists(filename)) {
-            addError("File not found: " + filename);
-            return nullptr;
-        }
-
         SCE_LOG_INFO("Parsing SCXML file: {}", filename);
 
         // W3C SCXML 5.8: Set base path for external script resolution
@@ -69,14 +64,13 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         actionParser_->setScxmlBasePath(basePath);
         SCE_LOG_DEBUG("Set SCXML base path for external script resolution: {}", basePath);
 
-        // Parse file using platform-specific XML parser
+        // RFC §W4 D1-C: PugiXMLParser throws `ParseFileNotFound` /
+        // `ParseXmlFailed` on parse-entry failures; the caller no
+        // longer polls a nullable result + `getLastError()`. The
+        // existing `if (!doc || !doc->isValid())` branch became dead
+        // code under typed-throw and is removed.
         auto xmlParser = IXMLParser::create();
         auto doc = xmlParser->parseFile(filename);
-
-        if (!doc || !doc->isValid()) {
-            addError("Failed to parse XML file: " + xmlParser->getLastError());
-            return nullptr;
-        }
 
         // Process XIncludes. Capture the result so the produced
         // PositionMap can thread into `processSceTemplate` — Phase X
@@ -107,6 +101,17 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
 
         // Parse document
         return parseAbstractDocument(doc);
+    } catch (const SCE::parsing::ParseError &pe) {
+        // RFC §W4 D1-C: PugiXMLParser + parseAbstractDocument throw
+        // typed `ParseError` subtypes for parser-entry failures
+        // (file-not-found, malformed XML, no/wrong root element).
+        // Q4-B coexistence: `addError` populates the legacy string
+        // surface; `recordDiagnostic` populates the typed
+        // `getDiagnostics()` surface that consumers dispatch on
+        // (RFC §W4 D8 ParseErrorConsumer.TypedCodeDistinguishesFailureClass*).
+        addError(pe.what());
+        recordDiagnostic(pe.clone());
+        return nullptr;
     } catch (const SCE::parsing::TemplateError &tpl) {
         std::string msg = tpl.what();
         if (tpl.location().has_value()) {
@@ -133,7 +138,16 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         recordDiagnostic(xie.clone());
         return nullptr;
     } catch (const std::exception &ex) {
-        addError("Exception while parsing file: " + std::string(ex.what()));
+        // RFC §W4 D1-C: wrap unexpected std::exception as typed
+        // `ParseException` so the typed surface stays populated even
+        // for non-typed throws (bad_alloc, third-party throws). Per
+        // D4 α-strict, `typeid(ex).name()` is NOT included — the wire
+        // detail field would emit different strings on libstdc++ /
+        // libc++ / MSVC, breaking portability.
+        SCE::parsing::ParseException pe(
+            "Exception while parsing file: " + std::string(ex.what()));
+        addError(pe.what());
+        recordDiagnostic(pe.clone());
         return nullptr;
     }
 }
@@ -145,14 +159,11 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
 
         SCE_LOG_INFO("Parsing SCXML content");
 
-        // Parse from string using platform-specific XML parser
+        // RFC §W4 D1-C: PugiXMLParser throws `ParseXmlFailed` on
+        // malformed input; the caller no longer polls a nullable
+        // result + `getLastError()`.
         auto xmlParser = IXMLParser::create();
         auto doc = xmlParser->parseContent(content);
-
-        if (!doc || !doc->isValid()) {
-            addError("Failed to parse XML content: " + xmlParser->getLastError());
-            return nullptr;
-        }
 
         // Process XIncludes; capture the produced PositionMap so it
         // composes into the template stage (Phase X RFC §1 Q2).
@@ -175,6 +186,12 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
 
         // Parse document
         return parseAbstractDocument(doc);
+    } catch (const SCE::parsing::ParseError &pe) {
+        // RFC §W4 D1-C: parser-entry typed surface (mirror of
+        // `parseFile`'s arm above).
+        addError(pe.what());
+        recordDiagnostic(pe.clone());
+        return nullptr;
     } catch (const SCE::parsing::TemplateError &tpl) {
         std::string msg = tpl.what();
         if (tpl.location().has_value()) {
@@ -200,28 +217,41 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         recordDiagnostic(xie.clone());
         return nullptr;
     } catch (const std::exception &ex) {
-        addError("Exception while parsing content: " + std::string(ex.what()));
+        // RFC §W4 D1-C: wrap unexpected std::exception as typed
+        // `ParseException`.
+        SCE::parsing::ParseException pe(
+            "Exception while parsing content: " + std::string(ex.what()));
+        addError(pe.what());
+        recordDiagnostic(pe.clone());
         return nullptr;
     }
 }
 
 std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::shared_ptr<IXMLDocument> doc) {
-    if (!doc) {
-        addError("Null document");
-        return nullptr;
-    }
+    // RFC §W4 D1-C: PugiXMLParser::parseFile / parseContent throw on
+    // failure rather than returning nullptr, so this function's
+    // callers (parseFile / parseContent above) only invoke it with a
+    // valid document. The historical `if (!doc) { addError("Null
+    // document"); return nullptr; }` branch became dead under
+    // typed-throw and is removed (the dropped `ParseNullDocument`
+    // leaf in RFC §W4 α-strict).
 
-    // Get root element
+    // Get root element. roxmltree's Rust-side analog cannot reach
+    // this case (parse rejects root-less input), so the C++ leaf
+    // reuses `xml/parse` rather than introducing a new wire code.
     auto rootElement = doc->getRootElement();
     if (!rootElement) {
-        addError("No root element found");
-        return nullptr;
+        throw SCE::parsing::ParseNoRootElement("No root element found");
     }
 
-    // Check if root element is 'scxml'
+    // Check if root element is 'scxml'. Mirrors the Rust-side
+    // `XmlError::WrongRootElement` producer in
+    // `sce-build/src/parser.rs::SCXMLParser::parse_impl` —
+    // both engines surface the same `xml/wrong-root-element`
+    // wire code so consumers dispatch identically across pipelines.
     if (!ParsingCommon::matchNodeName(rootElement->getName(), "scxml")) {
-        addError("Root element is not 'scxml', found: " + rootElement->getName());
-        return nullptr;
+        throw SCE::parsing::ParseWrongRootElement(
+            "Root element is not 'scxml', found: " + rootElement->getName());
     }
 
     SCE_LOG_INFO("Valid SCXML document found, parsing structure");

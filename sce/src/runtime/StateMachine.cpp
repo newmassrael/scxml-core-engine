@@ -633,12 +633,18 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     std::string xmlWrapper =
                         "<finalize xmlns=\"http://www.w3.org/2005/07/scxml\">" + finalizeScript + "</finalize>";
 
+                    // RFC §W4 D1-C: parseContent throws
+                    // `SCE::parsing::ParseXmlFailed` on malformed
+                    // input; the existing outer `catch (std::exception&)`
+                    // arm at the end of this try block surfaces it as
+                    // an SCE_LOG_ERROR with the typed `what()` text.
+                    // The historical `if (!document || !document->isValid())`
+                    // branch and its `parser->getLastError()` poll are
+                    // dead under typed-throw and removed.
                     auto parser = IXMLParser::create();
                     auto document = parser->parseContent(xmlWrapper);
 
-                    if (!document || !document->isValid()) {
-                        SCE_LOG_ERROR("StateMachine: Failed to parse finalize XML: {}", parser->getLastError());
-                    } else {
+                    {
                         auto root = document->getRootElement();
                         if (!root) {
                             SCE_LOG_ERROR("StateMachine: No root element in finalize XML");
