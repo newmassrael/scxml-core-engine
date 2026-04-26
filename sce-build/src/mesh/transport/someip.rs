@@ -125,6 +125,98 @@ pub const SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE: u16 = 0x0018;
 pub const SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL: u16 = 0x0019;
 pub const SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR: u16 = 0x0020;
 
+// ── Shared range allocator (RFC F.X-4 D2: extracted at third-consumer threshold) ──
+
+/// Hybrid (counter + optional author-pin) range allocator shared across
+/// the three SCE-reserved SOMEIP service-ID subsystems (RFC F.X-1 invoke,
+/// RFC F.X-3 region-liveness, RFC F.X-4 machine-liveness). Each subsystem
+/// passes its own `[base, ceiling]` sub-range and error-enum constructors;
+/// the body is identical across subsystems because F.X-1 D2's
+/// cross-subsystem stability property makes the algorithm range-agnostic.
+///
+/// **Determinism.** `BTreeMap` iteration is lex-sorted; re-running with
+/// the same input produces the same output across builds and across deploy
+/// graph edits that don't change the participant set.
+///
+/// **Collision-free by construction.** Pin slots are reserved before the
+/// counter advances; the overflow gate up front guarantees the counter
+/// never escapes the sub-range.
+///
+/// **Why generic over `E` (instead of returning a shared enum).** Each
+/// subsystem's public error enum carries operator-facing payload field
+/// names that match its participant kind (`machine` / `partition_key` /
+/// future machine-key) and references its own range constants in the
+/// rustdoc. Distinct enums keep the diagnostic chain typed end-to-end at
+/// the subsystem boundary; the helper accepts thin closure constructors
+/// so each public wrapper builds its own variant.
+fn range_alloc<E>(
+    participants: &std::collections::BTreeMap<String, Option<u16>>,
+    base: u16,
+    ceiling: u16,
+    err_overflow: impl FnOnce(usize, usize) -> E,
+    err_pin_out_of_range: impl FnOnce(String, u16, u16, u16) -> E,
+    err_pin_collision: impl FnOnce(Vec<String>, u16) -> E,
+) -> Result<std::collections::BTreeMap<String, u16>, E> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let range_size = (ceiling - base + 1) as usize;
+
+    // 1. Overflow gate. Counter scheme cannot fit more than range_size
+    //    participants regardless of pin shape, so reject up front. The
+    //    pin checks below assume the participant count is feasible.
+    if participants.len() > range_size {
+        return Err(err_overflow(participants.len(), range_size));
+    }
+
+    // 2. Pin range + collision validation. Reject any pin outside the
+    //    sub-range; group remaining pins by id to detect duplicates.
+    //    BTreeMap keeps the diagnostic deterministic for byte-stable
+    //    error fixtures.
+    let mut by_pin: BTreeMap<u16, Vec<String>> = BTreeMap::new();
+    for (key, maybe_pin) in participants.iter() {
+        if let Some(pin) = maybe_pin {
+            if *pin < base || *pin > ceiling {
+                return Err(err_pin_out_of_range(key.clone(), *pin, base, ceiling));
+            }
+            by_pin.entry(*pin).or_default().push(key.clone());
+        }
+    }
+    for (pinned_id, keys) in by_pin.iter() {
+        if keys.len() >= 2 {
+            return Err(err_pin_collision(keys.clone(), *pinned_id));
+        }
+    }
+
+    // 3. Reserved set: every pin claims its slot. Counter must skip these.
+    let reserved: BTreeSet<u16> = by_pin.keys().copied().collect();
+
+    // 4. Walk participants in lex order. Pinned → use the pin verbatim.
+    //    Un-pinned → consume the lowest unreserved slot. The participant-
+    //    count overflow gate above guarantees the counter never escapes
+    //    the sub-range: total claims = participants.len() <= range_size,
+    //    and reserved + auto = participants.len() (disjoint), so the
+    //    auto-assignment cannot collide with any pin or run off the end.
+    let mut out: BTreeMap<String, u16> = BTreeMap::new();
+    let mut next_slot: u16 = base;
+    for (key, maybe_pin) in participants.iter() {
+        if let Some(pin) = maybe_pin {
+            out.insert(key.clone(), *pin);
+            continue;
+        }
+        while reserved.contains(&next_slot) {
+            next_slot += 1;
+        }
+        debug_assert!(
+            next_slot <= ceiling,
+            "auto-assignment escaped sub-range — overflow gate or pin-reserve invariant broken"
+        );
+        out.insert(key.clone(), next_slot);
+        next_slot += 1;
+    }
+
+    Ok(out)
+}
+
 // ── Hybrid (counter + optional pin) service ID assigner ────────────────────
 
 /// Errors from the hybrid §9.6 SOMEIP scxml-invoke service ID assigner
@@ -190,73 +282,25 @@ pub enum AssignInvokeServiceIdError {
 pub fn assign_invoke_service_ids(
     participants: &std::collections::BTreeMap<String, Option<u16>>,
 ) -> Result<std::collections::BTreeMap<String, u16>, AssignInvokeServiceIdError> {
-    use std::collections::{BTreeMap, BTreeSet};
-
-    // 1. Overflow gate. Counter scheme cannot fit more than RANGE_SIZE
-    //    participants regardless of pin shape, so reject up front. The
-    //    pin checks below assume the participant count is feasible.
-    if participants.len() > SCXML_INVOKE_SERVICE_RANGE_SIZE {
-        return Err(AssignInvokeServiceIdError::Overflow {
-            participant_count: participants.len(),
-            ceiling: SCXML_INVOKE_SERVICE_RANGE_SIZE,
-        });
-    }
-
-    // 2. Pin range + collision validation. Reject any pin outside the
-    //    invoke sub-range; group remaining pins by id to detect duplicates.
-    //    BTreeMap keeps the diagnostic deterministic for byte-stable
-    //    error fixtures.
-    let mut by_pin: BTreeMap<u16, Vec<String>> = BTreeMap::new();
-    for (name, maybe_pin) in participants.iter() {
-        if let Some(pin) = maybe_pin {
-            if *pin < SCXML_INVOKE_SERVICE_BASE || *pin > SCXML_INVOKE_SERVICE_CEILING {
-                return Err(AssignInvokeServiceIdError::PinOutOfRange {
-                    machine: name.clone(),
-                    pinned_id: *pin,
-                    range_lo: SCXML_INVOKE_SERVICE_BASE,
-                    range_hi: SCXML_INVOKE_SERVICE_CEILING,
-                });
-            }
-            by_pin.entry(*pin).or_default().push(name.clone());
-        }
-    }
-    for (pinned_id, machines) in by_pin.iter() {
-        if machines.len() >= 2 {
-            return Err(AssignInvokeServiceIdError::PinCollision {
-                machines: machines.clone(),
-                pinned_id: *pinned_id,
-            });
-        }
-    }
-
-    // 3. Reserved set: every pin claims its slot. Counter must skip these.
-    let reserved: BTreeSet<u16> = by_pin.keys().copied().collect();
-
-    // 4. Walk participants in lex order. Pinned → use the pin verbatim.
-    //    Un-pinned → consume the lowest unreserved slot. The participant-
-    //    count overflow gate above guarantees the counter never escapes
-    //    the sub-range: total claims = participants.len() <= RANGE_SIZE,
-    //    and reserved + auto = participants.len() (disjoint), so the
-    //    auto-assignment cannot collide with any pin or run off the end.
-    let mut out: BTreeMap<String, u16> = BTreeMap::new();
-    let mut next_slot: u16 = SCXML_INVOKE_SERVICE_BASE;
-    for (name, maybe_pin) in participants.iter() {
-        if let Some(pin) = maybe_pin {
-            out.insert(name.clone(), *pin);
-            continue;
-        }
-        while reserved.contains(&next_slot) {
-            next_slot += 1;
-        }
-        debug_assert!(
-            next_slot <= SCXML_INVOKE_SERVICE_CEILING,
-            "auto-assignment escaped invoke sub-range — overflow gate or pin-reserve invariant broken"
-        );
-        out.insert(name.clone(), next_slot);
-        next_slot += 1;
-    }
-
-    Ok(out)
+    range_alloc(
+        participants,
+        SCXML_INVOKE_SERVICE_BASE,
+        SCXML_INVOKE_SERVICE_CEILING,
+        |participant_count, ceiling| AssignInvokeServiceIdError::Overflow {
+            participant_count,
+            ceiling,
+        },
+        |machine, pinned_id, range_lo, range_hi| AssignInvokeServiceIdError::PinOutOfRange {
+            machine,
+            pinned_id,
+            range_lo,
+            range_hi,
+        },
+        |machines, pinned_id| AssignInvokeServiceIdError::PinCollision {
+            machines,
+            pinned_id,
+        },
+    )
 }
 
 // ── Hybrid (counter + optional pin) §16.4 region-liveness assigner ─────────
@@ -330,73 +374,27 @@ pub enum AssignLivenessServiceIdError {
 pub fn assign_liveness_service_ids(
     participants: &std::collections::BTreeMap<String, Option<u16>>,
 ) -> Result<std::collections::BTreeMap<String, u16>, AssignLivenessServiceIdError> {
-    use std::collections::{BTreeMap, BTreeSet};
-
-    // 1. Overflow gate. Counter scheme cannot fit more than RANGE_SIZE
-    //    participants regardless of pin shape, so reject up front. The
-    //    pin checks below assume the participant count is feasible.
-    if participants.len() > SCXML_LIVENESS_SERVICE_RANGE_SIZE {
-        return Err(AssignLivenessServiceIdError::Overflow {
-            participant_count: participants.len(),
-            ceiling: SCXML_LIVENESS_SERVICE_RANGE_SIZE,
-        });
-    }
-
-    // 2. Pin range + collision validation. Reject any pin outside the
-    //    liveness sub-range; group remaining pins by id to detect
-    //    duplicates. BTreeMap keeps the diagnostic deterministic for
-    //    byte-stable error fixtures.
-    let mut by_pin: BTreeMap<u16, Vec<String>> = BTreeMap::new();
-    for (key, maybe_pin) in participants.iter() {
-        if let Some(pin) = maybe_pin {
-            if *pin < SCXML_LIVENESS_SERVICE_BASE || *pin > SCXML_LIVENESS_SERVICE_CEILING {
-                return Err(AssignLivenessServiceIdError::PinOutOfRange {
-                    partition_key: key.clone(),
-                    pinned_id: *pin,
-                    range_lo: SCXML_LIVENESS_SERVICE_BASE,
-                    range_hi: SCXML_LIVENESS_SERVICE_CEILING,
-                });
+    range_alloc(
+        participants,
+        SCXML_LIVENESS_SERVICE_BASE,
+        SCXML_LIVENESS_SERVICE_CEILING,
+        |participant_count, ceiling| AssignLivenessServiceIdError::Overflow {
+            participant_count,
+            ceiling,
+        },
+        |partition_key, pinned_id, range_lo, range_hi| {
+            AssignLivenessServiceIdError::PinOutOfRange {
+                partition_key,
+                pinned_id,
+                range_lo,
+                range_hi,
             }
-            by_pin.entry(*pin).or_default().push(key.clone());
-        }
-    }
-    for (pinned_id, keys) in by_pin.iter() {
-        if keys.len() >= 2 {
-            return Err(AssignLivenessServiceIdError::PinCollision {
-                partition_keys: keys.clone(),
-                pinned_id: *pinned_id,
-            });
-        }
-    }
-
-    // 3. Reserved set: every pin claims its slot. Counter must skip these.
-    let reserved: BTreeSet<u16> = by_pin.keys().copied().collect();
-
-    // 4. Walk participants in lex order. Pinned → use the pin verbatim.
-    //    Un-pinned → consume the lowest unreserved slot. The participant-
-    //    count overflow gate above guarantees the counter never escapes
-    //    the sub-range: total claims = participants.len() <= RANGE_SIZE,
-    //    and reserved + auto = participants.len() (disjoint), so the
-    //    auto-assignment cannot collide with any pin or run off the end.
-    let mut out: BTreeMap<String, u16> = BTreeMap::new();
-    let mut next_slot: u16 = SCXML_LIVENESS_SERVICE_BASE;
-    for (key, maybe_pin) in participants.iter() {
-        if let Some(pin) = maybe_pin {
-            out.insert(key.clone(), *pin);
-            continue;
-        }
-        while reserved.contains(&next_slot) {
-            next_slot += 1;
-        }
-        debug_assert!(
-            next_slot <= SCXML_LIVENESS_SERVICE_CEILING,
-            "auto-assignment escaped liveness sub-range — overflow gate or pin-reserve invariant broken"
-        );
-        out.insert(key.clone(), next_slot);
-        next_slot += 1;
-    }
-
-    Ok(out)
+        },
+        |partition_keys, pinned_id| AssignLivenessServiceIdError::PinCollision {
+            partition_keys,
+            pinned_id,
+        },
+    )
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
