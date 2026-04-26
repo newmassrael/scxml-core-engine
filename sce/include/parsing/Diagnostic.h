@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -54,6 +55,17 @@ public:
     virtual const std::optional<SourcePos> &location() const noexcept = 0;
 
     virtual nlohmann::ordered_json to_json() const = 0;
+
+    // Polymorphic copy. The boundary flatten in `SCXMLParser::parseFile`
+    // catches a typed diagnostic by const-reference (the throw object is
+    // owned by the catch frame) and needs to take ownership of an
+    // independent heap copy so it can record it on the parser's
+    // `diagnostics_` vector. A leaf-typed `clone()` is the standard
+    // workaround for slicing through a base-class copy ctor; each leaf
+    // returns `std::make_unique<Self>(*this)` so the dynamic type is
+    // preserved and `to_json()` keeps dispatching to the right override.
+    // RFC §W1 audit finding #1 closure (W2 deliverable).
+    virtual std::unique_ptr<Diagnostic> clone() const = 0;
 };
 
 }  // namespace SCE::parsing

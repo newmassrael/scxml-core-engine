@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
+#include "factory/NodeFactory.h"
 #include "parsing/Diagnostic.h"
+#include "parsing/SCXMLParser.h"
 #include "parsing/TemplateError.h"
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <memory>
 #include <optional>
 #include <regex>
 #include <set>
@@ -54,6 +57,10 @@ public:
         j["stage"] = "xml";
         j["message"] = "fake";
         return j;
+    }
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<FakeDiagnostic>(*this);
     }
 };
 
@@ -257,6 +264,79 @@ TEST(TemplateErrorWire, IdIsStableAcrossCalls) {
         "<sce:use template=\"a.sce-template.xml\">: cycle detected");
     EXPECT_EQ(err.to_json().at("id").get<std::string>(),
               err.to_json().at("id").get<std::string>());
+}
+
+// ── SCXMLParser boundary flatten (RFC §W1 audit #1 / W2) ──────────
+
+TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTemplateDiagnostic) {
+    // `<sce:use/>` without the required `template` attribute fires
+    // `TemplateMissingAttribute` from `TemplateExpander` at the call
+    // site (no file resolution). The boundary flatten in
+    // `SCXMLParser::parseContent` adds a typed catch arm AHEAD of
+    // the existing `std::exception&` fallback that records the
+    // diagnostic via `Diagnostic::clone()` so `getDiagnostics()`
+    // returns the typed object alongside the legacy string vector
+    // (Q4-B coexistence).
+    //
+    // Standing-consumer load-bearing-ness: removing the
+    // `recordDiagnostic(tpl.clone())` line in the typed catch arm
+    // reds this test with `getDiagnostics().size() == 0` because
+    // the flatten happens via `addError` only.
+    constexpr const char *kBrokenScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       xmlns:sce=\"http://sce.dev/ext\""
+        "       version=\"1.0\""
+        "       initial=\"s1\""
+        "       name=\"boundary_test\">"
+        "  <state id=\"s1\">"
+        "    <sce:use/>"
+        "  </state>"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kBrokenScxml);
+
+    EXPECT_EQ(model, nullptr);
+
+    // Q4-B: legacy string-vector surface remains populated.
+    EXPECT_TRUE(parser.hasErrors());
+    EXPECT_FALSE(parser.getErrorMessages().empty());
+
+    // RFC §W1 audit #1 closure: typed surface populated.
+    const auto &diags = parser.getDiagnostics();
+    ASSERT_EQ(diags.size(), 1u) << "expected exactly one typed diagnostic";
+    ASSERT_NE(diags[0], nullptr);
+    EXPECT_EQ(diags[0]->code(),
+              std::string_view{"xml/template-missing-attribute"});
+
+    // Round-trip through `to_json()` to confirm the cloned object
+    // preserved its dynamic type (a sliced base copy would dispatch
+    // to a different override or fail to compile against pure-virt).
+    const auto j = diags[0]->to_json();
+    EXPECT_EQ(j.at("code").get<std::string>(),
+              "xml/template-missing-attribute");
+    EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
+}
+
+TEST(SCXMLParserBoundary, GetDiagnosticsEmptyOnSuccessfulParse) {
+    // Successful parse leaves `diagnostics_` empty — the typed
+    // surface is opt-in and must not accumulate noise on the
+    // happy path. Sanity-checks `initParsing()` clears the vector
+    // between successive parses on the same parser instance.
+    constexpr const char *kValidScxml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+        "       version=\"1.0\""
+        "       initial=\"s1\""
+        "       name=\"valid_test\">"
+        "  <state id=\"s1\"/>"
+        "</scxml>";
+
+    SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+    auto model = parser.parseContent(kValidScxml);
+    EXPECT_NE(model, nullptr);
+    EXPECT_TRUE(parser.getDiagnostics().empty());
 }
 
 TEST(TemplateErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {

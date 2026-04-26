@@ -28,6 +28,10 @@ namespace SCE {
 class IXMLDocument;
 }
 
+namespace SCE::parsing {
+class Diagnostic;
+}
+
 /**
  * @brief Class that orchestrates SCXML parsing
  *
@@ -84,6 +88,19 @@ public:
      * @return List of warning messages
      */
     const std::vector<std::string> &getWarningMessages() const;
+
+    /**
+     * @brief Return typed parsing diagnostics.
+     *
+     * Parallel to `getErrorMessages()` (Q4-B permanent coexistence).
+     * Populated when the parse hits a typed throw site that the
+     * boundary flatten in `parseFile`/`parseContent` recognises —
+     * presently the 8 `SCE::parsing::TemplateError` subtypes
+     * (RFC §W1 audit finding #1 closure / W2 deliverable). Returns
+     * empty vector for parse paths that surface only string errors.
+     */
+    const std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> &
+    getDiagnostics() const noexcept;
 
     /**
      * @brief Return state node parser
@@ -214,6 +231,16 @@ private:
     void addWarning(const std::string &message);
 
     /**
+     * @brief Record a typed diagnostic alongside the legacy string vector.
+     *
+     * Owned heap copy keyed on `Diagnostic::clone()` so the parser
+     * can retain it past the catch frame's lifetime. Callers
+     * typically pair this with `addError(diag.what())` to populate
+     * both surfaces in lockstep (Q4-B coexistence).
+     */
+    void recordDiagnostic(std::unique_ptr<SCE::parsing::Diagnostic> diag);
+
+    /**
      * @brief Validate model
      * @param model Model to validate
      * @return Whether it is valid
@@ -233,6 +260,7 @@ private:
     std::shared_ptr<IXIncludeProcessor> xincludeProcessor_;
     std::vector<std::string> errorMessages_;
     std::vector<std::string> warningMessages_;
+    std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> diagnostics_;
     SCE::parsing::PositionMap documentPositions_;
 };
 

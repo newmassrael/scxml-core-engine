@@ -8,6 +8,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -86,6 +87,9 @@ public:
     std::string_view code() const noexcept override {
         return "xml/template-unknown-param";
     }
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<TemplateUnknownParam>(*this);
+    }
 };
 
 // `<sce:use>` omitted a `<sce:param required="true">` that the
@@ -98,6 +102,9 @@ public:
     using TemplateError::TemplateError;
     std::string_view code() const noexcept override {
         return "xml/template-missing-param";
+    }
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<TemplateMissingParam>(*this);
     }
 };
 
@@ -117,6 +124,9 @@ public:
     std::string_view code() const noexcept override {
         return "xml/template-cycle";
     }
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<TemplateCycle>(*this);
+    }
 };
 
 // Recursion exceeded
@@ -134,6 +144,9 @@ public:
     std::string_view code() const noexcept override {
         return "xml/template-too-deep";
     }
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<TemplateTooDeep>(*this);
+    }
 };
 
 // `<sce:use template="...">` named a file that could not be
@@ -150,6 +163,9 @@ public:
     std::string_view code() const noexcept override {
         return "xml/template-not-found";
     }
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<TemplateNotFound>(*this);
+    }
 };
 
 // Resolved template file exists but could not be read —
@@ -165,6 +181,9 @@ public:
     using TemplateError::TemplateError;
     std::string_view code() const noexcept override {
         return "xml/template-read-error";
+    }
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<TemplateReadError>(*this);
     }
 };
 
@@ -187,6 +206,9 @@ public:
     std::string_view code() const noexcept override {
         return "xml/template-malformed";
     }
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<TemplateMalformed>(*this);
+    }
 };
 
 // `<sce:use>` is missing the required `template` attribute, or
@@ -206,6 +228,9 @@ public:
     using TemplateError::TemplateError;
     std::string_view code() const noexcept override {
         return "xml/template-missing-attribute";
+    }
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<TemplateMissingAttribute>(*this);
     }
 };
 

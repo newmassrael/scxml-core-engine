@@ -5,6 +5,7 @@
 #include "GuardUtils.h"
 #include "backends/LogUtils.h"
 #include "core/LogMacros.h"
+#include "parsing/Diagnostic.h"
 #include "parsing/IXMLParser.h"
 #include "parsing/ParsingCommon.h"
 #include "parsing/TemplateError.h"
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <utility>
 
 SCE::SCXMLParser::SCXMLParser(std::shared_ptr<SCE::NodeFactory> nodeFactory,
                               std::shared_ptr<SCE::IXIncludeProcessor> xincludeProcessor)
@@ -112,6 +114,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
                    ":" + std::to_string(loc.col);
         }
         addError(msg);
+        recordDiagnostic(tpl.clone());
         return nullptr;
     } catch (const std::exception &ex) {
         addError("Exception while parsing file: " + std::string(ex.what()));
@@ -164,6 +167,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
                    ":" + std::to_string(loc.col);
         }
         addError(msg);
+        recordDiagnostic(tpl.clone());
         return nullptr;
     } catch (const std::exception &ex) {
         addError("Exception while parsing content: " + std::string(ex.what()));
@@ -447,9 +451,15 @@ const std::vector<std::string> &SCE::SCXMLParser::getWarningMessages() const {
     return warningMessages_;
 }
 
+const std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> &
+SCE::SCXMLParser::getDiagnostics() const noexcept {
+    return diagnostics_;
+}
+
 void SCE::SCXMLParser::initParsing() {
     errorMessages_.clear();
     warningMessages_.clear();
+    diagnostics_.clear();
 }
 
 void SCE::SCXMLParser::addError(const std::string &message) {
@@ -460,6 +470,13 @@ void SCE::SCXMLParser::addError(const std::string &message) {
 void SCE::SCXMLParser::addWarning(const std::string &message) {
     SCE_LOG_WARN("SCXMLParser - {}", message);
     warningMessages_.push_back(message);
+}
+
+void SCE::SCXMLParser::recordDiagnostic(
+    std::unique_ptr<SCE::parsing::Diagnostic> diag) {
+    if (diag) {
+        diagnostics_.push_back(std::move(diag));
+    }
 }
 
 bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
