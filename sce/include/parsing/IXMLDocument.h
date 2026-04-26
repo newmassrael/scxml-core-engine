@@ -6,36 +6,8 @@
 #include "IXMLElement.h"
 #include "parsing/PositionMap.h"
 #include <memory>
-#include <string>
 
 namespace SCE {
-
-// Result of `IXMLDocument::processXInclude`. Carries the XInclude-
-// expansion `PositionMap` alongside the success flag so downstream
-// diagnostic emitters can remap in-memory coordinates back to the
-// author's source file (or to a `xi:include`'d fragment file). See
-// `claudedocs/rfc-sce-template-phase-x.md` §3 B2. The PositionMap
-// is identity when `<xi:include>` is absent from the source
-// document and otherwise captures every spliced fragment byte with
-// File-origin attribution to the fragment's source file.
-struct XIncludeResult {
-    bool ok = false;
-    SCE::parsing::PositionMap positions;
-};
-
-// Result of `IXMLDocument::processSceTemplate`. Carries the
-// template-expansion `PositionMap` alongside the success flag so
-// downstream diagnostic emitters can remap in-memory coordinates
-// back to the author's source file. See
-// `claudedocs/rfc-sce-template-phase-c.md` §3 P2. The PositionMap
-// is identity when `<sce:use>` is absent from the source document
-// and otherwise captures every spliced template body byte with
-// File/CallSite origin attribution (RFC §6.3 Q3 depth-1 rule).
-struct SceTemplateResult {
-    bool ok = false;
-    SCE::parsing::PositionMap positions;
-};
-
 
 /**
  * @brief Abstract XML document interface
@@ -55,31 +27,36 @@ public:
 
     /**
      * @brief Process XInclude directives
-     * @return XIncludeResult { ok, positions }
+     * @return PositionMap tracking every emitted byte back to its
+     *         source file
      *
      * W3C XInclude: Replaces <xi:include> elements with external
      * content via the string-level expander
      * `SCE::parsing::expandStringX` (mirrors
-     * `sce-build/src/xinclude.rs::expand`). Returns a `PositionMap`
-     * tracking every emitted byte back to its source file so
-     * post-expansion diagnostics can resolve to author-source
+     * `sce-build/src/xinclude.rs::expand`). The returned PositionMap
+     * lets post-expansion diagnostics resolve to author-source
      * (file, row, col) — including bytes that originated in an
      * `xi:include`'d fragment. See
      * `claudedocs/rfc-sce-template-phase-x.md` §3 B2.
+     *
+     * Throws on failure: `SCE::parsing::XIncludeExpansionError`
+     * (typed subtypes from `sce/include/parsing/XIncludeError.h`)
+     * for expansion failures, `SCE::parsing::ParseXmlFailed` for
+     * reparse failures of the spliced text. RFC §W4.5 D2/D3.
      */
-    virtual XIncludeResult processXInclude() = 0;
+    virtual SCE::parsing::PositionMap processXInclude() = 0;
 
     /**
      * @brief Process `<sce:use>` template expansion directives
      * @param upstream PositionMap describing every byte of the
-     *        post-XInclude document text — typically the
-     *        `XIncludeResult::positions` returned by
-     *        `processXInclude`. The expander composes this map into
-     *        its own output so a diagnostic byte position resolves
-     *        through both preprocessor stages back to the author's
-     *        source file (host or `xi:include`'d fragment), per
-     *        Phase X RFC §1 Q2.
-     * @return SceTemplateResult { ok, positions }
+     *        post-XInclude document text — typically the value
+     *        returned by `processXInclude`. The expander composes
+     *        this map into its own output so a diagnostic byte
+     *        position resolves through both preprocessor stages
+     *        back to the author's source file (host or
+     *        `xi:include`'d fragment), per Phase X RFC §1 Q2.
+     * @return PositionMap composing `upstream` with the
+     *         template-expansion mapping
      *
      * Expands `<sce:use template="...">` against `<sce:template>` files
      * sibling to the current document. Mirrors the AOT expander
@@ -87,25 +64,24 @@ public:
      * yields a byte-equivalent post-preprocessor document on the other
      * (claudedocs/rfc-sce-template-phase-b.md §1 Q1).
      *
-     * Implementations must throw `SCE::parsing::TemplateError`
-     * (or one of its typed subtypes — see
-     * `sce/include/parsing/TemplateError.h`) on any failure, never
-     * silently succeed on unsupported shapes. The typed subtypes map
-     * 1:1 to the Rust `xml/template-*` DiagnosticCode set so the
-     * AOT and Interpreter paths surface the same class of failure.
+     * Throws on failure: `SCE::parsing::TemplateError` (typed
+     * subtypes from `sce/include/parsing/TemplateError.h`) for
+     * expansion failures, `SCE::parsing::ParseXmlFailed` for
+     * reparse failures. RFC §W4.5 D2.
      */
-    virtual SceTemplateResult processSceTemplate(
+    virtual SCE::parsing::PositionMap processSceTemplate(
         const SCE::parsing::PositionMap &upstream) = 0;
-
-    /**
-     * @brief Get error message if parsing failed
-     * @return Error message, empty if no error
-     */
-    virtual std::string getErrorMessage() const = 0;
 
     /**
      * @brief Check if document is valid
      * @return true if document loaded successfully
+     *
+     * Used by `DataModelItem` for valid-doc gating before mutating
+     * the wrapped DOM. Under W4 D1-C the underlying parsers throw
+     * on failure, so under typed-throw the predicate is
+     * monotonically true once a wrapper survives parser entry —
+     * the method stays for any caller that needs the legacy
+     * predicate shape.
      */
     virtual bool isValid() const = 0;
 };

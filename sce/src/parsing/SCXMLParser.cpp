@@ -72,32 +72,25 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         auto xmlParser = IXMLParser::create();
         auto doc = xmlParser->parseFile(filename);
 
-        // Process XIncludes. Capture the result so the produced
-        // PositionMap can thread into `processSceTemplate` — Phase X
-        // RFC §1 Q2 unifies post-XInclude and post-template
-        // diagnostic coordinates through a single composed map.
-        // XInclude failure surfacing remains pre-existing behaviour
-        // (silent on the SCXMLParser surface; processSceTemplate
-        // operates on whatever DOM state survived).
+        // Process XIncludes; the produced PositionMap threads into
+        // `processSceTemplate` so Phase X RFC §1 Q2 composition
+        // unifies post-XInclude and post-template diagnostic
+        // coordinates through a single map. RFC §W4.5 D1: typed
+        // throws bubble to the catch arms below
+        // (XIncludeExpansionError / ParseError) — there is no
+        // longer a polling result.
         SCE_LOG_DEBUG("Processing XIncludes");
-        auto xincludeResult = doc->processXInclude();
+        auto xincludePositions = doc->processXInclude();
 
         // Process `<sce:use>` template expansion. Each failure
         // mode raises a typed `SCE::parsing::TemplateError`
         // subtype (see `sce/include/parsing/TemplateError.h` for
-        // the 8-variant set) caught below — `TemplateError` is a
-        // `std::exception`, so the typed handler runs first and
-        // populates the error with the author-source location
-        // when one was stamped by the expander
-        // (`TemplateExpander.cpp`). See Phase C P2 §3 P2 in
+        // the 8-variant set) caught below; reparse failures of the
+        // spliced text raise `ParseXmlFailed` per RFC §W4.5 D2.
+        // See Phase C P2 §3 P2 in
         // claudedocs/rfc-sce-template-phase-c.md.
         SCE_LOG_DEBUG("Processing sce:template");
-        auto templateResult = doc->processSceTemplate(xincludeResult.positions);
-        if (!templateResult.ok) {
-            addError("Template expansion failed: " + doc->getErrorMessage());
-            return nullptr;
-        }
-        documentPositions_ = std::move(templateResult.positions);
+        documentPositions_ = doc->processSceTemplate(xincludePositions);
 
         // Parse document
         return parseAbstractDocument(doc);
@@ -165,24 +158,18 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         auto xmlParser = IXMLParser::create();
         auto doc = xmlParser->parseContent(content);
 
-        // Process XIncludes; capture the produced PositionMap so it
-        // composes into the template stage (Phase X RFC §1 Q2).
-        // XInclude failure surfacing remains pre-existing behaviour
-        // (silent on the SCXMLParser surface).
+        // Process XIncludes; the produced PositionMap composes into
+        // the template stage (Phase X RFC §1 Q2). Typed throws
+        // bubble to the catch arms below (RFC §W4.5 D1).
         SCE_LOG_DEBUG("Processing XIncludes");
-        auto xincludeResult = doc->processXInclude();
+        auto xincludePositions = doc->processXInclude();
 
         // Process `<sce:use>` template expansion. Each failure
         // mode raises a typed `SCE::parsing::TemplateError`
-        // subtype caught below so the emitted diagnostic carries
-        // the author-source location populated by the expander.
+        // subtype caught below; reparse failures raise
+        // `ParseXmlFailed` per RFC §W4.5 D2.
         SCE_LOG_DEBUG("Processing sce:template");
-        auto templateResult = doc->processSceTemplate(xincludeResult.positions);
-        if (!templateResult.ok) {
-            addError("Template expansion failed: " + doc->getErrorMessage());
-            return nullptr;
-        }
-        documentPositions_ = std::move(templateResult.positions);
+        documentPositions_ = doc->processSceTemplate(xincludePositions);
 
         // Parse document
         return parseAbstractDocument(doc);

@@ -321,8 +321,9 @@ std::string runCppPreprocessors(const std::string &scxmlPath) {
     sceDoc->setSourcePath(scxmlPath);
     sceDoc->setSourceText(sourceText);
 
-    const auto xResult = sceDoc->processXInclude();
-    sceDoc->processSceTemplate(xResult.positions);
+    // RFC §W4.5 D1: process*() return PositionMap directly.
+    const auto xPositions = sceDoc->processXInclude();
+    sceDoc->processSceTemplate(xPositions);
 
     return canonicaliseDocument(*pugiDoc);
 }
@@ -543,8 +544,8 @@ void runErrorParityFixture(const std::string &fixtureName,
         }
         sceDoc->setSourcePath(fixturePath);
         sceDoc->setSourceText(sourceText);
-        const auto xResult = sceDoc->processXInclude();
-        sceDoc->processSceTemplate(xResult.positions);
+        const auto xPositions = sceDoc->processXInclude();
+        sceDoc->processSceTemplate(xPositions);
     } catch (const SCE::parsing::TemplateError &ex) {
         actualType = typeid(ex).name();
         actualMessage = ex.what();

@@ -20,10 +20,18 @@ XIncludeProcessor::~XIncludeProcessor() {
 
 bool XIncludeProcessor::process(std::shared_ptr<IXMLDocument> doc) {
     SCE_LOG_WARN("XIncludeProcessor::process() is deprecated. Use IXMLDocument::processXInclude() instead");
-    if (doc) {
-        return doc->processXInclude().ok;
+    if (!doc) {
+        return false;
     }
-    return false;
+    // RFC §W4.5 D1: processXInclude returns PositionMap directly and
+    // throws on failure. Preserve this stub's bool return contract by
+    // catching the typed throws and folding into false.
+    try {
+        (void)doc->processXInclude();
+        return true;
+    } catch (const std::exception &) {
+        return false;
+    }
 }
 
 void XIncludeProcessor::setBasePath(const std::string &basePath) {

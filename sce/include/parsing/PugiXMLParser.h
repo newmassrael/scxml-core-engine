@@ -52,10 +52,9 @@ public:
     explicit PugiXMLDocument(std::shared_ptr<pugi::xml_document> doc);
 
     std::shared_ptr<IXMLElement> getRootElement() override;
-    XIncludeResult processXInclude() override;
-    SceTemplateResult processSceTemplate(
+    SCE::parsing::PositionMap processXInclude() override;
+    SCE::parsing::PositionMap processSceTemplate(
         const SCE::parsing::PositionMap &upstream) override;
-    std::string getErrorMessage() const override;
     bool isValid() const override;
 
     // Internal: Set base path for XInclude resolution
@@ -122,7 +121,6 @@ private:
                                              std::vector<std::string> &searched);
 
     std::shared_ptr<pugi::xml_document> doc_;
-    std::string errorMessage_;
     std::string basePath_;
     std::string sourcePath_;
     std::string sourceText_;

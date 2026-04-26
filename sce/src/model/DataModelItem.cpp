@@ -170,13 +170,12 @@ void SCE::DataModelItem::setXmlContent(const std::string &content) {
         if (xmlContent_ && xmlContent_->isValid()) {
             // Clear content_ if parsing succeeds (regenerate in getContent() if needed)
             content_ = "";
-        } else {
-            SCE_LOG_ERROR("Failed to parse XML content: {}",
-                      xmlContent_ ? xmlContent_->getErrorMessage() : "Parser returned null");
-            xmlContent_.reset();
-            // Store as plain string if parsing fails
-            content_ = content;
         }
+        // RFC §W4.5: the previous `else` branch polled
+        // `xmlContent_->getErrorMessage()` for failure surfacing; under
+        // W4 D1-C the parser throws on failure rather than returning
+        // a non-valid wrapper, so the branch was dead. The catch arm
+        // below handles all parse failures.
     } catch (const std::exception &ex) {
         SCE_LOG_ERROR("Failed to parse XML content: {}", ex.what());
         xmlContent_.reset();

@@ -275,8 +275,10 @@ TEST(XIncludeExpander, PugiXMLDocumentProcessXIncludePopulatesMap) {
     doc.setSourceText(mainSrc);
     doc.setBasePath(tmp.root().string());
 
-    const SCE::XIncludeResult result = doc.processXInclude();
-    ASSERT_TRUE(result.ok) << "processXInclude failed: " << doc.getErrorMessage();
+    // RFC §W4.5 D1: processXInclude returns PositionMap directly;
+    // any failure throws (XIncludeExpansionError or ParseXmlFailed)
+    // and would surface as a gtest unhandled-exception failure.
+    const auto positions = doc.processXInclude();
 
     // The DOM has been reparsed into the spliced bytes — fragment
     // wrapper dropped, child preserved.
@@ -301,7 +303,7 @@ TEST(XIncludeExpander, PugiXMLDocumentProcessXIncludePopulatesMap) {
     // shape; the lookup itself runs against the expander's
     // PositionMap, which is keyed against the bytes the expander
     // produced.
-    const auto pos = result.positions.lookup(0);
+    const auto pos = positions.lookup(0);
     EXPECT_EQ(pos.file.filename().string(), "main.xml")
         << "byte 0 of expanded output must resolve to host main.xml";
 }

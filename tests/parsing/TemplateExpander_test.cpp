@@ -408,9 +408,9 @@ TEST(TemplateExpander, ExpandStringNotFoundThrows) {
 // End-to-end path: write caller + template to disk, parse through
 // the real PugiXMLParser so sourceText_ / sourcePath_ / basePath_
 // are populated, run processSceTemplate, and assert the returned
-// SceTemplateResult.positions looks up as expected. Closes the
-// RFC §3 P2 deliverable #1 contract (processSceTemplate returns
-// PositionMap) with a consumer exercising the threaded member.
+// PositionMap looks up as expected. Closes the RFC §3 P2 deliverable
+// #1 contract (processSceTemplate returns PositionMap) with a
+// consumer exercising the threaded member.
 TEST(ProcessSceTemplate, RoundtripResolvesBodyAndCallsite) {
     const auto tmpDir = std::filesystem::temp_directory_path() /
                         "sce_process_sce_template_test_roundtrip";
@@ -429,11 +429,11 @@ TEST(ProcessSceTemplate, RoundtripResolvesBodyAndCallsite) {
     SCE::PugiXMLParser parser;
     auto doc = parser.parseFile(callerPath.string());
     ASSERT_NE(doc, nullptr);
-    const auto xResult = doc->processXInclude();
-    ASSERT_TRUE(xResult.ok);
-    const auto result = doc->processSceTemplate(xResult.positions);
-    ASSERT_TRUE(result.ok);
-    EXPECT_FALSE(result.positions.is_identity());
+    // RFC §W4.5 D1: process*() return PositionMap directly; failures
+    // throw and would surface as gtest unhandled-exception failures.
+    const auto xPositions = doc->processXInclude();
+    const auto positions = doc->processSceTemplate(xPositions);
+    EXPECT_FALSE(positions.is_identity());
 
     std::filesystem::remove_all(tmpDir);
 }
@@ -508,8 +508,8 @@ TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
     doc.setSourceText(mainSrc);
     doc.setBasePath(tmpDir.string());
 
-    const auto xResult = doc.processXInclude();
-    ASSERT_TRUE(xResult.ok);
+    // RFC §W4.5 D1: process*() return PositionMap directly.
+    const auto xPositions = doc.processXInclude();
 
     // Upstream attributes some byte to frag.xml (the spliced
     // fragment region). Probe to find one — the harness does not
@@ -517,7 +517,7 @@ TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
     std::size_t fragByte = 0;
     bool foundFragByte = false;
     for (std::size_t i = 0; i < 4096; ++i) {
-        const auto pos = xResult.positions.lookup(i);
+        const auto pos = xPositions.lookup(i);
         if (pos.file.filename() == "frag.xml") {
             fragByte = i;
             foundFragByte = true;
@@ -528,11 +528,10 @@ TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
         << "upstream PositionMap from processXInclude must attribute "
            "at least one byte to frag.xml";
 
-    const auto tResult = doc.processSceTemplate(xResult.positions);
-    ASSERT_TRUE(tResult.ok);
+    const auto tPositions = doc.processSceTemplate(xPositions);
 
-    const auto upstreamPos = xResult.positions.lookup(fragByte);
-    const auto downstreamPos = tResult.positions.lookup(fragByte);
+    const auto upstreamPos = xPositions.lookup(fragByte);
+    const auto downstreamPos = tPositions.lookup(fragByte);
     EXPECT_EQ(upstreamPos.file, downstreamPos.file)
         << "fragment-byte origin must survive processSceTemplate's "
            "no-`<sce:use>` fast path — Phase X RFC §1 Q2 upstream "
