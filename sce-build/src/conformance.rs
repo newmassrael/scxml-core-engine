@@ -653,6 +653,17 @@ pub fn harness_layout(language: Language) -> HarnessLayout {
             template_subdir: "forge/cpp/conformance",
             template_filename: "harness.cpp.jinja2",
         },
+        // RFC §5.J.1: C11 backend foundation lands in M1; the
+        // conformance harness template (`forge/c/conformance/harness.c.jinja2`)
+        // is M2+ work. The layout is wired here so a CLI invocation with
+        // `--language c11` fails at template-load with a precise file path
+        // (clear "missing template" error) instead of panicking on an
+        // exhaustiveness gap.
+        Language::C11 => HarnessLayout {
+            output_filename: "numerical_conformance_test.c",
+            template_subdir: "forge/c/conformance",
+            template_filename: "harness.c.jinja2",
+        },
     }
 }
 

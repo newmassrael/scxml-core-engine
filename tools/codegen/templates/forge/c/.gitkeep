@@ -1,0 +1,16 @@
+# C11 forge template tree (RFC §5.J.1, Phase A5)
+#
+# Foundation only — per-kind templates land in M2+:
+#   M2: lookup.h.jinja2 + lookup.c.jinja2 (vertical slice)
+#   M3: transform / condition / codec / validator (stateless kinds)
+#   M4: statechart C11 emitter (RTC + event queue + datamodel)
+#   M5: §5.O traceability (#line + sce_sourcemap.json) integration
+#
+# Per RFC §5.J.1 the C11 emitter generates `.h` + `.c` pairs using
+# `<stdint.h>` integer types, `_Static_assert` for invariants, no
+# varargs in generated code, and no `malloc`. A small
+# `sce_forge_runtime.h` (M3+) hosts shared helpers (cursor, Result
+# enum, pool API).
+#
+# Mesh codegen for C11 is explicitly out of scope (the watching-zenoh
+# downstream project does not consume Mesh codegen — see RFC §5.K).

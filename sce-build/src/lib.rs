@@ -279,6 +279,15 @@ pub fn compile_from_string_lang_typed(
             ),
             scxml_name,
         )),
+        generator::Language::C11 => Err(locate_codegen_error(
+            forge::error::GenerateError::InvalidConfig(
+                "C11 statechart codegen is not yet implemented (RFC \u{00A7}5.J.1, Phase A5 — \
+                 watching-zenoh consumer). Foundation enum + dispatch arms are in place; \
+                 per-kind emitters land in M2+ (lookup vertical slice first)."
+                    .into(),
+            ),
+            scxml_name,
+        )),
     }
 }
 
@@ -337,6 +346,15 @@ pub fn compile_scxml_lang_typed(
             ),
             scxml_path,
         )),
+        generator::Language::C11 => Err(locate_codegen_error(
+            forge::error::GenerateError::InvalidConfig(
+                "C11 statechart codegen is not yet implemented (RFC \u{00A7}5.J.1, Phase A5 — \
+                 watching-zenoh consumer). Foundation enum + dispatch arms are in place; \
+                 per-kind emitters land in M2+ (lookup vertical slice first)."
+                    .into(),
+            ),
+            scxml_path,
+        )),
     }
 }
 
@@ -358,6 +376,10 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
         generator::Language::Kotlin => "kotlin",
         generator::Language::Go => "go",
         generator::Language::Python => "python",
+        // RFC §5.J.1: dedicated C11 template tree. Statechart-side
+        // location parallels the other backend roots; the forge-side
+        // counterpart lives at `tools/codegen/templates/forge/c/`.
+        generator::Language::C11 => "c",
     };
     let base = find_template_base();
     if subdir.is_empty() {
@@ -401,6 +423,14 @@ pub fn compile_forge_from_string(
         generator::Language::Rust => forge::generator::generate_rust(&doc, &template_base),
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
+        generator::Language::C11 => Err(forge::error::ForgeError::from(
+            forge::error::GenerateError::InvalidConfig(
+                "C11 forge codegen is not yet implemented (RFC \u{00A7}5.J.1, Phase A5 — \
+                 watching-zenoh consumer). M2 will land the lookup vertical slice; other \
+                 kinds follow in M3+."
+                    .into(),
+            ),
+        )),
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
@@ -478,6 +508,13 @@ pub fn compile_forge_with_imports(
         generator::Language::Python => {
             forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx)
         }
+        generator::Language::C11 => Err(forge::error::ForgeError::from(
+            forge::error::GenerateError::InvalidConfig(
+                "C11 forge codegen with imports is not yet implemented (RFC \u{00A7}5.J.1, \
+                 Phase A5 — watching-zenoh consumer)."
+                    .into(),
+            ),
+        )),
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
@@ -742,7 +779,13 @@ fn discover_primary_function(
                 generator::Language::Cpp | generator::Language::Kotlin => {
                     format!("compute{}", filters::to_pascal_case(output_id))
                 }
-                generator::Language::Rust | generator::Language::Python => {
+                // C11 emits snake_case identifiers (RFC §5.J.1, matching
+                // standard C library naming and Linux kernel style); the
+                // template-level emitter is M2+ but the discovery contract
+                // must already return the name M2 will produce.
+                generator::Language::Rust
+                | generator::Language::Python
+                | generator::Language::C11 => {
                     format!("compute_{}", filters::to_snake_case(output_id))
                 }
                 generator::Language::Go => {
@@ -755,7 +798,9 @@ fn discover_primary_function(
                 generator::Language::Cpp | generator::Language::Kotlin => {
                     filters::to_camel_case(m.name.clone())
                 }
-                generator::Language::Rust | generator::Language::Python => {
+                generator::Language::Rust
+                | generator::Language::Python
+                | generator::Language::C11 => {
                     filters::to_snake_case(m.name.clone())
                 }
                 generator::Language::Go => {
@@ -768,7 +813,9 @@ fn discover_primary_function(
                 generator::Language::Cpp | generator::Language::Kotlin => {
                     format!("lookup{}", filters::to_pascal_case(m.output.id.clone()))
                 }
-                generator::Language::Rust | generator::Language::Python => {
+                generator::Language::Rust
+                | generator::Language::Python
+                | generator::Language::C11 => {
                     format!("lookup_{}", filters::to_snake_case(m.output.id.clone()))
                 }
                 generator::Language::Go => {
@@ -781,7 +828,9 @@ fn discover_primary_function(
                 generator::Language::Cpp | generator::Language::Kotlin => {
                     "lookup".to_string()
                 }
-                generator::Language::Rust | generator::Language::Python => {
+                generator::Language::Rust
+                | generator::Language::Python
+                | generator::Language::C11 => {
                     "lookup".to_string()
                 }
                 generator::Language::Go => {
@@ -830,6 +879,12 @@ fn build_qualified_call(
         generator::Language::Rust => format!("{namespace}::{func_name}"),
         generator::Language::Go => format!("{namespace}.{func_name}"),
         generator::Language::Python => format!("{namespace}.{func_name}"),
+        // C has no namespace mechanism — convention prefixes the module
+        // name onto every exported function so cross-file imports never
+        // collide. RFC §5.J.1 standardises on `<module>_<func>` to mirror
+        // POSIX / lwIP / FreeRTOS style; the M2+ lookup template will
+        // emit `temp_convert_lookup_output(...)` to match this contract.
+        generator::Language::C11 => format!("{namespace}_{func_name}"),
     }
 }
 
@@ -2282,6 +2337,71 @@ mod tests {
             "expected ScxmlSemanticError::InitialStateUnknown(state_id=\"nope\", scope=DocumentRoot), \
              got: {:?}",
             err.error,
+        );
+    }
+
+    // ── C11 backend foundation (RFC §5.J.1, M1) ─────────────────
+    //
+    // The M1 milestone introduces `Language::C11` as an enum variant
+    // and routes every entry point to a typed `InvalidConfig` error
+    // instead of the M2+ emitter. These tests pin the boundary so a
+    // future regression where someone silently routes C11 through a
+    // permissive arm (e.g. by accident in a `Cpp | C11` group) trips
+    // a test rather than producing nonsensical output.
+    //
+    // Sister tests for FromStr live in `generator::tests`.
+
+    #[test]
+    fn compile_from_string_lang_c11_returns_typed_invalid_config() {
+        use forge::error::{ForgeError, GenerateError};
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="c11_probe" initial="s">
+  <state id="s"/>
+</scxml>"##;
+        let result = compile_from_string_lang_typed(
+            scxml,
+            "c11_probe",
+            &[],
+            generator::Language::C11,
+        );
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("C11 statechart must surface InvalidConfig until M3+ landed"),
+        };
+        match err.error {
+            ForgeError::Generate(GenerateError::InvalidConfig(msg)) => {
+                assert!(
+                    msg.contains("C11") && msg.contains("not yet implemented"),
+                    "InvalidConfig message must name C11 and mark unimplemented: {msg}"
+                );
+                assert!(
+                    msg.contains("\u{00A7}5.J.1"),
+                    "InvalidConfig message must reference RFC \u{00A7}5.J.1: {msg}"
+                );
+            }
+            other => panic!(
+                "expected ForgeError::Generate(InvalidConfig), got {other:?}"
+            ),
+        }
+    }
+
+    #[test]
+    fn find_template_dir_for_c11_targets_dedicated_subdir() {
+        let dir = find_template_dir_for(generator::Language::C11);
+        // Dedicated `c/` subdirectory keeps the C11 template tree
+        // separate from C++ (which lives at the root). M2+ populates
+        // it; M1 ships a placeholder sentinel only.
+        assert!(
+            dir.ends_with("c"),
+            "C11 template dir must end with 'c': {}",
+            dir.display()
+        );
+        // The directory itself exists in M1 (sentinel placeholder).
+        assert!(
+            dir.exists(),
+            "M1 ships forge/c/ as an empty directory with a sentinel: {}",
+            dir.display()
         );
     }
 

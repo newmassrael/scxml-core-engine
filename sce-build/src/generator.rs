@@ -26,6 +26,12 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
 }
 
 /// Target language for code generation.
+///
+/// `C11` is reserved for the embedded MCU backend per RFC §5.J.1
+/// (watching-zenoh consumer, Phase A5). Enum membership lets every
+/// existing dispatch site flag the unimplemented case explicitly
+/// rather than silently routing C11 through a more permissive arm.
+/// Per-kind `C11` emitters land in M2+ (lookup vertical slice first).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     Rust,
@@ -33,6 +39,7 @@ pub enum Language {
     Kotlin,
     Go,
     Python,
+    C11,
 }
 
 impl std::str::FromStr for Language {
@@ -45,6 +52,7 @@ impl std::str::FromStr for Language {
             "kotlin" | "kt" => Ok(Language::Kotlin),
             "go" | "golang" => Ok(Language::Go),
             "python" | "py" => Ok(Language::Python),
+            "c11" | "c" => Ok(Language::C11),
             _ => Err(format!("Unknown language: {s}")),
         }
     }
@@ -865,6 +873,42 @@ mod tests {
     fn parse(content: &str) -> SCXMLModel {
         let mut p = SCXMLParser::new();
         p.parse_string(content, "brake").expect("parse")
+    }
+
+    // ── Language enum / FromStr drift guards ────────────────────
+    //
+    // RFC §5.J.1 (watching-zenoh consumer, M1 foundation): the C11 enum
+    // variant was added without a working emitter. These tests pin the
+    // boundary contract so future edits cannot silently drop "c11"/"c"
+    // recognition (which would silently route C11 callers to
+    // UnknownLanguage at the CLI) and so the M2+ vertical slice has a
+    // signal when adding a real C11 generator path.
+
+    #[test]
+    fn language_fromstr_accepts_c11_and_c_aliases() {
+        use std::str::FromStr;
+        assert_eq!(Language::from_str("c11").unwrap(), Language::C11);
+        assert_eq!(Language::from_str("c").unwrap(), Language::C11);
+    }
+
+    #[test]
+    fn language_fromstr_rejects_unknown_strings() {
+        use std::str::FromStr;
+        assert!(Language::from_str("c99").is_err());
+        assert!(Language::from_str("C11").is_err()); // case-sensitive, matches prior precedent
+        assert!(Language::from_str("").is_err());
+    }
+
+    #[test]
+    fn language_c11_distinct_from_other_variants() {
+        // Distinct enum membership is the reason to add the variant
+        // before the emitter exists — matches gain a pinned arm so M2+
+        // implementation changes are visible in diff review.
+        assert_ne!(Language::C11, Language::Cpp);
+        assert_ne!(Language::C11, Language::Rust);
+        assert_ne!(Language::C11, Language::Kotlin);
+        assert_ne!(Language::C11, Language::Go);
+        assert_ne!(Language::C11, Language::Python);
     }
 
     /// SCE_MESH.md §9.5 mesh-rpc invokes only have a C++ codegen path

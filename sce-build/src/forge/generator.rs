@@ -320,6 +320,27 @@ fn resolve_single_import(
                 member_method_sigs: Vec::new(),
             }
         }
+        crate::generator::Language::C11 => {
+            // RFC §5.J.1: C11 cross-file imports use plain `#include "<snake>.h"`.
+            // No namespace concept exists; the module name is encoded as a
+            // function prefix at every callsite (see `build_qualified_call`).
+            // The shape mirrors C++ but routes through the M2+ C11 emitter.
+            ImportContext {
+                alias: imp.alias.clone(),
+                kind: imp.kind.to_string(),
+                include_stmt: format!("#include \"{snake}.h\""),
+                type_name: pascal.clone(),
+                is_stateful,
+                member_name: format!("{}_", imp.alias),
+                member_type: snake.clone(),
+                namespace: snake.clone(),
+                qualified_call: String::new(),
+                param_types: Vec::new(),
+                ret_type: None,
+                member_field_types: Vec::new(),
+                member_method_sigs: Vec::new(),
+            }
+        }
     }
 }
 
@@ -851,6 +872,10 @@ fn generate_decode_expr(
                 format!("raw[{byte_off}..].to_vec()"),
             Language::Go | Language::Python =>
                 format!("raw[{byte_off}:]"),
+            Language::C11 => unimplemented!(
+                "C11 codec BitSize::Tail emitter is RFC \u{00A7}5.J.1 M3+ work \
+                 (codec DSL emitter follows lookup vertical slice)"
+            ),
         },
         BitSize::LengthRef => {
             let len_field = field.length_field.as_deref().unwrap_or("0");
@@ -865,6 +890,9 @@ fn generate_decode_expr(
                     format!("raw[{byte_off}:{byte_off}+int({len_field})]"),
                 Language::Python =>
                     format!("raw[{byte_off}:{byte_off} + {len_field}]"),
+                Language::C11 => unimplemented!(
+                    "C11 codec BitSize::LengthRef emitter is RFC \u{00A7}5.J.1 M3+ work"
+                ),
             }
         }
     }
@@ -909,6 +937,9 @@ fn decode_multibyte_unified(
                         if shift == 0 { format!("raw[{off}]") }
                         else { format!("(raw[{off}] << {shift})") }
                     }
+                    Language::C11 => unimplemented!(
+                        "C11 codec multibyte decode emitter is RFC \u{00A7}5.J.1 M3+ work"
+                    ),
                 }
             })
             .collect()
@@ -1011,6 +1042,9 @@ fn encode_single_field_unified(
                 Language::Rust => exprs.push(field_ref),
                 Language::Go => exprs.push(format!("byte({field_ref})")),
                 Language::Python => exprs.push(format!("{field_ref} & 0xFF")),
+                Language::C11 => unimplemented!(
+                    "C11 codec 8bit-aligned encode is RFC \u{00A7}5.J.1 M3+ work"
+                ),
             }
         }
         Some(bits) if bits < 8 || bit_off > 0 => {
@@ -1067,6 +1101,9 @@ fn encode_single_field_unified(
                             format!("(self.{name} >> {shift}) & 0xFF")
                         }
                     }
+                    Language::C11 => unimplemented!(
+                        "C11 codec multibyte encode is RFC \u{00A7}5.J.1 M3+ work"
+                    ),
                 };
                 exprs.push(expr);
             }
@@ -1960,6 +1997,9 @@ fn stateful_import_method_renames(
                             let target_method = filters::to_pascal_case(method.to_string());
                             format!("p.{}.{}", imp.member_name, target_method)
                         }
+                        generator::Language::C11 => unimplemented!(
+                            "C11 stateful import method rename is RFC \u{00A7}5.J.1 M3+ work"
+                        ),
                     };
                     out.push((qualified_key, expansion));
                 }
@@ -2022,6 +2062,9 @@ fn stateful_import_field_renames(
                     let snake_field = filters::to_snake_case(field.to_string());
                     format!("self.{}.{}", imp.member_name, snake_field)
                 }
+                generator::Language::C11 => unimplemented!(
+                    "C11 stateful import field rename is RFC \u{00A7}5.J.1 M3+ work"
+                ),
             };
             out.push((qualified_key.clone(), expansion));
         }
@@ -3381,6 +3424,10 @@ fn build_member_renames(
                 })
                 .collect())
         }
+        Language::C11 => unimplemented!(
+            "C11 inline-kind member renames are RFC \u{00A7}5.J.1 M3+ work \
+             (statechart emitter follows lookup vertical slice)"
+        ),
     }
 }
 
@@ -3457,6 +3504,9 @@ fn render_inline_transform_member(
                  \x20       return {transpiled}"
             )
         }
+        Language::C11 => unimplemented!(
+            "C11 inline transform emitter is RFC \u{00A7}5.J.1 M3+ work"
+        ),
     };
 
     Ok((String::new(), code))
@@ -3668,6 +3718,11 @@ fn render_inline_lookup_member(
             ));
             Ok((String::new(), code))
         }
+        Language::C11 => unimplemented!(
+            "C11 inline lookup emitter is RFC \u{00A7}5.J.1 M2+ work \
+             (lookup vertical slice is the M2 milestone — replace this arm \
+             when the lookup.h.jinja2/lookup.c.jinja2 templates land)"
+        ),
     }
 }
 
@@ -3735,6 +3790,9 @@ fn render_inline_condition_member(
                  \x20       return {transpiled}"
             )
         }
+        Language::C11 => unimplemented!(
+            "C11 inline condition emitter is RFC \u{00A7}5.J.1 M3+ work"
+        ),
     };
 
     Ok((String::new(), code))
@@ -3944,6 +4002,10 @@ fn render_inline_codec_member(
             code.push_str("            ])");
             Ok((String::new(), code))
         }
+        Language::C11 => unimplemented!(
+            "C11 inline codec emitter is RFC \u{00A7}5.J.1 M3+ work \
+             (codec DSL emitter follows lookup vertical slice)"
+        ),
     }
 }
 
@@ -3973,6 +4035,10 @@ impl LangCtx {
             crate::generator::Language::Rust => rust_type(ty),
             crate::generator::Language::Go => go_type(ty),
             crate::generator::Language::Python => python_type(ty),
+            crate::generator::Language::C11 => unimplemented!(
+                "C11 type_name is RFC \u{00A7}5.J.1 M2+ work \
+                 (lookup vertical slice will introduce c_type)"
+            ),
         }
     }
 
@@ -4008,6 +4074,9 @@ impl LangCtx {
                 format!("{} {}", go_escape_builtin(id), go_type(ty)),
             crate::generator::Language::Python =>
                 format!("{}: {}", filters::to_snake_case(id.to_string()), python_type(ty)),
+            crate::generator::Language::C11 => unimplemented!(
+                "C11 format_param is RFC \u{00A7}5.J.1 M2+ work"
+            ),
         }
     }
 
@@ -4029,6 +4098,13 @@ impl LangCtx {
             crate::generator::Language::Rust => "rs",
             crate::generator::Language::Go => "go",
             crate::generator::Language::Python => "py",
+            // C11 forge templates emit `.h` + `.c` pairs (RFC §5.J.1).
+            // The single-extension contract LangCtx assumes here is the
+            // header — the M2+ lookup vertical slice will introduce a
+            // companion `template_body_ext()` (or equivalent shape) for
+            // the `.c` half. Until then this arm is unreachable because
+            // generate_c11(...) does not exist.
+            crate::generator::Language::C11 => "h",
         }
     }
 
@@ -4039,6 +4115,13 @@ impl LangCtx {
             crate::generator::Language::Rust => ExprTarget::Rust,
             crate::generator::Language::Go => ExprTarget::Go,
             crate::generator::Language::Python => ExprTarget::Python,
+            // ExprTarget::C11 is RFC §5.J.1 M3+ work (typed-expr emitter
+            // for C requires its own coerce table — the C11 lookup MVP
+            // in M2 emits constant arrays only and does not exercise
+            // expression transpile).
+            crate::generator::Language::C11 => unimplemented!(
+                "ExprTarget::C11 is RFC \u{00A7}5.J.1 M3+ work"
+            ),
         }
     }
 
@@ -4091,6 +4174,9 @@ impl LangCtx {
             crate::generator::Language::Rust => rust_literal(val, ty),
             crate::generator::Language::Go => go_literal(val, ty),
             crate::generator::Language::Python => python_literal(val, ty),
+            crate::generator::Language::C11 => unimplemented!(
+                "C11 literal is RFC \u{00A7}5.J.1 M2+ work"
+            ),
         }
     }
 
@@ -4138,6 +4224,9 @@ impl LangCtx {
             crate::generator::Language::Rust => "rs_type",
             crate::generator::Language::Go => "go_type",
             crate::generator::Language::Python => "py_type",
+            crate::generator::Language::C11 => unimplemented!(
+                "C11 codec_type_key is RFC \u{00A7}5.J.1 M3+ work"
+            ),
         }
     }
 
@@ -4175,6 +4264,9 @@ impl LangCtx {
                 format!("byte({expr})"),
             crate::generator::Language::Python =>
                 format!("({expr}) & 0xFF"),
+            crate::generator::Language::C11 => unimplemented!(
+                "C11 codec_to_byte is RFC \u{00A7}5.J.1 M3+ work"
+            ),
         }
     }
 
@@ -4387,6 +4479,9 @@ fn render_observer(
             crate::generator::Language::Go => format!("{}Active", mon.id),
             crate::generator::Language::Rust | crate::generator::Language::Python =>
                 format!("{}_active", filters::to_snake_case(mon.id.clone())),
+            crate::generator::Language::C11 => unimplemented!(
+                "C11 observer active_var is RFC \u{00A7}5.J.1 M3+ work"
+            ),
         };
 
         serde_json::json!({

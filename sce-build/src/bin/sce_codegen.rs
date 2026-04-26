@@ -292,7 +292,7 @@ enum Commands {
     Generate {
         /// Input SCXML file path
         scxml: String,
-        /// Target language (rust, cpp, kotlin, go)
+        /// Target language (rust, cpp, kotlin, go, c11). C11 is RFC §5.J.1 foundation only — emitter lands in M2+.
         #[arg(short, long, default_value = "cpp")]
         language: String,
         /// Output directory
@@ -349,7 +349,7 @@ enum Commands {
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
-        /// Target language (rust, cpp, kotlin, go)
+        /// Target language (rust, cpp, kotlin, go, c11). C11 is RFC §5.J.1 foundation only — emitter lands in M2+.
         #[arg(short, long)]
         language: String,
         /// Path to tests/CMakeLists.txt (test registry)
@@ -687,6 +687,23 @@ fn cmd_generate(
                 let stub = "# W3C SCXML 5.8: Document rejected\n";
                 write_or_exit(error_format, out.join(format!("{input_stem}_sm.py")), stub);
             }
+            Language::C11 => {
+                // RFC §5.J.1: C11 statechart stub. M1 emits a header-only
+                // sentinel matching the C++ shape so any downstream
+                // consumer that includes the .h compiles to a no-op while
+                // the M3+ statechart emitter is pending.
+                let header = format!(
+                    "/* W3C SCXML 5.8: Document rejected */\n\
+                     #ifndef SCE_GEN_{guard}_SM_H\n\
+                     #define SCE_GEN_{guard}_SM_H\n\
+                     #define SCE_DOCUMENT_REJECTED 1\n\
+                     #endif\n",
+                    guard = filters::to_snake_case(input_stem.to_string()).to_uppercase()
+                );
+                let body = "/* W3C SCXML 5.8: Document rejected */\n";
+                write_or_exit(error_format, out.join(format!("{input_stem}_sm.h")), &header);
+                write_or_exit(error_format, out.join(format!("{input_stem}_sm.c")), body);
+            }
         }
         report.rejected = Some(RejectedDocument {
             spec: "W3C SCXML 5.8",
@@ -801,6 +818,18 @@ fn cmd_generate(
         Language::Python => {
             error_format.emit_and_exit(
                 &CliError::UnsupportedLanguage { lang: "Python statechart".into() },
+                "",
+            )
+        }
+        Language::C11 => {
+            // RFC §5.J.1: C11 statechart codegen lands in M3+. The M1
+            // foundation accepts `--lang c11` so downstream build
+            // pipelines can wire the flag now; until M3 the CLI surfaces
+            // a typed UnsupportedLanguage exit with the RFC reference.
+            error_format.emit_and_exit(
+                &CliError::UnsupportedLanguage {
+                    lang: "C11 statechart (RFC §5.J.1, Phase A5 — M3+)".into(),
+                },
                 "",
             )
         }
@@ -1106,6 +1135,9 @@ fn cmd_generate_w3c(
         Language::Kotlin => Box::new(KotlinBackend::new(&project_root)),
         Language::Cpp => Box::new(CppBackend::new(&project_root)),
         Language::Python => cli_exit(CliError::UnsupportedLanguage { lang: "Python W3C".into() }),
+        Language::C11 => cli_exit(CliError::UnsupportedLanguage {
+            lang: "C11 W3C (RFC §5.J.1, Phase A5 — M3+ statechart emitter)".into(),
+        }),
     };
 
     // C++ formatter: created once and reused for all generated tests.
