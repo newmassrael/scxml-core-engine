@@ -100,7 +100,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
             addError("Template expansion failed: " + doc->getErrorMessage());
             return nullptr;
         }
-        templatePositions_ = std::move(templateResult.positions);
+        documentPositions_ = std::move(templateResult.positions);
 
         // Parse document
         return parseAbstractDocument(doc);
@@ -152,7 +152,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
             addError("Template expansion failed: " + doc->getErrorMessage());
             return nullptr;
         }
-        templatePositions_ = std::move(templateResult.positions);
+        documentPositions_ = std::move(templateResult.positions);
 
         // Parse document
         return parseAbstractDocument(doc);

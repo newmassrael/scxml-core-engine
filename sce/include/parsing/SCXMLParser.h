@@ -150,18 +150,20 @@ public:
     }
 
     /**
-     * @brief PositionMap captured from the most recent
-     *        `processSceTemplate` call.
+     * @brief Composed post-preprocessor PositionMap.
      *
-     * Populated by `parseFile` / `parseContent` after template
-     * expansion completes. Downstream diagnostic emitters can call
-     * `templatePositions().lookup(byte_offset)` to translate a
+     * Captured by `parseFile` / `parseContent` after both XInclude
+     * and template expansion have run; the returned map describes
+     * every byte of the post-preprocessor document with origin
+     * attribution to the author's source file (host or `xi:include`'d
+     * fragment) plus depth-1 `<sce:use>` call-site collapse.
+     * Downstream diagnostic emitters can call
+     * `documentPositions().lookup(byte_offset)` to translate a
      * post-expansion in-memory offset back to the author's
-     * `(file, row, col)`. RFC §3 P2 deliverable #3 — see
-     * `claudedocs/rfc-sce-template-phase-c.md`.
+     * `(file, row, col)`. Composition contract: Phase X RFC §1 Q2.
      */
-    const SCE::parsing::PositionMap &templatePositions() const noexcept {
-        return templatePositions_;
+    const SCE::parsing::PositionMap &documentPositions() const noexcept {
+        return documentPositions_;
     }
 
 private:
@@ -231,7 +233,7 @@ private:
     std::shared_ptr<IXIncludeProcessor> xincludeProcessor_;
     std::vector<std::string> errorMessages_;
     std::vector<std::string> warningMessages_;
-    SCE::parsing::PositionMap templatePositions_;
+    SCE::parsing::PositionMap documentPositions_;
 };
 
 }  // namespace SCE
