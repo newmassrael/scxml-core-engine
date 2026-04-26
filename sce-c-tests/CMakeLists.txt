@@ -46,6 +46,8 @@ sce_generate_static_w3c_c_test(309 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(375 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.13: multi-block onentry handlers execute in document order (event1 before event2)
 sce_generate_static_w3c_c_test(407 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 3.9: onexit handler increments a datamodel variable on state exit
 sce_generate_static_w3c_c_test(415 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.7: state machine halts immediately when initial state is a top-level final state
+sce_generate_static_w3c_c_test(445 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.2: <data id> without expr/content is the ECMAScript value undefined (lua nil after transpile)
+sce_generate_static_w3c_c_test(449 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.9: a non-empty string in transition cond is a truthy value (lua_toboolean returns true)
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the

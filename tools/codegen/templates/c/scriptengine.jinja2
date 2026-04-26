@@ -39,6 +39,24 @@
     sm->L = luaL_newstate();
     if (sm->L != NULL) {
         luaL_openlibs(sm->L);
+        /* W3C SCXML 5.9 / 4.6: ECMAScript truthiness for transition cond
+           and <if cond>. Lua's native truthiness only treats nil/false as
+           falsy, but ECMAScript additionally treats 0, NaN, empty string,
+           null, and undefined as falsy — `lua_transformer::wrap_truthiness`
+           wraps cond expressions in `_scxml_truthy(...)` whenever the
+           expression is not already a Lua-comparable boolean (no
+           ==/~=/</>/etc), and that helper must exist in the lua state
+           before any cond is evaluated. Mirrors the C++ `LuaEngine.cpp`
+           lua_pushcfunction registration; we use a Lua-script definition
+           via luaL_dostring instead so the C11 backend stays free of
+           lua_CFunction trampolines (T3 lock-in: jinja2-inline only). */
+        (void)luaL_dostring(sm->L,
+            "function _scxml_truthy(v)\n"
+            "  if v == nil or v == false then return false end\n"
+            "  if type(v) == 'number' then return v ~= 0 and v == v end\n"
+            "  if type(v) == 'string' then return #v > 0 end\n"
+            "  return true\n"
+            "end");
         {% for var in model.variables %}
         {% if var.expr %}
         /* W3C SCXML 5.2.2: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
