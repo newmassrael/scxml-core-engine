@@ -6,6 +6,7 @@
 #include "parsing/DiagnosticBatchFormatter.h"
 #include "parsing/SCXMLParser.h"
 #include "parsing/TemplateError.h"
+#include "parsing/XIncludeError.h"
 #include "parsing/XIncludeExpander.h"
 
 #include <gtest/gtest.h>
@@ -320,6 +321,118 @@ TEST(XIncludeErrorWire, EmptyHrefCarriesActionableFragmentInMessage) {
         EXPECT_EQ(e.code(),
                   std::string_view{"xml/xinclude-missing-href"});
     }
+}
+
+// ── v1 schema conformance for XIncludeError subtypes ──────────────
+//
+// Mirror of the TemplateError schema-conformance tests above for the
+// 7 typed xinclude leaves promoted in RFC §W3. Each test constructs
+// a leaf with an example message and asserts the to_json() envelope
+// passes the shared `assertSchemaConformantBase` + `assertNoUnexpectedKeys`
+// curated checks against `schemas/sce-diagnostic.v1.schema.json`.
+
+namespace conformance {
+
+// Curated mirror of the `xml/xinclude-*` entries in
+// `schemas/sce-diagnostic.v1.schema.json` (lines 27-33). Hand-edited
+// list rather than runtime introspection so a typo or silent rename
+// on either side reds this fixture with a pointed string-equality
+// diff. Pinned cross-side by the W3-3 Rust drift tests in
+// `sce-build/src/xinclude.rs::tests`.
+const std::array<std::string_view, 7> kExpectedXIncludeCodes = {
+    "xml/xinclude-missing-href", "xml/xinclude-not-found",
+    "xml/xinclude-read-error",   "xml/xinclude-cycle",
+    "xml/xinclude-too-deep",     "xml/xinclude-malformed",
+    "xml/xinclude-unsupported",
+};
+
+}  // namespace conformance
+
+TEST(XIncludeErrorWire, MissingHrefConformsToV1Schema) {
+    const XIncludeMissingHref err(
+        "<xi:include> missing or empty `href` attribute");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/xinclude-missing-href");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_FALSE(j.contains("location"));
+}
+
+TEST(XIncludeErrorWire, NotFoundConformsToV1Schema) {
+    const XIncludeNotFound err(
+        "<xi:include href=\"missing.xml\">: file not found "
+        "(searched: /project/missing.xml)");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/xinclude-not-found");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(XIncludeErrorWire, ReadErrorConformsToV1Schema) {
+    const XIncludeReadError err(
+        "<xi:include href=\"frag.xml\">: cannot read file: "
+        "/project/frag.xml");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/xinclude-read-error");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(XIncludeErrorWire, CycleConformsToV1Schema) {
+    const XIncludeCycle err(
+        "<xi:include href=\"a.xml\">: cycle detected "
+        "(/a.xml -> /b.xml -> /a.xml)");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/xinclude-cycle");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(XIncludeErrorWire, TooDeepConformsToV1Schema) {
+    const XIncludeTooDeep err(
+        "<xi:include> nesting exceeds depth limit of 10");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/xinclude-too-deep");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(XIncludeErrorWire, MalformedConformsToV1Schema) {
+    const XIncludeMalformed err(
+        "<xi:include href=\"bad.xml\">: included file is malformed: "
+        "unexpected end of file");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/xinclude-malformed");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(XIncludeErrorWire, UnsupportedConformsToV1Schema) {
+    const XIncludeUnsupported err(
+        "<xi:include href=\"frag.xml\">: unsupported feature: "
+        "parse=\"text\" (only parse=\"xml\" is supported)");
+    const auto j = err.to_json();
+    conformance::assertSchemaConformantBase(j, "xml/xinclude-unsupported");
+    conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(XIncludeErrorWire, EveryCuratedXIncludeCodeIsExercised) {
+    // Sanity-check the curated list mirrors the 7 subtypes above.
+    // Adding an 8th wire code without a corresponding test reds here.
+    EXPECT_EQ(conformance::kExpectedXIncludeCodes.size(), 7u);
+    std::set<std::string_view> uniq(
+        conformance::kExpectedXIncludeCodes.begin(),
+        conformance::kExpectedXIncludeCodes.end());
+    EXPECT_EQ(uniq.size(), conformance::kExpectedXIncludeCodes.size())
+        << "duplicate entry in kExpectedXIncludeCodes";
+}
+
+TEST(XIncludeErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
+    // Mixing two subtypes' code() into the FNV-1a key keeps the id
+    // distinct even when the rendered message text happens to match
+    // (the canonical key prepends `code | stage | file` before the
+    // message fragment, so flipping code flips id). Mirrors the
+    // sister `TemplateErrorWire.IdDiffersAcrossSubtypesWithSameMessage`
+    // for the xinclude family.
+    const std::string msg = "shared message";
+    const XIncludeCycle a(msg);
+    const XIncludeMalformed b(msg);
+    EXPECT_NE(a.to_json().at("id").get<std::string>(),
+              b.to_json().at("id").get<std::string>());
 }
 
 // ── Canonical-JSON string (RFC §W2 deliverable #3) ────────────────
