@@ -731,6 +731,8 @@ pub struct SCXMLModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub needs_donedata_helper: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub needs_namelist_helper: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub needs_event_type_helper: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub needs_event_scheduler: Option<bool>,

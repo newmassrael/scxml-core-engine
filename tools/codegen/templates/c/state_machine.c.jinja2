@@ -331,6 +331,36 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
+{% elif action.event and action.namelist and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 + C.1 (test553): static-event with
+               `<send namelist>`, no `target` (external queue). Each
+               whitespace-separated variable name is evaluated against
+               the active datamodel; an undeclared name short-circuits
+               the entire dispatch by raising `error.execution` and
+               returning from the surrounding entry/exit/transition
+               function (W3C 5.10 stop-subsequent-content). Mirrors cpp
+               `actions/send.jinja2` lines 463-490 + 533-557 collapsed
+               for the no-target / no-delay arm — cpp delegates to
+               `NamelistHelper::evaluateNamelist`, which calls
+               `hasVariable` per name and returns false on first miss;
+               the C11 path inlines the same two-source check
+               (`_scxml_declared` + `rawget(_G, name)`) inside the lua
+               chunk via `lua_eval_namelist_var`. Successful evaluations
+               land on `_pending_donedata` so the next dequeue's
+               `set_current_event` promotes the table onto `_event.data`,
+               same shape as the params arm above.
+
+               Slot collision: shares `_pending_donedata` with the
+               params and donedata paths; same last-write-wins caveat
+               documented on the params arm applies. */
+            (void)luaL_dostring(sm->L, "_pending_donedata = {}");
+            {% for var_name in action.namelist.split() %}
+            {{ se.lua_eval_namelist_var(var_name) }}
+            {% endfor %}
+            {{ model.name }}_event_with_meta_t _send_evt;
+            memset(&_send_evt, 0, sizeof(_send_evt));
+            _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.content and not action.contentexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 + B.2 (test179): static-event with
                inline `<content>` (no `expr` attribute), no `target`

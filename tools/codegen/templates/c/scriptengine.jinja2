@@ -106,21 +106,22 @@
            swaps the per-event payload for a lua-side stash to avoid widening
            every event_with_meta_t entry with a typed-value union. */
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
-        {% if model.needs_donedata_helper %}
-        /* W3C SCXML 5.7 (test343): donedata `<param>` evaluation has to
-           detect ECMAScript ReferenceError semantics — `param.location`
-           pointing at an undeclared identifier must raise error.execution
-           per W3C 5.7. Lua's native semantics return `nil` for undeclared
-           globals, so we register a `_scxml_declared` table mirroring cpp
-           `LuaSessionContext::declaredVars` (see `LuaEngine.cpp:99-118`,
-           `isUndeclaredIdentifier`). The donedata param evaluator inspects
+        {% if model.needs_donedata_helper or model.needs_namelist_helper %}
+        /* W3C SCXML 5.7 + C.1 (test343, test553): donedata `<param>` and
+           `<send namelist>` evaluation both need to detect ECMAScript
+           ReferenceError semantics — referencing an undeclared identifier
+           must raise error.execution per W3C 5.7 / 6.2. Lua's native
+           semantics return `nil` for undeclared globals, so we register
+           a `_scxml_declared` table mirroring cpp `LuaSessionContext::declaredVars`
+           (see `LuaEngine.cpp:99-118`, `isUndeclaredIdentifier`). Both the
+           donedata param evaluator and the namelist evaluator inspect
            this set together with `rawget(_G, base)` — same two-source check
            as cpp. The set spans top-level <data> and every state-local
            <datamodel> entry so binding mode (early / late) is irrelevant
            to membership; the lua values are placeholder booleans because
            only the keys are read. Emitted only for fixtures that actually
-           contain a <donedata> (the analyzer-pinned helper flag), so non-
-           donedata fixtures keep their lua init footprint unchanged. */
+           use donedata or namelist (analyzer-pinned helper flags), so
+           non-using fixtures keep their lua init footprint unchanged. */
         (void)luaL_dostring(sm->L,
             "_scxml_declared = {"
             {%- set ns = namespace(first=true) -%}
@@ -455,6 +456,40 @@
         memset(&_err_evt, 0, sizeof(_err_evt));
         _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
         {{ model.name }}_raise(sm, &_err_evt);
+    }
+{% endmacro %}
+
+{# W3C SCXML 6.2 + C.1 (test553): evaluate one whitespace-tokenised
+   namelist variable name, store its value on `_pending_donedata.<name>`,
+   and raise `error.execution` if the name is not declared in the
+   datamodel. Mirrors cpp `NamelistHelper::evaluateNamelist`
+   (`sce/include/common/NamelistHelper.h:88-131`) — cpp gates evaluation
+   on `hasVariable` (= `LuaSessionContext::declaredVars.contains(name)`)
+   and stops dispatch on the first miss. Lua's silent-nil-for-undeclared
+   semantic is bridged by the same two-source check the donedata param
+   evaluator uses: `_scxml_declared` (set up in `lua_init_engine` for
+   donedata + namelist consumers) + `rawget(_G, name)`. The macro
+   raises error.execution and `return;` so the surrounding entry/exit/
+   transition function aborts subsequent content per W3C 5.10. The
+   caller emits `_pending_donedata = {}` once before iterating and
+   dispatches the event after the loop completes — falling through
+   means every name resolved cleanly. #}
+{% macro lua_eval_namelist_var(var_name) %}
+    if (luaL_dostring(sm->L,
+        "do "
+          "if not _scxml_declared['{{ var_name | escape_c }}'] and "
+            "rawget(_G, '{{ var_name | escape_c }}') == nil then "
+            "error('namelist variable not declared: {{ var_name | escape_c }}') "
+          "end; "
+          "_pending_donedata.{{ var_name }} = ({{ var_name }}) "
+        "end") != 0) {
+        lua_pop(sm->L, 1);
+        (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
+        return;
     }
 {% endmacro %}
 

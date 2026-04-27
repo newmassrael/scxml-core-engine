@@ -101,6 +101,7 @@ fn analyze_model_features(model: &mut SCXMLModel) {
     model.needs_send_helper = Some(false);
     model.needs_event_data_helper = Some(false);
     model.needs_donedata_helper = Some(false);
+    model.needs_namelist_helper = Some(false);
 
     model.needs_event_name = false;
     model.needs_event_data = false;
@@ -242,6 +243,14 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             }
             if !action.delay.is_empty() || !action.delayexpr.is_empty() {
                 model.needs_event_scheduler = Some(true);
+            }
+            // W3C SCXML C.1 (test553): namelist evaluation needs the
+            // declared-var set so undeclared names trigger error.execution
+            // (cpp `NamelistHelper::evaluateNamelist` calls `hasVariable`
+            // before reading; lua's silent-nil-for-undeclared semantic is
+            // bridged via the same `_scxml_declared` table donedata uses).
+            if !action.namelist.is_empty() {
+                model.needs_namelist_helper = Some(true);
             }
             // W3C SCXML C.2: BasicHTTP send detection
             if action.send_type == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
