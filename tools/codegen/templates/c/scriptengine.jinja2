@@ -458,20 +458,22 @@
     }
 {% endmacro %}
 
-{# W3C SCXML 6.2: evaluate `<send eventexpr="...">` and copy the result
-   into a caller-owned char buffer (`out_buf`, capacity `out_cap`). The
-   chunk pushes `tostring((expr))` onto the lua stack so any value type
-   (string / number / bool) coerces to its conventional textual form
-   before C reads it — mirrors cpp `ScriptResultUtils::resultToString`
+{# Consumer-agnostic to-string evaluator: evaluate an arbitrary lua-side
+   expression and copy the resulting `tostring(...)` value into a
+   caller-owned char buffer (`out_buf`, capacity `out_cap`). Active
+   consumers: `<send eventexpr>` (W3C 6.2), `<send targetexpr>`,
+   `<send typeexpr>`, `<log expr>` (W3C 4.4), `<cancel sendidexpr>`
+   (W3C 6.3). The chunk pushes `tostring((expr))` onto the lua stack so
+   any value type (string / number / bool) coerces to its conventional
+   textual form before C reads it — mirrors cpp `ScriptResultUtils::resultToString`
    semantics. On chunk failure the buffer is left empty and `out_ok`
-   becomes false; the caller (emit_action's send branch) is responsible
-   for raising error.execution and stopping the rest of the eventexpr
-   send. lua_pop runs unconditionally so the stack is clean for the
-   next caller. The 64-byte buffer cap is sized for the W3C corpus's
-   short event names (test172's "event2" needs 7 bytes); fixtures that
-   exceed it raise the cap via -DSCE_MAX_EVENT_TYPE_LEN-style overrides
-   when their first force fixture lands. #}
-{% macro lua_eval_eventexpr(expr, out_buf, out_cap, out_ok) %}
+   becomes false; the caller is responsible for raising error.execution
+   and stopping the rest of the action per W3C 5.10. lua_pop runs
+   unconditionally so the stack is clean for the next caller. Buffer
+   cap is per-call-site (64 for short event names / target tokens, 256
+   for log payloads / typeexpr URIs); fixtures that exceed a cap raise
+   it locally without affecting other consumers. #}
+{% macro lua_eval_to_string(expr, out_buf, out_cap, out_ok) %}
     {{ out_ok }} = false;
     {{ out_buf }}[0] = '\0';
     if (luaL_dostring(sm->L,
@@ -503,7 +505,7 @@
    `to_lua_expr`'s expression-eval path would see for the inner value.
    The chunk runs at the chunk top level (not inside a `do`/`function`
    block) so `return` exits the chunk's pcall directly, matching
-   `lua_eval_eventexpr`'s pattern. #}
+   `lua_eval_to_string`'s pattern. #}
 {% macro lua_eval_delayexpr(expr, out_ms, out_ok) %}
     {{ out_ok }} = false;
     {{ out_ms }} = 0;

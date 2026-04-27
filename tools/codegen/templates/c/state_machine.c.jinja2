@@ -158,7 +158,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                Mirrors cpp `actions/send.jinja2` lines 429-458. */
             char _send_evt_name[64];
             bool _send_evt_ok;
-{{ se.lua_eval_eventexpr(action.eventexpr, '_send_evt_name', '64', '_send_evt_ok') }}
+{{ se.lua_eval_to_string(action.eventexpr, '_send_evt_name', '64', '_send_evt_ok') }}
             if (!_send_evt_ok) {
                 {{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));
@@ -382,7 +382,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                revisits it, mirroring the existing invalid-`!` arm. */
             char _send_target_buf[64];
             bool _send_target_ok;
-{{ se.lua_eval_eventexpr(action.targetexpr, '_send_target_buf', '64', '_send_target_ok') }}
+{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', '64', '_send_target_ok') }}
             if (!_send_target_ok) {
                 {{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));
@@ -453,7 +453,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                no target). */
             char _send_type_buf[256];
             bool _send_type_ok;
-{{ se.lua_eval_eventexpr(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
+{{ se.lua_eval_to_string(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
             if (!_send_type_ok) {
                 /* cpp default-fallback on eval failure (line 48). */
                 memcpy(_send_type_buf,
@@ -495,7 +495,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                buffers raise the cap on both sites together. */
             char _send_type_buf[256];
             bool _send_type_ok;
-{{ se.lua_eval_eventexpr(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
+{{ se.lua_eval_to_string(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
             if (!_send_type_ok) {
                 /* cpp default-fallback on eval failure (line 47-48). */
                 memcpy(_send_type_buf,
@@ -514,7 +514,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             }
             char _send_target_buf[64];
             bool _send_target_ok;
-{{ se.lua_eval_eventexpr(action.targetexpr, '_send_target_buf', '64', '_send_target_ok') }}
+{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', '64', '_send_target_ok') }}
             if (!_send_target_ok) {
                 {{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));
@@ -654,7 +654,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
         {
             char _log_buf[256];
             bool _log_ok;
-{{ se.lua_eval_eventexpr(action.expr, '_log_buf', '256', '_log_ok') }}
+{{ se.lua_eval_to_string(action.expr, '_log_buf', '256', '_log_ok') }}
             if (_log_ok) {
                 (void)fprintf(stderr,
                     {% if action.label %}"{{ action.label | escape_c }}: %s\n"{% else %}"%s\n"{% endif %},
@@ -678,7 +678,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
            C11 inlines a stack-buffer compaction in `scheduled_cancel` per
            T3. Static `sendid` ships as a literal string at codegen time;
            dynamic `sendidexpr` evaluates the expression via
-           `lua_eval_eventexpr` (consumer-agnostic to-string helper) and
+           `lua_eval_to_string` (consumer-agnostic to-string helper) and
            passes the resulting buffer to the same helper, mirroring cpp's
            script-engine path (`scriptEngine.evaluateExpression` +
            `ScriptResultUtils::resultToString`). #error fallback for the
@@ -690,7 +690,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
         {
             char _cancel_buf[64];
             bool _cancel_ok;
-{{ se.lua_eval_eventexpr(action.sendidexpr, '_cancel_buf', '64', '_cancel_ok') }}
+{{ se.lua_eval_to_string(action.sendidexpr, '_cancel_buf', '64', '_cancel_ok') }}
             if (_cancel_ok) {
                 scheduled_cancel(sm, _cancel_buf);
             }
