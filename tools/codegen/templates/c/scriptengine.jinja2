@@ -93,6 +93,19 @@
            when the first <send target="#_ioprocessors..."> fixture
            forces them (built-but-unconsumed carve-out). */
         (void)luaL_dostring(sm->L, "_ioprocessors = {}");
+        /* W3C SCXML 5.5 + 3.7: donedata stash slot. The final-state entry
+           emit in `state_machine.c.jinja2::execute_entry_actions` populates
+           `_pending_donedata` (string / number / table) right before
+           raising `done.state.<parent>`; the next dequeue's
+           `set_current_event` promotes it onto `_event.data` and resets it
+           to nil. The slot is initialised here so the lua-side promotion
+           chunk can read `_pending_donedata` even when no `<donedata>` ever
+           fires (lua undefined globals already evaluate as nil, but an
+           explicit init keeps the contract grep-able). Mirrors the cpp
+           `EventWithMetadata::data`/`typedData` carry-on-event shape; C11
+           swaps the per-event payload for a lua-side stash to avoid widening
+           every event_with_meta_t entry with a typed-value union. */
+        (void)luaL_dostring(sm->L, "_pending_donedata = nil");
         {% for var in model.variables %}
         {% if var.expr %}
         /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}">.
@@ -345,6 +358,47 @@
    onentry block does not pick up a stale reference. #}
 {% macro lua_foreach_body_epilogue() %}
     (void)luaL_dostring(sm->L, "_sce_foreach_arr = nil");
+{% endmacro %}
+
+{# W3C SCXML 5.5: evaluate `<donedata><content expr="X"/></donedata>` and
+   stash the value on `_pending_donedata` so the next dequeue's
+   `set_current_event` can promote it onto `_event.data`. On chunk failure
+   the lua error is popped, `_pending_donedata` is reset to nil (W3C 5.5:
+   "Return empty data when evaluation fails"), and an `error.execution`
+   event is queued (W3C 5.10). Mirrors cpp `DoneDataHelper::evaluateContent`
+   — the cpp path returns `outEventData = ""` on failure but still emits
+   the done.state event; the C11 emit follows that same flow because the
+   structural-error short-circuit only applies to params, not content. #}
+{% macro lua_eval_donedata_content_expr(expr) %}
+    if (luaL_dostring(sm->L,
+        "_pending_donedata = ({{ expr | to_lua_expr | escape_c }})") != 0) {
+        lua_pop(sm->L, 1);
+        (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
+    }
+{% endmacro %}
+
+{# W3C SCXML 5.7: evaluate one `<param name=N expr=X/>` (or location=X) and
+   set `_pending_donedata.N = (X)`. The caller emits `_pending_donedata = {}`
+   once before iterating so the table exists. On chunk failure W3C 5.7
+   says "ignore the failed param, continue with others"; the macro pops
+   the lua error and queues `error.execution` without aborting the loop.
+   Structural-error (empty location AND empty expr) is decided at codegen
+   time by the caller and never reaches this macro. The chosen-expression
+   precedence (location > expr) mirrors cpp's
+   `param.location if param.location else param.expr`. #}
+{% macro lua_eval_donedata_param_expr(param_name, chosen_expr) %}
+    if (luaL_dostring(sm->L,
+        "_pending_donedata.{{ param_name }} = ({{ chosen_expr | to_lua_expr | escape_c }})") != 0) {
+        lua_pop(sm->L, 1);
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
+    }
 {% endmacro %}
 
 {# W3C SCXML 6.2: evaluate `<send eventexpr="...">` and copy the result

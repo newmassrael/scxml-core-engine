@@ -706,7 +706,9 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% set has_late_init = state.datamodel and model.binding == 'late' %}
-    {% if state.on_entry_blocks or has_late_init %}
+    {% set is_compound_final = state.is_final and state.parent %}
+    {% set has_donedata = state.is_final and state.donedata %}
+    {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata %}
     case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% if has_late_init %}
         /* W3C SCXML 5.3: late-binding state-local <datamodel> init runs
@@ -721,6 +723,91 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
         {{ emit_action(action) }}
         {% endfor %}
         {% endfor %}
+        {% if has_donedata %}
+        /* W3C SCXML 5.5: evaluate <donedata> for final state '{{ state_id }}'
+           and stash on `_pending_donedata` so the next dequeue's
+           `set_current_event` promotes it onto `_event.data`. Mirrors cpp
+           `entry_exit_actions.jinja2:389-460` 4-shape dispatch on
+           `donedata.params` / `content.kind == "expression"` /
+           `content.kind == "literal"`. The C11 emit collapses the cpp
+           SSoT helper calls (DoneDataHelper::evaluateContent /
+           evaluateParams / emitContentLiteral) to inline lua chunks per
+           T3 lock-in. */
+        {% if state.donedata.params %}
+        {# Codegen-time structural-error pre-check: W3C 5.7 says an empty
+           param `location` (no usable expr fallback either) is a structural
+           error — raise error.execution and skip the done.state event. The
+           parser stores both attributes verbatim (Option<String>), so jinja2
+           sees `param.location == ""` as falsy; cpp picks `param.expr`
+           when location is falsy via the `if … else` ternary. If both end
+           up empty / None we hit the cpp `paramExpr.empty()` early-return
+           false branch (DoneDataHelper.h:203-209). #}
+        {% set _structural = namespace(ok=true) %}
+        {% for param in state.donedata.params %}
+        {% set chosen = param.location if param.location else param.expr %}
+        {% if not chosen %}
+        {% set _structural.ok = false %}
+        {% endif %}
+        {% endfor %}
+        {% if not _structural.ok %}
+        /* W3C SCXML 5.7: structural error — empty `location` (and no
+           usable `expr`) on at least one <param>. Raise error.execution
+           and skip the done.state.{{ state.parent }} event entirely
+           (cpp DoneDataHelper::evaluateParams returns false → the
+           caller's `if (!success) break;` short-circuit). */
+        {
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+        }
+        (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+        break;
+        {% else %}
+        /* W3C SCXML 5.5: build _pending_donedata as a table of
+           name:value pairs. Failed param eval raises error.execution
+           and continues with the remaining params (cpp 5.7
+           "Continue to next param without adding this one"). */
+        (void)luaL_dostring(sm->L, "_pending_donedata = {}");
+        {% for param in state.donedata.params %}
+        {% set chosen = param.location if param.location else param.expr %}
+        {{ se.lua_eval_donedata_param_expr(param.name, chosen) }}
+        {% endfor %}
+        {% endif %}
+        {% elif state.donedata.content.kind == "expression" %}
+        /* W3C SCXML 5.5: <content expr="{{ state.donedata.content.text | escape_c }}"/>
+           — evaluate against the active datamodel. */
+        {{ se.lua_eval_donedata_content_expr(state.donedata.content.text) }}
+        {% elif state.donedata.content.kind == "literal" %}
+        /* W3C SCXML 5.5 + Appendix B.2.2: <content>literal</content> with
+           the "null" datamodel uses the inline text as-is (no evaluation).
+           The W3C corpus has no null-datamodel + literal-donedata fixture
+           registered for C11, and a null datamodel doesn't even reach this
+           emit path because needs_script_engine is false there (no lua_State).
+           Mirrors cpp `DoneDataHelper::emitContentLiteral` — which is
+           sce_base-linkable precisely because it bypasses the script engine.
+           Activation guard is therefore a #error so the first such fixture
+           lifts a non-lua emit path explicitly, matching the spec-mirror
+           parity carve-out reasoning (the cpp shape is the contract; we
+           don't fake-emit a lua chunk that wouldn't represent the literal
+           shape correctly). */
+#error "C11 backend: <donedata><content>literal</content> with null datamodel has no fixture in the W3C corpus — extend execute_entry_actions's donedata branch with a non-lua emit when the first fixture forces it."
+        {% endif %}
+        {% endif %}
+        {% if is_compound_final %}
+        /* W3C SCXML 3.7: raise done.state.{{ state.parent }} for compound
+           state completion. The donedata payload (if any) was stashed on
+           `_pending_donedata` above; the next dequeue's set_current_event
+           promotes it onto `_event.data`. Mirrors cpp
+           `entry_exit_actions.jinja2:461-475` raise + `EventWithMetadata
+           (Event::Done_state_<parent>, eventData)`. */
+        {
+            {{ model.name }}_event_with_meta_t _done_evt;
+            memset(&_done_evt, 0, sizeof(_done_evt));
+            _done_evt.event = {{ model.name | upper }}_EVENT_DONE_STATE_{{ state.parent | upper | replace('-', '_') | replace('.', '_') }};
+            {{ model.name }}_raise(sm, &_done_evt);
+        }
+        {% endif %}
         break;
     }
     {% endif %}
@@ -1499,19 +1586,33 @@ static bool scheduled_pop_ready({{ model.name }}_t *sm,
 
 {# W3C SCXML 5.10: Snapshot the dequeued event into the `_event` lua
    table so onentry/onexit/transition cond expressions can read
-   `_event.name`. Mirrors the C++ `LuaEngine::setCurrentEvent` overload
-   that pushes a fresh table on every dequeue. The C11 backend has the
-   compile-time-known set of event names available, so the dispatch is a
-   switch on the enum — no runtime enum→string lookup table is carried.
-   Only `.name` is populated in this milestone; the other W3C 5.10.1
-   metadata fields (.data/.type/.sendid/.origin/.origintype/.invokeid)
-   land with the first fixture that reads them (built-but-unconsumed
-   carve-out per feedback_built_but_unconsumed.md). The helper is
-   emitted only when the fixture uses the script engine; datamodel-less
-   fixtures have no lua_State and no consumer for _event. The (void)
-   casts keep the helper warning-free under -Wextra when the fixture
-   declares no events (then both the switch and the parameters fall
-   through unused). #}
+   `_event.name` / `_event.data`. Mirrors the C++ `LuaEngine::setCurrentEvent`
+   overload that pushes a fresh table on every dequeue. The C11 backend
+   has the compile-time-known set of event names available, so the
+   dispatch is a switch on the enum — no runtime enum→string lookup
+   table is carried.
+
+   `.data` is sourced from `_pending_donedata`, the lua-side stash slot
+   that the final-state entry emit populates right before raising
+   `done.state.<parent>` (or stashing for top-level finals). The promotion
+   chunk reads-and-clears in one luaL_dostring so the slot is consumed
+   exactly once per dequeue — non-donedata events still see `_event.data
+   = nil` because `_pending_donedata` defaults to nil after every promotion
+   and after lua_init_engine. The cpp engine carries `eventData` /
+   `typedData` on each `EventWithMetadata`; C11 swaps that for a lua
+   global to avoid widening every event_with_meta_t entry with a typed
+   union, but the observable W3C 5.10 contract (`_event.data` is the
+   donedata payload for done.state.<parent> events, nil otherwise) is the
+   same.
+
+   The other W3C 5.10.1 metadata fields (.type/.sendid/.origin/
+   .origintype/.invokeid) land with the first fixture that reads them
+   (built-but-unconsumed carve-out per feedback_built_but_unconsumed.md).
+   The helper is emitted only when the fixture uses the script engine;
+   datamodel-less fixtures have no lua_State and no consumer for _event.
+   The (void) casts keep the helper warning-free under -Wextra when the
+   fixture declares no events (then both the switch and the parameters
+   fall through unused). #}
 {% if model.needs_script_engine %}
 static void set_current_event(lua_State *L, {{ model.name }}_event_t e) {
     (void)L;
@@ -1519,7 +1620,9 @@ static void set_current_event(lua_State *L, {{ model.name }}_event_t e) {
     switch (e) {
     {% for event_name in model.events | sort %}
     case {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}:
-        (void)luaL_dostring(L, "_event = {name = '{{ event_name | escape_c }}'}");
+        (void)luaL_dostring(L,
+            "_event = {name = '{{ event_name | escape_c }}', data = _pending_donedata}; "
+            "_pending_donedata = nil");
         break;
     {% endfor %}
     default:
