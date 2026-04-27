@@ -47,6 +47,18 @@
 #define SCE_MAX_ENABLED_TRANSITIONS 8
 #endif
 
+// W3C SCXML 6.2 — delayed `<send>` queue capacity. Per-instance bounded
+// array carrying scheduled events between dispatch (when `<send delay>`
+// runs) and fire time (when `_tick(sm)` promotes ready events into the
+// internal queue). Sized for the typical mainEventLoop pattern of one or
+// two concurrent timeouts; fixtures with deeper schedules override at
+// build time (`-DSCE_MAX_SCHEDULED=N`). Mirrors the C++ `PullScheduler`
+// which uses an unbounded `std::map`; the C11 backend bounds it because
+// MCU profiles cannot allocate dynamically.
+#ifndef SCE_MAX_SCHEDULED
+#define SCE_MAX_SCHEDULED 4
+#endif
+
 // W3C SCXML 5.10 _event.data — generated event records reserve a fixed
 // payload slot so the entire EventWithMetadata is value-typed and queue
 // storage is statically reservable. The default sizes datamodel-less and

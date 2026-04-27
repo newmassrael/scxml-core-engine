@@ -133,6 +133,29 @@ typedef struct {{ model.name }}_event_queue {
     uint16_t count;
 } {{ model.name }}_event_queue_t;
 
+{% if model.needs_event_scheduler %}
+/* ── W3C SCXML 6.2: Delayed-send queue entry ──────────────────────── */
+{# Mirrors `SchedulerQueueCore::ScheduledEntry` from cpp
+   `common/SendSchedulingHelper.h`. Unlike the cpp shape we drop the
+   per-entry `eventData` payload until a fixture forces it (test579 +
+   test580 use `<send delay event=...>` with no params/content), and we
+   bound `send_id` rather than carry an std::string — same reasoning as
+   the regular event queue's bounded id slots. The queue is kept sorted
+   by `fire_time_ms` so `_tick` can early-exit at the first not-yet-
+   ready entry; insertion is O(n) per event which is the same shape as
+   the cpp `std::map<OrderKey, …>` for the small N we expect on MCU. #}
+typedef struct {{ model.name }}_scheduled_entry {
+    uint64_t fire_time_ms;
+    {{ model.name }}_event_t event;
+    char send_id[SCE_MAX_ID_LEN];
+} {{ model.name }}_scheduled_entry_t;
+
+typedef struct {{ model.name }}_scheduled_queue {
+    {{ model.name }}_scheduled_entry_t buf[SCE_MAX_SCHEDULED];
+    uint8_t count;
+} {{ model.name }}_scheduled_queue_t;
+{% endif %}
+
 /* ── Policy state (datamodel + transition tracking) ───────────────── */
 {# C++ `{name}Policy` mutable members. E1 minimum keeps only the
    transition-tracking trio that `AOT_EXECUTE_TRANSITION` always writes.
@@ -188,6 +211,9 @@ typedef struct {{ model.name }} {
     uint32_t active;
     {{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
     {{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
+{% if model.needs_event_scheduler %}
+    {{ model.name }}_scheduled_queue_t scheduled_queue;  /* W3C 6.2: delayed <send> queue, drained by _tick */
+{% endif %}
     {{ model.name }}_policy_t policy;
     bool is_running;
     bool transition_taken;
@@ -217,6 +243,17 @@ void {{ model.name }}_step({{ model.name }}_t *sm);
 
 /* W3C SCXML 6.2: Drive the SM until a top-level final state is reached. */
 void {{ model.name }}_run({{ model.name }}_t *sm);
+
+{% if model.needs_event_scheduler %}
+/* W3C SCXML 6.2: Promote any scheduled events whose fire time has elapsed
+   onto the internal queue. Reads the current time via the host-supplied
+   `_sce_clock_now_ms()` weak symbol — runner harnesses provide the
+   definition (e.g. `clock_gettime(CLOCK_MONOTONIC, …)` on POSIX, SysTick
+   on MCU). Mirrors cpp `StaticExecutionEngine::tick()` which calls
+   `scheduler_.popReadyEvent()` in a loop. The caller drives the macrostep
+   in its own loop: `while (!_is_in_final) { _tick(sm); _step(sm); }`. */
+void {{ model.name }}_tick({{ model.name }}_t *sm);
+{% endif %}
 
 /* W3C SCXML 5.3: Enqueue an event onto the internal (high-priority) queue. */
 void {{ model.name }}_raise({{ model.name }}_t *sm,

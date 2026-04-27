@@ -18,6 +18,32 @@
 {% if model.needs_script_engine %}
 #include <stdio.h>  /* snprintf for body-bearing <foreach> per-iter set */
 {% endif %}
+{% if model.needs_event_scheduler %}
+
+/* W3C SCXML 6.2: Monotonic clock binding for delayed `<send>` scheduling.
+   Declared here, defined by the host (test runner / MCU support code).
+   Mirrors the cpp `std::chrono::steady_clock::now()` call inside
+   `PullScheduler::scheduleEvent` — the C11 backend keeps the same
+   "monotonic milliseconds since some epoch" contract but indirects through
+   a host symbol so MCU profiles can map it to SysTick/HAL ticks while
+   POSIX runners supply `clock_gettime(CLOCK_MONOTONIC, …)`. The runner
+   harness must provide a definition; linking will fail otherwise (no
+   weak-symbol fallback emitted — silent zero clock would freeze the
+   schedule and silently mis-fire timeouts). */
+extern uint64_t _sce_clock_now_ms(void);
+
+/* Forward declarations — `scheduled_push` is invoked from inside
+   `execute_entry_actions` / `execute_exit_actions` (the action emitter's
+   `<send delay>` arm), but the definitions live alongside the rest of
+   the RTC core lower in the translation unit so they sit next to the
+   queues and macrostep helpers they belong with. The forward decl keeps
+   `-Werror=implicit-function-declaration` quiet without reordering the
+   logical sections of the generated source. */
+static void scheduled_push({{ model.name }}_t *sm,
+                           uint64_t fire_time_ms,
+                           {{ model.name }}_event_t event,
+                           const char *send_id);
+{% endif %}
 
 {# RFC §5.J.1: recursive action emitter. Mirrors the C++ tree's
    `actions/<type>.jinja2` include dispatch but inlines every variant in
@@ -156,26 +182,24 @@
                     {{ model.name }}_raise(sm, &_err_evt);
                 }
             }
-{% elif action.event and (action.delay or action.delayexpr) and not action.target and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.2: static-event + delay (no target / no payload).
-               No scheduler infrastructure yet — the C11 backend defers the
-               event scheduler (delayed dispatch + cancel + tick polling)
-               until its first force fixture lands. The fixtures currently
-               passing through this arm (test403a/b, test405, test404,
-               test580 once it lands) all use the `<send delay>` pattern as
-               a SAFETY-NET timeout: `<transition event="timeout" target="fail"/>`
-               that should NEVER fire because the success path completes
-               via internal raise events first. Dropping the schedule is
-               therefore observably equivalent to letting the timeout sit
-               unfired in a real scheduler — the SUCCESS path is identical.
-               Test fixtures whose PASS path actually depends on the
-               scheduled event firing (e.g. test579's `<state id="s3">
-               <transition event="timeout" target="pass"/>`) are flagged
-               in their commit message and will block this arm with
-               #error once registered; that fixture is what forces the
-               full scheduler. Mirrors cpp `actions/send.jinja2` deferred
-               static-event-with-delay path. */
-            (void)0;
+{% elif action.event and action.delay and not action.delayexpr and not action.target and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.2: static-event + literal delay (no target / no
+               payload). `action.delay_ms` is the parser-side conversion
+               from the SCXML "1s"/"500ms"/"0.5s" grammar into integer
+               milliseconds (parser.rs `parse_delay_to_ms`); ill-formed
+               grammar yields 0 there, which here schedules an immediately-
+               ready event — same observable shape as the cpp
+               `SendSchedulingHelper::parseDelayString` path. The send id
+               is the parser-generated `auto_send_id` so a future <cancel>
+               variant can target it via the same string the parser stamps.
+               Mirrors cpp `actions/send.jinja2` lines 461-528 collapsed
+               for the no-payload arm. delayexpr (runtime delay parsing)
+               and target/params/namelist combinations stay #error-guarded
+               below until a fixture forces them. */
+            scheduled_push(sm,
+                           _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
+                           {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
+                           "{{ action.auto_send_id | escape_c }}");
 {% else %}
 #error "C11 backend: <send> shape with target/params/namelist/content/typeexpr/idlocation is not yet implemented — extend emit_action's send branch with the first fixture forcing it."
 {% endif %}
@@ -432,6 +456,14 @@ static SCE_C_UNUSED uint32_t config_enter_chain(uint32_t active, {{ model.name }
    enter_state_recursive call per region child in document order. */
 static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state_t s);
 static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state_t s);
+{% if model.has_history_states %}
+/* enter_state_recursive's compound-with-history dispatch routes to
+   enter_history_state, which is defined alongside the rest of the
+   history machinery further down. The forward decl keeps that backward
+   call resolved in the same translation unit without reordering the
+   logical sections. */
+static void enter_history_state({{ model.name }}_t *sm, {{ model.name }}_history_t hid);
+{% endif %}
 
 static void enter_parallel_regions({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
     (void)sm;
@@ -505,6 +537,59 @@ static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state
     if (state_is_parallel(s)) {
         enter_parallel_regions(sm, s);
     } else if (state_is_compound(s)) {
+        /* W3C SCXML 3.6 (compound entry by default-path): when entering a
+           compound state without an explicit deep target, execute its
+           `<initial>` transition's executable content (if any) before
+           descending. cpp `enterStates` handles this in its initial-default
+           branch; we mirror it with a per-state switch over states that
+           parser.rs marked with `initial_transition_actions`. The actions
+           run between the compound's onentry (already executed in the
+           walk-down loop above) and the child entry below — exactly the
+           ordering test579 verifies (s0 onentry → raise event2 → history
+           default raises event3 → enter s01). */
+        {% set has_initial_actions = namespace(v=false) %}
+        {% for state_id, state in model.states | dictsort %}{% if state.initial_transition_actions %}{% set has_initial_actions.v = true %}{% endif %}{% endfor %}
+        {% if has_initial_actions.v %}
+        switch (s) {
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.initial_transition_actions %}
+        case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+            {% for action in state.initial_transition_actions %}
+            {{ emit_action(action) }}
+            {% endfor %}
+            break;
+        }
+        {% endif %}
+        {% endfor %}
+        default:
+            break;
+        }
+        {% endif %}
+
+        /* W3C SCXML 3.6 + 3.10: when the compound's `<initial>` targets a
+           history pseudo-state, route through `enter_history_state` so any
+           recorded snapshot wins over the default leaf. Without this branch
+           parser.rs's `resolve_history_targets` collapse — which rewrites
+           `state.initial` to the resolved default leaf for the regular
+           descend path — would silently bypass the snapshot on re-entry
+           (test579's second entry through s0 must restore s03 from the
+           captured snapshot rather than re-descend to s01). */
+        {% set has_initial_history = namespace(v=false) %}
+        {% for state_id, state in model.states | dictsort %}{% if state.initial_history_id %}{% set has_initial_history.v = true %}{% endif %}{% endfor %}
+        {% if has_initial_history.v %}
+        switch (s) {
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.initial_history_id %}
+        case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+            enter_history_state(sm, {{ model.name | upper }}_HIST_{{ state.initial_history_id | upper | replace('-', '_') | replace('.', '_') }});
+            return;
+        {% endif %}
+        {% endfor %}
+        default:
+            break;
+        }
+        {% endif %}
+
         {{ model.name }}_state_t child = state_get_initial_child(s);
         if (child != s) {
             enter_state_recursive(sm, child);
@@ -695,43 +780,41 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
    detection then reduces to bitmap intersection plus a small parallel-
    ancestor scan, no per-pair LCA recomputation. #}
 
-/* W3C SCXML 3.12: Least Common Ancestor (cpp HierarchicalAlgorithms::findLCA
-   mirror). Builds state1's parent chain, then walks state2 up checking each
-   step against the chain. Equal states are their own LCA. Returns
-   has_lca=false when the two states share no common ancestor (top-level
-   sibling pair under an implicit root). */
-static SCE_C_UNUSED {{ model.name }}_state_t find_lca({{ model.name }}_state_t s1,
-                                                       {{ model.name }}_state_t s2,
-                                                       bool *out_has) {
-    if (s1 == s2) {
-        *out_has = true;
-        return s1;
-    }
-    {{ model.name }}_state_t ancestors[{{ model.name | upper }}_STATE_COUNT];
-    uint32_t anc_count = 0u;
+/* W3C SCXML 3.12: Least Common Compound Ancestor (findLCCA per the
+   Algorithms appendix, which is the function `getTransitionDomain` calls
+   for external transitions whose source/target hierarchy needs the
+   full proper-ancestor walk).
+   Walks `getProperAncestors(source)` and returns the first ancestor that
+   contains `target` as a STRICT descendant. The strict check is what
+   distinguishes findLCCA from the older single-pair `findLCA`: when
+   target is itself an ancestor of source (e.g. test579's s03→s0),
+   findLCA collapses LCA onto target, so exit set computation excludes
+   target's onexit and Var1 never increments — observably wrong. The
+   strict-descendant check skips that case and walks one level higher,
+   producing the W3C-correct domain (root/no_lca when target sits on
+   source's own ancestor chain), at which point compute_exit_set's
+   no-lca branch exits the entire configuration so the target gets a
+   fresh entry chain (including its onentry and `<initial>` content).
+   Returns has_lca=false in two cases: (a) the two states share no
+   common ancestor (top-level siblings under an implicit root) and
+   (b) target lies on source's ancestor chain (target == anc, never
+   strict-descendant). compute_exit_set treats both with the same
+   "exit everything active" semantics, matching cpp
+   StaticExecutionEngine::handleHierarchicalTransition's no-LCA branch. */
+static SCE_C_UNUSED {{ model.name }}_state_t find_lcca({{ model.name }}_state_t source,
+                                                        {{ model.name }}_state_t target,
+                                                        bool *out_has) {
     bool hp = false;
-    {{ model.name }}_state_t cur = state_get_parent(s1, &hp);
-    while (hp && anc_count < (uint32_t){{ model.name | upper }}_STATE_COUNT) {
-        ancestors[anc_count++] = cur;
+    {{ model.name }}_state_t cur = state_get_parent(source, &hp);
+    while (hp) {
+        if (is_descendant_of(target, cur)) {
+            *out_has = true;
+            return cur;
+        }
         cur = state_get_parent(cur, &hp);
     }
-    cur = s2;
-    while (true) {
-        for (uint32_t k = 0u; k < anc_count; ++k) {
-            if (ancestors[k] == cur) {
-                *out_has = true;
-                return cur;
-            }
-        }
-        bool has_parent;
-        {{ model.name }}_state_t parent = state_get_parent(cur, &has_parent);
-        if (!has_parent) {
-            break;
-        }
-        cur = parent;
-    }
     *out_has = false;
-    return s1;
+    return source;
 }
 
 /* W3C SCXML App.D.2: exit set per transition (cpp ParallelTransitionHelper::
@@ -766,7 +849,7 @@ static SCE_C_UNUSED uint32_t compute_exit_set(uint32_t active,
         lca = source;
         has_lca = true;
     } else {
-        lca = find_lca(source, target, &has_lca);
+        lca = find_lcca(source, target, &has_lca);
     }
     if (!has_lca) {
         /* Cross-hierarchy transition (source and target are top-level
@@ -1082,13 +1165,15 @@ static void capture_histories({{ model.name }}_t *sm, uint32_t exit_union) {
 }
 
 /* W3C SCXML 3.10: enter a history pseudo-state — restore the recorded
-   snapshot if present, otherwise enter the default transition target.
+   snapshot if present, otherwise execute the history's default
+   `<transition>` executable content and enter its default target.
    Mirrors cpp HistoryHelper::buildEntryChain. enter_state_recursive is
    idempotent so any ancestor bits already set by an earlier transition
-   are not double-fired. The history's default transition body (the
-   `<transition>` children's executable content per W3C 3.10) is
-   deferred to the first fixture forcing it (test579/test580); only the
-   default `target=...` is honoured here. */
+   are not double-fired. The default-actions branch only runs on the
+   first entry to the parent state (recorded=false); once a snapshot has
+   been captured, subsequent re-entries restore it verbatim, matching
+   the W3C "default transition body executes only when no stored history"
+   contract that test579 verifies. */
 static void enter_history_state({{ model.name }}_t *sm, {{ model.name }}_history_t hid) {
     switch (hid) {
     {% for hid, info in model.history_states | dictsort %}
@@ -1099,6 +1184,9 @@ static void enter_history_state({{ model.name }}_t *sm, {{ model.name }}_history
                 enter_state_recursive(sm, ({{ model.name }}_state_t)i);
             }
         } else {
+            {% for action in info.default_actions %}
+            {{ emit_action(action) }}
+            {% endfor %}
             enter_state_recursive(sm, {{ model.name | upper }}_STATE_{{ info.default_target | upper | replace('-', '_') | replace('.', '_') }});
         }
         break;
@@ -1211,6 +1299,80 @@ void {{ model.name }}_raise_external({{ model.name }}_t *sm,
                                      const {{ model.name }}_event_with_meta_t *evt) {
     event_queue_push(&sm->external_queue, evt);
 }
+
+{% if model.needs_event_scheduler %}
+/* ── W3C SCXML 6.2: Delayed-send queue helpers ────────────────────── */
+
+{# Sorted insert keyed on `fire_time_ms`. cpp `SchedulerQueueCore` uses a
+   `std::map` whose ordering key is `(fireTime, sequenceNum)`; the C11
+   mirror keeps the same fire-time ordering and breaks ties by insertion
+   order (the linear scan stops at the first strictly-greater entry, so
+   equal-time entries fall in FIFO order — same observable outcome as
+   cpp's monotonic `sequenceCounter_`). Overflow raises error.execution
+   onto the internal queue per W3C 6.2 (the spec requires a discoverable
+   error rather than silent loss); the entry being inserted is the one
+   dropped, matching the bounded-resource contract documented at the
+   `SCE_MAX_SCHEDULED` define site in `sce/types.h`. #}
+static void scheduled_push({{ model.name }}_t *sm,
+                           uint64_t fire_time_ms,
+                           {{ model.name }}_event_t event,
+                           const char *send_id) {
+    if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
+        return;
+    }
+
+    /* Find insertion index keeping the array sorted by fire_time_ms. */
+    uint8_t pos = sm->scheduled_queue.count;
+    for (uint8_t i = 0; i < sm->scheduled_queue.count; ++i) {
+        if (fire_time_ms < sm->scheduled_queue.buf[i].fire_time_ms) {
+            pos = i;
+            break;
+        }
+    }
+
+    /* Shift later entries one slot right. */
+    for (uint8_t j = sm->scheduled_queue.count; j > pos; --j) {
+        sm->scheduled_queue.buf[j] = sm->scheduled_queue.buf[j - 1u];
+    }
+
+    {{ model.name }}_scheduled_entry_t *slot = &sm->scheduled_queue.buf[pos];
+    slot->fire_time_ms = fire_time_ms;
+    slot->event = event;
+    if (send_id != NULL) {
+        strncpy(slot->send_id, send_id, (size_t)SCE_MAX_ID_LEN - 1u);
+        slot->send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+    } else {
+        slot->send_id[0] = '\0';
+    }
+    sm->scheduled_queue.count++;
+}
+
+/* Pop the head entry iff its fire time has elapsed (compared against `now_ms`).
+   Returns true and writes the matured entry into `out` when ready, false otherwise.
+   Mirrors cpp `SchedulerQueueCore::popReadyEvent(now, …)` — the head element
+   is always the earliest-firing thanks to `scheduled_push`'s sorted insert. */
+static bool scheduled_pop_ready({{ model.name }}_t *sm,
+                                uint64_t now_ms,
+                                {{ model.name }}_scheduled_entry_t *out) {
+    if (sm->scheduled_queue.count == 0u) {
+        return false;
+    }
+    if (sm->scheduled_queue.buf[0].fire_time_ms > now_ms) {
+        return false;
+    }
+
+    *out = sm->scheduled_queue.buf[0];
+    for (uint8_t k = 1; k < sm->scheduled_queue.count; ++k) {
+        sm->scheduled_queue.buf[k - 1u] = sm->scheduled_queue.buf[k];
+    }
+    sm->scheduled_queue.count--;
+    return true;
+}
+{% endif %}
 
 /* ── RTC core (mirrors StaticExecutionEngine<Policy>::*) ──────────── */
 
@@ -1345,6 +1507,45 @@ void {{ model.name }}_step({{ model.name }}_t *sm) {
     }
 }
 
+{% if model.needs_event_scheduler %}
+/* W3C SCXML 6.2: Polling-loop entry point. Pumps every elapsed scheduled
+   `<send delay>` entry onto the external queue, then runs a normal
+   macrostep. Mirrors cpp `StaticExecutionEngine::tick()` (see
+   `sce/include/static/StaticExecutionEngine.h`) — the same composition
+   of `pumpScheduledEvents()` + `step()` that drives `runUntilCompletion`.
+   The host calls this in a loop alongside its sleep / poll-interval
+   primitive; the W3C spec is silent on poll cadence so the choice
+   belongs to the runner. */
+void {{ model.name }}_tick({{ model.name }}_t *sm) {
+    if (!sm->is_running) {
+        return;
+    }
+    if ({{ model.name }}_is_in_final_state(sm)) {
+        if (sm->completion_callback != NULL) {
+            sm->completion_callback(sm->completion_callback_user_data);
+        }
+        return;
+    }
+
+    uint64_t now_ms = _sce_clock_now_ms();
+    {{ model.name }}_scheduled_entry_t ready;
+    while (scheduled_pop_ready(sm, now_ms, &ready)) {
+        {{ model.name }}_event_with_meta_t evt;
+        memset(&evt, 0, sizeof(evt));
+        evt.event = ready.event;
+        /* Both arrays are SCE_MAX_ID_LEN-sized and `scheduled_push` always
+           writes a terminating NUL inside the buffer, so a verbatim
+           memcpy of the whole array transfers the string and its
+           terminator without tripping `-Wstringop-truncation` (which
+           strncpy would since src is a same-size buffer). */
+        memcpy(evt.send_id, ready.send_id, (size_t)SCE_MAX_ID_LEN);
+        {{ model.name }}_raise_external(sm, &evt);
+    }
+
+    {{ model.name }}_step(sm);
+}
+{% endif %}
+
 void {{ model.name }}_run({{ model.name }}_t *sm) {
     sm->is_running = true;
     while (sm->is_running && !{{ model.name }}_is_in_final_state(sm)) {
@@ -1371,6 +1572,14 @@ void {{ model.name }}_run({{ model.name }}_t *sm) {
 
 void {{ model.name }}_init({{ model.name }}_t *sm) {
     memset(sm, 0, sizeof(*sm));
+    /* W3C SCXML 6.2: SM is running from the moment the configuration is
+       seeded. cpp `StaticExecutionEngine::initialize` sets `isRunning_`
+       around the same point so external pollers — `_tick`, `_run`, and
+       any host scheduler harness — observe a live machine immediately.
+       Without this flag set _tick early-returns on its `is_running` guard
+       and scheduled `<send delay>` events would never promote into the
+       internal queue. */
+    sm->is_running = true;
     {% if model.needs_script_engine %}
     /* W3C SCXML 5.10: Open Lua engine and seed datamodel before any
        <onentry> body runs (those bodies may reference datamodel vars). */

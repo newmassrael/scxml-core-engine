@@ -20,6 +20,24 @@ include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
 set(SCE_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${SCE_C_GENERATED_DIR}")
 
+# Host-side support translation units for fixture binaries. Currently
+# carries the POSIX `_sce_clock_now_ms` definition (W3C SCXML 6.2
+# delayed-send clock binding); future runner-side helpers join here as
+# additional fixtures force them. Linked uniformly into every C11 fixture
+# below so any `<send delay>`-bearing fixture (safety-net or
+# success-path) resolves the symbol without per-runner duplication; the
+# linker dead-strips the object in fixtures whose generated code never
+# references the symbol.
+add_library(sce_c_test_support STATIC support/clock.c)
+target_include_directories(sce_c_test_support PUBLIC
+    "${CMAKE_SOURCE_DIR}/sce-c-runtime/include"
+)
+set_target_properties(sce_c_test_support PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+
 # C11 fixture registry — extend as W3C category coverage grows.
 # Each entry both (a) drives sce-codegen via the macro below and
 # (b) lines up with `aot_tests/test_<NUM>.c` for the per-fixture runner.
@@ -80,6 +98,8 @@ sce_generate_static_w3c_c_test(448 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(329 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: none of the four system variables (_sessionid / _event / _name / _ioprocessors) can be modified — chained Var{n} == _systemvar conds verify the binding survives an illegal <assign>
 sce_generate_static_w3c_c_test(346 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: every illegal <assign> to a read-only system variable raises error.execution — chain across all four covers the codegen-time reserved-name guard
 sce_generate_static_w3c_c_test(403c "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML App.D.2: cross-compound preemption via parallel-ancestor — p0s3→fail and s0→fail are dropped because their LCA-walk exit sets include the parallel ancestor p0; targetless transitions emit is_internal=true so the conflict-resolution self-loop exemption keeps p0s4's wildcard alive across both microsteps
+sce_generate_static_w3c_c_test(579 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)   # W3C SCXML 3.10 + 6.2: history default content runs on first entry only (s0 re-entry through sh1 restores s03 from snapshot, skipping the default `<raise event3>`); the success path requires the 1 s `<send delay>` timeout to actually fire, forcing the full polling-driven scheduler
+sce_generate_static_w3c_c_test(580 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)   # W3C SCXML 3.10 + 3.4: history pseudo-state never enters the active configuration even across <parallel> regions — `In('sh1')` cond stays false through the entire run, and the 2 s safety-net timeout never fires because the eventless chain reaches `pass` first
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
@@ -92,7 +112,7 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
     set(_target "sce_c_w3c_test_${TEST_NUM}")
 
     add_executable(${_target} ${_runner} ${_generated})
-    target_link_libraries(${_target} PRIVATE sce_c_runtime)
+    target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_test_support)
     target_include_directories(${_target} PRIVATE "${SCE_C_GENERATED_DIR}")
     if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_LUA)
         target_link_libraries(${_target} PRIVATE lua54)
