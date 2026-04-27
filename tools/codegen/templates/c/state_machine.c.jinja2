@@ -665,6 +665,17 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
 {% elif action.type == 'if' %}
         {
             /* W3C SCXML 4.3: <if cond="{{ action.cond | escape_c }}"> */
+{% if action.is_pure_in_predicate %}
+            /* W3C 5.9.2 pure In() predicate — native C lower via
+               `to_in_predicate_c11` (mirrors transition cond's pure-In branch).
+               Avoids both the dead `sm->L` reference (when the fixture is
+               otherwise lua-free) and a phantom lua trampoline (T3). */
+            if ({{ action.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
+                {% for sub in action.then_actions %}
+                {{ emit_action(sub, in_foreach) }}
+                {% endfor %}
+            }
+{% else %}
             bool _if_pass;
 {{ se.lua_eval_guard(action.cond, '_if_pass') }}
             if (_if_pass) {
@@ -672,9 +683,17 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                 {{ emit_action(sub, in_foreach) }}
                 {% endfor %}
             }
+{% endif %}
 {% for elif in action.elseif_branches %}
             else {
                 /* W3C SCXML 4.3: <elseif cond="{{ elif.cond | escape_c }}"> */
+{% if elif.is_pure_in_predicate %}
+                if ({{ elif.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
+                    {% for sub in elif.actions %}
+                    {{ emit_action(sub, in_foreach) }}
+                    {% endfor %}
+                }
+{% else %}
                 bool _elif_pass;
 {{ se.lua_eval_guard(elif.cond, '_elif_pass') }}
                 if (_elif_pass) {
@@ -682,6 +701,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                     {{ emit_action(sub, in_foreach) }}
                     {% endfor %}
                 }
+{% endif %}
 {% endfor %}
 {% if action.else_actions %}
             else {
@@ -1669,7 +1689,19 @@ static bool try_match_in_state({{ model.name }}_t *sm,
             {% for trans in state.transitions %}
             {{ emit_transition_match_check(trans) }} {
             {% if trans.cond %}
-            {% if model.needs_script_engine %}
+            {% if trans.is_pure_in_predicate %}
+                /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond | escape_c }}" pure
+                   In() predicate — native C lower via `to_in_predicate_c11`
+                   filter (mirrors cpp `parser::convert_in_to_cpp` of `this->
+                   isStateActive("...")`). Routes In('xx') → `<machine>_in_state(
+                   sm, <MACHINE>_STATE_<XX>)` so the chunk is compiler-checked
+                   instead of runtime-resolved through a lua trampoline (T3
+                   inline-only lock-in). The filter also unblocks pure-In conds
+                   in fixtures that don't otherwise need script-engine. */
+                if ({{ trans.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
+                    {{ emit_transition_body(trans) }}
+                }
+            {% elif model.needs_script_engine %}
                 /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" (lua eval) */
                 bool _trans_pass;
 {{ se.lua_eval_guard(trans.cond, '_trans_pass') }}

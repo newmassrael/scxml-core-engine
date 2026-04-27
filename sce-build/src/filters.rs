@@ -539,6 +539,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_lua_expr", to_lua_expr);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
+    env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
 }
@@ -546,6 +547,46 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
 /// Escape C string literals (identical escaping rules to Rust/C++).
 fn escape_c(text: String) -> String {
     escape_rust(text)
+}
+
+/// W3C SCXML 5.9.2: rewrite pure In('xxx') predicate text to a C11 native
+/// `<machine>_in_state(sm, <MACHINE>_STATE_<XXX>)` call. Mirrors cpp
+/// `parser::convert_in_to_cpp` which substitutes `this->isStateActive("xxx")`
+/// — both sit at the codegen-time-text-substitution layer (T3 inline-only
+/// lock-in for C11) instead of routing through a runtime `In()` callback.
+/// The state-id transformation matches `state_machine.h.jinja2`'s enum
+/// emission (uppercase + dot/dash → underscore) so the produced symbol
+/// resolves against the per-fixture `<machine>_state_e` enum.
+///
+/// W3C 3.10 carve-out: history pseudo-states are *never* in the active
+/// configuration, so `In('history_id')` must always return false (cpp
+/// gets this for free because `isStateActive` looks up activeStates_ as
+/// a string set; C11 must emit a `false` literal because history IDs
+/// have a separate `<machine>_history_e` enum and would not resolve as
+/// `<MACHINE>_STATE_*`). The `history_ids` arg carries the per-model
+/// history-state-id list from `model.history_states` so the filter can
+/// branch at codegen time.
+fn to_in_predicate_c11(
+    cond_text: String,
+    machine_name: String,
+    history_ids: Vec<String>,
+) -> String {
+    if cond_text.is_empty() {
+        return String::new();
+    }
+    static RE_IN_PRED: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"In\(['"]([^'"]+)['"]\)"#).unwrap());
+    let upper_machine = machine_name.to_uppercase();
+    RE_IN_PRED
+        .replace_all(&cond_text, |caps: &regex::Captures| {
+            let state_id = &caps[1];
+            if history_ids.iter().any(|h| h == state_id) {
+                return "false".to_string();
+            }
+            let upper_state = state_id.to_uppercase().replace(['-', '.'], "_");
+            format!("{machine_name}_in_state(sm, {upper_machine}_STATE_{upper_state})")
+        })
+        .to_string()
 }
 
 // ── Kotlin filters ───────────────────────────────────────────────
