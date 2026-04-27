@@ -252,6 +252,93 @@ static void scheduled_push({{ model.name }}_t *sm,
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
+{% elif action.event and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 5.10 + 6.2 (test176/205/560): static-event with
+               `<param>(s)`, no `target` (external queue). Each param's
+               `expr` is evaluated against the active datamodel and stored
+               on the shared `_pending_donedata` lua table; the next
+               dequeue's `set_current_event` promotes the table onto
+               `_event.data` so the receiving transition's `_event.data.{name}`
+               reads the captured value. Mirrors cpp `actions/send.jinja2`
+               lines 532-577 collapsed for the no-target / no-delay arm —
+               cpp builds `std::map<string, vector<string>> params` plus a
+               `typedParams` ScriptValue map, fuses them via
+               `EventDataHelper::buildEventDataJson` + `buildScriptValueFromParams`,
+               and attaches the typed result to `EventWithMetadata::typedData`.
+               C11 stashes the typed value directly on the lua table; the
+               JSON-string side of cpp's payload is irrelevant here because
+               the lua datamodel reads `_event.data` as a native lua table.
+
+               Slot collision: `_pending_donedata` is shared with the
+               donedata path (`execute_entry_actions`'s final-state arm).
+               Within one onentry, a `<send>` with params and a `<donedata>`
+               on the same final state would last-write-wins, but the W3C
+               corpus has no fixture forcing both in one block. The first
+               such fixture lifts the slot to a per-send_id keyed table
+               (cpp's `EventWithMetadata::eventData` per-event carry).
+
+               Param eval failure: silent-drop with empty-string fallback
+               per cpp send (W3C 6.2 ≠ 5.7); see
+               `scriptengine.jinja2::lua_eval_send_param_expr` docstring. */
+            (void)luaL_dostring(sm->L, "_pending_donedata = {}");
+            {% for param in action.params %}
+            {{ se.lua_eval_send_param_expr(param.name, param.expr) }}
+            {% endfor %}
+            {{ model.name }}_event_with_meta_t _send_evt;
+            memset(&_send_evt, 0, sizeof(_send_evt));
+            _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise_external(sm, &_send_evt);
+{% elif action.event and action.content and not action.contentexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 5.10 + 6.2 + B.2 (test179): static-event with
+               inline `<content>` (no `expr` attribute), no `target`
+               (external queue). The `<content>` body is a single textual
+               value — cpp `actions/send.jinja2` lines 643-647 routes it
+               through `EventDataHelper::jsonStringToScriptValue`, which
+               attempts JSON parse and falls back to a string ScriptValue.
+               C11 emits the body as a Lua expression (`to_lua_expr` filter)
+               so `<content>123</content>` lands as the lua number 123 on
+               `_pending_donedata` — matches cpp's typed-number path for
+               numeric literal content (test179 cond `_event.data == 123`
+               compares lua number to JS number after the script-engine
+               carries the value through verbatim).
+
+               Failure modes: non-expression text (e.g. `<content>this is
+               a string</content>`, test562) makes the lua chunk fail to
+               compile and `lua_eval_donedata_content_expr` raises
+               `error.execution` per W3C 5.5's content-eval-failure path.
+               That covers test179's success path; test562/578 (string and
+               JSON body shapes) need a different emit (string-passthrough
+               vs JSON parse) and lift with their first force fixture.
+               Until then the failure is observable as `error.execution`
+               on the queue, which makes the silent-drop drift impossible.
+
+               Slot collision with donedata: same as the params arm above. */
+            {{ se.lua_eval_donedata_content_expr(action.content) }}
+            {{ model.name }}_event_with_meta_t _send_evt;
+            memset(&_send_evt, 0, sizeof(_send_evt));
+            _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise_external(sm, &_send_evt);
+{% elif action.event and action.contentexpr and not action.content and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 5.10 + 6.2 (contentexpr force fixture): static-event
+               with `<content expr="...">`, no `target`. The expression is
+               evaluated against the active datamodel and the result lands
+               on the shared `_pending_donedata` slot, ready for the next
+               dequeue's `set_current_event` promotion onto `_event.data`.
+               Mirrors cpp `actions/send.jinja2` lines 710-769 collapsed
+               for the no-target / no-delay arm — cpp's contentexpr path
+               raises `error.execution` on eval failure (line 721) and
+               sets eventData to empty; the donedata content_expr macro
+               applies the same shape (`scriptengine.jinja2` lines 397-416).
+               No fixture in the C11 batch forces this arm yet; lifted now
+               for spec-mirror parity since the cpp branch is the contract
+               (`feedback_built_but_unconsumed.md` carve-out: reference
+               backend's branch ≡ contract). First force fixture exercises
+               the path. */
+            {{ se.lua_eval_donedata_content_expr(action.contentexpr) }}
+            {{ model.name }}_event_with_meta_t _send_evt;
+            memset(&_send_evt, 0, sizeof(_send_evt));
+            _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise_external(sm, &_send_evt);
 {% else %}
 #error "C11 backend: <send> shape with target/params/namelist/content/typeexpr/idlocation is not yet implemented — extend emit_action's send branch with the first fixture forcing it."
 {% endif %}

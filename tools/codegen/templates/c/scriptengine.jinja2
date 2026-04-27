@@ -489,3 +489,39 @@
     }
     lua_pop(sm->L, 1);
 {% endmacro %}
+
+{# W3C SCXML 5.10 + 6.2: evaluate one `<send><param name=N expr=X/></send>`
+   and store the value as `_pending_donedata.{name} = (X)`. The caller emits
+   `_pending_donedata = {}` once before iterating so the table exists, and
+   the next dequeue's `set_current_event` promotes the table onto
+   `_event.data`.
+
+   Error semantics (W3C 6.2 ≠ 5.7): cpp `actions/send.jinja2` (lines 220-228,
+   488-505) on param-expr eval failure logs and pushes empty string — it does
+   NOT raise `error.execution`. This is the opposite of donedata's W3C 5.7
+   path (`lua_eval_donedata_param_expr`) which raises on failure. The C11
+   macro mirrors cpp send: silent-drop on chunk failure, set the slot to
+   empty string so subsequent reader code sees a defined-but-empty value.
+
+   Slot reuse: `_pending_donedata` is shared with the donedata path. Within
+   the same microstep, a state's `<send>` with params and that state's
+   `<donedata>` would last-write-wins on this slot, but the W3C corpus has
+   no fixture forcing both in one onentry (`done.state.<parent>` is raised
+   from a final state, not from a state that also issues `<send>`). The
+   first such fixture lifts the slot to a per-event table keyed on
+   `evt.send_id` (cpp's `EventWithMetadata::eventData` per-event carry
+   equivalent). Documented at the call site as well so the seam is grep-able.
+
+   No `_scxml_declared` ReferenceError check: cpp send does not invoke
+   `LuaEngine::isUndeclaredSimpleVariable` (`LuaEngine.cpp:99`) on send
+   params (only donedata params per W3C 5.7's structural-error semantics);
+   the macro stays free of that lookup so fixtures without `<donedata>` do
+   not need to declare `_scxml_declared`. #}
+{% macro lua_eval_send_param_expr(param_name, expr) %}
+    if (luaL_dostring(sm->L,
+        "_pending_donedata.{{ param_name }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
+        lua_pop(sm->L, 1);
+        (void)luaL_dostring(sm->L,
+            "_pending_donedata.{{ param_name }} = ''");
+    }
+{% endmacro %}
