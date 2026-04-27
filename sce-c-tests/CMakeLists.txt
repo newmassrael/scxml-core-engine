@@ -71,6 +71,7 @@ sce_generate_static_w3c_c_test(403a "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.13:
 sce_generate_static_w3c_c_test(404 "${SCE_C_GENERATED_DIR}")   # W3C SCXML 3.4: <parallel> entry activates every region simultaneously; exit reverse-doc-order (s01p2 before s01p1 before s01p) drains queued raises in order so receiving states match event1→event2→event3→event4
 sce_generate_static_w3c_c_test(405 "${SCE_C_GENERATED_DIR}")   # W3C SCXML 3.13: multi-leaf simultaneous fire — two region-internal eventless transitions in one microstep produce queue [event1, event2, event3, event4] via App.D.2 reverse-doc-order exits then doc-order bodies
 sce_generate_static_w3c_c_test(403b "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML App.D.2: optimal enabled set is a set — same parent transition collected from two converging region leaves dedups via exit-set intersection so body fires exactly once
+sce_generate_static_w3c_c_test(387 "${SCE_C_GENERATED_DIR}")   # W3C SCXML 3.10: default history target — first entry of an unvisited shallow/deep history pseudo-state walks its default <transition target=...> down to the initial leaf (s0HistShallow → s01 → s011, s1HistDeep → s122)
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
