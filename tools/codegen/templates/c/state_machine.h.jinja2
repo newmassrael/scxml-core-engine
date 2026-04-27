@@ -50,6 +50,24 @@ enum {{ model.name }}_state_e {
 };
 typedef enum {{ model.name }}_state_e {{ model.name }}_state_t;
 
+{% if model.has_history_states %}
+/* ── W3C SCXML 3.10: History pseudo-state enumeration ─────────────── */
+{# History state IDs are not part of the regular state enum (parser.rs
+   collapses transition.target to the resolved leaf), so they get their
+   own enum here. The `_HIST_NONE` sentinel marks transitions whose
+   target is a regular state — every transition_info_t carries this
+   field, but only history-targeted transitions set it to a non-NONE
+   value. Mirrors the per-history `history_<id>: Option<Vec<State>>`
+   shape used by the Rust backend (state_machine.rs.jinja2:163). #}
+enum {{ model.name }}_history_e {
+    {{ model.name | upper }}_HIST_NONE,
+    {% for hid, _ in model.history_states | dictsort %}
+    {{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }},
+    {% endfor %}
+};
+typedef enum {{ model.name }}_history_e {{ model.name }}_history_t;
+
+{% endif %}
 /* ── W3C SCXML 6.2: Event enumeration ─────────────────────────────── */
 {# `_NONE` is the scheduler-polling default (W3C 6.2). Enumerated first so
    the underlying integer is 0, matching the C++ `Event::NONE` semantics
@@ -102,6 +120,9 @@ typedef struct {{ model.name }}_transition_info {
     bool is_internal;                      /* W3C 3.13: type="internal" (analyzer.rs has already collapsed not-proper-descendant cases to external) */
     bool is_targetless;                    /* W3C 5.9.2: no target — body fires, no state change */
     uint32_t exit_set;                     /* W3C App.D.2: states this transition would exit (computed at collect time) */
+{% if model.has_history_states %}
+    {{ model.name }}_history_t history_target;  /* W3C 3.10: HIST_NONE for plain transitions; non-NONE = enter via enter_history_state (snapshot or default) */
+{% endif %}
 } {{ model.name }}_transition_info_t;
 
 /* ── Internal/external event queues — circular buffer ─────────────── */
@@ -133,6 +154,19 @@ typedef struct {{ model.name }}_policy {
        (source_state, index) keys into the per-state switch the macro
        emits for fixtures that carry transition body actions. */
     uint16_t last_transition_index;
+{% if model.has_history_states %}
+    {# W3C SCXML 3.10: per-history-state snapshot. `_recorded` distinguishes
+       "first entry, use default transition target" from "captured snapshot
+       (possibly empty bitmap if all descendants exited)" — relying on the
+       bitmap alone would conflate "never visited" with "visited but emptied",
+       producing a default-target replay where W3C 3.10 mandates restore.
+       Mirrors cpp `HistoryHelper`'s `std::optional<std::vector<State>>`
+       shape (the optional's emptiness IS the not-yet-recorded marker). #}
+    {% for hid, info in model.history_states | dictsort %}
+    uint32_t history_{{ hid }}_snapshot;     /* {{ info.type }} snapshot of <history id="{{ hid }}"> children */
+    bool history_{{ hid }}_recorded;
+    {% endfor %}
+{% endif %}
 } {{ model.name }}_policy_t;
 
 /* ── State machine instance ───────────────────────────────────────── */

@@ -178,25 +178,21 @@ static bool event_queue_pop({{ model.name }}_event_queue_t *q,
 
 /* ── W3C SCXML 3.3: Static state policy ───────────────────────────── */
 
-{# W3C SCXML 3.6/3.7: `_initial_state()` returns the topmost ancestor in
-   the initial-state entry chain — i.e. the SCXML's root-level child that
-   contains the resolved initial leaf. parser.rs `resolve_deep_initial`
-   collapses `model.initial` to the leaf, but that erases the ancestor's
-   `<onentry>` blocks. The C++ engine reconstructs the chain at runtime
-   via `HierarchicalStateHelper::buildEntryChain`; the C11 backend walks
-   `state.parent` at codegen time (jinja2 namespace loop, capped at
-   32 levels per the spec's practical depth) and emits the root, then
-   relies on the existing compound-descend loop in `_init` to walk back
-   down through `state.initial` and execute every ancestor's onentry in
-   document order. #}
-{% set _entry_root = namespace(value=model.initial) %}
-{% for _ in range(32) %}
-{% if model.states[_entry_root.value] is defined and model.states[_entry_root.value].parent %}
-{% set _entry_root.value = model.states[_entry_root.value].parent %}
-{% endif %}
-{% endfor %}
+{# W3C SCXML 3.6/3.7: `_initial_state()` returns the resolved initial
+   leaf (parser.rs `resolve_deep_initial` already collapses `model.initial`
+   through the deep-initial chain so nested `<state initial="...">`
+   declarations end at the correct leaf). enter_state_recursive's
+   walk-up entry chain (HierarchicalStateHelper::buildEntryChain mirror)
+   now drives the ancestor onentry sequence — so emitting the leaf
+   directly is enough. An earlier revision returned the topmost
+   ancestor and relied on `state_get_initial_child` to walk back
+   down, but that path followed each ancestor's own `initial`
+   attribute and could diverge from `model.initial` when the SCXML
+   declared a deep initial that bypasses an intermediate state's
+   default initial child (test388: `<scxml initial="s012">` vs
+   `<state id="s01" initial="s011">`). #}
 {{ model.name }}_state_t {{ model.name }}_initial_state(void) {
-    return {{ model.name | upper }}_STATE_{{ _entry_root.value | upper | replace('-', '_') | replace('.', '_') }};
+    return {{ model.name | upper }}_STATE_{{ model.initial | upper | replace('-', '_') | replace('.', '_') }};
 }
 
 bool {{ model.name }}_is_final_state({{ model.name }}_state_t s) {
@@ -390,18 +386,38 @@ static void enter_parallel_regions({{ model.name }}_t *sm, {{ model.name }}_stat
     }
 }
 
-/* W3C SCXML 3.2/3.4/3.6: Unified entry walk. Sets the configuration bit
-   chain, runs onentry, then descends — into every region child for a
-   <parallel>, into the initial child for a compound state, and stops on
-   leaves. Idempotent: re-entering an already-active state is a no-op so
-   external transitions whose target's ancestor chain is already partly
-   active (cross-compound entry) do not double-fire onentry. */
+/* W3C SCXML 3.2/3.4/3.6: Unified entry walk. Walks up to the first
+   already-active ancestor (or the root), then walks back down running
+   onentry on every state in the chain — so cross-compound entries
+   activate every passive ancestor's onentry, not just the leaf's.
+   After the chain runs, descend: a <parallel> activates every region,
+   a compound state descends through state.initial. Idempotent — the
+   walk-up halts at the first active ancestor, so re-entry into an
+   already-active subtree does not double-fire onentry. Mirrors cpp
+   HierarchicalStateHelper::buildEntryChain. */
 static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
     if (config_in(sm->active, s)) {
         return;
     }
-    sm->active = config_enter_chain(sm->active, s);
-    execute_entry_actions(sm, s);
+    {{ model.name }}_state_t chain[{{ model.name | upper }}_STATE_COUNT];
+    uint32_t depth = 0u;
+    {
+        {{ model.name }}_state_t cur = s;
+        while (depth < (uint32_t){{ model.name | upper }}_STATE_COUNT) {
+            chain[depth++] = cur;
+            bool has_parent;
+            {{ model.name }}_state_t p = state_get_parent(cur, &has_parent);
+            if (!has_parent || config_in(sm->active, p)) {
+                break;
+            }
+            cur = p;
+        }
+    }
+    for (uint32_t i = depth; i > 0u; --i) {
+        {{ model.name }}_state_t e = chain[i - 1u];
+        sm->active |= state_bit(e);
+        execute_entry_actions(sm, e);
+    }
     if (state_is_parallel(s)) {
         enter_parallel_regions(sm, s);
     } else if (state_is_compound(s)) {
@@ -579,6 +595,9 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
                 _ti->is_targetless = {{ 'true' if not trans.target else 'false' }};
                 _ti->exit_set = compute_exit_set(sm->active, _ti->source, _ti->target,
                                                  _ti->is_internal, _ti->is_targetless);
+{% if model.has_history_states %}
+                _ti->history_target = {% if trans.history_target %}{{ model.name | upper }}_HIST_{{ trans.history_target | upper | replace('-', '_') | replace('.', '_') }}{% else %}{{ model.name | upper }}_HIST_NONE{% endif %};
+{% endif %}
                 (*out_count)++;
             }
             break;  /* W3C 3.13: preemption — first match in this state wins */
@@ -864,6 +883,88 @@ static bool process_transition({{ model.name }}_t *sm,
     return false;
 }
 
+{% if model.has_history_states %}
+/* W3C SCXML 3.10: snapshot every history state whose parent is exiting.
+   For each `<history>` child of an exiting parent, capture either the
+   parent's active immediate child (shallow) or the parent's active
+   leaf descendants (deep). Mirrors cpp HistoryHelper::captureHistory.
+   Called before the exit loop applies bit-clears so the active bitmap
+   still reflects the pre-exit configuration. The `_recorded` flag flips
+   to `true` even when the captured bitmap is empty — that is what
+   distinguishes "never visited" (default-target replay) from "visited
+   but currently empty" (restore-as-empty), per W3C 3.10. */
+static void capture_histories({{ model.name }}_t *sm, uint32_t exit_union) {
+    {% for hid, info in model.history_states | dictsort %}
+    {% set parent_enum = model.name | upper ~ '_STATE_' ~ (info.parent | upper | replace('-', '_') | replace('.', '_')) %}
+    /* <history id="{{ hid }}" type="{{ info.type }}"> child of {{ info.parent }} */
+    if ((exit_union & state_bit({{ parent_enum }})) != 0u
+        && config_in(sm->active, {{ parent_enum }})) {
+        uint32_t snap = 0u;
+        for (uint32_t i = 0u; i < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++i) {
+            if ((sm->active & ((uint32_t)1u << i)) == 0u) continue;
+            {{ model.name }}_state_t s = ({{ model.name }}_state_t)i;
+            if (s == {{ parent_enum }}) continue;
+            {% if info.type == 'shallow' %}
+            /* shallow: capture the parent's active immediate child only.
+               Compound-state semantics guarantee at most one such child;
+               <parallel> would relax that to all region children but the
+               first parallel+history fixture forces the generalisation. */
+            bool _hp;
+            {{ model.name }}_state_t _p = state_get_parent(s, &_hp);
+            if (_hp && _p == {{ parent_enum }}) {
+                snap |= state_bit(s);
+            }
+            {% else %}
+            /* deep: capture every active descendant that has no further
+               active children (= currently a leaf in the active config).
+               enter_state_recursive's config_enter_chain re-establishes
+               the ancestor bits on restore, so storing leaves alone is
+               sufficient. */
+            if (!is_descendant_of(s, {{ parent_enum }})) continue;
+            bool has_active_child = false;
+            for (uint32_t c = 0u; c < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++c) {
+                if (c == i || (sm->active & ((uint32_t)1u << c)) == 0u) continue;
+                bool _hp;
+                {{ model.name }}_state_t _p = state_get_parent(({{ model.name }}_state_t)c, &_hp);
+                if (_hp && _p == s) { has_active_child = true; break; }
+            }
+            if (!has_active_child) snap |= state_bit(s);
+            {% endif %}
+        }
+        sm->policy.history_{{ hid }}_snapshot = snap;
+        sm->policy.history_{{ hid }}_recorded = true;
+    }
+    {% endfor %}
+}
+
+/* W3C SCXML 3.10: enter a history pseudo-state — restore the recorded
+   snapshot if present, otherwise enter the default transition target.
+   Mirrors cpp HistoryHelper::buildEntryChain. enter_state_recursive is
+   idempotent so any ancestor bits already set by an earlier transition
+   are not double-fired. The history's default transition body (the
+   `<transition>` children's executable content per W3C 3.10) is
+   deferred to the first fixture forcing it (test579/test580); only the
+   default `target=...` is honoured here. */
+static void enter_history_state({{ model.name }}_t *sm, {{ model.name }}_history_t hid) {
+    switch (hid) {
+    {% for hid, info in model.history_states | dictsort %}
+    case {{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }}:
+        if (sm->policy.history_{{ hid }}_recorded) {
+            for (uint32_t i = 0u; i < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++i) {
+                if ((sm->policy.history_{{ hid }}_snapshot & ((uint32_t)1u << i)) == 0u) continue;
+                enter_state_recursive(sm, ({{ model.name }}_state_t)i);
+            }
+        } else {
+            enter_state_recursive(sm, {{ model.name | upper }}_STATE_{{ info.default_target | upper | replace('-', '_') | replace('.', '_') }});
+        }
+        break;
+    {% endfor %}
+    default:
+        break;
+    }
+}
+{% endif %}
+
 /* W3C SCXML App.D.2: Microstep execution.
    - exit:  union of every selected transition's exit_set, walked in
             reverse enum-value order (= reverse doc-order proxy) so the
@@ -896,6 +997,11 @@ static void handle_microstep({{ model.name }}_t *sm,
     for (uint8_t i = 0u; i < count; ++i) {
         exit_union |= list[i].exit_set;
     }
+{% if model.has_history_states %}
+    /* W3C SCXML 3.10: snapshot history states before exit clears any
+       bits — capture sees the pre-exit active configuration. */
+    capture_histories(sm, exit_union);
+{% endif %}
     for (uint32_t bit = (uint32_t){{ model.name | upper }}_STATE_COUNT; bit > 0u; --bit) {
         {{ model.name }}_state_t s = ({{ model.name }}_state_t)(bit - 1u);
         if ((exit_union & state_bit(s)) == 0u) {
@@ -941,7 +1047,15 @@ static void handle_microstep({{ model.name }}_t *sm,
         if (list[i].is_targetless) {
             continue;
         }
+{% if model.has_history_states %}
+        if (list[i].history_target != {{ model.name | upper }}_HIST_NONE) {
+            enter_history_state(sm, list[i].history_target);
+        } else {
+            enter_state_recursive(sm, list[i].target);
+        }
+{% else %}
         enter_state_recursive(sm, list[i].target);
+{% endif %}
     }
 }
 
