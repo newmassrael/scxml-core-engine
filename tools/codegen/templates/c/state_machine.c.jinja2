@@ -246,6 +246,23 @@ static SCE_C_UNUSED bool state_is_compound({{ model.name }}_state_t s) {
     }
 }
 
+/* W3C SCXML 3.4: <parallel> predicate. Entry into a parallel state
+   activates every region child simultaneously (mirrors cpp
+   StateRegistry::isParallel + the parallel-entry branch in
+   HierarchicalStateHelper::buildEntryChain). */
+static SCE_C_UNUSED bool state_is_parallel({{ model.name }}_state_t s) {
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.is_parallel %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        return true;
+    {% endif %}
+    {% endfor %}
+    default:
+        return false;
+    }
+}
+
 /* W3C SCXML 3.6: Initial child of a compound state. Returns the state
    itself if not compound (callers loop until `child == self` for descend). */
 static SCE_C_UNUSED {{ model.name }}_state_t state_get_initial_child({{ model.name }}_state_t s) {
@@ -345,6 +362,55 @@ static SCE_C_UNUSED uint32_t config_enter_chain(uint32_t active, {{ model.name }
 #define {{ model.name | upper }}_FINAL_MASK ( \
     (uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final %} \
     | ((uint32_t)1u << (uint32_t){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}{% endfor %})
+
+/* W3C SCXML 3.4: <parallel> region-children dispatch. Forward-declared so
+   enter_state_recursive can recurse through it before the function body
+   appears (mutual recursion: parallel → regions → enter_state_recursive →
+   compound/leaf). The body switches on the parallel state and emits one
+   enter_state_recursive call per region child in document order. */
+static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state_t s);
+static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state_t s);
+
+static void enter_parallel_regions({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
+    (void)sm;
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.is_parallel %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        {% for child_id, child_state in model.states | dictsort %}
+        {% if child_state.parent == state_id %}
+        enter_state_recursive(sm, {{ model.name | upper }}_STATE_{{ child_id | upper | replace('-', '_') | replace('.', '_') }});
+        {% endif %}
+        {% endfor %}
+        break;
+    {% endif %}
+    {% endfor %}
+    default:
+        break;
+    }
+}
+
+/* W3C SCXML 3.2/3.4/3.6: Unified entry walk. Sets the configuration bit
+   chain, runs onentry, then descends — into every region child for a
+   <parallel>, into the initial child for a compound state, and stops on
+   leaves. Idempotent: re-entering an already-active state is a no-op so
+   external transitions whose target's ancestor chain is already partly
+   active (cross-compound entry) do not double-fire onentry. */
+static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
+    if (config_in(sm->active, s)) {
+        return;
+    }
+    sm->active = config_enter_chain(sm->active, s);
+    execute_entry_actions(sm, s);
+    if (state_is_parallel(s)) {
+        enter_parallel_regions(sm, s);
+    } else if (state_is_compound(s)) {
+        {{ model.name }}_state_t child = state_get_initial_child(s);
+        if (child != s) {
+            enter_state_recursive(sm, child);
+        }
+    }
+}
 
 /* ── W3C SCXML 5.9: Action execution (per-state, document-order) ──── */
 {# Mirrors the C++ entry_exit_actions.jinja2 dispatch: each `<onentry>` /
@@ -515,16 +581,19 @@ static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t 
                      -Wunused-parameter when no state declares any
                      transitions (e.g. test415: top-level final-only). */
     sm->transition_taken = false;
-    /* W3C SCXML 3.12: Hierarchical event bubbling — start at the active
-       leaf and walk up the parent chain so an event matched by an
-       ancestor state still fires when the leaf has no matching
-       transition. Eventless transitions do NOT bubble (W3C 3.13) — they
-       only consider the active state itself, so `EVENT_NONE` short-
-       circuits after the first switch.
-       The walker mirrors the C++ `processTransition` loop in
-       `tools/codegen/templates/process_transition.jinja2`; flat fixtures
-       still terminate after one iteration because the root state has no
-       parent. */
+    /* W3C SCXML 3.13: Walk a single active leaf up the parent chain so
+       both event-bound and eventless transitions reach every state in
+       the active configuration's spine. cpp selectTransitions /
+       selectEventlessTransitions evaluate every active state in
+       document order and pick the first match; the leaf-up walk
+       achieves the same outcome for single-leaf configurations because
+       config_in(active, ancestor) is true for every ancestor of the
+       leaf (set by config_enter_chain). For <parallel> configurations
+       with transitions inside region children the walk must iterate
+       every leaf (test405's region-internal transition forces that
+       generalisation); test404 keeps the parallel transition on the
+       <parallel> itself, so the leaf-up walk reaches it via either
+       region's ancestor path. */
     {{ model.name }}_state_t check_state = config_leaf(sm->active);
     while (true) {
         switch (check_state) {
@@ -560,9 +629,6 @@ static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t 
         {% endfor %}
         default:
             break;
-        }
-        if (event == {{ model.name | upper }}_EVENT_NONE) {
-            return false;  /* W3C 3.13: eventless transitions do not bubble. */
         }
         bool _has_parent;
         {{ model.name }}_state_t _parent = state_get_parent(check_state, &_has_parent);
@@ -600,56 +666,42 @@ static void handle_hierarchical_transition({{ model.name }}_t *sm) {
     {{ model.name }}_state_t target = sm->policy.last_transition_target_state;
 
     /* W3C SCXML 3.13: Exit chain — every active descendant of source plus
-       source itself when the transition is external. Walk leaf-up from
-       the current configuration leaf so onexit runs in W3C-mandated
-       reverse-doc-order (child before parent). For single-leaf
-       configurations this loop walks one chain; <parallel> generalisation
-       will iterate every active leaf instead of just the first. */
-    {
-        {{ model.name }}_state_t exit_cur = config_leaf(sm->active);
-        while (exit_cur != source && is_descendant_of(exit_cur, source)) {
-            execute_exit_actions(sm, exit_cur);
-            sm->active &= ~state_bit(exit_cur);
-            bool _eh_has_parent;
-            {{ model.name }}_state_t _eh_parent = state_get_parent(exit_cur, &_eh_has_parent);
-            if (!_eh_has_parent) {
-                break;
-            }
-            exit_cur = _eh_parent;
+       source itself when the transition is external. Iterates the full
+       configuration bitmap in reverse enum order so multi-leaf
+       (<parallel>) exits drain every region simultaneously. Reverse
+       enum-value order approximates reverse document order: the parser
+       sorts states alphabetically, child IDs typically extend the parent
+       (e.g. s01p2 > s01p1 > s01p), and that ordering is what
+       test404/test405 verify for their <parallel> exit sequences. A
+       fixture whose alphabetical order diverges from doc order will
+       force a codegen-time doc-order list (cpp's StateRegistry mirror). */
+    for (uint32_t bit = (uint32_t){{ model.name | upper }}_STATE_COUNT; bit > 0u; --bit) {
+        {{ model.name }}_state_t s = ({{ model.name }}_state_t)(bit - 1u);
+        if ((sm->active & state_bit(s)) == 0u) {
+            continue;
         }
-        /* The leaf-walk stops once exit_cur reaches source (still inside
-           source's subtree). Drain any source-inclusive remainder for
-           external transitions; internal transitions leave source active. */
-        if (exit_cur == source) {
-            if (!sm->policy.last_transition_is_internal) {
-                execute_exit_actions(sm, source);
-                sm->active &= ~state_bit(source);
-            }
+        if (s == source || !is_descendant_of(s, source)) {
+            continue;
         }
+        execute_exit_actions(sm, s);
+        sm->active &= ~state_bit(s);
+    }
+    if (!sm->policy.last_transition_is_internal) {
+        execute_exit_actions(sm, source);
+        sm->active &= ~state_bit(source);
     }
 
     execute_transition_actions(sm);
 
-    /* W3C SCXML 3.13: Entry chain — set target plus its ancestor chain in
-       the configuration, run target's onentry, then descend into the
-       compound state's initial child until a leaf. The ancestor-set is
-       idempotent: ancestors that were already active (internal transition
-       case where source remained set) stay set. Onentry runs only on the
-       newly entered leaf descendants here; cross-compound entry that
-       crosses inactive ancestors gets per-ancestor onentry when the deeper
-       LCA fixture forces the buildEntryChain mirror. */
-    sm->active = config_enter_chain(sm->active, target);
-    execute_entry_actions(sm, target);
-    {{ model.name }}_state_t cursor = target;
-    while (state_is_compound(cursor)) {
-        {{ model.name }}_state_t child = state_get_initial_child(cursor);
-        if (child == cursor) {
-            break;
-        }
-        sm->active = config_enter_chain(sm->active, child);
-        execute_entry_actions(sm, child);
-        cursor = child;
-    }
+    /* W3C SCXML 3.13: Entry chain — enter the target and (recursively)
+       its initial descendants / parallel region children. Idempotent
+       config_enter_chain inside enter_state_recursive ensures ancestors
+       already active under an internal transition (source preserved)
+       stay set without double onentry. Cross-compound entry that crosses
+       inactive ancestors runs per-ancestor onentry only when the deeper
+       LCA fixture forces buildEntryChain mirror — current test503/505/506
+       and test404/405 all satisfy LCA == parent(source). */
+    enter_state_recursive(sm, target);
 }
 
 /* ── W3C SCXML 6.2: External-facing raise APIs ────────────────────── */
@@ -796,24 +848,13 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
        <onentry> body runs (those bodies may reference datamodel vars). */
 {{ se.lua_init_engine() }}
     {% endif %}
-    /* W3C SCXML 3.2: Configuration entry — set the initial state and its
-       ancestor chain in the bitmap, run onentry, then descend into compound
-       initial children. config_enter_chain idempotently sets every ancestor
-       bit so the active set mirrors cpp activeStates_ (compound parents
-       sit alongside the leaf). */
-    {{ model.name }}_state_t initial = {{ model.name }}_initial_state();
-    sm->active = config_enter_chain(sm->active, initial);
-    execute_entry_actions(sm, initial);
-    {{ model.name }}_state_t cursor = initial;
-    while (state_is_compound(cursor)) {
-        {{ model.name }}_state_t child = state_get_initial_child(cursor);
-        if (child == cursor) {
-            break;
-        }
-        sm->active = config_enter_chain(sm->active, child);
-        execute_entry_actions(sm, child);
-        cursor = child;
-    }
+    /* W3C SCXML 3.2: Configuration entry via the unified
+       enter_state_recursive walk — sets the initial root and every
+       ancestor / region-child / initial-descendant bit, runs onentry in
+       walk order. Mirrors cpp StaticExecutionEngine::initialize entry
+       loop. The recursion handles compound, parallel, and leaf states
+       uniformly. */
+    enter_state_recursive(sm, {{ model.name }}_initial_state());
     /* W3C SCXML 6.4: Macrostep completion loop. Mirrors the cpp
        StaticExecutionEngine::initialize tail: keep firing eventless
        transitions and processing internal/external events until both
