@@ -362,31 +362,25 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.content and not action.contentexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 5.10 + 6.2 + B.2 (test179): static-event with
-               inline `<content>` (no `expr` attribute), no `target`
-               (external queue). The `<content>` body is a single textual
-               value — cpp `actions/send.jinja2` lines 643-647 routes it
-               through `EventDataHelper::jsonStringToScriptValue`, which
-               attempts JSON parse and falls back to a string ScriptValue.
-               C11 emits the body as a Lua expression (`to_lua_expr` filter)
-               so `<content>123</content>` lands as the lua number 123 on
-               `_pending_donedata` — matches cpp's typed-number path for
-               numeric literal content (test179 cond `_event.data == 123`
-               compares lua number to JS number after the script-engine
-               carries the value through verbatim).
-
-               Failure modes: non-expression text (e.g. `<content>this is
-               a string</content>`, test562) makes the lua chunk fail to
-               compile and `lua_eval_donedata_content_expr` raises
-               `error.execution` per W3C 5.5's content-eval-failure path.
-               That covers test179's success path; test562/578 (string and
-               JSON body shapes) need a different emit (string-passthrough
-               vs JSON parse) and lift with their first force fixture.
-               Until then the failure is observable as `error.execution`
-               on the queue, which makes the silent-drop drift impossible.
+            /* W3C SCXML 5.10 + 6.2 + B.2 (test179, test562, test578):
+               static-event with inline `<content>` (no `expr`), no `target`
+               (external queue). cpp `actions/send.jinja2` lines 643-647
+               route the body through `EventDataHelper::jsonStringToScriptValue`
+               — best-effort JSON parse with raw-string fallback. C11
+               mirrors via `lua_send_content_literal`: the body lands in a
+               Lua [[long-string]], a JSON-key-syntax shim turns
+               `"key":` into `["key"]=`, then `pcall(load(...))` attempts
+               evaluation. On success the result lands on
+               `_pending_donedata` (test179 numeric `123`, test578 JSON
+               object); on failure the body is space-normalized per W3C
+               B.2 and used as the string payload (test562 multi-line
+               text). No `error.execution` is raised — literal `<content>`
+               is best-effort by spec; only `<content expr="...">`
+               (handled by the contentexpr arm below) raises on eval
+               failure.
 
                Slot collision with donedata: same as the params arm above. */
-            {{ se.lua_eval_donedata_content_expr(action.content) }}
+            {{ se.lua_send_content_literal(action.content) }}
             {{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};

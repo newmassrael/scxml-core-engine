@@ -416,6 +416,41 @@
     }
 {% endmacro %}
 
+{# W3C SCXML 5.10 + 6.2 (test179, test562, test578): best-effort literal
+   `<send><content>BODY</content></send>` evaluator. Mirrors cpp
+   `EventDataHelper::jsonStringToScriptValue` (`sce/src/common/EventDataHelper.cpp:122-139`)
+   — cpp tries JSON parse on bodies that begin with a JSON-eligible
+   character (`{ [ " t f n digit -`) and falls back to the raw string
+   otherwise. The C11 emit follows the same shape inline:
+     1. capture the body as a Lua [[long-string]] (preserves embedded
+        whitespace/newlines, no escape gymnastics)
+     2. apply a JSON→Lua key-syntax shim (`"key":` → `["key"]=`) so
+        a JSON object/array becomes a valid Lua table literal
+     3. attempt `load("return (" .. _try .. ")")` + `pcall` — succeeds
+        for numeric/boolean/JSON-shape bodies (test179 numeric, test578
+        JSON object); the table/value lands on `_pending_donedata`
+     4. on parse failure, W3C 5.10 ECMAScript datamodel space-normalize
+        the body (collapse `%s+` to single space, trim) and use it as
+        the string payload (test562 plain text, JSON-with-syntax-error
+        also routes here). No `error.execution` raise — W3C distinguishes
+        literal `<content>` (best-effort parse, never fails) from
+        `<content expr="...">` (expression eval, raises on failure).
+   The body is required not to contain `]]` (would close the long
+   string prematurely); the W3C corpus has no such fixture, and the
+   first force fixture lifts the level via `[==[...]==]`. #}
+{% macro lua_send_content_literal(content) %}
+    (void)luaL_dostring(sm->L,
+        "do "
+          "local _c = [[{{ content | escape_c }}]]; "
+          "local _try = _c:gsub('\"([^\"]*)\"%s*:', '[\"%1\"]='); "
+          "local _fn = load('return (' .. _try .. ')'); "
+          "local _ok = false; local _val = nil; "
+          "if _fn then _ok, _val = pcall(_fn) end; "
+          "if _ok then _pending_donedata = _val "
+          "else _pending_donedata = _c:gsub('%s+', ' '):match('^%s*(.-)%s*$') end "
+        "end");
+{% endmacro %}
+
 {# W3C SCXML 5.7: evaluate one `<param name=N expr=X/>` (or location=X) and
    set `_pending_donedata.N = (X)`. The caller emits `_pending_donedata = {}`
    once before iterating so the table exists. On chunk failure W3C 5.7
