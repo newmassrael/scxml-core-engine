@@ -459,8 +459,18 @@ static void enter_parallel_regions({{ model.name }}_t *sm, {{ model.name }}_stat
    After the chain runs, descend: a <parallel> activates every region,
    a compound state descends through state.initial. Idempotent — the
    walk-up halts at the first active ancestor, so re-entry into an
-   already-active subtree does not double-fire onentry. Mirrors cpp
-   HierarchicalStateHelper::buildEntryChain. */
+   already-active subtree does not double-fire onentry.
+
+   W3C SCXML 3.4 parallel-sibling re-entry: when an external transition
+   inside a parallel region exits all sibling regions (compute_exit_set
+   returns active descendants of the parallel LCA), re-entering the
+   target alone leaves the cousin regions inactive. Whenever an entered
+   state's parent is an already-active <parallel>, dispatch the parent's
+   region children — enter_state_recursive is idempotent on already-active
+   regions, so siblings that were never exited are no-ops.
+
+   Mirrors cpp HierarchicalStateHelper::buildEntryChain followed by the
+   StaticExecutionEngine::executeMicrostep parallel re-entry pass. */
 static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
     if (config_in(sm->active, s)) {
         return;
@@ -483,6 +493,14 @@ static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state
         {{ model.name }}_state_t e = chain[i - 1u];
         sm->active |= state_bit(e);
         execute_entry_actions(sm, e);
+    }
+    {
+        bool has_parent;
+        {{ model.name }}_state_t parent = state_get_parent(s, &has_parent);
+        if (has_parent && state_is_parallel(parent)
+            && config_in(sm->active, parent)) {
+            enter_parallel_regions(sm, parent);
+        }
     }
     if (state_is_parallel(s)) {
         enter_parallel_regions(sm, s);
@@ -657,7 +675,7 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
                 _ti->source = check_state;
                 _ti->target = {% if trans.target %}{{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }}{% else %}check_state{% endif %};
                 _ti->index = (uint16_t){{ trans.transition_index }}u;
-                _ti->is_internal = {{ 'true' if trans.type == 'internal' else 'false' }};
+                _ti->is_internal = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
                 _ti->is_targetless = {{ 'true' if not trans.target else 'false' }};
                 _ti->exit_set = compute_exit_set(sm->active, _ti->source, _ti->target,
                                                  _ti->is_internal, _ti->is_targetless);
@@ -677,19 +695,61 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
    detection then reduces to bitmap intersection plus a small parallel-
    ancestor scan, no per-pair LCA recomputation. #}
 
-/* W3C SCXML App.D.2: exit set per transition (cpp computeStatesToExit mirror).
-   - targetless (W3C 5.9.2): empty — body fires, no state change
-   - internal-to-descendant (W3C 3.13): {active descendants of source}.
-     Source stays active (re-runs onentry on the target descendant), but
-     intermediate active descendants exit and re-enter — test505's
-     `<transition event="foo" type="internal" target="s11">` exits s11
-     so its onexit assigns Var2 each pass.
-   - external (or internal-but-not-to-descendant): {source} ∪ {active
-     descendants of source}. Exact when LCA(source, target) ==
-     parent(source) — the carve-out covers every currently registered
-     fixture (test404/405, test503/505/506, test403b). A cross-compound
-     asymmetric transition lands the full LCA walk alongside cpp's
-     HierarchicalStateHelper::findLCA mirror. */
+/* W3C SCXML 3.12: Least Common Ancestor (cpp HierarchicalAlgorithms::findLCA
+   mirror). Builds state1's parent chain, then walks state2 up checking each
+   step against the chain. Equal states are their own LCA. Returns
+   has_lca=false when the two states share no common ancestor (top-level
+   sibling pair under an implicit root). */
+static SCE_C_UNUSED {{ model.name }}_state_t find_lca({{ model.name }}_state_t s1,
+                                                       {{ model.name }}_state_t s2,
+                                                       bool *out_has) {
+    if (s1 == s2) {
+        *out_has = true;
+        return s1;
+    }
+    {{ model.name }}_state_t ancestors[{{ model.name | upper }}_STATE_COUNT];
+    uint32_t anc_count = 0u;
+    bool hp = false;
+    {{ model.name }}_state_t cur = state_get_parent(s1, &hp);
+    while (hp && anc_count < (uint32_t){{ model.name | upper }}_STATE_COUNT) {
+        ancestors[anc_count++] = cur;
+        cur = state_get_parent(cur, &hp);
+    }
+    cur = s2;
+    while (true) {
+        for (uint32_t k = 0u; k < anc_count; ++k) {
+            if (ancestors[k] == cur) {
+                *out_has = true;
+                return cur;
+            }
+        }
+        bool has_parent;
+        {{ model.name }}_state_t parent = state_get_parent(cur, &has_parent);
+        if (!has_parent) {
+            break;
+        }
+        cur = parent;
+    }
+    *out_has = false;
+    return s1;
+}
+
+/* W3C SCXML App.D.2: exit set per transition (cpp ParallelTransitionHelper::
+   computeStatesToExit mirror). The bitmap returned is the actual set of
+   states that will exit when this transition fires, and it doubles as the
+   conflict-resolution input — bigger sets mean bigger intersections, so
+   removeConflictingTransitions catches every parallel-ancestor conflict
+   without a separate ancestor-chain pass.
+   - targetless (W3C 5.9.2): empty — body fires, no state change.
+   - internal-to-compound-descendant (W3C 3.13): empty. Source stays
+     active; intermediate active descendants exit/re-enter via the entry
+     phase walk (test505's `<transition type="internal" target="s11">`
+     exits s11 so its onexit assigns Var2 each pass).
+   - else: active descendants of LCA(source, target) — the LCA itself
+     is included only when source==LCA (external self-loop). Cross-
+     compound asymmetric transitions (target not a sibling of source) and
+     parallel-region transitions both fall through this path, so test403c
+     and test505/506 share one implementation. */
 static SCE_C_UNUSED uint32_t compute_exit_set(uint32_t active,
                                               {{ model.name }}_state_t source,
                                               {{ model.name }}_state_t target,
@@ -700,19 +760,37 @@ static SCE_C_UNUSED uint32_t compute_exit_set(uint32_t active,
     bool internal_to_descendant = is_internal
         && state_is_compound(source) && !state_is_parallel(source)
         && is_descendant_of(target, source);
-    uint32_t exit_set = 0u;
-    if (!internal_to_descendant) {
-        exit_set |= state_bit(source);
+    {{ model.name }}_state_t lca;
+    bool has_lca;
+    if (internal_to_descendant) {
+        lca = source;
+        has_lca = true;
+    } else {
+        lca = find_lca(source, target, &has_lca);
     }
+    if (!has_lca) {
+        /* Cross-hierarchy transition (source and target are top-level
+           siblings under an implicit root) — exit the entire active
+           configuration. cpp StaticExecutionEngine::handleHierarchicalTransition
+           walks oldState (= currentState_, the deepest active leaf) up
+           to the root; the bitmap equivalent is `active` itself, since
+           every active state is on some leaf's ancestor chain. */
+        return active;
+    }
+    bool should_exit_source = !is_internal && (source == lca);
+    uint32_t exit_set = 0u;
     for (uint32_t i = 0u; i < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++i) {
         if ((active & ((uint32_t)1u << i)) == 0u) {
             continue;
         }
         {{ model.name }}_state_t s = ({{ model.name }}_state_t)i;
-        if (s == source) {
+        if (s == lca) {
+            if (should_exit_source) {
+                exit_set |= state_bit(s);
+            }
             continue;
         }
-        if (is_descendant_of(s, source)) {
+        if (is_descendant_of(s, lca)) {
             exit_set |= state_bit(s);
         }
     }
@@ -1042,16 +1120,13 @@ static void enter_history_state({{ model.name }}_t *sm, {{ model.name }}_history
    Mirrors cpp StaticExecutionEngine::executeMicrostep +
    ParallelTransitionHelper::computeStatesToExit / sortTransitionsBySource /
    sortTransitionsByTarget, inlined into one function per the T3 lock-in.
-
-   LCA carve-out: every currently registered fixture has
-   LCA(source, target) == parent(source) so compute_exit_set's
-   {source} ∪ {active descendants of source} formulation is exact.
-   Cross-compound asymmetric transitions land the full LCA walk
-   alongside the cpp HierarchicalStateHelper::findLCA mirror. Sort keys
-   use enum-value order — alphabetic sort is the doc-order proxy across
-   every currently registered fixture (s01p > s01p1 > s01p11 ordering);
-   a fixture whose alphabetic order diverges from doc-order will force
-   a codegen-time doc-order table (cpp's StateRegistry mirror). */
+   compute_exit_set is the LCA-based cpp mirror so the pre-collected
+   exit_set bitmap drives both conflict resolution and the actual exit
+   walk in one pass. Sort keys use enum-value order — alphabetic sort
+   is the doc-order proxy across every currently registered fixture
+   (s01p > s01p1 > s01p11 ordering); a fixture whose alphabetic order
+   diverges from doc-order will force a codegen-time doc-order table
+   (cpp's StateRegistry mirror). */
 static void handle_microstep({{ model.name }}_t *sm,
                              {{ model.name }}_transition_info_t *list,
                              uint8_t count) {

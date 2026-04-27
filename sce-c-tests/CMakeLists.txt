@@ -79,6 +79,7 @@ sce_generate_static_w3c_c_test(444 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(448 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML B.2: ECMAScript single global scope — state-local <data> declared in a child / parallel sibling is reachable from a parent / sibling cond (early binding makes both var1 and var2 globally bound at init)
 sce_generate_static_w3c_c_test(329 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: none of the four system variables (_sessionid / _event / _name / _ioprocessors) can be modified — chained Var{n} == _systemvar conds verify the binding survives an illegal <assign>
 sce_generate_static_w3c_c_test(346 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.10: every illegal <assign> to a read-only system variable raises error.execution — chain across all four covers the codegen-time reserved-name guard
+sce_generate_static_w3c_c_test(403c "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML App.D.2: cross-compound preemption via parallel-ancestor — p0s3→fail and s0→fail are dropped because their LCA-walk exit sets include the parallel ancestor p0; targetless transitions emit is_internal=true so the conflict-resolution self-loop exemption keeps p0s4's wildcard alive across both microsteps
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
