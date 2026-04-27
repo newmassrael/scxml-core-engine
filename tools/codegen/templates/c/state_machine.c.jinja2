@@ -604,6 +604,12 @@ static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state
    `std::function` wrapper, no EntryExitHelper delegation) — T3 lock-in
    per c11_design_decisions.md.
 
+   The case is emitted whenever a state has either `on_entry_blocks` or
+   `<datamodel>` under late binding (W3C 5.3): late-binding init must run
+   before any onentry markup, mirroring cpp `entry_exit_actions.jinja2:79-90`
+   where `dm.initialize_state_datamodel` is invoked at the top of the
+   switch case. States with neither contribute no case (default break).
+
    The macro splits into per-action-type `c/actions/<type>.jinja2`
    includes only when a second consumer appears; until then keeping all
    variants in one local macro keeps the diff small and the activation
@@ -612,8 +618,16 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
     (void)sm;
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
-    {% if state.on_entry_blocks %}
+    {% set has_late_init = state.datamodel and model.binding == 'late' %}
+    {% if state.on_entry_blocks or has_late_init %}
     case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+        {% if has_late_init %}
+        /* W3C SCXML 5.3: late-binding state-local <datamodel> init runs
+           before any onentry markup. Mirrors cpp
+           `entry_exit_actions.jinja2:79-90` (dm.initialize_state_datamodel
+           invoked at the top of the switch case before on_entry_blocks). */
+        {{ se.lua_init_state_datamodel(state, state_id) }}
+        {% endif %}
         {% for block in state.on_entry_blocks %}
         /* Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }} */
         {% for action in block %}

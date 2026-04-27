@@ -127,10 +127,11 @@
            state-local <datamodel> variables initialise at startup so that any
            state can read them before its own onentry runs. Mirrors the cpp
            scriptengine_helpers.jinja2 early-binding loop (model.states |
-           dictsort + state.datamodel guard). Late binding emit is deferred
-           until the first late fixture forces it (built-but-unconsumed
-           carve-out — feedback_built_but_unconsumed.md).
-           Init-failure error.execution raise is also deferred here — the
+           dictsort + state.datamodel guard). The corresponding late-binding
+           emit is in `state_machine.c.jinja2::execute_entry_actions` so that
+           the per-state init runs on entry before the onentry blocks
+           (cpp `entry_exit_actions.jinja2:79-90` mirror).
+           Init-failure error.execution raise is silent-drop here — the
            top-level loop above lifts to the rc-checked shape because
            test277 forces it, but no current fixture has a state-local
            <data> with an illegal expr. The first such fixture will lift
@@ -152,6 +153,39 @@
         {% endfor %}
         {% endif %}
     }
+{% endmacro %}
+
+{# W3C SCXML 5.3 late binding: state-local <data> variables initialise on
+   the *entry* of the owning state, before any onentry markup runs. Called
+   from `state_machine.c.jinja2::execute_entry_actions` for each state with
+   `state.datamodel and model.binding == 'late'`. Mirrors cpp
+   `datamodel_macros.jinja2::initialize_state_datamodel` invoked from
+   `entry_exit_actions.jinja2:79-90`.
+
+   First-entry-only vs idempotent re-init: cpp's helper (and the lua-direct
+   emit here) re-initialises on every entry. The cpp side has no
+   first-entry flag in `DataModelInitHelper.h`, and `executeEntryActions`
+   is called every time the state is entered. C11 mirrors that — re-entry
+   to a state with a `<datamodel>` re-evaluates the init expressions.
+
+   Init-failure semantics: silent-drop, matching the early-binding emit
+   above. cpp uses `errorCallback` to raise `error.execution`; lifting
+   both early and late state-local emits to the rc-checked shape is a
+   separate concern (no current fixture forces it; test277 only exercises
+   the top-level loop). When a fixture forces the strict semantics both
+   loops lift together. #}
+{% macro lua_init_state_datamodel(state, state_id) %}
+    {% for var in state.datamodel %}
+    {% if var.expr %}
+    /* W3C SCXML 5.3 (late): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
+    (void)luaL_dostring(sm->L,
+        "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})");
+    {% elif var.content %}
+    /* W3C SCXML 5.3 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline content. */
+    (void)luaL_dostring(sm->L,
+        "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})");
+    {% endif %}
+    {% endfor %}
 {% endmacro %}
 
 {% macro lua_destroy_engine() %}
