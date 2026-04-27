@@ -131,22 +131,39 @@
            emit is in `state_machine.c.jinja2::execute_entry_actions` so that
            the per-state init runs on entry before the onentry blocks
            (cpp `entry_exit_actions.jinja2:79-90` mirror).
-           Init-failure error.execution raise is silent-drop here — the
-           top-level loop above lifts to the rc-checked shape because
-           test277 forces it, but no current fixture has a state-local
-           <data> with an illegal expr. The first such fixture will lift
-           this loop's emit to mirror the top-level shape verbatim. #}
+           Init-failure error.execution raise mirrors cpp
+           `DataModelInitHelper::initializeVariableFromExpr` errorCallback
+           (datamodel_macros.jinja2:22-24 lambda → engine.raise). The
+           top-level loop above and this state-local loop both lift to the
+           rc-checked shape (spec-mirror parity carve-out per
+           feedback_built_but_unconsumed.md — reference backend's branch is
+           the contract). No current corpus fixture has a state-local <data>
+           with an illegal expr (test277 only forces top-level), but cpp
+           emits the same lambda raise for both top-level and state-local
+           loops, so silent-drop here would be coincidence-match drift. #}
         {% for state_id, state in model.states | dictsort %}
         {% if state.datamodel %}
         {% for var in state.datamodel %}
         {% if var.expr %}
         /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
-        (void)luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})");
+        if (luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
+            lua_pop(sm->L, 1);
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+        }
         {% elif var.content %}
         /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline content. */
-        (void)luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})");
+        if (luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
+            lua_pop(sm->L, 1);
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+        }
         {% endif %}
         {% endfor %}
         {% endif %}
@@ -168,22 +185,38 @@
    is called every time the state is entered. C11 mirrors that — re-entry
    to a state with a `<datamodel>` re-evaluates the init expressions.
 
-   Init-failure semantics: silent-drop, matching the early-binding emit
-   above. cpp uses `errorCallback` to raise `error.execution`; lifting
-   both early and late state-local emits to the rc-checked shape is a
-   separate concern (no current fixture forces it; test277 only exercises
-   the top-level loop). When a fixture forces the strict semantics both
-   loops lift together. #}
+   Init-failure semantics: rc-checked, mirrors cpp
+   `DataModelInitHelper::initializeVariableFromExpr` errorCallback
+   (datamodel_macros.jinja2:22-24 lambda → engine.raise(Error_execution)).
+   Spec-mirror parity carve-out per feedback_built_but_unconsumed.md — the
+   reference backend's branch IS the contract, missing it would be silent
+   semantic drift / coincidence-match. No current corpus fixture has a
+   state-local <data> with an illegal expr that drives binding="late" (only
+   test307 has the shape and is a manual test), but cpp emits the same
+   lambda raise from both early and late call sites, so the C11 macro
+   matches that 1:1 regardless of differential corpus coverage. #}
 {% macro lua_init_state_datamodel(state, state_id) %}
     {% for var in state.datamodel %}
     {% if var.expr %}
     /* W3C SCXML 5.3 (late): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}"> */
-    (void)luaL_dostring(sm->L,
-        "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})");
+    if (luaL_dostring(sm->L,
+        "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
+        lua_pop(sm->L, 1);
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
+    }
     {% elif var.content %}
     /* W3C SCXML 5.3 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline content. */
-    (void)luaL_dostring(sm->L,
-        "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})");
+    if (luaL_dostring(sm->L,
+        "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
+        lua_pop(sm->L, 1);
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
+    }
     {% endif %}
     {% endfor %}
 {% endmacro %}
