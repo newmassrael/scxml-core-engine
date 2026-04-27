@@ -43,6 +43,7 @@ static void scheduled_push({{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
                            {{ model.name }}_event_t event,
                            const char *send_id);
+static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *send_id);
 {% endif %}
 
 {# RFC §5.J.1: recursive action emitter. Mirrors the C++ tree's
@@ -580,6 +581,34 @@ static void scheduled_push({{ model.name }}_t *sm,
 {% endif %}
 {% elif action.label %}
         (void)fprintf(stderr, "{{ action.label | escape_c }}\n");
+{% endif %}
+{% elif action.type == 'cancel' %}
+        /* W3C SCXML 6.3: <cancel{% if action.sendid %} sendid="{{ action.sendid }}"{% endif %}{% if action.sendidexpr %} sendidexpr="{{ action.sendidexpr | escape_c }}"{% endif %}>
+           remove every entry from the scheduled queue whose send_id matches
+           the cancel target. cpp `actions/cancel.jinja2` calls
+           `engine.cancelEvent(...)` which routes through PullScheduler;
+           C11 inlines a stack-buffer compaction in `scheduled_cancel` per
+           T3. Static `sendid` ships as a literal string at codegen time;
+           dynamic `sendidexpr` evaluates the expression via
+           `lua_eval_eventexpr` (consumer-agnostic to-string helper) and
+           passes the resulting buffer to the same helper, mirroring cpp's
+           script-engine path (`scriptEngine.evaluateExpression` +
+           `ScriptResultUtils::resultToString`). #error fallback for the
+           empty-shape <cancel> (no sendid, no sendidexpr) since W3C 6.3
+           requires one of them. */
+{% if action.sendid %}
+        scheduled_cancel(sm, "{{ action.sendid | escape_c }}");
+{% elif action.sendidexpr %}
+        {
+            char _cancel_buf[64];
+            bool _cancel_ok;
+{{ se.lua_eval_eventexpr(action.sendidexpr, '_cancel_buf', '64', '_cancel_ok') }}
+            if (_cancel_ok) {
+                scheduled_cancel(sm, _cancel_buf);
+            }
+        }
+{% else %}
+#error "C11 backend: <cancel> without sendid or sendidexpr is invalid per W3C SCXML 6.3 — the parser should have rejected this fixture."
 {% endif %}
 {% endif %}
 {% endmacro %}
@@ -1841,6 +1870,35 @@ static bool scheduled_pop_ready({{ model.name }}_t *sm,
     }
     sm->scheduled_queue.count--;
     return true;
+}
+
+/* W3C SCXML 6.3 (test208/210): remove every scheduled entry whose send_id
+   matches `send_id`. The cpp engine routes `<cancel>` to
+   `StaticExecutionEngine::cancelEvent` → `PullScheduler::cancelEvent`
+   (`sce/include/core/PullScheduler.h`) which iterates the std::map and
+   erases matches; C11 walks the bounded array in place per T3 lock-in.
+   Multiple entries can share a send_id (cpp guarantees uniqueness via
+   `SendHelper::generateSendId`, but a fixture-supplied static `id="foo"`
+   could repeat across a parallel region). The compaction loop tolerates
+   that — it advances `pos` only on a non-match so the buffer stays
+   contiguous. NULL or empty send_id is a no-op (matches cpp's
+   `if (sendid.empty()) return`). The action is silent on a miss, mirroring
+   the spec: W3C 6.3 doesn't require an error if the send_id is unknown
+   (cpp's `cancelEvent` ignores the result of `erase`). */
+static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *send_id) {
+    if (send_id == NULL || send_id[0] == '\0') {
+        return;
+    }
+    uint8_t pos = 0u;
+    for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
+        if (strcmp(sm->scheduled_queue.buf[i].send_id, send_id) != 0) {
+            if (pos != i) {
+                sm->scheduled_queue.buf[pos] = sm->scheduled_queue.buf[i];
+            }
+            pos++;
+        }
+    }
+    sm->scheduled_queue.count = pos;
 }
 {% endif %}
 
