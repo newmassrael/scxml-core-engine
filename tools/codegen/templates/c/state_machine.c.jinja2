@@ -237,6 +237,41 @@ static void scheduled_push({{ model.name }}_t *sm,
             }
 {% endfor %}
         }
+{% elif action.type == 'log' %}
+        /* W3C SCXML 4.4: <log{% if action.label %} label="{{ action.label }}"{% endif %}{% if action.expr %} expr="{{ action.expr | escape_c }}"{% endif %}>
+           Logging is observable side-effect only — the W3C spec mandates no
+           statechart effect, just developer-facing output. Mirrors cpp
+           `actions/log.jinja2`: success path emits the evaluated expression
+           via the host log sink (fprintf to stderr, the C11 equivalent of
+           cpp's `SCE_LOG_INFO`); evaluation failure emits an error line so
+           a fixture's log output remains diagnosable. Read-from-_event
+           metadata fields (`_event.raw`, `_event.invokeid`) match cpp's
+           TODO carve-out — comment-only emit until the first reader
+           fixture lifts both backends together. */
+{% if action.expr %}
+{% if '_event.raw' in action.expr or '_event.invokeid' in action.expr %}
+        /* TODO: log {{ action.expr }} — _event.raw / _event.invokeid carve-out
+           (mirrors cpp `actions/log.jinja2` line 6-7). */
+{% elif model.needs_script_engine %}
+        {
+            char _log_buf[256];
+            bool _log_ok;
+{{ se.lua_eval_eventexpr(action.expr, '_log_buf', '256', '_log_ok') }}
+            if (_log_ok) {
+                (void)fprintf(stderr,
+                    {% if action.label %}"{{ action.label | escape_c }}: %s\n"{% else %}"%s\n"{% endif %},
+                    _log_buf);
+            } else {
+                (void)fprintf(stderr,
+                    "Failed to evaluate log expression: {{ action.expr | escape_c }}\n");
+            }
+        }
+{% else %}
+#error "C11 backend: <log expr=...> without a script engine has no fixture in the W3C corpus — extend emit_action's log branch with the first fixture forcing it."
+{% endif %}
+{% elif action.label %}
+        (void)fprintf(stderr, "{{ action.label | escape_c }}\n");
+{% endif %}
 {% endif %}
 {% endmacro %}
 
