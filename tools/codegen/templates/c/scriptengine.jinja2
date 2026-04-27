@@ -106,6 +106,40 @@
            swaps the per-event payload for a lua-side stash to avoid widening
            every event_with_meta_t entry with a typed-value union. */
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+        {% if model.needs_donedata_helper %}
+        /* W3C SCXML 5.7 (test343): donedata `<param>` evaluation has to
+           detect ECMAScript ReferenceError semantics — `param.location`
+           pointing at an undeclared identifier must raise error.execution
+           per W3C 5.7. Lua's native semantics return `nil` for undeclared
+           globals, so we register a `_scxml_declared` table mirroring cpp
+           `LuaSessionContext::declaredVars` (see `LuaEngine.cpp:99-118`,
+           `isUndeclaredIdentifier`). The donedata param evaluator inspects
+           this set together with `rawget(_G, base)` — same two-source check
+           as cpp. The set spans top-level <data> and every state-local
+           <datamodel> entry so binding mode (early / late) is irrelevant
+           to membership; the lua values are placeholder booleans because
+           only the keys are read. Emitted only for fixtures that actually
+           contain a <donedata> (the analyzer-pinned helper flag), so non-
+           donedata fixtures keep their lua init footprint unchanged. */
+        (void)luaL_dostring(sm->L,
+            "_scxml_declared = {"
+            {%- set ns = namespace(first=true) -%}
+            {%- for var in model.variables -%}
+            {%- if not ns.first %}", "{% endif -%}
+            "{{ var.id }} = true"
+            {%- set ns.first = false -%}
+            {%- endfor -%}
+            {%- for state_id, state in model.states | dictsort -%}
+            {%- if state.datamodel -%}
+            {%- for var in state.datamodel -%}
+            {%- if not ns.first %}", "{% endif -%}
+            "{{ var.id }} = true"
+            {%- set ns.first = false -%}
+            {%- endfor -%}
+            {%- endif -%}
+            {%- endfor -%}
+            "}");
+        {% endif %}
         {% for var in model.variables %}
         {% if var.expr %}
         /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr | escape_c }}">.
@@ -389,10 +423,33 @@
    Structural-error (empty location AND empty expr) is decided at codegen
    time by the caller and never reaches this macro. The chosen-expression
    precedence (location > expr) mirrors cpp's
-   `param.location if param.location else param.expr`. #}
+   `param.location if param.location else param.expr`.
+
+   ECMAScript ReferenceError detection (W3C 5.7, test343): cpp
+   `LuaEngine::evaluateExpressionInternal` (`LuaEngine.cpp:795`) detects
+   undeclared simple variables via `isUndeclaredSimpleVariable` and
+   returns `ScriptResult::createError("ReferenceError: ...")`, which
+   triggers the param-error `error.execution` raise upstream. C11 mirrors
+   that check inside the lua chunk: extract the base identifier of the
+   chosen expression (everything up to the first `.` / `[` / operator),
+   look it up in `_scxml_declared` (set up in `lua_init_engine` to mirror
+   cpp's `declaredVars`) and `rawget(_G, base)` (covers Lua standard
+   globals like `math` / `string` and any system var written via
+   `_xxx = ...`). Missing on both paths is undeclared → error → upstream
+   pcall catches it and the macro raises error.execution. The base
+   extraction uses lua's pattern `^[%a_][%w_]*` so multi-segment
+   expressions like `Var1.foo` only check the first segment, exactly
+   like cpp's `expr.substr(0, baseEnd)`. #}
 {% macro lua_eval_donedata_param_expr(param_name, chosen_expr) %}
     if (luaL_dostring(sm->L,
-        "_pending_donedata.{{ param_name }} = ({{ chosen_expr | to_lua_expr | escape_c }})") != 0) {
+        "do "
+          "local _expr = '{{ chosen_expr | escape_c }}'; "
+          "local _base = _expr:match('^[%a_][%w_]*'); "
+          "if _base and not _scxml_declared[_base] and rawget(_G, _base) == nil then "
+            "error('ReferenceError: ' .. _base .. ' is not defined') "
+          "end; "
+          "_pending_donedata.{{ param_name }} = ({{ chosen_expr | to_lua_expr | escape_c }}) "
+        "end") != 0) {
         lua_pop(sm->L, 1);
         {{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));

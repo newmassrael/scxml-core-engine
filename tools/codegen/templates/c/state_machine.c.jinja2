@@ -529,11 +529,16 @@ static SCE_C_UNUSED uint32_t config_enter_chain(uint32_t active, {{ model.name }
     return out;
 }
 
-/* W3C SCXML 5.10: codegen-time bitmask of every <final> state. Used by
-   {{ model.name }}_is_in_final_state to decide whether the configuration
-   has reached a top-level final. */
+/* W3C SCXML 3.7: codegen-time bitmask of every TOP-LEVEL <final> state.
+   `{{ model.name }}_is_in_final_state` returns true only when the
+   machine reaches a final whose parent is the SCXML root — the spec's
+   "machine completion" criterion. Compound `<final>` states (those with
+   a `state.parent`) are NOT terminal: their entry raises
+   `done.state.<parent>` (W3C SCXML 3.7) and the surrounding compound
+   carries on. Mirrors cpp `static/StaticExecutionEngine.h::isInFinalState`
+   which checks only against `Policy::isInTopLevelFinalState`. */
 #define {{ model.name | upper }}_FINAL_MASK ( \
-    (uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final %} \
+    (uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final and not state.parent %} \
     | ((uint32_t)1u << (uint32_t){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}{% endfor %})
 
 /* W3C SCXML 3.4: <parallel> region-children dispatch. Forward-declared so
