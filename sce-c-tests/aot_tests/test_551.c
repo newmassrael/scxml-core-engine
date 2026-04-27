@@ -15,10 +15,9 @@ int main(void) {
     test551_init(&sm);
     test551_run(&sm);
 
-    test551_state_t final = test551_get_current_state(&sm);
-    int rc = (final == TEST551_STATE_PASS) ? 0 : 1;
+    int rc = test551_in_state(&sm, TEST551_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test551: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test551: FAIL — active = 0x%08x\n", (unsigned)test551_active_states(&sm));
     }
     test551_destroy(&sm);
     return rc;

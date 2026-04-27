@@ -16,10 +16,9 @@ int main(void) {
     test323_init(&sm);
     test323_run(&sm);
 
-    test323_state_t final = test323_get_current_state(&sm);
-    int rc = (final == TEST323_STATE_PASS) ? 0 : 1;
+    int rc = test323_in_state(&sm, TEST323_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test323: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test323: FAIL — active = 0x%08x\n", (unsigned)test323_active_states(&sm));
     }
     test323_destroy(&sm);
     return rc;

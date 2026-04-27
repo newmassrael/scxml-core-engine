@@ -26,10 +26,9 @@ int main(void) {
     test377_init(&sm);
     test377_run(&sm);
 
-    test377_state_t final = test377_get_current_state(&sm);
-    int rc = (final == TEST377_STATE_PASS) ? 0 : 1;
+    int rc = test377_in_state(&sm, TEST377_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test377: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test377: FAIL — active = 0x%08x\n", (unsigned)test377_active_states(&sm));
     }
     test377_destroy(&sm);
     return rc;

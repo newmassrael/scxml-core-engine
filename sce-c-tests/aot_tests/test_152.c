@@ -30,10 +30,9 @@ int main(void) {
     test152_init(&sm);
     test152_run(&sm);
 
-    test152_state_t final = test152_get_current_state(&sm);
-    int rc = (final == TEST152_STATE_PASS) ? 0 : 1;
+    int rc = test152_in_state(&sm, TEST152_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test152: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test152: FAIL — active = 0x%08x\n", (unsigned)test152_active_states(&sm));
     }
     test152_destroy(&sm);
     return rc;

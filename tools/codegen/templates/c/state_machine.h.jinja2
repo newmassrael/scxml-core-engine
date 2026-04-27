@@ -37,10 +37,16 @@ extern "C" {
 #endif
 
 /* ── W3C SCXML 3.3: State enumeration ─────────────────────────────── */
+{# State enum values double as bit indices in the configuration bitmap
+   (see SM struct below). The sentinel `_STATE_COUNT` is the first value
+   past the last real state and is the array dimension for any future
+   per-state codegen-time table; today it gates the 32-state bitmap
+   width via _Static_assert at the bottom of this header.                #}
 enum {{ model.name }}_state_e {
     {% for state_name in model.states | sort %}
-    {{ model.name | upper }}_STATE_{{ state_name | upper | replace('-', '_') | replace('.', '_') }}{{ "," if not loop.last }}
+    {{ model.name | upper }}_STATE_{{ state_name | upper | replace('-', '_') | replace('.', '_') }},
     {% endfor %}
+    {{ model.name | upper }}_STATE_COUNT
 };
 typedef enum {{ model.name }}_state_e {{ model.name }}_state_t;
 
@@ -87,6 +93,11 @@ typedef struct {{ model.name }}_event_queue {
    active-state vectors join in E2-E5 as their owning fixture lands. #}
 typedef struct {{ model.name }}_policy {
     {{ model.name }}_state_t last_transition_source_state;
+    /* W3C SCXML 3.13: Target captured at process_transition match time so
+       handle_hierarchical_transition can run exit→body→entry without
+       requiring a separate `current_state` shadow (active configuration
+       lives in the bitmap `active`). Unused when last_transition_is_targetless. */
+    {{ model.name }}_state_t last_transition_target_state;
     bool last_transition_is_internal;
     bool last_transition_is_targetless;
     /* W3C SCXML 3.13: Transition body actions are deferred to
@@ -104,7 +115,17 @@ typedef struct {{ model.name }}_policy {
    instance struct (the C++ template instantiates a per-fixture base
    class anyway, so there is no shared base layout to share).             #}
 typedef struct {{ model.name }} {
-    {{ model.name }}_state_t current_state;
+    /* W3C SCXML 3.2: configuration bitmap. Bit N (1u << N) corresponds
+       to STATE_N in the enum above; entry sets the bit, exit clears it.
+       Compound state entry sets both the parent ancestors and the
+       descended initial leaf; <parallel> entry will set every region's
+       leaf bit simultaneously. Mirrors cpp `StaticExecutionEngine::activeStates_`
+       (std::set<State>) — single truth source for the configuration,
+       no parallel `current_state` shadow that would drift in parallel
+       fixtures. _Static_assert at the bottom of the header pins the
+       state count below the bitmap width (32 today, multi-word array
+       lands when a fixture forces it). */
+    uint32_t active;
     {{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
     {{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
     {{ model.name }}_policy_t policy;
@@ -145,8 +166,13 @@ void {{ model.name }}_raise({{ model.name }}_t *sm,
 void {{ model.name }}_raise_external({{ model.name }}_t *sm,
                                      const {{ model.name }}_event_with_meta_t *evt);
 
-/* Query helpers. */
-{{ model.name }}_state_t {{ model.name }}_get_current_state(const {{ model.name }}_t *sm);
+/* W3C SCXML 3.2: configuration query helpers. `_active_states` exposes
+   the full bitmap; `_in_state(s)` mirrors the SCXML In() predicate (true
+   iff s is in the active configuration). `_get_current_state` is gone
+   on purpose — single-leaf semantics break for <parallel> where the
+   configuration spans multiple leaves simultaneously. */
+uint32_t {{ model.name }}_active_states(const {{ model.name }}_t *sm);
+bool {{ model.name }}_in_state(const {{ model.name }}_t *sm, {{ model.name }}_state_t s);
 bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm);
 
 /* W3C SCXML 3.3: Compile-time policy queries (mirror C++ `*Policy::*`). */
@@ -156,6 +182,8 @@ bool {{ model.name }}_is_final_state({{ model.name }}_state_t s);
 /* ── Compile-time invariants ──────────────────────────────────────── */
 _Static_assert(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
 _Static_assert(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");
+_Static_assert((unsigned){{ model.name | upper }}_STATE_COUNT <= 32u,
+               "Configuration bitmap is uint32_t; multi-word array lands when a fixture exceeds 32 states");
 
 #ifdef __cplusplus
 }

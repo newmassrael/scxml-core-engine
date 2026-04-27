@@ -16,10 +16,9 @@ int main(void) {
     test503_init(&sm);
     test503_run(&sm);
 
-    test503_state_t final = test503_get_current_state(&sm);
-    int rc = (final == TEST503_STATE_PASS) ? 0 : 1;
+    int rc = test503_in_state(&sm, TEST503_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test503: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test503: FAIL — active = 0x%08x\n", (unsigned)test503_active_states(&sm));
     }
     test503_destroy(&sm);
     return rc;

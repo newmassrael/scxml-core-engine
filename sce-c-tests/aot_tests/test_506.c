@@ -16,10 +16,9 @@ int main(void) {
     test506_init(&sm);
     test506_run(&sm);
 
-    test506_state_t final = test506_get_current_state(&sm);
-    int rc = (final == TEST506_STATE_PASS) ? 0 : 1;
+    int rc = test506_in_state(&sm, TEST506_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test506: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test506: FAIL — active = 0x%08x\n", (unsigned)test506_active_states(&sm));
     }
     test506_destroy(&sm);
     return rc;

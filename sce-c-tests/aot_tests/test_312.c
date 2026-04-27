@@ -25,10 +25,9 @@ int main(void) {
     test312_init(&sm);
     test312_run(&sm);
 
-    test312_state_t final = test312_get_current_state(&sm);
-    int rc = (final == TEST312_STATE_PASS) ? 0 : 1;
+    int rc = test312_in_state(&sm, TEST312_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test312: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test312: FAIL — active = 0x%08x\n", (unsigned)test312_active_states(&sm));
     }
     test312_destroy(&sm);
     return rc;

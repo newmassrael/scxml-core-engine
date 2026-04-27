@@ -16,10 +16,9 @@ int main(void) {
     test325_init(&sm);
     test325_run(&sm);
 
-    test325_state_t final = test325_get_current_state(&sm);
-    int rc = (final == TEST325_STATE_PASS) ? 0 : 1;
+    int rc = test325_in_state(&sm, TEST325_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test325: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test325: FAIL — active = 0x%08x\n", (unsigned)test325_active_states(&sm));
     }
     test325_destroy(&sm);
     return rc;

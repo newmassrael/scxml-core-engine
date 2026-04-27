@@ -19,10 +19,9 @@ int main(void) {
     test280_init(&sm);
     test280_run(&sm);
 
-    test280_state_t final = test280_get_current_state(&sm);
-    int rc = (final == TEST280_STATE_PASS) ? 0 : 1;
+    int rc = test280_in_state(&sm, TEST280_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test280: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test280: FAIL — active = 0x%08x\n", (unsigned)test280_active_states(&sm));
     }
     test280_destroy(&sm);
     return rc;

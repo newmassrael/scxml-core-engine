@@ -26,10 +26,9 @@ int main(void) {
     test415_init(&sm);
     test415_run(&sm);
 
-    test415_state_t final = test415_get_current_state(&sm);
-    int rc = (final == TEST415_STATE_FINAL) ? 0 : 1;
+    int rc = test415_in_state(&sm, TEST415_STATE_FINAL) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test415: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test415: FAIL — active = 0x%08x\n", (unsigned)test415_active_states(&sm));
     }
     test415_destroy(&sm);
     return rc;

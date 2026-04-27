@@ -24,10 +24,9 @@ int main(void) {
     test487_init(&sm);
     test487_run(&sm);
 
-    test487_state_t final = test487_get_current_state(&sm);
-    int rc = (final == TEST487_STATE_PASS) ? 0 : 1;
+    int rc = test487_in_state(&sm, TEST487_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test487: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test487: FAIL — active = 0x%08x\n", (unsigned)test487_active_states(&sm));
     }
     test487_destroy(&sm);
     return rc;

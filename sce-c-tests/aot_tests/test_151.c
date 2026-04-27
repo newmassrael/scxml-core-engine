@@ -21,10 +21,9 @@ int main(void) {
     test151_init(&sm);
     test151_run(&sm);
 
-    test151_state_t final = test151_get_current_state(&sm);
-    int rc = (final == TEST151_STATE_PASS) ? 0 : 1;
+    int rc = test151_in_state(&sm, TEST151_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test151: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test151: FAIL — active = 0x%08x\n", (unsigned)test151_active_states(&sm));
     }
     test151_destroy(&sm);
     return rc;

@@ -16,10 +16,9 @@ int main(void) {
     test318_init(&sm);
     test318_run(&sm);
 
-    test318_state_t final = test318_get_current_state(&sm);
-    int rc = (final == TEST318_STATE_PASS) ? 0 : 1;
+    int rc = test318_in_state(&sm, TEST318_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test318: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test318: FAIL — active = 0x%08x\n", (unsigned)test318_active_states(&sm));
     }
     test318_destroy(&sm);
     return rc;

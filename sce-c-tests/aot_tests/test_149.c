@@ -19,10 +19,9 @@ int main(void) {
     test149_init(&sm);
     test149_run(&sm);
 
-    test149_state_t final = test149_get_current_state(&sm);
-    int rc = (final == TEST149_STATE_PASS) ? 0 : 1;
+    int rc = test149_in_state(&sm, TEST149_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test149: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test149: FAIL — active = 0x%08x\n", (unsigned)test149_active_states(&sm));
     }
     test149_destroy(&sm);
     return rc;

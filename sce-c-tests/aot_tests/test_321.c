@@ -16,10 +16,9 @@ int main(void) {
     test321_init(&sm);
     test321_run(&sm);
 
-    test321_state_t final = test321_get_current_state(&sm);
-    int rc = (final == TEST321_STATE_PASS) ? 0 : 1;
+    int rc = test321_in_state(&sm, TEST321_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test321: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test321: FAIL — active = 0x%08x\n", (unsigned)test321_active_states(&sm));
     }
     test321_destroy(&sm);
     return rc;

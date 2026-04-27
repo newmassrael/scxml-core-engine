@@ -261,6 +261,91 @@ static SCE_C_UNUSED {{ model.name }}_state_t state_get_initial_child({{ model.na
     }
 }
 
+/* ── W3C SCXML 3.2: Configuration bitmap helpers ──────────────────── */
+{# Each state's enum value doubles as a bit index in `sm->active`. Entry
+   sets parent ancestors AND the leaf bit (mirrors cpp activeStates_ which
+   holds compound states alongside their leaves). Mirrors of cpp
+   StaticExecutionEngine::activeStates_ helpers — bitmap operations are
+   inlined per the T3 lock-in (no helper-class dispatch). #}
+static SCE_C_UNUSED uint32_t state_bit({{ model.name }}_state_t s) {
+    return (uint32_t)1u << (uint32_t)s;
+}
+
+static SCE_C_UNUSED bool config_in(uint32_t active, {{ model.name }}_state_t s) {
+    return (active & state_bit(s)) != 0u;
+}
+
+/* W3C SCXML 3.2: descendant test via parent walk-up. Used by the exit
+   chain to identify the active subtree under a transition's source. */
+static SCE_C_UNUSED bool is_descendant_of({{ model.name }}_state_t child,
+                                         {{ model.name }}_state_t ancestor) {
+    {{ model.name }}_state_t cur = child;
+    while (true) {
+        bool has_parent;
+        {{ model.name }}_state_t parent = state_get_parent(cur, &has_parent);
+        if (!has_parent) {
+            return false;
+        }
+        if (parent == ancestor) {
+            return true;
+        }
+        cur = parent;
+    }
+}
+
+/* W3C SCXML 3.2: leaf extraction. Returns the unique active state with
+   no active children (single-leaf invariant; <parallel> generalisation
+   lands when its first fixture forces multi-leaf walking — at that point
+   process_transition will iterate every leaf instead of just the first). */
+static SCE_C_UNUSED {{ model.name }}_state_t config_leaf(uint32_t active) {
+    for (uint32_t s = 0u; s < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++s) {
+        if ((active & ((uint32_t)1u << s)) == 0u) {
+            continue;
+        }
+        bool has_active_child = false;
+        for (uint32_t c = 0u; c < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++c) {
+            if (c == s || (active & ((uint32_t)1u << c)) == 0u) {
+                continue;
+            }
+            bool hp;
+            {{ model.name }}_state_t cp = state_get_parent(({{ model.name }}_state_t)c, &hp);
+            if (hp && cp == ({{ model.name }}_state_t)s) {
+                has_active_child = true;
+                break;
+            }
+        }
+        if (!has_active_child) {
+            return ({{ model.name }}_state_t)s;
+        }
+    }
+    return ({{ model.name }}_state_t)0;  /* unreachable in well-formed config */
+}
+
+/* W3C SCXML 3.2: enter `s` and every ancestor on its parent chain. Mirrors
+   cpp HierarchicalStateHelper::buildEntryChain followed by the configuration
+   set inserts. Idempotent — re-entering an already-active state is a no-op. */
+static SCE_C_UNUSED uint32_t config_enter_chain(uint32_t active, {{ model.name }}_state_t s) {
+    uint32_t out = active | state_bit(s);
+    {{ model.name }}_state_t cur = s;
+    while (true) {
+        bool has_parent;
+        {{ model.name }}_state_t parent = state_get_parent(cur, &has_parent);
+        if (!has_parent) {
+            break;
+        }
+        out |= state_bit(parent);
+        cur = parent;
+    }
+    return out;
+}
+
+/* W3C SCXML 5.10: codegen-time bitmask of every <final> state. Used by
+   {{ model.name }}_is_in_final_state to decide whether the configuration
+   has reached a top-level final. */
+#define {{ model.name | upper }}_FINAL_MASK ( \
+    (uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final %} \
+    | ((uint32_t)1u << (uint32_t){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}{% endfor %})
+
 /* ── W3C SCXML 5.9: Action execution (per-state, document-order) ──── */
 {# Mirrors the C++ entry_exit_actions.jinja2 dispatch: each `<onentry>` /
    `<onexit>` block lowers via the `emit_action` macro defined above for
@@ -417,7 +502,9 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
             sm->policy.last_transition_is_targetless = {{ 'true' if not trans.target else 'false' }};
             sm->policy.last_transition_index = (uint16_t){{ trans.transition_index }}u;
             {% if trans.target %}
-            sm->current_state = {{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }};
+            sm->policy.last_transition_target_state = {{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }};
+            {% else %}
+            sm->policy.last_transition_target_state = check_state;  /* unused for targetless; assigned for switch coverage */
             {% endif %}
             sm->transition_taken = true;
             return true;
@@ -438,7 +525,7 @@ static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t 
        `tools/codegen/templates/process_transition.jinja2`; flat fixtures
        still terminate after one iteration because the root state has no
        parent. */
-    {{ model.name }}_state_t check_state = sm->current_state;
+    {{ model.name }}_state_t check_state = config_leaf(sm->active);
     while (true) {
         switch (check_state) {
         {% for state_id, state in model.states | dictsort %}
@@ -487,45 +574,42 @@ static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t 
 }
 
 /* W3C SCXML 3.13: Hierarchical exit/entry sequence around a transition.
-   - targetless: transition body only (no exit, no entry).
+   Reads the transition descriptor from `sm->policy` (source/target/internal/
+   targetless flags) populated by emit_transition_body at match time, and
+   updates the configuration bitmap `sm->active` directly. Mirrors cpp
+   StaticExecutionEngine::handleHierarchicalTransition.
+   - targetless: transition body only, no configuration change.
    - internal (target is proper descendant of source — analyzer.rs
-     downgrades all other internal markers to external): transition body
-     + entry chain on the new leaf only.
-   - external: exit chain from the active leaf up to and including the
-     transition's source state, then transition body, then entry chain
-     on the target. The exit walk stops when it has just exited
-     `last_transition_source_state`, so cross-compound transitions exit
-     every active descendant of the source as well as the source itself.
+     downgrades all other internal markers to external): exit the
+     active descendants under source, body, entry-descend onto target.
+   - external: exit chain includes the source itself, body, entry-descend
+     onto target. The active descendants of the source are identified via
+     `is_descendant_of` over the bitmap.
 
    Full LCA(source, target) computation — the case where the target is
    neither a proper descendant of the source nor a sibling/cousin under
-   the same parent (i.e. the transition crosses compound boundaries
-   asymmetrically) — is intentionally deferred. test503/505/506 each
-   satisfy LCA == parent(source); a fixture that forces a deeper LCA
-   (e.g. source nested inside a compound, target outside that compound's
-   parent) will land the generalised walk under entry_exit_actions
-   alongside the C++ HierarchicalStateHelper mirror. */
-static void handle_hierarchical_transition({{ model.name }}_t *sm,
-                                           {{ model.name }}_state_t old_state,
-                                           {{ model.name }}_state_t new_state) {
+   the same parent — is intentionally deferred. test503/505/506 each
+   satisfy LCA == parent(source); a deeper-LCA fixture lands the generalised
+   walk alongside the cpp HierarchicalStateHelper mirror. */
+static void handle_hierarchical_transition({{ model.name }}_t *sm) {
     if (sm->policy.last_transition_is_targetless) {
         execute_transition_actions(sm);
         return;
     }
-    /* W3C SCXML 3.13: Exit chain. Both external and (true) internal
-       transitions exit every active descendant of the transition's
-       source — they differ only in whether the source itself is exited.
-       External transitions exit the source (and re-enter via the entry
-       chain below); internal transitions stop one step short, leaving
-       the source's `onexit` un-run.
-       Targetless transitions are handled above and never reach here
-       (per the early return). For flat fixtures the loop runs zero or
-       one iteration because `old_state` already equals
-       `last_transition_source_state`. */
+    {{ model.name }}_state_t source = sm->policy.last_transition_source_state;
+    {{ model.name }}_state_t target = sm->policy.last_transition_target_state;
+
+    /* W3C SCXML 3.13: Exit chain — every active descendant of source plus
+       source itself when the transition is external. Walk leaf-up from
+       the current configuration leaf so onexit runs in W3C-mandated
+       reverse-doc-order (child before parent). For single-leaf
+       configurations this loop walks one chain; <parallel> generalisation
+       will iterate every active leaf instead of just the first. */
     {
-        {{ model.name }}_state_t exit_cur = old_state;
-        while (exit_cur != sm->policy.last_transition_source_state) {
+        {{ model.name }}_state_t exit_cur = config_leaf(sm->active);
+        while (exit_cur != source && is_descendant_of(exit_cur, source)) {
             execute_exit_actions(sm, exit_cur);
+            sm->active &= ~state_bit(exit_cur);
             bool _eh_has_parent;
             {{ model.name }}_state_t _eh_parent = state_get_parent(exit_cur, &_eh_has_parent);
             if (!_eh_has_parent) {
@@ -533,22 +617,36 @@ static void handle_hierarchical_transition({{ model.name }}_t *sm,
             }
             exit_cur = _eh_parent;
         }
-        if (!sm->policy.last_transition_is_internal
-            && exit_cur == sm->policy.last_transition_source_state) {
-            execute_exit_actions(sm, exit_cur);
+        /* The leaf-walk stops once exit_cur reaches source (still inside
+           source's subtree). Drain any source-inclusive remainder for
+           external transitions; internal transitions leave source active. */
+        if (exit_cur == source) {
+            if (!sm->policy.last_transition_is_internal) {
+                execute_exit_actions(sm, source);
+                sm->active &= ~state_bit(source);
+            }
         }
     }
-    execute_transition_actions(sm);
-    execute_entry_actions(sm, new_state);
 
-    /* W3C 3.6: descend into compound state's initial child until a leaf. */
-    {{ model.name }}_state_t cursor = sm->current_state;
+    execute_transition_actions(sm);
+
+    /* W3C SCXML 3.13: Entry chain — set target plus its ancestor chain in
+       the configuration, run target's onentry, then descend into the
+       compound state's initial child until a leaf. The ancestor-set is
+       idempotent: ancestors that were already active (internal transition
+       case where source remained set) stay set. Onentry runs only on the
+       newly entered leaf descendants here; cross-compound entry that
+       crosses inactive ancestors gets per-ancestor onentry when the deeper
+       LCA fixture forces the buildEntryChain mirror. */
+    sm->active = config_enter_chain(sm->active, target);
+    execute_entry_actions(sm, target);
+    {{ model.name }}_state_t cursor = target;
     while (state_is_compound(cursor)) {
         {{ model.name }}_state_t child = state_get_initial_child(cursor);
         if (child == cursor) {
             break;
         }
-        sm->current_state = child;
+        sm->active = config_enter_chain(sm->active, child);
         execute_entry_actions(sm, child);
         cursor = child;
     }
@@ -615,13 +713,12 @@ static void process_event_queues({{ model.name }}_t *sm) {
         set_current_event(sm->L, evt.event);
         {% endif %}
 
-        if ({{ model.name }}_is_final_state(sm->current_state)) {
+        if ({{ model.name }}_is_in_final_state(sm)) {
             return;
         }
 
-        {{ model.name }}_state_t old = sm->current_state;
         if (process_transition(sm, evt.event)) {
-            handle_hierarchical_transition(sm, old, sm->current_state);
+            handle_hierarchical_transition(sm);
         }
     }
 
@@ -632,13 +729,12 @@ static void process_event_queues({{ model.name }}_t *sm) {
         set_current_event(sm->L, evt.event);
         {% endif %}
 
-        if ({{ model.name }}_is_final_state(sm->current_state)) {
+        if ({{ model.name }}_is_in_final_state(sm)) {
             return;
         }
 
-        {{ model.name }}_state_t old = sm->current_state;
         if (process_transition(sm, evt.event)) {
-            handle_hierarchical_transition(sm, old, sm->current_state);
+            handle_hierarchical_transition(sm);
         }
     }
 }
@@ -650,14 +746,13 @@ static void process_event_queues({{ model.name }}_t *sm) {
 static void check_eventless_transitions({{ model.name }}_t *sm) {
     int iter = 0;
     while (iter < 100) {
-        if ({{ model.name }}_is_final_state(sm->current_state)) {
+        if ({{ model.name }}_is_in_final_state(sm)) {
             return;
         }
-        {{ model.name }}_state_t old = sm->current_state;
         if (!process_transition(sm, {{ model.name | upper }}_EVENT_NONE)) {
             return;
         }
-        handle_hierarchical_transition(sm, old, sm->current_state);
+        handle_hierarchical_transition(sm);
         iter++;
     }
 }
@@ -665,30 +760,27 @@ static void check_eventless_transitions({{ model.name }}_t *sm) {
 void {{ model.name }}_step({{ model.name }}_t *sm) {
     process_event_queues(sm);
     check_eventless_transitions(sm);
-    if ({{ model.name }}_is_final_state(sm->current_state) && sm->completion_callback != NULL) {
+    if ({{ model.name }}_is_in_final_state(sm) && sm->completion_callback != NULL) {
         sm->completion_callback(sm->completion_callback_user_data);
     }
 }
 
 void {{ model.name }}_run({{ model.name }}_t *sm) {
     sm->is_running = true;
-    while (sm->is_running && !{{ model.name }}_is_final_state(sm->current_state)) {
-        {{ model.name }}_state_t before = sm->current_state;
+    while (sm->is_running && !{{ model.name }}_is_in_final_state(sm)) {
+        uint32_t before = sm->active;
         {{ model.name }}_step(sm);
-        /* True quiescence: state did not change AND both queues are empty
-           (the latter is the exit/entry-action follow-on path — an
-           eventless transition that fires inside `check_eventless_transitions`
-           can run an <onexit> that <raise>s a fresh event onto the internal
-           queue, leaving the state unchanged from the run-loop's vantage if
-           the eventless block stops there; we must continue so the next
-           step() drains those queued events). The original `transition_taken`
-           flag was unreliable because `process_transition` resets it at
-           every call, so the LAST microstep's verdict (NONE-no-match in
-           the eventless tail) overwrote earlier successful transitions —
-           test377 (W3C 3.13 onexit doc-order) made that misclassification
-           visible by having the run loop break before the queued events
-           could be drained. */
-        if (sm->current_state == before
+        /* True quiescence: configuration unchanged AND both queues empty.
+           The queue check covers the exit/entry-action follow-on path —
+           an eventless transition can run an <onexit> that <raise>s a
+           fresh event leaving the configuration unchanged from the
+           run-loop's vantage if the eventless block stops there; we
+           must continue so the next step() drains those queued events.
+           Comparing `sm->active` (full bitmap) instead of a single-leaf
+           `current_state` correctly handles configurations where multiple
+           bits change in one step (W3C 3.13 transition body actions
+           setting more than one ancestor bit). */
+        if (sm->active == before
             && sm->internal_queue.count == 0u
             && sm->external_queue.count == 0u) {
             break;
@@ -704,30 +796,33 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
        <onentry> body runs (those bodies may reference datamodel vars). */
 {{ se.lua_init_engine() }}
     {% endif %}
-    sm->current_state = {{ model.name }}_initial_state();
-    execute_entry_actions(sm, sm->current_state);
-    /* W3C 3.6: initial state may be compound — descend to its initial leaf. */
-    {{ model.name }}_state_t cursor = sm->current_state;
+    /* W3C SCXML 3.2: Configuration entry — set the initial state and its
+       ancestor chain in the bitmap, run onentry, then descend into compound
+       initial children. config_enter_chain idempotently sets every ancestor
+       bit so the active set mirrors cpp activeStates_ (compound parents
+       sit alongside the leaf). */
+    {{ model.name }}_state_t initial = {{ model.name }}_initial_state();
+    sm->active = config_enter_chain(sm->active, initial);
+    execute_entry_actions(sm, initial);
+    {{ model.name }}_state_t cursor = initial;
     while (state_is_compound(cursor)) {
         {{ model.name }}_state_t child = state_get_initial_child(cursor);
         if (child == cursor) {
             break;
         }
-        sm->current_state = child;
+        sm->active = config_enter_chain(sm->active, child);
         execute_entry_actions(sm, child);
         cursor = child;
     }
-    /* W3C SCXML 6.4: Macrostep completion loop. Mirrors the C++
-       `StaticExecutionEngine::initialize` tail (lines 987-999): keep
-       firing eventless transitions and processing internal/external
-       events until both stabilise. Without this loop the first event
-       raised in an `<onentry>` block races ahead of the source state's
-       eventless `<transition>` because `step()` drains the queue before
-       it checks eventless transitions; the queued event then has no
-       matching transition in the entered state and is silently dropped
-       (test503/505/506 force this — every initial state raises events
-       in onentry and immediately hands off to the next state via an
-       eventless or hierarchically-bubbled transition). */
+    /* W3C SCXML 6.4: Macrostep completion loop. Mirrors the cpp
+       StaticExecutionEngine::initialize tail: keep firing eventless
+       transitions and processing internal/external events until both
+       stabilise. Without this loop the first event raised in an
+       <onentry> block races ahead of the source state's eventless
+       <transition> because step() drains the queue before it checks
+       eventless transitions; the queued event then has no matching
+       transition in the entered state and is silently dropped
+       (test503/505/506 force this). */
     while (true) {
         check_eventless_transitions(sm);
         if (sm->internal_queue.count == 0u && sm->external_queue.count == 0u) {
@@ -745,10 +840,15 @@ void {{ model.name }}_destroy({{ model.name }}_t *sm) {
     {% endif %}
 }
 
-{{ model.name }}_state_t {{ model.name }}_get_current_state(const {{ model.name }}_t *sm) {
-    return sm->current_state;
+uint32_t {{ model.name }}_active_states(const {{ model.name }}_t *sm) {
+    return sm->active;
+}
+
+bool {{ model.name }}_in_state(const {{ model.name }}_t *sm,
+                               {{ model.name }}_state_t s) {
+    return config_in(sm->active, s);
 }
 
 bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm) {
-    return {{ model.name }}_is_final_state(sm->current_state);
+    return (sm->active & {{ model.name | upper }}_FINAL_MASK) != 0u;
 }

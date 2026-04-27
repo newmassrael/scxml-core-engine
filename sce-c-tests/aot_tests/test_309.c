@@ -19,10 +19,9 @@ int main(void) {
     test309_init(&sm);
     test309_run(&sm);
 
-    test309_state_t final = test309_get_current_state(&sm);
-    int rc = (final == TEST309_STATE_PASS) ? 0 : 1;
+    int rc = test309_in_state(&sm, TEST309_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test309: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test309: FAIL — active = 0x%08x\n", (unsigned)test309_active_states(&sm));
     }
     test309_destroy(&sm);
     return rc;

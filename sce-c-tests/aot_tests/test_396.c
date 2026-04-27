@@ -25,10 +25,9 @@ int main(void) {
     test396_init(&sm);
     test396_run(&sm);
 
-    test396_state_t final = test396_get_current_state(&sm);
-    int rc = (final == TEST396_STATE_PASS) ? 0 : 1;
+    int rc = test396_in_state(&sm, TEST396_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test396: FAIL — final state = %d\n", (int)final);
+        fprintf(stderr, "test396: FAIL — active = 0x%08x\n", (unsigned)test396_active_states(&sm));
     }
     test396_destroy(&sm);
     return rc;
