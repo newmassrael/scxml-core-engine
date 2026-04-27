@@ -148,6 +148,21 @@ typedef struct {{ model.name }}_scheduled_entry {
     uint64_t fire_time_ms;
     {{ model.name }}_event_t event;
     char send_id[SCE_MAX_ID_LEN];
+{% if model.needs_script_engine %}
+    /* W3C SCXML 5.10: per-entry payload reference into the lua registry.
+       LUA_NOREF (-2) when the <send> carries no <param>/<content>
+       (delay-only fixtures schedule with no payload); a positive int when
+       scheduled_push stashed a _pending_donedata table via
+       luaL_ref(L, LUA_REGISTRYINDEX). The dispatch path in `_tick` reads
+       the table back with lua_rawgeti, restores it onto the lua-side
+       _pending_donedata slot so set_current_event can promote it to
+       _event.data, and releases the registry slot via luaL_unref. Mirrors
+       cpp `EventWithMetadata::data` per-entry carry — cpp ships a JSON
+       string because its EventWithMetadata must cross engine-agnostic
+       boundaries; C11's P1 lock-in (Lua 5.4 only) makes the lua-native
+       ref the round-trip-free equivalent of the same per-entry carry. */
+    int payload_lua_ref;
+{% endif %}
 } {{ model.name }}_scheduled_entry_t;
 
 typedef struct {{ model.name }}_scheduled_queue {

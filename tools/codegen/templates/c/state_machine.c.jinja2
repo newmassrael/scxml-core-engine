@@ -42,7 +42,10 @@ extern uint64_t _sce_clock_now_ms(void);
 static void scheduled_push({{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
                            {{ model.name }}_event_t event,
-                           const char *send_id);
+                           const char *send_id
+{%- if model.needs_script_engine %},
+                           int payload_lua_ref
+{%- endif %});
 static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *send_id);
 {% endif %}
 
@@ -200,7 +203,9 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             scheduled_push(sm,
                            _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
                            {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
-                           "{{ action.auto_send_id | escape_c }}");
+                           "{{ action.auto_send_id | escape_c }}"
+{%- if model.needs_script_engine %}, LUA_NOREF
+{%- endif %});
 {% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and action.idlocation and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr %}
             /* W3C SCXML 6.2.4 + 5.10.1 (test332): static-event + invalid
                target with `idlocation`. The auto-generated `sendid` is
@@ -600,7 +605,9 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             scheduled_push(sm,
                            _sce_clock_now_ms() + _send_delay_ms,
                            {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
-                           "{{ action.auto_send_id | escape_c }}");
+                           "{{ action.auto_send_id | escape_c }}"
+{%- if model.needs_script_engine %}, LUA_NOREF
+{%- endif %});
 {% elif action.event and action.contentexpr and not action.content and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 (contentexpr force fixture): static-event
                with `<content expr="...">`, no `target`. The expression is
@@ -1927,8 +1934,24 @@ void {{ model.name }}_raise_external({{ model.name }}_t *sm,
 static void scheduled_push({{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
                            {{ model.name }}_event_t event,
-                           const char *send_id) {
+                           const char *send_id
+{%- if model.needs_script_engine %},
+                           int payload_lua_ref
+{%- endif %}) {
     if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
+{% if model.needs_script_engine %}
+        /* W3C SCXML 6.2: capacity overflow drops the new entry; the caller
+           already stashed any payload table into the lua registry so we
+           must release it here to avoid a leak that would survive until
+           lua_close (and the ref counter would still consume registry
+           slots). cpp's bounded-resource path raises the same
+           error.execution event but cleans up its EventWithMetadata
+           automatically via std::map's erase semantics; C11 mirrors the
+           cleanup explicitly here. */
+        if (payload_lua_ref != LUA_NOREF) {
+            luaL_unref(sm->L, LUA_REGISTRYINDEX, payload_lua_ref);
+        }
+{% endif %}
         {{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));
         _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
@@ -1959,6 +1982,9 @@ static void scheduled_push({{ model.name }}_t *sm,
     } else {
         slot->send_id[0] = '\0';
     }
+{% if model.needs_script_engine %}
+    slot->payload_lua_ref = payload_lua_ref;
+{% endif %}
     sm->scheduled_queue.count++;
 }
 
@@ -2009,6 +2035,19 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             }
             pos++;
         }
+{% if model.needs_script_engine %}
+        else if (sm->scheduled_queue.buf[i].payload_lua_ref != LUA_NOREF) {
+            /* W3C SCXML 6.3: matching entries are dropped via compaction;
+               release the lua registry slot here so the cancelled send's
+               payload table is reclaimable before lua_close. cpp routes
+               cancellation through `PullScheduler::cancelEvent` which
+               erases the std::map entry and lets the contained
+               EventWithMetadata's destructor handle teardown — C11 mirrors
+               that lifecycle ownership explicitly. */
+            luaL_unref(sm->L, LUA_REGISTRYINDEX,
+                       sm->scheduled_queue.buf[i].payload_lua_ref);
+        }
+{% endif %}
     }
     sm->scheduled_queue.count = pos;
 }
@@ -2345,6 +2384,20 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
 }
 
 void {{ model.name }}_destroy({{ model.name }}_t *sm) {
+    {% if model.needs_event_scheduler and model.needs_script_engine %}
+    /* W3C SCXML 6.2: release lua registry slots held by pending scheduled
+       entries before lua_close reclaims the registry as a whole. lua_close
+       would GC the slots automatically, but explicit unref keeps the
+       send_id ↔ payload pairing observable across destroy phases and
+       mirrors cpp's PullScheduler::~PullScheduler implicit cleanup via
+       std::map's destructor running before LuaEngine teardown. */
+    for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
+        if (sm->scheduled_queue.buf[i].payload_lua_ref != LUA_NOREF) {
+            luaL_unref(sm->L, LUA_REGISTRYINDEX,
+                       sm->scheduled_queue.buf[i].payload_lua_ref);
+        }
+    }
+    {% endif %}
     {% if model.needs_script_engine %}
 {{ se.lua_destroy_engine() }}
     {% else %}
