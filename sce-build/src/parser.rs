@@ -2013,38 +2013,106 @@ impl SCXMLParser {
     }
 
     fn apply_parallel_initial_overrides(&self, model: &mut SCXMLModel) {
-        if model.initial.is_empty() {
-            return;
+        // W3C SCXML 3.6/3.13: Multi-target initial declarations enter every
+        // listed descendant simultaneously. Walk up from each target
+        // through all ancestors up to (but not crossing) the multi-target
+        // origin state, overriding each compound ancestor's `initial` to
+        // the child on the path so codegen-time `state_get_initial_child`
+        // routes to the path leaf rather than the doc-order default.
+        // Skip parallel ancestors (they enter every region automatically).
+        // Two scopes covered:
+        //   - Root `<scxml initial="A B">` (origin = the document root).
+        //   - Nested `<state initial="A B">` (origin = that state). cpp
+        //     handles the nested case via `enterDeepInitialTargets_*` +
+        //     `StateEntryHelper::enterDeepTargets`, which builds an entry
+        //     chain per target. C11 collapses both scopes to per-ancestor
+        //     `initial` overrides so the existing chain walk-up reaches
+        //     every leaf without a multi-target dispatch helper.
+        let mut overrides: Vec<(String, String)> = Vec::new();
+        let collect = |targets: &[String], stop_at: Option<&str>, out: &mut Vec<(String, String)>| {
+            for state_id in targets {
+                if !model.states.contains_key(state_id) {
+                    continue;
+                }
+                let mut current = state_id.clone();
+                loop {
+                    let parent_id =
+                        match model.states.get(&current).and_then(|s| s.parent.clone()) {
+                            Some(p) if model.states.contains_key(&p) => p,
+                            _ => break,
+                        };
+                    if Some(parent_id.as_str()) == stop_at {
+                        break;
+                    }
+                    let is_parallel =
+                        model.states.get(&parent_id).map_or(false, |s| s.is_parallel);
+                    if !is_parallel {
+                        out.push((parent_id.clone(), current.clone()));
+                    }
+                    current = parent_id;
+                }
+            }
+        };
+
+        // Root-scope multi-target.
+        let root_targets: Vec<String> = if model.initial.is_empty() {
+            Vec::new()
+        } else {
+            let parts: Vec<String> = model.initial.split_whitespace().map(String::from).collect();
+            if parts.len() > 1 {
+                parts
+            } else {
+                Vec::new()
+            }
+        };
+        if !root_targets.is_empty() {
+            collect(&root_targets, None, &mut overrides);
         }
-        let initial_states: Vec<String> =
-            model.initial.split_whitespace().map(String::from).collect();
-        if initial_states.len() <= 1 {
-            return;
+
+        // Nested-scope multi-target — every state whose own `initial` lists
+        // more than one target. Snapshot ids first so we can iterate while
+        // mutating later.
+        let nested_origins: Vec<(String, Vec<String>)> = model
+            .states
+            .iter()
+            .filter_map(|(id, s)| {
+                let parts: Vec<String> =
+                    s.initial.split_whitespace().map(String::from).collect();
+                if parts.len() > 1 && parts.iter().all(|t| model.states.contains_key(t)) {
+                    Some((id.clone(), parts))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (origin_id, targets) in &nested_origins {
+            collect(targets, Some(origin_id.as_str()), &mut overrides);
         }
-        // W3C SCXML 3.6/3.13: Walk up from each target through ALL ancestors,
-        // overriding compound states' initial to point to the child on the path.
-        // Skip parallel states (they enter all children automatically).
-        for state_id in &initial_states {
-            if !model.states.contains_key(state_id) {
+
+        // Apply collected overrides. A path child takes precedence — the
+        // first override wins per ancestor (root-scope first, nested
+        // afterwards), preserving the path determined by the outer
+        // multi-target. Conflicts inside one scope can't arise because
+        // each path through a parallel ancestor enters its own region.
+        let mut applied: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        for (parent_id, child_id) in overrides {
+            if applied.contains(&parent_id) {
                 continue;
             }
-            let mut current = state_id.clone();
-            loop {
-                let parent_id = match model.states.get(&current).and_then(|s| s.parent.clone()) {
-                    Some(p) if model.states.contains_key(&p) => p,
-                    _ => break,
-                };
-                let is_parallel = model.states.get(&parent_id).map_or(false, |s| s.is_parallel);
-                if !is_parallel {
-                    if let Some(parent) = model.states.get_mut(&parent_id) {
-                        parent.initial = current.clone();
-                    }
-                }
-                current = parent_id;
+            if let Some(parent) = model.states.get_mut(&parent_id) {
+                parent.initial = child_id;
             }
+            applied.insert(parent_id);
         }
-        // After overrides, set model.initial to the first state
-        model.initial = initial_states[0].clone();
+
+        // After overrides, collapse model.initial to the first state of a
+        // root-scope multi-target so the chain entry helper has a single
+        // leaf to start from (sibling regions enter via parallel
+        // expansion).
+        if !root_targets.is_empty() {
+            model.initial = root_targets[0].clone();
+        }
     }
 
     fn resolve_history_targets(&self, model: &mut SCXMLModel) {

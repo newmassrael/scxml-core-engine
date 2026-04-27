@@ -1125,36 +1125,33 @@ static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state
             cur = p;
         }
     }
+    /* W3C SCXML 3.6 + 3.4: top-down chain enter. Each compound chain
+       element runs its `<initial>` transition's executable content
+       between its own onentry and its child's onentry (test412 —
+       actions interleave at the parent/child boundary). Each parallel
+       chain element activates its sibling regions before the chain
+       descends past it (test413/364/576 — multi-target initial enters
+       every sibling region, not just the path of model.initial_leaf).
+       The chain only carries one path-branch from leaf walk-up; sibling
+       regions are expanded via enter_parallel_regions, whose recursive
+       enter_state_recursive calls are idempotent on already-active
+       states. The idempotent guard at top of the loop catches the
+       chain[i] elements that the sibling expansion entered for us
+       (regions whose path overlaps the chain). cpp
+       HierarchicalStateHelper::buildEntryChain bakes parallel regions
+       into the chain itself; C11 expands them inline because the chain
+       array is a fixed-depth walk-up, not a tree push. */
+    {% set has_initial_actions = namespace(v=false) %}
+    {% for state_id, state in model.states | dictsort %}{% if state.initial_transition_actions %}{% set has_initial_actions.v = true %}{% endif %}{% endfor %}
     for (uint32_t i = depth; i > 0u; --i) {
         {{ model.name }}_state_t e = chain[i - 1u];
+        if (config_in(sm->active, e)) {
+            continue;
+        }
         sm->active |= state_bit(e);
         execute_entry_actions(sm, e);
-    }
-    {
-        bool has_parent;
-        {{ model.name }}_state_t parent = state_get_parent(s, &has_parent);
-        if (has_parent && state_is_parallel(parent)
-            && config_in(sm->active, parent)) {
-            enter_parallel_regions(sm, parent);
-        }
-    }
-    if (state_is_parallel(s)) {
-        enter_parallel_regions(sm, s);
-    } else if (state_is_compound(s)) {
-        /* W3C SCXML 3.6 (compound entry by default-path): when entering a
-           compound state without an explicit deep target, execute its
-           `<initial>` transition's executable content (if any) before
-           descending. cpp `enterStates` handles this in its initial-default
-           branch; we mirror it with a per-state switch over states that
-           parser.rs marked with `initial_transition_actions`. The actions
-           run between the compound's onentry (already executed in the
-           walk-down loop above) and the child entry below — exactly the
-           ordering test579 verifies (s0 onentry → raise event2 → history
-           default raises event3 → enter s01). */
-        {% set has_initial_actions = namespace(v=false) %}
-        {% for state_id, state in model.states | dictsort %}{% if state.initial_transition_actions %}{% set has_initial_actions.v = true %}{% endif %}{% endfor %}
         {% if has_initial_actions.v %}
-        switch (s) {
+        switch (e) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.initial_transition_actions %}
         case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
@@ -1169,15 +1166,28 @@ static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state
             break;
         }
         {% endif %}
-
-        /* W3C SCXML 3.6 + 3.10: when the compound's `<initial>` targets a
-           history pseudo-state, route through `enter_history_state` so any
-           recorded snapshot wins over the default leaf. Without this branch
-           parser.rs's `resolve_history_targets` collapse — which rewrites
+        if (state_is_parallel(e)) {
+            enter_parallel_regions(sm, e);
+        }
+    }
+    {
+        bool has_parent;
+        {{ model.name }}_state_t parent = state_get_parent(s, &has_parent);
+        if (has_parent && state_is_parallel(parent)
+            && config_in(sm->active, parent)) {
+            enter_parallel_regions(sm, parent);
+        }
+    }
+    if (state_is_compound(s) && !state_is_parallel(s)) {
+        /* W3C SCXML 3.6 + 3.10: when the compound leaf's `<initial>`
+           targets a history pseudo-state, route through
+           `enter_history_state` so any recorded snapshot wins over the
+           default leaf. Without this branch parser.rs's
+           `resolve_history_targets` collapse — which rewrites
            `state.initial` to the resolved default leaf for the regular
-           descend path — would silently bypass the snapshot on re-entry
-           (test579's second entry through s0 must restore s03 from the
-           captured snapshot rather than re-descend to s01). */
+           descend path — would silently bypass the snapshot on
+           re-entry (test579's second entry through s0 must restore s03
+           from the captured snapshot rather than re-descend to s01). */
         {% set has_initial_history = namespace(v=false) %}
         {% for state_id, state in model.states | dictsort %}{% if state.initial_history_id %}{% set has_initial_history.v = true %}{% endif %}{% endfor %}
         {% if has_initial_history.v %}
