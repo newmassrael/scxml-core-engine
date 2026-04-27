@@ -201,7 +201,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                dispatch path restores the table onto `_pending_donedata`
                just before raising, mirroring cpp's
                `EventDataHelper::buildEventDataJson` → `EventWithMetadata::data`
-               → `LuaEngine::setupEventInLua` round-trip — same per-entry
+               → `LuaEngine::setCurrentEvent` round-trip — same per-entry
                ownership shape, lua-native carry instead of JSON string per
                P1 lock-in (Lua 5.4 only). */
             (void)luaL_dostring(sm->L, "_pending_donedata = {}");
@@ -2345,7 +2345,7 @@ void {{ model.name }}_tick({{ model.name }}_t *sm) {
         /* W3C SCXML 5.10 (test186): restore the per-entry payload table
            onto `_pending_donedata` so the next dequeue's set_current_event
            promotes it onto `_event.data` (mirrors cpp's
-           EventWithMetadata::data → LuaEngine::setupEventInLua delivery).
+           EventWithMetadata::data → LuaEngine::setCurrentEvent delivery).
            luaL_unref releases the registry slot synchronously; LUA_NOREF
            entries (delay-only sends, no <param>) bypass the restore. */
         if (ready.payload_lua_ref != LUA_NOREF) {
