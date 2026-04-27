@@ -37,6 +37,16 @@
 #define SCE_MAX_PARALLEL_REGIONS 4
 #endif
 
+// W3C SCXML Appendix D.2 — optimal enabled transition set.
+// Per-microstep cap on the number of transitions that may fire
+// simultaneously. Sized for the typical <parallel> region count plus
+// headroom; fixtures that drive many concurrent regions override at
+// build time (`-DSCE_MAX_ENABLED_TRANSITIONS=N`). Stack-local lifetime
+// inside process_transition — no SM struct footprint.
+#ifndef SCE_MAX_ENABLED_TRANSITIONS
+#define SCE_MAX_ENABLED_TRANSITIONS 8
+#endif
+
 // W3C SCXML 5.10 _event.data — generated event records reserve a fixed
 // payload slot so the entire EventWithMetadata is value-typed and queue
 // storage is statically reservable. The default sizes datamodel-less and

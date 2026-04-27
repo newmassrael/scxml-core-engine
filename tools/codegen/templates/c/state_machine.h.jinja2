@@ -78,6 +78,32 @@ typedef struct {{ model.name }}_event_with_meta {
     char target[SCE_MAX_ID_LEN];
 } {{ model.name }}_event_with_meta_t;
 
+/* ── W3C SCXML Appendix D.2: Optimal enabled transition set ───────── */
+{# Mirrors the C++ `TransitionInfo` struct defined inside the generated
+   namespace (process_transition.jinja2 emits it per fixture). The C11
+   layout adds a `exit_set` bitmap field — cpp re-computes the exit set
+   inside `removeConflictingTransitions` via `ConflictResolutionHelper::
+   computeExitSet`, but the C11 backend evaluates it once at collect
+   time so conflict checks reduce to bitmap intersection (no helper
+   class dispatch — T3 lock-in). The struct is fixture-local rather
+   than runtime-shared because state_t is per-fixture.
+
+   Fields are read by:
+     - process_transition: writes (source, target, index, flags, exit_set)
+     - remove_conflicting_transitions: reads exit_set + source for the
+       depth-greedy preemption pass
+     - handle_microstep: reads (source, target, index, flags) for the
+       exit/body/entry sequence
+   #}
+typedef struct {{ model.name }}_transition_info {
+    {{ model.name }}_state_t source;       /* W3C 3.13: source state of transition */
+    {{ model.name }}_state_t target;       /* W3C 3.13: target state (== source when targetless) */
+    uint16_t index;                        /* W3C 3.13: per-source-state transition index for execute_transition_actions */
+    bool is_internal;                      /* W3C 3.13: type="internal" (analyzer.rs has already collapsed not-proper-descendant cases to external) */
+    bool is_targetless;                    /* W3C 5.9.2: no target — body fires, no state change */
+    uint32_t exit_set;                     /* W3C App.D.2: states this transition would exit (computed at collect time) */
+} {{ model.name }}_transition_info_t;
+
 /* ── Internal/external event queues — circular buffer ─────────────── */
 typedef struct {{ model.name }}_event_queue {
     {{ model.name }}_event_with_meta_t buf[SCE_MAX_EVENTS];

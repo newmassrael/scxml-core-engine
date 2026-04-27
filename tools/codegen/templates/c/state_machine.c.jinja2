@@ -563,43 +563,216 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
    convenience field used previously did not exist on the model and
    silently rendered to `false` for every transition. #}
 {% macro emit_transition_body(trans) %}
-            sm->policy.last_transition_source_state = check_state;
-            sm->policy.last_transition_is_internal = {{ 'true' if trans.type == 'internal' else 'false' }};
-            sm->policy.last_transition_is_targetless = {{ 'true' if not trans.target else 'false' }};
-            sm->policy.last_transition_index = (uint16_t){{ trans.transition_index }}u;
-            {% if trans.target %}
-            sm->policy.last_transition_target_state = {{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }};
-            {% else %}
-            sm->policy.last_transition_target_state = check_state;  /* unused for targetless; assigned for switch coverage */
-            {% endif %}
-            sm->transition_taken = true;
-            return true;
+            /* W3C SCXML App.D: collect into the enabled list. The list is a
+               stack-local fixed-cap buffer (`SCE_MAX_ENABLED_TRANSITIONS`,
+               override at build time). Overflow drops silently — fixtures
+               that need a higher cap raise it via -D, mirroring how
+               SCE_MAX_EVENTS scales with the queue. The exit set is
+               computed at collect time so conflict resolution reduces to
+               bitmap intersection (no helper-class dispatch — T3 lock-in). */
+            if (*out_count < (uint8_t)SCE_MAX_ENABLED_TRANSITIONS) {
+                {{ model.name }}_transition_info_t *_ti = &out_list[*out_count];
+                _ti->source = check_state;
+                _ti->target = {% if trans.target %}{{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }}{% else %}check_state{% endif %};
+                _ti->index = (uint16_t){{ trans.transition_index }}u;
+                _ti->is_internal = {{ 'true' if trans.type == 'internal' else 'false' }};
+                _ti->is_targetless = {{ 'true' if not trans.target else 'false' }};
+                _ti->exit_set = compute_exit_set(sm->active, _ti->source, _ti->target,
+                                                 _ti->is_internal, _ti->is_targetless);
+                (*out_count)++;
+            }
+            break;  /* W3C 3.13: preemption — first match in this state wins */
 {% endmacro %}
 
-static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t event) {
-    (void)event;  /* used only inside the per-state switch arms; suppress
-                     -Wunused-parameter when no state declares any
-                     transitions (e.g. test415: top-level final-only). */
-    sm->transition_taken = false;
-    /* W3C SCXML 3.13: Walk a single active leaf up the parent chain so
-       both event-bound and eventless transitions reach every state in
-       the active configuration's spine. cpp selectTransitions /
-       selectEventlessTransitions evaluate every active state in
-       document order and pick the first match; the leaf-up walk
-       achieves the same outcome for single-leaf configurations because
-       config_in(active, ancestor) is true for every ancestor of the
-       leaf (set by config_enter_chain). For <parallel> configurations
-       with transitions inside region children the walk must iterate
-       every leaf (test405's region-internal transition forces that
-       generalisation); test404 keeps the parallel transition on the
-       <parallel> itself, so the leaf-up walk reaches it via either
-       region's ancestor path. */
-    {{ model.name }}_state_t check_state = config_leaf(sm->active);
-    while (true) {
-        switch (check_state) {
-        {% for state_id, state in model.states | dictsort %}
-        {% if state.transitions %}
-        case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+/* ── W3C SCXML App.D: optimal enabled transition set helpers ──────── */
+{# Mirrors cpp ParallelTransitionHelper + ConflictResolutionHelper. The
+   C11 backend inlines the algorithm bodies here (T3 lock-in: no helper
+   class dispatch). compute_exit_set is called at collect time so each
+   transition_info_t carries its exit_set as a uint32_t — conflict
+   detection then reduces to bitmap intersection plus a small parallel-
+   ancestor scan, no per-pair LCA recomputation. #}
+
+/* W3C SCXML App.D.2: exit set per transition (cpp computeStatesToExit mirror).
+   - targetless (W3C 5.9.2): empty — body fires, no state change
+   - internal-to-descendant (W3C 3.13): {active descendants of source}.
+     Source stays active (re-runs onentry on the target descendant), but
+     intermediate active descendants exit and re-enter — test505's
+     `<transition event="foo" type="internal" target="s11">` exits s11
+     so its onexit assigns Var2 each pass.
+   - external (or internal-but-not-to-descendant): {source} ∪ {active
+     descendants of source}. Exact when LCA(source, target) ==
+     parent(source) — the carve-out covers every currently registered
+     fixture (test404/405, test503/505/506, test403b). A cross-compound
+     asymmetric transition lands the full LCA walk alongside cpp's
+     HierarchicalStateHelper::findLCA mirror. */
+static SCE_C_UNUSED uint32_t compute_exit_set(uint32_t active,
+                                              {{ model.name }}_state_t source,
+                                              {{ model.name }}_state_t target,
+                                              bool is_internal, bool is_targetless) {
+    if (is_targetless) {
+        return 0u;
+    }
+    bool internal_to_descendant = is_internal
+        && state_is_compound(source) && !state_is_parallel(source)
+        && is_descendant_of(target, source);
+    uint32_t exit_set = 0u;
+    if (!internal_to_descendant) {
+        exit_set |= state_bit(source);
+    }
+    for (uint32_t i = 0u; i < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++i) {
+        if ((active & ((uint32_t)1u << i)) == 0u) {
+            continue;
+        }
+        {{ model.name }}_state_t s = ({{ model.name }}_state_t)i;
+        if (s == source) {
+            continue;
+        }
+        if (is_descendant_of(s, source)) {
+            exit_set |= state_bit(s);
+        }
+    }
+    return exit_set;
+}
+
+/* W3C SCXML App.D removeConflictingTransitions — full algorithm mirror.
+   Walks the input list in document order; each new transition t1 is
+   compared against the already-filtered list. On conflict, the
+   preemption rule decides which side survives:
+     - t1.target == t2.source         → drop t2 (t1 enters t2's source, t2's exit absorbed)
+     - t2.target == t1.source         → drop t1 (reverse)
+     - t1.source descends from t2.src → drop t2 (t1 deeper, preempts)
+     - else                           → drop t1 (t2 deeper or equal-depth-doc-prior)
+   Conflict criteria (any one):
+     a) exit-set bitmap intersection
+     b) target/source equality (handles dup parent transitions reached
+        from converging region leaves — test403b adversarial fixture)
+     c) one transition exits a parallel ancestor of the other's source,
+        unless the other is an internal self-loop (W3C 3.13 exception)
+   Mirrors cpp ConflictResolutionAlgorithms::removeConflictingTransitions.
+   Working buffer reuses the SCE_MAX_ENABLED_TRANSITIONS cap so no
+   heap traffic; final result copied back into the caller's list. */
+static SCE_C_UNUSED uint8_t remove_conflicting_transitions({{ model.name }}_transition_info_t *list,
+                                                            uint8_t count) {
+    {{ model.name }}_transition_info_t filtered[SCE_MAX_ENABLED_TRANSITIONS];
+    uint8_t filtered_count = 0u;
+
+    for (uint8_t k = 0u; k < count; ++k) {
+        {{ model.name }}_transition_info_t t1 = list[k];
+        bool t1_preempted = false;
+        bool to_remove[SCE_MAX_ENABLED_TRANSITIONS];
+        for (uint8_t r = 0u; r < (uint8_t)SCE_MAX_ENABLED_TRANSITIONS; ++r) {
+            to_remove[r] = false;
+        }
+
+        for (uint8_t i = 0u; i < filtered_count; ++i) {
+            {{ model.name }}_transition_info_t *t2 = &filtered[i];
+            bool has_conflict = false;
+
+            /* (a) exit-set intersection */
+            if ((t1.exit_set & t2->exit_set) != 0u) {
+                has_conflict = true;
+            }
+
+            /* (b) target/source equality — dedups duplicate parent
+                  transitions reached from converging bubble paths. */
+            if (!has_conflict) {
+                if (t1.target == t2->source || t2->target == t1.source) {
+                    has_conflict = true;
+                }
+            }
+
+            /* (c) t1 exits a <parallel> ancestor of t2->source.
+                  Internal self-loops (source==target with type=internal)
+                  are exempt — they do not really exit any state. */
+            if (!has_conflict && !(t2->is_internal && t2->source == t2->target)) {
+                for (uint32_t j = 0u; j < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++j) {
+                    if ((t1.exit_set & ((uint32_t)1u << j)) == 0u) {
+                        continue;
+                    }
+                    {{ model.name }}_state_t s = ({{ model.name }}_state_t)j;
+                    if (state_is_parallel(s) && is_descendant_of(t2->source, s)) {
+                        has_conflict = true;
+                        break;
+                    }
+                }
+            }
+
+            /* (c) reverse — t2 exits a <parallel> ancestor of t1.source. */
+            if (!has_conflict && !(t1.is_internal && t1.source == t1.target)) {
+                for (uint32_t j = 0u; j < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++j) {
+                    if ((t2->exit_set & ((uint32_t)1u << j)) == 0u) {
+                        continue;
+                    }
+                    {{ model.name }}_state_t s = ({{ model.name }}_state_t)j;
+                    if (state_is_parallel(s) && is_descendant_of(t1.source, s)) {
+                        has_conflict = true;
+                        break;
+                    }
+                }
+            }
+
+            if (has_conflict) {
+                if (t1.target == t2->source) {
+                    to_remove[i] = true;
+                } else if (t2->target == t1.source) {
+                    t1_preempted = true;
+                } else if (is_descendant_of(t1.source, t2->source)) {
+                    to_remove[i] = true;
+                } else {
+                    t1_preempted = true;
+                }
+            }
+        }
+
+        if (!t1_preempted) {
+            uint8_t kept = 0u;
+            for (uint8_t i = 0u; i < filtered_count; ++i) {
+                if (!to_remove[i]) {
+                    if (kept != i) {
+                        filtered[kept] = filtered[i];
+                    }
+                    kept++;
+                }
+            }
+            if (kept < (uint8_t)SCE_MAX_ENABLED_TRANSITIONS) {
+                filtered[kept] = t1;
+                filtered_count = (uint8_t)(kept + 1u);
+            } else {
+                filtered_count = kept;
+            }
+        }
+    }
+
+    for (uint8_t i = 0u; i < filtered_count; ++i) {
+        list[i] = filtered[i];
+    }
+    return filtered_count;
+}
+
+/* W3C SCXML 3.13: Per-state collection switch. Mirrors the C++
+   `tryTransitionInState` helper (process_transition.jinja2 collect mode):
+   evaluate every transition in the state in document order, push the
+   first match onto the enabled list, then break out of the do-while so
+   later transitions in the same state are not evaluated (preemption).
+   Returns true iff this state contributed a transition.
+   `(void)sm` and `(void)event` keep the helper warning-free for fixtures
+   whose transition graph is sparse — the casts are no-ops once the
+   switch arms reference sm->active (compute_exit_set) and `event`
+   (matcher branches). */
+static bool try_match_in_state({{ model.name }}_t *sm,
+                                {{ model.name }}_state_t check_state,
+                                {{ model.name }}_event_t event,
+                                {{ model.name }}_transition_info_t *out_list,
+                                uint8_t *out_count) {
+    (void)sm;
+    (void)event;
+    (void)out_list;
+    uint8_t before = *out_count;
+    switch (check_state) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.transitions %}
+    case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
+        do {
             {% for trans in state.transitions %}
             {{ emit_transition_match_check(trans) }} {
             {% if trans.cond %}
@@ -623,85 +796,153 @@ static bool process_transition({{ model.name }}_t *sm, {{ model.name }}_event_t 
             {% endif %}
             }
             {% endfor %}
-            break;
-        }
-        {% endif %}
-        {% endfor %}
-        default:
-            break;
-        }
-        bool _has_parent;
-        {{ model.name }}_state_t _parent = state_get_parent(check_state, &_has_parent);
-        if (!_has_parent) {
-            return false;  /* Reached root, no further bubbling possible. */
-        }
-        check_state = _parent;
+        } while (0);
+        break;
+    {% endif %}
+    {% endfor %}
+    default:
+        break;
     }
+    return *out_count > before;
 }
 
-/* W3C SCXML 3.13: Hierarchical exit/entry sequence around a transition.
-   Reads the transition descriptor from `sm->policy` (source/target/internal/
-   targetless flags) populated by emit_transition_body at match time, and
-   updates the configuration bitmap `sm->active` directly. Mirrors cpp
-   StaticExecutionEngine::handleHierarchicalTransition.
-   - targetless: transition body only, no configuration change.
-   - internal (target is proper descendant of source — analyzer.rs
-     downgrades all other internal markers to external): exit the
-     active descendants under source, body, entry-descend onto target.
-   - external: exit chain includes the source itself, body, entry-descend
-     onto target. The active descendants of the source are identified via
-     `is_descendant_of` over the bitmap.
+/* W3C SCXML App.D: optimal-enabled-set selection. Two branches mirror
+   cpp processTransition's eventless / external split:
+   - eventless: walk every active state in document order (enum-value
+     order = alphabetic = doc-order proxy), no parent bubbling. cpp
+     selectEventlessTransitions evaluates every active state including
+     compound and parallel ancestors; the C switch's `default: break;`
+     arm short-circuits ancestors that declare no transitions.
+   - external: walk every active leaf, bubble up the parent chain, stop
+     at the first match per leaf. The same parent transition reached
+     from two converging bubble paths gets pushed twice — conflict
+     resolution dedups via exit-set intersection (test403b adversarial
+     fixture pins this dedup behaviour).
+   Compound and parallel ancestors are excluded as candidate leaves; a
+   future fixture forcing done.state events on a compound/parallel target
+   relaxes that filter alongside the cpp `isDoneStateEvent` mirror. */
+static bool process_transition({{ model.name }}_t *sm,
+                                {{ model.name }}_event_t event,
+                                {{ model.name }}_transition_info_t *out_list,
+                                uint8_t *out_count) {
+    *out_count = 0u;
+    sm->transition_taken = false;
+    if (event == {{ model.name | upper }}_EVENT_NONE) {
+        for (uint32_t i = 0u; i < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++i) {
+            if ((sm->active & ((uint32_t)1u << i)) == 0u) {
+                continue;
+            }
+            (void)try_match_in_state(sm, ({{ model.name }}_state_t)i, event, out_list, out_count);
+        }
+    } else {
+        for (uint32_t i = 0u; i < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++i) {
+            if ((sm->active & ((uint32_t)1u << i)) == 0u) {
+                continue;
+            }
+            {{ model.name }}_state_t leaf = ({{ model.name }}_state_t)i;
+            if (state_is_compound(leaf) || state_is_parallel(leaf)) {
+                continue;
+            }
+            {{ model.name }}_state_t check_state = leaf;
+            while (true) {
+                if (try_match_in_state(sm, check_state, event, out_list, out_count)) {
+                    break;
+                }
+                bool _hp;
+                {{ model.name }}_state_t _p = state_get_parent(check_state, &_hp);
+                if (!_hp) {
+                    break;
+                }
+                check_state = _p;
+            }
+        }
+    }
+    if (*out_count > 0u) {
+        sm->transition_taken = true;
+        return true;
+    }
+    return false;
+}
 
-   Full LCA(source, target) computation — the case where the target is
-   neither a proper descendant of the source nor a sibling/cousin under
-   the same parent — is intentionally deferred. test503/505/506 each
-   satisfy LCA == parent(source); a deeper-LCA fixture lands the generalised
-   walk alongside the cpp HierarchicalStateHelper mirror. */
-static void handle_hierarchical_transition({{ model.name }}_t *sm) {
-    if (sm->policy.last_transition_is_targetless) {
-        execute_transition_actions(sm);
+/* W3C SCXML App.D.2: Microstep execution.
+   - exit:  union of every selected transition's exit_set, walked in
+            reverse enum-value order (= reverse doc-order proxy) so the
+            deepest active descendant exits first; multi-leaf <parallel>
+            configurations drain every region simultaneously
+   - body:  transitions sorted by source enum-value, executed in order
+   - entry: transitions sorted by target enum-value, enter_state_recursive
+            is idempotent so duplicate / converging targets collapse
+   Mirrors cpp StaticExecutionEngine::executeMicrostep +
+   ParallelTransitionHelper::computeStatesToExit / sortTransitionsBySource /
+   sortTransitionsByTarget, inlined into one function per the T3 lock-in.
+
+   LCA carve-out: every currently registered fixture has
+   LCA(source, target) == parent(source) so compute_exit_set's
+   {source} ∪ {active descendants of source} formulation is exact.
+   Cross-compound asymmetric transitions land the full LCA walk
+   alongside the cpp HierarchicalStateHelper::findLCA mirror. Sort keys
+   use enum-value order — alphabetic sort is the doc-order proxy across
+   every currently registered fixture (s01p > s01p1 > s01p11 ordering);
+   a fixture whose alphabetic order diverges from doc-order will force
+   a codegen-time doc-order table (cpp's StateRegistry mirror). */
+static void handle_microstep({{ model.name }}_t *sm,
+                             {{ model.name }}_transition_info_t *list,
+                             uint8_t count) {
+    if (count == 0u) {
         return;
     }
-    {{ model.name }}_state_t source = sm->policy.last_transition_source_state;
-    {{ model.name }}_state_t target = sm->policy.last_transition_target_state;
 
-    /* W3C SCXML 3.13: Exit chain — every active descendant of source plus
-       source itself when the transition is external. Iterates the full
-       configuration bitmap in reverse enum order so multi-leaf
-       (<parallel>) exits drain every region simultaneously. Reverse
-       enum-value order approximates reverse document order: the parser
-       sorts states alphabetically, child IDs typically extend the parent
-       (e.g. s01p2 > s01p1 > s01p), and that ordering is what
-       test404/test405 verify for their <parallel> exit sequences. A
-       fixture whose alphabetical order diverges from doc order will
-       force a codegen-time doc-order list (cpp's StateRegistry mirror). */
+    uint32_t exit_union = 0u;
+    for (uint8_t i = 0u; i < count; ++i) {
+        exit_union |= list[i].exit_set;
+    }
     for (uint32_t bit = (uint32_t){{ model.name | upper }}_STATE_COUNT; bit > 0u; --bit) {
         {{ model.name }}_state_t s = ({{ model.name }}_state_t)(bit - 1u);
-        if ((sm->active & state_bit(s)) == 0u) {
+        if ((exit_union & state_bit(s)) == 0u) {
             continue;
         }
-        if (s == source || !is_descendant_of(s, source)) {
+        if ((sm->active & state_bit(s)) == 0u) {
             continue;
         }
         execute_exit_actions(sm, s);
         sm->active &= ~state_bit(s);
     }
-    if (!sm->policy.last_transition_is_internal) {
-        execute_exit_actions(sm, source);
-        sm->active &= ~state_bit(source);
+
+    /* W3C App.D.2 Step 3: bodies in document order. */
+    for (uint8_t i = 1u; i < count; ++i) {
+        {{ model.name }}_transition_info_t key = list[i];
+        uint8_t j = i;
+        while (j > 0u && (uint32_t)list[j - 1u].source > (uint32_t)key.source) {
+            list[j] = list[j - 1u];
+            j--;
+        }
+        list[j] = key;
+    }
+    for (uint8_t i = 0u; i < count; ++i) {
+        sm->policy.last_transition_source_state = list[i].source;
+        sm->policy.last_transition_target_state = list[i].target;
+        sm->policy.last_transition_is_internal = list[i].is_internal;
+        sm->policy.last_transition_is_targetless = list[i].is_targetless;
+        sm->policy.last_transition_index = list[i].index;
+        execute_transition_actions(sm);
     }
 
-    execute_transition_actions(sm);
-
-    /* W3C SCXML 3.13: Entry chain — enter the target and (recursively)
-       its initial descendants / parallel region children. Idempotent
-       config_enter_chain inside enter_state_recursive ensures ancestors
-       already active under an internal transition (source preserved)
-       stay set without double onentry. Cross-compound entry that crosses
-       inactive ancestors runs per-ancestor onentry only when the deeper
-       LCA fixture forces buildEntryChain mirror — current test503/505/506
-       and test404/405 all satisfy LCA == parent(source). */
-    enter_state_recursive(sm, target);
+    /* W3C App.D.2 Step 4-5: entries in document order. */
+    for (uint8_t i = 1u; i < count; ++i) {
+        {{ model.name }}_transition_info_t key = list[i];
+        uint8_t j = i;
+        while (j > 0u && (uint32_t)list[j - 1u].target > (uint32_t)key.target) {
+            list[j] = list[j - 1u];
+            j--;
+        }
+        list[j] = key;
+    }
+    for (uint8_t i = 0u; i < count; ++i) {
+        if (list[i].is_targetless) {
+            continue;
+        }
+        enter_state_recursive(sm, list[i].target);
+    }
 }
 
 /* ── W3C SCXML 6.2: External-facing raise APIs ────────────────────── */
@@ -754,9 +995,13 @@ static void set_current_event(lua_State *L, {{ model.name }}_event_t e) {
    with a lambda; here that lambda is inlined as the loop body. The
    external pass mirrors the internal one in E1 — finalize / autoforward
    hooks (HasFinalize / HasAutoforward constexpr branches in C++) are
-   deferred until E4 lands the invoke surface. */
+   deferred until E4 lands the invoke surface. The enabled-list buffer
+   is stack-local at the function scope; reused across both queues per
+   W3C App.D Step 1 (each event drives an independent microstep). */
 static void process_event_queues({{ model.name }}_t *sm) {
     {{ model.name }}_event_with_meta_t evt;
+    {{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
+    uint8_t count;
 
     while (event_queue_pop(&sm->internal_queue, &evt)) {
         strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
@@ -769,8 +1014,9 @@ static void process_event_queues({{ model.name }}_t *sm) {
             return;
         }
 
-        if (process_transition(sm, evt.event)) {
-            handle_hierarchical_transition(sm);
+        if (process_transition(sm, evt.event, enabled, &count)) {
+            count = remove_conflicting_transitions(enabled, count);
+            handle_microstep(sm, enabled, count);
         }
     }
 
@@ -785,8 +1031,9 @@ static void process_event_queues({{ model.name }}_t *sm) {
             return;
         }
 
-        if (process_transition(sm, evt.event)) {
-            handle_hierarchical_transition(sm);
+        if (process_transition(sm, evt.event, enabled, &count)) {
+            count = remove_conflicting_transitions(enabled, count);
+            handle_microstep(sm, enabled, count);
         }
     }
 }
@@ -794,17 +1041,22 @@ static void process_event_queues({{ model.name }}_t *sm) {
 /* W3C SCXML 6.2 (Appendix D, eventless microstep loop):
    Repeat eventless transitions until the configuration stops changing or
    a top-level final state is reached. The 100-iteration ceiling mirrors
-   the C++ guard against pathological cycles (`MAX_ITERATIONS`). */
+   the C++ guard against pathological cycles (`MAX_ITERATIONS`). Each
+   iteration's enabled list is built fresh, conflict-resolved, then
+   executed atomically — same shape as cpp's per-microstep collection. */
 static void check_eventless_transitions({{ model.name }}_t *sm) {
+    {{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
+    uint8_t count;
     int iter = 0;
     while (iter < 100) {
         if ({{ model.name }}_is_in_final_state(sm)) {
             return;
         }
-        if (!process_transition(sm, {{ model.name | upper }}_EVENT_NONE)) {
+        if (!process_transition(sm, {{ model.name | upper }}_EVENT_NONE, enabled, &count)) {
             return;
         }
-        handle_hierarchical_transition(sm);
+        count = remove_conflicting_transitions(enabled, count);
+        handle_microstep(sm, enabled, count);
         iter++;
     }
 }
