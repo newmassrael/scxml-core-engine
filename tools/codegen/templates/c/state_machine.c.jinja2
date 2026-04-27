@@ -200,6 +200,29 @@ static void scheduled_push({{ model.name }}_t *sm,
                            _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
                            {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}");
+{% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 (test159): static-event + invalid target whose
+               literal value starts with `!` per `SendHelper::isInvalidTarget`
+               (`sce/include/common/SendHelper.h:67`). Codegen-time decidable —
+               action.target is parsed verbatim (parser.rs:1146) so the prefix
+               check resolves at template time without a runtime SendHelper
+               call. W3C 5.10 mandates that error.execution stop subsequent
+               executable content; the enclosing `execute_entry_actions` /
+               `execute_exit_actions` / `execute_transition_actions` switch
+               case returns immediately, mirroring cpp
+               `actions/send.jinja2` lines 321-333 (in_entry_exit return). The
+               other target shapes (`#_internal` alias, `#_parent`, `#_child`,
+               `#_<invokeid>`, BasicHTTP URI, mesh `#...`, runtime targetexpr)
+               stay #error-guarded below until a fixture forces them. The
+               `not in_foreach` guard preserves the loop-body carve-out that
+               cpp ships (its `in_entry_exit` flag is unset inside foreach
+               bodies) — invalid-target send inside a `<foreach>` body lands
+               with its own force fixture. */
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+            return;
 {% else %}
 #error "C11 backend: <send> shape with target/params/namelist/content/typeexpr/idlocation is not yet implemented — extend emit_action's send branch with the first fixture forcing it."
 {% endif %}
