@@ -186,6 +186,35 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                     {{ model.name }}_raise(sm, &_err_evt);
                 }
             }
+{% elif action.event and action.delay and action.params and not action.delayexpr and not action.target and not action.eventexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation and (not in_foreach) %}
+            /* W3C SCXML 5.10 + 6.2 (test186): static-event + literal delay
+               + `<param>` carry. Per-param `expr` is evaluated against the
+               active datamodel **at send time**, not delivery time — the
+               surrounding onentry's subsequent <assign> may mutate the
+               source variable before the timer fires, but the captured
+               value snapshots into `_pending_donedata`. The lua-side
+               table is then anchored in the registry via luaL_ref so it
+               survives the gap between scheduling and dispatch (immediate
+               sends rebind `_pending_donedata` to a fresh table on every
+               raise; without the registry anchor a subsequent immediate
+               send would clobber the scheduled payload). The `_tick`
+               dispatch path restores the table onto `_pending_donedata`
+               just before raising, mirroring cpp's
+               `EventDataHelper::buildEventDataJson` → `EventWithMetadata::data`
+               → `LuaEngine::setupEventInLua` round-trip — same per-entry
+               ownership shape, lua-native carry instead of JSON string per
+               P1 lock-in (Lua 5.4 only). */
+            (void)luaL_dostring(sm->L, "_pending_donedata = {}");
+{% for param in action.params %}
+{{ se.lua_eval_send_param_expr(param.name, param.expr) }}
+{% endfor %}
+            lua_getglobal(sm->L, "_pending_donedata");
+            int _payload_ref = luaL_ref(sm->L, LUA_REGISTRYINDEX);
+            scheduled_push(sm,
+                           _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
+                           {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
+                           "{{ action.auto_send_id | escape_c }}",
+                           _payload_ref);
 {% elif action.event and action.delay and not action.delayexpr and not action.target and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2: static-event + literal delay (no target / no
                payload). `action.delay_ms` is the parser-side conversion
@@ -2312,6 +2341,19 @@ void {{ model.name }}_tick({{ model.name }}_t *sm) {
            terminator without tripping `-Wstringop-truncation` (which
            strncpy would since src is a same-size buffer). */
         memcpy(evt.send_id, ready.send_id, (size_t)SCE_MAX_ID_LEN);
+{% if model.needs_script_engine %}
+        /* W3C SCXML 5.10 (test186): restore the per-entry payload table
+           onto `_pending_donedata` so the next dequeue's set_current_event
+           promotes it onto `_event.data` (mirrors cpp's
+           EventWithMetadata::data → LuaEngine::setupEventInLua delivery).
+           luaL_unref releases the registry slot synchronously; LUA_NOREF
+           entries (delay-only sends, no <param>) bypass the restore. */
+        if (ready.payload_lua_ref != LUA_NOREF) {
+            lua_rawgeti(sm->L, LUA_REGISTRYINDEX, ready.payload_lua_ref);
+            lua_setglobal(sm->L, "_pending_donedata");
+            luaL_unref(sm->L, LUA_REGISTRYINDEX, ready.payload_lua_ref);
+        }
+{% endif %}
         {{ model.name }}_raise_external(sm, &evt);
     }
 
