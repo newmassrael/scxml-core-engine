@@ -365,6 +365,43 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
+{% elif (not in_foreach) and action.event and action.namelist and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 5.10 + 6.2 + C.1 (test354): static-event with both
+               `<send namelist>` AND `<param>` children sharing the same
+               event data table. cpp `actions/send.jinja2:463-528` evaluates
+               `NamelistHelper::evaluateNamelist` and the per-param
+               `evaluateExpression` against a single `params` map, then
+               packages the combined map through
+               `EventDataHelper::buildEventDataJson` for the receiver. C11
+               mirrors via `_pending_donedata` initialised once before the
+               loops, both evaluators writing into the same lua table:
+               namelist names land as `_pending_donedata.<var>` (W3C C.1
+               two-source declared check + ReferenceError-on-miss raises
+               error.execution + return, cpp `NamelistHelper::evaluateNamelist`
+               errorHandler 1:1 via `lua_eval_namelist_var`); param exprs
+               land as `_pending_donedata.<param>` (eval failure falls back
+               to empty string per cpp `params[name].push_back("")`, no
+               raise — `lua_eval_send_param_expr`). The set_current_event
+               chunk promotes the combined table onto `_event.data` so the
+               receiving transitions can read both `_event.data.<var>` and
+               `_event.data.<param>` from one dispatch. SCXMLEventProcessor
+               URI literal carve-out (옵션 ρ.send_type, 0df747ef) accepts
+               `type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"`
+               alongside the empty-default; other type literals stay
+               #error guarded. Slot collision: shares `_pending_donedata`
+               with the params/namelist/donedata/content paths; same
+               last-write-wins caveat applies. */
+            (void)luaL_dostring(sm->L, "_pending_donedata = {}");
+            {% for var_name in action.namelist.split() %}
+            {{ se.lua_eval_namelist_var(var_name) }}
+            {% endfor %}
+            {% for param in action.params %}
+            {{ se.lua_eval_send_param_expr(param.name, param.expr) }}
+            {% endfor %}
+            {{ model.name }}_event_with_meta_t _send_evt;
+            memset(&_send_evt, 0, sizeof(_send_evt));
+            _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.namelist and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 + C.1 (test553): static-event with
                `<send namelist>`, no `target` (external queue). Each
@@ -658,6 +695,27 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
+{% elif (not in_foreach) and action.event and action.send_type and action.send_type != 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' and action.send_type != 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.eventexpr and not action.target and not action.targetexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 (test199): unsupported send_type literal raises
+               error.execution and stops the surrounding entry/exit/transition
+               body. cpp `actions/send.jinja2:16-25` uses a runtime call to
+               `SendHelper::isSupportedSendType` (sce/include/common/SendHelper.h:301-312)
+               that returns false for any literal that is neither empty,
+               SCXMLEventProcessor, nor BasicHTTPEventProcessor; the false-fall
+               raises Error_execution and returns from the enclosing executor.
+               C11 lowers the decision to codegen time (T3 inline-only
+               lock-in) — the literal is known here, so the check collapses
+               to "type is set, not the SCXMLEventProcessor URI, not the
+               BasicHTTPEventProcessor URI" and emits the raise + return
+               directly. The BasicHTTP branch is preserved as a #error
+               carve-out below (cpp returns true for it; C11 BasicHTTP
+               dispatch lands with the first force fixture and is not in
+               watching-zenoh's scope per `c11_design_decisions.md`). */
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+            return;
 {% else %}
 #error "C11 backend: <send> shape with target/params/namelist/content/typeexpr/idlocation is not yet implemented — extend emit_action's send branch with the first fixture forcing it."
 {% endif %}
