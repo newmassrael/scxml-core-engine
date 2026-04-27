@@ -74,6 +74,9 @@ sce_generate_static_w3c_c_test(403b "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C S
 sce_generate_static_w3c_c_test(387 "${SCE_C_GENERATED_DIR}")   # W3C SCXML 3.10: default history target — first entry of an unvisited shallow/deep history pseudo-state walks its default <transition target=...> down to the initial leaf (s0HistShallow → s01 → s011, s1HistDeep → s122)
 sce_generate_static_w3c_c_test(388 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 3.10: history snapshot capture/restore — re-entering s0 via deep history restores s012 (last active leaf), shallow history restores s01 then walks initial s011
 sce_generate_static_w3c_c_test(172 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 6.2: <send eventexpr> evaluates the expression at send time using the current datamodel value (Var1 reassigned 'event2' before send → matches event2 transition, not initial 'event1')
+sce_generate_static_w3c_c_test(342 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 6.2: <send eventexpr> sets the dispatched event's name field — assign Var2 = _event.name then cond Var1 === Var2 verifies the round trip
+sce_generate_static_w3c_c_test(444 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 5.2: <data id> creates an ECMAScript variable accessible from cond — `++var1==2` exercises the closure-based prefix increment shim
+sce_generate_static_w3c_c_test(448 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML B.2: ECMAScript single global scope — state-local <data> declared in a child / parallel sibling is reachable from a parent / sibling cond (early binding makes both var1 and var2 globally bound at init)
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
