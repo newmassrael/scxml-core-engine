@@ -146,7 +146,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
 {% elif action.type == 'send' %}
         {
             /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr | escape_c }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
-{% if action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% if action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test172): dynamic event name via `eventexpr`,
                no target = internal queue. The event name string is matched
                against the codegen-time event enum; an unmatched name raises
@@ -201,7 +201,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                            _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
                            {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}");
-{% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and action.idlocation and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr %}
+{% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and action.idlocation and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr %}
             /* W3C SCXML 6.2.4 + 5.10.1 (test332): static-event + invalid
                target with `idlocation`. The auto-generated `sendid` is
                first stored to the idlocation variable, then the invalid
@@ -224,7 +224,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             _err_evt.send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
             {{ model.name }}_raise(sm, &_err_evt);
             return;
-{% elif action.event and action.idlocation and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr %}
+{% elif action.event and action.idlocation and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr %}
             /* W3C SCXML 6.2.4 (test183): bare-external static event with
                `idlocation`. Auto-generated sendid is stored to the lua
                datamodel variable named by `idlocation` so the receiving
@@ -243,7 +243,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             strncpy(_send_evt.send_id, "{{ action.auto_send_id | escape_c }}", (size_t)SCE_MAX_ID_LEN - 1u);
             _send_evt.send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
             {{ model.name }}_raise_external(sm, &_send_evt);
-{% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test159): static-event + invalid target whose
                literal value starts with `!` per `SendHelper::isInvalidTarget`
                (`sce/include/common/SendHelper.h:67`). Codegen-time decidable —
@@ -266,7 +266,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
             {{ model.name }}_raise(sm, &_err_evt);
             return;
-{% elif action.event and action.target == '#_internal' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% elif action.event and action.target == '#_internal' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML C.1 (test189): static-event + target="#_internal"
                routes to the internal (high-priority) queue per
                `SendHelper::isInternalTarget` (`sce/include/common/SendHelper.h:88`).
@@ -281,7 +281,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise(sm, &_send_evt);
-{% elif action.event and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% elif action.event and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test189): static-event with no `target` attribute
                defaults to the SCXML processor's external (low-priority) queue
                (W3C 6.2: "If the send element does not specify a target, the
@@ -295,7 +295,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
-{% elif action.event and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% elif action.event and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 (test176/205/560): static-event with
                `<param>(s)`, no `target` (external queue). Each param's
                `expr` is evaluated against the active datamodel and stored
@@ -331,7 +331,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
-{% elif action.event and action.content and not action.contentexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% elif action.event and action.content and not action.contentexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 + B.2 (test179): static-event with
                inline `<content>` (no `expr` attribute), no `target`
                (external queue). The `<content>` body is a single textual
@@ -361,7 +361,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
-{% elif action.event and action.targetexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.idlocation %}
+{% elif action.event and action.targetexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test173): runtime `targetexpr` evaluation —
                the target string is computed at send time from the
                datamodel, then dispatched to either the internal queue
@@ -422,7 +422,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                 {{ model.name }}_raise(sm, &_err_evt);
                 return;
             }
-{% elif action.event and action.typeexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.targetexpr and not action.idlocation %}
+{% elif action.event and action.typeexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test174): runtime `typeexpr` evaluation —
                the send type is computed at send time and validated against
                the supported processor list. cpp `SendHelper::isSupportedSendType`
@@ -462,7 +462,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                 _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
                 {{ model.name }}_raise_external(sm, &_send_evt);
             }
-{% elif action.event and action.delayexpr and not action.target and not action.eventexpr and not action.delay and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% elif action.event and action.delayexpr and not action.target and not action.eventexpr and not action.delay and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test175): runtime `delayexpr` evaluation —
                the delay string is computed at send time from the
                datamodel and parsed by the lua chunk in
@@ -489,7 +489,7 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                            _sce_clock_now_ms() + _send_delay_ms,
                            {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}");
-{% elif action.event and action.contentexpr and not action.content and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% elif action.event and action.contentexpr and not action.content and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 (contentexpr force fixture): static-event
                with `<content expr="...">`, no `target`. The expression is
                evaluated against the active datamodel and the result lands
