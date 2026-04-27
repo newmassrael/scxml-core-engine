@@ -200,6 +200,48 @@ static void scheduled_push({{ model.name }}_t *sm,
                            _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
                            {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}");
+{% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and action.idlocation and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr %}
+            /* W3C SCXML 6.2.4 + 5.10.1 (test332): static-event + invalid
+               target with `idlocation`. The auto-generated `sendid` is
+               first stored to the idlocation variable, then the invalid
+               target raises `error.execution` with the same `sendid`
+               attached to the event metadata so the receiving handler can
+               correlate the failure (`_event.sendid` reads the same value
+               that was captured in the idlocation slot). Mirrors cpp
+               `actions/send.jinja2` lines 26-35 (idlocation store via
+               `SendHelper::storeInIdLocation`) + lines 88-95 (invalid
+               target raise with `Engine::EventWithMetadata(Error_execution,
+               "", "", sendId)`). Auto-generated sendids are always
+               `__send_N` (parser.rs:1158) so the lua chunk's single-quoted
+               literal is safe without escape handling. */
+            (void)luaL_dostring(sm->L,
+                "{{ action.idlocation }} = '{{ action.auto_send_id | escape_c }}'");
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            strncpy(_err_evt.send_id, "{{ action.auto_send_id | escape_c }}", (size_t)SCE_MAX_ID_LEN - 1u);
+            _err_evt.send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            {{ model.name }}_raise(sm, &_err_evt);
+            return;
+{% elif action.event and action.idlocation and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr %}
+            /* W3C SCXML 6.2.4 (test183): bare-external static event with
+               `idlocation`. Auto-generated sendid is stored to the lua
+               datamodel variable named by `idlocation` so the receiving
+               state's cond can verify it via `typeof Var !== 'undefined'`.
+               The send proceeds as a regular bare-external dispatch with
+               the same sendid attached to the event metadata, mirroring
+               cpp `actions/send.jinja2` lines 26-35 (idlocation store) +
+               780-812 (bare-external raise paths) — cpp passes sendId
+               through `EventWithMetadata`'s constructor; C11 strncpy's it
+               into the meta struct's send_id field directly per T3. */
+            (void)luaL_dostring(sm->L,
+                "{{ action.idlocation }} = '{{ action.auto_send_id | escape_c }}'");
+            {{ model.name }}_event_with_meta_t _send_evt;
+            memset(&_send_evt, 0, sizeof(_send_evt));
+            _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            strncpy(_send_evt.send_id, "{{ action.auto_send_id | escape_c }}", (size_t)SCE_MAX_ID_LEN - 1u);
+            _send_evt.send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            {{ model.name }}_raise_external(sm, &_send_evt);
 {% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test159): static-event + invalid target whose
                literal value starts with `!` per `SendHelper::isInvalidTarget`
@@ -1834,15 +1876,35 @@ static bool scheduled_pop_ready({{ model.name }}_t *sm,
    fixture declares no events (then both the switch and the parameters
    fall through unused). #}
 {% if model.needs_script_engine %}
-static void set_current_event(lua_State *L, {{ model.name }}_event_t e) {
+static void set_current_event(lua_State *L, const {{ model.name }}_event_with_meta_t *evt) {
     (void)L;
-    (void)e;
-    switch (e) {
+    (void)evt;
+    /* W3C SCXML 5.10.1 (test332): expose `evt->send_id` to the lua side
+       via a transient global so the dispatch chunk below can embed it
+       without per-event snprintf. Empty send_id (i.e. the meta field
+       was zero-initialised by `<raise>` or non-`<send>` raises) is set to
+       lua nil — test333 verifies that non-error events have `_event.sendid`
+       blank, which lua-side reads as nil and ECMAScript surfaces as the
+       same `undefined`/falsy contract the cpp engine returns through its
+       optional-shaped `pendingEventSendId_` carry. The other W3C 5.10.1
+       metadata fields (type / origin / origintype / invokeid) land with
+       their first reader fixture (built-but-unconsumed carve-out per
+       feedback_built_but_unconsumed.md). */
+    if (evt->send_id[0] != '\0') {
+        lua_pushstring(L, evt->send_id);
+    } else {
+        lua_pushnil(L);
+    }
+    lua_setglobal(L, "_pending_send_id");
+    switch (evt->event) {
     {% for event_name in model.events | sort %}
     case {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}:
         (void)luaL_dostring(L,
-            "_event = {name = '{{ event_name | escape_c }}', data = _pending_donedata}; "
-            "_pending_donedata = nil");
+            "_event = {name = '{{ event_name | escape_c }}', "
+              "data = _pending_donedata, "
+              "sendid = _pending_send_id}; "
+            "_pending_donedata = nil; "
+            "_pending_send_id = nil");
         break;
     {% endfor %}
     default:
@@ -1881,7 +1943,7 @@ static void process_event_queues({{ model.name }}_t *sm) {
         strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
         sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
         {% if model.needs_script_engine %}
-        set_current_event(sm->L, evt.event);
+        set_current_event(sm->L, &evt);
         {% endif %}
 
         if ({{ model.name }}_is_in_final_state(sm)) {
@@ -1904,7 +1966,7 @@ static void process_event_queues({{ model.name }}_t *sm) {
         strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
         sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
         {% if model.needs_script_engine %}
-        set_current_event(sm->L, evt.event);
+        set_current_event(sm->L, &evt);
         {% endif %}
 
         if ({{ model.name }}_is_in_final_state(sm)) {
