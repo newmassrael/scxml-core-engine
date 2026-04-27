@@ -410,6 +410,20 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                 _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
                 {{ model.name }}_raise(sm, &_err_evt);
                 return;
+            } else if (strcmp(_send_target_buf, "{{ model.name }}_session") == 0) {
+                /* W3C SCXML 5.10.1 (test336): target = self session URI
+                   (the deterministic AOT-binding `<model.name>_session`
+                   literal lua-side `_sessionid` exposes). External pop
+                   sets `_event.origin` to that literal, so a receiver's
+                   `<send targetexpr=_event.origin/>` evaluates back to
+                   it — dispatch as an external send to the same session,
+                   re-entering the external queue. cpp `raiseExternal`
+                   fan-out sees the URI as a known target via the
+                   session-id match. */
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise_external(sm, &_send_evt);
             } else {
                 /* Any other dynamic target is unreachable in the C11
                    AOT-only profile (no #_parent / #_child / mesh / HTTP
@@ -461,6 +475,80 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                 memset(&_send_evt, 0, sizeof(_send_evt));
                 _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
                 {{ model.name }}_raise_external(sm, &_send_evt);
+            }
+{% elif action.event and action.typeexpr and action.targetexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.idlocation %}
+            /* W3C SCXML 6.2 (test336): runtime `typeexpr` + `targetexpr`
+               pair — cpp `actions/send.jinja2` lines 37-86 emits two
+               independent prologues (`dynamicType` from the typeexpr
+               eval, `dynamicTarget` from the targetexpr eval) before
+               the dispatch decision. The C11 mirror walks the same
+               two evals back-to-back: type first to short-circuit
+               unsupported processors with `error.execution` (the spec
+               says a processor that cannot send via the requested type
+               must raise that error, W3C 6.2.1), then target to pick
+               between empty/external, `#_internal`, self-session URI
+               (round-trips through the external queue), `!`-prefix
+               invalid, or the unreachable fallback that raises
+               `error.communication`. The buffer sizes match the
+               typeexpr-only arm (256 bytes) and the targetexpr-only
+               arm (64 bytes) verbatim — fixtures that force longer
+               buffers raise the cap on both sites together. */
+            char _send_type_buf[256];
+            bool _send_type_ok;
+{{ se.lua_eval_eventexpr(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
+            if (!_send_type_ok) {
+                /* cpp default-fallback on eval failure (line 47-48). */
+                memcpy(_send_type_buf,
+                       "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                       (size_t)47);
+                _send_type_buf[47] = '\0';
+            }
+            if (_send_type_buf[0] != '\0'
+                && strcmp(_send_type_buf,
+                          "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") != 0) {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            }
+            char _send_target_buf[64];
+            bool _send_target_ok;
+{{ se.lua_eval_eventexpr(action.targetexpr, '_send_target_buf', '64', '_send_target_ok') }}
+            if (!_send_target_ok) {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            }
+            if (_send_target_buf[0] == '\0') {
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise_external(sm, &_send_evt);
+            } else if (strcmp(_send_target_buf, "#_internal") == 0) {
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise(sm, &_send_evt);
+            } else if (_send_target_buf[0] == '!') {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            } else if (strcmp(_send_target_buf, "{{ model.name }}_session") == 0) {
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise_external(sm, &_send_evt);
+            } else {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
             }
 {% elif action.event and action.delayexpr and not action.target and not action.eventexpr and not action.delay and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test175): runtime `delayexpr` evaluation —
@@ -1959,9 +2047,22 @@ static void set_current_event(lua_State *L, const {{ model.name }}_event_with_me
        error and done families overriding to 'platform' regardless
        of which queue popped them.
 
-       The other W3C 5.10.1 metadata fields (origin / origintype /
-       invokeid) land with their first reader fixture (built-but-
-       unconsumed carve-out per feedback_built_but_unconsumed.md). */
+       W3C SCXML 5.10.1 (test336): `_event.origin` and
+       `_event.origintype` carry the URL plus processor type the
+       receiver can hand back to <send target=...> for bidirectional
+       communication. cpp populates them from `EventWithMetadata`
+       (StaticExecutionEngine.h:578: raiseExternal default
+       `EventWithMetadata(event, data, sessionId, "", "external",
+       SCXML_EVENT_PROCESSOR_TYPE)`); C11 mirrors via the
+       `_pending_event_origin` / `_pending_event_origintype` lua
+       globals seeded by process_event_queues' external pop, with
+       the deterministic AOT-binding `_sessionid =
+       '<model.name>_session'` (commit ddf5f43f) as the origin
+       value. Internal-queue pops leave both nil — W3C 5.10.1 only
+       sets origin for events the SCXML processor accepted from an
+       external producer. The remaining metadata field (.invokeid)
+       lands with its first reader fixture (built-but-unconsumed
+       carve-out per feedback_built_but_unconsumed.md). */
     if (evt->send_id[0] != '\0') {
         lua_pushstring(L, evt->send_id);
     } else {
@@ -1978,11 +2079,15 @@ static void set_current_event(lua_State *L, const {{ model.name }}_event_with_me
               {% else %}
               "type = _pending_event_type, "
               {% endif %}
+              "origin = _pending_event_origin, "
+              "origintype = _pending_event_origintype, "
               "data = _pending_donedata, "
               "sendid = _pending_send_id}; "
             "_pending_donedata = nil; "
             "_pending_send_id = nil; "
-            "_pending_event_type = nil");
+            "_pending_event_type = nil; "
+            "_pending_event_origin = nil; "
+            "_pending_event_origintype = nil");
         break;
     {% endfor %}
     default:
@@ -2049,10 +2154,22 @@ static void process_event_queues({{ model.name }}_t *sm) {
         strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
         sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
         {% if model.needs_script_engine %}
-        /* W3C SCXML 5.10.1 (test331): seed `_event.type` carry — external
+        /* W3C SCXML 5.10.1 (test331/336): seed `_event.type` /
+           `_event.origin` / `_event.origintype` carry — external
            queue pop is the spec's 'external' category (bare <send>,
-           scheduled <send>, ECMAScript host events all enqueue here). */
-        (void)luaL_dostring(sm->L, "_pending_event_type = 'external'");
+           scheduled <send>, ECMAScript host events all enqueue
+           here); origin is the deterministic AOT-binding session
+           URI (lua-side `_sessionid` from lua_init_engine, mirrors
+           cpp StaticExecutionEngine raiseExternal default of
+           sessionId), origintype is the SCXMLEventProcessor URI
+           literal so a receiver's `<send target=_event.origin
+           typeexpr=_event.origintype/>` round-trips into the same
+           external queue (test336). */
+        (void)luaL_dostring(sm->L,
+                            "_pending_event_type = 'external'; "
+                            "_pending_event_origin = _sessionid; "
+                            "_pending_event_origintype = "
+                              "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'");
         set_current_event(sm->L, &evt);
         {% endif %}
 
