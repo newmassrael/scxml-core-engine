@@ -318,6 +318,134 @@ static void scheduled_push({{ model.name }}_t *sm,
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ model.name }}_raise_external(sm, &_send_evt);
+{% elif action.event and action.targetexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 (test173): runtime `targetexpr` evaluation —
+               the target string is computed at send time from the
+               datamodel, then dispatched to either the internal queue
+               (`#_internal`), the external queue (empty), or raises
+               `error.execution` (`!`-prefix) / `error.communication`
+               (any other unsupported target) per cpp
+               `SendHelper::isInvalidTarget` / `isUnreachableTarget`
+               (`sce/include/common/SendHelper.h:67/88` + lines 85-102).
+               Mirrors cpp `actions/send.jinja2` lines 68-102 — cpp evaluates
+               into `dynamicTarget` then calls SendHelper helpers; the C11
+               port collapses the helper calls into a stack-buffer prefix
+               check (T3 inline). The 64-byte buffer matches `_send_evt_name`
+               sizing — fixtures forcing longer targets raise the cap with
+               their first force fixture. Eval failure raises
+               `error.execution` and stops subsequent executable content
+               (W3C 5.10). The `not in_foreach` carve-out is left implicit
+               here; the first force fixture inside a `<foreach>` body
+               revisits it, mirroring the existing invalid-`!` arm. */
+            char _send_target_buf[64];
+            bool _send_target_ok;
+{{ se.lua_eval_eventexpr(action.targetexpr, '_send_target_buf', '64', '_send_target_ok') }}
+            if (!_send_target_ok) {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            }
+            if (_send_target_buf[0] == '\0') {
+                /* Empty target → external queue (W3C 6.2). */
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise_external(sm, &_send_evt);
+            } else if (strcmp(_send_target_buf, "#_internal") == 0) {
+                /* `#_internal` alias → internal queue (W3C C.1). */
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise(sm, &_send_evt);
+            } else if (_send_target_buf[0] == '!') {
+                /* `!`-prefix → invalid target → error.execution and stop
+                   subsequent content. */
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            } else {
+                /* Any other dynamic target is unreachable in the C11
+                   AOT-only profile (no #_parent / #_child / mesh / HTTP
+                   yet — those land with their first force fixture).
+                   Raise error.communication per cpp's
+                   `SendHelper::isUnreachableTarget` path. */
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            }
+{% elif action.event and action.typeexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 (test174): runtime `typeexpr` evaluation —
+               the send type is computed at send time and validated against
+               the supported processor list. cpp `SendHelper::isSupportedSendType`
+               (`sce/include/common/SendHelper.h`) returns true for the
+               SCXMLEventProcessor URI plus the empty string default; the
+               C11 port inlines the literal compare per T3. Eval failure
+               falls back to the default SCXMLEventProcessor URI per cpp
+               line 47 ("Invalid typeexpr → use default SCXMLEventProcessor")
+               so a transient eval error doesn't cascade into a spurious
+               processor-mismatch error. Unsupported types raise
+               `error.execution` and stop subsequent executable content
+               (W3C 5.10). On a supported type the send proceeds as a bare
+               external (the C11 fixtures so far always pair typeexpr with
+               no target). */
+            char _send_type_buf[256];
+            bool _send_type_ok;
+{{ se.lua_eval_eventexpr(action.typeexpr, '_send_type_buf', '256', '_send_type_ok') }}
+            if (!_send_type_ok) {
+                /* cpp default-fallback on eval failure (line 48). */
+                memcpy(_send_type_buf,
+                       "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                       (size_t)47);
+                _send_type_buf[47] = '\0';
+            }
+            if (_send_type_buf[0] != '\0'
+                && strcmp(_send_type_buf,
+                          "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") != 0) {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            }
+            {
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise_external(sm, &_send_evt);
+            }
+{% elif action.event and action.delayexpr and not action.target and not action.eventexpr and not action.delay and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 (test175): runtime `delayexpr` evaluation —
+               the delay string is computed at send time from the
+               datamodel and parsed by the lua chunk in
+               `lua_eval_delayexpr` (mirrors cpp
+               `SendSchedulingHelper::parseDelayString`). On parse failure
+               cpp raises `error.execution` and stops subsequent content
+               (W3C 5.10); the C11 path follows the same shape. The send
+               id is the parser-generated `auto_send_id` so a future
+               `<cancel>` arm can target it. Send is always queued onto
+               the scheduled queue with a non-zero delay — even a parse
+               result of 0 ms is preserved verbatim to mirror cpp's
+               `parseDelayString("0ms") == 0` ready-now behaviour. */
+            uint64_t _send_delay_ms;
+            bool _send_delay_ok;
+{{ se.lua_eval_delayexpr(action.delayexpr, '_send_delay_ms', '_send_delay_ok') }}
+            if (!_send_delay_ok) {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            }
+            scheduled_push(sm,
+                           _sce_clock_now_ms() + _send_delay_ms,
+                           {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
+                           "{{ action.auto_send_id | escape_c }}");
 {% elif action.event and action.contentexpr and not action.content and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 (contentexpr force fixture): static-event
                with `<content expr="...">`, no `target`. The expression is

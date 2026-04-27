@@ -490,6 +490,42 @@
     lua_pop(sm->L, 1);
 {% endmacro %}
 
+{# W3C SCXML 6.2 (test175): evaluate `<send delayexpr="...">` and parse the
+   resulting string into milliseconds, mirroring cpp
+   `SendSchedulingHelper::parseDelayString`. Grammar (parser.rs:2799):
+     - "Nms"   → N
+     - "Ns"    → N * 1000
+     - bare N  → N * 1000   (W3C corpus default)
+   Negative results, malformed strings, or non-numeric values yield -1 and
+   set `out_ok = false`; the caller raises `error.execution` per W3C 5.10.
+   The lua side performs the entire parse so the C side stays free of
+   `strtod` / locale concerns and inherits the same number grammar that
+   `to_lua_expr`'s expression-eval path would see for the inner value.
+   The chunk runs at the chunk top level (not inside a `do`/`function`
+   block) so `return` exits the chunk's pcall directly, matching
+   `lua_eval_eventexpr`'s pattern. #}
+{% macro lua_eval_delayexpr(expr, out_ms, out_ok) %}
+    {{ out_ok }} = false;
+    {{ out_ms }} = 0;
+    if (luaL_dostring(sm->L,
+        "local _s = tostring(({{ expr | to_lua_expr | escape_c }})); "
+        "local _n, _u = _s:match('^%s*([%d.]+)%s*(%a*)%s*$'); "
+        "if not _n then return -1 end; "
+        "local _v = tonumber(_n); "
+        "if not _v or _v < 0 then return -1 end; "
+        "if _u == 'ms' then return math.floor(_v) "
+        "elseif _u == 's' or _u == '' then return math.floor(_v * 1000) "
+        "end; "
+        "return -1") == 0) {
+        lua_Integer _ms = lua_tointeger(sm->L, -1);
+        if (_ms >= 0) {
+            {{ out_ms }} = (uint64_t)_ms;
+            {{ out_ok }} = true;
+        }
+    }
+    lua_pop(sm->L, 1);
+{% endmacro %}
+
 {# W3C SCXML 5.10 + 6.2: evaluate one `<send><param name=N expr=X/></send>`
    and store the value as `_pending_donedata.{name} = (X)`. The caller emits
    `_pending_donedata = {}` once before iterating so the table exists, and
