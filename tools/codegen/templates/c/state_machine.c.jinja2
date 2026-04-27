@@ -2184,9 +2184,28 @@ static void set_current_event(lua_State *L, const {{ model.name }}_event_with_me
        '<model.name>_session'` (commit ddf5f43f) as the origin
        value. Internal-queue pops leave both nil — W3C 5.10.1 only
        sets origin for events the SCXML processor accepted from an
-       external producer. The remaining metadata field (.invokeid)
-       lands with its first reader fixture (built-but-unconsumed
-       carve-out per feedback_built_but_unconsumed.md). */
+       external producer.
+
+       W3C SCXML 5.10.1 (.invokeid): cpp `LuaEngine::setCurrentEvent`
+       (LuaEngine.cpp:1138-1139) pushes `invokeId.c_str()` onto
+       `_event.invokeid` for every event — non-invoke events arrive
+       with `Event::getInvokeId()` returning an empty std::string,
+       cpp emits an empty lua string, C11 mirrors via the
+       `_pending_event_invokeid` lua global with the
+       `_pending_event_origin`/`_pending_event_origintype`
+       precedent (undef=nil baseline + chunk-end reset). No
+       process_event_queues pop site seeds it yet — both internal
+       and external dequeues leave it nil, mirroring the empty
+       string cpp emits for non-invoke events under the same
+       lua-side absence semantic the sibling fields already use.
+       The invoke dispatch path lands the seeding when the invoke
+       milestone activates (cpp `Event::setInvokeId(invokeId)` at
+       the invoke handler is the seed site to mirror). Lifted as
+       spec-mirror parity rather than waiting for the first
+       force fixture (feedback_built_but_unconsumed.md
+       §"Spec-mirror parity (N-backend codegen)" — cpp's branch
+       is the contract; missing the field would be silent
+       semantic drift on the W3C 5.10.1 metadata family. */
     if (evt->send_id[0] != '\0') {
         lua_pushstring(L, evt->send_id);
     } else {
@@ -2205,13 +2224,15 @@ static void set_current_event(lua_State *L, const {{ model.name }}_event_with_me
               {% endif %}
               "origin = _pending_event_origin, "
               "origintype = _pending_event_origintype, "
+              "invokeid = _pending_event_invokeid, "
               "data = _pending_donedata, "
               "sendid = _pending_send_id}; "
             "_pending_donedata = nil; "
             "_pending_send_id = nil; "
             "_pending_event_type = nil; "
             "_pending_event_origin = nil; "
-            "_pending_event_origintype = nil");
+            "_pending_event_origintype = nil; "
+            "_pending_event_invokeid = nil");
         break;
     {% endfor %}
     default:
