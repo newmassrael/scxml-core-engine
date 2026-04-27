@@ -114,6 +114,50 @@
 {{ se.lua_foreach_no_body(action.array, action.item, action.index) }}
 {% endif %}
         }
+{% elif action.type == 'send' %}
+        {
+            /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr | escape_c }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}> */
+{% if action.eventexpr and not action.target and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 (test172): dynamic event name via `eventexpr`,
+               no target = internal queue. The event name string is matched
+               against the codegen-time event enum; an unmatched name raises
+               error.execution per W3C 6.2's "the value of 'event' MUST be
+               a valid event name" requirement. The other <send> dimensions
+               (target / delay / params / namelist / content / typeexpr /
+               idlocation) land with their first force fixture — keeping
+               the C11 send branch minimal until a consumer demands more.
+               Mirrors cpp `actions/send.jinja2` lines 429-458. */
+            char _send_evt_name[64];
+            bool _send_evt_ok;
+{{ se.lua_eval_eventexpr(action.eventexpr, '_send_evt_name', '64', '_send_evt_ok') }}
+            if (!_send_evt_ok) {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+            } else {
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                bool _send_evt_matched = false;
+                {% for event_name in model.events | sort %}
+                if (!_send_evt_matched && strcmp(_send_evt_name, "{{ event_name | escape_c }}") == 0) {
+                    _send_evt.event = {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
+                    _send_evt_matched = true;
+                }
+                {% endfor %}
+                if (_send_evt_matched) {
+                    {{ model.name }}_raise(sm, &_send_evt);
+                } else {
+                    {{ model.name }}_event_with_meta_t _err_evt;
+                    memset(&_err_evt, 0, sizeof(_err_evt));
+                    _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                    {{ model.name }}_raise(sm, &_err_evt);
+                }
+            }
+{% else %}
+#error "C11 backend: <send> shape with target/delay/params/namelist/content/typeexpr/idlocation/static-event is not yet implemented — extend emit_action's send branch with the first fixture forcing it."
+{% endif %}
+        }
 {% elif action.type == 'if' %}
         {
             /* W3C SCXML 4.3: <if cond="{{ action.cond | escape_c }}"> */
