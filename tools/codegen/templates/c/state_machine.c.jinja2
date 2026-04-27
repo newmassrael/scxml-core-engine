@@ -1944,10 +1944,24 @@ static void set_current_event(lua_State *L, const {{ model.name }}_event_with_me
        lua nil — test333 verifies that non-error events have `_event.sendid`
        blank, which lua-side reads as nil and ECMAScript surfaces as the
        same `undefined`/falsy contract the cpp engine returns through its
-       optional-shaped `pendingEventSendId_` carry. The other W3C 5.10.1
-       metadata fields (type / origin / origintype / invokeid) land with
-       their first reader fixture (built-but-unconsumed carve-out per
-       feedback_built_but_unconsumed.md). */
+       optional-shaped `pendingEventSendId_` carry.
+
+       W3C SCXML 5.10.1 (test331): `_event.type` is the spec's
+       three-way category: 'platform' for events the SCXML processor
+       itself raised (error.foo and done.foo families), 'internal'
+       for events dispatched off the internal queue (e.g. <raise>),
+       'external' for everything off the external queue (bare
+       <send>, delayed <send>). cpp carries the literal on
+       `EventWithMetadata.type` (StaticExecutionEngine.h:578 default
+       'external'); C11 mirrors it via the `_pending_event_type` lua
+       global written by process_event_queues' internal/external pop
+       sites — the per-enum case below reads it back, with the
+       error and done families overriding to 'platform' regardless
+       of which queue popped them.
+
+       The other W3C 5.10.1 metadata fields (origin / origintype /
+       invokeid) land with their first reader fixture (built-but-
+       unconsumed carve-out per feedback_built_but_unconsumed.md). */
     if (evt->send_id[0] != '\0') {
         lua_pushstring(L, evt->send_id);
     } else {
@@ -1959,10 +1973,16 @@ static void set_current_event(lua_State *L, const {{ model.name }}_event_with_me
     case {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}:
         (void)luaL_dostring(L,
             "_event = {name = '{{ event_name | escape_c }}', "
+              {% if event_name.startswith('error.') or event_name.startswith('done.') %}
+              "type = 'platform', "
+              {% else %}
+              "type = _pending_event_type, "
+              {% endif %}
               "data = _pending_donedata, "
               "sendid = _pending_send_id}; "
             "_pending_donedata = nil; "
-            "_pending_send_id = nil");
+            "_pending_send_id = nil; "
+            "_pending_event_type = nil");
         break;
     {% endfor %}
     default:
@@ -2001,6 +2021,11 @@ static void process_event_queues({{ model.name }}_t *sm) {
         strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
         sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
         {% if model.needs_script_engine %}
+        /* W3C SCXML 5.10.1 (test331): seed `_event.type` carry — internal
+           queue pop is the spec's 'internal' category. set_current_event's
+           per-enum case reads `_pending_event_type` back, with the
+           error and done event families overriding to 'platform'. */
+        (void)luaL_dostring(sm->L, "_pending_event_type = 'internal'");
         set_current_event(sm->L, &evt);
         {% endif %}
 
@@ -2024,6 +2049,10 @@ static void process_event_queues({{ model.name }}_t *sm) {
         strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
         sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
         {% if model.needs_script_engine %}
+        /* W3C SCXML 5.10.1 (test331): seed `_event.type` carry — external
+           queue pop is the spec's 'external' category (bare <send>,
+           scheduled <send>, ECMAScript host events all enqueue here). */
+        (void)luaL_dostring(sm->L, "_pending_event_type = 'external'");
         set_current_event(sm->L, &evt);
         {% endif %}
 
