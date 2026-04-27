@@ -739,13 +739,33 @@ static void execute_transition_actions({{ model.name }}_t *sm) {
            collapse to "match every non-NONE event" — eventless
            transitions are dispatched separately via EVENT_NONE so the
            wildcard must NOT pick them up, otherwise check_eventless_transitions
-           would loop forever. Prefix-suffix wildcards (e.g. "foo.*")
-           remain deferred until a fixture forces the prefix-match
-           emit shape (cpp/rust use precomputed enum lists or runtime
-           string matching; C11 will land that with its first consumer). #}
+           would loop forever. Codegen-time enumeration of all model events
+           would also be correct here but would scale linearly with
+           model.events; the EVENT_NONE inequality is O(1) regardless. #}
         if (event != {{ model.name | upper }}_EVENT_NONE)
+{% elif trans.prefix_matching_events | length == 0 %}
+        {# Defensive — analyzer.rs::build_prefix_matching always populates
+           prefix_matching_events for non-empty descriptors; an empty list
+           means none of the model's events satisfy the descriptor (e.g.
+           a `<transition event="never_raised"/>` with no matching raise/
+           send). Unreachable in well-formed SCXML, kept as a guard. #}
+        if (0)
+{% elif trans.prefix_matching_events | length == 1 %}
+        if (event == {{ model.name | upper }}_EVENT_{{ trans.prefix_matching_events[0] | upper | replace('.', '_') | replace('-', '_') }})
 {% else %}
-        if (event == {{ model.name | upper }}_EVENT_{{ trans.event | upper | replace('.', '_') | replace('-', '_') }})
+        {# W3C SCXML 5.9.3: descriptor expansion — covers (a) single-token
+           prefix matching (`event="foo"` matches `foo` and `foo.zoo` but
+           NOT `foos` because token boundary requires `.`), (b) space-
+           separated multi-token (`event="foo bar"` matches every event
+           covered by either token), (c) prefix-suffix wildcard
+           (`event="foo.*"` matches every event starting with `foo.`).
+           cpp/rust emit a runtime `matchesEventDescriptor` call into a
+           shared helper here (process_transition.jinja2:546-549,
+           rust/state_machine.rs.jinja2:694-697); C11 inlines the list
+           at codegen time per T3 inline-only lock-in. The set is
+           computed by analyzer.rs::build_prefix_matching using the same
+           algorithm as EventMatchingHelper.h. #}
+        if ({% for ev in trans.prefix_matching_events %}event == {{ model.name | upper }}_EVENT_{{ ev | upper | replace('.', '_') | replace('-', '_') }}{{ ' || ' if not loop.last }}{% endfor %})
 {% endif %}
 {% endmacro %}
 
