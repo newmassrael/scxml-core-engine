@@ -211,9 +211,9 @@ static void scheduled_push({{ model.name }}_t *sm,
                `execute_exit_actions` / `execute_transition_actions` switch
                case returns immediately, mirroring cpp
                `actions/send.jinja2` lines 321-333 (in_entry_exit return). The
-               other target shapes (`#_internal` alias, `#_parent`, `#_child`,
-               `#_<invokeid>`, BasicHTTP URI, mesh `#...`, runtime targetexpr)
-               stay #error-guarded below until a fixture forces them. The
+               other target shapes (`#_parent`, `#_child`, `#_<invokeid>`,
+               BasicHTTP URI, mesh `#...`, runtime targetexpr) stay
+               #error-guarded below until a fixture forces them. The
                `not in_foreach` guard preserves the loop-body carve-out that
                cpp ships (its `in_entry_exit` flag is unset inside foreach
                bodies) — invalid-target send inside a `<foreach>` body lands
@@ -223,6 +223,35 @@ static void scheduled_push({{ model.name }}_t *sm,
             _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
             {{ model.name }}_raise(sm, &_err_evt);
             return;
+{% elif action.event and action.target == '#_internal' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML C.1 (test189): static-event + target="#_internal"
+               routes to the internal (high-priority) queue per
+               `SendHelper::isInternalTarget` (`sce/include/common/SendHelper.h:88`).
+               Codegen-time decidable — action.target is parsed verbatim
+               (parser.rs:1146) so the literal "#_internal" alias resolves
+               at template time without a runtime SendHelper call. Mirrors
+               cpp `actions/send.jinja2` lines 598/628/664/694/784/806
+               (`isInternalTarget(action.target)` true-branch) — cpp emits
+               a runtime if/else around isInternalTarget; C11 inlines the
+               codegen-time decision per T3 lock-in. */
+            {{ model.name }}_event_with_meta_t _send_evt;
+            memset(&_send_evt, 0, sizeof(_send_evt));
+            _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise(sm, &_send_evt);
+{% elif action.event and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.send_type and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 (test189): static-event with no `target` attribute
+               defaults to the SCXML processor's external (low-priority) queue
+               (W3C 6.2: "If the send element does not specify a target, the
+               SCXML Processor MUST add the event to the external event
+               queue"). Mirrors cpp `actions/send.jinja2` lines
+               598/628/664/694/784/806 (`isInternalTarget("")` false-branch
+               → `raiseExternal`) — the empty-target literal naturally
+               falls into raiseExternal at runtime in cpp; C11 collapses
+               the runtime branch into a codegen-time choice per T3. */
+            {{ model.name }}_event_with_meta_t _send_evt;
+            memset(&_send_evt, 0, sizeof(_send_evt));
+            _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ model.name }}_raise_external(sm, &_send_evt);
 {% else %}
 #error "C11 backend: <send> shape with target/params/namelist/content/typeexpr/idlocation is not yet implemented — extend emit_action's send branch with the first fixture forcing it."
 {% endif %}
