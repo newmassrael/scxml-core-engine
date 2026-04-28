@@ -18,6 +18,14 @@
 {% if model.needs_script_engine %}
 #include <stdio.h>  /* snprintf for body-bearing <foreach> per-iter set */
 {% endif %}
+{% if model.needs_dom_helper %}
+/* W3C SCXML B.2: host-side XML DOM helper (sce-c-tests/support/
+   lua_dom_binding.h). cpp `LuaDOMBinding` 1:1 algorithmic mirror in
+   pure C — pugixml is C++-only and would break the C11 R3 zero-deps
+   lock-in, so the helper is testbench-only and never enters the
+   sce-c-runtime link surface. */
+#include "lua_dom_binding.h"
+{% endif %}
 {% if model.needs_event_scheduler %}
 
 /* W3C SCXML 6.2: Monotonic clock binding for delayed `<send>` scheduling.

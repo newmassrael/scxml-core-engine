@@ -736,6 +736,15 @@ pub struct SCXMLModel {
     pub needs_event_type_helper: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub needs_event_scheduler: Option<bool>,
+    /// W3C SCXML B.2: any reachable `<data>` content / `<data src=...>`
+    /// loaded payload / `<send><content>` literal whose first non-WS
+    /// character is `<` triggers the host-side XML DOM helper (C11
+    /// backend only — cpp / Rust / Go / Kotlin handle the same surface
+    /// through their own pipelines). Gates `lua_dom_register_metatable`
+    /// emission in scriptengine.jinja2 and the XML branches in the
+    /// var.content / send.content / event-promotion sites.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub needs_dom_helper: Option<bool>,
 
     /// SCE_MESH.md §14 rule 12: set to `true` when this machine is
     /// listed under any `partitions.<name>.machines:` entry in a

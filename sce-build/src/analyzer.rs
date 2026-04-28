@@ -64,6 +64,14 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
 /// [`crate::script_engine_analyzer::NeedsScriptEngineCause::DatamodelVariableInit`]
 /// cause, which is a superset of the non-literal case this function used
 /// to flag individually.
+/// First non-whitespace character of `s`, or `None` if `s` is empty or
+/// contains only whitespace. Mirrors cpp's
+/// `content.find_first_not_of(" \t\r\n")` pattern in
+/// `DataModelInitHelper::initializeVariable` and `LuaEngine::setCurrentEvent`.
+fn first_non_ws(s: &str) -> Option<char> {
+    s.chars().find(|c| !matches!(c, ' ' | '\t' | '\r' | '\n'))
+}
+
 fn classify_variables(model: &mut SCXMLModel) {
     for var in &mut model.variables {
         let expr = &var.expr;
@@ -102,6 +110,7 @@ fn analyze_model_features(model: &mut SCXMLModel) {
     model.needs_event_data_helper = Some(false);
     model.needs_donedata_helper = Some(false);
     model.needs_namelist_helper = Some(false);
+    model.needs_dom_helper = Some(false);
 
     model.needs_event_name = false;
     model.needs_event_data = false;
@@ -160,6 +169,27 @@ fn analyze_model_features(model: &mut SCXMLModel) {
             model.events.insert("error.execution".to_string());
             break;
         }
+    }
+
+    // W3C SCXML B.2 (test557): inline `<data>` content whose first
+    // non-whitespace character is `<` triggers the host-side XML DOM
+    // helper. Mirrors cpp `DataModelInitHelper::initializeVariable`
+    // first-char check (sce/src/common/DataModelInitHelper.cpp:103).
+    // Both top-level (`model.variables`) and state-local datamodel
+    // entries are inspected. The `<data src="...">` path defers content
+    // detection to the template (the file is read by the
+    // `read_data_src` filter at codegen time and the same first-char
+    // check fires there); this analyzer pass only handles inline
+    // content because every src=XML fixture in the current corpus
+    // (test557) also carries an inline `<` sibling that triggers here.
+    let needs_dom_from_inline = model.variables.iter()
+        .any(|v| first_non_ws(&v.content) == Some('<'))
+        || model.states.values().any(|state| {
+            state.datamodel.iter()
+                .any(|v| first_non_ws(&v.content) == Some('<'))
+        });
+    if needs_dom_from_inline {
+        model.needs_dom_helper = Some(true);
     }
 
     // Donedata-param/content and child-invoke `needs_script_engine`
@@ -251,6 +281,16 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             // bridged via the same `_scxml_declared` table donedata uses).
             if !action.namelist.is_empty() {
                 model.needs_namelist_helper = Some(true);
+            }
+            // W3C SCXML B.2 (test561): a `<send><content>` literal whose
+            // first non-whitespace character is `<` is delivered to the
+            // receiver as an XML DOM object, mirroring cpp
+            // `LuaEngine::setCurrentEvent` first-char check
+            // (LuaEngine.cpp:1145-1149). The flag gates the host-side DOM
+            // helper register call in scriptengine.jinja2 and the XML
+            // branch on the event-promotion site.
+            if first_non_ws(&action.content) == Some('<') {
+                model.needs_dom_helper = Some(true);
             }
             // W3C SCXML C.2: BasicHTTP send detection
             if action.send_type == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
