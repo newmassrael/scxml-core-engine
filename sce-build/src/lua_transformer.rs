@@ -1775,6 +1775,14 @@ pub fn transform_expression(ecma_script: &str, context: ExpressionContext) -> St
     processed = transform_math_builtins(&processed);
     processed = transform_compound_assignment(&processed);
     processed = transform_increment_decrement(&processed);
+    // W3C SCXML B.2: ECMAScript function expressions in value-expression
+    // context (e.g. `<data id="f" expr="function(x) {return x+1;}"/>`).
+    // The script-pipeline already lowers `function name(args) { body }` and
+    // `function(args) { body }` to Lua's `function ... end` form; running the
+    // same pass here lets transform_expression handle anonymous function
+    // expressions wherever an ECMAScript value is accepted (cond, location
+    // expr, data expr, assign expr).
+    processed = transform_function_syntax(&processed);
     processed = transform_instanceof_patterns(&processed);
     processed = transform_array_literals(&processed);
     processed = transform_null_undefined(&processed);
