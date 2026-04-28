@@ -90,6 +90,7 @@ set(W3C_C_AOT_TESTS "")
 set(W3C_C_AOT_TESTS_NEEDS_LUA "")
 set(W3C_C_AOT_TESTS_NEEDS_DOM "")
 set(W3C_C_AOT_TESTS_NEEDS_HTTP "")
+set(W3C_C_AOT_TESTS_NEEDS_INVOKE "")
 
 sce_generate_static_w3c_c_test(355 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.6: default initial = first child in document order
 sce_generate_static_w3c_c_test(144 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 4.2: raise inserts events at rear of internal queue (FIFO ordering)
@@ -281,6 +282,9 @@ sce_generate_static_w3c_c_test(534 "${SCE_C_GENERATED_DIR}" NEEDS_HTTP)  # W3C S
 sce_generate_static_w3c_c_test(567 "${SCE_C_GENERATED_DIR}" NEEDS_HTTP)  # W3C SCXML C.2 (test567): `<send event="test" target="..." type="BasicHTTP"><param name="param1" expr="2"/></send>` — event + static-literal param. Body = `_scxmleventname=test&param1=2`. The standalone server returns `data: {"param1": 2, "_scxmleventname": "test"}` — a JSON object. The codegen's `model.needs_script_engine` gate is on (because the transition action `<assign location="Var1" expr="_event.data.param1"/>` triggers `AssignAction` cause), so `sce_test_lua_push_json` parses the object span into a Lua table and `lua_setglobal("_pending_donedata")` stages it. The next dequeue's `set_current_event` lifts it onto `_event.data`, the assign reads `_event.data.param1` as the Lua integer 2, the s1 cond `Var1 == 2` evaluates true → s1→pass.
 sce_generate_static_w3c_c_test(519 "${SCE_C_GENERATED_DIR}" NEEDS_HTTP)  # W3C SCXML C.2 (test519): `<send event="test" target="..." type="BasicHTTP"><param name="param1" expr="1"/></send>` — event + static-literal numeric param. Body = `_scxmleventname=test&param1=1`. The standalone server's test519-specific numeric coercion (`tests/w3c/standalone_http_server.js:65-67`, `Number(value)` ≠ NaN) returns `data: {"param1": 1, "_scxmleventname": "test"}`. The transition `expr="_event.data[\"param1\"] == 1"` is recognised by `parser.rs:1059-1063` as a `cond=` synonym (all backends share the `attribute("cond").or_else("expr")` fall-through), and the codegen lowers it to a `luaL_dostring` returning a boolean — so `model.needs_script_engine` is on and `sce_test_lua_push_json` promotes the JSON object onto `_event.data` before the cond evaluates. Distinct from test567 by reading `_event.data` directly in the transition cond without an intermediate `<assign>`/datamodel hop, exercising the cond+JSON-deref path against numeric truthiness.
 
+# W3C SCXML 6.4 invoke — bare `<invoke type="scxml">` + inline `<content><scxml>...</scxml></content>` whose only state is a top-level `<final>`. Child reaches the final state synchronously inside its own `_init`, so the parent's `execute_pending_invokes` raises `done.invoke` immediately and the s0 transition fires before the 2 s safety-net timeout. Pins the per-SM `pending_invokes` queue + child SM struct embed + macrostep-end execute-pending hook + `_destroy` child cleanup walk. Children whose initial state is non-final (parent↔child send, finalize, autoforward) reach final asynchronously and require cross-SM event routing — extending the same emitter is the path forward.
+sce_generate_static_w3c_c_test(247 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE)  # W3C SCXML 6.4 (test247): bare `<invoke type="http://www.w3.org/TR/scxml/">` + inline `<content><scxml initial="subFinal"><final id="subFinal"/></scxml></content>`. The simplest invoke happy path — `done.invoke` event → s0→pass.
+
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `_Static_assert` and stdint/stdbool are first-class regardless of the
 # compiler's default standard. Lua54 is linked only into fixtures flagged
@@ -290,8 +294,14 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
     set(_runner "${CMAKE_CURRENT_SOURCE_DIR}/aot_tests/test_${TEST_NUM}.c")
     set(_generated "${SCE_C_GENERATED_DIR}/test${TEST_NUM}_sm.c")
     set(_target "sce_c_w3c_test_${TEST_NUM}")
+    # W3C SCXML 6.4: per-test invoke child sources. Empty for fixtures that
+    # carry no `<invoke>` (the variable is unset / empty list); fixtures
+    # marked NEEDS_INVOKE see the sce-build-extracted
+    # `__sce_synth_invoke__*_sm.c` translation units staged into the
+    # binary so child SM types are linked into the parent's _sm.c.
+    set(_child_sources "${W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES}")
 
-    add_executable(${_target} ${_runner} ${_generated})
+    add_executable(${_target} ${_runner} ${_generated} ${_child_sources})
     target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_test_support)
     target_include_directories(${_target} PRIVATE "${SCE_C_GENERATED_DIR}")
     if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_LUA)

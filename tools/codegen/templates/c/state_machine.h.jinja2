@@ -21,6 +21,21 @@
 
 #include "sce/types.h"
 
+{% if (model.invokes | scxml_family) %}
+/* W3C SCXML 6.4: invoke types + helpers (sce-c-runtime/include/sce/invoke.h).
+   Header-only — types and `static inline` helpers per c11_design_decisions.md
+   T3 lock-in. cpp's `core/InvokeHelper.h` template class is the equivalent
+   shape. */
+#include "sce/invoke.h"
+{% for invoke_info in model.invokes | scxml %}
+/* W3C SCXML 6.4: child SM declarations for `<invoke>` in this fixture.
+   Each invoke target's generated `_sm.h` is included so the parent's
+   struct can embed the child instance and call its public `_init`/
+   `_step`/`_destroy` API from the invoke lifecycle helpers below. */
+#include "{{ invoke_info.child_name }}_sm.h"
+{% endfor %}
+{% endif %}
+
 {% if model.needs_script_engine %}
 /* RFC §5.J.1: C11 backend embeds Lua 5.4 directly (no abstraction layer).
    The state machine struct owns the lua_State* lifecycle — opened by
@@ -235,6 +250,19 @@ typedef struct {{ model.name }} {
     char current_event_invoke_id[SCE_MAX_ID_LEN];
     void (*completion_callback)(void *user_data);
     void *completion_callback_user_data;
+    {% if (model.invokes | scxml_family) %}
+    /* W3C SCXML 6.4: pending invokes deferred to macrostep end + per-site
+       child SM instance. cpp uses `std::vector<PendingInvoke>` and
+       `std::shared_ptr<ChildSM>`; C11 mirrors with the bounded queue
+       from `sce/invoke.h` and value-typed embedded child structs.
+       `_active` flips on at execute-pending-invokes, off at destroy /
+       cancel. */
+    sce_invoke_pending_queue_t pending_invokes;
+    {% for invoke_info in model.invokes | scxml %}
+    {{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
+    bool child_{{ invoke_info.field_suffix }}_active;
+    {% endfor %}
+    {% endif %}
     {% if model.needs_script_engine %}
     lua_State *L;                                    /* W3C 5.10: ECMAScript datamodel */
     {% endif %}

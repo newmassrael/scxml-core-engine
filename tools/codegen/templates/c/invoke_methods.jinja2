@@ -1,0 +1,90 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# ── W3C SCXML 6.4: Invoke lifecycle helpers (per-SM) ────────────────
+   Mirrors `tools/codegen/templates/invoke_methods.jinja2` (cpp) — the
+   C11 emitter inlines a focused subset (defer queue + child SM struct
+   embed + macrostep-end execute hook + onexit cancel/destroy).
+   Cross-SM event routing (#_parent / #_<invokeid>) and the surfaces
+   that depend on it (autoforward, finalize, parent-driven child tick
+   loop) extend this template at later lifts.
+
+   T3 lock-in: per-SM logic emitted into `_sm.c`. Cross-SM types
+   (`sce_invoke_pending_queue_t`) live in `sce-c-runtime/include/sce/invoke.h`
+   as static inline helpers — no .c source.                             #}
+
+{# ── execute_pending_invokes ─────────────────────────────────────────
+   Drain the parent's pending queue at macrostep end. For each pending:
+     1. Initialize the embedded child SM (its onentry runs; if its initial
+        is a top-level <final>, it reaches the final state immediately).
+     2. Mark the child as active (so destroy/cancel can reclaim).
+     3. Check `is_in_final_state` — when the child has already reached
+        a top-level <final> (e.g. inline content whose only state is
+        <final>), raise the parent's `done.invoke` event (W3C 6.3.1)
+        onto the external queue.
+   Cross-SM event routing for children whose initial onentry sends to
+   the parent (`<send target="#_parent">`) — and the parent→child tick
+   loop those children require to reach final asynchronously — is the
+   surface the next lift phase extends here. #}
+static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
+    if (sm->pending_invokes.count == 0) {
+        return;
+    }
+
+    /* W3C SCXML 6.4: cpp `InvokeHelper::executePendingInvokes` copies the
+       pending vector before iterating — child init may push more events
+       (via <send target="#_parent">) but won't recurse into pending
+       since <invoke> in the child's onentry would push to the child's
+       own pending queue, not the parent's. C11 mirrors with a snapshot
+       count + clear-up-front. */
+    int n = sm->pending_invokes.count;
+    sce_invoke_pending_t snapshot[SCE_MAX_INVOKES];
+    for (int i = 0; i < n; ++i) {
+        snapshot[i] = sm->pending_invokes.entries[i];
+    }
+    sce_invoke_pending_clear(&sm->pending_invokes);
+
+    for (int i = 0; i < n; ++i) {
+        const sce_invoke_pending_t *p = &snapshot[i];
+
+        {% for state_id, state in model.states | dictsort %}
+        {% for invoke_info in state.invokes | scxml %}
+        if (p->state == (int){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
+            && p->invoke_idx == {{ loop.index0 }}) {
+            /* W3C SCXML 6.4: spawn child {{ invoke_info.child_name }}
+               (invoke id `{{ invoke_info.invoke_id }}` in state `{{ state_id }}`). */
+            {{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
+            sm->child_{{ invoke_info.field_suffix }}_active = true;
+            /* The child's `_init` runs the configuration entry walk and
+               onentry actions of its initial state. When the initial is
+               a top-level <final> (test247), is_in_final_state returns
+               true at this point and we synthesise `done.invoke`
+               immediately so the parent's next dequeue drains it. */
+            if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+                {{ model.name }}_event_with_meta_t _done_evt;
+                memset(&_done_evt, 0, sizeof(_done_evt));
+                _done_evt.event = {{ model.name | upper }}_EVENT_DONE_INVOKE;
+                strncpy(_done_evt.invoke_id, p->invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
+                _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+                {{ model.name }}_raise_external(sm, &_done_evt);
+            }
+            continue;
+        }
+        {% endfor %}
+        {% endfor %}
+    }
+}
+
+{# ── destroy_active_children ──────────────────────────────────────────
+   Called from `_destroy` to reclaim any children still active.
+   Idempotent on already-destroyed children (active flag gate). #}
+static void {{ model.name }}_destroy_active_children({{ model.name }}_t *sm) {
+    {% for state_id, state in model.states | dictsort %}
+    {% for invoke_info in state.invokes | scxml %}
+    if (sm->child_{{ invoke_info.field_suffix }}_active) {
+        {{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
+        sm->child_{{ invoke_info.field_suffix }}_active = false;
+    }
+    {% endfor %}
+    {% endfor %}
+}

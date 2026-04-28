@@ -14,6 +14,15 @@
 
 #include "{{ model.name }}_sm.h"
 
+{% if (model.invokes | scxml_family) %}
+/* W3C SCXML 6.4: invoke lifecycle includes — sce/invoke.h supplies
+   types + static inline helpers (declared in `_sm.h` for struct
+   visibility); each child SM's public API surfaces through the
+   per-target `_sm.h` includes also done in `_sm.h`. cpp emits the
+   equivalent via template instantiation — c11 inlines the per-SM
+   methods below. */
+{% endif %}
+
 #include <string.h>
 {% if model.needs_script_engine %}
 #include <stdio.h>  /* snprintf for body-bearing <foreach> per-iter set */
@@ -1590,7 +1599,8 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
     {% set has_late_init = state.datamodel and model.binding == 'late' %}
     {% set is_compound_final = state.is_final and state.parent %}
     {% set has_donedata = state.is_final and state.donedata %}
-    {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata %}
+    {% set has_scxml_invoke = (state.invokes | scxml) | length > 0 %}
+    {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata or has_scxml_invoke %}
     case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% if has_late_init %}
         /* W3C SCXML 5.3: late-binding state-local <datamodel> init runs
@@ -1606,6 +1616,33 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
            stop-subsequent-content) terminates only that block. */
         {{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
         {% endfor %}
+        {% if state.invokes | scxml %}
+        /* W3C SCXML 6.4: defer `<invoke>` execution until macrostep end.
+           cpp `entry_exit_actions.jinja2` mirrors this with
+           `pendingInvokes_.push_back({...})`; the C11 helper takes the
+           same (state, invoke_idx, id) tuple. Auto-generated ids follow
+           cpp pattern `<state>.<sm_ptr_hex>.<invoke_idx>` (W3C 3.12.1);
+           explicit `<invoke id="...">` overrides use the author-supplied
+           literal verbatim. */
+        {% for invoke_info in state.invokes | scxml %}
+        {
+            char _invoke_id_buf[SCE_MAX_ID_LEN];
+            {% if invoke_info.invoke_id and not invoke_info.invoke_id.startswith('_invoke_') %}
+            /* W3C SCXML 3.12.1: author-supplied id="{{ invoke_info.invoke_id }}"
+               wins over the auto-generated format. */
+            strncpy(_invoke_id_buf, "{{ invoke_info.invoke_id }}", (size_t)SCE_MAX_ID_LEN - 1u);
+            _invoke_id_buf[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            {% else %}
+            sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
+                                 "{{ state_id }}", (const void *)sm, {{ loop.index0 }});
+            {% endif %}
+            sce_invoke_pending_push(&sm->pending_invokes,
+                                    (int){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
+                                    {{ loop.index0 }},
+                                    _invoke_id_buf);
+        }
+        {% endfor %}
+        {% endif %}
         {% if has_donedata %}
         /* W3C SCXML 5.5: evaluate <donedata> for final state '{{ state_id }}'
            and stash on `_pending_donedata` so the next dequeue's
@@ -1741,7 +1778,8 @@ static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_
     (void)sm;
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
-    {% if state.on_exit_blocks %}
+    {% set has_scxml_invoke_exit = (state.invokes | scxml) | length > 0 %}
+    {% if state.on_exit_blocks or has_scxml_invoke_exit %}
     case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% for block in state.on_exit_blocks %}
         /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} —
@@ -1749,6 +1787,22 @@ static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_
            terminates only that block. W3C SCXML 3.13. */
         {{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
         {% endfor %}
+        {% if has_scxml_invoke_exit %}
+        /* W3C SCXML 6.4: cancel any pending invokes deferred from this
+           state's onentry that have not yet executed (state exit before
+           macrostep end), and destroy any active children spawned from
+           those invokes (state exit after macrostep end). cpp's
+           `cancelInvokesForState` + child shared_ptr reset are the
+           equivalent — c11 mirrors with the bounded queue + active flag. */
+        sce_invoke_pending_cancel_for_state(&sm->pending_invokes,
+                                            (int){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }});
+        {% for invoke_info in state.invokes | scxml %}
+        if (sm->child_{{ invoke_info.field_suffix }}_active) {
+            {{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
+            sm->child_{{ invoke_info.field_suffix }}_active = false;
+        }
+        {% endfor %}
+        {% endif %}
         break;
     }
     {% endif %}
@@ -2428,6 +2482,11 @@ static void handle_microstep({{ model.name }}_t *sm,
     }
 }
 
+{% if (model.invokes | scxml_family) %}
+/* ── W3C SCXML 6.4: Invoke lifecycle helpers (per-SM, T3 inline) ───── */
+{% include 'c/invoke_methods.jinja2' %}
+{% endif %}
+
 /* ── W3C SCXML 6.2: External-facing raise APIs ────────────────────── */
 
 void {{ model.name }}_raise({{ model.name }}_t *sm,
@@ -2818,6 +2877,15 @@ static void check_eventless_transitions({{ model.name }}_t *sm) {
 void {{ model.name }}_step({{ model.name }}_t *sm) {
     process_event_queues(sm);
     check_eventless_transitions(sm);
+    {% if (model.invokes | scxml_family) %}
+    /* W3C SCXML 6.4: at end of each macrostep, execute deferred
+       `<invoke>` elements for states entered-and-not-exited during the
+       step. Children that reach their top-level <final> synchronously
+       (test247 pattern: child has only `<final>` as initial) raise
+       `done.invoke` onto the external queue here so the next caller
+       loop iteration drains it. */
+    {{ model.name }}_execute_pending_invokes(sm);
+    {% endif %}
     if ({{ model.name }}_is_in_final_state(sm) && sm->completion_callback != NULL) {
         sm->completion_callback(sm->completion_callback_user_data);
     }
@@ -2932,6 +3000,13 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
        (test503/505/506 force this). */
     while (true) {
         check_eventless_transitions(sm);
+        {% if (model.invokes | scxml_family) %}
+        /* W3C SCXML 6.4: deferred invokes execute at every macrostep
+           end during init's stabilisation — the first invocation may
+           feed `done.invoke` back into the external queue, which the
+           loop's next iteration must drain. */
+        {{ model.name }}_execute_pending_invokes(sm);
+        {% endif %}
         if (sm->internal_queue.count == 0u && sm->external_queue.count == 0u) {
             break;
         }
@@ -2940,6 +3015,14 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
 }
 
 void {{ model.name }}_destroy({{ model.name }}_t *sm) {
+    {% if (model.invokes | scxml_family) %}
+    /* W3C SCXML 6.4: tear down any active invoke children before the
+       parent's own resources (lua state, scheduler payload refs) go
+       away. cpp's shared_ptr reset in the parent destructor is the
+       equivalent — c11 mirrors with the active-flag-gated explicit
+       destroy walk. Idempotent on already-destroyed children. */
+    {{ model.name }}_destroy_active_children(sm);
+    {% endif %}
     {% if model.needs_event_scheduler and model.needs_script_engine %}
     /* W3C SCXML 6.2: release lua registry slots held by pending scheduled
        entries before lua_close reclaims the registry as a whole. lua_close

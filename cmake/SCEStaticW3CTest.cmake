@@ -298,11 +298,14 @@ endfunction()
 # sce_generate_static_w3c_c_test: Generate C11 code for a single W3C test
 #
 # RFC §5.J.1 sibling of `sce_generate_static_w3c_test`. Produces a `.h` + `.c`
-# pair under OUTPUT_DIR via `sce-codegen -l c11`. Sub-state-machine and
-# child-invoke discovery are deferred — the C11 emitter ships the
-# datamodel-less + ECMAScript-via-Lua subset, which has no `<invoke>`
-# surface to recurse into. When invoke support lands the function will
-# mirror the C++ version's sub-TXML loop.
+# pair under OUTPUT_DIR via `sce-codegen -l c11`. When the fixture carries
+# `<invoke>` elements, sce-build pre-emits the inline `<content><scxml>...`
+# children as separate `test${N}__sce_synth_invoke__*.scxml` files
+# alongside `resources/${N}/test${N}.scxml` (parser §9.6.6 rule 3 default
+# = local extraction). The function discovers those siblings via
+# `file(GLOB)` and emits a per-child `_sm.{h,c}` pair — the parent SM
+# `_sm.c` includes each child's `_sm.h` and embeds the child as a struct
+# member (see `tools/codegen/templates/c/state_machine.h.jinja2`).
 #
 # Optional flag NEEDS_LUA: append the test to W3C_C_AOT_TESTS_NEEDS_LUA so
 # the caller can conditionally `target_link_libraries(... lua54)` only for
@@ -324,8 +327,16 @@ endfunction()
 # Independent of NEEDS_LUA / NEEDS_DOM — combined freely as the fixture
 # requires.
 #
+# Optional flag NEEDS_INVOKE: append the test to W3C_C_AOT_TESTS_NEEDS_INVOKE
+# so the caller can iterate the per-test child source list set by this
+# function (`W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES`) and link those
+# child `_sm.c` translation units into the fixture binary. The parent's
+# generated `_sm.h` already pulls in the child's `_sm.h` via
+# `state_machine.h.jinja2` so child types are visible in the parent's
+# struct. Independent of the other NEEDS_* flags — combined freely.
+#
 function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
-    cmake_parse_arguments(_SWCT "NEEDS_LUA;NEEDS_DOM;NEEDS_HTTP" "" "" ${ARGN})
+    cmake_parse_arguments(_SWCT "NEEDS_LUA;NEEDS_DOM;NEEDS_HTTP;NEEDS_INVOKE" "" "" ${ARGN})
 
     # Accumulate test number into W3C_C_AOT_TESTS so the caller can iterate.
     list(APPEND W3C_C_AOT_TESTS ${TEST_NUM})
@@ -342,12 +353,51 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         list(APPEND W3C_C_AOT_TESTS_NEEDS_HTTP ${TEST_NUM})
         set(W3C_C_AOT_TESTS_NEEDS_HTTP ${W3C_C_AOT_TESTS_NEEDS_HTTP} PARENT_SCOPE)
     endif()
+    if(_SWCT_NEEDS_INVOKE)
+        list(APPEND W3C_C_AOT_TESTS_NEEDS_INVOKE ${TEST_NUM})
+        set(W3C_C_AOT_TESTS_NEEDS_INVOKE ${W3C_C_AOT_TESTS_NEEDS_INVOKE} PARENT_SCOPE)
+    endif()
 
     set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
     set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
     set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
     set(GENERATED_HEADER "${OUTPUT_DIR}/test${TEST_NUM}_sm.h")
     set(GENERATED_SOURCE "${OUTPUT_DIR}/test${TEST_NUM}_sm.c")
+
+    # W3C SCXML 6.4: discover synthesised invoke children. sce-build extracts
+    # inline `<content><scxml>...</scxml></content>` into sibling files at
+    # parse time (see parser.rs §9.6.6 rule 3) so each child is statically
+    # codegen-able. The pattern matches `test${N}__sce_synth_invoke__*.scxml`;
+    # `file(GLOB)` runs at configure time, so the parent's add_executable
+    # below sees all child sources without a re-glob trigger.
+    file(GLOB _SYNTH_INVOKE_FILES
+        "${RESOURCE_DIR}/test${TEST_NUM}__sce_synth_invoke__*.scxml")
+    set(_CHILD_GENERATED_SOURCES "")
+    foreach(_SYNTH_FILE ${_SYNTH_INVOKE_FILES})
+        get_filename_component(_CHILD_NAME "${_SYNTH_FILE}" NAME_WE)
+        set(_CHILD_SCXML "${OUTPUT_DIR}/${_CHILD_NAME}.scxml")
+        set(_CHILD_HEADER "${OUTPUT_DIR}/${_CHILD_NAME}_sm.h")
+        set(_CHILD_SOURCE "${OUTPUT_DIR}/${_CHILD_NAME}_sm.c")
+
+        add_custom_command(
+            OUTPUT "${_CHILD_SCXML}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy "${_SYNTH_FILE}" "${_CHILD_SCXML}"
+            DEPENDS "${_SYNTH_FILE}"
+            COMMENT "Staging synth-invoke child SCXML: ${_CHILD_NAME}.scxml (C11)"
+            VERBATIM
+        )
+        add_custom_command(
+            OUTPUT "${_CHILD_HEADER}" "${_CHILD_SOURCE}"
+            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}" -l c11 -o "${OUTPUT_DIR}"
+            DEPENDS "${_CHILD_SCXML}" "${SCE_CODEGEN}"
+            COMMENT "Generating C11 code: ${_CHILD_NAME}_sm.{h,c}"
+            VERBATIM
+        )
+
+        list(APPEND _CHILD_GENERATED_SOURCES "${_CHILD_SOURCE}")
+    endforeach()
+    set(W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES "${_CHILD_GENERATED_SOURCES}" PARENT_SCOPE)
 
     # Allow either `resources/${N}/test${N}.scxml` (already-converted SCXML)
     # or `resources/${N}/test${N}.txml` (TXML pending conversion). Most W3C
@@ -393,10 +443,23 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         return()
     endif()
 
+    # Collect child header outputs so the parent's codegen depends on them
+    # — when the parent's `_sm.h` `#include`s the child's `_sm.h` (driven
+    # by `state_machine.h.jinja2` when `model.invokes | scxml_family` is
+    # non-empty), the build graph must materialise the child header
+    # before the parent compilation that consumes it. The codegen step
+    # itself does not read the child header; the dependency is for build
+    # ordering, not for re-codegen triggers (idempotent on child changes).
+    set(_CHILD_HEADER_DEPS "")
+    foreach(_SYNTH_FILE ${_SYNTH_INVOKE_FILES})
+        get_filename_component(_CHILD_NAME "${_SYNTH_FILE}" NAME_WE)
+        list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_CHILD_NAME}_sm.h")
+    endforeach()
+
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}" "${GENERATED_SOURCE}"
         COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}"
-        DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}"
+        DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}" ${_CHILD_HEADER_DEPS}
         COMMENT "Generating C11 code: test${TEST_NUM}_sm.{h,c}"
         VERBATIM
     )
