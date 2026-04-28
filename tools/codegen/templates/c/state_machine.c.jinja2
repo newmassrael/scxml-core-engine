@@ -135,6 +135,22 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             }
 {% elif action.actions and action.actions | length > 0 %}
 {{ se.lua_foreach_body_prologue(action.array, action.item, action.index) }}
+            if (_sce_n < 0) {
+                /* W3C SCXML 4.6 + 5.4 (test457): `array` must satisfy
+                   `instanceof Array` (or be a table per cpp's empty-table
+                   fallback) — non-table values raise error.execution and
+                   stop subsequent actions in the enclosing entry/exit
+                   block (W3C 5.10). Mirrors cpp `ForeachHelper.h:158-195`
+                   `evaluateForeachArray` returning nullopt → caller raise.
+                   The `return;` terminates only the surrounding entry/exit
+                   block helper (axis I separation), so the next block
+                   still runs. */
+                {{ model.name }}_event_with_meta_t _foreach_err_evt;
+                memset(&_foreach_err_evt, 0, sizeof(_foreach_err_evt));
+                _foreach_err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_foreach_err_evt);
+                return;
+            }
             for (int _i = 0; _i < _sce_n; ++_i) {
 {{ se.lua_foreach_body_iter(action.item, action.index) }}
                 {% for sub in action.actions %}

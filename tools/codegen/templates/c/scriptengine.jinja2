@@ -57,6 +57,46 @@
             "  if type(v) == 'string' then return #v > 0 end\n"
             "  return true\n"
             "end");
+        /* W3C SCXML 5.4 / 4.6 (test457): ECMAScript `instanceof Array`
+           predicate for `<foreach array=...>` validation. Mirrors cpp
+           `LuaEngine.cpp:463-483` lua_pushcfunction — strict array check
+           (table with `__is_array` metatable, OR table with rawlen > 0).
+           Empty tables return false here; the foreach prologue separately
+           treats any table as a (possibly empty) array per cpp
+           `ForeachHelper.h:173-191` empty-table fallback. C11 lowers the
+           cfunction to a Lua-script via dostring (T3 lock-in: no
+           lua_CFunction trampolines). */
+        (void)luaL_dostring(sm->L,
+            "function _isArray(v)\n"
+            "  if type(v) ~= 'table' then return false end\n"
+            "  local mt = getmetatable(v)\n"
+            "  if mt and mt.__is_array ~= nil then return true end\n"
+            "  return #v > 0\n"
+            "end");
+        /* W3C SCXML B.2 (test460): ECMAScript `Array.concat` — produces a
+           new table (no mutation of inputs), so a foreach body's
+           `Var1 = [].concat(Var1, [4])` rebinds Var1 while the foreach
+           prologue's `_sce_foreach_arr` keeps referencing the original
+           array (shallow-copy iteration semantic per W3C 4.6). Mirrors
+           cpp `LuaEngine.cpp:519-539` lua_pushcfunction; C11 lowers via
+           Lua-script per T3 lock-in. */
+        (void)luaL_dostring(sm->L,
+            "function _concat(...)\n"
+            "  local result = {}\n"
+            "  local n = 0\n"
+            "  for _, arg in ipairs({...}) do\n"
+            "    if type(arg) == 'table' then\n"
+            "      for _, v in ipairs(arg) do\n"
+            "        n = n + 1\n"
+            "        result[n] = v\n"
+            "      end\n"
+            "    else\n"
+            "      n = n + 1\n"
+            "      result[n] = arg\n"
+            "    end\n"
+            "  end\n"
+            "  return result\n"
+            "end");
         /* W3C SCXML 5.10: `_sessionid` is a read-only system variable bound
            on startup. The C++ runtime carries a per-instance UUID (set via
            `LuaEngine::setupSystemVariables`); the C11 backend is AOT-only
@@ -340,16 +380,19 @@
    W3C SCXML 4.6 mandates that even an empty foreach declares its item /
    index variables (so a later state can test them via `typeof`).
    Index is 0-based to mirror cpp `ForeachHelper::setForeachIterationVariables`
-   (size_t i passed verbatim). Non-array `array` values silently drop here;
-   the error.execution raise on type mismatch lands with the first negative
-   fixture. body-bearing foreach (action.actions non-empty) is rejected at
-   the call site with `#error` so a fresh consumer cannot land it silently. #}
+   (size_t i passed verbatim). Non-array `array` values: the empty-body
+   variant proceeds silently — the no-body case has no observable
+   side-effect to raise about (item/index already set to nil), and the
+   first force fixture for a body-less foreach over a non-array would
+   need a separate raise lift. body-bearing foreach (action.actions
+   non-empty) is rejected at the call site with `#error` so a fresh
+   consumer cannot land it silently. #}
 {% macro lua_foreach_no_body(array, item, index) %}
     (void)luaL_dostring(sm->L,
         "{{ item }} = nil; "
         {% if index %}"{{ index }} = nil; "{% endif %}
         "do local _a = ({{ array | to_lua_expr | escape_c }}); "
-        "if type(_a) == 'table' then "
+        "if _isArray(_a) or type(_a) == 'table' then "
         "for _i, _v in ipairs(_a) do "
         "{{ item }} = _v"
         {% if index %}"; {{ index }} = _i - 1"{% endif %}
@@ -357,14 +400,20 @@
 {% endmacro %}
 
 {# Body-bearing foreach prologue: stash the array on `_sce_foreach_arr` and
-   the length on local `_sce_n`. Returns -1 for non-table values so the C
-   loop is skipped (W3C 4.6 — error.execution raise on illegal array lands
-   with the first negative fixture). Caller declares the C-local `_sce_n`. #}
+   the length on local `_sce_n`. Returns -1 for non-table values; the
+   caller's `if (_sce_n < 0) raise + return;` arm raises error.execution
+   per W3C 4.6 + 5.4 (mirrors cpp `ForeachHelper::evaluateForeachArray`
+   nullopt → caller raise). For tables that pass `_isArray` returns
+   `#_sce_foreach_arr`; for empty / dictionary-shaped tables (no integer
+   keys, rawlen 0) falls back to length 0 per cpp's empty-table
+   fallback at `ForeachHelper.h:173-191`. Caller declares the C-local
+   `_sce_n`. #}
 {% macro lua_foreach_body_prologue(array, item, index) %}
     int _sce_n = -1;
     if (luaL_dostring(sm->L,
         "_sce_foreach_arr = ({{ array | to_lua_expr | escape_c }}); "
-        "if type(_sce_foreach_arr) == 'table' then return #_sce_foreach_arr "
+        "if _isArray(_sce_foreach_arr) then return #_sce_foreach_arr "
+        "elseif type(_sce_foreach_arr) == 'table' then return 0 "
         "else return -1 end") == 0) {
         _sce_n = (int)lua_tointeger(sm->L, -1);
     }
@@ -378,7 +427,12 @@
 {# Per-iteration update: set item to `_sce_foreach_arr[_i+1]` (lua is
    1-based, W3C index is 0-based; the C loop counter `_i` is the W3C
    index). Variable names come from the fixture; the snprintf buffer is
-   sized for the W3C corpus (≤ 32-char identifiers). #}
+   sized for the W3C corpus (≤ 32-char identifiers). On chunk failure
+   (e.g. illegal item identifier like `'continue'` triggering a Lua
+   syntax error) raise EVENT_ERROR_EXECUTION and `break` the C loop —
+   W3C 4.6 mandates loop termination on iteration failure. The
+   surrounding entry-block continues per the bb1c4503 carve-out
+   (W3C 4.6 surrounding-block-abort lifts with its own force fixture). #}
 {% macro lua_foreach_body_iter(item, index) %}
     {
         char _sce_buf[96];
@@ -386,7 +440,14 @@
             "{{ item }} = _sce_foreach_arr[%d]"
             {% if index %}"; {{ index }} = %d"{% endif %},
             _i + 1{% if index %}, _i{% endif %});
-        (void)luaL_dostring(sm->L, _sce_buf);
+        if (luaL_dostring(sm->L, _sce_buf) != 0) {
+            lua_pop(sm->L, 1);
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+            break;
+        }
     }
 {% endmacro %}
 
