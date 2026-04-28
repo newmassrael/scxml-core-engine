@@ -59,12 +59,35 @@ set_target_properties(sce_c_test_dom_support PROPERTIES
     C_EXTENSIONS OFF
 )
 
+# Host-side HTTP/1.1 client + JSON response extractor for the W3C SCXML
+# C.2 BasicHTTPEventProcessor corpus (test201/509/510/513/518/520/522/
+# 531/532/534/567). Synchronous POST against the existing Node.js
+# `tests/w3c/standalone_http_server.js` (Pattern B-i, see RFC
+# `claudedocs/rfc-c11-option-m-http.md` §3.2 — single source of truth
+# already used by Go/Rust harnesses + cpp WASM lane). POSIX socket(2)
+# only, no third-party dep — libcurl is too heavy for the host-helper
+# R3 budget and cpp-httplib is C++ only. Separate STATIC archive so
+# only fixtures flagged NEEDS_HTTP pull it; datamodel/DOM fixtures
+# stay free of the network machinery.
+add_library(sce_c_test_http_support STATIC
+    support/http_client.c
+)
+target_include_directories(sce_c_test_http_support PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/support"
+)
+set_target_properties(sce_c_test_http_support PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+
 # C11 fixture registry — extend as W3C category coverage grows.
 # Each entry both (a) drives sce-codegen via the macro below and
 # (b) lines up with `aot_tests/test_<NUM>.c` for the per-fixture runner.
 set(W3C_C_AOT_TESTS "")
 set(W3C_C_AOT_TESTS_NEEDS_LUA "")
 set(W3C_C_AOT_TESTS_NEEDS_DOM "")
+set(W3C_C_AOT_TESTS_NEEDS_HTTP "")
 
 sce_generate_static_w3c_c_test(355 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.6: default initial = first child in document order
 sce_generate_static_w3c_c_test(144 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 4.2: raise inserts events at rear of internal queue (FIFO ordering)
@@ -261,6 +284,9 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
     if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_DOM)
         target_link_libraries(${_target} PRIVATE sce_c_test_dom_support)
     endif()
+    if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP)
+        target_link_libraries(${_target} PRIVATE sce_c_test_http_support)
+    endif()
     set_target_properties(${_target} PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON
@@ -293,6 +319,40 @@ set_target_properties(sce_c_dom_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_dom COMMAND sce_c_dom_unit_test)
 set_tests_properties(c11_unit_dom PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
+# ─── HTTP client unit tests ────────────────────────────────────────
+#
+# Coverage for the host-side HTTP/1.1 client + JSON response extractor
+# (sce-c-tests/support/http_client.{c,h}). The W3C SCXML C.2 corpus
+# only exercises the happy path against the standalone Node server;
+# these unit tests force edge cases the corpus does not (URL parsing
+# rejections, percent-encoding overflow, depth-counted JSON object
+# capture with embedded `}`, `\uXXXX` UTF-8 unescape) plus a single
+# end-to-end POST round-trip against an in-process loopback server
+# (TCP 127.0.0.1, OS-assigned port, single-shot accept thread). pthread
+# link is local to this binary — sce_c_test_http_support stays free of
+# threading deps so fixture binaries that only call the synchronous
+# POST API do not pull pthread either.
+find_package(Threads REQUIRED)
+add_executable(sce_c_http_client_unit_test unit/http_client_test.c)
+target_link_libraries(sce_c_http_client_unit_test
+    PRIVATE
+        sce_c_test_http_support
+        Threads::Threads
+)
+target_include_directories(sce_c_http_client_unit_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/support"
+)
+set_target_properties(sce_c_http_client_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_http_client COMMAND sce_c_http_client_unit_test)
+set_tests_properties(c11_unit_http_client PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )

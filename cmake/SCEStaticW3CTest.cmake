@@ -316,8 +316,16 @@ endfunction()
 # Currently used only by the W3C SCXML B.2 corpus (test557, test561) —
 # the helper is testbench-only and never enters the sce-c-runtime link.
 #
+# Optional flag NEEDS_HTTP: append the test to W3C_C_AOT_TESTS_NEEDS_HTTP so
+# the caller can link the host-side HTTP/1.1 client + JSON extractor
+# (sce-c-tests/support/http_client.c). Used by the W3C SCXML C.2
+# BasicHTTPEventProcessor corpus that issues a real HTTP POST against the
+# Node.js standalone server (`tests/w3c/standalone_http_server.js`).
+# Independent of NEEDS_LUA / NEEDS_DOM — combined freely as the fixture
+# requires.
+#
 function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
-    cmake_parse_arguments(_SWCT "NEEDS_LUA;NEEDS_DOM" "" "" ${ARGN})
+    cmake_parse_arguments(_SWCT "NEEDS_LUA;NEEDS_DOM;NEEDS_HTTP" "" "" ${ARGN})
 
     # Accumulate test number into W3C_C_AOT_TESTS so the caller can iterate.
     list(APPEND W3C_C_AOT_TESTS ${TEST_NUM})
@@ -329,6 +337,10 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     if(_SWCT_NEEDS_DOM)
         list(APPEND W3C_C_AOT_TESTS_NEEDS_DOM ${TEST_NUM})
         set(W3C_C_AOT_TESTS_NEEDS_DOM ${W3C_C_AOT_TESTS_NEEDS_DOM} PARENT_SCOPE)
+    endif()
+    if(_SWCT_NEEDS_HTTP)
+        list(APPEND W3C_C_AOT_TESTS_NEEDS_HTTP ${TEST_NUM})
+        set(W3C_C_AOT_TESTS_NEEDS_HTTP ${W3C_C_AOT_TESTS_NEEDS_HTTP} PARENT_SCOPE)
     endif()
 
     set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
