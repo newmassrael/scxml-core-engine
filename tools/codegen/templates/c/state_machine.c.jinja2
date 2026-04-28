@@ -505,31 +505,42 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                 _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
                 {{ model.name }}_raise(sm, &_err_evt);
                 return;
-            } else if (strcmp(_send_target_buf, "{{ model.name }}_session") == 0) {
-                /* W3C SCXML 5.10.1 (test336): target = self session URI
-                   (the deterministic AOT-binding `<model.name>_session`
-                   literal lua-side `_sessionid` exposes). External pop
-                   sets `_event.origin` to that literal, so a receiver's
-                   `<send targetexpr=_event.origin/>` evaluates back to
-                   it — dispatch as an external send to the same session,
-                   re-entering the external queue. cpp `raiseExternal`
-                   fan-out sees the URI as a known target via the
-                   session-id match. */
-                {{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ model.name }}_raise_external(sm, &_send_evt);
-            } else {
-                /* Any other dynamic target is unreachable in the C11
-                   AOT-only profile (no #_parent / #_child / mesh / HTTP
-                   yet — those land with their first force fixture).
-                   Raise error.communication per cpp's
-                   `SendHelper::isUnreachableTarget` path. */
+            } else if (strcmp(_send_target_buf, "undefined") == 0 ||
+                       strcmp(_send_target_buf, "nil") == 0) {
+                /* W3C SCXML C.1 (test496/test521): unreachable target
+                   evaluation result raises error.communication and stops
+                   subsequent executable content. Mirrors cpp
+                   `SendHelper::isUnreachableTarget`
+                   (`sce/include/common/SendHelper.h:255`) with both the
+                   ECMAScript identifier (`"undefined"` from
+                   `ScriptResultUtils::resultToString`) and its lua transpile
+                   counterpart (`"nil"` from `tostring((nil))`). cpp's
+                   `target.empty()` arm of the same helper is already
+                   covered by the empty-buffer branch above. */
                 {{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));
                 _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
                 {{ model.name }}_raise(sm, &_err_evt);
                 return;
+            } else {
+                /* W3C SCXML 6.2 + C.1 (test190/test336): every other
+                   dynamic target is treated as a session URI and
+                   dispatched onto the external queue, mirroring cpp
+                   `actions/send.jinja2`'s fall-through to
+                   `engine.raiseExternal(...)` after the
+                   `isInvalidTarget`/`isUnreachableTarget`/`isInternalTarget`
+                   checks. cpp's `raiseExternal` collapses any unrecognised
+                   single-session URI (the deterministic
+                   `<model.name>_session` literal exposed on
+                   `_event.origin`, the `#_scxml_<sessionid>` form per
+                   W3C C.1.5, or any other future cross-session URI) into
+                   the same external pop, so the C11 mirror does the same.
+                   Per-target session lookup lands when the multi-session
+                   AOT profile is wired (no current consumer). */
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise_external(sm, &_send_evt);
             }
 {% elif action.event and action.typeexpr and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test174): runtime `typeexpr` evaluation —
@@ -633,17 +644,30 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                 _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
                 {{ model.name }}_raise(sm, &_err_evt);
                 return;
-            } else if (strcmp(_send_target_buf, "{{ model.name }}_session") == 0) {
-                {{ model.name }}_event_with_meta_t _send_evt;
-                memset(&_send_evt, 0, sizeof(_send_evt));
-                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-                {{ model.name }}_raise_external(sm, &_send_evt);
-            } else {
+            } else if (strcmp(_send_target_buf, "undefined") == 0 ||
+                       strcmp(_send_target_buf, "nil") == 0) {
+                /* W3C SCXML C.1 (test496/test521): unreachable target
+                   evaluation result — mirrors cpp
+                   `SendHelper::isUnreachableTarget`. Same shape as the
+                   targetexpr-only arm above (kept synchronised: any
+                   future relaxation must touch both). */
                 {{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));
                 _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
                 {{ model.name }}_raise(sm, &_err_evt);
                 return;
+            } else {
+                /* W3C SCXML 6.2 + C.1 (test190/test336 mirror): any other
+                   dynamic target falls through to the external queue —
+                   same fall-through as the targetexpr-only arm. cpp
+                   `actions/send.jinja2` reaches `engine.raiseExternal`
+                   after the helper checks regardless of whether typeexpr
+                   was present, so the typeexpr-presence does not change
+                   the dispatch shape. */
+                {{ model.name }}_event_with_meta_t _send_evt;
+                memset(&_send_evt, 0, sizeof(_send_evt));
+                _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                {{ model.name }}_raise_external(sm, &_send_evt);
             }
 {% elif action.event and action.delayexpr and not action.target and not action.eventexpr and not action.delay and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test175): runtime `delayexpr` evaluation —

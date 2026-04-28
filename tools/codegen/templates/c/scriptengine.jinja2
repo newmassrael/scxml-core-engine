@@ -68,9 +68,7 @@
            emit_action assign branch (any <assign location> targeting a
            reserved system variable lowers to error.execution rather than
            a luaL_dostring), so the Lua state itself never sees a
-           re-binding attempt. _ioprocessors lands with its first
-           consuming fixture (built-but-unconsumed carve-out per
-           feedback_built_but_unconsumed.md). */
+           re-binding attempt. */
         (void)luaL_dostring(sm->L,
             "_sessionid = '{{ model.name | escape_c }}_session'");
         /* W3C SCXML 5.10: `_name` is the SCXML element's `name` attribute
@@ -82,17 +80,20 @@
            is invoked. */
         (void)luaL_dostring(sm->L,
             "_name = '{{ model.scxml_name | default('') | escape_c }}'");
-        /* W3C SCXML 5.10: `_ioprocessors` is a table of supported I/O
-           processor descriptors (cpp `LuaEngine.cpp` populates the
-           `scxml` slot with `{location = '<EventProcessor URI>'}` plus
-           any extra processors injected at session setup). The C11
-           backend has no <send>/<invoke> consumer yet, so we register
-           an empty table — non-nil so W3C 5.10's typeof check still
-           passes, and the read-only enforcement rejects any reassign
-           before it reaches the lua state. Per-processor entries land
-           when the first <send target="#_ioprocessors..."> fixture
-           forces them (built-but-unconsumed carve-out). */
-        (void)luaL_dostring(sm->L, "_ioprocessors = {}");
+        /* W3C SCXML 5.10 + C.1 (test500/501/569): `_ioprocessors` is a
+           table of supported I/O processor descriptors keyed by alias.
+           Mirrors cpp `LuaEngine::setupSystemVariables`
+           (`sce/src/scripting/LuaEngine.cpp:1041-1046`): for each entry
+           in `ioProcessors` (cpp's `StateMachine.cpp:3107` seeds it as
+           `{"scxml"}`), build `_ioprocessors[proc] = {location = proc}`.
+           The C11 AOT-only profile mirrors that exact emit shape — the
+           literal `"scxml"` is bound non-nil so test500's typeof check
+           passes, and indexed access (`_ioprocessors['scxml'].location`)
+           returns a truthy string so test569's cond evaluates true.
+           Per-processor entries beyond `scxml` land when the first
+           additional-IO-processor fixture forces them. */
+        (void)luaL_dostring(sm->L,
+            "_ioprocessors = {scxml = {location = 'scxml'}}");
         /* W3C SCXML 5.5 + 3.7: donedata stash slot. The final-state entry
            emit in `state_machine.c.jinja2::execute_entry_actions` populates
            `_pending_donedata` (string / number / table) right before
