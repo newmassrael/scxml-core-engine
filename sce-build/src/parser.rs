@@ -2273,6 +2273,9 @@ impl SCXMLParser {
 
     /// W3C SCXML 6.2: Collect events from child state machines that send to parent (#_parent).
     /// Auto-adds child-to-parent events to parent Event enum for compile-time type safety.
+    /// Also stamps `InvokeSessionCommon::child_has_send_to_parent` per invoke so
+    /// codegen can gate the parent_sm / parent_dispatch wiring at child spawn time
+    /// (W3C SCXML 6.4 — required for test226/240/241/243/244/245/276).
     fn collect_child_to_parent_events(
         &self,
         model: &mut SCXMLModel,
@@ -2286,6 +2289,8 @@ impl SCXMLParser {
             None => return, // No filesystem access (WASM)
         };
         let mut parsed_children: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut child_send_to_parent: std::collections::HashMap<String, bool> =
+            std::collections::HashMap::new();
 
         let invokes: Vec<ScxmlInvokeInfo> = model
             .states
@@ -2323,9 +2328,29 @@ impl SCXMLParser {
                 collect_parent_send_events(&child_state.initial_transition_actions, &mut child_parent_events);
             }
 
+            child_send_to_parent
+                .insert(si.child_name.clone(), !child_parent_events.is_empty());
+
             // Add collected events to parent's event set
             for event in child_parent_events {
                 model.events.insert(event);
+            }
+        }
+
+        // W3C SCXML 6.4: stamp child_has_send_to_parent on every Scxml/Hybrid
+        // invoke so codegen knows to wire parent_sm / parent_dispatch before
+        // child spawn. Hybrid mirrors the same flag because the spawned child
+        // is a regular SCXML session whose parent-routing surface is identical.
+        for state in model.states.values_mut() {
+            for invoke in state.invokes.iter_mut() {
+                let common = match invoke {
+                    Invoke::Scxml(i) => &mut i.common,
+                    Invoke::Hybrid(i) => &mut i.common,
+                    Invoke::MeshRpc(_) => continue,
+                };
+                if let Some(&has) = child_send_to_parent.get(&common.child_name) {
+                    common.child_has_send_to_parent = has;
+                }
             }
         }
     }

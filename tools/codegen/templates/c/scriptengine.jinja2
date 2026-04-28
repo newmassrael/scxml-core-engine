@@ -835,6 +835,58 @@
     lua_pop(sm->L, 1);
 {% endmacro %}
 
+{# W3C SCXML 6.4 (test226/240/241/243/244/245/276): cross-Lua-state value
+   transfer for `<invoke><param>` / `<invoke namelist>`. Parent's
+   `execute_pending_invokes` evaluates the expression (for params) or reads
+   the global (for namelist) on its own `lua_State` so the value lands on
+   `src_L`'s top of stack; this macro copies that top value to `dst_L`'s
+   global table under `dst_name` and pops the source slot.
+
+   cpp `invoke_methods.jinja2:118-128` passes the param's expr STRING to the
+   child's script engine (`child->setParamInScriptEngine(name, expr)`) so
+   the child re-evaluates in its own context. C11 cannot mirror that shape:
+   each generated SM owns a dedicated `lua_State` per `_init`, so a string
+   that names a parent-side variable would be undefined in the child's
+   state. Instead we evaluate parent-side and transfer the value — which is
+   also closer to W3C 6.4.1's intent ("evaluate the expr in the calling
+   context"). For literal-expression W3C tests (all of test226/240/241/243
+   /244/245/276 use `expr="1"` or namelist names that resolve to integers),
+   both shapes converge on the same observable child datamodel.
+
+   Type dispatch covers the W3C corpus param/namelist value types: integer
+   / float (Lua number, distinguished via lua_isinteger so 0 stays an int
+   in the child datamodel), string, boolean. Non-primitives (table /
+   function / userdata) collapse to nil — no fixture in the W3C corpus
+   passes those; the first one forces a typed-payload helper. nil and
+   none transfer as nil. The pop on `src_L` keeps the parent's stack
+   balanced for sibling-param iteration. #}
+{% macro lua_xfer_top_to_child(src_L, dst_L, dst_name) %}
+        {
+            int _xfer_t = lua_type({{ src_L }}, -1);
+            if (_xfer_t == LUA_TBOOLEAN) {
+                lua_pushboolean({{ dst_L }}, lua_toboolean({{ src_L }}, -1));
+            } else if (_xfer_t == LUA_TNUMBER) {
+                if (lua_isinteger({{ src_L }}, -1)) {
+                    lua_pushinteger({{ dst_L }}, lua_tointeger({{ src_L }}, -1));
+                } else {
+                    lua_pushnumber({{ dst_L }}, lua_tonumber({{ src_L }}, -1));
+                }
+            } else if (_xfer_t == LUA_TSTRING) {
+                size_t _xfer_len = 0;
+                const char *_xfer_s = lua_tolstring({{ src_L }}, -1, &_xfer_len);
+                if (_xfer_s != NULL) {
+                    lua_pushlstring({{ dst_L }}, _xfer_s, _xfer_len);
+                } else {
+                    lua_pushnil({{ dst_L }});
+                }
+            } else {
+                lua_pushnil({{ dst_L }});
+            }
+            lua_setglobal({{ dst_L }}, "{{ dst_name }}");
+            lua_pop({{ src_L }}, 1);
+        }
+{% endmacro %}
+
 {# W3C SCXML 5.10 + 6.2: evaluate one `<send><param name=N expr=X/></send>`
    and store the value as `_pending_donedata.{name} = (X)`. The caller emits
    `_pending_donedata = {}` once before iterating so the table exists, and

@@ -397,6 +397,40 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
 
         list(APPEND _CHILD_GENERATED_SOURCES "${_CHILD_SOURCE}")
     endforeach()
+
+    # W3C SCXML 6.4 (test226/276): discover author-supplied sibling sub-fixture
+    # TXML files. These are referenced by the parent via `<invoke src="file:test${N}sub1.scxml">`
+    # rather than inline `<content>`, so sce-build sees them as external paths
+    # and the parent's generated `_sm.h` `#include`s the child's `_sm.h`.
+    # Mirrors the C++ path's `test${N}sub*.txml` discovery (line 137 above) —
+    # convert TXML→SCXML, then codegen the C11 SM. Glob runs at configure
+    # time so the parent's add_executable below sees the staged files.
+    file(GLOB _SUB_TXML_FILES "${RESOURCE_DIR}/test${TEST_NUM}sub*.txml")
+    foreach(_SUB_TXML ${_SUB_TXML_FILES})
+        get_filename_component(_SUB_NAME "${_SUB_TXML}" NAME_WE)
+        set(_SUB_SCXML "${OUTPUT_DIR}/${_SUB_NAME}.scxml")
+        set(_SUB_HEADER "${OUTPUT_DIR}/${_SUB_NAME}_sm.h")
+        set(_SUB_SOURCE "${OUTPUT_DIR}/${_SUB_NAME}_sm.c")
+
+        add_custom_command(
+            OUTPUT "${_SUB_SCXML}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+            COMMAND txml-converter "${_SUB_TXML}" "${_SUB_SCXML}"
+            DEPENDS txml-converter "${_SUB_TXML}"
+            COMMENT "Converting ${_SUB_NAME}.txml to SCXML (C11 sub-fixture)"
+            VERBATIM
+        )
+        add_custom_command(
+            OUTPUT "${_SUB_HEADER}" "${_SUB_SOURCE}"
+            COMMAND "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}"
+            DEPENDS "${_SUB_SCXML}" "${SCE_CODEGEN}"
+            COMMENT "Generating C11 code: ${_SUB_NAME}_sm.{h,c}"
+            VERBATIM
+        )
+
+        list(APPEND _CHILD_GENERATED_SOURCES "${_SUB_SOURCE}")
+    endforeach()
+
     set(W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES "${_CHILD_GENERATED_SOURCES}" PARENT_SCOPE)
 
     # Allow either `resources/${N}/test${N}.scxml` (already-converted SCXML)
@@ -447,13 +481,22 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     # — when the parent's `_sm.h` `#include`s the child's `_sm.h` (driven
     # by `state_machine.h.jinja2` when `model.invokes | scxml_family` is
     # non-empty), the build graph must materialise the child header
-    # before the parent compilation that consumes it. The codegen step
-    # itself does not read the child header; the dependency is for build
-    # ordering, not for re-codegen triggers (idempotent on child changes).
+    # before the parent compilation that consumes it. Equally important
+    # for `collect_child_to_parent_events` — sce-build's parser scans the
+    # child SCXML at parent codegen time to populate
+    # `child_has_send_to_parent` / `child_datamodel_vars`, so the child
+    # SCXML must exist at the OUTPUT_DIR path before parent codegen runs.
+    # Both synth-invoke (inline) and sibling-sub (test226/276 author-
+    # supplied) shapes are tracked here so neither shape silently regens
+    # the parent against a stale or absent child model.
     set(_CHILD_HEADER_DEPS "")
     foreach(_SYNTH_FILE ${_SYNTH_INVOKE_FILES})
         get_filename_component(_CHILD_NAME "${_SYNTH_FILE}" NAME_WE)
         list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_CHILD_NAME}_sm.h")
+    endforeach()
+    foreach(_SUB_TXML ${_SUB_TXML_FILES})
+        get_filename_component(_SUB_NAME "${_SUB_TXML}" NAME_WE)
+        list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_SUB_NAME}_sm.h")
     endforeach()
 
     add_custom_command(

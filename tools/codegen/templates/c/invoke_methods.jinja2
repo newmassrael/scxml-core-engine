@@ -4,14 +4,55 @@
 {# ── W3C SCXML 6.4: Invoke lifecycle helpers (per-SM) ────────────────
    Mirrors `tools/codegen/templates/invoke_methods.jinja2` (cpp) — the
    C11 emitter inlines a focused subset (defer queue + child SM struct
-   embed + macrostep-end execute hook + onexit cancel/destroy).
-   Cross-SM event routing (#_parent / #_<invokeid>) and the surfaces
-   that depend on it (autoforward, finalize, parent-driven child tick
-   loop) extend this template at later lifts.
+   embed + macrostep-end execute hook + onexit cancel/destroy +
+   cross-machine `#_parent` dispatch + `<param>` / `namelist` value
+   transfer).
 
    T3 lock-in: per-SM logic emitted into `_sm.c`. Cross-SM types
    (`sce_invoke_pending_queue_t`) live in `sce-c-runtime/include/sce/invoke.h`
    as static inline helpers — no .c source.                             #}
+
+{% set _ns = namespace(any_child_parent_send=false) %}
+{% for invoke_info in model.invokes | scxml %}
+{% if invoke_info.child_has_send_to_parent %}
+{% set _ns.any_child_parent_send = true %}
+{% endif %}
+{% endfor %}
+
+{% if _ns.any_child_parent_send %}
+{# ── dispatch_external_by_name ───────────────────────────────────────
+   W3C SCXML 6.4: child-to-parent event routing shim. Children spawned
+   via `<invoke>` whose body contains `<send target="#_parent">` invoke
+   this function through their `parent_dispatch` fn pointer (stamped on
+   the child SM struct at `execute_pending_invokes` time). The shim
+   converts the event-name string to this SM's event enum and enqueues
+   onto the external queue, mirroring the parent-template parameter
+   shape the cpp backend uses for the same routing.
+
+   Event names absent from this SM's enum (events the analyzer's
+   `collect_child_to_parent_events` pass did not promote because no
+   `<send target="#_parent">` in any registered child fixture used them)
+   silently drop. Wildcard `event="*"` parent transitions still match
+   any of the promoted names because the dispatch goes through the
+   regular external queue, which the macrostep evaluates against every
+   transition's matcher (W3C SCXML 3.13). The empty NULL-guard handles
+   defensive callers — production children always pass a valid name. #}
+static void {{ model.name }}_dispatch_external_by_name(void *opaque, const char *name) {
+    if (opaque == NULL || name == NULL) {
+        return;
+    }
+    {{ model.name }}_t *sm = ({{ model.name }}_t *)opaque;
+    {{ model.name }}_event_with_meta_t evt;
+    memset(&evt, 0, sizeof(evt));
+    {% for ev_name in model.events | sort %}
+    if (strcmp(name, "{{ ev_name }}") == 0) {
+        evt.event = {{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }};
+        {{ model.name }}_raise_external(sm, &evt);
+        return;
+    }
+    {% endfor %}
+}
+{% endif %}
 
 {# ── execute_pending_invokes ─────────────────────────────────────────
    Drain the parent's pending queue at macrostep end. For each pending:
@@ -55,6 +96,82 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
                (invoke id `{{ invoke_info.invoke_id }}` in state `{{ state_id }}`). */
             {{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
             sm->child_{{ invoke_info.field_suffix }}_active = true;
+            {% if invoke_info.child_has_send_to_parent %}
+            /* W3C SCXML 6.4 (test226/240/241/243/244/245/276): wire the
+               child SM's parent-routing fields AFTER `_init` (which
+               memsets the struct) and BEFORE param/namelist transfer
+               + the child's first macrostep. Child SMs that route to
+               `#_parent` have their `_init` skip the post-entry
+               eventless-loop (gated on `has_parent_communication` in
+               state_machine.c.jinja2) so the first eventless transition
+               body — which may be `<send target="#_parent" event=...>` —
+               does not run until parent_dispatch is non-NULL. */
+            sm->child_{{ invoke_info.field_suffix }}.parent_sm = sm;
+            sm->child_{{ invoke_info.field_suffix }}.parent_dispatch = {{ model.name }}_dispatch_external_by_name;
+            {% endif %}
+            {% if invoke_info.child_needs_script_engine and (invoke_info.params or invoke_info.namelist) %}
+            /* W3C SCXML 6.4.1 (test226/240/241/243/244/245/276):
+               `<param>` and `namelist` value passing. Evaluate each
+               param's `expr` (or read each namelist name's binding)
+               on the parent's `lua_State` so the value lands on
+               `sm->L`'s top of stack, then transfer to the child's
+               `lua_State` as a global under the param/namelist name —
+               overriding the `<data expr=...>` defaults that the
+               child's `_init` already seeded. The cpp backend mirrors
+               this shape via `child->setParamInScriptEngine(name, expr)`
+               (`tools/codegen/templates/invoke_methods.jinja2:118-128`)
+               but transfers the expr STRING for re-evaluation in the
+               child's engine; C11 evaluates parent-side because each
+               generated SM owns its own Lua state and a parent-side
+               variable name is undefined in the child's state. For
+               literal exprs (the entire W3C corpus param/namelist
+               surface) both shapes converge on the same observable.
+
+               Names not declared in the child's `<datamodel>` skip
+               the transfer (test245: namelist Var2 with no child
+               <data id="Var2"> stays unbound) — mirrors cpp's
+               `DatamodelValidationHelper::isVariableDeclaredInChild`
+               filter at `invoke_methods.jinja2:102-104`. */
+            {% if invoke_info.params %}
+            {% for param in invoke_info.params %}
+            {% if invoke_info.child_datamodel_vars and param.name in invoke_info.child_datamodel_vars %}
+            /* `<param name="{{ param.name }}" expr="{{ param.expr | escape_c }}"/>` */
+            if (luaL_dostring(sm->L,
+                "return ({{ param.expr | to_lua_expr | escape_c }})") == 0) {
+{{ se.lua_xfer_top_to_child("sm->L", "sm->child_" ~ invoke_info.field_suffix ~ ".L", param.name) }}
+            } else {
+                lua_pop(sm->L, 1);
+            }
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+            {% if invoke_info.namelist %}
+            {% for ns_name in invoke_info.namelist.split() %}
+            {% if invoke_info.child_datamodel_vars and ns_name in invoke_info.child_datamodel_vars %}
+            /* namelist `{{ ns_name }}` */
+            lua_getglobal(sm->L, "{{ ns_name }}");
+{{ se.lua_xfer_top_to_child("sm->L", "sm->child_" ~ invoke_info.field_suffix ~ ".L", ns_name) }}
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+            {% endif %}
+            {% if invoke_info.child_has_send_to_parent %}
+            /* W3C SCXML 6.4: drive the child's deferred macrostep loop
+               now that param/namelist have been applied and parent
+               routing is live. The bound (16) is a safety net — the
+               W3C corpus' Phase-3 children reach `<final>` in one
+               macrostep (single eventless transition + send-to-parent
+               + enter subFinal). The first iteration that observes
+               `is_in_final_state` exits before calling `_step` again
+               so a child that finalised during init's entry walk
+               (test247-style sync-final) costs zero `_step` calls. */
+            for (int _step_n = 0; _step_n < 16; ++_step_n) {
+                if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+                    break;
+                }
+                {{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
+            }
+            {% endif %}
             /* The child's `_init` runs the configuration entry walk and
                onentry actions of its initial state. When the initial is
                a top-level <final> (test247), is_in_final_state returns

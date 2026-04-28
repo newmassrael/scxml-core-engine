@@ -342,6 +342,16 @@ pub struct InvokeSessionCommon {
     pub use_specific_event: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub child_datamodel_vars: Option<Vec<String>>,
+    /// W3C SCXML 6.4 (test226/240/241/243/244/245/276): the child SCXML
+    /// has at least one `<send target="#_parent" event="..."/>`. Codegen
+    /// uses this to gate parent_sm / parent_dispatch wiring at child
+    /// spawn time so parent-routed events reach the parent's external
+    /// queue. Mirrors the C++ reuse of `child_model.has_parent_communication`
+    /// surfaced via the parsed child model — populated by
+    /// `collect_child_to_parent_events` during invoke metadata
+    /// resolution.
+    #[serde(default)]
+    pub child_has_send_to_parent: bool,
 }
 
 impl std::ops::Deref for InvokeSessionCommon {
