@@ -394,14 +394,35 @@
 {# Emit a bounded block that evaluates `cond` and stores its truthiness in
    `result_var` (must be `bool` and already declared by the caller). The
    chunk returns the value, lua_toboolean lifts it, lua_pop drops the
-   stack slot. Same drop-on-error policy as lua_assign for now. #}
+   stack slot.
+
+   W3C SCXML 5.9 (test344): "If a conditional expression cannot be
+   evaluated as a boolean value or its evaluation causes an error, the
+   SCXML processor MUST place the error 'error.execution' in the
+   internal event queue." On luaL_dostring failure (syntax error, runtime
+   trap, etc.) we pop the error message, raise error.execution, and leave
+   `result_var` at its initial false — mirrors cpp `LuaEngine::evaluateBoolean`
+   chunk-failure path (LuaEngine.cpp:~880, returns false + sets error
+   so the surrounding `process_transition` can route the error to a
+   handler). The success path is unchanged from the prior silent-drop
+   shape so cond expressions that legitimately evaluate to false (e.g.
+   test309's `cond="return"` racing with an unconditional fall-through
+   transition) keep producing the same observable: result_var stays
+   false, the next transition fires eventlessly before error.execution
+   is dequeued, and pass is reached. #}
 {% macro lua_eval_guard(cond, result_var) %}
     {{ result_var }} = false;
     if (luaL_dostring(sm->L,
         "return ({{ cond | to_lua_guard | escape_c }})") == 0) {
         {{ result_var }} = (bool)lua_toboolean(sm->L, -1);
+        lua_pop(sm->L, 1);
+    } else {
+        lua_pop(sm->L, 1);
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
     }
-    lua_pop(sm->L, 1);
 {% endmacro %}
 
 {# Emit a body-empty <foreach>: declare item (and optional index) on the Lua

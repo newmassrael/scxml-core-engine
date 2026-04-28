@@ -340,10 +340,26 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                598/628/664/694/784/806 (`isInternalTarget("")` false-branch
                → `raiseExternal`) — the empty-target literal naturally
                falls into raiseExternal at runtime in cpp; C11 collapses
-               the runtime branch into a codegen-time choice per T3. */
+               the runtime branch into a codegen-time choice per T3.
+
+               W3C SCXML 5.10.1 (test351): when the author specified a
+               literal `id="..."` on `<send>`, propagate it through the
+               event metadata so the receiver reads `_event.sendid` as
+               that string. When `id` was omitted (and `idlocation`
+               isn't used either — handled by a sibling arm), W3C 5.10.1
+               mandates `_event.sendid` stay empty, so we leave the
+               zero-initialised `send_id` field alone. parser.rs sets
+               `action.auto_send_id = action.id` when the user gave one
+               (parser.rs:1161); when no id was given, auto_send_id
+               becomes `__send_N` but here we deliberately ignore it
+               because there's no idlocation slot to mirror it into. */
             {{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {% if action.id %}
+            strncpy(_send_evt.send_id, "{{ action.id | escape_c }}", (size_t)SCE_MAX_ID_LEN - 1u);
+            _send_evt.send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            {% endif %}
             {{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 (test176/205/560): static-event with
