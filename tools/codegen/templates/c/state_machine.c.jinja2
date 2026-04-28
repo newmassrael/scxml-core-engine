@@ -1358,6 +1358,43 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
             _done_evt.event = {{ model.name | upper }}_EVENT_DONE_STATE_{{ state.parent | upper | replace('-', '_') | replace('.', '_') }};
             {{ model.name }}_raise(sm, &_done_evt);
         }
+        {% if model.states[state.parent].parent and model.states[model.states[state.parent].parent].is_parallel %}
+        {% set parallel_id = model.states[state.parent].parent %}
+        /* W3C SCXML 3.4 + 3.7.1: <parallel> completion check — when every
+           region of {{ parallel_id }} has an active direct <final> child,
+           raise done.state.{{ parallel_id }}. Mirrors cpp
+           `entry_exit_actions.jinja2:476-505` via
+           `ParallelCompletionHelper::areAllRegionsInFinal` (Zero
+           Duplication helper). The cpp helper iterates regions at
+           runtime; C11 expands the `regions × final-children` enumeration
+           at codegen-time per T3 inline-only lock-in. Direct-child only
+           (cpp `getParent(active) == region`), no descendant final. */
+        {
+            bool _parallel_complete = true;
+            {% for region_id, region_state in model.states | dictsort %}
+            {% if region_state.parent == parallel_id %}
+            {
+                const uint32_t _region_final_mask = (uint32_t)0u
+                {% for fchild_id, fchild_state in model.states | dictsort %}
+                {% if fchild_state.parent == region_id and fchild_state.is_final %}
+                    | state_bit({{ model.name | upper }}_STATE_{{ fchild_id | upper | replace('-', '_') | replace('.', '_') }})
+                {% endif %}
+                {% endfor %}
+                ;
+                if (!(sm->active & _region_final_mask)) {
+                    _parallel_complete = false;
+                }
+            }
+            {% endif %}
+            {% endfor %}
+            if (_parallel_complete) {
+                {{ model.name }}_event_with_meta_t _done_p_evt;
+                memset(&_done_p_evt, 0, sizeof(_done_p_evt));
+                _done_p_evt.event = {{ model.name | upper }}_EVENT_DONE_STATE_{{ parallel_id | upper | replace('-', '_') | replace('.', '_') }};
+                {{ model.name }}_raise(sm, &_done_p_evt);
+            }
+        }
+        {% endif %}
         {% endif %}
         break;
     }
