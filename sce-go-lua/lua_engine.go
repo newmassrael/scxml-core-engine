@@ -330,133 +330,64 @@ func jsonToLuaTable(json string) string {
 	return result.String()
 }
 
-// pushDOMTable pushes a Lua table with DOM-like methods for XML data (W3C SCXML B.2).
-// Port of Rust sce-rust-lua setup_dom_metatable_for().
+// pushDOMTable parses xml into a full DOM tree and pushes a Lua table
+// onto the stack whose three methods (getElementsByTagName /
+// getAttribute / getTagName) dispatch through the parsed tree.  Each
+// method is a closure that captures (*XmlDoc, nodeID), which keeps the
+// arena alive for as long as any Lua reference exists — equivalent to
+// cpp's `shared_ptr<XMLElement>` semantics and Rust's `Arc<XmlDoc>`
+// UserData.  Parse failure leaves the stack empty and pushes nil so
+// callers (W3C SCXML B.2 paths) get the spec's "leave variable
+// undefined on parse error" behaviour.  Mirrors cpp
+// `LuaDOMBinding::pushDOMObject` (sce/src/scripting/LuaDOMBinding.cpp:74).
 func (e *LuaEngine) pushDOMTable(sess *session, xml string) {
-	l := sess.l
-
-	// Create main table with __xml field
-	l.NewTable()
-	l.PushString(xml)
-	l.SetField(-2, "__xml")
-
-	e.setupDOMMethods(sess)
+	doc := ParseXml(xml)
+	if !doc.IsValid() {
+		sess.l.PushNil()
+		return
+	}
+	e.pushDOMNode(sess, doc, doc.Root, true)
 }
 
-// setupDOMMethods sets getElementsByTagName, getAttribute, getTagName on the table at stack top.
-func (e *LuaEngine) setupDOMMethods(sess *session) {
+// pushDOMNode pushes a Lua table for a single tree node (document or
+// element).  `isDocument` toggles cpp `XMLDocument`-vs-`XMLElement`
+// semantics: getElementsByTagName recurses from the root inclusively
+// for documents, descends into children only for elements.
+func (e *LuaEngine) pushDOMNode(sess *session, doc *XmlDoc, nodeID int, isDocument bool) {
 	l := sess.l
+	l.NewTable()
 
-	// getElementsByTagName(tag) -> array of element tables
+	// getElementsByTagName(tag) -> 1-based array of element tables
+	// (ECMAScript [0]/[1] are lowered to Lua [1]/[2] by the
+	// transformer upstream).
 	l.PushGoFunction(func(l *lua.State) int {
-		// self is at 1, tag at 2
 		tag, _ := l.ToString(2)
-		// Get __xml from self
-		l.Field(1, "__xml")
-		xmlStr, _ := l.ToString(-1)
-		l.Pop(1)
-
-		l.NewTable() // result array
-		openTag := "<" + tag
-		idx := 1
-		pos := 0
-		for pos < len(xmlStr) {
-			start := strings.Index(xmlStr[pos:], openTag)
-			if start == -1 {
-				break
-			}
-			absStart := pos + start
-			afterTag := absStart + len(openTag)
-			// Check it's actually a tag boundary (not a prefix match)
-			if afterTag < len(xmlStr) {
-				c := xmlStr[afterTag]
-				if c != ' ' && c != '\t' && c != '>' && c != '/' {
-					pos = afterTag
-					continue
-				}
-			}
-			closeTag := "</" + tag + ">"
-			// Check for self-closing
-			selfCloseIdx := strings.Index(xmlStr[afterTag:], "/>")
-			pairedEndIdx := strings.Index(xmlStr[absStart:], closeTag)
-
-			if selfCloseIdx >= 0 {
-				selfCloseAbs := afterTag + selfCloseIdx
-				if pairedEndIdx < 0 || selfCloseAbs < absStart+pairedEndIdx {
-					// Self-closing tag
-					elemXML := xmlStr[absStart : selfCloseAbs+2]
-					l.NewTable()
-					l.PushString(elemXML)
-					l.SetField(-2, "__xml")
-					e.setupDOMMethods(&session{l: l, declaredVars: sess.declaredVars})
-					l.RawSetInt(-2, idx)
-					idx++
-					pos = selfCloseAbs + 2
-					continue
-				}
-			}
-			if pairedEndIdx >= 0 {
-				elemXML := xmlStr[absStart : absStart+pairedEndIdx+len(closeTag)]
-				l.NewTable()
-				l.PushString(elemXML)
-				l.SetField(-2, "__xml")
-				e.setupDOMMethods(&session{l: l, declaredVars: sess.declaredVars})
-				l.RawSetInt(-2, idx)
-				idx++
-				pos = absStart + pairedEndIdx + len(closeTag)
-			} else {
-				break
-			}
+		var ids []int
+		if isDocument {
+			ids = doc.GetElementsByTagName(tag)
+		} else {
+			ids = doc.GetElementsByTagNameFrom(nodeID, tag)
+		}
+		l.NewTable()
+		for i, id := range ids {
+			e.pushDOMNode(sess, doc, id, false)
+			l.RawSetInt(-2, i+1)
 		}
 		return 1
 	})
 	l.SetField(-2, "getElementsByTagName")
 
-	// getAttribute(name) -> string or nil
+	// getAttribute(name) -> string ("" on miss, matches cpp)
 	l.PushGoFunction(func(l *lua.State) int {
 		attrName, _ := l.ToString(2)
-		l.Field(1, "__xml")
-		xmlStr, _ := l.ToString(-1)
-		l.Pop(1)
-
-		for _, quote := range []byte{'"', '\''} {
-			pattern := attrName + "=" + string(quote)
-			start := strings.Index(xmlStr, pattern)
-			if start >= 0 {
-				valStart := start + len(pattern)
-				end := strings.IndexByte(xmlStr[valStart:], quote)
-				if end >= 0 {
-					l.PushString(xmlStr[valStart : valStart+end])
-					return 1
-				}
-			}
-		}
-		l.PushNil()
+		l.PushString(doc.GetAttribute(nodeID, attrName))
 		return 1
 	})
 	l.SetField(-2, "getAttribute")
 
-	// getTagName() -> string
+	// getTagName() -> string ("" on non-element, matches cpp)
 	l.PushGoFunction(func(l *lua.State) int {
-		l.Field(1, "__xml")
-		xmlStr, _ := l.ToString(-1)
-		l.Pop(1)
-
-		start := strings.IndexByte(xmlStr, '<')
-		if start >= 0 {
-			after := start + 1
-			end := after
-			for end < len(xmlStr) {
-				c := xmlStr[end]
-				if c == ' ' || c == '\t' || c == '>' || c == '/' || c == '\n' {
-					break
-				}
-				end++
-			}
-			l.PushString(xmlStr[after:end])
-			return 1
-		}
-		l.PushNil()
+		l.PushString(doc.GetTagName(nodeID))
 		return 1
 	})
 	l.SetField(-2, "getTagName")
