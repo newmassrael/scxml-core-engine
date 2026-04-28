@@ -37,13 +37,17 @@
    regular external queue, which the macrostep evaluates against every
    transition's matcher (W3C SCXML 3.13). The empty NULL-guard handles
    defensive callers — production children always pass a valid name. #}
-static void {{ model.name }}_dispatch_external_by_name(void *opaque, const char *name) {
+static void {{ model.name }}_dispatch_external_by_name(void *opaque, const char *name, const char *invoke_id) {
     if (opaque == NULL || name == NULL) {
         return;
     }
     {{ model.name }}_t *sm = ({{ model.name }}_t *)opaque;
     {{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
+    if (invoke_id != NULL) {
+        strncpy(evt.invoke_id, invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
+        evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+    }
     {% for ev_name in model.events | sort %}
     if (strcmp(name, "{{ ev_name }}") == 0) {
         evt.event = {{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }};
@@ -94,21 +98,27 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
             && p->invoke_idx == {{ loop.index0 }}) {
             /* W3C SCXML 6.4: spawn child {{ invoke_info.child_name }}
                (invoke id `{{ invoke_info.invoke_id }}` in state `{{ state_id }}`). */
-            {{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
-            sm->child_{{ invoke_info.field_suffix }}_active = true;
             {% if invoke_info.child_has_send_to_parent %}
-            /* W3C SCXML 6.4 (test226/240/241/243/244/245/276): wire the
-               child SM's parent-routing fields AFTER `_init` (which
-               memsets the struct) and BEFORE param/namelist transfer
-               + the child's first macrostep. Child SMs that route to
-               `#_parent` have their `_init` skip the post-entry
-               eventless-loop (gated on `has_parent_communication` in
-               state_machine.c.jinja2) so the first eventless transition
-               body — which may be `<send target="#_parent" event=...>` —
-               does not run until parent_dispatch is non-NULL. */
-            sm->child_{{ invoke_info.field_suffix }}.parent_sm = sm;
-            sm->child_{{ invoke_info.field_suffix }}.parent_dispatch = {{ model.name }}_dispatch_external_by_name;
+            /* W3C SCXML 6.4 (test191/338): stamp parent-routing fields
+               BEFORE the configuration entry walk by passing them
+               through `_init_with_parent`. `<onentry><send target="#_parent">`
+               in the child runs during `enter_state_recursive` inside
+               this call, so a NULL `parent_dispatch` would silently
+               drop the event. Fixtures whose child only routes to
+               `#_parent` from inside `<transition>` bodies (test226/
+               240/241/243/244/245/276) are unaffected by the stamp
+               ordering — those sends fire later from the macrostep
+               loop below — but the unified `_init_with_parent` entry
+               point keeps a single child-SM init shape. */
+            {{ invoke_info.child_name }}_init_with_parent(
+                &sm->child_{{ invoke_info.field_suffix }},
+                sm,
+                {{ model.name }}_dispatch_external_by_name,
+                p->invoke_id);
+            {% else %}
+            {{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
             {% endif %}
+            sm->child_{{ invoke_info.field_suffix }}_active = true;
             {% if invoke_info.child_needs_script_engine and (invoke_info.params or invoke_info.namelist) %}
             /* W3C SCXML 6.4.1 (test226/240/241/243/244/245/276):
                `<param>` and `namelist` value passing. Evaluate each

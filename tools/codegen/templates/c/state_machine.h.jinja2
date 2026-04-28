@@ -267,30 +267,49 @@ typedef struct {{ model.name }} {
     lua_State *L;                                    /* W3C 5.10: ECMAScript datamodel */
     {% endif %}
     {% if model.has_parent_communication %}
-    /* W3C SCXML 6.4 (test226/240/241/243/244/245/276): cross-machine
-       event dispatch when this SM is invoked as a child. The parent's
-       `execute_pending_invokes` stamps these two fields BEFORE calling
-       `_init` so any onentry / transition body running during the
-       child's first macrostep can route `<send target="#_parent">`
-       through the parent-supplied dispatcher. The dispatcher converts
-       the event-name string to the parent's event enum and enqueues
-       onto the parent's external queue (mirrors cpp's parent template
-       parameter + `Engine::raise_external` shape, collapsed to a fn
-       pointer here per C11 idiom). When this SM runs at the top level
-       (no invoking parent), both fields stay NULL after `_init` and
-       the `#_parent` send branch silently no-ops — same observable as
-       cpp's SendHelper drop for top-level SMs that try to send to
-       a non-existent parent. */
+    /* W3C SCXML 6.4: cross-machine event dispatch when this SM is
+       invoked as a child. The parent's `execute_pending_invokes` calls
+       `_init_with_parent`, which stamps these fields BEFORE the
+       configuration entry walk runs — so any `<onentry>` body
+       containing `<send target="#_parent">` (test191/338) routes
+       through the parent-supplied dispatcher rather than dropping
+       under a NULL guard. The dispatcher converts the event-name
+       string to the parent's event enum and stamps `invoke_id` onto
+       the resulting external event so the parent's `_event.invokeid`
+       reads as the spawning child's id (test338). Mirrors cpp's
+       parent template parameter + `Engine::raise_external` shape,
+       collapsed to a fn pointer here per C11 idiom. */
     void *parent_sm;
-    void (*parent_dispatch)(void *parent_sm, const char *event_name);
+    void (*parent_dispatch)(void *parent_sm, const char *event_name, const char *invoke_id);
+    char invoke_id[SCE_MAX_ID_LEN];
     {% endif %}
 } {{ model.name }}_t;
 
 /* ── Public API ───────────────────────────────────────────────────── */
 
+{% if not model.has_parent_communication %}
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
    Must be called once before {{ model.name }}_step / {{ model.name }}_run. */
 void {{ model.name }}_init({{ model.name }}_t *sm);
+{% else %}
+/* W3C SCXML 6.4: Initialize an invoked-child SM with parent-routing
+   wired BEFORE the configuration entry walk runs. The parent's
+   `execute_pending_invokes` calls this immediately after pushing the
+   pending entry, so `<onentry>` bodies containing
+   `<send target="#_parent">` (test191/338) reach the parent through
+   `dispatch` rather than no-oping under a NULL guard. The `invoke_id`
+   string is the spawn-time id (`<state>.<sm_ptr_hex>.<invoke_idx>` or
+   the explicit `<invoke id>`) — the dispatcher carries it onto the
+   parent's external event so `_event.invokeid` reads as that id at
+   the parent's transition time (test338). SMs that declare
+   `<send target="#_parent">` are exclusively invoked as children, so
+   the plain `_init` symbol is not emitted for them — the only call site
+   is the parent's invoke helper. */
+void {{ model.name }}_init_with_parent({{ model.name }}_t *sm,
+                                       void *parent_sm,
+                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id),
+                                       const char *invoke_id);
+{% endif %}
 
 /* W3C SCXML 5.10: Tear down any owned datamodel resources. Idempotent —
    safe to call once per _init or zero times if the caller treats the

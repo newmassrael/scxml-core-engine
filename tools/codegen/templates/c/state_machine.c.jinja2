@@ -373,21 +373,18 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
             {{ model.name }}_raise(sm, &_err_evt);
             return;
 {% elif action.event and action.target == '#_parent' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
-            /* W3C SCXML 6.4 (test226/240/241/243/244/245/276): static-event
-               + target="#_parent" routes to the invoking parent's external
-               queue. The parent's `execute_pending_invokes` stamps the
-               child SM struct's `parent_sm` + `parent_dispatch` fields
-               before the child runs its first macrostep so this lower
-               call resolves to the parent's auto-generated string-keyed
-               dispatch shim. Top-level SMs (no invoking parent) leave
-               both fields NULL and the call silently no-ops — same
-               observable as cpp's SendHelper behaviour for #_parent
-               sends from a top-level SM (no exception raised, no event
-               queued). The branch is reachable only when this SM
+            /* W3C SCXML 6.4: static-event + target="#_parent" routes to
+               the invoking parent's external queue via the dispatch fn
+               pointer + invoke_id stamped by `_init_with_parent`. The
+               parent's auto-generated `dispatch_external_by_name` shim
+               converts the event name to its enum and copies the
+               invoke_id onto the resulting external event so the
+               parent's `_event.invokeid` reads as this child's id
+               (test338). The branch is reachable only when this SM
                carries `model.has_parent_communication=true`, which the
                h-template gate ensures the fields exist for. */
             if (sm->parent_dispatch != NULL) {
-                sm->parent_dispatch(sm->parent_sm, "{{ action.event }}");
+                sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id);
             }
 {% elif action.event and action.target == '#_internal' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML C.1 (test189): static-event + target="#_internal"
@@ -3021,6 +3018,7 @@ void {{ model.name }}_run({{ model.name }}_t *sm) {
     sm->is_running = false;
 }
 
+{% if not model.has_parent_communication %}
 void {{ model.name }}_init({{ model.name }}_t *sm) {
     memset(sm, 0, sizeof(*sm));
     /* W3C SCXML 6.2: SM is running from the moment the configuration is
@@ -3043,7 +3041,6 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
        loop. The recursion handles compound, parallel, and leaf states
        uniformly. */
     enter_state_recursive(sm, {{ model.name }}_initial_state());
-    {% if not model.has_parent_communication %}
     /* W3C SCXML 6.4: Macrostep completion loop. Mirrors the cpp
        StaticExecutionEngine::initialize tail: keep firing eventless
        transitions and processing internal/external events until both
@@ -3052,19 +3049,12 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
        <transition> because step() drains the queue before it checks
        eventless transitions; the queued event then has no matching
        transition in the entered state and is silently dropped
-       (test503/505/506 force this).
-
-       Gated on `not has_parent_communication`: SMs that send to
-       `#_parent` are designed to run as invoked children, and the
-       parent's `execute_pending_invokes` drives the first macrostep
-       AFTER stamping `parent_sm` / `parent_dispatch` and applying
-       `<param>` / `namelist` overrides. Running the loop here would
-       evaluate eventless transitions against the still-default
-       datamodel and route any `<send target="#_parent">` body to a
-       NULL dispatcher (W3C SCXML 6.4 — test226/240/241/243/244/245/276).
-       Top-level test fixtures (the parent SCXML files in the corpus)
-       do not declare `<send target="#_parent">` so the gate keeps the
-       loop intact for them. */
+       (test503/505/506 force this). Top-level fixtures only — child SMs
+       (which declare `<send target="#_parent">` and emit
+       `_init_with_parent` instead) defer macrostep stabilisation to the
+       parent's invoke helper, which runs it after stamping
+       parent-routing fields and applying `<param>` / `namelist`
+       overrides. */
     while (true) {
         check_eventless_transitions(sm);
         {% if (model.invokes | scxml_family) %}
@@ -3079,8 +3069,49 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
         }
         process_event_queues(sm);
     }
-    {% endif %}
 }
+{% else %}
+void {{ model.name }}_init_with_parent({{ model.name }}_t *sm,
+                                       void *parent_sm,
+                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id),
+                                       const char *invoke_id) {
+    memset(sm, 0, sizeof(*sm));
+    /* W3C SCXML 6.4: Stamp parent-routing BEFORE the entry walk so
+       `<onentry><send target="#_parent">` (test191/338) routes through
+       the parent's dispatcher rather than dropping under the NULL
+       guard at line ~3xx. The plain `_init` shape stamped these fields
+       AFTER the entry walk and after `<param>` / `namelist` transfer,
+       which silently lost any onentry-time send-to-parent. The
+       `invoke_id` carry lets `_event.invokeid` read as the spawning
+       child's id at the parent's transition time (test338). */
+    sm->parent_sm = parent_sm;
+    sm->parent_dispatch = dispatch;
+    if (invoke_id != NULL) {
+        strncpy(sm->invoke_id, invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
+        sm->invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+    }
+    sm->is_running = true;
+    {% if model.needs_script_engine %}
+    /* W3C SCXML 5.10: Open Lua engine and seed datamodel before any
+       <onentry> body runs (those bodies may reference datamodel vars). */
+{{ se.lua_init_engine() }}
+    {% endif %}
+    /* W3C SCXML 3.2: Configuration entry via the unified
+       enter_state_recursive walk — sets the initial root and every
+       ancestor / region-child / initial-descendant bit, runs onentry in
+       walk order. Mirrors cpp StaticExecutionEngine::initialize entry
+       loop. The recursion handles compound, parallel, and leaf states
+       uniformly. */
+    enter_state_recursive(sm, {{ model.name }}_initial_state());
+    /* W3C SCXML 6.4: macrostep stabilisation deferred to the parent's
+       `execute_pending_invokes` — it runs `<param>` / `namelist`
+       overrides after the entry walk and only then drives the eventless
+       loop via repeated `_step` calls. Running it here would evaluate
+       eventless transitions against the still-default child datamodel
+       (test226/240/241/243/244/245/276 depend on the override-then-step
+       order). */
+}
+{% endif %}
 
 void {{ model.name }}_destroy({{ model.name }}_t *sm) {
     {% if (model.invokes | scxml_family) %}
