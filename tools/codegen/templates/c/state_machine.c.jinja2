@@ -386,6 +386,31 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
             if (sm->parent_dispatch != NULL) {
                 sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id);
             }
+{% elif action.event and action.target and action.target.startswith('#_') and action.target not in ('#_parent', '#_internal') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% set _target_id = action.target[2:] %}
+{% set _matching = namespace(invoke=none) %}
+{% for _state_id, _state in model.states | dictsort %}
+{% for _invoke in _state.invokes | scxml %}
+{% if _invoke.invoke_id == _target_id %}
+{% set _matching.invoke = _invoke %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if _matching.invoke %}
+            /* W3C SCXML 6.4 (test192/253): static-event +
+               target="{{ action.target }}" routes to the embedded
+               child invoked under `id="{{ _target_id }}"`. The
+               literal `#_<id>` resolves at codegen time to a single
+               invoke instance — the call dispatches to the child's
+               public `_raise_external_by_name` shim, which converts
+               the event-name string to the child's event enum and
+               enqueues onto the child's external queue. Mirrors
+               cpp's `SendHelper::resolveSessionTarget` for the
+               session-prefix case, collapsed to a static call per
+               C11 T3 lock-in (no runtime registry lookup needed
+               because the invoke id is known at codegen time). */
+            {{ _matching.invoke.child_name }}_raise_external_by_name(&sm->child_{{ _matching.invoke.field_suffix }}, "{{ action.event }}");
+{% endif %}
 {% elif action.event and action.target == '#_internal' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML C.1 (test189): static-event + target="#_internal"
                routes to the internal (high-priority) queue per
@@ -2532,6 +2557,33 @@ void {{ model.name }}_raise_external({{ model.name }}_t *sm,
     event_queue_push(&sm->external_queue, evt);
 }
 
+{% if model.has_parent_communication %}
+/* W3C SCXML 6.4 (test192/253): String-keyed counterpart for
+   `<send target="#_<invokeid>" event="X">` from the invoking parent.
+   The parent's per-invoke `_send_to_child` helper resolves the
+   `#_<id>` literal to the embedded child instance at codegen time;
+   that helper calls this function on the child's struct, which
+   converts the event-name string to the child's event enum and
+   enqueues onto the child's external queue. Mirrors the parent's
+   static `_dispatch_external_by_name` shim (used for the reverse
+   direction with an `invoke_id` carry); this public form is the
+   minimal entry point for the parent→child path. */
+void {{ model.name }}_raise_external_by_name({{ model.name }}_t *sm, const char *event_name) {
+    if (sm == NULL || event_name == NULL) {
+        return;
+    }
+    {{ model.name }}_event_with_meta_t evt;
+    memset(&evt, 0, sizeof(evt));
+    {% for ev_name in model.events | sort %}
+    if (strcmp(event_name, "{{ ev_name }}") == 0) {
+        evt.event = {{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }};
+        {{ model.name }}_raise_external(sm, &evt);
+        return;
+    }
+    {% endfor %}
+}
+{% endif %}
+
 {% if model.needs_event_scheduler %}
 /* ── W3C SCXML 6.2: Delayed-send queue helpers ────────────────────── */
 
@@ -2936,6 +2988,13 @@ void {{ model.name }}_step({{ model.name }}_t *sm) {
        `done.invoke` onto the external queue here so the next caller
        loop iteration drains it. */
     {{ model.name }}_execute_pending_invokes(sm);
+    /* W3C SCXML 6.4 (test192): drive active children so events the
+       parent enqueued onto a child's external queue earlier in this
+       macrostep (via `<send target="#_<invokeid>">`) get drained on
+       the same `_step` call. A child that reaches `<final>` here has
+       its `done.invoke` raised onto the parent's external queue for
+       the next iteration. */
+    {{ model.name }}_drive_active_children(sm);
     {% endif %}
     if ({{ model.name }}_is_in_final_state(sm) && sm->completion_callback != NULL) {
         sm->completion_callback(sm->completion_callback_user_data);

@@ -119,6 +119,14 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
             {{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
             {% endif %}
             sm->child_{{ invoke_info.field_suffix }}_active = true;
+            /* W3C SCXML 6.3.1: persist the spawn-time invoke id so
+               `_drive_active_children` can stamp `done.invoke.invoke_id`
+               for async-final children whose own SM struct does not
+               carry an `invoke_id` slot (test247-shape children with
+               no `<send target="#_parent">`). */
+            strncpy(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id,
+                    (size_t)SCE_MAX_ID_LEN - 1u);
+            sm->child_{{ invoke_info.field_suffix }}_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
             {% if invoke_info.child_needs_script_engine and (invoke_info.params or invoke_info.namelist) %}
             /* W3C SCXML 6.4.1 (test226/240/241/243/244/245/276):
                `<param>` and `namelist` value passing. Evaluate each
@@ -209,6 +217,46 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
         {% endfor %}
         {% endfor %}
     }
+}
+
+{# ── drive_active_children ───────────────────────────────────────────
+   W3C SCXML 6.4: drive every active child's macrostep so the parent's
+   `<send target="#_<invokeid>" event="X">` lower (which enqueued onto
+   the child's external queue) gets drained on the next call cycle.
+   When a child reaches its top-level `<final>` here we synthesise
+   `done.invoke` onto the parent's external queue — same shape as the
+   sync-final raise in `execute_pending_invokes`. The parent's `_step`
+   calls this AFTER `process_event_queues` and `execute_pending_invokes`
+   so any sends the child raises during its own step (`<send target=
+   "#_parent">` from a transition body) land on the parent's external
+   queue in time for the next macrostep iteration to dequeue them. #}
+static void {{ model.name }}_drive_active_children({{ model.name }}_t *sm) {
+    {% for state_id, state in model.states | dictsort %}
+    {% for invoke_info in state.invokes | scxml %}
+    if (sm->child_{{ invoke_info.field_suffix }}_active
+        && !{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+        {{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
+        if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+            /* W3C SCXML 6.4 / 6.3.1: child completed asynchronously
+               (post-init parent→child message drove it to <final>).
+               Raise done.invoke with the spawn-time invoke_id stamped
+               by `execute_pending_invokes`. The send-to-parent body
+               of the child's terminal transition has already enqueued
+               onto sm's external queue — done.invoke lands AFTER it
+               (FIFO) so a parent that has both a verdict-event
+               transition and a `done.invoke → fail` net (test192/253)
+               drains the verdict event first. */
+            {{ model.name }}_event_with_meta_t _done_evt;
+            memset(&_done_evt, 0, sizeof(_done_evt));
+            _done_evt.event = {% if invoke_info.use_specific_event %}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+            strncpy(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id,
+                    (size_t)SCE_MAX_ID_LEN - 1u);
+            _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            {{ model.name }}_raise_external(sm, &_done_evt);
+        }
+    }
+    {% endfor %}
+    {% endfor %}
 }
 
 {# ── destroy_active_children ──────────────────────────────────────────

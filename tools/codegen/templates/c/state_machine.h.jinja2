@@ -261,6 +261,12 @@ typedef struct {{ model.name }} {
     {% for invoke_info in model.invokes | scxml %}
     {{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
     bool child_{{ invoke_info.field_suffix }}_active;
+    /* W3C SCXML 6.4 / 6.3.1: spawn-time invoke id stamped from
+       `sce_invoke_pending_t::invoke_id` so `_drive_active_children`
+       can fill `done.invoke.invoke_id` even when the child SM itself
+       does not carry parent-routing fields (no `<send target="#_parent">`
+       in the child means no `invoke_id` slot on the child struct). */
+    char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
     {% endfor %}
     {% endif %}
     {% if model.needs_script_engine %}
@@ -342,6 +348,18 @@ void {{ model.name }}_raise({{ model.name }}_t *sm,
 /* W3C SCXML 6.2: Enqueue an event onto the external (low-priority) queue. */
 void {{ model.name }}_raise_external({{ model.name }}_t *sm,
                                      const {{ model.name }}_event_with_meta_t *evt);
+
+{% if model.has_parent_communication %}
+/* W3C SCXML 6.4 (test192/253): String-keyed external raise — the
+   invoking parent's `<send target="#_<invokeid>" event="X">` lower
+   resolves to a call on the embedded child's instance through this
+   helper. The body switches on the event-name string, sets the
+   matching enum, and enqueues onto this SM's external queue. Names
+   absent from the SM's enum silently drop (the parent's send had no
+   matching transition shape — same observable as cpp's SendHelper for
+   unknown event targets). */
+void {{ model.name }}_raise_external_by_name({{ model.name }}_t *sm, const char *event_name);
+{% endif %}
 
 /* W3C SCXML 3.2: configuration query helpers. `_active_states` exposes
    the full bitmap; `_in_state(s)` mirrors the SCXML In() predicate (true
