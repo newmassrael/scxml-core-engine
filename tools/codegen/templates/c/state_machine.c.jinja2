@@ -1251,7 +1251,42 @@ static void enter_state_recursive({{ model.name }}_t *sm, {{ model.name }}_state
    The macro splits into per-action-type `c/actions/<type>.jinja2`
    includes only when a second consumer appears; until then keeping all
    variants in one local macro keeps the diff small and the activation
-   site explicit.                                                          #}
+   site explicit.
+
+   W3C SCXML 3.13 separate blocks: every `<onentry>` / `<onexit>`
+   element on a state is an independent execution block — when one
+   block aborts (e.g. an invalid-target `<send>` raises error.execution
+   and stops subsequent actions per W3C 5.10), the next block still
+   runs. C11 mirrors cpp's `EntryExitHelper::executeEntryBlocks`
+   vector-of-lambdas dispatch by emitting each block as its own static
+   helper function: a `return;` inside the helper terminates only that
+   block, and the enclosing switch case calls the next helper in
+   sequence. Single-block fixtures retain the same observable behavior
+   (function ends after the one helper call). #}
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_entry_blocks %}
+{% for block in state.on_entry_blocks %}
+static void {{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ model.name }}_t *sm) {
+    (void)sm;
+    {% for action in block %}
+    {{ emit_action(action) }}
+    {% endfor %}
+}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_exit_blocks %}
+{% for block in state.on_exit_blocks %}
+static void {{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ model.name }}_t *sm) {
+    (void)sm;
+    {% for action in block %}
+    {{ emit_action(action) }}
+    {% endfor %}
+}
+{% endfor %}
+{% endif %}
+{% endfor %}
 static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state_t s) {
     (void)sm;
     switch (s) {
@@ -1269,10 +1304,11 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
         {{ se.lua_init_state_datamodel(state, state_id) }}
         {% endif %}
         {% for block in state.on_entry_blocks %}
-        /* Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }} */
-        {% for action in block %}
-        {{ emit_action(action) }}
-        {% endfor %}
+        /* Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }} —
+           each block is an independent helper so a `return;` inside
+           (e.g. invalid-target send raising error.execution + W3C 5.10
+           stop-subsequent-content) terminates only that block. */
+        {{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
         {% endfor %}
         {% if has_donedata %}
         /* W3C SCXML 5.5: evaluate <donedata> for final state '{{ state_id }}'
@@ -1412,10 +1448,10 @@ static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_
     {% if state.on_exit_blocks %}
     case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% for block in state.on_exit_blocks %}
-        /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} */
-        {% for action in block %}
-        {{ emit_action(action) }}
-        {% endfor %}
+        /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} —
+           each block is an independent helper so a `return;` inside
+           terminates only that block. W3C SCXML 3.13. */
+        {{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
         {% endfor %}
         break;
     }
