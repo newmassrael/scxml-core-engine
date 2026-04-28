@@ -691,18 +691,33 @@ fn cmd_generate(
                 // RFC §5.J.1: C11 statechart stub. M1 emits a header-only
                 // sentinel matching the C++ shape so any downstream
                 // consumer that includes the .h compiles to a no-op while
-                // the M3+ statechart emitter is pending.
+                // the M3+ statechart emitter is pending. The body file
+                // carries an `extern const int` definition so the
+                // translation unit is non-empty (ISO C forbids empty
+                // translation units, surfaces under
+                // `-Wpedantic -Werror`); the symbol's name doubles as a
+                // grep-able marker that links cleanly even if the host
+                // never declares it.
+                let guard = filters::to_snake_case(input_stem.to_string()).to_uppercase();
                 let header = format!(
                     "/* W3C SCXML 5.8: Document rejected */\n\
                      #ifndef SCE_GEN_{guard}_SM_H\n\
                      #define SCE_GEN_{guard}_SM_H\n\
                      #define SCE_DOCUMENT_REJECTED 1\n\
+                     extern const int sce_document_rejected_{stem};\n\
                      #endif\n",
-                    guard = filters::to_snake_case(input_stem.to_string()).to_uppercase()
+                    guard = guard,
+                    stem = input_stem
                 );
-                let body = "/* W3C SCXML 5.8: Document rejected */\n";
+                let body = format!(
+                    "/* W3C SCXML 5.8: Document rejected */\n\
+                     #include \"{input_stem}_sm.h\"\n\
+                     const int sce_document_rejected_{stem} = 1;\n",
+                    input_stem = input_stem,
+                    stem = input_stem
+                );
                 write_or_exit(error_format, out.join(format!("{input_stem}_sm.h")), &header);
-                write_or_exit(error_format, out.join(format!("{input_stem}_sm.c")), body);
+                write_or_exit(error_format, out.join(format!("{input_stem}_sm.c")), &body);
             }
         }
         report.rejected = Some(RejectedDocument {

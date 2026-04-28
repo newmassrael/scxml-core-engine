@@ -258,6 +258,35 @@
         {% endif %}
         {% endfor %}
         {% endif %}
+        {% if model.global_scripts %}
+        /* W3C SCXML 5.8: top-level <script> bodies execute at document
+           load time, after datamodel <data> initialisation and before any
+           state machine entry. Mirrors cpp `scriptengine_helpers.jinja2`
+           lines 165-179 (model.global_scripts loop): each script's content
+           routes through `to_lua_script` (compound assignment / increment /
+           array-literal / function-syntax transforms — distinct from the
+           expression-only `to_lua_expr` used for <data expr> / <assign expr>
+           because a script body can be a multi-statement chunk) and lands
+           in a luaL_dostring chunk. Chunk failure (load-time syntax error
+           or runtime trap) raises error.execution per W3C 5.10, mirroring
+           the cpp `engine.raise(typename Engine::EventWithMetadata(
+           Event::Error_execution, errorMsg))` shape. The
+           document-rejection path (parse_global_scripts setting
+           `model.document_rejected = true` on bad src) short-circuits at
+           the codegen entry boundary in `sce_codegen.rs:690-706` so this
+           loop only runs for fixtures whose scripts parsed successfully —
+           src loading failure never reaches the template. */
+        {% for script in model.global_scripts %}
+        if (luaL_dostring(sm->L,
+            "{{ script.content | to_lua_script | escape_c }}") != 0) {
+            lua_pop(sm->L, 1);
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+        }
+        {% endfor %}
+        {% endif %}
     }
 {% endmacro %}
 

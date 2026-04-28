@@ -876,6 +876,46 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
 {% else %}
 #error "C11 backend: <cancel> without sendid or sendidexpr is invalid per W3C SCXML 6.3 — the parser should have rejected this fixture."
 {% endif %}
+{% elif action.type == 'script' %}
+        {
+            /* W3C SCXML 5.8: inline <script> as executable content runs each
+               time its containing onentry/onexit/transition body fires.
+               Distinct from the load-time top-level <script> (handled in
+               scriptengine.jinja2 lua_init_engine's global_scripts loop) —
+               this branch lifts the per-action body for <onentry>/<onexit>/
+               <transition> sites. Mirrors cpp `actions/script.jinja2`
+               lines 8-23 (non-cpp/non-kt path): the script body routes
+               through `to_lua_script` (compound assignment / increment /
+               array-literal / function-syntax transforms — distinct from
+               `to_lua_expr` because a script body is a chunk, not an
+               expression) and lands in a luaL_dostring chunk. Chunk
+               failure raises error.execution per W3C 5.10, mirroring the
+               cpp `engine.raise(EventWithMetadata(Event::Error_execution,
+               errorMsg))` shape. The is_cpp_function / is_kt_function
+               carve-outs from cpp's parser path never apply to C11 (the
+               parser-side native code transform skips C11 — there is no
+               C11-equivalent code-injection variant), so this branch only
+               handles the lua-eval shape; src= attribute on inline
+               <script> is rejected at parser time (parse_global_scripts
+               handles top-level src; inline `<script src="...">` is
+               outside W3C 5.8's scope per the corpus). */
+{% if in_foreach %}
+            if (luaL_dostring(sm->L,
+                "{{ action.content | to_lua_script | escape_c }}") != 0) {
+                lua_pop(sm->L, 1);
+                break;  /* W3C 4.6: error inside <foreach> body breaks the loop */
+            }
+{% else %}
+            if (luaL_dostring(sm->L,
+                "{{ action.content | to_lua_script | escape_c }}") != 0) {
+                lua_pop(sm->L, 1);
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+            }
+{% endif %}
+        }
 {% endif %}
 {% endmacro %}
 
