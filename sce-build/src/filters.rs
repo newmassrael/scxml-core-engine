@@ -204,6 +204,43 @@ fn normalize_ws(text: String) -> String {
     RE_WHITESPACE.replace_all(text.trim(), " ").to_string()
 }
 
+/// W3C SCXML 5.2.2: read external data file referenced by `<data src="...">`.
+///
+/// C11 codegen-time read (RFC §5.J.1 R3 zero-deps lock-in: no runtime
+/// fopen in sce-c-runtime). Mirrors cpp `FileLoadingHelper::loadExternalScript`
+/// + `DataModelInitHelper::initializeVariableFromSrc` by inlining the file
+/// content into the generated C source as a string literal. The downstream
+/// emit threads this content through the same eval+whitespace-fallback
+/// dispatch as inline `<data>` content (cpp `DataModelInitHelper::initializeVariable`
+/// at sce/src/common/DataModelInitHelper.cpp:80-156).
+///
+/// `base_path` is `model.scxml_base_path` (relative to codegen cwd or the
+/// canonical SCXML parent when the strip fails). cmake's c11 fixture path
+/// copies the `.txt` sidecar alongside the SCXML so this resolves at the
+/// build location; manual sce-codegen invocation reads from the original
+/// resources/<n>/ directory because the SCXML path is absolute and
+/// compute_scxml_base_path returns the absolute parent when cwd-strip fails.
+fn read_data_src(src: String, base_path: String) -> Result<String, minijinja::Error> {
+    let path = src.strip_prefix("file:").unwrap_or(&src);
+    let candidate = std::path::PathBuf::from(&base_path).join(path);
+    let resolved = if candidate.is_absolute() {
+        candidate
+    } else {
+        std::env::current_dir()
+            .map(|c| c.join(&candidate))
+            .unwrap_or(candidate)
+    };
+    std::fs::read_to_string(&resolved).map_err(|e| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            format!(
+                "read_data_src failed for src='{src}' (resolved='{}'): {e}",
+                resolved.display()
+            ),
+        )
+    })
+}
+
 // ── ECMAScript→Lua transformation filters ─────────────────────────
 
 fn to_lua_expr(expr: String) -> String {
@@ -540,6 +577,8 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
     env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
+    env.add_filter("normalize_ws", normalize_ws);
+    env.add_filter("read_data_src", read_data_src);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
 }

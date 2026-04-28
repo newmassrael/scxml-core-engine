@@ -198,16 +198,43 @@
             {{ model.name }}_raise(sm, &_err_evt);
         }
         {% elif var.content %}
-        /* W3C SCXML 5.3: <data id="{{ var.id }}"> inline content (eval as expression).
-           Mirrors `<data expr="...">` — the trimmed text content is treated as
-           an ECMAScript expression and transpiled via `to_lua_expr`. */
+        /* W3C SCXML 5.3/B.2: <data id="{{ var.id }}"> inline content. cpp
+           `DataModelInitHelper::initializeVariable` (sce/src/common/
+           DataModelInitHelper.cpp:80-156) dispatch: try eval as expression;
+           on Lua syntax/runtime failure, fall back to a whitespace-normalized
+           string. The XML-content branch (first non-WS char `<`) is a DOM
+           milestone carve-out for C11 (next_c11_xml_dom_rfc.md §5) — it
+           emits the same eval+string-fallback shape so the variable holds
+           the normalized XML text, which fails any subsequent
+           `getElementsByTagName`/`getAttribute` dereference and routes the
+           SM to fail (silent carve-out: those fixtures aren't registered). */
         if (luaL_dostring(sm->L,
             "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
-            {{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ model.name }}_raise(sm, &_err_evt);
+            /* W3C SCXML B.2: eval failure → whitespace-normalized literal.
+               cpp `DataModelInitHelper.cpp:142-155` (normalizeWhitespace +
+               setVariable). */
+            lua_pushliteral(sm->L, "{{ var.content | normalize_ws | escape_c }}");
+            lua_setglobal(sm->L, "{{ var.id }}");
+        }
+        {% elif var.src %}
+        /* W3C SCXML 5.2.2: <data id="{{ var.id }}" src="{{ var.src }}">.
+           C11 codegen-time file read (RFC §5.J.1 R3 zero-deps: no runtime
+           fopen in sce-c-runtime). Mirrors cpp
+           `DataModelInitHelper::initializeVariableFromSrc` (sce/src/common/
+           DataModelInitHelper.cpp:159-181), which loads the file and
+           dispatches to `initializeVariable` — the C11 codegen reads the
+           file via the `read_data_src` filter and threads the content
+           through the same eval+whitespace-fallback shape as inline
+           content. cmake's c11 fixture path copies the `.txt` sidecar
+           alongside the SCXML so the codegen-time read resolves under
+           ${SCE_C_GENERATED_DIR}. */
+        {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
+        if (luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ _src_content | to_lua_expr | escape_c }})") != 0) {
+            lua_pop(sm->L, 1);
+            lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
+            lua_setglobal(sm->L, "{{ var.id }}");
         }
         {% endif %}
         {% endfor %}
@@ -244,14 +271,21 @@
             {{ model.name }}_raise(sm, &_err_evt);
         }
         {% elif var.content %}
-        /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline content. */
+        /* W3C SCXML 5.3/B.2 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline content. eval+whitespace-fallback per top-level branch above. */
         if (luaL_dostring(sm->L,
             "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
-            {{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ model.name }}_raise(sm, &_err_evt);
+            lua_pushliteral(sm->L, "{{ var.content | normalize_ws | escape_c }}");
+            lua_setglobal(sm->L, "{{ var.id }}");
+        }
+        {% elif var.src %}
+        /* W3C SCXML 5.2.2 (early): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
+        {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
+        if (luaL_dostring(sm->L,
+            "{{ var.id }} = ({{ _src_content | to_lua_expr | escape_c }})") != 0) {
+            lua_pop(sm->L, 1);
+            lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
+            lua_setglobal(sm->L, "{{ var.id }}");
         }
         {% endif %}
         {% endfor %}
@@ -326,14 +360,21 @@
         {{ model.name }}_raise(sm, &_err_evt);
     }
     {% elif var.content %}
-    /* W3C SCXML 5.3 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline content. */
+    /* W3C SCXML 5.3/B.2 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline content. eval+whitespace-fallback per top-level branch in the early-binding macro above. */
     if (luaL_dostring(sm->L,
         "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
-        {{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ model.name }}_raise(sm, &_err_evt);
+        lua_pushliteral(sm->L, "{{ var.content | normalize_ws | escape_c }}");
+        lua_setglobal(sm->L, "{{ var.id }}");
+    }
+    {% elif var.src %}
+    /* W3C SCXML 5.2.2 (late): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
+    {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
+    if (luaL_dostring(sm->L,
+        "{{ var.id }} = ({{ _src_content | to_lua_expr | escape_c }})") != 0) {
+        lua_pop(sm->L, 1);
+        lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
+        lua_setglobal(sm->L, "{{ var.id }}");
     }
     {% endif %}
     {% endfor %}
