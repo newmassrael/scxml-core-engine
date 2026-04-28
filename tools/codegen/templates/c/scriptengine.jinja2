@@ -108,6 +108,28 @@
             "  end\n"
             "  return result\n"
             "end");
+        /* W3C SCXML B.2 (test224): ECMAScript `String.prototype.indexOf` /
+           `Array.prototype.indexOf` — returns the 0-based position of the
+           needle or `-1` when absent. `lua_transformer::wrap_method_calls`
+           rewrites `<obj>.indexOf(<arg>)` into `_indexOf(<obj>, <arg>)`,
+           so the helper must exist before any cond reaches the Lua state.
+           Mirrors cpp `LuaEngine.cpp:485-517` lua_pushcfunction (string
+           branch via `strstr`, array branch via raw-iter equality);
+           C11 lowers to `string.find(.., plain=true)` for strings and a
+           1-based ipairs walk for arrays per T3 lock-in (no lua_CFunction
+           trampolines). */
+        (void)luaL_dostring(sm->L,
+            "function _indexOf(obj, value)\n"
+            "  if type(obj) == 'string' and type(value) == 'string' then\n"
+            "    local s = string.find(obj, value, 1, true)\n"
+            "    if s then return s - 1 else return -1 end\n"
+            "  end\n"
+            "  if type(obj) ~= 'table' then return -1 end\n"
+            "  for i, v in ipairs(obj) do\n"
+            "    if v == value then return i - 1 end\n"
+            "  end\n"
+            "  return -1\n"
+            "end");
         /* W3C SCXML 5.10: `_sessionid` is a read-only system variable bound
            on startup. The C++ runtime carries a per-instance UUID (set via
            `LuaEngine::setupSystemVariables`); the C11 backend is AOT-only

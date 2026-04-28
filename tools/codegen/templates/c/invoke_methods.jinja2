@@ -63,7 +63,16 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
             if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
                 {{ model.name }}_event_with_meta_t _done_evt;
                 memset(&_done_evt, 0, sizeof(_done_evt));
-                _done_evt.event = {{ model.name | upper }}_EVENT_DONE_INVOKE;
+                /* W3C SCXML 6.4 / 6.3.1 (test235): when the parent has a
+                   `done.invoke.<id>` transition (used_done_invoke_events
+                   contains the specific name), `use_specific_event` is
+                   set on the invoke and the spec-mirror raise emits the
+                   `_<id>` enum variant. Otherwise the generic
+                   `done.invoke` enum carries the event (test247). cpp
+                   `invoke_methods.jinja2:160` makes the same choice via
+                   the `Event::Done_invoke_<id>` vs `Event::Done_invoke`
+                   ternary. */
+                _done_evt.event = {% if invoke_info.use_specific_event %}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
                 strncpy(_done_evt.invoke_id, p->invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
                 _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
                 {{ model.name }}_raise_external(sm, &_done_evt);

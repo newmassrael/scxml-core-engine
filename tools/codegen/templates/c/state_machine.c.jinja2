@@ -1640,6 +1640,25 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
                                     (int){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
                                     {{ loop.index0 }},
                                     _invoke_id_buf);
+            {% if invoke_info.idlocation and model.needs_script_engine %}
+            /* W3C SCXML 6.4.1 (test223/224/225/338): expose the spawned
+               invoke's id to the parent datamodel via the `idlocation`
+               variable. cpp `entry_exit_actions.jinja2:107` does this
+               with `scriptEngine.setVariable(...)`; the C11 mirror is
+               the idiomatic Lua API pair (no `luaL_dostring` / string
+               escaping needed since the value is a literal C string
+               and the variable name is fixed at codegen time). The
+               assignment runs at defer time so a sibling read in the
+               same macrostep — e.g. test225's `Var1 === Var2` cond on
+               two adjacent invokes — sees the just-written id before
+               the macrostep-end `execute_pending_invokes` spawns the
+               children. Lua-only path: this elif arm is reached only
+               when the model's invoke list is non-empty AND the test
+               carries a datamodel (idlocation requires `Var*` slots,
+               which already gates `model.needs_script_engine`). */
+            lua_pushstring(sm->L, _invoke_id_buf);
+            lua_setglobal(sm->L, "{{ invoke_info.idlocation }}");
+            {% endif %}
         }
         {% endfor %}
         {% endif %}
@@ -2732,6 +2751,24 @@ static void set_current_event(lua_State *L, const {{ model.name }}_event_with_me
         lua_pushnil(L);
     }
     lua_setglobal(L, "_pending_send_id");
+    /* W3C SCXML 5.10.1 (.invokeid, test228/338): seed the lua-side
+       carry from the dequeued event's `invoke_id` meta field so the
+       per-enum chunk below promotes it onto `_event.invokeid`. cpp's
+       `LuaEngine::setCurrentEvent` (LuaEngine.cpp:1138-1139) emits the
+       same value via `lua_pushstring(invokeId.c_str())` — non-invoke
+       events arrive with an empty C string, which we convert to lua
+       nil so the dispatch chunk's `invokeid = _pending_event_invokeid`
+       reads as the same `undefined`/falsy contract cpp surfaces for
+       `Event::getInvokeId().empty()`. The pop-side `current_event_
+       invoke_id` cache (process_event_queues lines below) keeps the
+       C-side state for any non-Lua consumers; the lua push here is
+       what the ECMAScript datamodel reads. */
+    if (evt->invoke_id[0] != '\0') {
+        lua_pushstring(L, evt->invoke_id);
+    } else {
+        lua_pushnil(L);
+    }
+    lua_setglobal(L, "_pending_event_invokeid");
     switch (evt->event) {
     {% for event_name in model.events | sort %}
     case {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}:
