@@ -21,10 +21,14 @@
 //! VM with its own globals, variables, and `_event` table). Session isolation
 //! matches the C++ `ISessionLifecycle` contract.
 
+mod dom;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use mlua::prelude::*;
+
+use dom::{XmlDoc, XmlRef};
 
 use sce_rust_runtime::scripting::{
     set_script_engine, IScriptEngine, NativeMethod, ScriptEngineAlreadyRegistered, ScriptError,
@@ -415,14 +419,7 @@ fn script_value_to_lua(lua: &Lua, val: &ScriptValue) -> LuaResult<LuaValue> {
             }
             Ok(LuaValue::Table(table))
         }
-        ScriptValue::Dom(xml) => {
-            // Store as userdata-like table with __xml field
-            let table = lua.create_table()?;
-            table.set("__xml", xml.as_str())?;
-            // Set DOM metatable for getElementsByTagName etc.
-            setup_dom_metatable_for(lua, &table)?;
-            Ok(LuaValue::Table(table))
-        }
+        ScriptValue::Dom(xml) => push_xml_as_userdata(lua, xml.as_str()),
     }
 }
 
@@ -542,81 +539,22 @@ fn json_to_lua_table(json: &str) -> String {
     result
 }
 
-fn setup_dom_metatable_for(lua: &Lua, table: &LuaTable) -> LuaResult<()> {
-    let get_elements = lua.create_function(|lua, (tbl, tag): (LuaTable, String)| {
-        let xml: String = tbl.get("__xml").unwrap_or_default();
-        let result = lua.create_table()?;
-        let open_tag = format!("<{}", tag);
-        let mut idx = 1;
-        let mut pos = 0;
-        while let Some(start) = xml[pos..].find(&open_tag) {
-            let abs_start = pos + start;
-            let after_tag = abs_start + open_tag.len();
-            // W3C SCXML B.2: Handle both self-closing (<tag .../>) and paired (<tag ...>...</tag>) elements
-            let close_tag = format!("</{}>", tag);
-            if let Some(self_close) = xml[after_tag..].find("/>") {
-                let self_close_abs = after_tag + self_close;
-                // Check if self-closing comes before any closing tag
-                let paired_end = xml[abs_start..].find(&close_tag).map(|e| abs_start + e);
-                if paired_end.is_none() || self_close_abs < paired_end.unwrap() {
-                    // Self-closing tag: <tag .../>
-                    let element_xml = &xml[abs_start..self_close_abs + 2];
-                    let elem = lua.create_table()?;
-                    elem.set("__xml", element_xml)?;
-                    setup_dom_metatable_for(lua, &elem)?;
-                    result.raw_set(idx, elem)?;
-                    idx += 1;
-                    pos = self_close_abs + 2;
-                    continue;
-                }
-            }
-            if let Some(end) = xml[abs_start..].find(&close_tag) {
-                let element_xml = &xml[abs_start..abs_start + end + close_tag.len()];
-                let elem = lua.create_table()?;
-                elem.set("__xml", element_xml)?;
-                setup_dom_metatable_for(lua, &elem)?;
-                result.raw_set(idx, elem)?;
-                idx += 1;
-                pos = abs_start + end + close_tag.len();
-            } else {
-                break;
-            }
-        }
-        Ok(result)
-    })?;
-
-    let get_attribute = lua.create_function(|lua, (tbl, attr_name): (LuaTable, String)| -> LuaResult<LuaValue> {
-        let xml: String = tbl.get("__xml").unwrap_or_default();
-        // Support both name="value" and name='value' patterns
-        for quote in ['"', '\''] {
-            let pattern = format!("{}={}", attr_name, quote);
-            if let Some(start) = xml.find(&pattern) {
-                let val_start = start + pattern.len();
-                if let Some(end) = xml[val_start..].find(quote) {
-                    return Ok(LuaValue::String(lua.create_string(&xml[val_start..val_start + end])?));
-                }
-            }
-        }
-        Ok(LuaValue::Nil)
-    })?;
-
-    let get_tag_name = lua.create_function(|lua, tbl: LuaTable| -> LuaResult<LuaValue> {
-        let xml: String = tbl.get("__xml").unwrap_or_default();
-        // Extract tag name from first < >
-        if let Some(start) = xml.find('<') {
-            let after = start + 1;
-            if let Some(end) = xml[after..].find(|c: char| c.is_whitespace() || c == '>' || c == '/') {
-                return Ok(LuaValue::String(lua.create_string(&xml[after..after + end])?));
-            }
-        }
-        Ok(LuaValue::Nil)
-    })?;
-
-    table.set("getElementsByTagName", get_elements)?;
-    table.set("getAttribute", get_attribute)?;
-    table.set("getTagName", get_tag_name)?;
-
-    Ok(())
+/// Parse `xml_content` into a full DOM tree and push the resulting
+/// document as Lua userdata.  Returns `LuaValue::Nil` on parse failure
+/// so callers (W3C SCXML B.2 paths) get the spec's "leave variable
+/// undefined on parse error" semantic for free.  Mirrors cpp
+/// `LuaDOMBinding::pushDOMObject` (sce/src/scripting/LuaDOMBinding.cpp:74).
+fn push_xml_as_userdata(lua: &Lua, xml_content: &str) -> LuaResult<LuaValue> {
+    let doc = Arc::new(XmlDoc::parse(xml_content));
+    if !doc.is_valid() {
+        return Ok(LuaValue::Nil);
+    }
+    let xref = match XmlRef::document(doc) {
+        Some(r) => r,
+        None => return Ok(LuaValue::Nil),
+    };
+    let ud = lua.create_userdata(xref)?;
+    Ok(LuaValue::UserData(ud))
 }
 
 fn map_lua_err(e: mlua::Error) -> ScriptError {
@@ -703,10 +641,12 @@ impl IScriptEngine for LuaEngine {
         let mut sessions = self.sessions.lock().unwrap();
         let session = sessions.get_mut(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
-        let table = session.lua.create_table().map_err(map_lua_err)?;
-        table.set("__xml", xml_content).map_err(map_lua_err)?;
-        setup_dom_metatable_for(&session.lua, &table).map_err(map_lua_err)?;
-        session.lua.globals().set(name, table).map_err(map_lua_err)?;
+        // Parse into a full DOM tree (cpp pugixml mirror) and bind as
+        // userdata.  Parse failure yields nil — same observable as cpp
+        // `LuaDOMBinding::pushDOMObject` on `XMLDocument::isValid()` =
+        // false, which leaves the var unbound rather than raising.
+        let value = push_xml_as_userdata(&session.lua, xml_content).map_err(map_lua_err)?;
+        session.lua.globals().set(name, value).map_err(map_lua_err)?;
         session.declared_vars.insert(name.to_string());
         Ok(())
     }
@@ -782,10 +722,9 @@ impl IScriptEngine for LuaEngine {
         if !event_data.is_empty() {
             // W3C SCXML B.2: XML data → DOM object (test 561)
             if event_data.trim_start().starts_with('<') {
-                let dom_table = session.lua.create_table().map_err(map_lua_err)?;
-                dom_table.set("__xml", event_data).map_err(map_lua_err)?;
-                setup_dom_metatable_for(&session.lua, &dom_table).map_err(map_lua_err)?;
-                event_table.set("data", dom_table).map_err(map_lua_err)?;
+                let dom_value = push_xml_as_userdata(&session.lua, event_data)
+                    .map_err(map_lua_err)?;
+                event_table.set("data", dom_value).map_err(map_lua_err)?;
             } else {
                 // Try to evaluate as Lua expression first
                 let data_result = session.lua.load(format!("return {}", event_data))
