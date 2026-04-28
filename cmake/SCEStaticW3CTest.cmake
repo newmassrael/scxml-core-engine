@@ -310,15 +310,25 @@ endfunction()
 # fixtures (e.g. test355, test144) leave Lua out of the link entirely so
 # the MCU footprint stays minimal for the watching-zenoh consumer.
 #
+# Optional flag NEEDS_DOM: append the test to W3C_C_AOT_TESTS_NEEDS_DOM so
+# the caller can link the host-side XML DOM helper (sce-c-tests/support/
+# dom.c + lua_dom_binding.c) alongside Lua. NEEDS_DOM implies NEEDS_LUA.
+# Currently used only by the W3C SCXML B.2 corpus (test557, test561) —
+# the helper is testbench-only and never enters the sce-c-runtime link.
+#
 function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
-    cmake_parse_arguments(_SWCT "NEEDS_LUA" "" "" ${ARGN})
+    cmake_parse_arguments(_SWCT "NEEDS_LUA;NEEDS_DOM" "" "" ${ARGN})
 
     # Accumulate test number into W3C_C_AOT_TESTS so the caller can iterate.
     list(APPEND W3C_C_AOT_TESTS ${TEST_NUM})
     set(W3C_C_AOT_TESTS ${W3C_C_AOT_TESTS} PARENT_SCOPE)
-    if(_SWCT_NEEDS_LUA)
+    if(_SWCT_NEEDS_LUA OR _SWCT_NEEDS_DOM)
         list(APPEND W3C_C_AOT_TESTS_NEEDS_LUA ${TEST_NUM})
         set(W3C_C_AOT_TESTS_NEEDS_LUA ${W3C_C_AOT_TESTS_NEEDS_LUA} PARENT_SCOPE)
+    endif()
+    if(_SWCT_NEEDS_DOM)
+        list(APPEND W3C_C_AOT_TESTS_NEEDS_DOM ${TEST_NUM})
+        set(W3C_C_AOT_TESTS_NEEDS_DOM ${W3C_C_AOT_TESTS_NEEDS_DOM} PARENT_SCOPE)
     endif()
 
     set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")

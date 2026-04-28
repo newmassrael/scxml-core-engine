@@ -38,11 +38,33 @@ set_target_properties(sce_c_test_support PROPERTIES
     C_EXTENSIONS OFF
 )
 
+# Host-side XML DOM helper for the W3C SCXML B.2 corpus (test557, test561).
+# 1:1 algorithmic mirror of cpp `XMLDOMWrapper` + `LuaDOMBinding` re-
+# implemented in pure C — pugixml is C++-only and would violate the C11
+# backend's R3 zero-deps lock-in. Kept as a separate STATIC archive so
+# only fixtures explicitly flagged NEEDS_DOM pull it (and the lua54 link
+# it transitively requires); datamodel-less and Lua-only fixtures stay
+# free of the DOM machinery.
+add_library(sce_c_test_dom_support STATIC
+    support/dom.c
+    support/lua_dom_binding.c
+)
+target_link_libraries(sce_c_test_dom_support PUBLIC lua54)
+target_include_directories(sce_c_test_dom_support PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/support"
+)
+set_target_properties(sce_c_test_dom_support PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+
 # C11 fixture registry — extend as W3C category coverage grows.
 # Each entry both (a) drives sce-codegen via the macro below and
 # (b) lines up with `aot_tests/test_<NUM>.c` for the per-fixture runner.
 set(W3C_C_AOT_TESTS "")
 set(W3C_C_AOT_TESTS_NEEDS_LUA "")
+set(W3C_C_AOT_TESTS_NEEDS_DOM "")
 
 sce_generate_static_w3c_c_test(355 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.6: default initial = first child in document order
 sce_generate_static_w3c_c_test(144 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 4.2: raise inserts events at rear of internal queue (FIFO ordering)
@@ -228,6 +250,9 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
     target_include_directories(${_target} PRIVATE "${SCE_C_GENERATED_DIR}")
     if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_LUA)
         target_link_libraries(${_target} PRIVATE lua54)
+    endif()
+    if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_DOM)
+        target_link_libraries(${_target} PRIVATE sce_c_test_dom_support)
     endif()
     set_target_properties(${_target} PROPERTIES
         C_STANDARD 11
