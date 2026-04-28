@@ -771,13 +771,36 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
                lock-in) — the literal is known here, so the check collapses
                to "type is set, not the SCXMLEventProcessor URI, not the
                BasicHTTPEventProcessor URI" and emits the raise + return
-               directly. The BasicHTTP branch is preserved as a #error
-               carve-out below (cpp returns true for it; C11 BasicHTTP
-               dispatch lands with the first force fixture and is not in
-               watching-zenoh's scope per `c11_design_decisions.md`). */
+               directly. The BasicHTTP branch with a target is preserved
+               as a #error carve-out below (lifted by host-side HTTP
+               transport — see `claudedocs/rfc-c11-option-m-http.md`);
+               the targetless BasicHTTP arm is the next sibling and
+               handles test577 in isolation. */
             {{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
             _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ model.name }}_raise(sm, &_err_evt);
+            return;
+{% elif (not in_foreach) and action.event and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.eventexpr and not action.target and not action.targetexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.idlocation %}
+            /* W3C SCXML C.2 (test577): BasicHTTPEventProcessor send_type
+               with no `target` and no `targetexpr` raises
+               `error.communication` on the internal queue.
+               `SendHelper::requiresTargetAttribute`
+               (`sce/include/common/SendHelper.h:275-277`) returns true for
+               the BasicHTTPEventProcessor URI; cpp `actions/send.jinja2:337-343`
+               emits a runtime check inside the no-target arm. With a
+               literal BasicHTTP `send_type` and no `target`/`targetexpr`,
+               the check is decidable at codegen time, so C11 inlines the
+               raise + return per T3 lock-in (mirrors the test159 invalid-
+               target arm above). The W3C 5.10 mandate to halt subsequent
+               executable content is satisfied by the `return` from the
+               enclosing entry/exit/transition executor. The BasicHTTP
+               arms with a target/targetexpr/params/namelist/content stay
+               #error-guarded below until the host-side HTTP transport
+               lands (RFC `claudedocs/rfc-c11-option-m-http.md`). */
+            {{ model.name }}_event_with_meta_t _err_evt;
+            memset(&_err_evt, 0, sizeof(_err_evt));
+            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
             {{ model.name }}_raise(sm, &_err_evt);
             return;
 {% else %}
