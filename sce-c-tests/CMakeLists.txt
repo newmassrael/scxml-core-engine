@@ -270,3 +270,26 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
         LABELS "w3c;c11;aot"
     )
 endforeach()
+
+# ─── DOM helper unit tests ──────────────────────────────────────────
+#
+# Coverage for the full pugixml feature set (DOCTYPE / CDATA / entity
+# decoding / mixed text PCDATA) that the W3C SCXML B.2 corpus does not
+# force. Without these the additions to sce-c-tests/support/dom.c are
+# unconsumed; the unit suite is the first reader and pins the parser's
+# `parse_default`-equivalent behaviour against drift.
+add_executable(sce_c_dom_unit_test unit/dom_test.c)
+target_link_libraries(sce_c_dom_unit_test PRIVATE sce_c_test_dom_support)
+target_include_directories(sce_c_dom_unit_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/support"
+)
+set_target_properties(sce_c_dom_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_dom COMMAND sce_c_dom_unit_test)
+set_tests_properties(c11_unit_dom PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)

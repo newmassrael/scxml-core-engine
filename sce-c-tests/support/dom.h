@@ -6,13 +6,22 @@
 // 1:1 algorithmic mirror of `sce/include/scripting/XMLDOMWrapper.h` and
 // `sce/src/scripting/XMLDOMWrapper.cpp` (cpp ref-backend, pugixml-based),
 // reimplemented in pure C (no pugixml — that header is C++ only).
-// Mini recursive-descent parser covers the corpus subset forced by
-// test557 / test561: paired `<tag>...</tag>` + self-close `<tag/>`,
-// `attr="value"` and `attr='value'` both quote styles, `xmlns=""` as a
-// regular attribute (no namespace prefix processing), whitespace skip,
-// optional `<?xml ?>` PI prologue, optional `<!-- comment -->` skip.
-// DOCTYPE / CDATA / mixed text content / entity references are not
-// covered — the parser stores an error message and reports invalid.
+// Recursive-descent parser covers the cpp pugixml feature set required
+// by W3C SCXML 1.0:
+//   * paired `<tag>...</tag>` + self-close `<tag/>`
+//   * `attr="value"` and `attr='value'` both quote styles
+//   * `xmlns=""` / `xmlns:x=""` as regular attributes (no namespace
+//     prefix processing — pugixml's default `parse_default` flag set)
+//   * named entity refs `&amp;` / `&lt;` / `&gt;` / `&quot;` / `&apos;`
+//     and numeric refs `&#N;` / `&#xN;` (UTF-8 encoded), in attribute
+//     values and text content
+//   * `<?xml ?>` PI prologue + `<!-- comment -->` skip (anywhere)
+//   * `<!DOCTYPE ...>` skip (with optional internal subset `[...]`)
+//   * `<![CDATA[...]]>` content as a CDATA node child
+//   * mixed text content as PCDATA node children
+// DTD validation, xml:space="preserve", and namespace-aware tag lookup
+// are deliberately out of scope (cpp pugixml also runs without them on
+// `parse_default`).
 
 #ifndef SCE_C_TESTS_SUPPORT_DOM_H
 #define SCE_C_TESTS_SUPPORT_DOM_H
@@ -29,8 +38,18 @@ typedef struct sce_xml_attr_s {
     struct sce_xml_attr_s *next;
 } sce_xml_attr_t;
 
+// Mirrors a subset of pugi::xml_node_type — only the kinds needed for
+// W3C SCXML B.2 corpus and getElementsByTagName semantics.
+typedef enum {
+    SCE_XML_NODE_ELEMENT,
+    SCE_XML_NODE_PCDATA,    // mixed text content (#PCDATA)
+    SCE_XML_NODE_CDATA      // <![CDATA[...]]> section
+} sce_xml_node_type_t;
+
 typedef struct sce_xml_node_s {
-    char *tag;
+    sce_xml_node_type_t type;
+    char *tag;                    // element: tag name; pcdata/cdata: NULL
+    char *text;                   // pcdata/cdata: content; element: NULL
     sce_xml_attr_t *attrs;
     struct sce_xml_node_s *first_child;
     struct sce_xml_node_s *next_sibling;

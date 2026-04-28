@@ -44,14 +44,158 @@ static char *sce_xml_dup_cstr(const char *s) {
     return dst;
 }
 
-static sce_xml_node_t *sce_xml_node_new(void) {
+static sce_xml_node_t *sce_xml_node_new(sce_xml_node_type_t type) {
     sce_xml_node_t *n = (sce_xml_node_t *)calloc(1u, sizeof(*n));
+    if (n) {
+        n->type = type;
+    }
     return n;
 }
 
 static sce_xml_attr_t *sce_xml_attr_new(void) {
     sce_xml_attr_t *a = (sce_xml_attr_t *)calloc(1u, sizeof(*a));
     return a;
+}
+
+// ─── Entity decoding ────────────────────────────────────────────────
+//
+// XML 1.0 §4.6 predefined entities + §4.1 character references.  The
+// decoder is invoked for both attribute values and element text, mirroring
+// pugixml's `parse_default` (which has both `parse_escapes` and
+// `parse_eol` semantics on by default).  Encoding is UTF-8 (input is also
+// UTF-8 per W3C SCXML).  An undecodable reference (unknown name, malformed
+// numeric form) is left verbatim — pugixml does the same on
+// `parse_eol | parse_escapes` failure.
+
+static int sce_xml_utf8_encode(uint32_t codepoint, char out[4]) {
+    if (codepoint < 0x80u) {
+        out[0] = (char)codepoint;
+        return 1;
+    }
+    if (codepoint < 0x800u) {
+        out[0] = (char)(0xC0u | (codepoint >> 6));
+        out[1] = (char)(0x80u | (codepoint & 0x3Fu));
+        return 2;
+    }
+    if (codepoint < 0x10000u) {
+        out[0] = (char)(0xE0u | (codepoint >> 12));
+        out[1] = (char)(0x80u | ((codepoint >> 6) & 0x3Fu));
+        out[2] = (char)(0x80u | (codepoint & 0x3Fu));
+        return 3;
+    }
+    if (codepoint < 0x110000u) {
+        out[0] = (char)(0xF0u | (codepoint >> 18));
+        out[1] = (char)(0x80u | ((codepoint >> 12) & 0x3Fu));
+        out[2] = (char)(0x80u | ((codepoint >> 6) & 0x3Fu));
+        out[3] = (char)(0x80u | (codepoint & 0x3Fu));
+        return 4;
+    }
+    return 0;  // invalid codepoint
+}
+
+// Decode `&...;` references in `src` (length `len`) into a freshly
+// malloc'd NUL-terminated string.  Returns NULL on out-of-memory; never
+// rejects malformed references — those are passed through verbatim so a
+// raw `&` in attribute / text is still observable (pugixml leaves
+// unrecognised references in place under `parse_default`).
+static char *sce_xml_decode_entities(const char *src, size_t len) {
+    // Worst case: every char is a 1-byte literal — output ≤ input.
+    char *out = (char *)malloc(len + 1u);
+    if (!out) {
+        return NULL;
+    }
+    size_t i = 0u;
+    size_t o = 0u;
+    while (i < len) {
+        char c = src[i];
+        if (c != '&') {
+            out[o++] = c;
+            i++;
+            continue;
+        }
+        // Locate the terminating ';' within the next 32 bytes (XML
+        // entity names are short; numeric refs cap at ~10 hex digits).
+        size_t end = i + 1u;
+        size_t cap = (i + 32u < len) ? (i + 32u) : len;
+        while (end < cap && src[end] != ';') {
+            end++;
+        }
+        if (end >= cap || src[end] != ';') {
+            // No terminator — pass through.
+            out[o++] = c;
+            i++;
+            continue;
+        }
+        size_t name_start = i + 1u;
+        size_t name_len = end - name_start;
+        int matched = 0;
+        if (name_len >= 2u && src[name_start] == '#') {
+            // Numeric character reference.
+            uint32_t cp = 0u;
+            int valid = 1;
+            if (src[name_start + 1u] == 'x' || src[name_start + 1u] == 'X') {
+                if (name_len < 3u) {
+                    valid = 0;
+                }
+                for (size_t k = name_start + 2u; valid && k < end; ++k) {
+                    char h = src[k];
+                    cp <<= 4;
+                    if (h >= '0' && h <= '9') {
+                        cp |= (uint32_t)(h - '0');
+                    } else if (h >= 'a' && h <= 'f') {
+                        cp |= (uint32_t)(h - 'a' + 10);
+                    } else if (h >= 'A' && h <= 'F') {
+                        cp |= (uint32_t)(h - 'A' + 10);
+                    } else {
+                        valid = 0;
+                    }
+                }
+            } else {
+                for (size_t k = name_start + 1u; valid && k < end; ++k) {
+                    char d = src[k];
+                    if (d < '0' || d > '9') {
+                        valid = 0;
+                        break;
+                    }
+                    cp = cp * 10u + (uint32_t)(d - '0');
+                }
+            }
+            if (valid) {
+                char buf[4];
+                int n = sce_xml_utf8_encode(cp, buf);
+                if (n > 0) {
+                    for (int k = 0; k < n; ++k) {
+                        out[o++] = buf[k];
+                    }
+                    matched = 1;
+                }
+            }
+        } else if (name_len == 2u && memcmp(src + name_start, "lt", 2) == 0) {
+            out[o++] = '<';
+            matched = 1;
+        } else if (name_len == 2u && memcmp(src + name_start, "gt", 2) == 0) {
+            out[o++] = '>';
+            matched = 1;
+        } else if (name_len == 3u && memcmp(src + name_start, "amp", 3) == 0) {
+            out[o++] = '&';
+            matched = 1;
+        } else if (name_len == 4u && memcmp(src + name_start, "quot", 4) == 0) {
+            out[o++] = '"';
+            matched = 1;
+        } else if (name_len == 4u && memcmp(src + name_start, "apos", 4) == 0) {
+            out[o++] = '\'';
+            matched = 1;
+        }
+        if (matched) {
+            i = end + 1u;
+        } else {
+            // Unknown / malformed — pass through verbatim.
+            out[o++] = c;
+            i++;
+        }
+    }
+    out[o] = '\0';
+    return out;
 }
 
 // ─── Tree free ──────────────────────────────────────────────────────
@@ -78,6 +222,7 @@ static void sce_xml_free_node_recursive(sce_xml_node_t *n) {
     }
     sce_xml_free_attrs(n->attrs);
     free(n->tag);
+    free(n->text);
     free(n);
 }
 
@@ -169,7 +314,32 @@ static void sce_xml_skip_comment(sce_xml_parser_t *p) {
     }
 }
 
-// Read one of <?xml?> or <!-- --> if present at current position.
+// Skip <!DOCTYPE name ...> with optional `[ internal subset ]`.  pugixml
+// drops the doctype entirely on `parse_default`; we mirror that since
+// W3C SCXML B.2 corpus never reads DOCTYPE-declared entities and we
+// don't run DTD validation.  Internal subset is balanced on `[`/`]`.
+static void sce_xml_skip_doctype(sce_xml_parser_t *p) {
+    if (!sce_xml_match(p, "<!DOCTYPE")) {
+        return;
+    }
+    int in_subset = 0;
+    while (p->pos < p->len) {
+        char c = p->src[p->pos];
+        if (c == '[') {
+            in_subset = 1;
+        } else if (c == ']') {
+            in_subset = 0;
+        } else if (c == '>' && !in_subset) {
+            p->pos++;
+            return;
+        }
+        p->pos++;
+    }
+    sce_xml_parser_set_error(p, "unterminated DOCTYPE");
+}
+
+// Read one of <?xml?> / <!-- --> / <!DOCTYPE ...> if present at the
+// current position.
 static int sce_xml_skip_misc(sce_xml_parser_t *p) {
     sce_xml_skip_ws(p);
     if (p->pos + 1u < p->len && p->src[p->pos] == '<') {
@@ -180,6 +350,11 @@ static int sce_xml_skip_misc(sce_xml_parser_t *p) {
         if (p->pos + 3u < p->len && p->src[p->pos + 1u] == '!' &&
             p->src[p->pos + 2u] == '-' && p->src[p->pos + 3u] == '-') {
             sce_xml_skip_comment(p);
+            return 1;
+        }
+        if (p->pos + 8u < p->len && p->src[p->pos + 1u] == '!' &&
+            memcmp(p->src + p->pos + 2u, "DOCTYPE", 7) == 0) {
+            sce_xml_skip_doctype(p);
             return 1;
         }
     }
@@ -219,7 +394,13 @@ static char *sce_xml_parse_attr_value(sce_xml_parser_t *p) {
         sce_xml_parser_set_error(p, "unterminated attribute value");
         return NULL;
     }
-    char *val = sce_xml_dup_range(p->src, start, p->pos);
+    // Decode XML entity references in attribute values (pugixml's
+    // parse_default has parse_escapes set, mirrors that).
+    char *val = sce_xml_decode_entities(p->src + start, p->pos - start);
+    if (!val) {
+        sce_xml_parser_set_error(p, "out of memory");
+        return NULL;
+    }
     p->pos++;  // consume closing quote
     return val;
 }
@@ -272,6 +453,85 @@ static int sce_xml_parse_attributes(sce_xml_parser_t *p, sce_xml_node_t *node) {
     }
 }
 
+// Append `child` to `parent`'s child list.  Caller owns lifecycle on
+// failure (the freshly-parsed child is freed by the caller path).
+static void sce_xml_append_child(sce_xml_node_t *parent, sce_xml_node_t *child,
+                                 sce_xml_node_t **tail_inout) {
+    child->parent = parent;
+    if (*tail_inout) {
+        (*tail_inout)->next_sibling = child;
+    } else {
+        parent->first_child = child;
+    }
+    *tail_inout = child;
+}
+
+// Parse a `<![CDATA[ ... ]]>` section into a CDATA-typed text child.
+// Caller has already verified the `<![CDATA[` prefix is present.
+static int sce_xml_parse_cdata(sce_xml_parser_t *p, sce_xml_node_t *parent,
+                               sce_xml_node_t **tail_inout) {
+    if (!sce_xml_match(p, "<![CDATA[")) {
+        sce_xml_parser_set_error(p, "expected CDATA");
+        return 0;
+    }
+    size_t start = p->pos;
+    while (p->pos + 2u < p->len) {
+        if (p->src[p->pos] == ']' && p->src[p->pos + 1u] == ']' &&
+            p->src[p->pos + 2u] == '>') {
+            char *body = sce_xml_dup_range(p->src, start, p->pos);
+            if (!body) {
+                sce_xml_parser_set_error(p, "out of memory");
+                return 0;
+            }
+            sce_xml_node_t *node = sce_xml_node_new(SCE_XML_NODE_CDATA);
+            if (!node) {
+                free(body);
+                sce_xml_parser_set_error(p, "out of memory");
+                return 0;
+            }
+            node->text = body;
+            sce_xml_append_child(parent, node, tail_inout);
+            p->pos += 3u;  // consume ']]>'
+            return 1;
+        }
+        p->pos++;
+    }
+    sce_xml_parser_set_error(p, "unterminated CDATA section");
+    return 0;
+}
+
+// Capture text content up to the next `<` and append as PCDATA.  The
+// raw bytes are entity-decoded so `&amp;` etc. round-trip to their
+// literal form (parse_escapes default).  An empty text run produces no
+// node — pugixml's `parse_ws_pcdata_single` would emit one, but we
+// don't surface a runtime difference: the W3C corpus reads attribute
+// values, not text content, and `getElementsByTagName` only collects
+// element nodes anyway.
+static int sce_xml_consume_text(sce_xml_parser_t *p, sce_xml_node_t *parent,
+                                sce_xml_node_t **tail_inout) {
+    size_t start = p->pos;
+    while (p->pos < p->len && p->src[p->pos] != '<') {
+        p->pos++;
+    }
+    if (p->pos == start) {
+        return 1;
+    }
+    char *decoded = sce_xml_decode_entities(p->src + start, p->pos - start);
+    if (!decoded) {
+        sce_xml_parser_set_error(p, "out of memory");
+        return 0;
+    }
+    sce_xml_node_t *node = sce_xml_node_new(SCE_XML_NODE_PCDATA);
+    if (!node) {
+        free(decoded);
+        sce_xml_parser_set_error(p, "out of memory");
+        return 0;
+    }
+    node->text = decoded;
+    sce_xml_append_child(parent, node, tail_inout);
+    return 1;
+}
+
 static sce_xml_node_t *sce_xml_parse_element(sce_xml_parser_t *p) {
     if (p->pos >= p->len || p->src[p->pos] != '<') {
         sce_xml_parser_set_error(p, "expected '<'");
@@ -282,7 +542,7 @@ static sce_xml_node_t *sce_xml_parse_element(sce_xml_parser_t *p) {
     if (!tag) {
         return NULL;
     }
-    sce_xml_node_t *node = sce_xml_node_new();
+    sce_xml_node_t *node = sce_xml_node_new(SCE_XML_NODE_ELEMENT);
     if (!node) {
         free(tag);
         sce_xml_parser_set_error(p, "out of memory");
@@ -314,13 +574,23 @@ static sce_xml_node_t *sce_xml_parse_element(sce_xml_parser_t *p) {
     }
     p->pos++;
 
-    // Children + text content.  Text content is currently silently
-    // skipped — corpus (test557/561) carries only element children.
+    // Element body — interleaved children, CDATA sections, comments,
+    // and mixed text.  Comments / PIs / DOCTYPE inside a body are
+    // dropped by sce_xml_skip_misc (DOCTYPE in body is technically
+    // ill-formed but pugixml tolerates it under parse_default).
     sce_xml_node_t *child_tail = NULL;
     while (p->pos < p->len) {
-        // skip whitespace between children — non-whitespace text is
-        // currently treated as an error to surface unsupported cases.
-        sce_xml_skip_ws(p);
+        // CDATA must be tested before generic comment / PI dispatch
+        // because skip_misc does not handle `<![CDATA[`.
+        if (p->pos + 8u < p->len && p->src[p->pos] == '<' &&
+            p->src[p->pos + 1u] == '!' && p->src[p->pos + 2u] == '[' &&
+            memcmp(p->src + p->pos + 3u, "CDATA[", 6) == 0) {
+            if (!sce_xml_parse_cdata(p, node, &child_tail)) {
+                sce_xml_free_node_recursive(node);
+                return NULL;
+            }
+            continue;
+        }
         if (sce_xml_skip_misc(p)) {
             continue;
         }
@@ -338,19 +608,13 @@ static sce_xml_node_t *sce_xml_parse_element(sce_xml_parser_t *p) {
                 sce_xml_free_node_recursive(node);
                 return NULL;
             }
-            child->parent = node;
-            if (child_tail) {
-                child_tail->next_sibling = child;
-            } else {
-                node->first_child = child;
-            }
-            child_tail = child;
+            sce_xml_append_child(node, child, &child_tail);
         } else {
-            // Mixed text content — corpus does not exercise it.  Skip
-            // until next '<' so files with stray whitespace + element
-            // mix still parse cleanly; non-whitespace text is dropped.
-            while (p->pos < p->len && p->src[p->pos] != '<') {
-                p->pos++;
+            // Mixed text content — capture as PCDATA child.  Empty
+            // runs (caller already at `<`) produce no node.
+            if (!sce_xml_consume_text(p, node, &child_tail)) {
+                sce_xml_free_node_recursive(node);
+                return NULL;
             }
         }
     }
@@ -475,13 +739,15 @@ const char *sce_xml_get_attribute(const sce_xml_node_t *node, const char *attr) 
     return "";
 }
 
-// cpp findElementsByTagNameStatic 1:1 — checks current node, then descends.
+// cpp findElementsByTagNameStatic 1:1 — element-only match, then
+// descend.  PCDATA / CDATA children carry no tag and are walked past.
 static int sce_xml_collect(sce_xml_node_t *node, const char *tag,
                            sce_xml_node_t ***out, size_t *count, size_t *cap) {
     if (!node) {
         return 1;
     }
-    if (node->tag && strcmp(node->tag, tag) == 0) {
+    if (node->type == SCE_XML_NODE_ELEMENT && node->tag &&
+        strcmp(node->tag, tag) == 0) {
         if (*count == *cap) {
             size_t new_cap = *cap == 0u ? 4u : *cap * 2u;
             sce_xml_node_t **resized = (sce_xml_node_t **)realloc(*out, new_cap * sizeof(*resized));
