@@ -395,6 +395,67 @@ static int test_post_roundtrip(void) {
     return 0;
 }
 
+/* Chunked-encoded round-trip — the Node standalone server emits
+   `Transfer-Encoding: chunked` for JSON responses (Express auto-
+   chunks). The client must reassemble the chunk payloads before the
+   JSON extractor sees the body. */
+static int test_post_roundtrip_chunked(void) {
+    /* Body `{"event":"test","data":"hi"}` = 28 bytes; encoded as a
+       single 0x1c chunk plus the terminator. The test pins the
+       dechunk path against drift in the standalone server's
+       framing choice. */
+    static const char reply[] =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/json\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+        "1c\r\n"
+        "{\"event\":\"test\",\"data\":\"hi\"}\r\n"
+        "0\r\n"
+        "\r\n";
+
+    stub_server_t s;
+    if (stub_server_start(&s, reply) < 0) {
+        fprintf(stderr, "  FAIL: stub_server_start failed\n");
+        return 1;
+    }
+    pthread_t th;
+    if (pthread_create(&th, NULL, stub_server_thread, &s) != 0) {
+        stub_server_stop(&s);
+        fprintf(stderr, "  FAIL: pthread_create failed\n");
+        return 1;
+    }
+
+    char url_str[64];
+    snprintf(url_str, sizeof(url_str), "http://127.0.0.1:%d/test", s.port);
+    sce_test_http_url_t url;
+    ASSERT_TRUE(sce_test_http_url_parse(url_str, &url), "url parse");
+
+    sce_test_http_response_t resp;
+    bool ok = sce_test_http_post(&url, "application/x-www-form-urlencoded",
+                                  "x=y", 3u, 5000, &resp);
+    pthread_join(th, NULL);
+    stub_server_stop(&s);
+
+    ASSERT_TRUE(ok, "post must succeed");
+    ASSERT_TRUE(resp.status_code == 200, "status 200");
+    /* After dechunk, body length must match the chunk payload size. */
+    ASSERT_TRUE(resp.body_len == 28u, "dechunked body length");
+
+    sce_test_http_json_response_t parsed;
+    ASSERT_TRUE(sce_test_http_parse_response(resp.body, resp.body_len,
+                                              &parsed),
+                "parse dechunked response");
+    ASSERT_MEMEQ(parsed.event_name, parsed.event_name_len,
+                 "test", "event_name");
+    ASSERT_MEMEQ(parsed.event_data, parsed.event_data_len,
+                 "hi", "event_data");
+
+    sce_test_http_response_free(&resp);
+    return 0;
+}
+
 /* ── main: aggregate ────────────────────────────────────────────── */
 
 int main(void) {
@@ -418,6 +479,7 @@ int main(void) {
         {"json_missing_event_rejected",  test_json_missing_event_rejected},
         {"json_non_object_rejected",     test_json_non_object_rejected},
         {"post_roundtrip",               test_post_roundtrip},
+        {"post_roundtrip_chunked",       test_post_roundtrip_chunked},
     };
     const size_t n = sizeof(tests) / sizeof(tests[0]);
     size_t failed = 0u;

@@ -26,6 +26,20 @@
    sce-c-runtime link surface. */
 #include "lua_dom_binding.h"
 {% endif %}
+{% if model.needs_http_send %}
+/* W3C SCXML C.2: host-side HTTP/1.1 client + JSON response extractor
+   (sce-c-tests/support/http_client.h). Synchronous POST against the
+   standalone Node server (`tests/w3c/standalone_http_server.js`) —
+   Pattern B-i mirroring Go/Rust harnesses, single source of truth. */
+#include "http_client.h"
+{% if model.needs_script_engine %}
+/* W3C SCXML C.2: JSON-to-Lua push for promoting the standalone
+   server's `data` response field onto the `_pending_donedata` slot.
+   Linked only when the SM has a Lua datamodel — fixtures that never
+   dereference `_event.data` skip this header. */
+#include "http_lua_binding.h"
+{% endif %}
+{% endif %}
 {% if model.needs_event_scheduler %}
 
 /* W3C SCXML 6.2: Monotonic clock binding for delayed `<send>` scheduling.
@@ -55,6 +69,31 @@ static void scheduled_push({{ model.name }}_t *sm,
                            int payload_lua_ref
 {%- endif %});
 static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *send_id);
+{% endif %}
+{% if model.needs_http_send %}
+
+/* W3C SCXML C.2: standalone server's response carries the receiving
+   event's name as a JSON string (`{"event":"<name>",...}`). The generated
+   per-fixture helper below maps that name to the SM's `Event` enum at
+   runtime. The mapping is the inverse of the codegen-time
+   `EVENT_<UPPER>` synthesis used everywhere else in the source — same
+   set of names, same UPPER + dot/dash → underscore transform. Unknown
+   names collapse to `EVENT_NONE` and the surrounding arm declines to
+   raise. Linear scan is fine: the W3C C.2 corpus events are bounded by
+   the document's transition set (≤ ~10 names). T3 inline lock-in says
+   no helper functions in the runtime; the fixture-side static helper
+   is generated source, so it is in scope. */
+static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *name, size_t len) {
+    if (name == NULL || len == 0u) {
+        return {{ model.name | upper }}_EVENT_NONE;
+    }
+    {% for event_name in model.events | sort %}
+    if (len == {{ event_name | length }}u && memcmp(name, "{{ event_name }}", {{ event_name | length }}u) == 0) {
+        return {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }};
+    }
+    {% endfor %}
+    return {{ model.name | upper }}_EVENT_NONE;
+}
 {% endif %}
 
 {# RFC §5.J.1: recursive action emitter. Mirrors the C++ tree's
@@ -803,6 +842,160 @@ static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *se
             _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
             {{ model.name }}_raise(sm, &_err_evt);
             return;
+{% elif (not in_foreach) and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and action.target and action.target.startswith('http://') and not action.eventexpr and not action.targetexpr and not action.delay and not action.delayexpr and not action.contentexpr and not action.typeexpr and not action.idlocation %}
+            /* W3C SCXML C.2: BasicHTTP send to literal HTTP target.
+               Synchronous POST against the standalone server (Pattern B-i,
+               see RFC `claudedocs/rfc-c11-option-m-http.md` §3.2) followed
+               by event-name dispatch and optional `_event.data` promotion
+               onto the `_pending_donedata` Lua slot. Mirrors cpp
+               `actions/send.jinja2:347-428` `engine.performHttpSend()`
+               callback + Go `sce-go-tests/harness/harness.go::SetupHTTPTest`.
+               The standalone server JSON-echoes the request as
+               `{"status":"success","event":"<name>","data":<json|string>}`,
+               which we parse and inject as the next external event. The
+               `Connection: close` request header lets the server signal
+               EOF via socket close so chunked-transfer parsing stays out
+               of the host-helper R3 budget.
+
+               Body shape (matches cpp `HttpEventTarget::send` lines 47-60):
+                 * event or params or namelist → form-urlencoded with
+                   `_scxmleventname=<event>` + `<param>=<val>` pairs +
+                   `<namelist_var>=<lua_value>` pairs
+                 * content (no event/params/namelist) → text/plain
+                 * else → empty form-urlencoded
+
+               Failure path: socket / parse / unknown event → silent drop.
+               cpp's parallel callback (`HttpEventTarget.cpp:90-94`) returns
+               a `SendResult::error(NETWORK_ERROR)` but the surrounding
+               state machine has no transition listening for the failure
+               in any C.2 fixture; the fixtures use a `<send delay="3s"
+               event="timeout"/>` safety net that fires before the timeout
+               reaches the SM's external queue. C11 mirrors that behaviour
+               by silently discarding the failure rather than emitting a
+               local error.communication (which the cpp lane also
+               doesn't). */
+            {
+                /* W3C SCXML C.2: parse target URL (literal, decided at
+                   codegen time per T3 inline lock-in). */
+                sce_test_http_url_t _http_url;
+                if (sce_test_http_url_parse("{{ action.target }}", &_http_url)) {
+                    /* W3C SCXML C.2: build POST body. The discriminator
+                       (form vs text/plain) follows cpp's "event or
+                       params non-empty → form-urlencoded" rule. */
+                    char _http_body[1024];
+                    _http_body[0] = '\0';
+                    size_t _http_body_len = 0u;
+                    const char *_http_content_type = "application/x-www-form-urlencoded";
+{% if action.event or action.params or action.namelist %}
+{% if action.event %}
+                    /* W3C SCXML C.2: include the SCXML event name as the
+                       reserved `_scxmleventname` form parameter so the
+                       server's response carries it back as `event`. */
+                    (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
+                                                    "_scxmleventname", "{{ action.event }}");
+{% endif %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+                    (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
+                                                    "{{ param.name }}", "{{ param.static_value }}");
+{% else %}
+                    {
+                        char _param_buf[256];
+                        bool _param_ok = false;
+                        {{ se.lua_eval_to_string(param.expr, "_param_buf", "256", "_param_ok") }}
+                        if (_param_ok) {
+                            (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
+                                                            "{{ param.name }}", _param_buf);
+                        }
+                    }
+{% endif %}
+{% endfor %}
+{% if action.namelist %}
+{% for var_name in action.namelist | split %}
+                    {
+                        /* W3C SCXML 5.10 + C.1: namelist variable
+                           `{{ var_name }}` evaluated against the active
+                           datamodel and appended as a form parameter.
+                           Empty Lua results (undeclared / nil) drop the
+                           pair silently rather than ReferenceError —
+                           cpp's `NamelistHelper::evaluateNamelist` raises
+                           on missing vars but no W3C C.2 fixture forces
+                           that arm; the eval-on-demand path here mirrors
+                           how the SCXMLEventProcessor send arm
+                           (state_machine.c.jinja2 line 447) handles it. */
+                        char _nl_buf[256];
+                        bool _nl_ok = false;
+                        {{ se.lua_eval_to_string(var_name, "_nl_buf", "256", "_nl_ok") }}
+                        if (_nl_ok) {
+                            (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
+                                                            "{{ var_name }}", _nl_buf);
+                        }
+                    }
+{% endfor %}
+{% endif %}
+{% elif action.content %}
+                    /* W3C SCXML C.2 (test520): content-only send — body
+                       is the literal `<content>` text, content type
+                       text/plain. Server replies with event="HTTP.POST"
+                       (the http method name) per the standalone server's
+                       fallback. */
+                    {
+                        static const char _http_content_literal[] = "{{ action.content | escape_c }}";
+                        size_t _http_content_size = sizeof(_http_content_literal) - 1u;
+                        if (_http_content_size < sizeof(_http_body)) {
+                            memcpy(_http_body, _http_content_literal, _http_content_size);
+                            _http_body[_http_content_size] = '\0';
+                            _http_body_len = _http_content_size;
+                        }
+                    }
+                    _http_content_type = "text/plain";
+{% endif %}
+                    /* W3C SCXML C.2: synchronous POST + parse + dispatch.
+                       5 second timeout mirrors cpp `HttpEventTarget`
+                       default; W3C C.2 fixtures use a `<send delay>`
+                       safety-net that beats this by ~2s, so a hung
+                       request never deadlocks the test. */
+                    sce_test_http_response_t _http_resp;
+                    memset(&_http_resp, 0, sizeof(_http_resp));
+                    if (sce_test_http_post(&_http_url, _http_content_type,
+                                           _http_body, _http_body_len, 5000, &_http_resp)) {
+                        sce_test_http_json_response_t _http_json;
+                        if (sce_test_http_parse_response(_http_resp.body, _http_resp.body_len, &_http_json)) {
+                            {{ model.name }}_event_with_meta_t _http_evt;
+                            memset(&_http_evt, 0, sizeof(_http_evt));
+                            /* W3C SCXML C.2: dispatch event by name. The
+                               server's response shapes `_event.name` from
+                               `_scxmleventname` form param if present
+                               else "HTTP.POST"/"event1" defaults; the
+                               codegen-emitted `_event_from_name` resolves
+                               the runtime string against the SM's known
+                               event set. */
+                            _http_evt.event = {{ model.name }}_event_from_name(_http_json.event_name, _http_json.event_name_len);
+                            if (_http_evt.event != {{ model.name | upper }}_EVENT_NONE) {
+{% if model.needs_script_engine %}
+                                /* W3C SCXML C.2: promote `data` field onto
+                                   `_pending_donedata` so the next dequeue's
+                                   `set_current_event` lifts it onto
+                                   `_event.data` (the JSON-table form for
+                                   server-echoed objects, the literal-
+                                   string form for content-only fixtures
+                                   like test520). */
+                                if (_http_json.event_data != NULL) {
+                                    if (_http_json.data_is_string) {
+                                        lua_pushlstring(sm->L, _http_json.event_data, _http_json.event_data_len);
+                                        lua_setglobal(sm->L, "_pending_donedata");
+                                    } else if (sce_test_lua_push_json(sm->L, _http_json.event_data, _http_json.event_data_len)) {
+                                        lua_setglobal(sm->L, "_pending_donedata");
+                                    }
+                                }
+{% endif %}
+                                {{ model.name }}_raise_external(sm, &_http_evt);
+                            }
+                        }
+                    }
+                    sce_test_http_response_free(&_http_resp);
+                }
+            }
 {% else %}
 #error "C11 backend: <send> shape with target/params/namelist/content/typeexpr/idlocation is not yet implemented — extend emit_action's send branch with the first fixture forcing it."
 {% endif %}

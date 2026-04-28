@@ -332,6 +332,73 @@ static bool sce_http_read_body(int fd,
     return true;
 }
 
+/* Decode RFC 7230 §4.1 chunked transfer encoding in place. Input is
+   the raw byte stream `<size-hex>\r\n<chunk>\r\n...0\r\n\r\n` already
+   accumulated into `buf` (length `*len`). Output is the concatenated
+   chunk payload, length re-written into `*len`. The Node.js
+   standalone server emits chunked because Express does not buffer
+   the JSON response — the client side has to handle it.
+
+   Returns false on truncation / malformed-size / missing CRLF; the
+   caller treats false as transport failure. The buffer is mutated
+   in place (output is strictly ≤ input size, so no re-allocation). */
+static bool sce_http_dechunk_inplace(char *buf, size_t *len) {
+    char *read = buf;
+    char *write = buf;
+    char *end = buf + *len;
+
+    while (read < end) {
+        /* Parse chunk size as hex. RFC 7230: extension `<size>;<ext>`
+           is allowed but the standalone server does not emit it; we
+           tolerate by stopping at the first non-hex char and skipping
+           to the CRLF. */
+        char *size_end = read;
+        while (size_end < end &&
+               ((*size_end >= '0' && *size_end <= '9') ||
+                (*size_end >= 'a' && *size_end <= 'f') ||
+                (*size_end >= 'A' && *size_end <= 'F'))) {
+            size_end++;
+        }
+        if (size_end == read) {
+            return false;
+        }
+        char saved = *size_end;
+        *size_end = '\0';
+        long chunk_size = strtol(read, NULL, 16);
+        *size_end = saved;
+        if (chunk_size < 0) {
+            return false;
+        }
+        /* Skip optional `;ext` and the trailing `\r\n`. */
+        char *crlf = memchr(size_end, '\n', (size_t)(end - size_end));
+        if (crlf == NULL) {
+            return false;
+        }
+        read = crlf + 1;
+        if ((size_t)chunk_size == 0u) {
+            /* Last chunk — trailing `\r\n` (and any trailers) ignored. */
+            break;
+        }
+        if (read + chunk_size > end) {
+            return false;
+        }
+        memmove(write, read, (size_t)chunk_size);
+        write += chunk_size;
+        read += chunk_size;
+        /* Consume the `\r\n` separator after the chunk payload. */
+        if (read + 1 < end && read[0] == '\r' && read[1] == '\n') {
+            read += 2;
+        } else if (read < end && read[0] == '\n') {
+            read += 1;
+        } else {
+            return false;
+        }
+    }
+    *len = (size_t)(write - buf);
+    buf[*len] = '\0';
+    return true;
+}
+
 /* ── Public API: synchronous POST ───────────────────────────────── */
 
 bool sce_test_http_post(const sce_test_http_url_t *url,
@@ -400,10 +467,13 @@ bool sce_test_http_post(const sce_test_http_url_t *url,
     }
     out->status_code = status_code;
 
-    /* Optional Content-Length header — the Node standalone server
-       always emits one; honour it for fast pre-sizing and as a hard
-       boundary. Falls back to "drain until EOF" via Connection:
-       close when absent. */
+    /* Two body-framing modes per RFC 7230 §3.3.3:
+         (a) Content-Length: <N> → exactly N body bytes
+         (b) Transfer-Encoding: chunked → `<hex-size>\r\n<chunk>\r\n...0\r\n\r\n`
+       The Node.js standalone server picks chunked for JSON responses
+       (Express auto-chunks because the body is computed in pieces);
+       the unit-test stub server picks Content-Length. Both shapes
+       must round-trip cleanly. */
     long content_length = -1;
     const char *cl = sce_http_find_header(header_buf, (size_t)header_len,
                                            "Content-Length");
@@ -414,16 +484,47 @@ bool sce_test_http_post(const sce_test_http_url_t *url,
             content_length = val;
         }
     }
+    bool is_chunked = false;
+    const char *te = sce_http_find_header(header_buf, (size_t)header_len,
+                                           "Transfer-Encoding");
+    if (te != NULL) {
+        /* The header value may carry a list (`chunked, gzip` etc.);
+           we only honour the bare `chunked` token. The standalone
+           server emits `chunked` alone; gzip/deflate isn't in the
+           host-helper R3 budget. */
+        const char *eol = memchr(te, '\r',
+                                 (size_t)((header_buf + header_len) - te));
+        size_t te_len = (eol != NULL)
+                        ? (size_t)(eol - te)
+                        : (size_t)((header_buf + header_len) - te);
+        for (size_t i = 0u; i + 7u <= te_len; i++) {
+            if (strncasecmp(te + i, "chunked", 7u) == 0) {
+                is_chunked = true;
+                break;
+            }
+        }
+    }
 
     char *body_buf = NULL;
     size_t body_buf_len = 0u;
+    /* Drain raw bytes first; chunked uses size-prefixed framing inside
+       the body so Content-Length is meaningless. When neither header
+       is set, drain-until-EOF (server closes per `Connection: close`). */
     if (!sce_http_read_body(fd, body_prefix, body_prefix_len,
-                             content_length, &body_buf, &body_buf_len)) {
+                             is_chunked ? -1 : content_length,
+                             &body_buf, &body_buf_len)) {
         close(fd);
         return false;
     }
-
     close(fd);
+
+    if (is_chunked) {
+        if (!sce_http_dechunk_inplace(body_buf, &body_buf_len)) {
+            free(body_buf);
+            return false;
+        }
+    }
+
     out->ok = true;
     out->body = body_buf;
     out->body_len = body_buf_len;
