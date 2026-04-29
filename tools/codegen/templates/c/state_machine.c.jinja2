@@ -1258,7 +1258,18 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
             }
         }
 {% else %}
-#error "C11 backend: <log expr=...> without a script engine has no fixture in the W3C corpus — extend emit_action's log branch with the first fixture forcing it."
+        /* No-datamodel fixtures cannot reference variables, so the expr is
+           necessarily a literal (string / numeric / constant arithmetic).
+           Mirrors cpp `actions/log.jinja2:19-21`'s no-script-engine path —
+           single-quote → double-quote substitution turns SCXML's JS-style
+           `'hello'` into a valid C string literal, then fprintf to stderr.
+           Spec-mirror parity per `feedback_built_but_unconsumed.md`: emit
+           the cpp shape 1:1 even without a current corpus fixture forcing
+           the path, so the first MCU/null-datamodel consumer sees aligned
+           behaviour with cpp. */
+        (void)fprintf(stderr,
+            {% if action.label %}"{{ action.label | escape_c }}: %s\n"{% else %}"%s\n"{% endif %},
+            {{ action.expr | replace("'", '"') }});
 {% endif %}
 {% elif action.label %}
         (void)fprintf(stderr, "{{ action.label | escape_c }}\n");
