@@ -313,6 +313,10 @@
                 "$ref": "#/definitions/CanonicalType"
               }
             },
+            "has_state": {
+              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<data sce:max-delta=...>` is present (rate-of-change rule is the only state-bearing validator construct). Empty in fixtures.json (manifest-side override is rejected); the value is computed by `read_validator_has_state` at render time so the SCXML remains the single source of truth.\n\nAll backends except C11 generate uniform `validator.validate(...)` regardless of state, so the flag is unused for them. C11 needs it because RFC §5.J.2 V2c uses a free function for stateless validators (no instance to call a method on) and a state struct + pointer pass for stateful ones; the harness fragment branches on this flag to emit the matching call shape.",
+              "type": "boolean"
+            },
             "kind": {
               "type": "string",
               "enum": [

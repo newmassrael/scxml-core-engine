@@ -648,8 +648,23 @@ fn render_transform(
             let fn_name = match lang {
                 Language::Go =>
                     format!("Compute{}", filters::to_pascal_case(out.id.clone())),
-                Language::Rust | Language::Python | Language::C11 =>
+                Language::Rust | Language::Python =>
                     format!("compute_{}", filters::to_snake_case(out.id.clone())),
+                // RFC §5.J.2 §3 D1 (mirroring Lookup): C11 has a flat scope,
+                // so fully-qualify the exported function with `<m.name>_` to
+                // keep two transforms whose output ids collide (e.g. both
+                // `temperature`) from clashing in a single TU. This also
+                // matches what `build_qualified_call` produces at every
+                // cross-file callsite (`{namespace}_{discover_primary_function}`),
+                // so `crossfile_validator_transform` and any other future
+                // C11 transform import resolves to the same symbol the
+                // generated header declares.
+                Language::C11 =>
+                    format!(
+                        "{}_compute_{}",
+                        filters::to_snake_case(m.name.clone()),
+                        filters::to_snake_case(out.id.clone()),
+                    ),
                 _ =>
                     format!("compute{}", filters::to_pascal_case(out.id.clone())),
             };
@@ -1358,6 +1373,14 @@ fn render_validator(
             obj.insert("max".into(), serde_json::json!(r.max));
             obj.insert("has_min".into(), r.min.is_some().into());
             obj.insert("has_max".into(), r.max.is_some().into());
+            // Unsigned typing flag — needed by the C template to elide
+            // lower-bound checks where `min == "0"` and the field type is
+            // unsigned, since `unsigned < 0` is tautologically false and
+            // gcc -Wtype-limits would surface a -Werror in the C11 build.
+            // cpp/Rust/Go/Kotlin/Python builds either don't run -Werror
+            // here or don't carry an equivalent diagnostic, so they emit
+            // the same redundant comparison as before.
+            obj.insert("is_unsigned".into(), r.sce_type.is_unsigned().into());
             if matches!(lang, Language::Kotlin) {
                 let conv = kotlin_unsigned_conversion(&r.sce_type).unwrap_or("");
                 obj.insert("conv".into(), conv.into());
@@ -1426,6 +1449,21 @@ fn render_validator(
     ctx.insert("range_rules".into(), serde_json::json!(range_rules));
     ctx.insert("roc_rules".into(), serde_json::json!(roc_rules));
     ctx.insert("plausibility_expr".into(), serde_json::json!(plausibility_expr));
+
+    // C11 (RFC §5.J.2 §3 Phase C V1b): per-fixture flat-scope typedef + V2c
+    // mixed calling convention. Stateless validators (no rocs) emit a free
+    // function `<snake>_validate(args)`; stateful validators emit a state
+    // struct + pointer-passing `<snake>_validate(<snake>_t *self, args)`,
+    // mirroring the cpp shape but in C-idiomatic form (no member functions,
+    // no zero-field structs which would violate -Wpedantic).
+    if matches!(lang, Language::C11) {
+        let snake = filters::to_snake_case(m.name.clone());
+        ctx.insert("c_result_typedef".into(), format!("{snake}_result_t").into());
+        ctx.insert("c_state_typedef".into(), format!("{snake}_t").into());
+        ctx.insert("c_validate_func".into(), format!("{snake}_validate").into());
+        ctx.insert("c_has_state".into(), (!prev_vars.is_empty()).into());
+    }
+
     l.insert_imports(&mut ctx, imports);
 
     l.render(env, "validator", ctx)
@@ -1674,9 +1712,10 @@ pub fn generate_c11(doc: &ForgeDocument, template_dir: &Path) -> Result<Generate
 
 /// Generate C11 code with cross-file import support.
 ///
-/// Phase A only emits Transform kinds. Other variants surface a
-/// `GenerateError::UnsupportedFeature` naming the phase that lifts
-/// them, so an operator who points `--language c11` at a fixture in
+/// Phase A landed Transform; Phase B added Condition, Lookup, Codec;
+/// Phase C lifts Validator. Procedure/Filter/Interpolation/Timer/
+/// Observer remain `GenerateError::UnsupportedFeature` until their
+/// phase, so an operator who points `--language c11` at a fixture in
 /// scope for a future phase sees a single-line "deferred to Phase X"
 /// diagnostic instead of an `unimplemented!` panic.
 pub fn generate_c11_with_imports(
@@ -1694,12 +1733,7 @@ pub fn generate_c11_with_imports(
         ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Validator(_) => {
-            return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for kind Validator is RFC \u{00A7}5.J.2 Phase C work.".into(),
-            )
-            .into());
-        }
+        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Procedure(_) => {
             return Err(GenerateError::UnsupportedFeature(
                 "C11 forge codegen for kind Procedure is RFC \u{00A7}5.J.2 Phase D work \
@@ -4464,7 +4498,9 @@ impl LangCtx {
     /// Validator previous-value variable name per language convention.
     fn prev_name(&self, id: &str) -> String {
         match self.lang {
-            crate::generator::Language::Rust | crate::generator::Language::Python =>
+            crate::generator::Language::Rust
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11 =>
                 format!("prev_{}", filters::to_snake_case(id.to_string())),
             _ =>
                 format!("prev{}", filters::to_pascal_case(self.local_id(id))),

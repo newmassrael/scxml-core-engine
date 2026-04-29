@@ -267,6 +267,21 @@ pub enum FixtureSpec {
     Validator {
         args: Vec<CanonicalType>,
         output: Vec<StructField>,
+        /// Derived at harness-rendering time from SCXML — true iff at least
+        /// one `<data sce:max-delta=...>` is present (rate-of-change rule
+        /// is the only state-bearing validator construct). Empty in
+        /// fixtures.json (manifest-side override is rejected); the value is
+        /// computed by `read_validator_has_state` at render time so the
+        /// SCXML remains the single source of truth.
+        ///
+        /// All backends except C11 generate uniform `validator.validate(...)`
+        /// regardless of state, so the flag is unused for them. C11 needs
+        /// it because RFC §5.J.2 V2c uses a free function for stateless
+        /// validators (no instance to call a method on) and a state struct
+        /// + pointer pass for stateful ones; the harness fragment branches
+        /// on this flag to emit the matching call shape.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        has_state: bool,
     },
     /// Byte-layout codec. Generated struct exposes `encode()` returning the
     /// raw byte vector and a static `decode(raw)` returning the typed struct
@@ -634,12 +649,20 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Validator { output, .. } => {
+                FixtureSpec::Validator { output, has_state, .. } => {
                     if output.is_empty() {
                         return Err(format!(
                             "fixture {}: validator requires at least one \
                              `output` field — an empty output would render \
                              an assertion-free test body",
+                            f.name
+                        ));
+                    }
+                    if *has_state {
+                        return Err(format!(
+                            "fixture {}: validator `has_state` is derived from \
+                             the SCXML (presence of <data sce:max-delta=...>); \
+                             remove it from fixtures.json",
                             f.name
                         ));
                     }
@@ -761,10 +784,11 @@ pub fn harness_filename(language: Language) -> &'static str {
 /// would fail at render time on any kind whose fragment is not yet
 /// present. Each new sub-phase widens the predicate alongside the
 /// matching `kinds/<kind>.c.jinja2` fragment landing:
-///   * Phase A: Transform
+///   * Phase A:   Transform
 ///   * Phase B-1: Condition
-///   * Phase B-2: Lookup (pending)
-///   * Phase B-3: Codec (pending)
+///   * Phase B-2: Lookup
+///   * Phase B-3: Codec
+///   * Phase C:   Validator
 fn c11_supported_kind(spec: &FixtureSpec) -> bool {
     matches!(
         spec,
@@ -772,6 +796,7 @@ fn c11_supported_kind(spec: &FixtureSpec) -> bool {
             | FixtureSpec::Condition { .. }
             | FixtureSpec::Lookup { .. }
             | FixtureSpec::Codec { .. }
+            | FixtureSpec::Validator { .. }
     )
 }
 
@@ -876,6 +901,35 @@ fn read_lookup_enum_values(scxml_path: &Path) -> Result<Vec<String>, String> {
     Ok(values)
 }
 
+/// Parse a `<scxml sce:kind="validator">` source file and return whether
+/// any `<data>` declares a `sce:max-delta` attribute (the only state-bearing
+/// validator construct — rate-of-change rules retain a previous-value field
+/// across calls). Used by the C11 harness fragment to choose between the
+/// stateless free-function call shape and the stateful struct + pointer
+/// pass shape (RFC §5.J.2 V2c). Other backends emit uniform method calls
+/// regardless of state and ignore the flag.
+fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
+    let text = std::fs::read_to_string(scxml_path)
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
+    let doc = roxmltree::Document::parse(&text)
+        .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
+    let scxml_ns = "http://www.w3.org/2005/07/scxml";
+    let sce_ns = crate::forge::model::SCE_NAMESPACE;
+    let Some(datamodel) = doc.root_element().children().find(|n| {
+        n.is_element()
+            && n.tag_name().name() == "datamodel"
+            && n.tag_name().namespace() == Some(scxml_ns)
+    }) else {
+        return Ok(false);
+    };
+    for data in datamodel.children().filter(|n| n.is_element() && n.tag_name().name() == "data") {
+        if data.attribute((sce_ns, "max-delta")).is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Render the per-language conformance harness from a manifest, returning
 /// the rendered source code.
 ///
@@ -958,6 +1012,36 @@ pub fn render_harness(
                 // entries so the harness can generate enum-to-string helpers.
                 if output.ty == CanonicalType::String {
                     *enum_values = read_lookup_enum_values(&scxml_path)?;
+                }
+            }
+            FixtureSpec::Validator { has_state, .. } => {
+                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
+                *has_state = read_validator_has_state(&scxml_path)?;
+            }
+            FixtureSpec::Transform { output, compound_outputs, .. } => {
+                // RFC §5.J.2 §3 D1: prefix transform function names with the
+                // fixture name in C11 so the harness call sites match what
+                // `render_transform` exports (full-qual flat-scope identifier).
+                // Non-C11 backends rely on namespace/package scoping and need
+                // no rewrite — the `function` field stays in its bare form.
+                if matches!(language, Language::C11) {
+                    let prefix = crate::filters::to_snake_case(fixture_name.clone());
+                    if let Some(out) = output.as_mut() {
+                        if let Some(orig) = out.function.clone() {
+                            out.function = Some(format!(
+                                "{}_{}",
+                                prefix,
+                                crate::filters::to_snake_case(orig),
+                            ));
+                        }
+                    }
+                    for co in compound_outputs.iter_mut() {
+                        co.function = format!(
+                            "{}_{}",
+                            prefix,
+                            crate::filters::to_snake_case(co.function.clone()),
+                        );
+                    }
                 }
             }
             FixtureSpec::Procedure {
@@ -1059,10 +1143,16 @@ pub fn render_harness(
             for f in &fixtures {
                 let mut v = serde_json::to_value(f)
                     .map_err(|e| format!("serialize fixture {}: {e}", f.name))?;
-                let cases = reference
+                // Fold every key of the oracle entry (e.g. `cases`, `sequence`,
+                // `tags`) into the fixture object so per-kind fragments can
+                // reference them as `f.<key>` regardless of which shape the
+                // oracle uses for that kind. transform/condition/lookup/codec
+                // expose `cases`; validator/observer expose `sequence`. New
+                // kinds can introduce their own shape without changing this
+                // enrichment site.
+                let oracle_entry = reference
                     .get(&f.ref_section)
                     .and_then(|s| s.get(&f.name))
-                    .and_then(|fix| fix.get("cases"))
                     .ok_or_else(|| {
                         format!(
                             "fixture {} not found in {} under section {}",
@@ -1071,12 +1161,26 @@ pub fn render_harness(
                             f.ref_section
                         )
                     })?
-                    .clone();
-                v.as_object_mut()
+                    .as_object()
                     .ok_or_else(|| {
-                        format!("fixture {} did not serialize to a JSON object", f.name)
-                    })?
-                    .insert("cases".to_string(), cases);
+                        format!(
+                            "fixture {} oracle entry is not a JSON object in {}",
+                            f.name,
+                            reference_path.display()
+                        )
+                    })?;
+                let fixture_obj = v.as_object_mut().ok_or_else(|| {
+                    format!("fixture {} did not serialize to a JSON object", f.name)
+                })?;
+                for (k, val) in oracle_entry {
+                    // Manifest fields take precedence — the oracle is for
+                    // case data, not for redefining the fixture's identity
+                    // or shape. This guards against accidental overrides
+                    // (e.g. timer's oracle `timers` block colliding with
+                    // its manifest `timers` list when a future phase adds
+                    // timer to c11_supported_kind).
+                    fixture_obj.entry(k.clone()).or_insert_with(|| val.clone());
+                }
                 enriched.push(v);
             }
             (

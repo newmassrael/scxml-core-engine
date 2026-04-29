@@ -82,6 +82,7 @@ endif()
 #   * Phase B-1: Condition (3 fixtures)
 #   * Phase B-2: Lookup    (4 fixtures)
 #   * Phase B-3: Codec     (3 fixtures)
+#   * Phase C:   Validator (5 fixtures, incl. one cross-file transform import)
 set(C11_FIXTURES
     transform_temperature
     transform_bitwise
@@ -96,6 +97,11 @@ set(C11_FIXTURES
     codec_simple_frame
     codec_subbyte
     codec_little_endian
+    validator_range_only
+    validator_plausibility_only
+    validator_rpm_check
+    validator_signed_roc
+    crossfile_validator_transform
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

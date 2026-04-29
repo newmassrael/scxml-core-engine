@@ -1,0 +1,52 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Validator kind — pre-baked oracle. RFC §5.J.2 V2c: stateless validators
+   call the free function `<name>_validate(args...)`; stateful ones init a
+   state struct once per fixture and pass `&state` to advance prev fields
+   across cases. The result struct is `<name>_result_t` with `bool valid`
+   and `const char *reason`; reason equality goes through `strcmp`. #}
+static void test_{{ f.name }}(void) {
+    static const struct {
+{% for arg_ty in f.args %}
+        {{ arg_ty | c_type }} arg{{ loop.index0 }};
+{% endfor %}
+{% for field in f.output %}
+        {{ field.type | c_type }} expected_{{ field.name }};
+{% endfor %}
+    } cases[] = {
+{% for step in f.sequence %}
+        { {% for arg_ty in f.args %}{{ step.args[loop.index0] | c_literal(arg_ty) }}{% if not loop.last %}, {% endif %}{% endfor %}, {% for field in f.output %}{{ step.expected[field.name] | c_literal(field.type) }}{% if not loop.last %}, {% endif %}{% endfor %} },
+{% endfor %}
+    };
+    const size_t n = sizeof(cases) / sizeof(cases[0]);
+{% if f.has_state %}
+    {{ f.name | to_snake_case }}_t state = {0};
+{% endif %}
+    for (size_t i = 0; i < n; ++i) {
+        {{ f.name | to_snake_case }}_result_t r = {{ f.name | to_snake_case }}_validate({% if f.has_state %}&state{% if f.args %}, {% endif %}{% endif %}{% for arg_ty in f.args %}cases[i].arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% for field in f.output %}
+{% if field.type == "bool" %}
+        if (r.{{ field.name }} != cases[i].expected_{{ field.name }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} step %zu {{ field.name }}: actual=%d expected=%d\n",
+                i, (int)r.{{ field.name }}, (int)cases[i].expected_{{ field.name }});
+            ++g_failures;
+        }
+{% elif field.type == "string" %}
+        if (strcmp(r.{{ field.name }}, cases[i].expected_{{ field.name }}) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} step %zu {{ field.name }}: actual=\"%s\" expected=\"%s\"\n",
+                i, r.{{ field.name }}, cases[i].expected_{{ field.name }});
+            ++g_failures;
+        }
+{% else %}
+        if (r.{{ field.name }} != cases[i].expected_{{ field.name }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} step %zu {{ field.name }}\n", i);
+            ++g_failures;
+        }
+{% endif %}
+{% endfor %}
+    }
+}

@@ -1,0 +1,94 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+typedef struct {
+    bool        valid;
+    const char *reason;
+} {{ c_result_typedef }};
+{% if c_has_state %}
+
+typedef struct {
+{% for pv in prev_vars %}
+    {{ pv.type }} {{ pv.name }}_;
+{% endfor %}
+} {{ c_state_typedef }};
+
+static inline {{ c_result_typedef }} {{ c_validate_func }}({{ c_state_typedef }} *self, {{ params }}) {
+{% else %}
+
+static inline {{ c_result_typedef }} {{ c_validate_func }}({{ params }}) {
+{% endif %}
+{% for rule in range_rules %}
+{# Unsigned + min "0": elide the lower-bound term. `unsigned < 0` is a
+   tautology that gcc surfaces as -Wtype-limits → -Werror in this
+   harness's strict-warning build. The semantic is unchanged because
+   the unsigned domain already excludes negative values by definition. #}
+{% set elide_lower = rule.is_unsigned and rule.min == "0" %}
+{% if rule.has_min and rule.has_max %}
+{% if elide_lower %}
+    if ({{ rule.id }} > {{ rule.max }})
+        return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_out_of_range"};
+{% else %}
+    if ({{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }})
+        return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_out_of_range"};
+{% endif %}
+{% elif rule.has_min %}
+{% if not elide_lower %}
+    if ({{ rule.id }} < {{ rule.min }})
+        return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_out_of_range"};
+{% endif %}
+{% elif rule.has_max %}
+    if ({{ rule.id }} > {{ rule.max }})
+        return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_out_of_range"};
+{% endif %}
+{% endfor %}
+{% for rule in roc_rules %}
+{% if rule.is_float %}
+    {
+        {{ rule.type }} delta_ = ({{ rule.id }} - self->{{ rule.prev_name }}_);
+        if (delta_ < 0) delta_ = -delta_;
+        if (delta_ > {{ rule.max_delta }})
+            return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
+    }
+{% elif rule.is_unsigned %}
+    {
+        {{ rule.type }} delta_ = ({{ rule.id }} > self->{{ rule.prev_name }}_) ? ({{ rule.id }} - self->{{ rule.prev_name }}_) : (self->{{ rule.prev_name }}_ - {{ rule.id }});
+        if (delta_ > {{ rule.max_delta }})
+            return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
+    }
+{% else %}
+    {
+        int64_t delta_ = (int64_t){{ rule.id }} - (int64_t)self->{{ rule.prev_name }}_;
+        if (delta_ < 0) delta_ = -delta_;
+        if (delta_ > {{ rule.max_delta }})
+            return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
+    }
+{% endif %}
+{% endfor %}
+{% if plausibility_expr %}
+    if (!({{ plausibility_expr }}))
+        return ({{ c_result_typedef }}){false, "plausibility_failed"};
+{% endif %}
+{% for pv in prev_vars %}
+    self->{{ pv.name }}_ = {{ pv.id }};
+{% endfor %}
+    return ({{ c_result_typedef }}){true, ""};
+}
+
+#endif  /* {{ guard }} */
