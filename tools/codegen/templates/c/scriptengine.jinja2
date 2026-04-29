@@ -543,9 +543,10 @@
    variant proceeds silently — the no-body case has no observable
    side-effect to raise about (item/index already set to nil), and the
    first force fixture for a body-less foreach over a non-array would
-   need a separate raise lift. body-bearing foreach (action.actions
-   non-empty) is rejected at the call site with `#error` so a fresh
-   consumer cannot land it silently. #}
+   need a separate raise lift. body-bearing foreach routes to the
+   prologue/iter/epilogue trio above (state_machine.c.jinja2 lines
+   233-256), never to this macro — the call-site `{% if action.actions %}`
+   guard is the single seam. #}
 {% macro lua_foreach_no_body(array, item, index) %}
     (void)luaL_dostring(sm->L,
         "{{ item }} = nil; "

@@ -339,8 +339,8 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                variant can target it via the same string the parser stamps.
                Mirrors cpp `actions/send.jinja2` lines 461-528 collapsed
                for the no-payload arm. delayexpr (runtime delay parsing)
-               and target/params/namelist combinations stay #error-guarded
-               below until a fixture forces them. */
+               and target/params/namelist combinations land in their own
+               arms below. */
             scheduled_push(sm,
                            _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
                            {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
@@ -401,8 +401,8 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                case returns immediately, mirroring cpp
                `actions/send.jinja2` lines 321-333 (in_entry_exit return). The
                other target shapes (`#_parent`, `#_child`, `#_<invokeid>`,
-               BasicHTTP URI, mesh `#...`, runtime targetexpr) stay
-               #error-guarded below until a fixture forces them. The
+               BasicHTTP URI, mesh `#...`, runtime targetexpr) land in
+               their own arms below. The
                `not in_foreach` guard preserves the loop-body carve-out that
                cpp ships (its `in_entry_exit` flag is unset inside foreach
                bodies) — invalid-target send inside a `<foreach>` body lands
@@ -641,8 +641,11 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                `_event.data.<param>` from one dispatch. SCXMLEventProcessor
                URI literal carve-out (옵션 ρ.send_type, 0df747ef) accepts
                `type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"`
-               alongside the empty-default; other type literals stay
-               #error guarded. Slot collision: shares `_pending_donedata`
+               alongside the empty-default; the BasicHTTP URI literal is
+               served by the BasicHTTP arm further below (W3C C.2 send),
+               and any other type literal lands in the test199-mirror
+               arm that raises error.execution. Slot collision: shares
+               `_pending_donedata`
                with the params/namelist/donedata/content paths; same
                last-write-wins caveat applies. */
             (void)luaL_dostring(sm->L, "_pending_donedata = {}");
@@ -985,9 +988,10 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                lock-in) — the literal is known here, so the check collapses
                to "type is set, not the SCXMLEventProcessor URI, not the
                BasicHTTPEventProcessor URI" and emits the raise + return
-               directly. The BasicHTTP branch with a target is preserved
-               as a #error carve-out below (lifted by host-side HTTP
-               transport — see `claudedocs/rfc-c11-option-m-http.md`);
+               directly. The BasicHTTP branch with target/targetexpr is
+               served by the lifted arm below (RFC §2.1 dim coverage:
+               idlocation / typeexpr / targetexpr / contentexpr in
+               addition to the existing namelist + dynamic-params lifts);
                the targetless BasicHTTP arm is the next sibling and
                handles test577 in isolation. */
             {{ model.name }}_event_with_meta_t _err_evt;
@@ -1009,34 +1013,62 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                target arm above). The W3C 5.10 mandate to halt subsequent
                executable content is satisfied by the `return` from the
                enclosing entry/exit/transition executor. The BasicHTTP
-               arms with a target/targetexpr/params/namelist/content stay
-               #error-guarded below until the host-side HTTP transport
-               lands (RFC `claudedocs/rfc-c11-option-m-http.md`). */
+               arms with a target/targetexpr (with optional params /
+               namelist / content / contentexpr / typeexpr / idlocation)
+               are served by the lifted arm below per RFC §2.1. */
             {{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
             _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
             {{ model.name }}_raise(sm, &_err_evt);
             return;
-{% elif (not in_foreach) and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and action.target and action.target.startswith('http://') and not action.eventexpr and not action.targetexpr and not action.delay and not action.delayexpr and not action.contentexpr and not action.typeexpr and not action.idlocation %}
-            /* W3C SCXML C.2: BasicHTTP send to literal HTTP target.
-               Synchronous POST against the standalone server (Pattern B-i,
-               see RFC `claudedocs/rfc-c11-option-m-http.md` §3.2) followed
-               by event-name dispatch and optional `_event.data` promotion
+{% elif (not in_foreach) and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) and not action.eventexpr and not action.delay and not action.delayexpr %}
+            /* W3C SCXML C.2: BasicHTTP send to HTTP target (literal `target`
+               or runtime `targetexpr`). Synchronous POST against the
+               standalone server (Pattern B-i, see RFC
+               `claudedocs/rfc-c11-option-m-http.md` §3.2) followed by
+               event-name dispatch and optional `_event.data` promotion
                onto the `_pending_donedata` Lua slot. Mirrors cpp
-               `actions/send.jinja2:347-428` `engine.performHttpSend()`
-               callback + Go `sce-go-tests/harness/harness.go::SetupHTTPTest`.
-               The standalone server JSON-echoes the request as
-               `{"status":"success","event":"<name>","data":<json|string>}`,
-               which we parse and inject as the next external event. The
-               `Connection: close` request header lets the server signal
-               EOF via socket close so chunked-transfer parsing stays out
-               of the host-helper R3 budget.
+               `actions/send.jinja2:347-428` `engine.performHttpSend()`,
+               rust `rust/actions/send.rs.jinja2:252-315`, and
+               `sce-go-tests/harness/harness.go::SetupHTTPTest`.
+
+               Dimension coverage (RFC §2.1 c11 guard #1):
+                 * idlocation (W3C 6.2.4) — store `auto_send_id` into the
+                   datamodel slot via lua dostring, mirroring the existing
+                   SCXMLEventProcessor idlocation arms above and cpp
+                   `actions/send.jinja2:26-35`.
+                 * typeexpr (W3C 6.2) — runtime-evaluate and verify the
+                   result equals BasicHTTPEventProcessor URI; the static
+                   `send_type` already gates this arm so typeexpr is the
+                   dynamic-redundant case (W3C allows either, not both).
+                   Mismatch raises error.execution per cpp's
+                   `SendHelper::isSupportedSendType` contract
+                   (sce/include/common/SendHelper.h:301-312).
+                 * targetexpr (W3C 6.2) — runtime-evaluate then check the
+                   result starts with `http://`/`https://` (mirroring
+                   `SendHelper::isHttpTarget`, SendHelper.h:181-184); a
+                   non-HTTP result raises error.communication and stops
+                   the action per W3C 5.10 + C.1 (test 496).
+                 * contentexpr (W3C 5.10) — runtime-evaluate the body
+                   literal and ship as text/plain, mirroring cpp lines
+                   395-404 and the donedata `lua_eval_donedata_content_expr`
+                   path. Eval failure raises error.execution.
+                 * namelist + dynamic params — already lifted (form-encoded
+                   per-name pairs evaluated via `lua_eval_to_string`).
+
+               eventexpr / delay / delayexpr stay out of this arm —
+               neither cpp nor rust lift them inside their BasicHTTP
+               branches; force fixtures lift jointly across all three
+               reference backends (out of RFC §2.1 dim scope).
 
                Body shape (matches cpp `HttpEventTarget::send` lines 47-60):
                  * event or params or namelist → form-urlencoded with
                    `_scxmleventname=<event>` + `<param>=<val>` pairs +
                    `<namelist_var>=<lua_value>` pairs
-                 * content (no event/params/namelist) → text/plain
+                 * contentexpr (no event/params/namelist) → text/plain,
+                   body = runtime-evaluated string
+                 * content (no event/params/namelist) → text/plain,
+                   body = static literal
                  * else → empty form-urlencoded
 
                Failure path: socket / parse / unknown event → silent drop.
@@ -1050,10 +1082,69 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                local error.communication (which the cpp lane also
                doesn't). */
             {
-                /* W3C SCXML C.2: parse target URL (literal, decided at
-                   codegen time per T3 inline lock-in). */
+{% if action.idlocation %}
+                /* W3C SCXML 6.2.4: store the parser-generated `auto_send_id`
+                   into the datamodel slot named by `idlocation` so the
+                   surrounding SCXML can later read it (e.g. for a
+                   pre-emptive `<cancel>`). Mirrors the existing
+                   SCXMLEventProcessor idlocation arms above and cpp
+                   `actions/send.jinja2:26-35`. */
+                (void)luaL_dostring(sm->L,
+                    "{{ action.idlocation }} = '{{ action.auto_send_id | escape_c }}'");
+{% endif %}
+{% if action.typeexpr %}
+                /* W3C SCXML 6.2: runtime typeexpr evaluation. The static
+                   send_type already pinned this arm to BasicHTTP; the
+                   typeexpr is the dynamic-redundant case (test corpus
+                   either uses static `type` or `typeexpr`, not both, but
+                   the parser admits both per W3C). Validate the runtime
+                   result equals the BasicHTTP URI so a mismatched typeexpr
+                   raises error.execution per `SendHelper::isSupportedSendType`
+                   (sce/include/common/SendHelper.h:301-312). Stops the
+                   surrounding entry/exit/transition body per W3C 5.10. */
+                {
+                    char _type_buf[256];
+                    bool _type_ok;
+{{ se.lua_eval_to_string(action.typeexpr, '_type_buf', '256', '_type_ok') }}
+                    if (!_type_ok ||
+                        strcmp(_type_buf,
+                               "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") != 0) {
+                        {{ model.name }}_event_with_meta_t _err_evt;
+                        memset(&_err_evt, 0, sizeof(_err_evt));
+                        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                        {{ model.name }}_raise(sm, &_err_evt);
+                        return;
+                    }
+                }
+{% endif %}
+{% if action.targetexpr %}
+                /* W3C SCXML 6.2: targetexpr → dynamic target. Eval failure
+                   or non-HTTP result raises error.communication per W3C
+                   C.1 (test 496) + cpp `SendHelper::isHttpTarget`
+                   (sce/include/common/SendHelper.h:181-184). The buf is
+                   threaded through the URL parse below in place of the
+                   static literal. */
+                char _target_buf[256];
+                {
+                    bool _target_ok;
+{{ se.lua_eval_to_string(action.targetexpr, '_target_buf', '256', '_target_ok') }}
+                    if (!_target_ok ||
+                        (strncmp(_target_buf, "http://", 7) != 0 &&
+                         strncmp(_target_buf, "https://", 8) != 0)) {
+                        {{ model.name }}_event_with_meta_t _err_evt;
+                        memset(&_err_evt, 0, sizeof(_err_evt));
+                        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
+                        {{ model.name }}_raise(sm, &_err_evt);
+                        return;
+                    }
+                }
+{% endif %}
+                /* W3C SCXML C.2: parse target URL. Literal `target` is
+                   decided at codegen time per T3 inline lock-in;
+                   `targetexpr` reads the runtime-populated `_target_buf`
+                   above. */
                 sce_test_http_url_t _http_url;
-                if (sce_test_http_url_parse("{{ action.target }}", &_http_url)) {
+                if (sce_test_http_url_parse({% if action.targetexpr %}_target_buf{% else %}"{{ action.target }}"{% endif %}, &_http_url)) {
                     /* W3C SCXML C.2: build POST body. The discriminator
                        (form vs text/plain) follows cpp's "event or
                        params non-empty → form-urlencoded" rule. */
@@ -1108,6 +1199,34 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                     }
 {% endfor %}
 {% endif %}
+{% elif action.contentexpr %}
+                    /* W3C SCXML C.2 + 5.10: dynamic `<content expr=...>`
+                       body. Mirrors cpp `actions/send.jinja2:395-404`
+                       contentResult path and the donedata
+                       `lua_eval_donedata_content_expr` macro. The
+                       expression is evaluated against the active
+                       datamodel via `lua_eval_to_string`; eval failure
+                       raises error.execution and stops subsequent
+                       executable content per W3C 5.10. */
+                    {
+                        char _content_buf[1024];
+                        bool _content_ok = false;
+                        {{ se.lua_eval_to_string(action.contentexpr, "_content_buf", "1024", "_content_ok") }}
+                        if (!_content_ok) {
+                            {{ model.name }}_event_with_meta_t _err_evt;
+                            memset(&_err_evt, 0, sizeof(_err_evt));
+                            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                            {{ model.name }}_raise(sm, &_err_evt);
+                            return;
+                        }
+                        size_t _content_len = strlen(_content_buf);
+                        if (_content_len < sizeof(_http_body)) {
+                            memcpy(_http_body, _content_buf, _content_len);
+                            _http_body[_content_len] = '\0';
+                            _http_body_len = _content_len;
+                        }
+                    }
+                    _http_content_type = "text/plain";
 {% elif action.content %}
                     /* W3C SCXML C.2 (test520): content-only send — body
                        is the literal `<content>` text, content type
@@ -1172,7 +1291,26 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                 }
             }
 {% else %}
-#error "C11 backend: <send> shape with target/params/namelist/content/typeexpr/idlocation is not yet implemented — extend emit_action's send branch with the first fixture forcing it."
+            /* W3C SCXML 6.2: unenumerated `<send>` shape. The elif chain
+               above covers every shape the C11 corpus + RFC §2.1 BasicHTTP
+               lift currently emit; an unmatched shape (e.g. BasicHTTP +
+               eventexpr / delay / delayexpr — out of RFC §2.1 dim scope —
+               or a future SCXML attribute combination) lands here. Mirror
+               the test199 unsupported-send-type arm above and the cpp
+               `SendHelper::isSupportedSendType` fallback semantics: raise
+               error.execution and stop the surrounding entry/exit/
+               transition body per W3C 5.10. Fail loud at runtime rather
+               than silent emit (`feedback_silently_broken_hooks.md`),
+               and avoid codegen-time preprocessor failure so the build
+               never blocks on a fixture the SM author can fix at the
+               SCXML layer. */
+            {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                return;
+            }
 {% endif %}
         }
 {% elif action.type == 'if' %}
@@ -1285,9 +1423,13 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
            `lua_eval_to_string` (consumer-agnostic to-string helper) and
            passes the resulting buffer to the same helper, mirroring cpp's
            script-engine path (`scriptEngine.evaluateExpression` +
-           `ScriptResultUtils::resultToString`). #error fallback for the
-           empty-shape <cancel> (no sendid, no sendidexpr) since W3C 6.3
-           requires one of them. */
+           `ScriptResultUtils::resultToString`). No else arm — the
+           SCXML parser (sce-build/src/parser.rs cancel branch, wire
+           `validation/require-either`) hard-rejects the empty-shape
+           `<cancel/>` (no sendid, no sendidexpr) per W3C 6.3, so the
+           codegen never sees that shape. Mirrors cpp/rust/go/kotlin
+           `cancel.jinja2` post-`20676dcc` per
+           `claudedocs/rfc-c11-error-guards-lift.md` v2 Layer 4. */
 {% if action.sendid %}
         scheduled_cancel(sm, "{{ action.sendid | escape_c }}");
 {% elif action.sendidexpr %}
@@ -1299,8 +1441,6 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                 scheduled_cancel(sm, _cancel_buf);
             }
         }
-{% else %}
-#error "C11 backend: <cancel> without sendid or sendidexpr is invalid per W3C SCXML 6.3. Defense-in-depth — the SCXML parser (sce-build/src/parser.rs cancel branch, wire `validation/require-either`) rejects this shape at parse time, so this codegen-time #error is unreachable in practice. See claudedocs/rfc-c11-error-guards-lift.md v2 Layer 4."
 {% endif %}
 {% elif action.type == 'script' %}
         {

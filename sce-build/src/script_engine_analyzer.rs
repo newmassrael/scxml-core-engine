@@ -56,7 +56,10 @@ pub enum NeedsScriptEngineCause {
     /// not a static string literal. Static literals are folded at build time.
     SendParamExpr { state_id: String, param_name: String },
     /// W3C SCXML 6.2 — `<send>` with `eventexpr` / `targetexpr` /
-    /// `delayexpr` / `typeexpr` attributes, any of which is a runtime expression.
+    /// `delayexpr` / `typeexpr` / `contentexpr` / `idlocation` attributes:
+    /// any of which forces runtime expression evaluation. `contentexpr`
+    /// (W3C 5.10) and `idlocation` (W3C 6.2.4) entail datamodel reads/writes
+    /// the script engine owns; without it the value has no carrier.
     SendDynamicAttr { state_id: String },
     /// W3C SCXML 4.2 — `<if cond="...">` evaluates a non-native guard expression.
     IfCondition { state_id: String },
@@ -284,6 +287,8 @@ fn send_has_dynamic_attr(action: &Action) -> bool {
         || !action.targetexpr.is_empty()
         || !action.delayexpr.is_empty()
         || !action.typeexpr.is_empty()
+        || !action.contentexpr.is_empty()
+        || !action.idlocation.is_empty()
 }
 
 fn cond_needs_engine(cond: &str) -> bool {
