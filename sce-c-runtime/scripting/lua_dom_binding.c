@@ -13,9 +13,9 @@
 //     reachable for as long as any element survives, mirroring cpp's
 //     `shared_ptr<XMLElement>` semantics.
 
-#include "lua_dom_binding.h"
+#include <sce/lua_dom_binding.h>
 
-#include "dom.h"
+#include <sce/dom.h>
 
 #include <lauxlib.h>
 #include <lua.h>

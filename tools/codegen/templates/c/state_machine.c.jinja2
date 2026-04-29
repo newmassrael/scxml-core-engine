@@ -28,40 +28,43 @@
 #include <stdio.h>  /* snprintf for body-bearing <foreach> per-iter set */
 {% endif %}
 {% if model.needs_dom_helper %}
-/* W3C SCXML B.2: host-side XML DOM helper (sce-c-tests/support/
-   lua_dom_binding.h). cpp `LuaDOMBinding` 1:1 algorithmic mirror in
-   pure C — pugixml is C++-only and would break the C11 R3 zero-deps
-   lock-in, so the helper is testbench-only and never enters the
-   sce-c-runtime link surface. */
-#include "lua_dom_binding.h"
+/* W3C SCXML B.2: XML DOM helper (sce-c-runtime/include/sce/lua_dom_binding.h).
+   cpp `LuaDOMBinding` 1:1 algorithmic mirror in pure C — pugixml is
+   C++-only and would break the C11 R3 zero-deps lock-in. Lives in the
+   `sce_c_scripting` tier (Lua-bound), built atop the freestanding-C
+   `sce_c_base` DOM parser. See ARCHITECTURE.md §"C11 backend layering". */
+#include <sce/lua_dom_binding.h>
 {% endif %}
 {% if model.needs_http_send %}
-/* W3C SCXML C.2: host-side HTTP/1.1 client + JSON response extractor
-   (sce-c-tests/support/http_client.h). Synchronous POST against the
-   standalone Node server (`tests/w3c/standalone_http_server.js`) —
-   Pattern B-i mirroring Go/Rust harnesses, single source of truth. */
-#include "http_client.h"
+/* W3C SCXML C.2: HTTP/1.1 client + JSON response extractor
+   (sce-c-runtime/include/sce/http_client.h). Synchronous POST against
+   the standalone Node server (`tests/w3c/standalone_http_server.js`) —
+   Pattern B-i mirroring Go/Rust harnesses, single source of truth.
+   POSIX impl in `sce_c_runtime_posix`; bare-metal consumers (e.g.
+   watching-zenoh) supply their own `sce_c_runtime_<target>` providing
+   the same symbols. */
+#include <sce/http_client.h>
 {% if model.needs_script_engine %}
 /* W3C SCXML C.2: JSON-to-Lua push for promoting the standalone
    server's `data` response field onto the `_pending_donedata` slot.
    Linked only when the SM has a Lua datamodel — fixtures that never
-   dereference `_event.data` skip this header. */
-#include "http_lua_binding.h"
+   dereference `_event.data` skip this header. Lives in the
+   `sce_c_scripting` tier. */
+#include <sce/http_lua_binding.h>
 {% endif %}
 {% endif %}
 {% if model.needs_event_scheduler %}
 
 /* W3C SCXML 6.2: Monotonic clock binding for delayed `<send>` scheduling.
-   Declared here, defined by the host (test runner / MCU support code).
-   Mirrors the cpp `std::chrono::steady_clock::now()` call inside
-   `PullScheduler::scheduleEvent` — the C11 backend keeps the same
-   "monotonic milliseconds since some epoch" contract but indirects through
-   a host symbol so MCU profiles can map it to SysTick/HAL ticks while
-   POSIX runners supply `clock_gettime(CLOCK_MONOTONIC, …)`. The runner
-   harness must provide a definition; linking will fail otherwise (no
-   weak-symbol fallback emitted — silent zero clock would freeze the
-   schedule and silently mis-fire timeouts). */
-extern uint64_t _sce_clock_now_ms(void);
+   The interface lives in `sce-c-runtime/include/sce/clock.h` (sce-c-core
+   tier); the link-time impl is supplied by `sce_c_runtime_posix` for
+   host runners or by a downstream `sce_c_runtime_<target>` for bare-metal
+   consumers (see ARCHITECTURE.md §"C11 backend layering" and
+   `consumer_watching_zenoh.md`). Linking fails if no impl is provided —
+   no weak-symbol fallback (silent zero clock would freeze the schedule
+   and silently mis-fire timeouts). */
+#include <sce/clock.h>
+
 
 /* Forward declarations — `scheduled_push` is invoked from inside
    `execute_entry_actions` / `execute_exit_actions` (the action emitter's

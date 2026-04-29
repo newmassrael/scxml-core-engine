@@ -20,68 +20,13 @@ include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
 set(SCE_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${SCE_C_GENERATED_DIR}")
 
-# Host-side support translation units for fixture binaries. Currently
-# carries the POSIX `_sce_clock_now_ms` definition (W3C SCXML 6.2
-# delayed-send clock binding); future runner-side helpers join here as
-# additional fixtures force them. Linked uniformly into every C11 fixture
-# below so any `<send delay>`-bearing fixture (safety-net or
-# success-path) resolves the symbol without per-runner duplication; the
-# linker dead-strips the object in fixtures whose generated code never
-# references the symbol.
-add_library(sce_c_test_support STATIC support/clock.c)
-target_include_directories(sce_c_test_support PUBLIC
-    "${CMAKE_SOURCE_DIR}/sce-c-runtime/include"
-)
-set_target_properties(sce_c_test_support PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-
-# Host-side XML DOM helper for the W3C SCXML B.2 corpus (test557, test561).
-# 1:1 algorithmic mirror of cpp `XMLDOMWrapper` + `LuaDOMBinding` re-
-# implemented in pure C — pugixml is C++-only and would violate the C11
-# backend's R3 zero-deps lock-in. Kept as a separate STATIC archive so
-# only fixtures explicitly flagged NEEDS_DOM pull it (and the lua54 link
-# it transitively requires); datamodel-less and Lua-only fixtures stay
-# free of the DOM machinery.
-add_library(sce_c_test_dom_support STATIC
-    support/dom.c
-    support/lua_dom_binding.c
-)
-target_link_libraries(sce_c_test_dom_support PUBLIC lua54)
-target_include_directories(sce_c_test_dom_support PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/support"
-)
-set_target_properties(sce_c_test_dom_support PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-
-# Host-side HTTP/1.1 client + JSON response extractor for the W3C SCXML
-# C.2 BasicHTTPEventProcessor corpus (test201/509/510/513/518/520/522/
-# 531/532/534/567). Synchronous POST against the existing Node.js
-# `tests/w3c/standalone_http_server.js` (Pattern B-i, see RFC
-# `claudedocs/rfc-c11-option-m-http.md` §3.2 — single source of truth
-# already used by Go/Rust harnesses + cpp WASM lane). POSIX socket(2)
-# only, no third-party dep — libcurl is too heavy for the host-helper
-# R3 budget and cpp-httplib is C++ only. Separate STATIC archive so
-# only fixtures flagged NEEDS_HTTP pull it; datamodel/DOM fixtures
-# stay free of the network machinery.
-add_library(sce_c_test_http_support STATIC
-    support/http_client.c
-    support/http_lua_binding.c
-)
-target_link_libraries(sce_c_test_http_support PUBLIC lua54)
-target_include_directories(sce_c_test_http_support PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/support"
-)
-set_target_properties(sce_c_test_http_support PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
+# Test-binary support helpers now live in sce-c-runtime as 4-tier-aligned
+# libraries (see sce-c-runtime/CMakeLists.txt + ARCHITECTURE.md §"C11
+# backend layering"). The W3C 204 conformance runner is the contract-test
+# consumer of `sce_c_runtime_posix` (clock + http_client) and
+# `sce_c_scripting` (lua_dom + http_lua bindings). Per-fixture link is
+# wired in `sce_generate_static_w3c_c_test` below, gated by the existing
+# NEEDS_{LUA,DOM,HTTP} flags.
 
 # C11 fixture registry — extend as W3C category coverage grows.
 # Each entry both (a) drives sce-codegen via the macro below and
@@ -367,16 +312,20 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
     set(_child_sources "${W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES}")
 
     add_executable(${_target} ${_runner} ${_generated} ${_child_sources})
-    target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_test_support)
+    target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_runtime_posix)
     target_include_directories(${_target} PRIVATE "${SCE_C_GENERATED_DIR}")
     if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_LUA)
         target_link_libraries(${_target} PRIVATE lua54)
     endif()
     if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_DOM)
-        target_link_libraries(${_target} PRIVATE sce_c_test_dom_support)
+        # sce_c_base provides the freestanding DOM parser; sce_c_scripting
+        # adds the Lua binding (which needs lua54 — pulled transitively).
+        target_link_libraries(${_target} PRIVATE sce_c_base sce_c_scripting)
     endif()
     if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP)
-        target_link_libraries(${_target} PRIVATE sce_c_test_http_support)
+        # sce_c_runtime_posix provides http_client; sce_c_scripting adds
+        # the Lua binding for HTTP fixtures.
+        target_link_libraries(${_target} PRIVATE sce_c_scripting)
     endif()
     set_target_properties(${_target} PROPERTIES
         C_STANDARD 11
@@ -399,10 +348,7 @@ endforeach()
 # unconsumed; the unit suite is the first reader and pins the parser's
 # `parse_default`-equivalent behaviour against drift.
 add_executable(sce_c_dom_unit_test unit/dom_test.c)
-target_link_libraries(sce_c_dom_unit_test PRIVATE sce_c_test_dom_support)
-target_include_directories(sce_c_dom_unit_test PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/support"
-)
+target_link_libraries(sce_c_dom_unit_test PRIVATE sce_c_runtime sce_c_base sce_c_scripting)
 set_target_properties(sce_c_dom_unit_test PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
@@ -431,11 +377,10 @@ find_package(Threads REQUIRED)
 add_executable(sce_c_http_client_unit_test unit/http_client_test.c)
 target_link_libraries(sce_c_http_client_unit_test
     PRIVATE
-        sce_c_test_http_support
+        sce_c_runtime
+        sce_c_runtime_posix
+        sce_c_scripting
         Threads::Threads
-)
-target_include_directories(sce_c_http_client_unit_test PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/support"
 )
 set_target_properties(sce_c_http_client_unit_test PROPERTIES
     C_STANDARD 11

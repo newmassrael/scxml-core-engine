@@ -20,7 +20,7 @@
 //     than shared because http_client.c is Lua-free and exporting a
 //     decoder API would cross the layering boundary unnecessarily.
 
-#include "http_lua_binding.h"
+#include <sce/http_lua_binding.h>
 
 #include <ctype.h>
 #include <stdint.h>

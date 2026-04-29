@@ -15,7 +15,7 @@
 //
 // Each test returns 0 on PASS, non-zero on FAIL. main() aggregates.
 
-#include "http_client.h"
+#include <sce/http_client.h>
 
 #include <pthread.h>
 #include <stdio.h>

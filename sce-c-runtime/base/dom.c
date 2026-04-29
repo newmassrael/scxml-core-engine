@@ -4,7 +4,7 @@
 // W3C SCXML B.2 — host-side XML DOM tree for the C11 backend.
 // cpp `XMLDOMWrapper.cpp` 1:1 algorithmic mirror, pugixml-free.
 
-#include "dom.h"
+#include <sce/dom.h>
 
 #include <ctype.h>
 #include <stddef.h>

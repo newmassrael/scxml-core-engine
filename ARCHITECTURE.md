@@ -156,6 +156,21 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 | Interpreter / Full runtime | `sce_runtime` | + Parser, StateMachine, everything |
 | Header-only (embedded, minimal) | `sce_core` | Templates and concepts only |
 
+### C11 Backend Layering
+
+The C11 backend mirrors the 4-tier shape with a small adaptation. Generated C11 state machines carry the runtime engine inline (per `c11_design_decisions.md` T3 inline-only lock-in), so the "tier 4" slot holds platform-specific implementations rather than a runtime-engine library. Consumers compose tiers like cpp.
+
+| C11 Tier | Library | Kind | Contents |
+|----------|---------|------|----------|
+| Tier 1 (Core) | `sce_c_runtime` | INTERFACE | Public headers (`sce/clock.h`, `sce/dom.h`, `sce/http_client.h`, `sce/lua_dom_binding.h`, `sce/http_lua_binding.h`); no .c sources, no external link |
+| Tier 2 (Base) | `sce_c_base` | STATIC | Freestanding-C helpers — DOM parser (`base/dom.c`); links only against `libc` |
+| Tier 3 (Scripting) | `sce_c_scripting` | STATIC, optional | Lua-bound bridges over `sce_c_base` + platform impl; gated by `SCE_ENABLE_LUA` |
+| Tier 4 (Platform) | `sce_c_runtime_posix` | STATIC, optional | POSIX reference impl (`posix/clock.c`, `posix/http_client.c`); gated by `SCE_C_RUNTIME_POSIX` (default ON for host) |
+
+Bare-metal / RTOS consumers (e.g. `consumer_watching_zenoh.md`) opt out of `sce_c_runtime_posix` and supply their own `sce_c_runtime_<target>` library providing the same symbol contract (`_sce_clock_now_ms` for the W3C 6.2 scheduler; HTTP impl optional). The interface contract in `sce-c-runtime/include/sce/` is the single source of truth — the test runner (`sce-c-tests`) is the contract-test consumer that pins the API against drift.
+
+**Generated C11 code** consumes these tiers via stable headers (`#include <sce/clock.h>` etc.), never via host-relative paths — the headers and their impls are decoupled by the `sce_c_runtime` INTERFACE include path.
+
 ### C++ Standard Compatibility
 
 `sce_core` and `sce_base` target C++17 minimum for cross-compilation to constrained toolchains (e.g., QNX GCC 8.3). C++20 features are conditionally enabled at compile time.

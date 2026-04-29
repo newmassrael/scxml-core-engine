@@ -12,7 +12,7 @@
 // FAIL. main() runs all and aggregates verdicts. CTest wires this as a
 // single binary returning 0 / non-zero based on the aggregate.
 
-#include "dom.h"
+#include <sce/dom.h>
 
 #include <stdio.h>
 #include <stdlib.h>

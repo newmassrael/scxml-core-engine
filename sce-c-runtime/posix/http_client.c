@@ -27,7 +27,7 @@
    `_POSIX_C_SOURCE 200809L` define above gates the strict-stdc
    compiler off. */
 
-#include "http_client.h"
+#include <sce/http_client.h>
 
 #include <strings.h>
 #include <arpa/inet.h>
