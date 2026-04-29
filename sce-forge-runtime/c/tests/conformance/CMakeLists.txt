@@ -80,7 +80,7 @@ endif()
 # Each sub-phase widens this list alongside the matching template:
 #   * Phase A:   Transform (3 fixtures)
 #   * Phase B-1: Condition (3 fixtures)
-#   * Phase B-2: Lookup    (pending)
+#   * Phase B-2: Lookup    (4 fixtures)
 #   * Phase B-3: Codec     (pending)
 set(C11_FIXTURES
     transform_temperature
@@ -89,6 +89,10 @@ set(C11_FIXTURES
     condition_threshold
     condition_range
     condition_programming
+    lookup_alarm_code
+    lookup_state_action
+    lookup_unit_scale
+    lookup_engine_status
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

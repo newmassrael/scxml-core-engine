@@ -768,7 +768,9 @@ pub fn harness_filename(language: Language) -> &'static str {
 fn c11_supported_kind(spec: &FixtureSpec) -> bool {
     matches!(
         spec,
-        FixtureSpec::Transform { .. } | FixtureSpec::Condition { .. }
+        FixtureSpec::Transform { .. }
+            | FixtureSpec::Condition { .. }
+            | FixtureSpec::Lookup { .. }
     )
 }
 
@@ -932,10 +934,24 @@ pub fn render_harness(
             FixtureSpec::Lookup { function, output_id, output, enum_values, .. } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 let raw_output_id = read_lookup_output_id(&scxml_path)?;
-                *function = Some(format!(
-                    "lookup_{}",
-                    crate::filters::to_snake_case(raw_output_id.clone())
-                ));
+                // C11 (RFC §5.J.2 §3 D1) emits fully-qualified `<m.name>_<output_id>`
+                // because its flat scope cannot rely on namespace + enum-class
+                // disambiguation the way every other backend does. The other
+                // five backends keep the historical `lookup_<output_id>` shape
+                // — the namespace / enum class layer of their generated code
+                // already carries the fixture identity.
+                *function = Some(if matches!(language, Language::C11) {
+                    format!(
+                        "{}_{}",
+                        crate::filters::to_snake_case(fixture_name.clone()),
+                        crate::filters::to_snake_case(raw_output_id.clone()),
+                    )
+                } else {
+                    format!(
+                        "lookup_{}",
+                        crate::filters::to_snake_case(raw_output_id.clone()),
+                    )
+                });
                 *output_id = Some(raw_output_id);
                 // String-output lookups: derive enum variant names from SCXML
                 // entries so the harness can generate enum-to-string helpers.

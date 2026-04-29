@@ -691,6 +691,15 @@ fn render_lookup(
             format!("Lookup{}", filters::to_pascal_case(m.output.id.clone())),
         Language::Rust | Language::Python =>
             format!("lookup_{}", filters::to_snake_case(m.output.id.clone())),
+        // RFC §5.J.2 §3 D1: C11 has a flat scope, so fully-qualify with the
+        // fixture name to keep two lookups whose output ids collide
+        // (e.g. both `status`) from clashing in a single TU.
+        Language::C11 =>
+            format!(
+                "{}_{}",
+                filters::to_snake_case(m.name.clone()),
+                filters::to_snake_case(m.output.id.clone()),
+            ),
         _ =>
             format!("lookup{}", filters::to_pascal_case(m.output.id.clone())),
     };
@@ -763,7 +772,7 @@ fn render_lookup(
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("enum_name".into(), enum_name.into());
-    ctx.insert("func_name".into(), func_name.into());
+    ctx.insert("func_name".into(), func_name.clone().into());
     ctx.insert("input_type".into(), l.param_type(&m.input.sce_type).into());
     ctx.insert("value_type".into(), l.param_type(&m.output.sce_type).into());
     ctx.insert("input_id".into(), input_id.into());
@@ -784,6 +793,33 @@ fn render_lookup(
             None => String::new(),
         };
         ctx.insert("match_suffix".into(), match_suffix.into());
+    }
+
+    // C11 (RFC §5.J.2 §3 D1): fully-qualified flat-scope identifiers derived
+    // from `func_name` (already `<m.name>_<output_id>`). Variant prefix is
+    // its UPPER_SNAKE form; sibling helpers / arrays append a stable suffix.
+    // Variant list and value-name switch arms are joined here rather than
+    // inside the template — minijinja's trim_blocks collapses inline
+    // `{% endif %}` newlines and would emit all variants on one line.
+    if matches!(lang, Language::C11) {
+        let prefix = to_upper_snake(&func_name);
+        let variants_block: String = unique_values
+            .iter()
+            .map(|v| format!("    {prefix}_{v}"))
+            .collect::<Vec<_>>()
+            .join(",\n");
+        let value_name_arms: String = unique_values
+            .iter()
+            .map(|v| format!("        case {prefix}_{v}: return \"{v}\";"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        ctx.insert("c_typedef_name".into(), format!("{func_name}_t").into());
+        ctx.insert("c_variant_prefix".into(), prefix.into());
+        ctx.insert("c_value_name_func".into(), format!("{func_name}_name").into());
+        ctx.insert("c_keys_array_name".into(), format!("{func_name}_keys").into());
+        ctx.insert("c_values_array_name".into(), format!("{func_name}_values").into());
+        ctx.insert("c_variants_block".into(), variants_block.into());
+        ctx.insert("c_value_name_arms".into(), value_name_arms.into());
     }
 
     l.insert_imports(&mut ctx, imports);
@@ -1629,10 +1665,10 @@ pub fn generate_c11_with_imports(
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Lookup(_) | ForgeDocument::Codec(_) => {
+        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Codec(_) => {
             return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for kinds Lookup/Codec is RFC \u{00A7}5.J.2 Phase B work \
-                 (B-2 Lookup, B-3 Codec)."
+                "C11 forge codegen for kind Codec is RFC \u{00A7}5.J.2 Phase B work (B-3 Codec)."
                     .into(),
             )
             .into());

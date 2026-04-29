@@ -1,0 +1,70 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+{% if output_is_string %}
+
+typedef enum {
+{{ c_variants_block }}
+} {{ c_typedef_name }};
+
+static inline {{ c_typedef_name }} {{ func_name }}({{ input_type }} {{ input_id }}) {
+    switch ({{ input_id }}) {
+{% for group in entries_by_value %}
+{% for key in group.keys %}
+        case {{ key }}:
+{% endfor %}
+            return {{ c_variant_prefix }}_{{ group.value }};
+{% endfor %}
+        default: return {{ c_variant_prefix }}_{{ default_value }};
+    }
+}
+
+static inline const char *{{ c_value_name_func }}({{ c_typedef_name }} v) {
+    switch (v) {
+{{ c_value_name_arms }}
+    }
+    return (const char *)0;
+}
+{% else %}
+
+static const {{ input_type }} {{ c_keys_array_name }}[{{ n }}] = { {{ keys_literal | join(", ") }} };
+static const {{ value_type }} {{ c_values_array_name }}[{{ n }}] = { {{ values_literal | join(", ") }} };
+
+{% if on_miss_error %}
+static inline bool {{ func_name }}({{ input_type }} {{ input_id }}, {{ value_type }} *out) {
+    for (size_t _i = 0; _i < {{ n }}; ++_i) {
+        if ({{ c_keys_array_name }}[_i] == {{ input_id }}) {
+            *out = {{ c_values_array_name }}[_i];
+            return true;
+        }
+    }
+    return false;
+}
+{% else %}
+static inline {{ value_type }} {{ func_name }}({{ input_type }} {{ input_id }}) {
+    for (size_t _i = 0; _i < {{ n }}; ++_i) {
+        if ({{ c_keys_array_name }}[_i] == {{ input_id }}) {
+            return {{ c_values_array_name }}[_i];
+        }
+    }
+    return {{ default_literal }};
+}
+{% endif %}
+{% endif %}
+
+#endif  /* {{ guard }} */
