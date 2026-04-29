@@ -196,6 +196,17 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
                true at this point and we synthesise `done.invoke`
                immediately so the parent's next dequeue drains it. */
             if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+                {% if invoke_info.child_has_send_to_parent %}
+                /* W3C SCXML 3.4 (test236): run `<onexit>` on every
+                   still-active child state BEFORE raising `done.invoke`
+                   so a `<final>` with `<onexit><send target="#_parent">`
+                   gets its verdict event onto the parent's external
+                   queue ahead of the completion event. Children whose
+                   own SCXML never sends to `#_parent` (test247-shape:
+                   pure `<final>` with no exit body) skip the helper —
+                   they have no `_finalize_session` symbol to call. */
+                {{ invoke_info.child_name }}_finalize_session(&sm->child_{{ invoke_info.field_suffix }});
+                {% endif %}
                 {{ model.name }}_event_with_meta_t _done_evt;
                 memset(&_done_evt, 0, sizeof(_done_evt));
                 /* W3C SCXML 6.4 / 6.3.1 (test235): when the parent has a
@@ -246,6 +257,12 @@ static void {{ model.name }}_drive_active_children({{ model.name }}_t *sm) {
         {{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
         {% endif %}
         if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+            {% if invoke_info.child_has_send_to_parent %}
+            /* W3C SCXML 3.4 (test236-shape async-final): mirror the
+               sync-final exit walk so `<onexit>` of the just-entered
+               final state runs before `done.invoke`. */
+            {{ invoke_info.child_name }}_finalize_session(&sm->child_{{ invoke_info.field_suffix }});
+            {% endif %}
             /* W3C SCXML 6.4 / 6.3.1: child completed asynchronously
                (post-init parent→child message drove it to <final>).
                Raise done.invoke with the spawn-time invoke_id stamped

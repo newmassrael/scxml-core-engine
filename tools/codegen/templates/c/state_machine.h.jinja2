@@ -359,6 +359,15 @@ void {{ model.name }}_raise_external({{ model.name }}_t *sm,
    matching transition shape — same observable as cpp's SendHelper for
    unknown event targets). */
 void {{ model.name }}_raise_external_by_name({{ model.name }}_t *sm, const char *event_name);
+
+/* W3C SCXML 6.4 / 3.4 (test236): natural-termination exit walk.
+   Runs `<onexit>` on every active state so a `<final>` state with an
+   `<onexit><send target="#_parent">` body fires the send onto the
+   parent's external queue BEFORE the parent's invoke helper raises
+   `done.invoke`. Called only on the natural-final path; the cancel
+   path NULLs the parent dispatch instead so any in-flight sends drop
+   (W3C 6.4 cancellation drop semantics, test252). */
+void {{ model.name }}_finalize_session({{ model.name }}_t *sm);
 {% endif %}
 
 /* W3C SCXML 3.2: configuration query helpers. `_active_states` exposes

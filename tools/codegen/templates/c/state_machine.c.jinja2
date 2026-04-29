@@ -1856,6 +1856,17 @@ static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_
                                             (int){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }});
         {% for invoke_info in state.invokes | scxml %}
         if (sm->child_{{ invoke_info.field_suffix }}_active) {
+            {% if invoke_info.child_has_send_to_parent %}
+            /* W3C SCXML 6.4 cancel-drop semantics (test252): NULL the
+               child's parent dispatch BEFORE destroy so any
+               `<onexit><send target="#_parent">` body that might still
+               run inside the child's teardown drops at the NULL guard
+               instead of reaching the parent's external queue. The
+               natural-final path uses `_finalize_session` (in the
+               invoke helper) which keeps dispatch live; only the
+               cancel path takes this branch. */
+            sm->child_{{ invoke_info.field_suffix }}.parent_dispatch = NULL;
+            {% endif %}
             {{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
             sm->child_{{ invoke_info.field_suffix }}_active = false;
         }
@@ -2558,7 +2569,34 @@ void {{ model.name }}_raise_external({{ model.name }}_t *sm,
 }
 
 {% if model.has_parent_communication %}
-/* W3C SCXML 6.4 (test192/253): String-keyed counterpart for
+/* W3C SCXML 6.4 / 3.4 (test236): natural-termination exit walk.
+   Called by the invoking parent's invoke helper when the child reaches
+   its top-level `<final>` (synchronous-final spawn at
+   `execute_pending_invokes` or async-final at `_drive_active_children`).
+   Runs `execute_exit_actions` on every still-active state in
+   reverse-enum-value order so each state's `<onexit>` block fires —
+   in particular, the `<onexit><send target="#_parent">` body on a
+   `<final>` state lands on the parent's external queue BEFORE the
+   parent helper raises `done.invoke`, satisfying W3C SCXML 6.4's
+   "verdict-event before completion-event" ordering (test236). The
+   parent CANCEL path (state-exit calls `<sm>_destroy`) does NOT route
+   through this helper — `execute_exit_actions` in the parent NULLs
+   `parent_dispatch` first so any in-flight child sends drop, mirroring
+   W3C 6.4 cancellation drop semantics (test252). */
+void {{ model.name }}_finalize_session({{ model.name }}_t *sm) {
+    if (!sm->is_running) {
+        return;
+    }
+    for (int _i = (int){{ model.name | upper }}_STATE_COUNT - 1; _i >= 0; --_i) {
+        {{ model.name }}_state_t _s = ({{ model.name }}_state_t)_i;
+        if (config_in(sm->active, _s)) {
+            execute_exit_actions(sm, _s);
+        }
+    }
+    sm->is_running = false;
+}
+
+/* W3C SCXML 6.2: String-keyed counterpart for
    `<send target="#_<invokeid>" event="X">` from the invoking parent.
    The parent's per-invoke `_send_to_child` helper resolves the
    `#_<id>` literal to the embedded child instance at codegen time;
