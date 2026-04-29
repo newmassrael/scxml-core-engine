@@ -352,6 +352,17 @@ pub struct InvokeSessionCommon {
     /// resolution.
     #[serde(default)]
     pub child_has_send_to_parent: bool,
+    /// W3C SCXML 6.2 (test207): the child SCXML carries a non-empty
+    /// `<send delay="...">` so its codegen emitted a scheduler queue
+    /// + a `_tick` entry point. Parents that drive active children
+    /// from `_drive_active_children` need to call the child's `_tick`
+    /// (not just `_step`) so scheduled child events promote onto the
+    /// child's internal queue and drive its macrostep on the same
+    /// outer-step iteration. Top-level fixtures know about this
+    /// derived from the child SCXML at parse time, mirroring how
+    /// `child_needs_script_engine` is populated.
+    #[serde(default)]
+    pub child_needs_event_scheduler: bool,
 }
 
 impl std::ops::Deref for InvokeSessionCommon {

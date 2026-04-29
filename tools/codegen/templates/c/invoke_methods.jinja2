@@ -235,7 +235,16 @@ static void {{ model.name }}_drive_active_children({{ model.name }}_t *sm) {
     {% for invoke_info in state.invokes | scxml %}
     if (sm->child_{{ invoke_info.field_suffix }}_active
         && !{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+        {% if invoke_info.child_needs_event_scheduler %}
+        /* W3C SCXML 6.2 (test207): the child carries `<send delay>`
+           in its own session, so call its `_tick` (which promotes
+           elapsed scheduled events onto its internal queue, then
+           runs a macrostep). Driving `_step` alone would never
+           dispatch the child's delayed events. */
+        {{ invoke_info.child_name }}_tick(&sm->child_{{ invoke_info.field_suffix }});
+        {% else %}
         {{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
+        {% endif %}
         if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
             /* W3C SCXML 6.4 / 6.3.1: child completed asynchronously
                (post-init parent→child message drove it to <final>).

@@ -2936,6 +2936,47 @@ fn collect_parent_send_events(actions: &[Action], events: &mut std::collections:
     }
 }
 
+/// W3C SCXML 6.2 (test187/207): detect whether the child SCXML carries
+/// any `<send delay="...">` / `<send delayexpr="...">`. The child's
+/// codegen emits a scheduler queue + `_tick` entry point only when
+/// this returns `true`; the parent's invoke driver mirrors the gate so
+/// it knows whether to call the child's `_tick` from `_drive_active_children`.
+fn child_has_delayed_send(child_model: &SCXMLModel) -> bool {
+    fn walk(actions: &[Action]) -> bool {
+        for action in actions {
+            if action.action_type == "send"
+                && (!action.delay.is_empty() || !action.delayexpr.is_empty())
+            {
+                return true;
+            }
+            if walk(&action.then_actions)
+                || walk(&action.else_actions)
+                || walk(&action.actions)
+                || action.elseif_branches.iter().any(|b| walk(&b.actions))
+            {
+                return true;
+            }
+        }
+        false
+    }
+    for state in child_model.states.values() {
+        for block in state.on_entry_blocks.iter().chain(state.on_exit_blocks.iter()) {
+            if walk(block) {
+                return true;
+            }
+        }
+        for trans in &state.transitions {
+            if walk(&trans.actions) {
+                return true;
+            }
+        }
+        if walk(&state.initial_transition_actions) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Parse a child SCXML file to extract metadata (needs_script_engine, datamodel vars).
 ///
 /// The fields written (`child_needs_script_engine`, `child_datamodel_vars`)
@@ -2953,6 +2994,14 @@ fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
             common.child_datamodel_vars = Some(
                 child_model.variables.iter().map(|v| v.id.clone()).collect(),
             );
+            // W3C SCXML 6.2 (test187/207): mirror the child's own scheduler
+            // requirement. The child's codegen emits `_tick` only when
+            // its scheduler queue is non-empty; the parent's invoke driver
+            // must know whether that entry point exists at template time.
+            // The model's `needs_event_scheduler` field is set by the
+            // analyzer (post-parse), so we re-derive here by walking the
+            // child's <send> actions for any `delay` / `delayexpr`.
+            common.child_needs_event_scheduler = child_has_delayed_send(&child_model);
         }
         Err(_) => {
             common.child_needs_script_engine = true;
