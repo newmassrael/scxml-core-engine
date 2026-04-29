@@ -7,6 +7,7 @@ build_python/
 build_wasm/
 build_tsan/
 build_release/
+build_conformance_c/
 /bin/
 lib/
 out/
