@@ -74,14 +74,21 @@ if(NOT EXISTS "${REFERENCE_JSON}")
     message(FATAL_ERROR "reference JSON not found at ${REFERENCE_JSON}")
 endif()
 
-# Phase A (RFC §5.J.2 §3): the C11 backend supports only the Transform
-# kind. Filtering at fixture-enumeration time means CMake never asks
+# RFC §5.J.2 §3: which fixtures the C11 backend currently emits.
+# Filtering at fixture-enumeration time means CMake never asks
 # sce-codegen to emit a kind that has no `.c.jinja2` template yet.
-# Phase B widens this list as Lookup/Condition/Codec land.
-set(C11_PHASE_A_FIXTURES
+# Each sub-phase widens this list alongside the matching template:
+#   * Phase A:   Transform (3 fixtures)
+#   * Phase B-1: Condition (3 fixtures)
+#   * Phase B-2: Lookup    (pending)
+#   * Phase B-3: Codec     (pending)
+set(C11_FIXTURES
     transform_temperature
     transform_bitwise
     transform_multi_output
+    condition_threshold
+    condition_range
+    condition_programming
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -90,7 +97,7 @@ file(MAKE_DIRECTORY "${GENERATED_DIR}")
 # Step 1: per-fixture product code generation. Each fixture's SCXML is
 # fed to sce-codegen --language c11 to produce a single header.
 set(GENERATED_HEADERS "")
-foreach(fixture IN LISTS C11_PHASE_A_FIXTURES)
+foreach(fixture IN LISTS C11_FIXTURES)
     set(out_header "${GENERATED_DIR}/${fixture}.h")
     set(scxml "${RESOURCE_DIR}/${fixture}.scxml")
     add_custom_command(

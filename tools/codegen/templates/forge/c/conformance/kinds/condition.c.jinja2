@@ -1,0 +1,26 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Condition kind — pure boolean predicate; pre-baked oracle (RFC §5.J.2 F7). #}
+static void test_{{ f.name }}(void) {
+    static const struct {
+{% for arg_ty in f.args %}
+        {{ arg_ty | c_type }} arg{{ loop.index0 }};
+{% endfor %}
+        bool expected;
+    } cases[] = {
+{% for c in f.cases %}
+        { {% for arg_ty in f.args %}{{ c.args[loop.index0] | c_literal(arg_ty) }}{% if not loop.last %}, {% endif %}{% endfor %}, {{ c.expected | c_literal("bool") }} },
+{% endfor %}
+    };
+    const size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; ++i) {
+        bool actual = {{ f.function | to_snake_case }}({% for arg_ty in f.args %}cases[i].arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        if (actual != cases[i].expected) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: actual=%d expected=%d\n",
+                i, (int)actual, (int)cases[i].expected);
+            ++g_failures;
+        }
+    }
+}

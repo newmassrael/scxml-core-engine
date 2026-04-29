@@ -756,14 +756,20 @@ pub fn harness_filename(language: Language) -> &'static str {
 }
 
 /// RFC §5.J.2: gate which fixture kinds the C11 conformance harness
-/// includes per phase. Phase A ships only the `Transform` kind
-/// fragment; Phase B (Lookup/Condition/Codec) and later widen this
-/// predicate as their respective `kinds/<kind>.c.jinja2` fragments
-/// land. The filter exists because `harness.c.jinja2` does dynamic
-/// `{% include "kinds/" ~ f.kind ~ ".c.jinja2" %}` and would fail at
-/// render time on any kind whose fragment is not yet present.
+/// includes per phase. The filter exists because `harness.c.jinja2`
+/// does dynamic `{% include "kinds/" ~ f.kind ~ ".c.jinja2" %}` and
+/// would fail at render time on any kind whose fragment is not yet
+/// present. Each new sub-phase widens the predicate alongside the
+/// matching `kinds/<kind>.c.jinja2` fragment landing:
+///   * Phase A: Transform
+///   * Phase B-1: Condition
+///   * Phase B-2: Lookup (pending)
+///   * Phase B-3: Codec (pending)
 fn c11_supported_kind(spec: &FixtureSpec) -> bool {
-    matches!(spec, FixtureSpec::Transform { .. })
+    matches!(
+        spec,
+        FixtureSpec::Transform { .. } | FixtureSpec::Condition { .. }
+    )
 }
 
 /// Parse a `<scxml sce:kind="procedure">` source file and return the

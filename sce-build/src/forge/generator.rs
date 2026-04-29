@@ -806,7 +806,8 @@ fn render_condition(
 
     let func_name = match lang {
         Language::Go => filters::to_pascal_case(m.name.clone()),
-        Language::Rust | Language::Python => filters::to_snake_case(m.name.clone()),
+        Language::Rust | Language::Python | Language::C11 =>
+            filters::to_snake_case(m.name.clone()),
         _ => filters::to_camel_case(m.name.clone()),
     };
 
@@ -1627,11 +1628,11 @@ pub fn generate_c11_with_imports(
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Lookup(_)
-        | ForgeDocument::Condition(_)
-        | ForgeDocument::Codec(_) => {
+        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Lookup(_) | ForgeDocument::Codec(_) => {
             return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for kinds Lookup/Condition/Codec is RFC \u{00A7}5.J.2 Phase B work."
+                "C11 forge codegen for kinds Lookup/Codec is RFC \u{00A7}5.J.2 Phase B work \
+                 (B-2 Lookup, B-3 Codec)."
                     .into(),
             )
             .into());
