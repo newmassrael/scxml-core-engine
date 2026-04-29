@@ -300,7 +300,15 @@ typedef struct {{ model.name }} {
        parent template parameter + `Engine::raise_external` shape,
        collapsed to a fn pointer here per C11 idiom. */
     void *parent_sm;
-    void (*parent_dispatch)(void *parent_sm, const char *event_name, const char *invoke_id);
+    /* W3C SCXML 6.4 (test233): the optional `event_data` arg carries a
+       Lua-source string representation of `<send><param>` payloads from
+       the child to the parent's `_event.data` slot — the parent shim
+       memcpy's it into `event_with_meta_t.data`, then the parent's
+       external dequeue runs `_event.data = <table>` before transition
+       matching and finalize. NULL means no payload (the long-standing
+       no-param `<send target="#_parent" event="X"/>` shape passes NULL
+       too — same enqueue path, just an empty data slot). */
+    void (*parent_dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data);
     char invoke_id[SCE_MAX_ID_LEN];
     {% endif %}
 } {{ model.name }}_t;
@@ -327,7 +335,7 @@ void {{ model.name }}_init({{ model.name }}_t *sm);
    is the parent's invoke helper. */
 void {{ model.name }}_init_with_parent({{ model.name }}_t *sm,
                                        void *parent_sm,
-                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id),
+                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
                                        const char *invoke_id);
 {% endif %}
 

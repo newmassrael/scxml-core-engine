@@ -416,7 +416,75 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
                carries `model.has_parent_communication=true`, which the
                h-template gate ensures the fields exist for. */
             if (sm->parent_dispatch != NULL) {
-                sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id);
+                sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id, NULL);
+            }
+{% elif action.event and action.target == '#_parent' and action.params and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.4 (test233): static-event + target="#_parent" +
+               <param> children. Each param expr is evaluated in this
+               (child) SM's lua_State, then formatted into a Lua-source
+               table literal `{name1 = v1, name2 = v2, ...}`. The string
+               travels via the parent_dispatch shim's `event_data` arg,
+               lands on `event_with_meta_t.data` in the parent, and the
+               parent's external dequeue runs `_event.data = <table>`
+               before transition matching + finalize.
+
+               The per-value formatter quotes strings (`%q`-style),
+               serialises numbers/booleans verbatim, and emits `nil`
+               otherwise. Tables/functions are rejected (no W3C corpus
+               fixture forces nested send-to-parent param payloads;
+               first such fixture lifts the formatter to the recursive
+               cpp-`Json::Value::toStyledString` shape).
+
+               Buffer overflow drops the rest of the payload and emits
+               error.execution per W3C 6.2 ("if the value of any param
+               cannot be marshalled..."). cpp's send dispatch cancels
+               the message wholesale on serialisation error; C11 stops
+               appending after capacity but still ships the truncated
+               prefix — a stricter cancel-and-raise lift lands when a
+               fixture forces it. */
+            if (sm->parent_dispatch != NULL) {
+                char _ed[SCE_MAX_DATA_LEN];
+                int _ed_len = 0;
+                _ed[_ed_len++] = '{';
+                {% for param in action.params %}
+                {% if not loop.first %}
+                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
+                {% endif %}
+                {
+                    static const char *_pn = "{{ param.name }} = ";
+                    int _pnl = (int)strlen(_pn);
+                    if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
+                        memcpy(_ed + _ed_len, _pn, (size_t)_pnl);
+                        _ed_len += _pnl;
+                    }
+                }
+                /* Per-param value formatter (number/string/bool → Lua source). */
+                if (luaL_dostring(sm->L,
+                    "local _v = ({{ param.expr | to_lua_expr | escape_c }}); "
+                    "if type(_v) == 'string' then return string.format('%q', _v) "
+                    "elseif type(_v) == 'number' or type(_v) == 'boolean' then return tostring(_v) "
+                    "else return 'nil' end") == 0) {
+                    const char *_v = lua_tostring(sm->L, -1);
+                    if (_v != NULL) {
+                        int _vl = (int)strlen(_v);
+                        if (_ed_len + _vl < (int)SCE_MAX_DATA_LEN - 1) {
+                            memcpy(_ed + _ed_len, _v, (size_t)_vl);
+                            _ed_len += _vl;
+                        }
+                    }
+                    lua_pop(sm->L, 1);
+                } else {
+                    lua_pop(sm->L, 1);
+                    /* Param eval failure: insert `nil` placeholder. */
+                    if (_ed_len + 3 < (int)SCE_MAX_DATA_LEN - 1) {
+                        memcpy(_ed + _ed_len, "nil", 3);
+                        _ed_len += 3;
+                    }
+                }
+                {% endfor %}
+                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
+                _ed[_ed_len] = '\0';
+                sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id, _ed);
             }
 {% elif action.event and action.target and action.target.startswith('#_') and action.target not in ('#_parent', '#_internal') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
 {% set _target_id = action.target[2:] %}
@@ -3107,11 +3175,66 @@ static void process_event_queues({{ model.name }}_t *sm) {
                             "_pending_event_origintype = "
                               "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'");
         set_current_event(sm->L, &evt);
+        /* W3C SCXML 6.4 (test233): hydrate `_event.data` from the
+           cross-SM payload string the child shipped via parent_dispatch's
+           `event_data` arg. The string is a Lua table literal (e.g.
+           `{aParam = 2}`); load it as a return expression and bind to
+           `_event.data`. Empty/missing payload clears the slot so the
+           transition cond / finalize body sees `_event.data == nil`
+           rather than a stale value from a prior dequeue. cpp's
+           equivalent is `EventWithMetadata.data` member set in
+           `Event::setData` and surfaced via
+           `LuaEngine::setCurrentEvent` (LuaEngine.cpp:1138-1159). */
+        if (evt.data[0] != '\0') {
+            char _setbuf[SCE_MAX_DATA_LEN + 64];
+            (void)snprintf(_setbuf, sizeof(_setbuf),
+                "_event.data = (%s)", evt.data);
+            (void)luaL_dostring(sm->L, _setbuf);
+        } else {
+            (void)luaL_dostring(sm->L, "if _event then _event.data = nil end");
+        }
         {% endif %}
 
         if ({{ model.name }}_is_in_final_state(sm)) {
             return;
         }
+
+        {% set _has_finalize = namespace(any=false) %}
+        {% for state_id, state in model.states | dictsort %}
+        {% for invoke_info in state.invokes | scxml %}
+        {% if invoke_info.finalize_content %}
+        {% set _has_finalize.any = true %}
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+        {% if _has_finalize.any %}
+        /* W3C SCXML 6.4 (test233): run the matching invoke's
+           `<finalize>` body in the parent's lua_State BEFORE transition
+           selection. The finalize body reads `_event.data.<key>` (just
+           hydrated above) and writes parent variables — so the
+           subsequent transition cond evaluates against post-finalize
+           state. The match is by `evt.invoke_id` against the spawn-time
+           id stamped by `execute_pending_invokes` so events arriving
+           from one invoke don't trigger a sibling's finalize (the
+           test234 parallel-finalize fixture pins this isolation). cpp
+           `StateMachine::processEvent` runs finalize via the
+           `InvokeExecutor::executeFinalize(invokeid)` arm at the
+           equivalent point; the same content was lowered to JS by the
+           parser, so `to_lua_script` ports it across the syntax overlap
+           (Lua and JS both spell `Var = _event.data.aParam` the same). */
+        {% for state_id, state in model.states | dictsort %}
+        {% for invoke_info in state.invokes | scxml %}
+        {% if invoke_info.finalize_content %}
+        if (sm->child_{{ invoke_info.field_suffix }}_active
+            && evt.invoke_id[0] != '\0'
+            && strcmp(evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id) == 0) {
+            (void)luaL_dostring(sm->L,
+                "{{ invoke_info.finalize_content | to_lua_script | escape_c }}");
+        }
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+        {% endif %}
 
         {% if model.has_autoforward_invoke %}
         /* W3C SCXML 6.4 (test229): forward this external event to any
@@ -3218,7 +3341,12 @@ void {{ model.name }}_tick({{ model.name }}_t *sm) {
            pointer, the in-flight delayed send falls away silently. */
         if (ready.to_parent) {
             if (sm->parent_dispatch != NULL) {
-                sm->parent_dispatch(sm->parent_sm, ready.to_parent_event, sm->invoke_id);
+                /* W3C SCXML 6.2 (test187): delayed `<send target="#_parent">`
+                   without `<param>` carries no payload; pass NULL so the
+                   parent shim's `event_data` arm is a no-op. The fixture
+                   that combines delay + param would land here once the
+                   first such fixture exists. */
+                sm->parent_dispatch(sm->parent_sm, ready.to_parent_event, sm->invoke_id, NULL);
             }
             continue;
         }
@@ -3331,7 +3459,7 @@ void {{ model.name }}_init({{ model.name }}_t *sm) {
 {% else %}
 void {{ model.name }}_init_with_parent({{ model.name }}_t *sm,
                                        void *parent_sm,
-                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id),
+                                       void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
                                        const char *invoke_id) {
     memset(sm, 0, sizeof(*sm));
     /* W3C SCXML 6.4: Stamp parent-routing BEFORE the entry walk so

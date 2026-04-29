@@ -37,7 +37,7 @@
    regular external queue, which the macrostep evaluates against every
    transition's matcher (W3C SCXML 3.13). The empty NULL-guard handles
    defensive callers — production children always pass a valid name. #}
-static void {{ model.name }}_dispatch_external_by_name(void *opaque, const char *name, const char *invoke_id) {
+static void {{ model.name }}_dispatch_external_by_name(void *opaque, const char *name, const char *invoke_id, const char *event_data) {
     if (opaque == NULL || name == NULL) {
         return;
     }
@@ -47,6 +47,17 @@ static void {{ model.name }}_dispatch_external_by_name(void *opaque, const char 
     if (invoke_id != NULL) {
         strncpy(evt.invoke_id, invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
         evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+    }
+    /* W3C SCXML 6.4 (test233): copy child-supplied `<send><param>` Lua-
+       source string into `event_with_meta_t.data`. The dequeue path
+       loads it into the parent's L state as `_event.data` before
+       transition matching + finalize. NULL or empty `event_data` leaves
+       the slot zero-initialised so the dequeue's empty-string check
+       skips the load — same observable as cpp `EventWithMetadata{event,
+       data=""}` in the no-param send-to-parent shape. */
+    if (event_data != NULL && event_data[0] != '\0') {
+        strncpy(evt.data, event_data, (size_t)SCE_MAX_DATA_LEN - 1u);
+        evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
     }
     {% for ev_name in model.events | sort %}
     if (strcmp(name, "{{ ev_name }}") == 0) {
