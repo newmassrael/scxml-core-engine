@@ -391,6 +391,7 @@ fn render_c11(
     model: &SCXMLModel,
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
@@ -1020,6 +1021,20 @@ mod tests {
         let templates: &[(&str, &str)] = &[];
         let err = generate_go_with_templates(&model, templates).unwrap_err();
         assert!(matches!(err, GenerateError::UnsupportedFeature(_)));
+    }
+
+    #[test]
+    fn c11_generate_rejects_mesh_rpc_invoke() {
+        let model = parse(MESH_RPC_SCXML);
+        let templates: &[(&str, &str)] = &[];
+        match generate_c11_with_templates(&model, templates, "fixture") {
+            Ok(_) => panic!("expected UnsupportedFeature, got Ok"),
+            Err(GenerateError::UnsupportedFeature(msg)) => {
+                assert!(msg.contains("sce:mesh-rpc"), "msg names the feature: {msg}");
+                assert!(msg.contains("C11"), "msg names the language: {msg}");
+            }
+            Err(other) => panic!("expected UnsupportedFeature, got {other:?}"),
+        }
     }
 
     /// SCE_MESH.md §14 rule 12 / §16.5 shape assertion. With the
