@@ -1,0 +1,36 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Procedure kind — D-1 (L1) only. Pure guard-only diamonds; the oracle
+   exposes `args` + `expected.{completed, final_state}` per case, no
+   payload bytes / no donedata until D-2 lands. The pre-baked oracle
+   keeps the harness allocation-free per RFC §5.J.2 F7. #}
+static void test_{{ f.name }}(void) {
+    static const struct {
+{% for arg_ty in f.args %}
+        {{ arg_ty | c_type }} arg{{ loop.index0 }};
+{% endfor %}
+        bool         expected_completed;
+        const char  *expected_final;
+    } cases[] = {
+{% for c in f.cases %}
+        { {% for arg_ty in f.args %}{{ c.args[loop.index0] | c_literal(arg_ty) }}{% if not loop.last %}, {% endif %}{% endfor %}, {{ c.expected.completed | string | lower }}, "{{ c.expected.final_state }}" },
+{% endfor %}
+    };
+    const size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; ++i) {
+        {{ f.name | to_snake_case }}_result_t r = {{ f.name | to_snake_case }}_execute({% for arg_ty in f.args %}cases[i].arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        if (r.completed != cases[i].expected_completed) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu completed: actual=%d expected=%d\n",
+                i, (int)r.completed, (int)cases[i].expected_completed);
+            ++g_failures;
+        }
+        if (strcmp(r.final_state, cases[i].expected_final) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu final_state: actual=\"%s\" expected=\"%s\"\n",
+                i, r.final_state, cases[i].expected_final);
+            ++g_failures;
+        }
+    }
+}

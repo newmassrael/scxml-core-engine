@@ -240,6 +240,10 @@
                 "$ref": "#/definitions/HelperStub"
               }
             },
+            "is_l2": {
+              "description": "Derived at harness-rendering time from the SCXML — true iff the procedure exercises any of the four L2 markers: `<sce:helper>`, `<data sce:direction=\"internal\">`, `<onentry><send>`, or `<donedata>` on a `<final>` state. Mirrors `ProcedureModel::is_l2()` (which operates on the parsed model) but uses a lightweight roxmltree scan so the predicate is cheap to consult at fixture- filtering time. Must be absent in the manifest JSON — the user cannot override what the SCXML structurally declares.\n\nUsed by the C11 backend's per-phase `c11_supported_kind` filter: Phase D-1 admits `is_l2: false` only (pure guard-only diamonds); D-2 widens to `is_l2: true` with the matching `procedure.h` runtime header; D-3 is the cross-file import widening (no gating change — the import shape is independent of L1/L2).",
+              "type": "boolean"
+            },
             "kind": {
               "type": "string",
               "enum": [

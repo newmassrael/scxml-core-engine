@@ -226,6 +226,22 @@ pub enum FixtureSpec {
         /// `Manifest::validate` rejects any user-supplied value.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         helpers_ordered: Vec<HelperStub>,
+        /// Derived at harness-rendering time from the SCXML — true iff the
+        /// procedure exercises any of the four L2 markers: `<sce:helper>`,
+        /// `<data sce:direction="internal">`, `<onentry><send>`, or
+        /// `<donedata>` on a `<final>` state. Mirrors `ProcedureModel::is_l2()`
+        /// (which operates on the parsed model) but uses a lightweight
+        /// roxmltree scan so the predicate is cheap to consult at fixture-
+        /// filtering time. Must be absent in the manifest JSON — the user
+        /// cannot override what the SCXML structurally declares.
+        ///
+        /// Used by the C11 backend's per-phase `c11_supported_kind` filter:
+        /// Phase D-1 admits `is_l2: false` only (pure guard-only diamonds);
+        /// D-2 widens to `is_l2: true` with the matching `procedure.h`
+        /// runtime header; D-3 is the cross-file import widening (no
+        /// gating change — the import shape is independent of L1/L2).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        is_l2: bool,
     },
     Lookup {
         args: Vec<CanonicalType>,
@@ -678,13 +694,24 @@ impl Manifest {
                     }
                 }
                 FixtureSpec::Procedure {
-                    helpers_ordered, ..
+                    helpers_ordered,
+                    is_l2,
+                    ..
                 } => {
                     if !helpers_ordered.is_empty() {
                         return Err(format!(
                             "fixture {}: procedure `helpers_ordered` is \
                              derived from the SCXML at harness-rendering \
                              time; remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                    if *is_l2 {
+                        return Err(format!(
+                            "fixture {}: procedure `is_l2` is derived from \
+                             the SCXML (presence of <sce:helper> / internal \
+                             <data> / <send> in onentry / <donedata>); \
+                             remove it from fixtures.json",
                             f.name
                         ));
                     }
@@ -789,15 +816,20 @@ pub fn harness_filename(language: Language) -> &'static str {
 ///   * Phase B-2: Lookup
 ///   * Phase B-3: Codec
 ///   * Phase C:   Validator
+///   * Phase D-1: Procedure (L1 only — `is_l2: false`, pure guard-only
+///     diamonds with no service/helper/donedata/internals); D-2 widens
+///     to `is_l2: true` once the matching `procedure.h` runtime header
+///     and L2 emit paths land.
 fn c11_supported_kind(spec: &FixtureSpec) -> bool {
-    matches!(
-        spec,
+    match spec {
         FixtureSpec::Transform { .. }
-            | FixtureSpec::Condition { .. }
-            | FixtureSpec::Lookup { .. }
-            | FixtureSpec::Codec { .. }
-            | FixtureSpec::Validator { .. }
-    )
+        | FixtureSpec::Condition { .. }
+        | FixtureSpec::Lookup { .. }
+        | FixtureSpec::Codec { .. }
+        | FixtureSpec::Validator { .. } => true,
+        FixtureSpec::Procedure { is_l2, .. } => !*is_l2,
+        _ => false,
+    }
 }
 
 /// Parse a `<scxml sce:kind="procedure">` source file and return the
@@ -835,6 +867,80 @@ pub(crate) fn read_procedure_helper_names(scxml_path: &Path) -> Result<Vec<Strin
         names.push(name.to_string());
     }
     Ok(names)
+}
+
+/// Parse a `<scxml sce:kind="procedure">` source file and detect whether
+/// the procedure exercises any L2 marker. Mirrors `ProcedureModel::is_l2()`
+/// (which operates on the fully parsed model) but uses a lightweight
+/// roxmltree scan so the predicate is cheap to consult at fixture-
+/// filtering time without invoking the full forge-model pipeline.
+///
+/// The four L2 markers, any of which flips the result to `true`:
+///   1. `<sce:helper>` declaration in `<datamodel>`
+///   2. `<data sce:direction="internal">` in `<datamodel>`
+///   3. `<onentry><send>` (any send action — service/event/etc.)
+///   4. `<donedata>` on a `<final>` state
+pub(crate) fn read_procedure_is_l2(scxml_path: &Path) -> Result<bool, String> {
+    let text = std::fs::read_to_string(scxml_path)
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
+    let doc = roxmltree::Document::parse(&text)
+        .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
+    let scxml_ns = "http://www.w3.org/2005/07/scxml";
+    let sce_ns = crate::forge::model::SCE_NAMESPACE;
+
+    let root = doc.root_element();
+
+    // Marker 1+2: scan <datamodel> for <sce:helper> or <data direction="internal">.
+    if let Some(datamodel) = root.children().find(|n| {
+        n.is_element()
+            && n.tag_name().name() == "datamodel"
+            && n.tag_name().namespace() == Some(scxml_ns)
+    }) {
+        for child in datamodel.children().filter(|n| n.is_element()) {
+            let name = child.tag_name().name();
+            let ns = child.tag_name().namespace();
+            if name == "helper" && ns == Some(sce_ns) {
+                return Ok(true);
+            }
+            if name == "data" && ns == Some(scxml_ns) {
+                if child.attribute((sce_ns, "direction")) == Some("internal") {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    // Marker 3+4: walk <state>/<final> children for <onentry><send> and
+    // <donedata>. A procedure root only nests states one level deep
+    // (no <parallel>, no compound states), so a flat scan suffices.
+    for state in root.children().filter(|n| {
+        n.is_element()
+            && n.tag_name().namespace() == Some(scxml_ns)
+            && (n.tag_name().name() == "state" || n.tag_name().name() == "final")
+    }) {
+        for inner in state.children().filter(|n| n.is_element()) {
+            let inner_name = inner.tag_name().name();
+            let inner_ns = inner.tag_name().namespace();
+            if inner_ns != Some(scxml_ns) {
+                continue;
+            }
+            if inner_name == "donedata" {
+                return Ok(true);
+            }
+            if inner_name == "onentry" {
+                let has_send = inner.children().any(|n| {
+                    n.is_element()
+                        && n.tag_name().name() == "send"
+                        && n.tag_name().namespace() == Some(scxml_ns)
+                });
+                if has_send {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    Ok(false)
 }
 
 /// Parse a `<scxml sce:kind="lookup">` source file and return the
@@ -1047,6 +1153,7 @@ pub fn render_harness(
             FixtureSpec::Procedure {
                 helpers,
                 helpers_ordered,
+                is_l2,
                 ..
             } => {
                 // Parse the SCXML for <sce:helper> declarations and cross-check
@@ -1087,6 +1194,11 @@ pub fn render_harness(
                             .expect("cross-checked above"),
                     })
                     .collect();
+                // Populate the derived L2 flag from the SCXML so the
+                // C11 backend's per-phase fixture filter
+                // (`c11_supported_kind`) can gate by procedure level
+                // without re-parsing each candidate fixture.
+                *is_l2 = read_procedure_is_l2(&scxml_path)?;
             }
             _ => {}
         }

@@ -1,0 +1,74 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+/*
+ * RFC §5.J.2 Phase D-1: L1 (guard-only) procedure path. Pure switch/case
+ * over a state enum, driven by a 1000-iteration safety loop. No service
+ * handler, no helper DI, no event queue, no donedata — those land in
+ * Phase D-2 once the matching `sce-forge-runtime/c/include/sce/forge/
+ * procedure.h` runtime header arrives.
+ */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+
+typedef enum {
+{% for s in state_enum %}
+    {{ s.enum_name }} = {{ s.index }}{% if not loop.last %},{% endif %}
+
+{% endfor %}
+} {{ state_typedef }};
+
+typedef struct {
+    bool         completed;
+    const char  *final_state;
+} {{ result_typedef }};
+
+static inline {{ result_typedef }} {{ execute_func }}({{ params }}) {
+{% for f in input_fields %}
+    /* Some L1 procedures (e.g. unconditional pipelines) ignore an input;
+       silence -Wunused-parameter without losing the named slot in the
+       public ABI. Emitting unconditionally keeps the template branch-free. */
+    (void){{ f.id }};
+{% endfor %}
+    {{ state_typedef }} current = {{ initial_state_enum }};
+
+    /* L1 safety cap mirrors the cpp run_procedure() bound. */
+    for (int _iter = 0; _iter < 1000; ++_iter) {
+        switch (current) {
+{% for s in non_final_states %}
+            case {{ s.enum_name }}:
+{% for tr in s.transitions %}
+{% if tr.has_cond %}
+                if ({{ tr.cond }}) { current = {{ tr.target_enum }}; break; }
+{% else %}
+                current = {{ tr.target_enum }}; break;
+{% endif %}
+{% endfor %}
+{% set last = s.transitions | last %}
+{% if last and last.has_cond %}
+                /* No transition matched — procedure terminates uncompleted. */
+                return ({{ result_typedef }}){false, ""};
+{% endif %}
+{% endfor %}
+{% for s in final_states %}
+            case {{ s.enum_name }}:
+                return ({{ result_typedef }}){true, "{{ s.id }}"};
+{% endfor %}
+            default:
+                return ({{ result_typedef }}){false, ""};
+        }
+    }
+    /* Safety cap exceeded — never expected for L1 acyclic guard flows. */
+    return ({{ result_typedef }}){false, ""};
+}
+
+#endif  /* {{ guard }} */

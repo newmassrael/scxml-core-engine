@@ -1734,13 +1734,18 @@ pub fn generate_c11_with_imports(
         ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Procedure(_) => {
-            return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for kind Procedure is RFC \u{00A7}5.J.2 Phase D work \
-                 (gated on the C11 statechart RTC normalization)."
-                    .into(),
-            )
-            .into());
+        ForgeDocument::Procedure(m) => {
+            if m.is_l2() {
+                return Err(GenerateError::UnsupportedFeature(
+                    "C11 forge codegen for L2 procedures (with <sce:helper> / \
+                     internal <data> / <onentry><send> / <donedata>) is RFC \
+                     \u{00A7}5.J.2 Phase D-2/D-3 work — D-1 ships only the L1 \
+                     guard-only path."
+                        .into(),
+                )
+                .into());
+            }
+            render_procedure_c(&env, m, imports)?
         }
         ForgeDocument::Filter(_)
         | ForgeDocument::Interpolation(_)
@@ -2139,6 +2144,172 @@ fn render_procedure_cpp(
         has_imports => has_imports,
         imports => stateful_imports,
         all_imports => all_imports,
+    };
+
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
+}
+
+// ── Procedure: C11 (D-1 L1 only — RFC §5.J.2 §3.D) ──────────
+//
+// L1 procedures are pure guard-only diamond flows: no `<sce:helper>`,
+// no internal `<data>`, no `<onentry><send>`, no `<donedata>`. The
+// emit shape is a single `static inline` execute function returning
+// a `<name>_result_t` record (`completed` + `final_state` C string),
+// driving a flat `switch`/`case` over a `<name>_state_t` enum inside
+// a 1000-iteration safety loop.
+//
+// L2 (D-2/D-3) is rejected at the dispatcher (`generate_c11_with_imports`)
+// with a precise error pointing at the relevant sub-phase. This
+// function therefore needs no helper / send / donedata / assign
+// branches — every fixture it sees has empty `helpers`, empty
+// `internals`, no `on_entry_sends`, and no `done_params`.
+fn render_procedure_c(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let snake = filters::to_snake_case(m.name.clone());
+    let upper = to_upper_snake(&m.name);
+    let guard = format!("SCE_FORGE_{}_H", &upper);
+
+    let state_enum: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            serde_json::json!({
+                "enum_name": format!("{}_STATE_{}", upper, to_upper_snake(&s.id)),
+                "id": s.id,
+                "is_final": s.is_final,
+                "index": i,
+            })
+        })
+        .collect();
+
+    // Input parameters: snake_case ids in C, native types via c_param_type.
+    let input_fields: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "id": filters::to_snake_case(f.id.clone()),
+                "c_param_type": c_param_type(&f.sce_type),
+            })
+        })
+        .collect();
+    let params = if input_fields.is_empty() {
+        "void".to_string()
+    } else {
+        m.inputs
+            .iter()
+            .map(|f| {
+                format!(
+                    "{} {}",
+                    c_param_type(&f.sce_type),
+                    filters::to_snake_case(f.id.clone())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    // Build identifier rename map: SCXML source ids → snake_case parameter
+    // names so the typed expression pipeline emits matching C identifiers.
+    let var_name_strings: Vec<String> = m.inputs.iter().map(|f| f.id.clone()).collect();
+    let snake_owned: Vec<String> = m
+        .inputs
+        .iter()
+        .map(|f| filters::to_snake_case(f.id.clone()))
+        .collect();
+    let mut owned_rename: std::collections::HashMap<&str, String> =
+        std::collections::HashMap::new();
+    for (raw, snk) in var_name_strings.iter().zip(snake_owned.iter()) {
+        owned_rename.insert(raw.as_str(), snk.clone());
+    }
+    let rename_map: std::collections::HashMap<&str, &str> = owned_rename
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+
+    let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+
+    // Non-final states: ordered transition list with transpiled C guards.
+    // L1 procedures have no event-driven transitions and no transition
+    // assigns — every transition is either an unconditional `target` or
+    // a guarded `cond`+`target` pair.
+    let non_final_states: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .filter(|s| !s.is_final)
+        .map(|s| {
+            let transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .map(|tr| {
+                    let cond_transpiled = tr.cond.as_ref().map(|c| {
+                        transpile_procedure_expr(
+                            c,
+                            ExprTarget::C,
+                            &procedure_type_ctx,
+                            &rename_map,
+                            crate::forge::types::InferredType::Bool,
+                        )
+                    });
+                    let target_enum = format!(
+                        "{}_STATE_{}",
+                        upper,
+                        to_upper_snake(&tr.target),
+                    );
+                    serde_json::json!({
+                        "has_cond": tr.cond.is_some(),
+                        "cond": cond_transpiled.unwrap_or_default(),
+                        "target_enum": target_enum,
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "enum_name": format!("{}_STATE_{}", upper, to_upper_snake(&s.id)),
+                "transitions": transitions,
+            })
+        })
+        .collect();
+
+    let final_states: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .filter(|s| s.is_final)
+        .map(|s| {
+            serde_json::json!({
+                "enum_name": format!("{}_STATE_{}", upper, to_upper_snake(&s.id)),
+                "id": s.id,
+            })
+        })
+        .collect();
+
+    let initial_state_enum = format!(
+        "{}_STATE_{}",
+        upper,
+        to_upper_snake(&m.initial),
+    );
+    let result_typedef = format!("{}_result_t", &snake);
+    let state_typedef = format!("{}_state_t", &snake);
+    let execute_func = format!("{}_execute", &snake);
+
+    let tmpl = env
+        .get_template("procedure.h.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+
+    let ctx = minijinja::context! {
+        guard => guard,
+        state_typedef => state_typedef,
+        result_typedef => result_typedef,
+        execute_func => execute_func,
+        params => params,
+        initial_state_enum => initial_state_enum,
+        state_enum => minijinja::Value::from_serialize(&state_enum),
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        final_states => minijinja::Value::from_serialize(&final_states),
+        input_fields => minijinja::Value::from_serialize(&input_fields),
     };
 
     Ok(tmpl.render(ctx).map_err(generator::render_error)?)

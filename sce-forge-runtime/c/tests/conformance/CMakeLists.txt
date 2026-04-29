@@ -83,6 +83,10 @@ endif()
 #   * Phase B-2: Lookup    (4 fixtures)
 #   * Phase B-3: Codec     (3 fixtures)
 #   * Phase C:   Validator (5 fixtures, incl. one cross-file transform import)
+#   * Phase D-1: Procedure L1 (3 fixtures — pure guard-only diamonds);
+#                D-2 widens by `procedure_security_access` once the
+#                runtime header lands; D-3 widens by the two
+#                crossfile_procedure_codec[_mutate] cross-file imports.
 set(C11_FIXTURES
     transform_temperature
     transform_bitwise
@@ -102,6 +106,9 @@ set(C11_FIXTURES
     validator_rpm_check
     validator_signed_roc
     crossfile_validator_transform
+    procedure_linear
+    procedure_diamond
+    procedure_startup_check
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
