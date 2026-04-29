@@ -96,6 +96,35 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
         {% for invoke_info in state.invokes | scxml %}
         if (p->state == (int){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
             && p->invoke_idx == {{ loop.index0 }}) {
+            {% if invoke_info.namelist %}
+            {# W3C SCXML 6.4 / test554: a namelist name not declared in the
+               parent's `<datamodel>` is an evaluation error — cpp
+               `InvokeExecutor::startInvoke` (sce/src/runtime/InvokeExecutor.cpp:425-432)
+               aborts the spawn via `destroySession + return ""`, propagating
+               error.execution upstream. Parent vars are statically known
+               at codegen time (model.variables), so the membership check
+               folds to a compile-time predicate. The `loop.first` arm
+               emits the error.execution raise + skip-spawn (`continue`)
+               exactly once on the first undeclared name — subsequent
+               undeclared names produce no output (the spawn is already
+               aborted). The param/namelist transfer block below stays
+               unreachable for this iteration. #}
+            {% set _parent_var_ids = model.variables | map(attribute='id') | list %}
+            {% for _ns_name in invoke_info.namelist.split() if _ns_name not in _parent_var_ids %}
+            {% if loop.first %}
+            /* W3C SCXML 6.4 (test554): namelist references undeclared
+               parent var `{{ _ns_name }}` — abort spawn and raise
+               error.execution per cpp `InvokeExecutor`. */
+            {
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+            }
+            continue;
+            {% endif %}
+            {% endfor %}
+            {% endif %}
             /* W3C SCXML 6.4: spawn child {{ invoke_info.child_name }}
                (invoke id `{{ invoke_info.invoke_id }}` in state `{{ state_id }}`). */
             {% if invoke_info.child_has_send_to_parent %}
