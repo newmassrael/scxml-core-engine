@@ -70,7 +70,7 @@ extern uint64_t _sce_clock_now_ms(void);
    queues and macrostep helpers they belong with. The forward decl keeps
    `-Werror=implicit-function-declaration` quiet without reordering the
    logical sections of the generated source. */
-static void scheduled_push({{ model.name }}_t *sm,
+static SCE_C_UNUSED void scheduled_push({{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
                            {{ model.name }}_event_t event,
                            const char *send_id
@@ -78,6 +78,19 @@ static void scheduled_push({{ model.name }}_t *sm,
                            int payload_lua_ref
 {%- endif %});
 static SCE_C_UNUSED void scheduled_cancel({{ model.name }}_t *sm, const char *send_id);
+{% if model.has_parent_communication %}
+/* W3C SCXML 6.2 + 6.4 (test187): delayed `<send target="#_parent">` —
+   distinct entry-point from `scheduled_push` so the local-event arm
+   keeps its enum-typed parameter while the parent-routed arm carries
+   an event NAME (the parent's enum is foreign here). Both paths share
+   the same `scheduled_queue_t` so `_tick`'s pop-by-fire-time ordering
+   stays unified, and `scheduled_cancel`'s send_id walk catches
+   to-parent entries the same way as local entries. */
+static SCE_C_UNUSED void scheduled_push_parent({{ model.name }}_t *sm,
+                                  uint64_t fire_time_ms,
+                                  const char *event_name,
+                                  const char *send_id);
+{% endif %}
 {% endif %}
 {% if model.needs_http_send %}
 
@@ -372,6 +385,25 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
             _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
             {{ model.name }}_raise(sm, &_err_evt);
             return;
+{% elif action.event and action.target == '#_parent' and action.delay and not action.delayexpr and not action.eventexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+            /* W3C SCXML 6.2 + 6.4 (test187): static-event + target="#_parent"
+               + literal delay. The send is scheduled in the child's own
+               `scheduled_queue` rather than dispatched immediately so the
+               cpp invariant — "session terminates → pending delayed sends
+               drop" — holds: when the child reaches `<final>` before
+               `fire_time_ms` is reached, `_tick`'s `is_in_final_state`
+               early-return prevents promotion (the child's invoke driver
+               also stops calling `_tick` once the child finalises, so
+               the queue is never pumped again). Mirrors cpp's per-child
+               `parentSendScheduler_` (`actions/send.jinja2:189-194`)
+               whose dtor fires when the ParentStateMachine destroys the
+               child SM; C11 collapses to the unified scheduled_queue
+               with a `to_parent` discriminator since a second buffer
+               would duplicate fire-time ordering. */
+            scheduled_push_parent(sm,
+                                  _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
+                                  "{{ action.event }}",
+                                  "{{ action.auto_send_id | escape_c }}");
 {% elif action.event and action.target == '#_parent' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.4: static-event + target="#_parent" routes to
                the invoking parent's external queue via the dispatch fn
@@ -2689,8 +2721,69 @@ static void scheduled_push({{ model.name }}_t *sm,
 {% if model.needs_script_engine %}
     slot->payload_lua_ref = payload_lua_ref;
 {% endif %}
+{% if model.has_parent_communication %}
+    slot->to_parent = false;
+    slot->to_parent_event[0] = '\0';
+{% endif %}
     sm->scheduled_queue.count++;
 }
+
+{% if model.has_parent_communication %}
+/* W3C SCXML 6.2 + 6.4 (test187): sorted-insert delayed entry whose
+   firing routes through `parent_dispatch` instead of the local
+   `raise_external` path. Shares the same scheduled_queue buffer as
+   `scheduled_push` so a single fire-time ordering covers both arms,
+   and `scheduled_cancel` walks the same send_id index. The `event`
+   enum slot is left at `_EVENT_NONE` (the to_parent flag is the
+   discriminator `_tick` reads) — the parent's enum is foreign to
+   this SM, so the routing target travels as an event NAME in
+   `to_parent_event`. Capacity overflow drops the entry the same way
+   the local arm does (raise error.execution + return). */
+static void scheduled_push_parent({{ model.name }}_t *sm,
+                                  uint64_t fire_time_ms,
+                                  const char *event_name,
+                                  const char *send_id) {
+    if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
+        {{ model.name }}_event_with_meta_t _err_evt;
+        memset(&_err_evt, 0, sizeof(_err_evt));
+        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ model.name }}_raise(sm, &_err_evt);
+        return;
+    }
+
+    uint8_t pos = sm->scheduled_queue.count;
+    for (uint8_t i = 0; i < sm->scheduled_queue.count; ++i) {
+        if (fire_time_ms < sm->scheduled_queue.buf[i].fire_time_ms) {
+            pos = i;
+            break;
+        }
+    }
+    for (uint8_t j = sm->scheduled_queue.count; j > pos; --j) {
+        sm->scheduled_queue.buf[j] = sm->scheduled_queue.buf[j - 1u];
+    }
+
+    {{ model.name }}_scheduled_entry_t *slot = &sm->scheduled_queue.buf[pos];
+    slot->fire_time_ms = fire_time_ms;
+    slot->event = {{ model.name | upper }}_EVENT_NONE;
+    if (send_id != NULL) {
+        strncpy(slot->send_id, send_id, (size_t)SCE_MAX_ID_LEN - 1u);
+        slot->send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+    } else {
+        slot->send_id[0] = '\0';
+    }
+{% if model.needs_script_engine %}
+    slot->payload_lua_ref = LUA_NOREF;
+{% endif %}
+    slot->to_parent = true;
+    if (event_name != NULL) {
+        strncpy(slot->to_parent_event, event_name, (size_t)SCE_MAX_ID_LEN - 1u);
+        slot->to_parent_event[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+    } else {
+        slot->to_parent_event[0] = '\0';
+    }
+    sm->scheduled_queue.count++;
+}
+{% endif %}
 
 /* Pop the head entry iff its fire time has elapsed (compared against `now_ms`).
    Returns true and writes the matured entry into `out` when ready, false otherwise.
@@ -3062,6 +3155,22 @@ void {{ model.name }}_tick({{ model.name }}_t *sm) {
     uint64_t now_ms = _sce_clock_now_ms();
     {{ model.name }}_scheduled_entry_t ready;
     while (scheduled_pop_ready(sm, now_ms, &ready)) {
+{% if model.has_parent_communication %}
+        /* W3C SCXML 6.2 + 6.4 (test187): a `to_parent` entry routes
+           through `parent_dispatch` instead of the local raise path —
+           the parent's enum is foreign to this SM so we carry the
+           event NAME and let the parent's `dispatch_external_by_name`
+           shim resolve it. The NULL guard mirrors the cancellation
+           drop semantics in `_finalize_session`'s sibling cancel arm
+           (test252-shape): if the parent already cleared the dispatch
+           pointer, the in-flight delayed send falls away silently. */
+        if (ready.to_parent) {
+            if (sm->parent_dispatch != NULL) {
+                sm->parent_dispatch(sm->parent_sm, ready.to_parent_event, sm->invoke_id);
+            }
+            continue;
+        }
+{% endif %}
         {{ model.name }}_event_with_meta_t evt;
         memset(&evt, 0, sizeof(evt));
         evt.event = ready.event;
