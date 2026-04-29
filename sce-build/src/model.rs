@@ -648,6 +648,14 @@ pub struct SCXMLModel {
     pub has_history_states: bool,
     pub has_event_metadata: bool,
     pub has_parent_communication: bool,
+    /// W3C SCXML 6.4 / test229: `true` iff any `<invoke>` in the document
+    /// carries `autoforward="true"`. Drives codegen of the
+    /// `forward_to_autoforward_children` helper + its call site in the
+    /// external-dequeue branch of `process_event_queues`. Set in
+    /// [`crate::parser::SCXMLParser::parse_invoke`] alongside the per-invoke
+    /// `autoforward` field so the helper is only emitted when at least one
+    /// invoke needs it (rest of the corpus stays byte-identical).
+    pub has_autoforward_invoke: bool,
     /// SCE_MESH.md §9.6 — codegen-shape seam. `true` when the machine
     /// must emit the non-templated child shape (no `ParentStateMachine`
     /// template param, no `parent_` pointer field, `#_parent` routed

@@ -1520,6 +1520,14 @@ impl SCXMLParser {
         let srcexpr = elem.attribute("srcexpr").unwrap_or("").to_string();
         let idlocation = elem.attribute("idlocation").unwrap_or("").to_string();
         let autoforward = elem.attribute("autoforward").unwrap_or("false") == "true";
+        if autoforward {
+            // W3C SCXML 6.4 / test229: stamp the SM-wide predicate so the
+            // c11 codegen emits `forward_to_autoforward_children` and its
+            // process_event_queues call site. Per-invoke `autoforward` flag
+            // (assigned below into `InvokeSessionCommon::autoforward`) drives
+            // the per-child arm inside that helper.
+            model.has_autoforward_invoke = true;
+        }
         let namelist = elem.attribute("namelist").unwrap_or("").to_string();
 
         // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> — short-lived RPC

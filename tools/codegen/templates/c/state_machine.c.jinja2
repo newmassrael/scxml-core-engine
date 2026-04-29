@@ -3016,6 +3016,43 @@ static void set_current_event(lua_State *L, const {{ model.name }}_event_with_me
    eventless function definition follows. */
 static void check_eventless_transitions({{ model.name }}_t *sm);
 
+{% if model.has_autoforward_invoke %}
+/* W3C SCXML 6.4 (test229): forward each non-platform external event to
+   active autoforward children. cpp `StateMachine::processEvent`
+   (sce/src/runtime/StateMachine.cpp:683) does the same via
+   `getAutoForwardSessions` + `child->processEvent`; mirrored here by a
+   per-event switch arm that calls each active autoforward child's
+   `_raise_external_by_name` shim with the parent-side event-name string.
+   Platform events (done.*, error.*, cancel.invoke), the wildcard sentinel,
+   and the empty-name placeholder are excluded — those are state-machine
+   internal and forwarding them across session boundaries is not spec'd
+   (cpp filters them via `isPlatformEvent`). The shim ignores names not
+   in the child's enum (silently falls through), so a child SM with a
+   smaller event vocabulary than the parent is safely tolerated. */
+static void {{ model.name }}_forward_to_autoforward_children({{ model.name }}_t *sm,
+        const {{ model.name }}_event_with_meta_t *evt) {
+    switch (evt->event) {
+        {% for ev_name in model.events | sort %}
+        {% if ev_name and ev_name != 'Wildcard' and not ev_name.startswith('done.') and not ev_name.startswith('error.') and ev_name != 'cancel.invoke' %}
+        case {{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }}:
+            {% for state_id, state in model.states | dictsort %}
+            {% for invoke_info in state.invokes | scxml %}
+            {% if invoke_info.autoforward and invoke_info.child_has_send_to_parent %}
+            if (sm->child_{{ invoke_info.field_suffix }}_active) {
+                {{ invoke_info.child_name }}_raise_external_by_name(
+                    &sm->child_{{ invoke_info.field_suffix }}, "{{ ev_name }}");
+            }
+            {% endif %}
+            {% endfor %}
+            {% endfor %}
+            break;
+        {% endif %}
+        {% endfor %}
+        default: break;
+    }
+}
+{% endif %}
+
 static void process_event_queues({{ model.name }}_t *sm) {
     {{ model.name }}_event_with_meta_t evt;
     {{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
@@ -3075,6 +3112,21 @@ static void process_event_queues({{ model.name }}_t *sm) {
         if ({{ model.name }}_is_in_final_state(sm)) {
             return;
         }
+
+        {% if model.has_autoforward_invoke %}
+        /* W3C SCXML 6.4 (test229): forward this external event to any
+           active autoforward children BEFORE running parent-side
+           transition matching, so the child's enqueued copy is in its
+           external queue by the time the post-step `_drive_active_children`
+           call drains it inside the same macrostep. The forward and the
+           parent's own transition firing are independent — both can match
+           the same event (test229's parent has a no-target
+           `<transition event="childToParent"/>` that consumes but does not
+           change configuration; the forward still delivers a copy to the
+           child). cpp orders the same way (StateMachine.cpp:683 runs
+           autoforward before findApplicableTransitions). */
+        {{ model.name }}_forward_to_autoforward_children(sm, &evt);
+        {% endif %}
 
         if (process_transition(sm, evt.event, enabled, &count)) {
             count = remove_conflicting_transitions(enabled, count);
