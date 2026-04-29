@@ -44,7 +44,9 @@ The accepted surface comprises:
 - **Executable content**: `<onentry>`, `<onexit>`, `<if>`/`<elseif>`/
   `<else>`, `<foreach>`, `<raise>`, `<send>` (internal targets,
   `#_internal`, `#_parent`, `#_invokeid`, delayed sends),
-  `<cancel>`, `<assign>`, `<log>`, `<script>`.
+  `<cancel>` (W3C §6.3 — MUST carry `sendid` or `sendidexpr`; the
+  both-empty shape is rejected at parse time, wire
+  `validation/require-either`), `<assign>`, `<log>`, `<script>`.
 - **Datamodel**: `<datamodel>` / `<data>` with expression-language
   assignment. The generated code runs a Lua 5.4 datamodel by default
   (see `lua_engine_default.md`); ECMAScript data-model documents are

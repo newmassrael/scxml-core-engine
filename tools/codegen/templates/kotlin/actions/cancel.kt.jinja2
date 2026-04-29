@@ -2,7 +2,12 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# W3C SCXML 6.3: Cancel delayed send event.
-   Ported 1:1 from C++ cancel.jinja2. #}
+   Ported 1:1 from C++ cancel.jinja2.
+   <cancel> MUST carry either sendid or sendidexpr (W3C §6.3); both-empty
+   is rejected at parse time by the SCXML parser (parser.rs cancel branch,
+   wire `validation/require-either`). No `{% else %}` arm — parser
+   guarantees one branch matches. See `claudedocs/rfc-c11-error-guards-lift.md`
+   v2 Layer 4 for the 5-backend alignment. #}
 {% if action.sendidexpr and model.needs_script_engine %}
             // W3C SCXML 6.3: Dynamic sendid evaluation (test210)
             run {

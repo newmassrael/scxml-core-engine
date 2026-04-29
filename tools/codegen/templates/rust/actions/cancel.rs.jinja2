@@ -1,7 +1,12 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 6.3: <cancel> - Cancel delayed send event #}
+{# W3C SCXML 6.3: <cancel> - Cancel delayed send event.
+   <cancel> MUST carry either sendid or sendidexpr (W3C §6.3); both-empty
+   is rejected at parse time by the SCXML parser (parser.rs cancel branch,
+   wire `validation/require-either`). No `{% else %}` arm — parser
+   guarantees one branch matches. See `claudedocs/rfc-c11-error-guards-lift.md`
+   v2 Layer 4 for the 5-backend alignment. #}
 {% if action.sendidexpr %}
 // W3C SCXML 6.3: <cancel sendidexpr="{{ action.sendidexpr | escape_rust }}">
 {

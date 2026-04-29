@@ -1286,7 +1286,7 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
             }
         }
 {% else %}
-#error "C11 backend: <cancel> without sendid or sendidexpr is invalid per W3C SCXML 6.3 — the parser should have rejected this fixture."
+#error "C11 backend: <cancel> without sendid or sendidexpr is invalid per W3C SCXML 6.3. Defense-in-depth — the SCXML parser (sce-build/src/parser.rs cancel branch, wire `validation/require-either`) rejects this shape at parse time, so this codegen-time #error is unreachable in practice. See claudedocs/rfc-c11-error-guards-lift.md v2 Layer 4."
 {% endif %}
 {% elif action.type == 'script' %}
         {

@@ -835,7 +835,7 @@ impl SCXMLParser {
 
             // Parse transitions
             for trans_elem in scxml_children(&child, "transition") {
-                let transition = self.parse_transition(&trans_elem, model)?;
+                let transition = self.parse_transition(&trans_elem, model, source_name)?;
                 // Collect event names
                 if !transition.event.is_empty() {
                     let ev = &transition.event;
@@ -852,7 +852,7 @@ impl SCXMLParser {
 
             // Parse onentry blocks
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model)?;
+                let block = self.parse_executable_content(&entry_elem, model, source_name)?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
@@ -860,7 +860,7 @@ impl SCXMLParser {
 
             // Parse onexit blocks
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model)?;
+                let block = self.parse_executable_content(&exit_elem, model, source_name)?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -870,7 +870,7 @@ impl SCXMLParser {
             if let Some(initial_elem) = scxml_child(&child, "initial") {
                 if let Some(initial_trans) = scxml_child(&initial_elem, "transition") {
                     state.initial_transition_actions =
-                        self.parse_executable_content(&initial_trans, model)?;
+                        self.parse_executable_content(&initial_trans, model, source_name)?;
                     if state.initial.is_empty() {
                         if let Some(target) = initial_trans.attribute("target") {
                             state.initial = target.to_string();
@@ -943,13 +943,13 @@ impl SCXMLParser {
             self.document_order_counter += 1;
 
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model)?;
+                let block = self.parse_executable_content(&entry_elem, model, source_name)?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
             }
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model)?;
+                let block = self.parse_executable_content(&exit_elem, model, source_name)?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -980,7 +980,7 @@ impl SCXMLParser {
             self.document_order_counter += 1;
 
             for trans_elem in scxml_children(&child, "transition") {
-                let transition = self.parse_transition(&trans_elem, model)?;
+                let transition = self.parse_transition(&trans_elem, model, source_name)?;
                 if !transition.event.is_empty() {
                     let ev = &transition.event;
                     if ev != "*" && ev != ".*" && ev != "_*" {
@@ -995,13 +995,13 @@ impl SCXMLParser {
             }
 
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model)?;
+                let block = self.parse_executable_content(&entry_elem, model, source_name)?;
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
             }
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model)?;
+                let block = self.parse_executable_content(&exit_elem, model, source_name)?;
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -1025,7 +1025,7 @@ impl SCXMLParser {
             for trans_elem in scxml_children(&child, "transition") {
                 if let Some(target) = trans_elem.attribute("target") {
                     default_target = target.to_string();
-                    default_actions = self.parse_executable_content(&trans_elem, model)?;
+                    default_actions = self.parse_executable_content(&trans_elem, model, source_name)?;
                     break;
                 }
             }
@@ -1054,6 +1054,7 @@ impl SCXMLParser {
         &mut self,
         elem: &roxmltree::Node,
         model: &mut SCXMLModel,
+        source_name: &str,
     ) -> Result<Transition, crate::forge::error::Located<crate::forge::error::ForgeError>>
     {
         let cond = elem
@@ -1104,7 +1105,7 @@ impl SCXMLParser {
             ..Default::default()
         };
 
-        transition.actions = self.parse_executable_content(elem, model)?;
+        transition.actions = self.parse_executable_content(elem, model, source_name)?;
 
         // Detect guard conditions requiring In() predicate. The
         // script-engine side of this check is re-evaluated post-parse by
@@ -1124,11 +1125,12 @@ impl SCXMLParser {
         &mut self,
         parent: &roxmltree::Node,
         model: &mut SCXMLModel,
+        source_name: &str,
     ) -> Result<Vec<Action>, crate::forge::error::Located<crate::forge::error::ForgeError>>
     {
         let mut actions = Vec::new();
         for child in parent.children() {
-            if let Some(action) = self.parse_executable_content_single(&child, model)? {
+            if let Some(action) = self.parse_executable_content_single(&child, model, source_name)? {
                 actions.push(action);
             }
         }
@@ -1275,6 +1277,7 @@ impl SCXMLParser {
         elem: &roxmltree::Node,
         action: &mut Action,
         model: &mut SCXMLModel,
+        source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         let cond = elem.attribute("cond").unwrap_or("").to_string();
         let mut is_pure_in = false;
@@ -1335,7 +1338,7 @@ impl SCXMLParser {
                 }
                 _ => {
                     // Parse the nested action
-                    let nested_actions = self.parse_executable_content_single(&child, model)?;
+                    let nested_actions = self.parse_executable_content_single(&child, model, source_name)?;
                     if let Some(nested) = nested_actions {
                         match current_branch {
                             0 => action.then_actions.push(nested),
@@ -1357,6 +1360,7 @@ impl SCXMLParser {
         &mut self,
         child: &roxmltree::Node,
         model: &mut SCXMLModel,
+        source_name: &str,
     ) -> Result<
         Option<Action>,
         crate::forge::error::Located<crate::forge::error::ForgeError>,
@@ -1437,6 +1441,27 @@ impl SCXMLParser {
             "cancel" => {
                 action.sendid = child.attribute("sendid").unwrap_or("").to_string();
                 action.sendidexpr = child.attribute("sendidexpr").unwrap_or("").to_string();
+                // W3C SCXML §6.3: <cancel> MUST have either sendid or
+                // sendidexpr. Mirrors the invoke-duplicate-id check
+                // (parse_invoke) — a parse-time ValidationError emit
+                // routes through the same Located + Diagnostic pipeline,
+                // reusing wire code `validation/require-either` per
+                // W4 D4 fold (concept identity over namespace
+                // duplication). 5-backend cancel templates may safely
+                // assume at least one attribute is non-empty post-parse.
+                if action.sendid.is_empty() && action.sendidexpr.is_empty() {
+                    let pos = child.document().text_pos_at(child.range().start);
+                    return Err(crate::forge::error::Located::new(
+                        crate::forge::error::ValidationError::RequireEither {
+                            element: "<cancel>".into(),
+                            alternatives: vec!["sendid".into(), "sendidexpr".into()],
+                        }
+                        .into(),
+                        source_name,
+                        Some(pos.row),
+                        Some(pos.col),
+                    ));
+                }
                 // [`NeedsScriptEngineCause::CancelExpr`] — derived post-parse
                 // by [`crate::script_engine_analyzer`] from `sendidexpr`.
             }
@@ -1446,9 +1471,9 @@ impl SCXMLParser {
                 action.array = child.attribute("array").unwrap_or("").to_string();
                 action.item = child.attribute("item").unwrap_or("").to_string();
                 action.index = child.attribute("index").unwrap_or("").to_string();
-                action.actions = self.parse_executable_content(child, model)?;
+                action.actions = self.parse_executable_content(child, model, source_name)?;
             }
-            "if" => self.parse_if_action(child, &mut action, model)?,
+            "if" => self.parse_if_action(child, &mut action, model, source_name)?,
             _ => return Ok(None),
         }
         Ok(Some(action))
@@ -1599,7 +1624,7 @@ impl SCXMLParser {
         // Parse <finalize>
         let mut finalize_content = String::new();
         if let Some(finalize_elem) = scxml_child(elem, "finalize") {
-            let finalize_actions = self.parse_executable_content(&finalize_elem, model)?;
+            let finalize_actions = self.parse_executable_content(&finalize_elem, model, source_name)?;
             finalize_content = actions_to_javascript(&finalize_actions);
         }
 
@@ -4061,6 +4086,41 @@ mod tests {
         let entry = &model.states["s1"].on_entry_blocks[0];
         assert_eq!(entry[0].action_type, "cancel");
         assert_eq!(entry[0].sendid, "timer1");
+    }
+
+    /// W3C SCXML §6.3 enforcement — `<cancel>` MUST carry sendid or
+    /// sendidexpr. The both-empty shape is a parse-time hard error,
+    /// emitted as `ValidationError::RequireEither` (wire code
+    /// `validation/require-either` per W4 D4 fold). 5-backend cancel
+    /// templates rely on this guarantee — see
+    /// `claudedocs/rfc-c11-error-guards-lift.md` v2 Layer 4.
+    #[test]
+    fn cancel_without_sendid_or_sendidexpr_rejected() {
+        use crate::forge::error::{ForgeError, ValidationError};
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
+            <state id="s1">
+                <onentry>
+                    <cancel/>
+                </onentry>
+            </state>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let err = parser.parse_string(scxml, "test").unwrap_err();
+        match err.error {
+            ForgeError::Validation(ValidationError::RequireEither {
+                element,
+                alternatives,
+            }) => {
+                assert_eq!(element, "<cancel>");
+                assert_eq!(
+                    alternatives,
+                    vec!["sendid".to_string(), "sendidexpr".to_string()]
+                );
+            }
+            other => panic!(
+                "expected ValidationError::RequireEither for <cancel/>, got: {other:?}"
+            ),
+        }
     }
 
     #[test]
