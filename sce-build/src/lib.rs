@@ -414,14 +414,7 @@ pub fn compile_forge_from_string(
         generator::Language::Rust => forge::generator::generate_rust(&doc, &template_base),
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
-        generator::Language::C11 => Err(forge::error::ForgeError::from(
-            forge::error::GenerateError::InvalidConfig(
-                "C11 forge codegen is not yet implemented (RFC \u{00A7}5.J.1, Phase A5 — \
-                 watching-zenoh consumer). M2 will land the lookup vertical slice; other \
-                 kinds follow in M3+."
-                    .into(),
-            ),
-        )),
+        generator::Language::C11 => forge::generator::generate_c11(&doc, &template_base),
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
@@ -499,13 +492,9 @@ pub fn compile_forge_with_imports(
         generator::Language::Python => {
             forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx)
         }
-        generator::Language::C11 => Err(forge::error::ForgeError::from(
-            forge::error::GenerateError::InvalidConfig(
-                "C11 forge codegen with imports is not yet implemented (RFC \u{00A7}5.J.1, \
-                 Phase A5 — watching-zenoh consumer)."
-                    .into(),
-            ),
-        )),
+        generator::Language::C11 => {
+            forge::generator::generate_c11_with_imports(&parsed.document, &template_base, &import_ctx)
+        }
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)

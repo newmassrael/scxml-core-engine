@@ -76,6 +76,12 @@ pub enum ExprTarget {
     Rust,
     Go,
     Python,
+    /// C11 backend (RFC §5.J.2). Identifier emission is snake-case (matching
+    /// the C convention and Rust/Python's ident handling); coercion rules
+    /// mirror C++ (implicit widening, decimal-integer-to-float `.0`
+    /// promotion under push-down). The emitter is restricted to operators
+    /// the Phase-A transform fixtures exercise.
+    C,
 }
 
 /// Transpile an ECMAScript expression to the target language with full
@@ -131,6 +137,7 @@ pub fn transpile_typed(
         ExprTarget::Rust => emit_rust(&ast, expected),
         ExprTarget::Go => emit_go(&ast, expected),
         ExprTarget::Python => Ok(emit_python(&ast, expected)),
+        ExprTarget::C => Ok(emit_c(&ast, expected)),
     }
 }
 
@@ -194,6 +201,7 @@ pub fn transpile_lvalue(
         ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?,
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
         ExprTarget::Python => emit_python(&ast, InferredType::Unknown),
+        ExprTarget::C => emit_c(&ast, InferredType::Unknown),
     };
     Ok((emitted, ty))
 }
@@ -2153,6 +2161,133 @@ fn python_binop(op: BinOp) -> &'static str {
         BinOp::BitAnd => "&", BinOp::BitOr => "|", BinOp::BitXor => "^",
         BinOp::Shl => "<<", BinOp::Shr => ">>", BinOp::UShr => ">>",
     }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Emitter — C11
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// C and C++ share enough that emit_c reuses the cpp_binop / cpp_unary
+// operator strings and the same arithmetic-conversion rules (integer
+// promotion, decimal-integer-to-float `.0` promotion in float context).
+// The differences vs emit_cpp:
+//
+// * Identifiers go through `to_snake_case` (matches the C convention and
+//   the parameter names emitted by `LangCtx::format_param` for
+//   `Language::C11`). Cpp leaves identifiers verbatim.
+// * Null literal becomes `NULL` (from `<stddef.h>`) instead of `nullptr`.
+// * No other differences are exercised by the Phase-A transform fixture
+//   set; broader operator and type coverage lands in subsequent phases.
+
+fn emit_c(expr: &TypedExpr, expected: InferredType) -> String {
+    // Push-down: arithmetic + Float expectation propagates into operands so
+    // decimal-integer literals pick up `.0` and avoid integer division.
+    if let ExprKind::Binary { op, left, right } = &expr.kind {
+        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+            let l_raw = emit_c(left, expected);
+            let r_raw = emit_c(right, expected);
+            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            return format!("{l} {} {r}", cpp_binop(*op));
+        }
+    }
+    // Push-down: Unary{Neg|Pos} in float context — same rationale as emit_cpp.
+    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+        if matches!(expected, InferredType::Float { .. }) {
+            let inner = emit_c(operand, expected);
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            return if wrap {
+                format!("{}({inner})", cpp_unary(*op))
+            } else {
+                format!("{}{inner}", cpp_unary(*op))
+            };
+        }
+    }
+    let raw = c_emit_node(expr);
+    c_coerce(raw, expr.ty, expected, expr)
+}
+
+fn c_emit_node(expr: &TypedExpr) -> String {
+    match &expr.kind {
+        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
+        ExprKind::NullLit => "NULL".to_string(),
+        ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
+        ExprKind::Raw(s) => s.clone(),
+        ExprKind::Binary { op, left, right } => {
+            let operand_ty = binary_operand_type(*op, left.ty, right.ty);
+            let l_raw = emit_c(left, operand_ty);
+            let r_raw = emit_c(right, operand_ty);
+            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            format!("{l} {} {r}", cpp_binop(*op))
+        }
+        ExprKind::Unary { op, operand } => {
+            let inner = emit_c(operand, expr.ty);
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            if wrap {
+                format!("{}({inner})", cpp_unary(*op))
+            } else {
+                format!("{}{inner}", cpp_unary(*op))
+            }
+        }
+        ExprKind::Conditional { condition, consequent, alternate } => {
+            format!(
+                "{} ? {} : {}",
+                emit_c(condition, InferredType::Bool),
+                emit_c(consequent, expr.ty),
+                emit_c(alternate, expr.ty),
+            )
+        }
+        ExprKind::Member { object, property } => {
+            format!("{}.{property}", wrap_postfix(object, emit_c(object, InferredType::Unknown)))
+        }
+        ExprKind::Index { object, index } => {
+            format!(
+                "{}[{}]",
+                wrap_postfix(object, emit_c(object, InferredType::Unknown)),
+                emit_c(index, InferredType::Unknown),
+            )
+        }
+        ExprKind::Call { callee, args } => {
+            let a: Vec<_> = args.iter().map(|a| emit_c(a, InferredType::Unknown)).collect();
+            format!(
+                "{}({})",
+                wrap_postfix(callee, emit_c(callee, InferredType::Unknown)),
+                a.join(", "),
+            )
+        }
+    }
+}
+
+fn c_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+    use InferredType::*;
+    if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
+        return raw;
+    }
+    if let (UntypedInt, Float { .. }) = (from, to) {
+        if let ExprKind::NumberLit(text) = &node.kind {
+            if is_decimal_integer_literal(text) {
+                return format!("{raw}.0");
+            }
+        }
+    }
+    raw
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

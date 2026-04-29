@@ -373,6 +373,54 @@ fn cpp_param_type(ty: &SceType) -> String {
     }
 }
 
+/// Map SceType to C11 type name (RFC §5.J.2 F2). All types are stdint
+/// fixed-width integers, plain `bool` (from `<stdbool.h>`), or IEEE
+/// `float`/`double`. String/Bytes are out of scope for Phase A — the
+/// transform fixtures do not exercise them; Phase B's codec arms add
+/// the heap-free byte-array handling.
+fn c_type(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8 => "uint8_t",
+        SceType::Uint16 => "uint16_t",
+        SceType::Uint32 => "uint32_t",
+        SceType::Uint64 => "uint64_t",
+        SceType::Int8 => "int8_t",
+        SceType::Int16 => "int16_t",
+        SceType::Int32 => "int32_t",
+        SceType::Int64 => "int64_t",
+        SceType::Float32 => "float",
+        SceType::Float64 => "double",
+        SceType::Bool => "bool",
+        // String / Bytes flow through Phase B+ (codec & condition kinds).
+        // Returning a stable placeholder lets the match be exhaustive
+        // without adding a panic site — the Phase-A transform pipeline
+        // never reaches these arms because the fixture set is purely
+        // numeric.
+        SceType::String => "const char *",
+        SceType::Bytes => "const uint8_t *",
+    }
+}
+
+/// C11 parameter type. For Phase A's numeric-only transform fixtures
+/// this is the same as `c_type` — strings and bytes (which would need
+/// length-paired pointer pairs) are deferred to Phase B+.
+fn c_param_type(ty: &SceType) -> &'static str {
+    c_type(ty)
+}
+
+/// C11 literal formatter. Mirrors `cpp_literal` exactly for the shape
+/// Phase A exercises (decimal-integer-to-float `.0` promotion, `f`
+/// suffix for Float32). C and C++ accept the same literal grammar at
+/// this level.
+fn c_literal(text: &str, ty: &SceType) -> String {
+    match ty {
+        SceType::Float32 if looks_like_int(text) => format!("{text}.0f"),
+        SceType::Float32 => format!("{text}f"),
+        SceType::Float64 if looks_like_int(text) => format!("{text}.0"),
+        _ => text.to_string(),
+    }
+}
+
 /// Map SceType to Kotlin type name (SCE_FORGE.md Section 3.3).
 fn kotlin_type(ty: &SceType) -> &'static str {
     match ty {
@@ -600,7 +648,7 @@ fn render_transform(
             let fn_name = match lang {
                 Language::Go =>
                     format!("Compute{}", filters::to_pascal_case(out.id.clone())),
-                Language::Rust | Language::Python =>
+                Language::Rust | Language::Python | Language::C11 =>
                     format!("compute_{}", filters::to_snake_case(out.id.clone())),
                 _ =>
                     format!("compute{}", filters::to_pascal_case(out.id.clone())),
@@ -1546,6 +1594,81 @@ pub fn generate_python_with_imports(
     })
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── C11 code generation (RFC §5.J.2) ────────────────────────
+// ══════════════════════════════════════════════════════════════
+//
+// Phase A scope: `Transform` kind only. All other ForgeDocument
+// variants return a precise GenerateError that names the deferring
+// phase (matches `forge_phase3_complete.md` discipline of failing
+// loud at codegen time, not at compile time of stale generated code).
+
+/// Generate code from a ForgeDocument for C11 using Jinja2 templates.
+pub fn generate_c11(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
+    generate_c11_with_imports(doc, template_dir, &[])
+}
+
+/// Generate C11 code with cross-file import support.
+///
+/// Phase A only emits Transform kinds. Other variants surface a
+/// `GenerateError::UnsupportedFeature` naming the phase that lifts
+/// them, so an operator who points `--language c11` at a fixture in
+/// scope for a future phase sees a single-line "deferred to Phase X"
+/// diagnostic instead of an `unimplemented!` panic.
+pub fn generate_c11_with_imports(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+) -> Result<GeneratedOutput, ForgeError> {
+    let forge_dir = template_dir.join("forge/c");
+    let mut env = generator::new_env();
+    generator::load_templates(&mut env, &forge_dir)?;
+    inject_runtime_dep_global(&mut env, doc);
+
+    let code = match doc {
+        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Lookup(_)
+        | ForgeDocument::Condition(_)
+        | ForgeDocument::Codec(_) => {
+            return Err(GenerateError::UnsupportedFeature(
+                "C11 forge codegen for kinds Lookup/Condition/Codec is RFC \u{00A7}5.J.2 Phase B work."
+                    .into(),
+            )
+            .into());
+        }
+        ForgeDocument::Validator(_) => {
+            return Err(GenerateError::UnsupportedFeature(
+                "C11 forge codegen for kind Validator is RFC \u{00A7}5.J.2 Phase C work.".into(),
+            )
+            .into());
+        }
+        ForgeDocument::Procedure(_) => {
+            return Err(GenerateError::UnsupportedFeature(
+                "C11 forge codegen for kind Procedure is RFC \u{00A7}5.J.2 Phase D work \
+                 (gated on the C11 statechart RTC normalization)."
+                    .into(),
+            )
+            .into());
+        }
+        ForgeDocument::Filter(_)
+        | ForgeDocument::Interpolation(_)
+        | ForgeDocument::Timer(_)
+        | ForgeDocument::Observer(_) => {
+            return Err(GenerateError::UnsupportedFeature(
+                "C11 forge codegen for kinds Filter/Interpolation/Timer/Observer is \
+                 RFC \u{00A7}5.J.2 Phase E work."
+                    .into(),
+            )
+            .into());
+        }
+    };
+
+    let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
+    Ok(GeneratedOutput {
+        files: vec![(filename, code)],
+    })
+}
+
 // ── Procedure: C++ ──────────────────────────────────────────
 
 fn render_procedure_cpp(
@@ -2416,6 +2539,9 @@ fn bytes_wrap_for(target: ExprTarget, transpiled: &str) -> String {
         ExprTarget::Rust => format!("{transpiled}.as_bytes().to_vec()"),
         ExprTarget::Go => format!("[]byte({transpiled})"),
         ExprTarget::Python => format!("{transpiled}.encode()"),
+        ExprTarget::C => unimplemented!(
+            "C11 bytes_wrap_for: procedure kind is RFC \u{00A7}5.J.2 Phase D work"
+        ),
     }
 }
 
@@ -4035,10 +4161,7 @@ impl LangCtx {
             crate::generator::Language::Rust => rust_type(ty),
             crate::generator::Language::Go => go_type(ty),
             crate::generator::Language::Python => python_type(ty),
-            crate::generator::Language::C11 => unimplemented!(
-                "C11 type_name is RFC \u{00A7}5.J.1 M2+ work \
-                 (lookup vertical slice will introduce c_type)"
-            ),
+            crate::generator::Language::C11 => c_type(ty),
         }
     }
 
@@ -4048,6 +4171,7 @@ impl LangCtx {
         match self.lang {
             crate::generator::Language::Cpp => cpp_param_type(ty),
             crate::generator::Language::Rust => rust_param_type(ty),
+            crate::generator::Language::C11 => c_param_type(ty).to_string(),
             _ => self.type_name(ty).to_string(),
         }
     }
@@ -4074,16 +4198,17 @@ impl LangCtx {
                 format!("{} {}", go_escape_builtin(id), go_type(ty)),
             crate::generator::Language::Python =>
                 format!("{}: {}", filters::to_snake_case(id.to_string()), python_type(ty)),
-            crate::generator::Language::C11 => unimplemented!(
-                "C11 format_param is RFC \u{00A7}5.J.1 M2+ work"
-            ),
+            crate::generator::Language::C11 =>
+                format!("{} {}", c_param_type(ty), filters::to_snake_case(id.to_string())),
         }
     }
 
     /// Language-specific identifier for local variables / parameters.
     fn local_id(&self, id: &str) -> String {
         match self.lang {
-            crate::generator::Language::Rust | crate::generator::Language::Python =>
+            crate::generator::Language::Rust
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11 =>
                 filters::to_snake_case(id.to_string()),
             crate::generator::Language::Go =>
                 go_escape_builtin(id),
@@ -4115,13 +4240,7 @@ impl LangCtx {
             crate::generator::Language::Rust => ExprTarget::Rust,
             crate::generator::Language::Go => ExprTarget::Go,
             crate::generator::Language::Python => ExprTarget::Python,
-            // ExprTarget::C11 is RFC §5.J.1 M3+ work (typed-expr emitter
-            // for C requires its own coerce table — the C11 lookup MVP
-            // in M2 emits constant arrays only and does not exercise
-            // expression transpile).
-            crate::generator::Language::C11 => unimplemented!(
-                "ExprTarget::C11 is RFC \u{00A7}5.J.1 M3+ work"
-            ),
+            crate::generator::Language::C11 => ExprTarget::C,
         }
     }
 
@@ -4140,6 +4259,11 @@ impl LangCtx {
             }
             crate::generator::Language::Kotlin => {
                 m.insert("package".into(), filters::to_snake_case(name.to_string()).into());
+            }
+            crate::generator::Language::C11 => {
+                // C has no namespace concept — only the include guard differs
+                // from Cpp, dropping the C++ name-mangling-sensitive tail.
+                m.insert("guard".into(), format!("SCE_FORGE_{}_H", to_upper_snake(name)).into());
             }
             _ => {}
         }
@@ -4174,9 +4298,7 @@ impl LangCtx {
             crate::generator::Language::Rust => rust_literal(val, ty),
             crate::generator::Language::Go => go_literal(val, ty),
             crate::generator::Language::Python => python_literal(val, ty),
-            crate::generator::Language::C11 => unimplemented!(
-                "C11 literal is RFC \u{00A7}5.J.1 M2+ work"
-            ),
+            crate::generator::Language::C11 => c_literal(val, ty),
         }
     }
 

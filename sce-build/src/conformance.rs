@@ -406,6 +406,70 @@ pub fn go_type_for(ty: &str) -> &'static str {
     }
 }
 
+/// Map a canonical type to its C11 native type name. Phase A (transform)
+/// only exercises numeric types — string/bytes paths land in Phase B+.
+pub fn c_type_for(ty: &str) -> &'static str {
+    match ty {
+        "bool" => "bool",
+        "f64" => "double",
+        "f32" => "float",
+        "i32" => "int32_t",
+        "u8" => "uint8_t",
+        "u16" => "uint16_t",
+        "u32" => "uint32_t",
+        // Phase B: codec/condition introduce string + bytes via const
+        // pointer + length pairs; placeholder here keeps the match
+        // exhaustive without an unimplemented path.
+        "string" => "const char *",
+        _ => "/* unknown canonical type */ void",
+    }
+}
+
+/// Format a JSON literal value (from `numerical_reference.json`) as a
+/// C11 source-level literal for the requested canonical type. Used by
+/// the C11 conformance harness to pre-bake oracle arrays at codegen
+/// time (RFC §5.J.2 F7 — C has no zero-deps JSON parser that survives
+/// the R3 lock-in, so the oracle is materialised into the harness
+/// source itself).
+pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
+    match (value, ty) {
+        (serde_json::Value::Bool(b), _) => if *b { "true".into() } else { "false".into() },
+        (serde_json::Value::Number(n), "f32") => {
+            let f = n.as_f64().unwrap_or(0.0);
+            // Match Rust's "decimal int → .0_f32" promotion pattern but
+            // emit C `f` suffix.
+            if f.fract() == 0.0 && f.is_finite() {
+                format!("{f:.1}f")
+            } else {
+                format!("{f}f")
+            }
+        }
+        (serde_json::Value::Number(n), "f64") => {
+            let f = n.as_f64().unwrap_or(0.0);
+            if f.fract() == 0.0 && f.is_finite() {
+                format!("{f:.1}")
+            } else {
+                format!("{f}")
+            }
+        }
+        (serde_json::Value::Number(n), _) => {
+            // Integer canonical types — print the integer text.
+            if let Some(i) = n.as_i64() {
+                i.to_string()
+            } else if let Some(u) = n.as_u64() {
+                u.to_string()
+            } else {
+                n.to_string()
+            }
+        }
+        (serde_json::Value::String(s), _) => format!("\"{s}\""),
+        // Null / array / object are not valid scalar oracle values for
+        // Phase A's transform fixtures; emit a syntactic marker so the C
+        // compiler rejects with a clear message if reached.
+        _ => format!("/* unsupported oracle value: {value} */"),
+    }
+}
+
 /// Map a canonical type to its Kotlin native type name.
 pub fn kt_type_for(ty: &str) -> &'static str {
     match ty {
@@ -464,6 +528,23 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
     env.add_filter("kt_unmarshal", |raw: String, ty: String| {
         kt_unmarshal_expr(&raw, &ty)
     });
+    // C11 (RFC §5.J.2). `c_type` is the type-name mapping the harness
+    // template uses for pre-baked oracle struct fields. `c_literal` is
+    // a binary filter that takes a JSON value and a canonical type and
+    // produces the exact C11 source literal — replacing the runtime
+    // JSON parsing every other backend does at test execution time.
+    env.add_filter("c_type", |ty: String| c_type_for(&ty).to_string());
+    env.add_filter(
+        "c_literal",
+        |value: minijinja::Value, ty: String| -> String {
+            // minijinja Value → serde_json::Value via serialization,
+            // since `c_literal_for` operates on serde_json::Value (which
+            // is what the upstream `cases` enrichment hands us).
+            let json: serde_json::Value =
+                serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
+            c_literal_for(&json, &ty)
+        },
+    );
 }
 
 /// Top-level manifest document.
@@ -672,6 +753,17 @@ pub fn harness_layout(language: Language) -> HarnessLayout {
 /// compile; new code should call [`harness_layout`] directly.
 pub fn harness_filename(language: Language) -> &'static str {
     harness_layout(language).output_filename
+}
+
+/// RFC §5.J.2: gate which fixture kinds the C11 conformance harness
+/// includes per phase. Phase A ships only the `Transform` kind
+/// fragment; Phase B (Lookup/Condition/Codec) and later widen this
+/// predicate as their respective `kinds/<kind>.c.jinja2` fragments
+/// land. The filter exists because `harness.c.jinja2` does dynamic
+/// `{% include "kinds/" ~ f.kind ~ ".c.jinja2" %}` and would fail at
+/// render time on any kind whose fragment is not yet present.
+fn c11_supported_kind(spec: &FixtureSpec) -> bool {
+    matches!(spec, FixtureSpec::Transform { .. })
 }
 
 /// Parse a `<scxml sce:kind="procedure">` source file and return the
@@ -893,6 +985,16 @@ pub fn render_harness(
         }
     }
 
+    // RFC §5.J.2: the C11 backend lands kinds in phases (A: Transform,
+    // B: Lookup/Condition/Codec, …). Only fixtures whose kind has a
+    // matching `kinds/<kind>.c.jinja2` fragment may flow through; the
+    // harness scaffold's dynamic `{% include %}` would otherwise fail
+    // at render time. Each new phase widens this filter by adding the
+    // newly-supported kind to `c11_supported_kind`.
+    if matches!(language, Language::C11) {
+        fixtures.retain(|f| c11_supported_kind(&f.spec));
+    }
+
     // Per-kind presence flags let per-language harness scaffolds pull in
     // kind-specific runtime imports (e.g. Go `forge` package, Kotlin
     // `sce-kotlin-runtime` types) only when the fixture set actually uses
@@ -904,10 +1006,69 @@ pub fn render_harness(
         .iter()
         .any(|f| matches!(f.spec, FixtureSpec::Timer { .. }));
 
+    // C11 (RFC §5.J.2 F7): pre-bake the oracle into the harness source.
+    // Other backends parse `numerical_reference.json` at test-runtime via
+    // their language's JSON library, but C11 has no zero-deps parser
+    // that survives the R3 lock-in — so we attach a `cases` array to
+    // each fixture and emit `static const` arrays at codegen time.
+    //
+    // `float_tolerance` is exposed so the harness can `#define` the
+    // tolerance once instead of duplicating the literal across every
+    // per-kind fragment.
+    let (fixtures_value, float_tolerance): (minijinja::Value, Option<f64>) =
+        if matches!(language, Language::C11) {
+            let reference_path = resource_dir
+                .parent()
+                .map(|p| p.join("conformance/numerical_reference.json"))
+                .ok_or_else(|| {
+                    "cannot derive numerical_reference.json path from resource_dir".to_string()
+                })?;
+            let reference_text = std::fs::read_to_string(&reference_path)
+                .map_err(|e| format!("read {}: {e}", reference_path.display()))?;
+            let reference: serde_json::Value = serde_json::from_str(&reference_text)
+                .map_err(|e| format!("parse {}: {e}", reference_path.display()))?;
+
+            let tol = reference
+                .get("float_tolerance")
+                .and_then(|v| v.as_f64());
+
+            let mut enriched = Vec::with_capacity(fixtures.len());
+            for f in &fixtures {
+                let mut v = serde_json::to_value(f)
+                    .map_err(|e| format!("serialize fixture {}: {e}", f.name))?;
+                let cases = reference
+                    .get(&f.ref_section)
+                    .and_then(|s| s.get(&f.name))
+                    .and_then(|fix| fix.get("cases"))
+                    .ok_or_else(|| {
+                        format!(
+                            "fixture {} not found in {} under section {}",
+                            f.name,
+                            reference_path.display(),
+                            f.ref_section
+                        )
+                    })?
+                    .clone();
+                v.as_object_mut()
+                    .ok_or_else(|| {
+                        format!("fixture {} did not serialize to a JSON object", f.name)
+                    })?
+                    .insert("cases".to_string(), cases);
+                enriched.push(v);
+            }
+            (
+                minijinja::Value::from_serialize(&serde_json::Value::Array(enriched)),
+                tol,
+            )
+        } else {
+            (minijinja::Value::from_serialize(&fixtures), None)
+        };
+
     let ctx = minijinja::context! {
-        fixtures => minijinja::Value::from_serialize(&fixtures),
+        fixtures => fixtures_value,
         has_procedure => has_procedure,
         has_timer => has_timer,
+        float_tolerance => float_tolerance,
     };
 
     tmpl.render(ctx)
@@ -1006,6 +1167,7 @@ mod tests {
             Language::Python,
             Language::Go,
             Language::Kotlin,
+            Language::C11,
         ];
 
         for lang in &languages {

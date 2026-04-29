@@ -1,0 +1,63 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Transform kind — pre-baked oracle; single or compound output. #}
+{% if f.output %}
+static void test_{{ f.name }}(void) {
+    static const struct {
+{% for arg_ty in f.args %}
+        {{ arg_ty | c_type }} arg{{ loop.index0 }};
+{% endfor %}
+        double expected;
+    } cases[] = {
+{% for c in f.cases %}
+        { {% for arg_ty in f.args %}{{ c.args[loop.index0] | c_literal(arg_ty) }}{% if not loop.last %}, {% endif %}{% endfor %}, {{ c.expected | c_literal("f64") }} },
+{% endfor %}
+    };
+    const size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; ++i) {
+        double actual = {{ f.output.function | to_snake_case }}({% for arg_ty in f.args %}cases[i].arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        if (!close_enough(actual, cases[i].expected, FLOAT_TOL)) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: actual=%.17g expected=%.17g\n",
+                i, actual, cases[i].expected);
+            ++g_failures;
+        }
+    }
+}
+{% else %}
+static void test_{{ f.name }}(void) {
+    static const struct {
+{% for arg_ty in f.args %}
+        {{ arg_ty | c_type }} arg{{ loop.index0 }};
+{% endfor %}
+{% for co in f.compound_outputs %}
+        {{ co["type"] | c_type }} expected_{{ co.key }};
+{% endfor %}
+    } cases[] = {
+{% for c in f.cases %}
+        { {% for arg_ty in f.args %}{{ c.args[loop.index0] | c_literal(arg_ty) }}{% if not loop.last %}, {% endif %}{% endfor %}, {% for co in f.compound_outputs %}{{ c.expected[co.key] | c_literal(co["type"]) }}{% if not loop.last %}, {% endif %}{% endfor %} },
+{% endfor %}
+    };
+    const size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; ++i) {
+{% for co in f.compound_outputs %}
+        {{ co["type"] | c_type }} actual_{{ co.key }} = {{ co.function | to_snake_case }}({% for arg_ty in f.args %}cases[i].arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% if co.compare == "tolerance" %}
+        if (!close_enough((double)actual_{{ co.key }}, (double)cases[i].expected_{{ co.key }}, FLOAT_TOL)) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} {{ co.key }} case %zu: actual=%.17g expected=%.17g\n",
+                i, (double)actual_{{ co.key }}, (double)cases[i].expected_{{ co.key }});
+            ++g_failures;
+        }
+{% else %}
+        if (actual_{{ co.key }} != cases[i].expected_{{ co.key }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} {{ co.key }} case %zu\n", i);
+            ++g_failures;
+        }
+{% endif %}
+{% endfor %}
+    }
+}
+{% endif %}
