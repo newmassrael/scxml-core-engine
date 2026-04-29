@@ -81,7 +81,7 @@ endif()
 #   * Phase A:   Transform (3 fixtures)
 #   * Phase B-1: Condition (3 fixtures)
 #   * Phase B-2: Lookup    (4 fixtures)
-#   * Phase B-3: Codec     (pending)
+#   * Phase B-3: Codec     (3 fixtures)
 set(C11_FIXTURES
     transform_temperature
     transform_bitwise
@@ -93,6 +93,9 @@ set(C11_FIXTURES
     lookup_state_action
     lookup_unit_scale
     lookup_engine_status
+    codec_simple_frame
+    codec_subbyte
+    codec_little_endian
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

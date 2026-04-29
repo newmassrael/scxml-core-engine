@@ -902,6 +902,23 @@ fn render_codec(
     ctx.insert("fields".into(), serde_json::json!(fields));
     ctx.insert("min_bytes".into(), m.min_frame_bytes().into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
+
+    // C11 (RFC §5.J.2 §3 D2): full-qual flat-scope identifiers.
+    // Decode = α (`bool fn(raw, len, *out)`); encode = β (return-by-value
+    // `<name>_encoded_t { bytes[MAX]; len }`). MAX collapses to MIN for
+    // fixed-only fixtures (Phase B-3 set); Tail/LengthRef fixtures will
+    // surface a max-side computation when their first fixture lands.
+    if matches!(lang, crate::generator::Language::C11) {
+        let snake = filters::to_snake_case(m.name.clone());
+        let upper = to_upper_snake(&m.name);
+        ctx.insert("c_struct_typedef".into(), format!("{snake}_t").into());
+        ctx.insert("c_encoded_typedef".into(), format!("{snake}_encoded_t").into());
+        ctx.insert("c_decode_func".into(), format!("{snake}_decode").into());
+        ctx.insert("c_encode_func".into(), format!("{snake}_encode").into());
+        ctx.insert("c_max_bytes_macro".into(), format!("{upper}_MAX_BYTES").into());
+        ctx.insert("c_min_bytes_macro".into(), format!("{upper}_MIN_BYTES").into());
+    }
+
     l.insert_imports(&mut ctx, imports);
 
     l.render(env, "codec", ctx)
@@ -929,6 +946,8 @@ fn generate_decode_expr(
                         format!("static_cast<uint8_t>((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})"),
                     Language::Kotlin =>
                         format!("((raw[{byte_off}].toInt() ushr {bit_off}) and 0x{mask:02X}).toUByte()"),
+                    Language::C11 =>
+                        format!("(uint8_t)((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})"),
                     _ =>
                         format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}"),
                 }
@@ -1022,9 +1041,11 @@ fn decode_multibyte_unified(
                         if shift == 0 { format!("raw[{off}]") }
                         else { format!("(raw[{off}] << {shift})") }
                     }
-                    Language::C11 => unimplemented!(
-                        "C11 codec multibyte decode emitter is RFC \u{00A7}5.J.1 M3+ work"
-                    ),
+                    Language::C11 => {
+                        let target = match byte_count { 2 => "uint16_t", 3 | 4 => "uint32_t", _ => "uint64_t" };
+                        if shift == 0 { format!("raw[{off}]") }
+                        else { format!("(({target})raw[{off}] << {shift})") }
+                    }
                 }
             })
             .collect()
@@ -1090,7 +1111,9 @@ fn generate_encode_exprs(
                 match lang {
                     crate::generator::Language::Kotlin =>
                         parts.push(format!("({field_ref}.toInt() and 0x{mask:02X} shl {bit_off})")),
-                    crate::generator::Language::Cpp | crate::generator::Language::Rust =>
+                    crate::generator::Language::Cpp
+                    | crate::generator::Language::Rust
+                    | crate::generator::Language::C11 =>
                         parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})")),
                     _ =>
                         parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}")),
@@ -1127,9 +1150,9 @@ fn encode_single_field_unified(
                 Language::Rust => exprs.push(field_ref),
                 Language::Go => exprs.push(format!("byte({field_ref})")),
                 Language::Python => exprs.push(format!("{field_ref} & 0xFF")),
-                Language::C11 => unimplemented!(
-                    "C11 codec 8bit-aligned encode is RFC \u{00A7}5.J.1 M3+ work"
-                ),
+                // C11 (β encode shape): field_ref already includes `self->`,
+                // and the value is a uint8_t so no width cast is required.
+                Language::C11 => exprs.push(field_ref),
             }
         }
         Some(bits) if bits < 8 || bit_off > 0 => {
@@ -1186,9 +1209,13 @@ fn encode_single_field_unified(
                             format!("(self.{name} >> {shift}) & 0xFF")
                         }
                     }
-                    Language::C11 => unimplemented!(
-                        "C11 codec multibyte encode is RFC \u{00A7}5.J.1 M3+ work"
-                    ),
+                    Language::C11 => {
+                        if shift == 0 {
+                            format!("(uint8_t)(self->{name} & 0xFF)")
+                        } else {
+                            format!("(uint8_t)((self->{name} >> {shift}) & 0xFF)")
+                        }
+                    }
                 };
                 exprs.push(expr);
             }
@@ -1666,13 +1693,7 @@ pub fn generate_c11_with_imports(
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Codec(_) => {
-            return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for kind Codec is RFC \u{00A7}5.J.2 Phase B work (B-3 Codec)."
-                    .into(),
-            )
-            .into());
-        }
+        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Validator(_) => {
             return Err(GenerateError::UnsupportedFeature(
                 "C11 forge codegen for kind Validator is RFC \u{00A7}5.J.2 Phase C work.".into(),
@@ -4383,17 +4404,17 @@ impl LangCtx {
             crate::generator::Language::Rust => "rs_type",
             crate::generator::Language::Go => "go_type",
             crate::generator::Language::Python => "py_type",
-            crate::generator::Language::C11 => unimplemented!(
-                "C11 codec_type_key is RFC \u{00A7}5.J.1 M3+ work"
-            ),
+            crate::generator::Language::C11 => "c_type",
         }
     }
 
-    /// Codec field ID: Go PascalCase, Rust/Python snake_case, others as-is.
+    /// Codec field ID: Go PascalCase, Rust/Python/C11 snake_case, others as-is.
     fn codec_field_id(&self, id: &str) -> String {
         match self.lang {
             crate::generator::Language::Go => filters::to_pascal_case(id.to_string()),
-            crate::generator::Language::Rust | crate::generator::Language::Python =>
+            crate::generator::Language::Rust
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11 =>
                 filters::to_snake_case(id.to_string()),
             _ => id.to_string(),
         }
@@ -4406,6 +4427,10 @@ impl LangCtx {
                 format!("self.{name}"),
             crate::generator::Language::Go =>
                 format!("s.{name}"),
+            // C11's encode is a free function `encode(const struct_t *self)`
+            // so member access goes through the pointer with `->`.
+            crate::generator::Language::C11 =>
+                format!("self->{name}"),
             _ => name.to_string(),
         }
     }
@@ -4423,9 +4448,8 @@ impl LangCtx {
                 format!("byte({expr})"),
             crate::generator::Language::Python =>
                 format!("({expr}) & 0xFF"),
-            crate::generator::Language::C11 => unimplemented!(
-                "C11 codec_to_byte is RFC \u{00A7}5.J.1 M3+ work"
-            ),
+            crate::generator::Language::C11 =>
+                format!("(uint8_t)({expr})"),
         }
     }
 

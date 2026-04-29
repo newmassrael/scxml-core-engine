@@ -1,0 +1,51 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+#define {{ c_min_bytes_macro }} {{ min_bytes }}
+#define {{ c_max_bytes_macro }} {{ min_bytes }}
+
+typedef struct {
+{% for field in fields %}
+    {{ field.c_type }} {{ field.id }};
+{% endfor %}
+} {{ c_struct_typedef }};
+
+typedef struct {
+    uint8_t bytes[{{ c_max_bytes_macro }}];
+    size_t  len;
+} {{ c_encoded_typedef }};
+
+static inline bool {{ c_decode_func }}(const uint8_t *raw, size_t len, {{ c_struct_typedef }} *out) {
+    if (len < {{ c_min_bytes_macro }}) return false;
+{% for field in fields %}
+    out->{{ field.id }} = {{ field.decode_expr }};
+{% endfor %}
+    return true;
+}
+
+static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_typedef }} *self) {
+    {{ c_encoded_typedef }} r;
+    r.len = {{ c_min_bytes_macro }};
+{% for expr in encode_exprs %}
+    r.bytes[{{ loop.index0 }}] = {{ expr }};
+{% endfor %}
+    return r;
+}
+
+#endif  /* {{ guard }} */

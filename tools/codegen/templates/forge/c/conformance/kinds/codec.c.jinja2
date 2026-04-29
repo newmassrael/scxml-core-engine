@@ -1,0 +1,56 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Codec kind — round-trip { decoded, encoded } cases. C11 uses the
+   header's `<f.name>_t` struct + `<f.name>_encoded_t` β-shape return
+   from encode() and bool/out-param decode() per RFC §5.J.2 §3 D2. #}
+static void test_{{ f.name }}(void) {
+    typedef struct {
+{% for field in f.fields %}
+        {{ field.type | c_type }} input_{{ field.name | to_snake_case }};
+{% endfor %}
+        size_t expected_len;
+        uint8_t expected_bytes[16];
+    } {{ f.name }}_case_t;
+    static const {{ f.name }}_case_t cases[] = {
+{% for c in f.cases %}
+        {
+{% for field in f.fields %}
+            .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
+{% endfor %}
+            .expected_len = {{ c.encoded | length }},
+            .expected_bytes = { {% for b in c.encoded %}{{ b }}{% if not loop.last %}, {% endif %}{% endfor %} },
+        },
+{% endfor %}
+    };
+    const size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; ++i) {
+        {{ f.name }}_t val;
+{% for field in f.fields %}
+        val.{{ field.name | to_snake_case }} = cases[i].input_{{ field.name | to_snake_case }};
+{% endfor %}
+        {{ f.name }}_encoded_t encoded = {{ f.name }}_encode(&val);
+        if (encoded.len != cases[i].expected_len ||
+            memcmp(encoded.bytes, cases[i].expected_bytes, cases[i].expected_len) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu encode: len actual=%zu expected=%zu\n",
+                i, encoded.len, cases[i].expected_len);
+            ++g_failures;
+            continue;
+        }
+        {{ f.name }}_t round_tripped;
+        if (!{{ f.name }}_decode(cases[i].expected_bytes, cases[i].expected_len, &round_tripped)) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode: returned false\n", i);
+            ++g_failures;
+            continue;
+        }
+{% for field in f.fields %}
+        if (round_tripped.{{ field.name | to_snake_case }} != cases[i].input_{{ field.name | to_snake_case }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual=%lld expected=%lld\n",
+                i, (long long)round_tripped.{{ field.name | to_snake_case }}, (long long)cases[i].input_{{ field.name | to_snake_case }});
+            ++g_failures;
+        }
+{% endfor %}
+    }
+}

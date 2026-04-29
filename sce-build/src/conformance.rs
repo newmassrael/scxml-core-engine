@@ -771,6 +771,7 @@ fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         FixtureSpec::Transform { .. }
             | FixtureSpec::Condition { .. }
             | FixtureSpec::Lookup { .. }
+            | FixtureSpec::Codec { .. }
     )
 }
 
