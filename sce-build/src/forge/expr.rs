@@ -2223,6 +2223,24 @@ fn c_emit_node(expr: &TypedExpr) -> String {
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
+            // RFC §5.J.2 V3 — string comparison lowering. C lacks operator
+            // overloading; `a == b` on `const char *` is pointer equality, not
+            // content equality. Lower any string-typed comparison (==, !=, <,
+            // >, <=, >=) to `strcmp(a, b) <op> 0`, which is the lexicographic
+            // semantic the other backends already provide natively (cpp via
+            // std::string operator==, Rust via PartialOrd, Python lex order).
+            // The validator template adds <string.h> when this lowering can
+            // fire; non-validator kinds that import the result get the
+            // include via the same mechanism if they ever exercise string
+            // comparison in their expressions.
+            if op.is_comparison()
+                && matches!(left.ty, InferredType::Str)
+                && matches!(right.ty, InferredType::Str)
+            {
+                let l_raw = emit_c(left, InferredType::Str);
+                let r_raw = emit_c(right, InferredType::Str);
+                return format!("strcmp({l_raw}, {r_raw}) {} 0", cpp_binop(*op));
+            }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_c(left, operand_ty);
             let r_raw = emit_c(right, operand_ty);
@@ -2315,6 +2333,10 @@ mod tests {
     fn float(bits: u8) -> InferredType { InferredType::Float { bits } }
     fn int(signed: bool, bits: u8) -> InferredType { InferredType::Int { signed, bits } }
 
+    fn tp_with(expr: &str, target: ExprTarget, ctx: &TypeCtx<'_>) -> String {
+        transpile_typed(expr, target, ctx, &empty_renames(), InferredType::Unknown).unwrap()
+    }
+
     // ── Arithmetic (untyped contexts, verbatim) ─────────────────
 
     #[test]
@@ -2393,6 +2415,63 @@ mod tests {
     #[test]
     fn cpp_string_literal_contents_preserved() {
         assert_eq!(tp("x === 'a === b'", ExprTarget::Cpp), "x == \"a === b\"");
+    }
+
+    // ── C11 V3: string compare → strcmp lowering ────────────────
+
+    #[test]
+    fn c_string_eq_lowers_to_strcmp() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("engineState", InferredType::Str);
+        assert_eq!(
+            tp_with("engineState === 'STOP'", ExprTarget::C, &ctx),
+            "strcmp(engine_state, \"STOP\") == 0"
+        );
+    }
+
+    #[test]
+    fn c_string_neq_lowers_to_strcmp() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("engineState", InferredType::Str);
+        assert_eq!(
+            tp_with("engineState !== 'STOP'", ExprTarget::C, &ctx),
+            "strcmp(engine_state, \"STOP\") != 0"
+        );
+    }
+
+    #[test]
+    fn c_string_lex_compare_lowers_to_strcmp() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("a", InferredType::Str);
+        ctx.insert_var("b", InferredType::Str);
+        assert_eq!(tp_with("a < b", ExprTarget::C, &ctx), "strcmp(a, b) < 0");
+        assert_eq!(tp_with("a > b", ExprTarget::C, &ctx), "strcmp(a, b) > 0");
+        assert_eq!(tp_with("a <= b", ExprTarget::C, &ctx), "strcmp(a, b) <= 0");
+        assert_eq!(tp_with("a >= b", ExprTarget::C, &ctx), "strcmp(a, b) >= 0");
+    }
+
+    #[test]
+    fn c_numeric_compare_unchanged() {
+        // Sanity: numeric comparison is NOT routed through strcmp.
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("rpm", InferredType::Int { signed: false, bits: 16 });
+        assert_eq!(tp_with("rpm > 8000", ExprTarget::C, &ctx), "rpm > 8000");
+    }
+
+    #[test]
+    fn c_string_compare_within_logical_combo() {
+        // rpm_validator real expression: numeric == on rpm, string !== on engineState.
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("rpm", InferredType::Int { signed: false, bits: 16 });
+        ctx.insert_var("engineState", InferredType::Str);
+        assert_eq!(
+            tp_with(
+                "rpm === 0 || engineState !== 'STOP'",
+                ExprTarget::C,
+                &ctx
+            ),
+            "rpm == 0 || strcmp(engine_state, \"STOP\") != 0"
+        );
     }
 
     #[test]
