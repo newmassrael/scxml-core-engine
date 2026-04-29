@@ -266,6 +266,66 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
             continue;
         }
         {% endfor %}
+        {% for invoke_info in state.invokes | hybrid %}
+        if (p->state == (int){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
+            && p->invoke_idx == {{ (state.invokes | scxml | length) + loop.index0 }}) {
+            /* W3C SCXML 6.4 (test216/530): hybrid invoke — evaluate
+               srcexpr/contentexpr at runtime (validation only) before
+               spawning the pre-generated AOT child stub. cpp
+               `invoke_methods.jinja2:179-249` is the equivalent. The
+               evaluated value is intentionally not consumed: the
+               W3C contract checked here is "evaluation succeeds at
+               invoke-fire time", not "evaluated string drives child
+               selection" — child SM identity is fixed at codegen time
+               by sce-build's `generate_hybrid_child_scxmls`. */
+            {% if model.needs_script_engine %}
+            {% if invoke_info.srcexpr %}
+            /* W3C SCXML 6.4.3: srcexpr eval-validation. */
+            if (luaL_dostring(sm->L,
+                "return ({{ invoke_info.srcexpr | to_lua_expr | escape_c }})") != 0) {
+                lua_pop(sm->L, 1);
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                continue;
+            }
+            lua_pop(sm->L, 1);
+            {% elif invoke_info.contentexpr %}
+            /* W3C SCXML 6.4.4: contentexpr eval-validation. */
+            if (luaL_dostring(sm->L,
+                "return ({{ invoke_info.contentexpr | to_lua_expr | escape_c }})") != 0) {
+                lua_pop(sm->L, 1);
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+                continue;
+            }
+            lua_pop(sm->L, 1);
+            {% endif %}
+            {% endif %}
+            /* W3C SCXML 6.4: spawn pre-generated AOT stub child
+               `{{ invoke_info.child_name }}` (initial=`<final>` so the
+               child reaches its final state during `_init`'s entry
+               walk and the immediate-final raise below fires
+               `done.invoke` synchronously). */
+            {{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
+            sm->child_{{ invoke_info.field_suffix }}_active = true;
+            strncpy(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id,
+                    (size_t)SCE_MAX_ID_LEN - 1u);
+            sm->child_{{ invoke_info.field_suffix }}_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+                {{ model.name }}_event_with_meta_t _done_evt;
+                memset(&_done_evt, 0, sizeof(_done_evt));
+                _done_evt.event = {% if invoke_info.use_specific_event %}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+                strncpy(_done_evt.invoke_id, p->invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
+                _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+                {{ model.name }}_raise_external(sm, &_done_evt);
+            }
+            continue;
+        }
+        {% endfor %}
         {% endfor %}
     }
 }
@@ -283,6 +343,28 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
    queue in time for the next macrostep iteration to dequeue them. #}
 static void {{ model.name }}_drive_active_children({{ model.name }}_t *sm) {
     {% for state_id, state in model.states | dictsort %}
+    {% for invoke_info in state.invokes | hybrid %}
+    /* W3C SCXML 6.4 (test216/530): hybrid stub children always reach
+       `<final>` during `_init` (initial="final" by construction in
+       `generate_hybrid_child_scxmls`), so the active flag will already
+       be paired with `is_in_final_state == true` on entry. The only
+       reason to drive them is defensive — a future stub that defers
+       finalisation would land here. The trivial-stub fast path below
+       no-ops gracefully. */
+    if (sm->child_{{ invoke_info.field_suffix }}_active
+        && !{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+        {{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
+        if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+            {{ model.name }}_event_with_meta_t _done_evt;
+            memset(&_done_evt, 0, sizeof(_done_evt));
+            _done_evt.event = {% if invoke_info.use_specific_event %}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+            strncpy(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id,
+                    (size_t)SCE_MAX_ID_LEN - 1u);
+            _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            {{ model.name }}_raise_external(sm, &_done_evt);
+        }
+    }
+    {% endfor %}
     {% for invoke_info in state.invokes | scxml %}
     if (sm->child_{{ invoke_info.field_suffix }}_active
         && !{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
@@ -331,6 +413,12 @@ static void {{ model.name }}_drive_active_children({{ model.name }}_t *sm) {
 static void {{ model.name }}_destroy_active_children({{ model.name }}_t *sm) {
     {% for state_id, state in model.states | dictsort %}
     {% for invoke_info in state.invokes | scxml %}
+    if (sm->child_{{ invoke_info.field_suffix }}_active) {
+        {{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
+        sm->child_{{ invoke_info.field_suffix }}_active = false;
+    }
+    {% endfor %}
+    {% for invoke_info in state.invokes | hybrid %}
     if (sm->child_{{ invoke_info.field_suffix }}_active) {
         {{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
         sm->child_{{ invoke_info.field_suffix }}_active = false;

@@ -175,6 +175,30 @@ static {{ model.name }}_event_t {{ model.name }}_event_from_name(const char *nam
 {% if in_foreach %}
             break;  /* W3C 4.6: error inside <foreach> body breaks the loop */
 {% endif %}
+{% elif (not action.expr) and action.content %}
+            /* W3C SCXML 5.4 (test530-shape): `<assign location="{{ action.location }}">`
+               with inline XML child element (no `expr` attribute). The parser's
+               `parse_executable_content` arm c14n-serialises the children into
+               `action.content` (parser.rs:1383-1391). Mirror cpp
+               `actions/assign.jinja2:40-42`: wrap as a Lua single-quoted
+               string literal so the datamodel slot holds the SCXML text for
+               downstream `<content expr>` evaluation. Lua single-quoted
+               strings preserve embedded `"` verbatim — the W3C corpus's
+               c14n output for `<scxml ...><final/></scxml>` carries only
+               double-quotes in attribute values, no single-quote / backslash
+               on this path. The replace-chain stays in for defensive
+               escaping should a future fixture introduce them. */
+            if (luaL_dostring(sm->L,
+                "{{ action.location }} = '{{ action.content | replace('\\', '\\\\') | replace("'", "\\'") | escape_c }}'") != 0) {
+                lua_pop(sm->L, 1);
+                {{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ model.name }}_raise(sm, &_err_evt);
+{% if in_foreach %}
+                break;
+{% endif %}
+            }
 {% elif in_foreach %}
 {{ se.lua_assign_in_foreach_body(action.location, action.expr) }}
 {% else %}
@@ -1739,7 +1763,8 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
     {% set is_compound_final = state.is_final and state.parent %}
     {% set has_donedata = state.is_final and state.donedata %}
     {% set has_scxml_invoke = (state.invokes | scxml) | length > 0 %}
-    {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata or has_scxml_invoke %}
+    {% set has_hybrid_invoke = (state.invokes | hybrid) | length > 0 %}
+    {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata or has_scxml_invoke or has_hybrid_invoke %}
     case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% if has_late_init %}
         /* W3C SCXML 5.3: late-binding state-local <datamodel> init runs
@@ -1795,6 +1820,36 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
                when the model's invoke list is non-empty AND the test
                carries a datamodel (idlocation requires `Var*` slots,
                which already gates `model.needs_script_engine`). */
+            lua_pushstring(sm->L, _invoke_id_buf);
+            lua_setglobal(sm->L, "{{ invoke_info.idlocation }}");
+            {% endif %}
+        }
+        {% endfor %}
+        {% endif %}
+        {% if has_hybrid_invoke %}
+        /* W3C SCXML 6.4 (test216/530): defer hybrid `<invoke srcexpr=...>` /
+           `<invoke><content expr=...>` execution until macrostep end.
+           Mirrors the static-scxml defer above — same auto-id format
+           (`<state>.<sm_ptr_hex>.<invoke_idx>`) and same pending-queue
+           push. Eval validation runs at execute time
+           (`{{ model.name }}_execute_pending_invokes`), not at defer
+           time, so `<assign>` blocks earlier in this same onentry have
+           the chance to mutate the variable that srcexpr/contentexpr
+           reads (test216 hinges on this ordering). cpp
+           `entry_exit_actions.jinja2:309-336` is the equivalent. */
+        {% for invoke_info in state.invokes | hybrid %}
+        {
+            char _invoke_id_buf[SCE_MAX_ID_LEN];
+            sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
+                                 "{{ state_id }}", (const void *)sm,
+                                 {{ (state.invokes | scxml | length) + loop.index0 }});
+            sce_invoke_pending_push(&sm->pending_invokes,
+                                    (int){{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
+                                    {{ (state.invokes | scxml | length) + loop.index0 }},
+                                    _invoke_id_buf);
+            {% if invoke_info.idlocation and model.needs_script_engine %}
+            /* W3C SCXML 6.4.1: idlocation propagation — same shape as the
+               static-scxml branch. */
             lua_pushstring(sm->L, _invoke_id_buf);
             lua_setglobal(sm->L, "{{ invoke_info.idlocation }}");
             {% endif %}
@@ -1937,7 +1992,8 @@ static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% set has_scxml_invoke_exit = (state.invokes | scxml) | length > 0 %}
-    {% if state.on_exit_blocks or has_scxml_invoke_exit %}
+    {% set has_hybrid_invoke_exit = (state.invokes | hybrid) | length > 0 %}
+    {% if state.on_exit_blocks or has_scxml_invoke_exit or has_hybrid_invoke_exit %}
     case {{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% for block in state.on_exit_blocks %}
         /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} —
@@ -1945,7 +2001,7 @@ static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_
            terminates only that block. W3C SCXML 3.13. */
         {{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
         {% endfor %}
-        {% if has_scxml_invoke_exit %}
+        {% if has_scxml_invoke_exit or has_hybrid_invoke_exit %}
         /* W3C SCXML 6.4: cancel any pending invokes deferred from this
            state's onentry that have not yet executed (state exit before
            macrostep end), and destroy any active children spawned from
@@ -1967,6 +2023,18 @@ static void execute_exit_actions({{ model.name }}_t *sm, {{ model.name }}_state_
                cancel path takes this branch. */
             sm->child_{{ invoke_info.field_suffix }}.parent_dispatch = NULL;
             {% endif %}
+            {{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
+            sm->child_{{ invoke_info.field_suffix }}_active = false;
+        }
+        {% endfor %}
+        {% for invoke_info in state.invokes | hybrid %}
+        /* W3C SCXML 6.4 (test216/530): hybrid child cancel — same shape
+           as the static-scxml branch above. The trivial immediate-final
+           stub never installs `parent_dispatch`, so the cancel-drop
+           NULL guard is unnecessary (test252-shape concerns do not
+           arise for hybrid stubs). cpp `entry_exit_actions.jinja2:677`
+           is the equivalent. */
+        if (sm->child_{{ invoke_info.field_suffix }}_active) {
             {{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
             sm->child_{{ invoke_info.field_suffix }}_active = false;
         }

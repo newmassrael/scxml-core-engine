@@ -34,6 +34,16 @@
    `_step`/`_destroy` API from the invoke lifecycle helpers below. */
 #include "{{ invoke_info.child_name }}_sm.h"
 {% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+/* W3C SCXML 6.4 (test216/530): child SM declarations for hybrid
+   `<invoke srcexpr=...>` / `<invoke><content expr=...>`. The child's
+   SCXML is a trivial immediate-final stub written by sce-build's
+   `generate_hybrid_child_scxmls`; the parent's runtime evaluation of
+   srcexpr/contentexpr is validation-only (cpp `test216_sm.inl:166`
+   pattern). The child header / struct embed shape is identical to the
+   static-scxml case. */
+#include "{{ invoke_info.child_name }}_sm.h"
+{% endfor %}
 {% endif %}
 
 {% if model.needs_script_engine %}
@@ -280,6 +290,17 @@ typedef struct {{ model.name }} {
        can fill `done.invoke.invoke_id` even when the child SM itself
        does not carry parent-routing fields (no `<send target="#_parent">`
        in the child means no `invoke_id` slot on the child struct). */
+    char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
+    {% endfor %}
+    {% for invoke_info in model.invokes | hybrid %}
+    /* W3C SCXML 6.4 (test216/530): hybrid invoke child slot. Identical
+       struct shape to the static-scxml case — the only runtime
+       difference is the eval-validation prelude in
+       `execute_pending_invokes` (cpp `test216_sm.inl:166-176` mirror).
+       The child SM is the trivial immediate-final stub that sce-build
+       writes via `generate_hybrid_child_scxmls`. */
+    {{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
+    bool child_{{ invoke_info.field_suffix }}_active;
     char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
     {% endfor %}
     {% endif %}

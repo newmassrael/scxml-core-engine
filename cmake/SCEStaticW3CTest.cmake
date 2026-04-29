@@ -431,6 +431,45 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         list(APPEND _CHILD_GENERATED_SOURCES "${_SUB_SOURCE}")
     endforeach()
 
+    # W3C SCXML 6.4 (test216/530): hybrid `<invoke srcexpr=...>` /
+    # `<invoke><content expr=...>` children. sce-build writes an
+    # immediate-final stub to RESOURCE_DIR for every hybrid invoke
+    # (see `generate_hybrid_child_scxmls`'s c11 backend dest in
+    # `sce-codegen`). The stubs follow `test${N}_hybrid*.scxml` —
+    # picked up by the configure-time GLOB below alongside the
+    # synth-invoke siblings. Each stub is staged into OUTPUT_DIR and
+    # codegen'd as a child SM the same way inline-content children
+    # are handled, so the parent's `_sm.h` `#include` resolves and the
+    # hybrid arm in `invoke_methods.jinja2`'s `execute_pending_invokes`
+    # has a real symbol to call into. The stubs are checked into the
+    # parent's resource directory under git on first run — `write_if_changed`
+    # in sce-build keeps the file stable across rebuilds.
+    file(GLOB _HYBRID_STUB_FILES "${RESOURCE_DIR}/test${TEST_NUM}_hybrid*.scxml")
+    foreach(_HYBRID_STUB ${_HYBRID_STUB_FILES})
+        get_filename_component(_HYBRID_NAME "${_HYBRID_STUB}" NAME_WE)
+        set(_HYBRID_SCXML "${OUTPUT_DIR}/${_HYBRID_NAME}.scxml")
+        set(_HYBRID_HEADER "${OUTPUT_DIR}/${_HYBRID_NAME}_sm.h")
+        set(_HYBRID_SOURCE "${OUTPUT_DIR}/${_HYBRID_NAME}_sm.c")
+
+        add_custom_command(
+            OUTPUT "${_HYBRID_SCXML}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy "${_HYBRID_STUB}" "${_HYBRID_SCXML}"
+            DEPENDS "${_HYBRID_STUB}"
+            COMMENT "Staging hybrid invoke stub: ${_HYBRID_NAME}.scxml (C11)"
+            VERBATIM
+        )
+        add_custom_command(
+            OUTPUT "${_HYBRID_HEADER}" "${_HYBRID_SOURCE}"
+            COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}"
+            DEPENDS "${_HYBRID_SCXML}" "${SCE_CODEGEN}"
+            COMMENT "Generating C11 code: ${_HYBRID_NAME}_sm.{h,c}"
+            VERBATIM
+        )
+
+        list(APPEND _CHILD_GENERATED_SOURCES "${_HYBRID_SOURCE}")
+    endforeach()
+
     set(W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES "${_CHILD_GENERATED_SOURCES}" PARENT_SCOPE)
 
     # Allow either `resources/${N}/test${N}.scxml` (already-converted SCXML)
@@ -497,6 +536,10 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     foreach(_SUB_TXML ${_SUB_TXML_FILES})
         get_filename_component(_SUB_NAME "${_SUB_TXML}" NAME_WE)
         list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_SUB_NAME}_sm.h")
+    endforeach()
+    foreach(_HYBRID_STUB ${_HYBRID_STUB_FILES})
+        get_filename_component(_HYBRID_NAME "${_HYBRID_STUB}" NAME_WE)
+        list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_HYBRID_NAME}_sm.h")
     endforeach()
 
     add_custom_command(

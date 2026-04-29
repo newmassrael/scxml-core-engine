@@ -871,7 +871,21 @@ fn cmd_generate(
     // parent. `process_static_invokes` extracts inline <scxml> content to
     // the *source* directory; the build system expects them in OUTPUT_DIR.
     copy_static_invoke_children(&model, Path::new(scxml_path), out_path);
-    generate_hybrid_child_scxmls(&model, out_path);
+    // W3C SCXML 6.4 (test216/530): hybrid stub destination is backend-aware.
+    // cpp's CMake harness drives child codegen from OUTPUT_DIR (its
+    // `process_children_<N>.cmake` reads `<OUTPUT_DIR>/<child>.scxml`), so
+    // hybrid stubs land alongside the parent's generated files. c11 discovers
+    // children via RESOURCE_DIR GLOBs at CMake configure time — a stub
+    // emitted only into OUTPUT_DIR is invisible to that GLOB on the first
+    // build. Mirroring `process_static_invokes` for inline `<content>`,
+    // the c11 stub is written to the SCXML source directory so the same
+    // configure-time discovery flow picks it up.
+    let hybrid_dest = if lang == Language::C11 {
+        Path::new(scxml_path).parent().unwrap_or(Path::new("."))
+    } else {
+        out_path
+    };
+    generate_hybrid_child_scxmls(&model, hybrid_dest);
 
     // SCE Mesh: generate transport routing code when --deploy is provided.
     // Uses the public API (compile_mesh_transport) so CLI, tests, and build.rs
