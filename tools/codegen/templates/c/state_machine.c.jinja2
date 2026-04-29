@@ -3246,20 +3246,23 @@ static void process_event_queues({{ model.name }}_t *sm) {
         /* W3C SCXML 6.4 (test233): hydrate `_event.data` from the
            cross-SM payload string the child shipped via parent_dispatch's
            `event_data` arg. The string is a Lua table literal (e.g.
-           `{aParam = 2}`); load it as a return expression and bind to
-           `_event.data`. Empty/missing payload clears the slot so the
-           transition cond / finalize body sees `_event.data == nil`
-           rather than a stale value from a prior dequeue. cpp's
-           equivalent is `EventWithMetadata.data` member set in
-           `Event::setData` and surfaced via
-           `LuaEngine::setCurrentEvent` (LuaEngine.cpp:1138-1159). */
+           `{aParam = 2}`); load it as a return expression and override
+           `_event.data` with the cross-SM payload. set_current_event
+           above already established `_event.data = _pending_donedata`
+           per-event-enum case (correct shape for same-SM `<send>` /
+           `<raise>` / HTTP-response paths that pre-populate the
+           `_pending_donedata` slot — test176/179/519/etc); the override
+           below only fires for the cross-SM case where the receiver's
+           `_pending_donedata` is locally nil and the payload arrived on
+           the dequeued event's `data` field instead. cpp's equivalent
+           is `EventWithMetadata.data` member set in `Event::setData`
+           and surfaced via `LuaEngine::setCurrentEvent`
+           (LuaEngine.cpp:1138-1159). */
         if (evt.data[0] != '\0') {
             char _setbuf[SCE_MAX_DATA_LEN + 64];
             (void)snprintf(_setbuf, sizeof(_setbuf),
                 "_event.data = (%s)", evt.data);
             (void)luaL_dostring(sm->L, _setbuf);
-        } else {
-            (void)luaL_dostring(sm->L, "if _event then _event.data = nil end");
         }
         {% endif %}
 
