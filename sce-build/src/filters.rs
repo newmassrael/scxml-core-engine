@@ -573,6 +573,7 @@ fn escape_cpp(text: String) -> String {
 pub fn register_c11_filters(env: &mut minijinja::Environment) {
     register_invoke_filters(env);
     env.add_filter("escape_c", escape_c);
+    env.add_filter("escape_json_string", escape_json_string);
     env.add_filter("to_lua_expr", to_lua_expr);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
@@ -586,6 +587,25 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
 /// Escape C string literals (identical escaping rules to Rust/C++).
 fn escape_c(text: String) -> String {
     escape_rust(text)
+}
+
+/// Escape characters for embedding inside a JSON string literal (RFC 8259 §7).
+/// SSoT mirror of cpp `DoneDataHelper::escapeJsonString`
+/// (sce/include/common/DoneDataHelper.h:260-291). Only the inner escapes
+/// are produced — surrounding `"..."` quotes are added by the template.
+/// Composed with `escape_c` when emitted into a C string literal so the
+/// runtime bytes match cpp's `EventDataHelper::scriptValueToJsonString`
+/// for a string ScriptValue (`"text"` JSON-quoted form, mesh §9.6.2
+/// wire-18 canonical wire). The replace order is fixed: backslash first
+/// so the `\` introduced by subsequent escapes is not double-escaped.
+pub fn escape_json_string(text: String) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+        .replace('\u{08}', "\\b")
+        .replace('\u{0c}', "\\f")
 }
 
 /// W3C SCXML 5.9.2: rewrite pure In('xxx') predicate text to a C11 native

@@ -1926,19 +1926,30 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
            — evaluate against the active datamodel. */
         {{ se.lua_eval_donedata_content_expr(state.donedata.content.text) }}
         {% elif state.donedata.content.kind == "literal" %}
-        /* W3C SCXML 5.5 + Appendix B.2.2: <content>literal</content> with
-           the "null" datamodel uses the inline text as-is (no evaluation).
-           The W3C corpus has no null-datamodel + literal-donedata fixture
-           registered for C11, and a null datamodel doesn't even reach this
-           emit path because needs_script_engine is false there (no lua_State).
-           Mirrors cpp `DoneDataHelper::emitContentLiteral` — which is
-           sce_base-linkable precisely because it bypasses the script engine.
-           Activation guard is therefore a #error so the first such fixture
-           lifts a non-lua emit path explicitly, matching the spec-mirror
-           parity carve-out reasoning (the cpp shape is the contract; we
-           don't fake-emit a lua chunk that wouldn't represent the literal
-           shape correctly). */
-#error "C11 backend: <donedata><content>literal</content> with null datamodel has no fixture in the W3C corpus — extend execute_entry_actions's donedata branch with a non-lua emit when the first fixture forces it."
+        /* W3C SCXML 5.5 + Appendix B.2.2: <content>literal-text</content>
+           under the "null" datamodel — the inline text is the content
+           value verbatim, no evaluation, no script engine required.
+           Parser routes to `kind == "literal"` only when datamodel="null"
+           (parser.rs:1975-1979); ECMAScript-datamodel models with the
+           same XML route through the Expression arm above per Appendix
+           B.2.2 JSON parse semantics. Mirrors cpp `DoneDataHelper::
+           emitContentLiteral` (sce/include/common/DoneDataHelper.h:94-101)
+           which lives in `sce_base` precisely because it bypasses the
+           script engine. C11 splits the carrier across two slots: when
+           a script engine is present (rare for null datamodel — only
+           when other actions in the model force `needs_script_engine`),
+           also stash a lua-string copy on `_pending_donedata` so the
+           ECMAScript-side `_event.data` reads the value via the existing
+           dequeue promotion; the JSON-quoted byte form lands on
+           `_done_evt.data` at the raise site below regardless, matching
+           cpp's `EventWithMetadata.data` invariant for non-lua observers
+           (parent_dispatch shim, mesh §9.6.2 wire-18). The lua chunk
+           uses Lua's long-bracket string `[[...]]` which has no escape
+           interpretation, so the inline text is carried verbatim. */
+        {% if model.needs_script_engine %}
+        (void)luaL_dostring(sm->L,
+            "_pending_donedata = [[{{ state.donedata.content.text | escape_c }}]]");
+        {% endif %}
         {% endif %}
         {% endif %}
         {% if is_compound_final %}
@@ -1952,6 +1963,22 @@ static void execute_entry_actions({{ model.name }}_t *sm, {{ model.name }}_state
             {{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
             _done_evt.event = {{ model.name | upper }}_EVENT_DONE_STATE_{{ state.parent | upper | replace('-', '_') | replace('.', '_') }};
+            {% if state.donedata and state.donedata.content and state.donedata.content.kind == "literal" %}
+            /* W3C SCXML 5.5 + B.2 (mesh §9.6.2 wire-18): literal donedata
+               payload as a JSON-quoted string on the C-struct carrier.
+               Mirrors cpp `EventWithMetadata.data` populated via
+               `DoneDataHelper::emitContentLiteral` →
+               `EventDataHelper::scriptValueToJsonString` (a string-kind
+               ScriptValue yields the `"text"` JSON-quoted form). The
+               strncpy bound is SCE_MAX_DATA_LEN-1 to leave room for the
+               trailing NUL — long literals truncate with a guaranteed
+               terminator (same shape as cross-SM dispatch_external_by_name's
+               evt.data carry in invoke_methods.jinja2:58-61). */
+            strncpy(_done_evt.data,
+                    "\"{{ state.donedata.content.text | escape_json_string | escape_c }}\"",
+                    (size_t)SCE_MAX_DATA_LEN - 1u);
+            _done_evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
+            {% endif %}
             {{ model.name }}_raise(sm, &_done_evt);
         }
         {% if model.states[state.parent].parent and model.states[model.states[state.parent].parent].is_parallel %}
