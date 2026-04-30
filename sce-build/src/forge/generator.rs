@@ -1751,11 +1751,11 @@ pub fn generate_c11_with_imports(
         }
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Interpolation(_)
-        | ForgeDocument::Timer(_) => {
+        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Timer(_) => {
             return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for kinds Interpolation/Timer is \
-                 RFC \u{00A7}5.J.2 Phase E work."
+                "C11 forge codegen for the Timer kind is \
+                 RFC \u{00A7}5.J.2 Phase E-4 work."
                     .into(),
             )
             .into());
@@ -5405,6 +5405,12 @@ fn render_interpolation(
         };
         serde_json::json!({
             "input_id": a.input_id,
+            // RFC §5.J.2 Phase E-3: C11 uses snake_case parameter names
+            // (matches `param_str` C11 arm at line 5113); cpp/Kotlin keep
+            // camelCase, Rust/Python/Go use their own conventions emitted
+            // through `param_str`. The template references this only when
+            // lang=C11 — other backends ignore the field.
+            "input_id_snake": filters::to_snake_case(a.input_id.clone()),
             "var_name": var_name,
             "breakpoints": a.breakpoints,
             "size": a.breakpoints.len(),
@@ -5426,6 +5432,17 @@ fn render_interpolation(
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
     ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+
+    // RFC §5.J.2 Phase E-3: C11 bakes the linear/bilinear algorithm
+    // inline per fixture (no runtime header surface). Adds `<snake>` so
+    // the static const breakpoint and value tables can be prefixed and
+    // not collide across fixtures sharing a translation unit.
+    if matches!(lang, crate::generator::Language::C11) {
+        ctx.insert(
+            "snake".into(),
+            filters::to_snake_case(m.name.clone()).into(),
+        );
+    }
 
     render_phase3(env, &format!("interpolation.{}.jinja2", l.template_ext()), ctx)
 }

@@ -851,6 +851,12 @@ fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // global C identifiers (enum tag constants, capacity macro) are
         // observer-prefixed.
         FixtureSpec::Observer { .. } => true,
+        // RFC §5.J.2 Phase E-3: 1D linear / 2D bilinear interpolation.
+        // C11 inlines the algorithm per fixture with the array sizes
+        // substituted in (cpp/Rust use templates over array sizes;
+        // bake-at-codegen sidesteps the lack of generics). Static const
+        // breakpoint + value tables are emitted at codegen time.
+        FixtureSpec::Interpolation { .. } => true,
         _ => false,
     }
 }

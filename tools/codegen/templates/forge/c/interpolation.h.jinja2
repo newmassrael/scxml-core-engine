@@ -1,0 +1,108 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+/* Pre-baked breakpoint and value tables. cpp/Rust use compile-time
+ * generic templates over array sizes; C11 has no templates, so the
+ * algorithm is inlined per-fixture with the array sizes substituted in
+ * directly (`{{ rows }}`, `{{ cols }}`). Out-of-range inputs clamp to
+ * the nearest endpoint — the same policy as cpp's linear()/bilinear(). */
+{% for axis in axes %}
+static const {{ output_type }} {{ snake }}_{{ axis.var_name | lower }}[{{ axis.size }}] = { {% for bp in axis.breakpoints %}{{ bp }}{% if not loop.last %}, {% endif %}{% endfor %} };
+{% endfor %}
+{% if is_bilinear %}
+static const {{ output_type }} {{ snake }}_values[{{ rows }}][{{ cols }}] = {
+{% for r in range(rows) %}
+    { {% for c in range(cols) %}{{ values[r * cols + c] }}{% if not loop.last %}, {% endif %}{% endfor %} }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+};
+{% else %}
+static const {{ output_type }} {{ snake }}_values[{{ rows }}] = { {% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %} };
+{% endif %}
+
+static inline {{ output_type }} {{ snake }}_lookup({{ params }}) {
+{% if is_bilinear %}
+    /* 2D bilinear: clamp on both axes, then bilinear over the 2x2 cell. */
+    {{ output_type }} x = ({{ output_type }}){{ axes[0].input_id_snake }};
+    {{ output_type }} y = ({{ output_type }}){{ axes[1].input_id_snake }};
+    size_t r0 = 0, r1 = 0;
+    {{ output_type }} tx = 0;
+    if (x <= {{ snake }}_{{ axes[0].var_name | lower }}[0]) {
+        r0 = 0; r1 = 0; tx = 0;
+    } else if (x >= {{ snake }}_{{ axes[0].var_name | lower }}[{{ rows }} - 1]) {
+        r0 = {{ rows }} - 1; r1 = {{ rows }} - 1; tx = 0;
+    } else {
+        for (size_t i = 0; i + 1 < {{ rows }}; ++i) {
+            if (x <= {{ snake }}_{{ axes[0].var_name | lower }}[i + 1]) {
+                r0 = i; r1 = i + 1;
+                tx = (x - {{ snake }}_{{ axes[0].var_name | lower }}[i])
+                   / ({{ snake }}_{{ axes[0].var_name | lower }}[i + 1]
+                      - {{ snake }}_{{ axes[0].var_name | lower }}[i]);
+                break;
+            }
+        }
+    }
+    size_t c0 = 0, c1 = 0;
+    {{ output_type }} ty = 0;
+    if (y <= {{ snake }}_{{ axes[1].var_name | lower }}[0]) {
+        c0 = 0; c1 = 0; ty = 0;
+    } else if (y >= {{ snake }}_{{ axes[1].var_name | lower }}[{{ cols }} - 1]) {
+        c0 = {{ cols }} - 1; c1 = {{ cols }} - 1; ty = 0;
+    } else {
+        for (size_t j = 0; j + 1 < {{ cols }}; ++j) {
+            if (y <= {{ snake }}_{{ axes[1].var_name | lower }}[j + 1]) {
+                c0 = j; c1 = j + 1;
+                ty = (y - {{ snake }}_{{ axes[1].var_name | lower }}[j])
+                   / ({{ snake }}_{{ axes[1].var_name | lower }}[j + 1]
+                      - {{ snake }}_{{ axes[1].var_name | lower }}[j]);
+                break;
+            }
+        }
+    }
+    {{ output_type }} v00 = {{ snake }}_values[r0][c0];
+    {{ output_type }} v01 = {{ snake }}_values[r0][c1];
+    {{ output_type }} v10 = {{ snake }}_values[r1][c0];
+    {{ output_type }} v11 = {{ snake }}_values[r1][c1];
+    {{ output_type }} v0 = v00 + tx * (v10 - v00);
+    {{ output_type }} v1 = v01 + tx * (v11 - v01);
+    return v0 + ty * (v1 - v0);
+{% else %}
+    /* 1D linear: clamp out-of-range, otherwise locate cell and lerp. */
+    {{ output_type }} x = ({{ output_type }}){{ axes[0].input_id_snake }};
+    if (x <= {{ snake }}_{{ axes[0].var_name | lower }}[0]) {
+        return {{ snake }}_values[0];
+    }
+    if (x >= {{ snake }}_{{ axes[0].var_name | lower }}[{{ rows }} - 1]) {
+        return {{ snake }}_values[{{ rows }} - 1];
+    }
+    for (size_t i = 0; i + 1 < {{ rows }}; ++i) {
+        if (x <= {{ snake }}_{{ axes[0].var_name | lower }}[i + 1]) {
+            {{ output_type }} x0 = {{ snake }}_{{ axes[0].var_name | lower }}[i];
+            {{ output_type }} x1 = {{ snake }}_{{ axes[0].var_name | lower }}[i + 1];
+            {{ output_type }} y0 = {{ snake }}_values[i];
+            {{ output_type }} y1 = {{ snake }}_values[i + 1];
+            {{ output_type }} t = (x - x0) / (x1 - x0);
+            return y0 + t * (y1 - y0);
+        }
+    }
+    return {{ snake }}_values[{{ rows }} - 1];
+{% endif %}
+}
+
+#endif  /* {{ guard }} */

@@ -93,6 +93,10 @@ endif()
 #   * Phase E-2: Observer (1 fixture — observer_coolant). C11 bakes
 #                the ThresholdState bool flag + fixed-cap EventQueue
 #                + tag enum inline per fixture.
+#   * Phase E-3: Interpolation (2 fixtures — 1d_linear / 2d_bilinear).
+#                C11 inlines the linear/bilinear algorithm per fixture
+#                with array sizes substituted in (cpp/Rust use templates
+#                over array sizes — C11 has no generics).
 set(C11_FIXTURES
     transform_temperature
     transform_bitwise
@@ -122,6 +126,8 @@ set(C11_FIXTURES
     filter_moving_average
     filter_debounce
     observer_coolant
+    interpolation_1d_linear
+    interpolation_2d_bilinear
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
