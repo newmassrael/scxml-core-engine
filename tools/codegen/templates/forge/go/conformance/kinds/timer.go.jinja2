@@ -2,21 +2,9 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# Timer kind — verify registration metadata and callback dispatch via recording mocks. #}
-	type recTimer struct {
-		regType string
-		regMs   uint32
-		regCb   func()
-	}
-	func (r *recTimer) StartPeriodic(ms uint32, cb func()) { r.regType = "periodic"; r.regMs = ms; r.regCb = cb }
-	func (r *recTimer) StartOneShot(ms uint32, cb func()) { r.regType = "one_shot"; r.regMs = ms; r.regCb = cb }
-	func (r *recTimer) Cancel() {}
-
-	type recHandler struct{ lastCall string }
-{% for t in f.timers %}
-	func (h *recHandler) {{ t.callback | to_pascal_case }}() { h.lastCall = "{{ t.callback }}" }
-{% endfor %}
-
-	handler := &recHandler{}
+{# recTimer + fixture-specific RecHandler types live at file scope in #}
+{# harness.go.jinja2 (Go disallows method receivers inside a function body). #}
+	handler := &{{ f.name | to_pascal_case }}RecHandler{}
 {% for t in f.timers %}
 	timer{{ t.id | to_pascal_case }} := &recTimer{}
 {% endfor %}

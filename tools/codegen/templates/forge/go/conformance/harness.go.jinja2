@@ -31,6 +31,9 @@ import (
 {% if has_procedure %}
 	"github.com/newmassrael/sce-forge-runtime/forge"
 {% endif %}
+{% if has_timer %}
+	"github.com/newmassrael/sce-forge-runtime/timer"
+{% endif %}
 {% for f in fixtures %}
 	{{ f.name }} "github.com/newmassrael/sce-forge-runtime/conformance/generated/{{ f.name }}"
 {% endfor %}
@@ -143,6 +146,40 @@ type timerEntry struct {
 	IntervalMs uint32 `json:"interval_ms"`
 	Callback   string `json:"callback"`
 }
+{% if has_timer %}
+
+// Recording mock implementing the timer.Timer interface. File-level
+// because Go forbids method-receiver definitions inside function
+// bodies — a method's receiver type must live at package scope.
+type recTimer struct {
+	regType string
+	regMs   uint32
+	regCb   func()
+}
+
+// Receiver method signatures take the named `timer.Callback` type rather
+// than the raw `func()`, since Go interface satisfaction requires
+// parameter types to be identical (not merely structurally equivalent
+// to the underlying type). Without the named alias the compiler reports
+// `*recTimer does not implement timer.Timer`.
+func (r *recTimer) StartPeriodic(ms uint32, cb timer.Callback) { r.regType = "periodic"; r.regMs = ms; r.regCb = cb }
+func (r *recTimer) StartOneShot(ms uint32, cb timer.Callback)  { r.regType = "one_shot"; r.regMs = ms; r.regCb = cb }
+func (r *recTimer) Cancel()                                    {}
+
+// Per-fixture handler mocks. Each generated scheduler exposes a
+// fixture-specific Handler interface whose method set differs by
+// callback id, so the recording mock cannot be unified across
+// fixtures the way recTimer is.
+{% for f in fixtures %}
+{% if f.kind == "timer" %}
+type {{ f.name | to_pascal_case }}RecHandler struct{ lastCall string }
+
+{% for t in f.timers %}
+func (h *{{ f.name | to_pascal_case }}RecHandler) {{ t.callback | to_pascal_case }}() { h.lastCall = "{{ t.callback }}" }
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
 
 // stringLookupSpec / stringLookupCase cover lookups whose output is a
 // language-level enum. The oracle stores the expected value as a string
@@ -279,11 +316,7 @@ func (r *reference) stringLookupCases(t *testing.T, section, fixture string) []s
 	if !ok {
 		t.Fatalf("fixture %q: missing entry in string_lookups", fixture)
 	}
-	var spec stringLookupSpec
-	if err := json.Unmarshal(raw, &spec); err != nil {
-		t.Fatalf("fixture %q: cannot decode stringLookupSpec: %v", fixture, err)
-	}
-	return spec.Cases
+	return raw.Cases
 }
 
 func repoRoot(t *testing.T) string {
