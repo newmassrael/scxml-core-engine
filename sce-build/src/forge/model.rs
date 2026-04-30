@@ -256,6 +256,27 @@ impl SceType {
         matches!(self, Self::Uint8 | Self::Uint16 | Self::Uint32 | Self::Uint64)
     }
 
+    /// Stringified maximum value for unsigned integer types — used by the
+    /// C11 validator template to detect when a `range-max` annotation
+    /// equals the type's natural ceiling so the generated `> max`
+    /// comparison can be elided. gcc's `-Wtype-limits` (promoted to
+    /// `-Werror` in the C11 conformance build) rejects tautological
+    /// comparisons like `uint8_t > 255`, so the generator must surface
+    /// the type's max as a string for jinja-side comparison against the
+    /// rule's `max` text. Returns `None` for non-unsigned types — the
+    /// equivalent signed-max elision would require also tracking the
+    /// signed-min boundary, and no current fixture pins type-extremal
+    /// signed bounds.
+    pub fn unsigned_max_str(&self) -> Option<&'static str> {
+        match self {
+            Self::Uint8 => Some("255"),
+            Self::Uint16 => Some("65535"),
+            Self::Uint32 => Some("4294967295"),
+            Self::Uint64 => Some("18446744073709551615"),
+            _ => None,
+        }
+    }
+
     /// Signed integer types (int8..int64).
     pub fn is_signed(&self) -> bool {
         matches!(self, Self::Int8 | Self::Int16 | Self::Int32 | Self::Int64)

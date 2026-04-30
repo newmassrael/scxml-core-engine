@@ -1107,16 +1107,50 @@ fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
         .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
     let scxml_ns = "http://www.w3.org/2005/07/scxml";
     let sce_ns = crate::forge::model::SCE_NAMESPACE;
-    let Some(datamodel) = doc.root_element().children().find(|n| {
-        n.is_element()
-            && n.tag_name().name() == "datamodel"
-            && n.tag_name().namespace() == Some(scxml_ns)
-    }) else {
+    // Trigger 1: any ROC field — `sce:max-delta` requires prev-value
+    // tracking which lives in the validator state struct. Trigger 2: any
+    // `<sce:import>` whose kind is stateful (codec / filter / observer /
+    // validator / procedure / timer) — the imported instance becomes a
+    // member of the validator state struct so the C11 emitter must use
+    // the stateful `<state_t> *_st`-passing signature instead of the
+    // stateless free-function form. Both triggers must mirror the
+    // `c_has_state` decision in `render_validator` (generator.rs); when
+    // the two diverge the harness emits a call signature that doesn't
+    // match the generated function — typically "too few arguments to
+    // crossfile_validator_codec_validate".
+    let Some(scxml_root) = doc
+        .root()
+        .children()
+        .find(|n| n.is_element() && n.tag_name().name() == "scxml")
+    else {
         return Ok(false);
     };
-    for data in datamodel.children().filter(|n| n.is_element() && n.tag_name().name() == "data") {
-        if data.attribute((sce_ns, "max-delta")).is_some() {
-            return Ok(true);
+    for child in scxml_root.children() {
+        if !child.is_element() {
+            continue;
+        }
+        let tag = child.tag_name().name();
+        let ns = child.tag_name().namespace();
+        if tag == "import" && ns == Some(sce_ns) {
+            if let Some(kind) = child.attribute("kind") {
+                let stateful = matches!(
+                    kind,
+                    "codec" | "filter" | "observer" | "validator" | "procedure" | "timer"
+                );
+                if stateful {
+                    return Ok(true);
+                }
+            }
+        }
+        if tag == "datamodel" && ns == Some(scxml_ns) {
+            for data in child
+                .children()
+                .filter(|n| n.is_element() && n.tag_name().name() == "data")
+            {
+                if data.attribute((sce_ns, "max-delta")).is_some() {
+                    return Ok(true);
+                }
+            }
         }
     }
     Ok(false)

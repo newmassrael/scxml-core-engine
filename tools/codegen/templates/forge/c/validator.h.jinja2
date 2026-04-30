@@ -27,22 +27,45 @@ typedef struct {
 {% for pv in prev_vars %}
     {{ pv.type }} {{ pv.name }}_;
 {% endfor %}
+{% if has_imports %}
+    /* Imported kind members (cross-file composition).
+       Mirrors the procedure host's state struct layout — each stateful
+       import (codec/filter/...) is embedded by-value so the rename
+       map's `_st->{member}.{field}` expansion lands on a real slot and
+       the C11 ImportLowering can prepend `&_st->{member}` for method
+       dispatch (filter.update, future codec methods, ...). */
+{% for imp in imports %}
+    {{ imp.member_type }} {{ imp.member_name }};
+{% endfor %}
+{% endif %}
 } {{ c_state_typedef }};
 
-static inline {{ c_result_typedef }} {{ c_validate_func }}({{ c_state_typedef }} *self, {{ params }}) {
+static inline {{ c_result_typedef }} {{ c_validate_func }}({{ c_state_typedef }} *_st, {{ params }}) {
 {% else %}
 
 static inline {{ c_result_typedef }} {{ c_validate_func }}({{ params }}) {
 {% endif %}
 {% for rule in range_rules %}
-{# Unsigned + min "0": elide the lower-bound term. `unsigned < 0` is a
-   tautology that gcc surfaces as -Wtype-limits → -Werror in this
-   harness's strict-warning build. The semantic is unchanged because
-   the unsigned domain already excludes negative values by definition. #}
+{# Two tautology elisions for gcc -Wtype-limits → -Werror:
+     • `elide_lower`: unsigned + min "0" — `unsigned < 0` is
+       tautologically false. Domain-equivalent to keeping the term
+       since the unsigned type itself excludes negatives.
+     • `elide_upper`: rule.max equals the type's natural ceiling
+       (e.g. uint8 with max=255). `uint8 > 255` is tautologically
+       false; gcc rejects it. Generator-side computation in
+       `range_rules` (`is_max_at_type_max`) avoids per-template
+       string-table maintenance. #}
 {% set elide_lower = rule.is_unsigned and rule.min == "0" %}
+{% set elide_upper = rule.is_max_at_type_max %}
 {% if rule.has_min and rule.has_max %}
-{% if elide_lower %}
+{% if elide_lower and elide_upper %}
+{# Both bounds at the type's natural extremes — every value of the
+   type is in range, so emit no check at all. #}
+{% elif elide_lower %}
     if ({{ rule.id }} > {{ rule.max }})
+        return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_out_of_range"};
+{% elif elide_upper %}
+    if ({{ rule.id }} < {{ rule.min }})
         return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_out_of_range"};
 {% else %}
     if ({{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }})
@@ -54,27 +77,29 @@ static inline {{ c_result_typedef }} {{ c_validate_func }}({{ params }}) {
         return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_out_of_range"};
 {% endif %}
 {% elif rule.has_max %}
+{% if not elide_upper %}
     if ({{ rule.id }} > {{ rule.max }})
         return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_out_of_range"};
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for rule in roc_rules %}
 {% if rule.is_float %}
     {
-        {{ rule.type }} delta_ = ({{ rule.id }} - self->{{ rule.prev_name }}_);
+        {{ rule.type }} delta_ = ({{ rule.id }} - _st->{{ rule.prev_name }}_);
         if (delta_ < 0) delta_ = -delta_;
         if (delta_ > {{ rule.max_delta }})
             return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
     }
 {% elif rule.is_unsigned %}
     {
-        {{ rule.type }} delta_ = ({{ rule.id }} > self->{{ rule.prev_name }}_) ? ({{ rule.id }} - self->{{ rule.prev_name }}_) : (self->{{ rule.prev_name }}_ - {{ rule.id }});
+        {{ rule.type }} delta_ = ({{ rule.id }} > _st->{{ rule.prev_name }}_) ? ({{ rule.id }} - _st->{{ rule.prev_name }}_) : (_st->{{ rule.prev_name }}_ - {{ rule.id }});
         if (delta_ > {{ rule.max_delta }})
             return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
     }
 {% else %}
     {
-        int64_t delta_ = (int64_t){{ rule.id }} - (int64_t)self->{{ rule.prev_name }}_;
+        int64_t delta_ = (int64_t){{ rule.id }} - (int64_t)_st->{{ rule.prev_name }}_;
         if (delta_ < 0) delta_ = -delta_;
         if (delta_ > {{ rule.max_delta }})
             return ({{ c_result_typedef }}){false, "{{ rule.reason_id }}_rate_of_change_exceeded"};
@@ -86,7 +111,7 @@ static inline {{ c_result_typedef }} {{ c_validate_func }}({{ params }}) {
         return ({{ c_result_typedef }}){false, "plausibility_failed"};
 {% endif %}
 {% for pv in prev_vars %}
-    self->{{ pv.name }}_ = {{ pv.id }};
+    _st->{{ pv.name }}_ = {{ pv.id }};
 {% endfor %}
     return ({{ c_result_typedef }}){true, ""};
 }

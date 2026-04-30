@@ -41,8 +41,27 @@ type {{ struct_name }} struct {
 {% endif %}
 }
 
+// New{{ struct_name }} returns an initialized validator. Stateful imports
+// whose Go zero-value is not a valid initial state (e.g. filter — its
+// internal pointer to the runtime implementation is nil after zero-init
+// and the first Update call would deref nil) opt in to an explicit
+// factory call via `ImportContext::go_init_expr`. Codec imports leave
+// their slot zero-initialized (the pure-data struct's natural empty
+// state). Validators with no stateful imports get an empty literal,
+// matching the legacy `var v X` zero-value path callers used before
+// this constructor existed.
+func New{{ struct_name }}() *{{ struct_name }} {
+	return &{{ struct_name }}{
+{% for imp in imports %}
+{% if imp.go_init_expr %}
+		{{ imp.member_name }}: {{ imp.go_init_expr }},
+{% endif %}
+{% endfor %}
+	}
+}
+
 // Validate checks all validation rules and returns the result.
-func (v *{{ struct_name }}) Validate({{ params }}) ValidationResult {
+func (p *{{ struct_name }}) Validate({{ params }}) ValidationResult {
 {% for rule in range_rules %}
 {% if rule.has_min and rule.has_max %}
 	if {{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }} {
@@ -60,12 +79,12 @@ func (v *{{ struct_name }}) Validate({{ params }}) ValidationResult {
 {% endfor %}
 {% for rule in roc_rules %}
 {% if rule.is_float %}
-	if math.Abs(float64({{ rule.id }})-float64(v.{{ rule.prev_name }})) > {{ rule.max_delta }} {
+	if math.Abs(float64({{ rule.id }})-float64(p.{{ rule.prev_name }})) > {{ rule.max_delta }} {
 		return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_rate_of_change_exceeded"}
 	}
 {% elif rule.is_signed %}
 	{
-		delta := int64({{ rule.id }}) - int64(v.{{ rule.prev_name }})
+		delta := int64({{ rule.id }}) - int64(p.{{ rule.prev_name }})
 		if delta < 0 {
 			delta = -delta
 		}
@@ -76,10 +95,10 @@ func (v *{{ struct_name }}) Validate({{ params }}) ValidationResult {
 {% else %}
 	{
 		var delta {{ rule.type }}
-		if {{ rule.id }} > v.{{ rule.prev_name }} {
-			delta = {{ rule.id }} - v.{{ rule.prev_name }}
+		if {{ rule.id }} > p.{{ rule.prev_name }} {
+			delta = {{ rule.id }} - p.{{ rule.prev_name }}
 		} else {
-			delta = v.{{ rule.prev_name }} - {{ rule.id }}
+			delta = p.{{ rule.prev_name }} - {{ rule.id }}
 		}
 		if delta > {{ rule.max_delta }} {
 			return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_rate_of_change_exceeded"}
@@ -93,7 +112,7 @@ func (v *{{ struct_name }}) Validate({{ params }}) ValidationResult {
 	}
 {% endif %}
 {% for pv in prev_vars %}
-	v.{{ pv.name }} = {{ pv.id }}
+	p.{{ pv.name }} = {{ pv.id }}
 {% endfor %}
 	return ValidationResult{Valid: true, Reason: ""}
 }

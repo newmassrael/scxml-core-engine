@@ -1046,6 +1046,16 @@ fn forge_c11_crossfile_procedure_filter() {
     assert_standalone_forge_c("crossfile_procedure_filter", "crossfile_procedure_filter.c.h");
 }
 
+#[test]
+fn forge_c11_crossfile_validator_codec() {
+    assert_standalone_forge_c("crossfile_validator_codec", "crossfile_validator_codec.c.h");
+}
+
+#[test]
+fn forge_c11_crossfile_validator_filter() {
+    assert_standalone_forge_c("crossfile_validator_filter", "crossfile_validator_filter.c.h");
+}
+
 // ── Validator conformance (C++) ──────────────────────────────
 
 #[test]
@@ -1376,6 +1386,56 @@ fn forge_crossfile_validator_transform_go() {
 #[test]
 fn forge_crossfile_validator_transform_python() {
     assert_standalone_forge_python("crossfile_validator_transform", "crossfile_validator_transform.py");
+}
+
+#[test]
+fn forge_crossfile_validator_codec_cpp() {
+    assert_standalone_forge("crossfile_validator_codec", "crossfile_validator_codec.h");
+}
+
+#[test]
+fn forge_crossfile_validator_codec_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_validator_codec", "CrossfileValidatorCodec.kt");
+}
+
+#[test]
+fn forge_crossfile_validator_codec_rust() {
+    assert_standalone_forge_rust("crossfile_validator_codec", "crossfile_validator_codec.rs");
+}
+
+#[test]
+fn forge_crossfile_validator_codec_go() {
+    assert_standalone_forge_go("crossfile_validator_codec", "crossfile_validator_codec.go");
+}
+
+#[test]
+fn forge_crossfile_validator_codec_python() {
+    assert_standalone_forge_python("crossfile_validator_codec", "crossfile_validator_codec.py");
+}
+
+#[test]
+fn forge_crossfile_validator_filter_cpp() {
+    assert_standalone_forge("crossfile_validator_filter", "crossfile_validator_filter.h");
+}
+
+#[test]
+fn forge_crossfile_validator_filter_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_validator_filter", "CrossfileValidatorFilter.kt");
+}
+
+#[test]
+fn forge_crossfile_validator_filter_rust() {
+    assert_standalone_forge_rust("crossfile_validator_filter", "crossfile_validator_filter.rs");
+}
+
+#[test]
+fn forge_crossfile_validator_filter_go() {
+    assert_standalone_forge_go("crossfile_validator_filter", "crossfile_validator_filter.go");
+}
+
+#[test]
+fn forge_crossfile_validator_filter_python() {
+    assert_standalone_forge_python("crossfile_validator_filter", "crossfile_validator_filter.py");
 }
 
 #[test]
@@ -2104,6 +2164,11 @@ fn crossfile_matrix_observer_condition() {
 #[test]
 fn crossfile_matrix_validator_codec() {
     assert_crossfile_codegen_languages("crossfile_validator_codec", SIX_BACKENDS);
+}
+
+#[test]
+fn crossfile_matrix_validator_filter() {
+    assert_crossfile_codegen_languages("crossfile_validator_filter", SIX_BACKENDS);
 }
 
 #[test]

@@ -3,7 +3,7 @@
 
 {# Validator kind — stateful Validate(args...) returning a struct whose fields are declared in `f.output`. #}
 	steps := ref.validatorSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
-	var validator {{ f.name }}.{{ f.name | to_pascal_case }}
+	validator := {{ f.name }}.New{{ f.name | to_pascal_case }}()
 	type expectedShape struct {
 {% for field in f.output %}
 		{{ field.name | to_pascal_case }} {{ field.type | go_type }} `json:"{{ field.name }}"`

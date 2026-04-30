@@ -374,6 +374,29 @@
         {"args": [100,  200.0],   "expected": {"valid": true,  "reason": ""},                               "note": "reverse step also at boundary; prev -> (100, 200)"}
       ]
     },
+    "crossfile_validator_filter": {
+      "fixture": "CrossfileValidatorFilter::validate",
+      "signature": "(rawSample: f64, threshold: f64) -> ValidationResult{valid, reason}",
+      "description": "Cross-file composition fixture: validator imports filter_low_pass as `smoother` and calls `smoother.update(rawSample)` inside a plausibility predicate (`smoother.update(rawSample) < threshold`). The validator's state struct embeds the filter's by-value state, so the smoother accumulates across validate() calls — this is a sequence test of cross-file member-method dispatch on a stateful kind. The C11 path goes through `expr::ImportLowering` with `&_st->smoother_` prepended; the five other backends through `stateful_import_method_renames` per-language expansions (Go: `p.Smoother.Update`; rust/python: `self.smoother.update`; cpp/kotlin: `smoother_.update` / `smoother.update`). Filter formula: alpha=0.1 first-order low-pass, y[0]=x[0], y[n]=0.1*x[n]+0.9*y[n-1]. The third case spikes raw to 1e6 while the threshold drops to 50, exercising the smoothing-then-failure path; with the smoother already at ~11 the post-spike y is ~100009.9, well above 50.",
+      "sequence": [
+        {"args": [10.0, 1000.0],     "expected": {"valid": true,  "reason": ""},                    "note": "first sample: smoother init y=10.0; 10 < 1000 -> pass"},
+        {"args": [20.0, 1000.0],     "expected": {"valid": true,  "reason": ""},                    "note": "smoother y = 0.1*20 + 0.9*10 = 11.0; 11 < 1000 -> pass"},
+        {"args": [1000000.0, 50.0],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "raw spikes to 1e6; smoother y ~= 100009.9; 100009.9 < 50 -> fail"},
+        {"args": [1000000.0, 50.0],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "raw stays high; smoother y ~= 190008.91; still well above threshold"}
+      ]
+    },
+    "crossfile_validator_codec": {
+      "fixture": "CrossfileValidatorCodec::validate",
+      "signature": "(msgId: u8, payload: u16) -> ValidationResult{valid, reason}",
+      "description": "Cross-file composition fixture: validator imports codec_simple_frame as `frame` and reads the codec's decoded fields inside a plausibility predicate (frame.msgId === msgId AND frame.payload === payload). The validator's stateful import frame is default-initialized so msgId=0 and payload=0 on every call — plausibility passes only when both args match those defaults. This is the load-bearing consumer for validator-host stateful import wiring across all six backends: render_validator now installs alias + field rename maps for the five non-C11 languages, and the C11 path goes through expr::ImportLowering + transpile_typed_with_import_lowering with a `<state_t> *_st` pointer argument so the rename map's `_st->frame_.msg_id` expansion lands on a real slot. Without this fixture the rename gap was masked because the matrix test only checks codegen-success / Rust syn-parse, not compilation.",
+      "sequence": [
+        {"args": [0, 0],     "expected": {"valid": true,  "reason": ""},                    "note": "matches default-initialized frame fields exactly"},
+        {"args": [1, 0],     "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "msgId mismatch (frame.msgId=0 != 1)"},
+        {"args": [0, 1],     "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "payload mismatch (frame.payload=0 != 1)"},
+        {"args": [255, 4095], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "both fields at upper range bounds but neither matches frame defaults"},
+        {"args": [128, 2048], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "mid-range values; in range but plausibility still fails"}
+      ]
+    },
     "crossfile_validator_transform": {
       "fixture": "CrossfileValidatorTransform::validate",
       "signature": "(rawTemp: u16) -> ValidationResult{valid, reason}",

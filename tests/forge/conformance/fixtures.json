@@ -237,6 +237,26 @@
       ]
     },
     {
+      "name": "crossfile_validator_codec",
+      "kind": "validator",
+      "ref_section": "validators",
+      "args": ["u8", "u16"],
+      "output": [
+        {"name": "valid",  "type": "bool",   "compare": "equality"},
+        {"name": "reason", "type": "string", "compare": "equality"}
+      ]
+    },
+    {
+      "name": "crossfile_validator_filter",
+      "kind": "validator",
+      "ref_section": "validators",
+      "args": ["f64", "f64"],
+      "output": [
+        {"name": "valid",  "type": "bool",   "compare": "equality"},
+        {"name": "reason", "type": "string", "compare": "equality"}
+      ]
+    },
+    {
       "name": "crossfile_validator_transform",
       "kind": "validator",
       "ref_section": "validators",

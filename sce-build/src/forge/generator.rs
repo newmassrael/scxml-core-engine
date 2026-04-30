@@ -1496,6 +1496,18 @@ fn render_validator(
             // here or don't carry an equivalent diagnostic, so they emit
             // the same redundant comparison as before.
             obj.insert("is_unsigned".into(), r.sce_type.is_unsigned().into());
+            // Same -Werror=type-limits hazard at the upper bound: a
+            // `uint8_t > 255` test is tautologically false. The C11
+            // template elides the upper-bound comparison when this
+            // flag is true. Computed by string-comparing the rule's
+            // declared max against the type's natural ceiling so a
+            // user who writes `range-max="200"` for a uint8 still
+            // gets the comparison emitted (not tautological).
+            let is_max_at_type_max = match (&r.max, r.sce_type.unsigned_max_str()) {
+                (Some(max_str), Some(type_max)) => max_str == type_max,
+                _ => false,
+            };
+            obj.insert("is_max_at_type_max".into(), is_max_at_type_max.into());
             if matches!(lang, Language::Kotlin) {
                 let conv = kotlin_unsigned_conversion(&r.sce_type).unwrap_or("");
                 obj.insert("conv".into(), conv.into());
@@ -1527,34 +1539,141 @@ fn render_validator(
         })
         .collect();
 
-    // Build import alias rename map for expressions (stateless → qualified call).
-    let import_renames: std::collections::HashMap<&str, &str> = imports
+    // Build the unified expression rename map. Validator host needs the
+    // same per-language stateful-import wiring procedure host already
+    // installs (`render_procedure_*` mirrors). Without it, the cpp
+    // template declares a `frame_{}` member but the plausibility
+    // expression references bare `frame.msgId` — undefined symbol at
+    // compile time. The C11 template lacks the state struct for
+    // stateful imports altogether; that gap is closed below + in
+    // `c/validator.h.jinja2`.
+    //
+    // Layering (mirrors procedure host's `owned_rename_map` build):
+    //   1. Stateless imports → qualified-call replacement.
+    //   2. Stateful alias bare-Ident → per-language member access prefix
+    //      (cpp: `frame_`; rust/python: `self.frame`; go: `p.Frame`;
+    //      kotlin/c11: handled implicitly through field/method renames).
+    //   3. `stateful_import_method_renames` — per-language `alias.method`
+    //      collapse for cpp/kotlin/rust/go/python; C11 routes methods
+    //      through `expr::ImportLowering` instead and skips this map.
+    //   4. `stateful_import_field_renames` — per-language `alias.field`
+    //      collapse for all six backends including C11
+    //      (`_st->frame_.msg_id`).
+    //   5. Go: builtin-keyword escapes for input identifiers.
+    let mut owned_renames: std::collections::HashMap<&str, String> =
+        std::collections::HashMap::new();
+    for imp in imports {
+        if !imp.is_stateful && !imp.qualified_call.is_empty() {
+            owned_renames.insert(imp.alias.as_str(), imp.qualified_call.clone());
+        }
+    }
+    // Per-language alias bare-Ident rewrite. The rename map's qualified
+    // key collapse handles `alias.field` and `alias.method` separately
+    // through entries 3-4; this entry catches the bare-alias case (e.g.
+    // a future `<sce:plausibility="frame == otherFrame"/>`). Following
+    // the procedure host pattern: cpp inserts `member_name`,
+    // rust/python prefix `self.`, go prefixes `p.`, kotlin's
+    // member_name == alias is identity, C11 has no procedure-style
+    // self-prefix since field/method renames already include the
+    // `_st->` indirection.
+    for imp in imports {
+        if !imp.is_stateful {
+            continue;
+        }
+        let alias_expansion: Option<String> = match lang {
+            Language::Cpp => Some(imp.member_name.clone()),
+            Language::Rust | Language::Python => {
+                Some(format!("self.{}", imp.member_name))
+            }
+            Language::Go => Some(format!("p.{}", imp.member_name)),
+            Language::Kotlin | Language::C11 => None,
+        };
+        if let Some(exp) = alias_expansion {
+            owned_renames.insert(imp.alias.as_str(), exp);
+        }
+    }
+    let validator_method_renames =
+        stateful_import_method_renames(imports, &lang);
+    for (k, v) in &validator_method_renames {
+        owned_renames.insert(k.as_str(), v.clone());
+    }
+    let validator_field_renames =
+        stateful_import_field_renames(imports, &lang);
+    for (k, v) in &validator_field_renames {
+        owned_renames.insert(k.as_str(), v.clone());
+    }
+    let go_escape_pairs = l.go_rename_pairs(rv.inputs.iter().map(|f| f.id.as_str()));
+    if matches!(lang, Language::Go) {
+        for (k, v) in &go_escape_pairs {
+            owned_renames.insert(k.as_str(), v.clone());
+        }
+    }
+    let expr_renames: std::collections::HashMap<&str, &str> = owned_renames
         .iter()
-        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
-        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
+        .map(|(k, v)| (*k, v.as_str()))
         .collect();
 
-    // Go: merge import renames with builtin escape renames.
-    let go_renames = l.go_rename_pairs(rv.inputs.iter().map(|f| f.id.as_str()));
-    let mut combined_renames = rename_map(&go_renames);
-    for (k, v) in &import_renames {
-        combined_renames.insert(*k, *v);
-    }
-    let expr_renames = if matches!(lang, Language::Go) {
-        &combined_renames
-    } else {
-        &import_renames
-    };
+    // C11 stateful-import method-call lowering specs. Validator host
+    // diverges from procedure host on the codec arm: procedure wraps
+    // `<codec>_encode` to convert `<codec>_encoded_t` → `sce_forge_bytes_t`
+    // because of the `<send sce:payload>` slot's bytes contract.
+    // Validator has no payload contract — plausibility predicates only
+    // read fields, and any future codec method call would dispatch
+    // directly into the kind's free function. Filter is identical to
+    // procedure host (direct `<filter_snake>_update`).
+    let import_lowerings: Vec<expr::ImportLowering> = imports
+        .iter()
+        .filter(|imp| imp.is_stateful)
+        .map(|imp| {
+            let methods: Vec<(String, String)> = match imp.kind.as_str() {
+                "filter" => vec![(
+                    "update".to_string(),
+                    format!("{}_update", imp.namespace),
+                )],
+                // Codec: validator currently only reads codec fields in
+                // plausibility (no `frame.encode()` call site exists in
+                // any validator fixture). Empty methods list keeps the
+                // pre-pass a no-op for codec; the field rename map
+                // (entry 4 above) handles every read path.
+                "codec" => Vec::new(),
+                // Other stateful kinds: no fixture consumer yet. Add
+                // entries when the first one lands.
+                _ => Vec::new(),
+            };
+            expr::ImportLowering {
+                alias: imp.alias.clone(),
+                prepended_arg: format!("&_st->{}", imp.member_name),
+                methods,
+            }
+        })
+        .collect();
+    let has_stateful_imports = imports.iter().any(|imp| imp.is_stateful);
 
     let type_ctx = crate::forge::type_ctx::validator(m, imports);
     let plausibility_expr = match &rv.plausibility {
-        Some(e) => Some(expr::transpile_typed(
-            e,
-            l.expr_target(),
-            &type_ctx,
-            expr_renames,
-            crate::forge::types::InferredType::Bool,
-        )?),
+        Some(e) => Some({
+            // C11 with stateful imports → AST pre-pass for method-call
+            // lowering. Other languages and stateless-only C11 flow
+            // through the standard pipeline; the rename map already
+            // collapses field/method Member nodes for those paths.
+            if matches!(lang, Language::C11) && has_stateful_imports {
+                expr::transpile_typed_with_import_lowering(
+                    e,
+                    &type_ctx,
+                    &expr_renames,
+                    crate::forge::types::InferredType::Bool,
+                    &import_lowerings,
+                )?
+            } else {
+                expr::transpile_typed(
+                    e,
+                    l.expr_target(),
+                    &type_ctx,
+                    &expr_renames,
+                    crate::forge::types::InferredType::Bool,
+                )?
+            }
+        }),
         None => None,
     };
 
@@ -1566,17 +1685,26 @@ fn render_validator(
     ctx.insert("plausibility_expr".into(), serde_json::json!(plausibility_expr));
 
     // C11 (RFC §5.J.2 §3 Phase C V1b): per-fixture flat-scope typedef + V2c
-    // mixed calling convention. Stateless validators (no rocs) emit a free
-    // function `<snake>_validate(args)`; stateful validators emit a state
-    // struct + pointer-passing `<snake>_validate(<snake>_t *self, args)`,
-    // mirroring the cpp shape but in C-idiomatic form (no member functions,
-    // no zero-field structs which would violate -Wpedantic).
+    // mixed calling convention. Stateless validators (no rocs and no
+    // stateful imports) emit a free function `<snake>_validate(args)`;
+    // stateful validators emit a state struct + pointer-passing
+    // `<snake>_validate(<snake>_t *self, args)`, mirroring the cpp shape
+    // but in C-idiomatic form (no member functions, no zero-field structs
+    // which would violate -Wpedantic).
+    //
+    // `c_has_state` triggers on either condition:
+    //   - ROC fields exist (`prev_vars` non-empty), or
+    //   - any cross-file stateful import is present (codec/filter/...) —
+    //     those need a `_st->{member}` slot in the state struct so the
+    //     rename map's `_st->frame_.msg_id` expansion resolves and so the
+    //     C11 ImportLowering can prepend `&_st->{member}` for method calls.
     if matches!(lang, Language::C11) {
         let snake = filters::to_snake_case(m.name.clone());
         ctx.insert("c_result_typedef".into(), format!("{snake}_result_t").into());
         ctx.insert("c_state_typedef".into(), format!("{snake}_t").into());
         ctx.insert("c_validate_func".into(), format!("{snake}_validate").into());
-        ctx.insert("c_has_state".into(), (!prev_vars.is_empty()).into());
+        let c_has_state = !prev_vars.is_empty() || has_stateful_imports;
+        ctx.insert("c_has_state".into(), c_has_state.into());
     }
 
     l.insert_imports(&mut ctx, imports);

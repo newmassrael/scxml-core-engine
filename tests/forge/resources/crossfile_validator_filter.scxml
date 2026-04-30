@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — validator invoking filter update -->
+<!-- Validator imports a stateful filter and calls the filter's update() method
+     inside a plausibility predicate. The filter accumulates state across
+     validate() calls (validator host's stateful import members live in the
+     same state struct as ROC prev_vars), so the second call sees a smoothed
+     value derived from both the current and previous raw samples. The
+     plausibility passes iff the smoothed reading stays under threshold.
+     Verifies that cross-file member-method calls land on a non-codec
+     stateful kind through the validator's expression pipeline across all
+     six backends — the C11 path goes through expr::ImportLowering with
+     `&_st->smoother_` prepended, the five other backends through the
+     stateful_import_method_renames per-language expansions. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="filter_low_pass.scxml" kind="filter" as="smoother"/>
+
+  <datamodel>
+    <data id="rawSample" sce:type="float64" sce:direction="in"/>
+    <data id="threshold" sce:type="float64" sce:direction="in"/>
+    <data id="ok" sce:type="bool" sce:direction="out"
+          sce:plausibility="smoother.update(rawSample) &lt; threshold"/>
+  </datamodel>
+</scxml>
