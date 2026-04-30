@@ -914,6 +914,48 @@ fn forge_python_codec_subbyte() {
     assert_standalone_forge_python("codec_subbyte", "codec_subbyte.py");
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── C11 conformance tests ────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+/// Generate C11 from a standalone forge SCXML and compare against expected output.
+fn assert_standalone_forge_c(scxml_name: &str, expected_filename: &str) {
+    assert_standalone_forge_lang(
+        scxml_name,
+        expected_filename,
+        sce_build::generator::Language::C11,
+    );
+}
+
+// ── Codec (C11) ─────────────────────────────────────────────
+
+#[test]
+fn forge_c11_codec_simple_frame() {
+    assert_standalone_forge_c("codec_simple_frame", "codec_simple_frame.c.h");
+}
+
+#[test]
+fn forge_c11_codec_little_endian() {
+    assert_standalone_forge_c("codec_little_endian", "codec_little_endian.c.h");
+}
+
+#[test]
+fn forge_c11_codec_subbyte() {
+    assert_standalone_forge_c("codec_subbyte", "codec_subbyte.c.h");
+}
+
+// ── Crossfile codec (C11) ───────────────────────────────────
+
+#[test]
+fn forge_c11_crossfile_procedure_codec() {
+    assert_standalone_forge_c("crossfile_procedure_codec", "crossfile_procedure_codec.c.h");
+}
+
+#[test]
+fn forge_c11_crossfile_procedure_codec_mutate() {
+    assert_standalone_forge_c("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.c.h");
+}
+
 // ── Validator conformance (C++) ──────────────────────────────
 
 #[test]
