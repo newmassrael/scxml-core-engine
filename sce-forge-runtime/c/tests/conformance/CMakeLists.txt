@@ -74,71 +74,31 @@ if(NOT EXISTS "${REFERENCE_JSON}")
     message(FATAL_ERROR "reference JSON not found at ${REFERENCE_JSON}")
 endif()
 
-# RFC §5.J.2 §3: which fixtures the C11 backend currently emits.
-# Filtering at fixture-enumeration time means CMake never asks
-# sce-codegen to emit a kind that has no `.c.jinja2` template yet.
-# Each sub-phase widens this list alongside the matching template:
-#   * Phase A:   Transform (3 fixtures)
-#   * Phase B-1: Condition (3 fixtures)
-#   * Phase B-2: Lookup    (4 fixtures)
-#   * Phase B-3: Codec     (3 fixtures)
-#   * Phase C:   Validator (5 fixtures, incl. one cross-file transform import)
-#   * Phase D-1: Procedure L1 (3 fixtures — pure guard-only diamonds);
-#                D-2 widens by `procedure_security_access` once the
-#                runtime header lands; D-3 widens by the two
-#                crossfile_procedure_codec[_mutate] cross-file imports.
-#   * Phase E-1: Filter (3 fixtures — low_pass / moving_average /
-#                debounce). C11 bakes the algorithm per fixture at
-#                codegen time (no runtime header surface).
-#   * Phase E-2: Observer (1 fixture — observer_coolant). C11 bakes
-#                the ThresholdState bool flag + fixed-cap EventQueue
-#                + tag enum inline per fixture.
-#   * Phase E-3: Interpolation (2 fixtures — 1d_linear / 2d_bilinear).
-#                C11 inlines the linear/bilinear algorithm per fixture
-#                with array sizes substituted in (cpp/Rust use templates
-#                over array sizes — C11 has no generics).
-#   * Phase E-4: Timer (1 fixture — timer_diag_scheduler). C11 emits a
-#                vtable-based ITimer interface + function-pointer
-#                handler struct + per-timer start/cancel pairs (cpp uses
-#                a virtual ITimer + duck-typed Handler template param).
-#                After E-4: every forge kind covered, all 11 forge kinds
-#                except Phase F's inline-kind statechart embedding.
-set(C11_FIXTURES
-    transform_temperature
-    transform_bitwise
-    transform_multi_output
-    condition_threshold
-    condition_range
-    condition_programming
-    lookup_alarm_code
-    lookup_state_action
-    lookup_unit_scale
-    lookup_engine_status
-    codec_simple_frame
-    codec_subbyte
-    codec_little_endian
-    codec_tail
-    codec_length_ref
-    validator_range_only
-    validator_plausibility_only
-    validator_rpm_check
-    validator_signed_roc
-    crossfile_validator_transform
-    crossfile_validator_condition
-    procedure_linear
-    procedure_diamond
-    procedure_startup_check
-    procedure_security_access
-    crossfile_procedure_codec
-    crossfile_procedure_codec_mutate
-    filter_low_pass
-    filter_moving_average
-    filter_debounce
-    observer_coolant
-    interpolation_1d_linear
-    interpolation_2d_bilinear
-    timer_diag_scheduler
+# RFC §5.J.2 §3: pull the C11 fixture catalog from sce-codegen itself.
+# The Rust binary owns the manifest schema and the per-language `kind`
+# gate (`c11_supported_kind`), so cmake never has to touch JSON or
+# duplicate the phase-staging list — `--language c11` filters out any
+# kind whose `kinds/<kind>.c.jinja2` fragment has not landed yet,
+# matching the filter `generate-conformance --language c11` applies at
+# harness render time. After Phase E-4 every forge kind has its
+# fragment, so today the filter is a no-op identity over the manifest;
+# it stays in the toolchain so a future kind addition forces an
+# explicit decision in `c11_supported_kind` instead of silently being
+# pulled into the harness.
+execute_process(
+    COMMAND "${SCE_CODEGEN}" list-fixtures
+            --manifest "${FIXTURE_MANIFEST}"
+            --format cmake
+            --language c11
+    OUTPUT_VARIABLE C11_FIXTURES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _manifest_rc
 )
+if(NOT _manifest_rc EQUAL 0)
+    message(FATAL_ERROR
+        "sce-codegen list-fixtures --language c11 failed for "
+        "${FIXTURE_MANIFEST}")
+endif()
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")

@@ -438,6 +438,13 @@ enum Commands {
         /// `space` emits a single space-separated line.
         #[arg(short, long, default_value = "plain")]
         format: String,
+        /// Optional language gate. When set to `c11`, applies the same
+        /// `c11_supported_kind` filter that `generate-conformance` uses,
+        /// so the c11 cmake harness can derive its fixture set from the
+        /// single manifest source of truth. Other values (and the unset
+        /// default) emit every fixture in the manifest unchanged.
+        #[arg(short, long)]
+        language: Option<String>,
     },
 }
 
@@ -503,7 +510,9 @@ fn main() {
             manifest,
             output_dir,
         } => cmd_generate_conformance(&language, &manifest, &output_dir),
-        Commands::ListFixtures { manifest, format } => cmd_list_fixtures(&manifest, &format),
+        Commands::ListFixtures { manifest, format, language } => {
+            cmd_list_fixtures(&manifest, &format, language.as_deref())
+        }
         Commands::Expand { scxml } => cmd_expand(&scxml),
     }
 }
@@ -2379,7 +2388,7 @@ fn cmd_expand(scxml_path: &str) {
 
 // ── Subcommand: list-fixtures ──────────────────────────────────
 
-fn cmd_list_fixtures(manifest_path: &str, format: &str) {
+fn cmd_list_fixtures(manifest_path: &str, format: &str, language: Option<&str>) {
     let manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
         .unwrap_or_else(|e| {
             cli_exit(CliError::ReadInput {
@@ -2387,7 +2396,27 @@ fn cmd_list_fixtures(manifest_path: &str, format: &str) {
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
             })
         });
-    let names: Vec<&str> = manifest.fixtures.iter().map(|f| f.name.as_str()).collect();
+    // RFC §5.J.2: when `--language c11` is passed, mirror the per-kind
+    // filter `generate-conformance` applies before harness rendering so
+    // the c11 cmake harness sees identically-shaped fixture sets from
+    // both subcommands. Unrecognised languages and the unset default
+    // pass every manifest fixture through untouched, matching the prior
+    // (filterless) contract every other backend already relies on.
+    let lang_filter = match language {
+        Some(s) => Some(s.parse::<Language>().unwrap_or_else(|_| {
+            cli_exit(CliError::UnknownLanguage { lang: s.to_string() })
+        })),
+        None => None,
+    };
+    let names: Vec<&str> = manifest
+        .fixtures
+        .iter()
+        .filter(|f| match lang_filter {
+            Some(Language::C11) => sce_build::conformance::c11_supported_kind(&f.spec),
+            _ => true,
+        })
+        .map(|f| f.name.as_str())
+        .collect();
     match format {
         "plain" => {
             for n in &names {

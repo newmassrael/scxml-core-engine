@@ -863,7 +863,12 @@ pub fn harness_filename(language: Language) -> &'static str {
 ///     diamonds with no service/helper/donedata/internals); D-2 widens
 ///     to `is_l2: true` once the matching `procedure.h` runtime header
 ///     and L2 emit paths land.
-fn c11_supported_kind(spec: &FixtureSpec) -> bool {
+///
+/// Exposed as `pub` so the `sce-codegen list-fixtures --language c11`
+/// CLI can apply the same filter that `generate-conformance` uses,
+/// keeping the c11 cmake harness's fixture set auto-derived from the
+/// single manifest source of truth instead of hand-maintained.
+pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
     match spec {
         FixtureSpec::Transform { .. }
         | FixtureSpec::Condition { .. }
