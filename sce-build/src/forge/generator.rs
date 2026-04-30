@@ -4418,7 +4418,7 @@ fn render_single_inline_kind(
             render_inline_condition_member(&kind.id, expr, l, machine_name)
         }
         InlineKindData::Codec { fields, default_endian } => {
-            render_inline_codec_member(&kind.id, fields, *default_endian, l)
+            render_inline_codec_member(&kind.id, fields, *default_endian, l, machine_name)
         }
     }
 }
@@ -4915,6 +4915,7 @@ fn render_inline_codec_member(
     codec_fields: &[CodecField],
     default_endian: Endian,
     l: &LangCtx,
+    machine_name: &str,
 ) -> Result<(String, String), ForgeError> {
     use crate::generator::Language;
     let struct_name = filters::to_pascal_case(id.to_string());
@@ -5111,10 +5112,67 @@ fn render_inline_codec_member(
             code.push_str("            ])");
             Ok((String::new(), code))
         }
-        Language::C11 => unimplemented!(
-            "C11 inline codec emitter is RFC \u{00A7}5.J.1 M3+ work \
-             (codec DSL emitter follows lookup vertical slice)"
-        ),
+        Language::C11 => {
+            // RFC §5.J.2 Phase F-2: free-standing inline codec emit. Mirrors
+            // the standalone `forge/c/codec.h.jinja2` shape (typedef struct
+            // + encoded buffer struct + static inline decode/encode pair)
+            // but injects without #ifndef guards or #include — those are
+            // already provided by the enclosing state_machine.h. Naming
+            // prefix `<sm>_<id>_*` avoids collisions with peer fixtures
+            // sharing the same enclosing translation unit, mirroring the
+            // standalone codec's `<file_stem>_*` convention.
+            let sm_snake = filters::to_snake_case(machine_name.to_string());
+            let sm_upper = sm_snake.to_uppercase();
+            let id_snake = filters::to_snake_case(id.to_string());
+            let id_upper = id_snake.to_uppercase();
+            let struct_typedef = format!("{sm_snake}_{id_snake}_t");
+            let encoded_typedef = format!("{sm_snake}_{id_snake}_encoded_t");
+            let decode_func = format!("{sm_snake}_{id_snake}_decode");
+            let encode_func = format!("{sm_snake}_{id_snake}_encode");
+            let min_macro = format!("{sm_upper}_{id_upper}_MIN_BYTES");
+            let max_macro = format!("{sm_upper}_{id_upper}_MAX_BYTES");
+
+            let mut code = String::new();
+            code.push_str(&format!("/* SCE Forge: Inline codec '{id}' */\n"));
+            code.push_str(&format!("#define {min_macro} {min_bytes}\n"));
+            code.push_str(&format!("#define {max_macro} {min_bytes}\n\n"));
+
+            code.push_str("typedef struct {\n");
+            for f in codec_fields {
+                let field_id = filters::to_snake_case(f.id.clone());
+                code.push_str(&format!("    {} {};\n", c_type(&f.sce_type), field_id));
+            }
+            code.push_str(&format!("}} {struct_typedef};\n\n"));
+
+            code.push_str("typedef struct {\n");
+            code.push_str(&format!("    uint8_t bytes[{max_macro}];\n"));
+            code.push_str("    size_t  len;\n");
+            code.push_str(&format!("}} {encoded_typedef};\n\n"));
+
+            code.push_str(&format!(
+                "static inline bool {decode_func}(const uint8_t *raw, size_t len, {struct_typedef} *out) {{\n\
+                 \x20   if (len < {min_macro}) return false;\n"
+            ));
+            for f in codec_fields {
+                let field_id = filters::to_snake_case(f.id.clone());
+                let decode = generate_decode_expr(f, default_endian, Language::C11);
+                code.push_str(&format!("    out->{field_id} = {decode};\n"));
+            }
+            code.push_str("    return true;\n}\n\n");
+
+            let encode_exprs =
+                generate_encode_exprs(codec_fields, default_endian, Language::C11);
+            code.push_str(&format!(
+                "static inline {encoded_typedef} {encode_func}(const {struct_typedef} *self) {{\n\
+                 \x20   {encoded_typedef} r;\n\
+                 \x20   r.len = {min_macro};\n"
+            ));
+            for (i, expr_str) in encode_exprs.iter().enumerate() {
+                code.push_str(&format!("    r.bytes[{i}] = {expr_str};\n"));
+            }
+            code.push_str("    return r;\n}");
+            Ok((String::new(), code))
+        }
     }
 }
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: inline codec within a statechart -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="inline_codec_test" initial="idle">
+  <datamodel>
+    <data id="frame" sce:kind="codec" sce:default-endian="big">
+      <sce:field id="msgId" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+      <sce:field id="length" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+      <sce:field id="payload" sce:type="uint16" sce:byte="2" sce:bit-size="16"/>
+    </data>
+  </datamodel>
+  <state id="idle">
+    <transition event="rx" target="active"/>
+  </state>
+  <state id="active">
+    <transition event="done" target="idle"/>
+  </state>
+</scxml>

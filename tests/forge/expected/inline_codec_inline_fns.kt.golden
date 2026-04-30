@@ -1,0 +1,23 @@
+// SCE Forge: Inline codec 'frame'
+    data class Frame(
+        val msgId: UByte,
+        val length: UByte,
+        val payload: UShort
+    ) {
+        companion object {
+            fun decode(raw: ByteArray): Frame? {
+                if (raw.size < 4) return null
+                return Frame(
+                    raw[0].toUByte(),
+                    raw[1].toUByte(),
+                    (((raw[2].toInt() and 0xFF) shl 8) or (raw[3].toInt() and 0xFF)).toUShort(),
+                )
+            }
+        }
+        fun encode(): ByteArray = byteArrayOf(
+            msgId.toByte(),
+            length.toByte(),
+            (payload.toInt() ushr 8 and 0xFF).toByte(),
+            (payload.toInt() and 0xFF).toByte()
+        )
+    }

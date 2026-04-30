@@ -1,0 +1,27 @@
+// SCE Forge: Inline codec 'frame'
+#[derive(Debug, Clone)]
+pub struct Frame {
+    pub msg_id: u8,
+    pub length: u8,
+    pub payload: u16,
+}
+
+impl Frame {
+    pub fn decode(raw: &[u8]) -> Option<Self> {
+        if raw.len() < 4 { return None; }
+        Some(Self {
+            msg_id: raw[0],
+            length: raw[1],
+            payload: ((raw[2] as u16) << 8) | raw[3] as u16,
+        })
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        vec![
+            self.msg_id,
+            self.length,
+            (self.payload >> 8 & 0xFF) as u8,
+            (self.payload & 0xFF) as u8
+        ]
+    }
+}

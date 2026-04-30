@@ -1,0 +1,26 @@
+// SCE Forge: Inline codec 'frame'
+type Frame struct {
+	MsgId uint8
+	Length uint8
+	Payload uint16
+}
+
+func DecodeFrame(raw []byte) (*Frame, error) {
+	if len(raw) < 4 {
+		return nil, fmt.Errorf("frame too short: %d < 4", len(raw))
+	}
+	return &Frame{
+		MsgId: raw[0],
+		Length: raw[1],
+		Payload: uint16(raw[2])<<8 | uint16(raw[3]),
+	}, nil
+}
+
+func (s *Frame) Encode() []byte {
+	return []byte{
+		byte(s.MsgId),
+		byte(s.Length),
+		byte(s.Payload >> 8 & 0xFF),
+		byte(s.Payload & 0xFF)
+	}
+}

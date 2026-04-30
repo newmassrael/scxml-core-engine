@@ -268,7 +268,7 @@ fn assert_inline_kinds_lang(
     }
 
     // ── Layer 2: Structural assertions ─────────────────────────
-    assert_inline_structural(&member_fns, &type_defs, lang);
+    assert_inline_structural(&member_fns, &type_defs, lang, scxml_name);
 
     // ── Layer 3: Template integration + compile gate ───────────
     let tdir = sce_build::find_template_dir_for(lang);
@@ -299,6 +299,19 @@ fn assert_inline_kinds_lang(
 /// Verifies idiomatic patterns that byte-comparison alone cannot catch
 /// (e.g. a missing `self.` prefix would still match a stale golden).
 fn assert_inline_structural(
+    member_fns: &str,
+    type_defs: &str,
+    lang: sce_build::generator::Language,
+    scxml_name: &str,
+) {
+    match scxml_name {
+        "inline_mixed" => assert_inline_mixed_structural(member_fns, type_defs, lang),
+        "inline_codec" => assert_inline_codec_structural(member_fns, type_defs, lang),
+        _ => {} // Other fixtures rely on byte-golden comparison alone.
+    }
+}
+
+fn assert_inline_mixed_structural(
     member_fns: &str,
     type_defs: &str,
     lang: sce_build::generator::Language,
@@ -382,6 +395,69 @@ fn assert_inline_structural(
             // const policy pointer parameter
             assert!(member_fns.contains("(const inline_mixed_policy_t *_st)"),
                 "C11: missing const policy pointer parameter");
+        }
+        _ => {}
+    }
+}
+
+/// Structural assertions for `inline_codec.scxml` (Phase F-2). The codec
+/// inline kind emits a payload struct + (de)serialization pair — these
+/// idiomatic patterns differ enough across languages that byte-compare
+/// alone would miss e.g. a forgotten `companion object` in Kotlin or a
+/// missing `_encoded_t` envelope in C11.
+fn assert_inline_codec_structural(
+    member_fns: &str,
+    type_defs: &str,
+    lang: sce_build::generator::Language,
+) {
+    use sce_build::generator::Language;
+    match lang {
+        Language::Kotlin => {
+            assert!(member_fns.contains("data class Frame("),
+                "Kotlin: missing data class for inline codec");
+            assert!(member_fns.contains("companion object"),
+                "Kotlin: missing companion object hosting decode");
+            assert!(member_fns.contains("fun decode(raw: ByteArray): Frame?"),
+                "Kotlin: missing decode signature");
+            assert!(member_fns.contains("fun encode(): ByteArray = byteArrayOf("),
+                "Kotlin: missing encode signature");
+        }
+        Language::Rust => {
+            assert!(type_defs.contains("pub struct Frame"),
+                "Rust: missing pub struct in type_defs");
+            assert!(type_defs.contains("#[derive(Debug, Clone)]"),
+                "Rust: missing derives on codec struct");
+            assert!(type_defs.contains("pub fn decode(raw: &[u8]) -> Option<Self>"),
+                "Rust: missing decode signature");
+            assert!(type_defs.contains("pub fn encode(&self) -> Vec<u8>"),
+                "Rust: missing encode signature");
+        }
+        Language::Go => {
+            assert!(type_defs.contains("type Frame struct"),
+                "Go: missing struct in type_defs");
+            assert!(type_defs.contains("func DecodeFrame(raw []byte) (*Frame, error)"),
+                "Go: missing exported Decode function");
+            assert!(type_defs.contains("func (s *Frame) Encode() []byte"),
+                "Go: missing receiver Encode method");
+        }
+        Language::C11 => {
+            assert!(member_fns.contains("#define INLINE_CODEC_FRAME_MIN_BYTES 4"),
+                "C11: missing min-bytes macro");
+            assert!(member_fns.contains("} inline_codec_frame_t;"),
+                "C11: missing payload typedef");
+            assert!(member_fns.contains("} inline_codec_frame_encoded_t;"),
+                "C11: missing encoded envelope typedef");
+            assert!(member_fns.contains(
+                "static inline bool inline_codec_frame_decode(\
+                 const uint8_t *raw, size_t len, inline_codec_frame_t *out)"
+            ), "C11: missing decode signature");
+            assert!(member_fns.contains(
+                "static inline inline_codec_frame_encoded_t \
+                 inline_codec_frame_encode(const inline_codec_frame_t *self)"
+            ), "C11: missing encode signature");
+            // self->{snake} member access on encode side
+            assert!(member_fns.contains("self->msg_id"),
+                "C11: missing self-> prefix on encode field access");
         }
         _ => {}
     }
@@ -1170,6 +1246,40 @@ fn forge_inline_mixed_go() {
 #[test]
 fn forge_inline_mixed_c11() {
     assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::C11);
+}
+
+// ── Inline codec conformance (Phase F-2) ───────────────────────
+//
+// Separate fixture from inline_mixed because the codec DSL is the
+// only inline kind that emits both a payload struct and its
+// (de)serialization pair — co-locating it with lookup/transform/
+// condition would force the existing 4-language inline_mixed
+// goldens to absorb codec output, conflating two structurally
+// distinct emit shapes in one byte-compare.
+
+#[test]
+fn forge_inline_codec() {
+    assert_inline_kinds_cpp("inline_codec");
+}
+
+#[test]
+fn forge_inline_codec_kotlin() {
+    assert_inline_kinds_lang("inline_codec", sce_build::generator::Language::Kotlin);
+}
+
+#[test]
+fn forge_inline_codec_rust() {
+    assert_inline_kinds_lang("inline_codec", sce_build::generator::Language::Rust);
+}
+
+#[test]
+fn forge_inline_codec_go() {
+    assert_inline_kinds_lang("inline_codec", sce_build::generator::Language::Go);
+}
+
+#[test]
+fn forge_inline_codec_c11() {
+    assert_inline_kinds_lang("inline_codec", sce_build::generator::Language::C11);
 }
 
 // ── Named Context typedef emission ─────────────────────────────
