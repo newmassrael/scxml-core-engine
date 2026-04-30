@@ -1056,6 +1056,174 @@ fn forge_c11_crossfile_validator_filter() {
     assert_standalone_forge_c("crossfile_validator_filter", "crossfile_validator_filter.c.h");
 }
 
+#[test]
+fn forge_c11_crossfile_validator_transform() {
+    assert_standalone_forge_c("crossfile_validator_transform", "crossfile_validator_transform.c.h");
+}
+
+#[test]
+fn forge_c11_crossfile_validator_condition() {
+    assert_standalone_forge_c("crossfile_validator_condition", "crossfile_validator_condition.c.h");
+}
+
+#[test]
+fn forge_c11_crossfile_validator_lookup() {
+    assert_standalone_forge_c("crossfile_validator_lookup", "crossfile_validator_lookup.c.h");
+}
+
+#[test]
+fn forge_c11_crossfile_validator_interpolation() {
+    assert_standalone_forge_c("crossfile_validator_interpolation", "crossfile_validator_interpolation.c.h");
+}
+
+// ── Transform (C11) ──────────────────────────────────────────
+
+#[test]
+fn forge_c11_transform_temperature() {
+    assert_standalone_forge_c("transform_temperature", "transform_temperature.c.h");
+}
+
+#[test]
+fn forge_c11_transform_multi_output() {
+    assert_standalone_forge_c("transform_multi_output", "transform_multi_output.c.h");
+}
+
+#[test]
+fn forge_c11_transform_bitwise() {
+    assert_standalone_forge_c("transform_bitwise", "transform_bitwise.c.h");
+}
+
+// ── Lookup (C11) ─────────────────────────────────────────────
+
+#[test]
+fn forge_c11_lookup_engine_status() {
+    assert_standalone_forge_c("lookup_engine_status", "lookup_engine_status.c.h");
+}
+
+#[test]
+fn forge_c11_lookup_alarm_code() {
+    assert_standalone_forge_c("lookup_alarm_code", "lookup_alarm_code.c.h");
+}
+
+#[test]
+fn forge_c11_lookup_state_action() {
+    assert_standalone_forge_c("lookup_state_action", "lookup_state_action.c.h");
+}
+
+#[test]
+fn forge_c11_lookup_unit_scale() {
+    assert_standalone_forge_c("lookup_unit_scale", "lookup_unit_scale.c.h");
+}
+
+#[test]
+fn forge_c11_lookup_severity_default() {
+    assert_standalone_forge_c("lookup_severity_default", "lookup_severity_default.c.h");
+}
+
+// ── Condition (C11) ──────────────────────────────────────────
+
+#[test]
+fn forge_c11_condition_programming() {
+    assert_standalone_forge_c("condition_programming", "condition_programming.c.h");
+}
+
+#[test]
+fn forge_c11_condition_threshold() {
+    assert_standalone_forge_c("condition_threshold", "condition_threshold.c.h");
+}
+
+#[test]
+fn forge_c11_condition_range() {
+    assert_standalone_forge_c("condition_range", "condition_range.c.h");
+}
+
+// ── Validator (C11) ──────────────────────────────────────────
+
+#[test]
+fn forge_c11_validator_rpm_check() {
+    assert_standalone_forge_c("validator_rpm_check", "validator_rpm_check.c.h");
+}
+
+#[test]
+fn forge_c11_validator_range_only() {
+    assert_standalone_forge_c("validator_range_only", "validator_range_only.c.h");
+}
+
+#[test]
+fn forge_c11_validator_signed_roc() {
+    assert_standalone_forge_c("validator_signed_roc", "validator_signed_roc.c.h");
+}
+
+#[test]
+fn forge_c11_validator_plausibility_only() {
+    assert_standalone_forge_c("validator_plausibility_only", "validator_plausibility_only.c.h");
+}
+
+// ── Procedure (C11) ──────────────────────────────────────────
+
+#[test]
+fn forge_c11_procedure_startup_check() {
+    assert_standalone_forge_c("procedure_startup_check", "procedure_startup_check.c.h");
+}
+
+#[test]
+fn forge_c11_procedure_linear() {
+    assert_standalone_forge_c("procedure_linear", "procedure_linear.c.h");
+}
+
+#[test]
+fn forge_c11_procedure_diamond() {
+    assert_standalone_forge_c("procedure_diamond", "procedure_diamond.c.h");
+}
+
+#[test]
+fn forge_c11_procedure_security_access() {
+    assert_standalone_forge_c("procedure_security_access", "procedure_security_access.c.h");
+}
+
+// ── Interpolation (C11) ──────────────────────────────────────
+
+#[test]
+fn forge_c11_interpolation_1d_linear() {
+    assert_standalone_forge_c("interpolation_1d_linear", "interpolation_1d_linear.c.h");
+}
+
+#[test]
+fn forge_c11_interpolation_2d_bilinear() {
+    assert_standalone_forge_c("interpolation_2d_bilinear", "interpolation_2d_bilinear.c.h");
+}
+
+// ── Filter (C11) ─────────────────────────────────────────────
+
+#[test]
+fn forge_c11_filter_moving_average() {
+    assert_standalone_forge_c("filter_moving_average", "filter_moving_average.c.h");
+}
+
+#[test]
+fn forge_c11_filter_low_pass() {
+    assert_standalone_forge_c("filter_low_pass", "filter_low_pass.c.h");
+}
+
+#[test]
+fn forge_c11_filter_debounce() {
+    assert_standalone_forge_c("filter_debounce", "filter_debounce.c.h");
+}
+
+// ── Observer (C11) ───────────────────────────────────────────
+
+#[test]
+fn forge_c11_observer_coolant() {
+    assert_standalone_forge_c("observer_coolant", "observer_coolant.c.h");
+}
+
+// ── Timer (C11) ──────────────────────────────────────────────
+
+#[test]
+fn forge_c11_timer_diag_scheduler() {
+    assert_standalone_forge_c("timer_diag_scheduler", "timer_diag_scheduler.c.h");
+}
+
 // ── Validator conformance (C++) ──────────────────────────────
 
 #[test]
