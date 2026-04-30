@@ -24,7 +24,7 @@ impl ValidatorRpmCheck {
     }
 
     pub fn validate(&mut self, rpm: u16, engine_state: &str) -> ValidationResult {
-        if rpm < 0 || rpm > 8000 {
+        if rpm > 8000 {
             return ValidationResult { valid: false, reason: "rpm_out_of_range".to_string() };
         }
         {

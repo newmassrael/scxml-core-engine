@@ -23,7 +23,11 @@
 {% endif %}
     }
 {% else %}
-{# String-output lookup — enum-to-string via Debug derive. #}
+{# String-output lookup — enum→raw-value match. `#[derive(Debug)]` would
+   print the Rust variant ("Stop"), but the oracle stores the verbatim
+   SCXML mapping value ("STOP"). Per-variant match against
+   `f.enum_values` (raw SCXML values) routes back to the wire form so
+   the assertion compares apples-to-apples. #}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     for case in spec["cases"].as_array().expect("cases must be array") {
 {% for arg_ty in f.args %}
@@ -31,7 +35,11 @@
 {% endfor %}
         let expected = case["expected"].as_str().expect("expected string");
         let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
-        let actual_str = format!("{:?}", actual);
+        let actual_str = match actual {
+{% for value in f.enum_values %}
+            fixtures::{{ f.name }}::{{ f.output_id | to_pascal_case }}::{{ value | to_rust_variant }} => "{{ value }}",
+{% endfor %}
+        };
         assert_eq!(actual_str, expected, "{{ f.name }}");
     }
 {% endif %}

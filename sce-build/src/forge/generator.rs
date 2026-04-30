@@ -5537,7 +5537,14 @@ fn render_filter(
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
     ctx.insert("filter_type".into(), m.filter_type.as_str().into());
-    ctx.insert("input_id".into(), m.input.id.clone().into());
+    // Rust function parameters are deny-warnings strict on snake_case; other
+    // backends keep the SCXML-author identifier verbatim per their language
+    // conventions. Mirrors the per-language emit pattern used by `param_str`.
+    let input_id_emit = match lang {
+        crate::generator::Language::Rust => filters::to_snake_case(m.input.id.clone()),
+        _ => m.input.id.clone(),
+    };
+    ctx.insert("input_id".into(), input_id_emit.into());
     ctx.insert("input_type".into(), l.type_name(&m.input.sce_type).into());
     ctx.insert("output_type".into(), l.type_name(&m.output.sce_type).into());
     ctx.insert("window".into(), serde_json::json!(m.window));
@@ -5802,28 +5809,12 @@ fn to_upper_snake(s: &str) -> String {
 }
 
 
-/// Convert all-uppercase identifiers to PascalCase for Rust enum variants.
-/// "STOP" → "Stop", "RUNNING" → "Running", "ENGINE_START" → "EngineStart".
-/// Mixed-case input is delegated to filters::to_pascal_case.
+/// Forge-local thin wrapper around `filters::to_rust_variant` for the
+/// `&str` call sites scattered in this module. Centralized definition
+/// lives in `filters.rs` so the same SCREAMING_SNAKE → PascalCase rule
+/// is reachable as a minijinja filter from harness templates.
 fn to_rust_variant(s: &str) -> String {
-    if s.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()) {
-        s.split('_')
-            .filter(|p| !p.is_empty())
-            .map(|word| {
-                let mut chars = word.chars();
-                match chars.next() {
-                    Some(c) => {
-                        let mut out = c.to_uppercase().to_string();
-                        out.extend(chars.map(|c| c.to_ascii_lowercase()));
-                        out
-                    }
-                    None => String::new(),
-                }
-            })
-            .collect()
-    } else {
-        filters::to_pascal_case(s.to_string())
-    }
+    filters::to_rust_variant(s.to_string())
 }
 
 // ══════════════════════════════════════════════════════════════

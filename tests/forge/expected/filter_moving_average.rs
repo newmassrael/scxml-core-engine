@@ -15,8 +15,8 @@ impl FilterMovingAverage {
         }
     }
 
-    pub fn update(&mut self, rawTemp: f64) -> f64 {
-        self.impl_.update(rawTemp as f64)
+    pub fn update(&mut self, raw_temp: f64) -> f64 {
+        self.impl_.update(raw_temp as f64)
     }
 
     pub fn reset(&mut self) {

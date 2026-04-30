@@ -40,12 +40,12 @@
 {% for h in f.helpers_ordered %}
 {% if h.stub.kind == "xor_bytes" %}
         // <sce:helper name="{{ h.name }}"> stub — XOR every byte with {{ h.stub.mask }}.
-        let stub_{{ h.name }} = |input: &[u8]| -> Vec<u8> {
+        let stub_{{ h.name | to_snake_case }} = |input: &[u8]| -> Vec<u8> {
             input.iter().map(|b| b ^ {{ h.stub.mask }}u8).collect()
         };
 {% endif %}
 {% endfor %}
-        let result = fixtures::{{ f.name }}::execute(handler{% for h in f.helpers_ordered %}, stub_{{ h.name }}{% endfor %}{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
+        let result = fixtures::{{ f.name }}::execute(handler{% for h in f.helpers_ordered %}, stub_{{ h.name | to_snake_case }}{% endfor %}{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
         assert_eq!(
             result.completed, expected_completed,
             "{{ f.name }}.completed"

@@ -49,6 +49,7 @@ pub fn register_filters(env: &mut minijinja::Environment) {
     register_invoke_filters(env);
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("to_pascal_case", to_pascal_case);
+    env.add_filter("to_rust_variant", to_rust_variant);
     env.add_filter("to_rust_type", to_rust_type);
     env.add_filter("escape_rust", escape_rust);
     env.add_filter("to_rust_string_expr", to_rust_string_expr);
@@ -99,6 +100,30 @@ pub fn to_pascal_case(name: String) -> String {
         .split(&name)
         .map(|p| if p.is_empty() { String::new() } else { capitalize_first(p) })
         .collect()
+}
+
+/// Convert all-uppercase identifiers to PascalCase for Rust enum variants.
+/// "STOP" -> "Stop", "RUNNING" -> "Running", "ENGINE_START" -> "EngineStart".
+/// Mixed-case input is delegated to to_pascal_case.
+pub fn to_rust_variant(name: String) -> String {
+    if name.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()) {
+        name.split('_')
+            .filter(|p| !p.is_empty())
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    Some(c) => {
+                        let mut out = c.to_uppercase().to_string();
+                        out.extend(chars.map(|c| c.to_ascii_lowercase()));
+                        out
+                    }
+                    None => String::new(),
+                }
+            })
+            .collect()
+    } else {
+        to_pascal_case(name)
+    }
 }
 
 /// Map SCXML variable type to Rust type.
