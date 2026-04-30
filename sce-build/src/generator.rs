@@ -396,6 +396,24 @@ fn render_c11(
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
 
+    // SCE Forge: render inline kind declarations as C11 code fragment.
+    // Mirrors cpp/Kotlin's single-block emit (no top-level type_defs split
+    // because C11 has no nested types — enum typedefs and `static inline`
+    // functions both flow into member_fns and inject after the policy
+    // typedef in state_machine.h.jinja2).
+    let inline_kind_code = if !model.inline_kinds.is_empty() {
+        let machine_name = filters::to_pascal_case(model.name.clone());
+        crate::forge::generator::render_inline_kinds(
+            &model.inline_kinds,
+            Language::C11,
+            &machine_name,
+        )
+        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?
+        .member_fns
+    } else {
+        String::new()
+    };
+
     let header_tmpl = env
         .get_template("c/state_machine.h.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -410,6 +428,7 @@ fn render_c11(
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
+        inline_kind_code => &inline_kind_code,
     };
     let source_ctx = minijinja::context! {
         model => &model_val,

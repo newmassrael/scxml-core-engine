@@ -1,0 +1,23 @@
+/* SCE Forge: Inline lookup 'rpmStatus' */
+typedef enum {
+    INLINE_MIXED_RPM_STATUS_OFF,
+    INLINE_MIXED_RPM_STATUS_RUNNING,
+} inline_mixed_rpm_status_t;
+
+static inline inline_mixed_rpm_status_t inline_mixed_lookup_rpm_status(uint32_t raw) {
+    switch (raw) {
+    case 0:
+        return INLINE_MIXED_RPM_STATUS_OFF;
+    case 1:
+        return INLINE_MIXED_RPM_STATUS_RUNNING;
+    default: return INLINE_MIXED_RPM_STATUS_OFF;
+    }
+}
+/* SCE Forge: Inline condition 'isReady' */
+static inline bool inline_mixed_is_ready(const inline_mixed_policy_t *_st) {
+    return _st->speed == 0 && _st->engine_off == true;
+}
+/* SCE Forge: Inline transform 'toFahrenheit' */
+static inline double inline_mixed_compute_to_fahrenheit(const inline_mixed_policy_t *_st) {
+    return _st->celsius * 1.8 + 32.0;
+}

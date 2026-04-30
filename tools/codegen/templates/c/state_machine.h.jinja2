@@ -246,6 +246,21 @@ typedef struct {{ model.name }}_policy {
 {% endif %}
 } {{ model.name }}_policy_t;
 
+{% if inline_kind_code %}
+/* ── SCE Forge: Inline kind declarations ──────────────────────────── */
+{# RFC §5.J.2 Phase F: free-standing emit (typedef enums + `static
+   inline` functions). C11 has no nested types — both lookup enum
+   typedefs and transform/condition/codec functions live at file
+   scope, prefixed with the policy name to avoid identifier
+   collisions across fixtures. The functions take `const <sm>_policy_t
+   *_st` so their `_st->{snake}` member access mirrors cpp's implicit
+   `this->`. Cpp emits the same fragment inside the Policy struct
+   body (state_machine.jinja2 line 291); this is the C11 mirror at the
+   only structurally-equivalent point — immediately after the policy
+   typedef closes. #}
+{{ inline_kind_code }}
+
+{% endif %}
 /* ── State machine instance ───────────────────────────────────────── */
 {# Equivalent to `class {name} : StaticExecutionEngine<{name}Policy>` —
    in C11 the engine and policy fields are flattened into a single

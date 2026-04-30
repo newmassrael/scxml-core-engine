@@ -217,6 +217,7 @@ fn assert_inline_kinds_lang(
         sce_build::generator::Language::Kotlin => "kt",
         sce_build::generator::Language::Rust => "rs",
         sce_build::generator::Language::Go => "go",
+        sce_build::generator::Language::C11 => "c",
         _ => panic!("unsupported language for inline kind lang test"),
     };
 
@@ -350,6 +351,37 @@ fn assert_inline_structural(
             // Package-level lookup (no receiver)
             assert!(member_fns.contains("func LookupRpmStatus("),
                 "Go: missing package-level lookup function");
+        }
+        Language::C11 => {
+            // RFC §5.J.2 Phase F. Verifies idiomatic C11 emit shape that
+            // byte-comparison alone cannot catch (e.g. a missing `_st->`
+            // prefix or wrong typedef shape would still match a stale
+            // golden written from a buggy renderer).
+
+            // Top-level enum typedef (no nesting in C)
+            assert!(member_fns.contains("typedef enum"),
+                "C11: missing typedef enum for lookup");
+            assert!(member_fns.contains("} inline_mixed_rpm_status_t;"),
+                "C11: missing snake_case typedef name");
+            // Prefixed enum constants (no namespacing in C)
+            assert!(member_fns.contains("INLINE_MIXED_RPM_STATUS_OFF"),
+                "C11: missing prefixed enum constant");
+            assert!(member_fns.contains("INLINE_MIXED_RPM_STATUS_RUNNING"),
+                "C11: missing prefixed enum constant");
+            // _st-> member access (procedure D14a mirror)
+            assert!(member_fns.contains("_st->"),
+                "C11: missing _st-> prefix for policy member access");
+            // Free-standing static inline functions
+            assert!(member_fns.contains("static inline bool inline_mixed_is_ready("),
+                "C11: missing condition function signature");
+            assert!(member_fns.contains("static inline double inline_mixed_compute_to_fahrenheit("),
+                "C11: missing transform function signature");
+            assert!(member_fns.contains(
+                "static inline inline_mixed_rpm_status_t inline_mixed_lookup_rpm_status("
+            ), "C11: missing lookup function signature");
+            // const policy pointer parameter
+            assert!(member_fns.contains("(const inline_mixed_policy_t *_st)"),
+                "C11: missing const policy pointer parameter");
         }
         _ => {}
     }
@@ -1133,6 +1165,11 @@ fn forge_inline_mixed_rust() {
 #[test]
 fn forge_inline_mixed_go() {
     assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::Go);
+}
+
+#[test]
+fn forge_inline_mixed_c11() {
+    assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::C11);
 }
 
 // ── Named Context typedef emission ─────────────────────────────

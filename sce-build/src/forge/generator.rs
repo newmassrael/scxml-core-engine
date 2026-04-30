@@ -4412,7 +4412,7 @@ fn render_single_inline_kind(
             render_inline_transform_member(&kind.id, expr, output_type, l, machine_name)
         }
         InlineKindData::Lookup { input_id, entries, default_value } => {
-            render_inline_lookup_member(&kind.id, input_id, entries, default_value, l)
+            render_inline_lookup_member(&kind.id, input_id, entries, default_value, l, machine_name)
         }
         InlineKindData::Condition { expr } => {
             render_inline_condition_member(&kind.id, expr, l, machine_name)
@@ -4454,10 +4454,22 @@ fn build_member_renames(
                 })
                 .collect())
         }
-        Language::C11 => unimplemented!(
-            "C11 inline-kind member renames are RFC \u{00A7}5.J.1 M3+ work \
-             (statechart emitter follows lookup vertical slice)"
-        ),
+        Language::C11 => {
+            // RFC §5.J.2 Phase F: C11 inline-kind member access mirrors the
+            // standalone procedure D14a pattern — free-standing `static inline`
+            // functions take a `const <sm>_policy_t *_st` parameter and rewrite
+            // bare datamodel identifiers to `_st->{snake}`. Identical to
+            // `procedure_security_access`'s sce:helper-imported state access
+            // (e.g. `seed` → `_st->seed`).
+            let idents = expr::extract_free_idents(raw_expr)?;
+            Ok(idents
+                .into_iter()
+                .map(|id| {
+                    let target = format!("_st->{}", filters::to_snake_case(id.clone()));
+                    (id, target)
+                })
+                .collect())
+        }
     }
 }
 
@@ -4534,9 +4546,21 @@ fn render_inline_transform_member(
                  \x20       return {transpiled}"
             )
         }
-        Language::C11 => unimplemented!(
-            "C11 inline transform emitter is RFC \u{00A7}5.J.1 M3+ work"
-        ),
+        Language::C11 => {
+            // RFC §5.J.2 Phase F: free-standing `static inline` function with
+            // `const <sm>_policy_t *_st` first parameter. Mirrors cpp's
+            // `[[nodiscard]] T compute<Id>() const` — the C11 `_st` parameter
+            // expresses the same const-receiver contract.
+            let sm_snake = filters::to_snake_case(machine_name.to_string());
+            let id_snake = filters::to_snake_case(id.to_string());
+            let func_name = format!("{sm_snake}_compute_{id_snake}");
+            format!(
+                "/* SCE Forge: Inline transform '{id}' */\n\
+                 static inline {ret_type} {func_name}(const {sm_snake}_policy_t *_st) {{\n\
+                 \x20   return {transpiled};\n\
+                 }}"
+            )
+        }
     };
 
     Ok((String::new(), code))
@@ -4551,6 +4575,7 @@ fn render_inline_lookup_member(
     entries: &[LookupEntry],
     default_value: &str,
     l: &LangCtx,
+    machine_name: &str,
 ) -> Result<(String, String), ForgeError> {
     use crate::generator::Language;
     let enum_name = filters::to_pascal_case(id.to_string());
@@ -4748,11 +4773,53 @@ fn render_inline_lookup_member(
             ));
             Ok((String::new(), code))
         }
-        Language::C11 => unimplemented!(
-            "C11 inline lookup emitter is RFC \u{00A7}5.J.1 M2+ work \
-             (lookup vertical slice is the M2 milestone — replace this arm \
-             when the lookup.h.jinja2/lookup.c.jinja2 templates land)"
-        ),
+        Language::C11 => {
+            // RFC §5.J.2 Phase F: top-level enum typedef + free `static
+            // inline` lookup function. C11 has no namespacing, so enum
+            // constants are prefixed `<SM_UPPER>_<ID_UPPER>_<VALUE>`
+            // (mirrors procedure_security_access's
+            // `PROCEDURE_SECURITY_ACCESS_STATE_*` pattern). The lookup
+            // function is pure (no `_st` parameter) — the input arrives
+            // explicitly via `input_id`.
+            let sm_snake = filters::to_snake_case(machine_name.to_string());
+            let sm_upper = sm_snake.to_uppercase();
+            let id_snake = filters::to_snake_case(id.to_string());
+            let id_upper = id_snake.to_uppercase();
+            let typedef = format!("{sm_snake}_{id_snake}_t");
+            let func_name = format!("{sm_snake}_lookup_{id_snake}");
+            let input_snake = filters::to_snake_case(input_id.to_string());
+            let const_name = |v: &str| -> String {
+                format!("{sm_upper}_{id_upper}_{}", v.to_uppercase())
+            };
+
+            let mut code = String::new();
+            code.push_str(&format!(
+                "/* SCE Forge: Inline lookup '{id}' */\n\
+                 typedef enum {{\n"
+            ));
+            for v in &unique_values {
+                code.push_str(&format!("    {},\n", const_name(v)));
+            }
+            code.push_str(&format!("}} {typedef};\n\n"));
+
+            code.push_str(&format!(
+                "static inline {typedef} {func_name}(uint32_t {input_snake}) {{\n\
+                 \x20   switch ({input_snake}) {{\n"
+            ));
+            for (value, keys) in &map {
+                for key in keys {
+                    code.push_str(&format!("    case {key}:\n"));
+                }
+                code.push_str(&format!("        return {};\n", const_name(value)));
+            }
+            code.push_str(&format!(
+                "    default: return {};\n\
+                 \x20   }}\n\
+                 }}",
+                const_name(default_value)
+            ));
+            Ok((String::new(), code))
+        }
     }
 }
 
@@ -4820,9 +4887,21 @@ fn render_inline_condition_member(
                  \x20       return {transpiled}"
             )
         }
-        Language::C11 => unimplemented!(
-            "C11 inline condition emitter is RFC \u{00A7}5.J.1 M3+ work"
-        ),
+        Language::C11 => {
+            // RFC §5.J.2 Phase F: free `static inline bool` function with
+            // `const <sm>_policy_t *_st` first parameter. Mirror of cpp's
+            // `[[nodiscard]] bool isReady() const` — same const-receiver
+            // contract expressed via the `_st` pointer.
+            let sm_snake = filters::to_snake_case(machine_name.to_string());
+            let id_snake = filters::to_snake_case(id.to_string());
+            let func_name = format!("{sm_snake}_{id_snake}");
+            format!(
+                "/* SCE Forge: Inline condition '{id}' */\n\
+                 static inline bool {func_name}(const {sm_snake}_policy_t *_st) {{\n\
+                 \x20   return {transpiled};\n\
+                 }}"
+            )
+        }
     };
 
     Ok((String::new(), code))
