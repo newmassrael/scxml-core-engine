@@ -182,19 +182,32 @@ class {{ class_name }}(ProcedureStateMachine):
 
     def _execute_transition_actions(
         self, source: int, tr_index: int
-    ) -> None:
+    ) -> Optional[int]:
+        # Returns None for normal flow; non-None signals that an
+        # assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
+        # §3 B4 bytes cap violation) raised an internal event that the
+        # shared run_to_completion loop re-pumps through
+        # _process_transition.
 {% if not states_with_assigns %}
-        pass
+        return None
 {% else %}
 {% for s in states_with_assigns %}
         if source == State.{{ s.name }}:
 {% for tr in s.assign_transitions %}
             if tr_index == {{ tr.index }}:
 {% for a in tr.assigns %}
+{% if a.is_bytes_with_cap %}
+                _scope_tmp = {{ a.expr }}
+                if len(_scope_tmp) > {{ a.cap }}:
+                    return Event.ErrorExecution
+                {{ a.location }} = _scope_tmp
+{% else %}
                 {{ a.location }} = {{ a.expr }}
+{% endif %}
 {% endfor %}
 {% endfor %}
 {% endfor %}
+        return None
 {% endif %}
 
 

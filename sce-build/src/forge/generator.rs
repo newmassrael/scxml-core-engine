@@ -2767,7 +2767,11 @@ fn build_procedure_states_with_assigns(
         .collect();
     let cap_check_target = matches!(
         target,
-        ExprTarget::Cpp | ExprTarget::Rust | ExprTarget::Kotlin | ExprTarget::Go
+        ExprTarget::Cpp
+            | ExprTarget::Rust
+            | ExprTarget::Kotlin
+            | ExprTarget::Go
+            | ExprTarget::Python
     );
 
     m.states
@@ -3594,7 +3598,11 @@ fn render_procedure_python(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
-    let common = build_procedure_common(m, false);
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 commit 3e: Python
+    // _execute_transition_actions abstract signature now returns
+    // Optional[int]; opt into the always-emit ErrorExecution variant for
+    // the cap-check raise path.
+    let common = build_procedure_common(m, true);
 
     // Build rename map: varName → self._var_name
     let var_name_strings: Vec<String> = m
