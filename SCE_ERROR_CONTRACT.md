@@ -242,6 +242,7 @@ references against a real document and drift silently.
 | `generate/invalid-config` | `generate` | no | |
 | `generate/template-load` | `generate` | no | |
 | `generate/template-render` | `generate` | no | |
+| `generate/unsupported-feature` | `generate` | no | |
 | `codegen/mcu-class-kind-on-non-mcu-language` | `generate` | no | |
 | `codegen/generic-kind-backend-emit-missing` | `generate` | no | |
 | `io/filesystem` | `io` | no | |
