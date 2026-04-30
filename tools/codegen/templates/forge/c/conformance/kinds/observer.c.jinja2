@@ -1,0 +1,50 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Observer kind — feed an input sequence and compare emitted tag names
+   step-by-step against the oracle's expected_events list.
+   Oracle is pre-baked into the harness source (RFC §5.J.2 F7). #}
+{% set _snake = f.name | to_snake_case %}
+{% set _upper = (f.name | to_snake_case) | upper %}
+static const char *{{ _snake }}_tag_name({{ _snake }}_tag_t t) {
+    switch (t) {
+{% for tag in f.event_tags %}
+        case {{ _upper }}_TAG_{{ tag }}: return "{{ tag }}";
+{% endfor %}
+    }
+    return "?";
+}
+
+static void test_{{ f.name }}(void) {
+    {{ _snake }}_t observer = {0};
+    static const struct {
+        {{ f.input | c_type }} input;
+        const char *expected[8];
+        size_t expected_count;
+    } seq[] = {
+{% for step in f.sequence %}
+{% if step.expected_events | length == 0 %}
+        { {{ step.input | c_literal(f.input) }}, {0}, 0 }{% if not loop.last %},{% endif %}
+{% else %}
+        { {{ step.input | c_literal(f.input) }}, { {% for ev in step.expected_events %}"{{ ev }}"{% if not loop.last %}, {% endif %}{% endfor %} }, {{ step.expected_events | length }} }{% if not loop.last %},{% endif %}
+{% endif %}
+
+{% endfor %}
+    };
+    const size_t n = sizeof(seq) / sizeof(seq[0]);
+    for (size_t i = 0; i < n; ++i) {
+        {{ _snake }}_queue_t actual = {{ _snake }}_update(&observer, seq[i].input);
+        bool ok = (actual.size == seq[i].expected_count);
+        for (size_t j = 0; ok && j < actual.size; ++j) {
+            if (strcmp({{ _snake }}_tag_name(actual.buffer[j]), seq[i].expected[j]) != 0) {
+                ok = false;
+            }
+        }
+        if (!ok) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} step %zu: events differ (size %zu vs expected %zu)\n",
+                i, actual.size, seq[i].expected_count);
+            ++g_failures;
+        }
+    }
+}

@@ -843,6 +843,14 @@ fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // `<snake>` + `<input_id_snake>` to its context so the C11
         // template emits free functions instead of templated classes.
         FixtureSpec::Filter { .. } => true,
+        // RFC §5.J.2 Phase E-2: hysteresis observer kind. C11 bakes the
+        // ThresholdState bool flag + fixed-cap EventQueue + tag enum
+        // inline per fixture. `render_observer` closed the prior C11
+        // `active_var` unimplemented site by adopting Rust's
+        // `<id>_active` convention, and inserts `<snake>`/`<upper>` so
+        // global C identifiers (enum tag constants, capacity macro) are
+        // observer-prefixed.
+        FixtureSpec::Observer { .. } => true,
         _ => false,
     }
 }

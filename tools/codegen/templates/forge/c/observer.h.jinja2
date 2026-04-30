@@ -1,0 +1,75 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+/* Event tag enum — the C global namespace has no nested-class scoping,
+ * so each tag is prefixed with the observer's UPPER_SNAKE name. cpp uses
+ * `ForgeDomain::Tag::EMIT_WARNING`; the C11 mirror is
+ * `<UPPER>_TAG_EMIT_WARNING` (no member access form available). */
+typedef enum {
+{% for ev in events %}
+    {{ upper }}_TAG_{{ ev }}{% if not loop.last %},{% endif %}
+
+{% endfor %}
+} {{ snake }}_tag_t;
+
+/* Fixed-capacity event FIFO (cpp parity: SCE::Forge::EventQueue<Domain, 8>).
+ * Returned by value from update(); the harness inspects `size` and
+ * iterates `buffer[0..size]`. */
+#define {{ upper }}_QUEUE_CAPACITY 8
+typedef struct {
+    {{ snake }}_tag_t buffer[{{ upper }}_QUEUE_CAPACITY];
+    size_t size;
+} {{ snake }}_queue_t;
+
+/* Observer state — one bool per monitor (ThresholdState parity). */
+typedef struct {
+{% for mon in monitors %}
+    bool {{ mon.active_var }};
+{% endfor %}
+} {{ snake }}_t;
+
+static inline {{ snake }}_queue_t {{ snake }}_update({{ snake }}_t *self, {{ params }}) {
+    {{ snake }}_queue_t events;
+    events.size = 0;
+{% for mon in monitors %}
+    if (!self->{{ mon.active_var }} && ({{ mon.enter_expr }})) {
+        self->{{ mon.active_var }} = true;
+        if (events.size < {{ upper }}_QUEUE_CAPACITY) {
+            events.buffer[events.size++] = {{ upper }}_TAG_{{ mon.event_enter }};
+        }
+    }
+{% if mon.has_leave %}
+{% if mon.has_on_leave %}
+    else if (self->{{ mon.active_var }} && ({{ mon.leave_expr }})) {
+        self->{{ mon.active_var }} = false;
+        if (events.size < {{ upper }}_QUEUE_CAPACITY) {
+            events.buffer[events.size++] = {{ upper }}_TAG_{{ mon.event_leave }};
+        }
+    }
+{% else %}
+    else if (self->{{ mon.active_var }} && ({{ mon.leave_expr }})) {
+        self->{{ mon.active_var }} = false;
+    }
+{% endif %}
+{% endif %}
+{% endfor %}
+    return events;
+}
+
+#endif  /* {{ guard }} */

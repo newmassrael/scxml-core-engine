@@ -90,6 +90,9 @@ endif()
 #   * Phase E-1: Filter (3 fixtures — low_pass / moving_average /
 #                debounce). C11 bakes the algorithm per fixture at
 #                codegen time (no runtime header surface).
+#   * Phase E-2: Observer (1 fixture — observer_coolant). C11 bakes
+#                the ThresholdState bool flag + fixed-cap EventQueue
+#                + tag enum inline per fixture.
 set(C11_FIXTURES
     transform_temperature
     transform_bitwise
@@ -118,6 +121,7 @@ set(C11_FIXTURES
     filter_low_pass
     filter_moving_average
     filter_debounce
+    observer_coolant
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

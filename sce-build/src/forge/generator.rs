@@ -1750,11 +1750,11 @@ pub fn generate_c11_with_imports(
             }
         }
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Interpolation(_)
-        | ForgeDocument::Timer(_)
-        | ForgeDocument::Observer(_) => {
+        | ForgeDocument::Timer(_) => {
             return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for kinds Interpolation/Timer/Observer is \
+                "C11 forge codegen for kinds Interpolation/Timer is \
                  RFC \u{00A7}5.J.2 Phase E work."
                     .into(),
             )
@@ -5531,11 +5531,14 @@ fn render_observer(
             crate::generator::Language::Cpp => format!("{}Active_", mon.id),
             crate::generator::Language::Kotlin => format!("{}Active", mon.id),
             crate::generator::Language::Go => format!("{}Active", mon.id),
-            crate::generator::Language::Rust | crate::generator::Language::Python =>
+            // C11 follows Rust/Python's snake_case "<id>_active" convention.
+            // The bake-at-codegen observer template (RFC §5.J.2 Phase E-2)
+            // emits these as bool fields on the `<snake>_t` state struct,
+            // mirroring the cpp ThresholdState::active_ flag bit-for-bit.
+            crate::generator::Language::Rust
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11 =>
                 format!("{}_active", filters::to_snake_case(mon.id.clone())),
-            crate::generator::Language::C11 => unimplemented!(
-                "C11 observer active_var is RFC \u{00A7}5.J.1 M3+ work"
-            ),
         };
 
         serde_json::json!({
@@ -5568,6 +5571,17 @@ fn render_observer(
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
     ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+
+    // RFC §5.J.2 Phase E-2: C11 emits per-fixture state struct + tag enum
+    // + fixed-cap event queue inline (no runtime header surface). Adds
+    // `<snake>` and `<upper>` so the template can prefix global C
+    // identifiers (enum tag constants, capacity macro) without colliding
+    // across fixtures sharing the same translation unit.
+    if matches!(lang, crate::generator::Language::C11) {
+        let snake = filters::to_snake_case(m.name.clone());
+        ctx.insert("upper".into(), to_upper_snake(&m.name).into());
+        ctx.insert("snake".into(), snake.into());
+    }
 
     render_phase3(env, &format!("observer.{}.jinja2", l.template_ext()), ctx)
 }
