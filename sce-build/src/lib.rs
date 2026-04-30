@@ -800,9 +800,21 @@ fn discover_primary_function(
                     format!("lookup{}", filters::to_pascal_case(m.output.id.clone()))
                 }
                 generator::Language::Rust
-                | generator::Language::Python
-                | generator::Language::C11 => {
+                | generator::Language::Python => {
                     format!("lookup_{}", filters::to_snake_case(m.output.id.clone()))
+                }
+                // RFC §5.J.2 §3 D1: C11 has a flat scope, so render_lookup
+                // emits `<m.name>_<output_id>`; build_qualified_call C11
+                // composes `<namespace>_<func_name>` and the namespace is
+                // already the imported file's stem (= `<m.name>` snake).
+                // Returning just `<output_id>` here (without the `lookup_`
+                // prefix that Rust/Python use) keeps the cross-file
+                // callsite landing on the actual emitted function rather
+                // than `<m.name>_lookup_<output_id>`. Mirrors the same
+                // mirror-pattern fix applied to Condition C11
+                // (`"check"`-suffix constant).
+                generator::Language::C11 => {
+                    filters::to_snake_case(m.output.id.clone())
                 }
                 generator::Language::Go => {
                     format!("Lookup{}", filters::to_pascal_case(m.output.id.clone()))

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: lookup kind — numeric output, default-on-miss.
+     Fault code -> severity level with `sce:default="0"` so missing keys
+     surface as severity 0 instead of an Option/None. The first numeric
+     lookup whose call result is non-Optional, used by
+     crossfile_validator_lookup as a clean cross-file call target whose
+     return value can flow directly into a comparison without
+     language-specific Option unwrapping. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="severity_default">
+  <datamodel>
+    <data id="code" sce:type="int32" sce:direction="in"/>
+    <data id="severity" sce:type="int32" sce:direction="out"/>
+    <data id="mapping" sce:default="0">
+      <sce:entry key="100" value="1"/>
+      <sce:entry key="200" value="2"/>
+      <sce:entry key="300" value="3"/>
+      <sce:entry key="400" value="2"/>
+      <sce:entry key="500" value="4"/>
+    </data>
+  </datamodel>
+</scxml>

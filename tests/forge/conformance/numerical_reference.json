@@ -236,6 +236,20 @@
         {"args": [5], "expected": 10.0,  "note": "decametre"},
         {"args": [6], "expected": 100.0, "note": "hectometre"}
       ]
+    },
+    "lookup_severity_default": {
+      "fixture": "lookup_severity",
+      "signature": "(code: i32) -> i32",
+      "description": "Fault code -> severity level with `sce:default=\"0\"` so missing keys return 0 directly. The first numeric+default lookup whose return value is non-Optional, used by crossfile_validator_lookup as a clean cross-file callsite (validator's plausibility predicate compares the result against 0 without any language-specific Option unwrap).",
+      "cases": [
+        {"args": [100], "expected": 1, "note": "low alarm"},
+        {"args": [200], "expected": 2, "note": "medium alarm"},
+        {"args": [300], "expected": 3, "note": "high alarm"},
+        {"args": [400], "expected": 2, "note": "duplicate value (medium) — exercises non-injective mapping"},
+        {"args": [500], "expected": 4, "note": "critical alarm"},
+        {"args": [0],   "expected": 0, "note": "miss -> default fallback"},
+        {"args": [999], "expected": 0, "note": "miss -> default fallback (above any key)"}
+      ]
     }
   },
 
@@ -378,6 +392,20 @@
         {"args": [101.0, 99.0,  100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "coolant marginally above max"},
         {"args": [95.0,  110.0, 100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "oil marginally above max"},
         {"args": [-30.0, -20.0, 0.0],   "expected": {"valid": true,  "reason": ""},                    "note": "negative temps below max=0; both <= 0 so tempWarn=false"}
+      ]
+    },
+    "crossfile_validator_lookup": {
+      "fixture": "CrossfileValidatorLookup::validate",
+      "signature": "(code: i32) -> ValidationResult{valid, reason}",
+      "description": "Cross-file composition fixture: validator imports lookup_severity_default as `severityFor` and uses the result inside a plausibility predicate (`severityFor(code) > 0`). Mirrors crossfile_validator_transform / _condition but exercises the lookup kind across the import boundary, with numeric+default policy so the call result is non-Optional and the comparison can flow directly per-language. The C11 backend's flat-scope identifier resolution is the most fragile axis here — `discover_primary_function` returns just the output id (`severity`) so build_qualified_call lands on the actual emitted `<m.name>_<output_id>` symbol (`lookup_severity_default_severity`) instead of doubling the prefix. Range constraint on `code` is `[0, 1000]`, so any code outside that surfaces as code_out_of_range without ever calling the lookup.",
+      "sequence": [
+        {"args": [100], "expected": {"valid": true,  "reason": ""},                    "note": "code=100 -> severity=1 > 0; plausibility passes"},
+        {"args": [200], "expected": {"valid": true,  "reason": ""},                    "note": "code=200 -> severity=2 > 0; plausibility passes"},
+        {"args": [500], "expected": {"valid": true,  "reason": ""},                    "note": "code=500 -> severity=4 > 0; plausibility passes"},
+        {"args": [50],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "code=50 -> miss -> severity=0; 0 > 0 false so plausibility fails (range still passes since 50 ∈ [0,1000])"},
+        {"args": [999], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "code=999 -> miss -> severity=0; same default-fallback failure mode"},
+        {"args": [-1],  "expected": {"valid": false, "reason": "code_out_of_range"},   "note": "code=-1 -> below range; range check fires first, lookup never runs"},
+        {"args": [1001],"expected": {"valid": false, "reason": "code_out_of_range"},   "note": "code=1001 -> above range; same range-first ordering"}
       ]
     }
   },

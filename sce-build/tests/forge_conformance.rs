@@ -514,6 +514,11 @@ fn forge_lookup_unit_scale() {
     assert_standalone_forge("lookup_unit_scale", "lookup_unit_scale.h");
 }
 
+#[test]
+fn forge_lookup_severity_default() {
+    assert_standalone_forge("lookup_severity_default", "lookup_severity_default.h");
+}
+
 // ── Condition conformance (3 tests) ───────────────────────────
 
 #[test]
@@ -611,6 +616,11 @@ fn forge_kotlin_lookup_unit_scale() {
     assert_standalone_forge_kotlin("lookup_unit_scale", "LookupUnitScale.kt");
 }
 
+#[test]
+fn forge_kotlin_lookup_severity_default() {
+    assert_standalone_forge_kotlin("lookup_severity_default", "LookupSeverityDefault.kt");
+}
+
 // ── Condition (Kotlin) ───────────────────────────────────────
 
 #[test]
@@ -706,6 +716,11 @@ fn forge_rust_lookup_state_action() {
 #[test]
 fn forge_rust_lookup_unit_scale() {
     assert_standalone_forge_rust("lookup_unit_scale", "lookup_unit_scale.rs");
+}
+
+#[test]
+fn forge_rust_lookup_severity_default() {
+    assert_standalone_forge_rust("lookup_severity_default", "lookup_severity_default.rs");
 }
 
 // ── Condition (Rust) ─────────────────────────────────────────
@@ -814,6 +829,11 @@ fn forge_go_lookup_unit_scale() {
     assert_standalone_forge_go("lookup_unit_scale", "lookup_unit_scale.go");
 }
 
+#[test]
+fn forge_go_lookup_severity_default() {
+    assert_standalone_forge_go("lookup_severity_default", "lookup_severity_default.go");
+}
+
 // ── Condition (Go) ──────────────────────────────────────────
 
 #[test]
@@ -918,6 +938,11 @@ fn forge_python_lookup_state_action() {
 #[test]
 fn forge_python_lookup_unit_scale() {
     assert_standalone_forge_python("lookup_unit_scale", "lookup_unit_scale.py");
+}
+
+#[test]
+fn forge_python_lookup_severity_default() {
+    assert_standalone_forge_python("lookup_severity_default", "lookup_severity_default.py");
 }
 
 // ── Condition (Python) ──────────────────────────────────────
@@ -1346,6 +1371,31 @@ fn forge_crossfile_validator_condition_go() {
 #[test]
 fn forge_crossfile_validator_condition_python() {
     assert_standalone_forge_python("crossfile_validator_condition", "crossfile_validator_condition.py");
+}
+
+#[test]
+fn forge_crossfile_validator_lookup_cpp() {
+    assert_standalone_forge("crossfile_validator_lookup", "crossfile_validator_lookup.h");
+}
+
+#[test]
+fn forge_crossfile_validator_lookup_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_validator_lookup", "CrossfileValidatorLookup.kt");
+}
+
+#[test]
+fn forge_crossfile_validator_lookup_rust() {
+    assert_standalone_forge_rust("crossfile_validator_lookup", "crossfile_validator_lookup.rs");
+}
+
+#[test]
+fn forge_crossfile_validator_lookup_go() {
+    assert_standalone_forge_go("crossfile_validator_lookup", "crossfile_validator_lookup.go");
+}
+
+#[test]
+fn forge_crossfile_validator_lookup_python() {
+    assert_standalone_forge_python("crossfile_validator_lookup", "crossfile_validator_lookup.py");
 }
 
 // ── Inline kind conformance ──────────────────────────────────
@@ -1994,6 +2044,16 @@ fn crossfile_matrix_observer_condition() {
 #[test]
 fn crossfile_matrix_validator_codec() {
     assert_crossfile_codegen_languages("crossfile_validator_codec", SIX_BACKENDS);
+}
+
+#[test]
+fn crossfile_matrix_validator_condition() {
+    assert_crossfile_codegen_languages("crossfile_validator_condition", SIX_BACKENDS);
+}
+
+#[test]
+fn crossfile_matrix_validator_lookup() {
+    assert_crossfile_codegen_languages("crossfile_validator_lookup", SIX_BACKENDS);
 }
 
 // ═══════════════════════════════════════════════════════════════

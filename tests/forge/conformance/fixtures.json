@@ -181,6 +181,14 @@
       "args": ["i32"],
       "output": {"type": "f64", "compare": "tolerance"}
     },
+    {
+      "name": "lookup_severity_default",
+      "kind": "lookup",
+      "ref_section": "pure_functions",
+      "on_miss": "default",
+      "args": ["i32"],
+      "output": {"type": "i32", "compare": "equality"}
+    },
 
     {
       "name": "validator_range_only",
@@ -237,6 +245,16 @@
       "kind": "validator",
       "ref_section": "validators",
       "args": ["f64", "f64", "f64"],
+      "output": [
+        {"name": "valid",  "type": "bool",   "compare": "equality"},
+        {"name": "reason", "type": "string", "compare": "equality"}
+      ]
+    },
+    {
+      "name": "crossfile_validator_lookup",
+      "kind": "validator",
+      "ref_section": "validators",
+      "args": ["i32"],
       "output": [
         {"name": "valid",  "type": "bool",   "compare": "equality"},
         {"name": "reason", "type": "string", "compare": "equality"}

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — validator importing lookup.
+     Validator's plausibility predicate calls into an imported numeric+default
+     lookup so the C11 backend's flat-scope identifier resolution is exercised
+     across the import boundary the same way crossfile_validator_transform and
+     crossfile_validator_condition exercise their kinds. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="lookup_severity_default.scxml" kind="lookup" as="severityFor"/>
+
+  <datamodel>
+    <data id="code" sce:type="int32" sce:direction="in"
+          sce:range-min="0" sce:range-max="1000"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="severityFor(code) > 0"/>
+  </datamodel>
+</scxml>
