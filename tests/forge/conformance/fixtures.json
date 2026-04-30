@@ -232,6 +232,16 @@
         {"name": "reason", "type": "string", "compare": "equality"}
       ]
     },
+    {
+      "name": "crossfile_validator_condition",
+      "kind": "validator",
+      "ref_section": "validators",
+      "args": ["f64", "f64", "f64"],
+      "output": [
+        {"name": "valid",  "type": "bool",   "compare": "equality"},
+        {"name": "reason", "type": "string", "compare": "equality"}
+      ]
+    },
 
     {
       "name": "codec_little_endian",

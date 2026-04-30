@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — validator importing condition -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="condition_threshold.scxml" kind="condition" as="tempWarn"/>
+
+  <datamodel>
+    <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+    <data id="oilTemp" sce:type="float64" sce:direction="in"/>
+    <data id="maxTemp" sce:type="float64" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="!tempWarn(coolantTemp, oilTemp, maxTemp)"/>
+  </datamodel>
+</scxml>

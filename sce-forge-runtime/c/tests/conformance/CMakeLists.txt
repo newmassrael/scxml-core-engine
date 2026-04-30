@@ -124,6 +124,7 @@ set(C11_FIXTURES
     validator_rpm_check
     validator_signed_roc
     crossfile_validator_transform
+    crossfile_validator_condition
     procedure_linear
     procedure_diamond
     procedure_startup_check

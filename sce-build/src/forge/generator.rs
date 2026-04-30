@@ -865,7 +865,15 @@ fn render_condition(
 
     let func_name = match lang {
         Language::Go => filters::to_pascal_case(m.name.clone()),
-        Language::Rust | Language::Python | Language::C11 =>
+        // RFC §5.J.2 §3 D1: C11 has flat scope, so cross-file imports
+        // resolve callsites via `<namespace>_<discover_primary_function>`.
+        // Mirror the transform `<m.name>_compute_<id>` shape with a
+        // condition-specific suffix so namespace-prefixed callsites stay
+        // distinct from the bare m.name. Single-output kind, so the
+        // suffix is the constant `check` rather than the output id.
+        Language::C11 =>
+            format!("{}_check", filters::to_snake_case(m.name.clone())),
+        Language::Rust | Language::Python =>
             filters::to_snake_case(m.name.clone()),
         _ => filters::to_camel_case(m.name.clone()),
     };

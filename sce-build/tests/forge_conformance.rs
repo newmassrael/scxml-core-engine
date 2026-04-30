@@ -1323,6 +1323,31 @@ fn forge_crossfile_validator_transform_python() {
     assert_standalone_forge_python("crossfile_validator_transform", "crossfile_validator_transform.py");
 }
 
+#[test]
+fn forge_crossfile_validator_condition_cpp() {
+    assert_standalone_forge("crossfile_validator_condition", "crossfile_validator_condition.h");
+}
+
+#[test]
+fn forge_crossfile_validator_condition_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_validator_condition", "CrossfileValidatorCondition.kt");
+}
+
+#[test]
+fn forge_crossfile_validator_condition_rust() {
+    assert_standalone_forge_rust("crossfile_validator_condition", "crossfile_validator_condition.rs");
+}
+
+#[test]
+fn forge_crossfile_validator_condition_go() {
+    assert_standalone_forge_go("crossfile_validator_condition", "crossfile_validator_condition.go");
+}
+
+#[test]
+fn forge_crossfile_validator_condition_python() {
+    assert_standalone_forge_python("crossfile_validator_condition", "crossfile_validator_condition.py");
+}
+
 // ── Inline kind conformance ──────────────────────────────────
 
 #[test]

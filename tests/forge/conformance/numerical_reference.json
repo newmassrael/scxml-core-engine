@@ -365,6 +365,20 @@
         {"args": [4096],  "expected": {"valid": false, "reason": "raw_temp_out_of_range"},     "note": "raw=4096 -> just above range; range check fires first, plausibility never runs"},
         {"args": [10000], "expected": {"valid": false, "reason": "raw_temp_out_of_range"},     "note": "raw=10000 -> well above range; same range-first ordering as the previous case"}
       ]
+    },
+    "crossfile_validator_condition": {
+      "fixture": "CrossfileValidatorCondition::validate",
+      "signature": "(coolantTemp: f64, oilTemp: f64, maxTemp: f64) -> ValidationResult{valid, reason}",
+      "description": "Cross-file composition fixture: validator imports condition_threshold as `tempWarn` and negates it inside a plausibility predicate. Stateless three-input validator with no range / ROC rules — the only failure mode is plausibility_failed when the imported condition reports a warning. The condition's expression is `coolantTemp > maxTemp || oilTemp > maxTemp`, so valid=true iff both temps are at-or-below maxTemp. Mirrors crossfile_validator_transform but exercises the condition kind across the import boundary instead of transform; the C11 backend's flat-scope identifier resolution is the most fragile axis here because the imported condition's exported function name must match the call-site spelling under build_qualified_call.",
+      "sequence": [
+        {"args": [50.0,  60.0,  100.0], "expected": {"valid": true,  "reason": ""},                    "note": "both temps well below max"},
+        {"args": [110.0, 60.0,  100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "coolant > max triggers tempWarn"},
+        {"args": [50.0,  105.0, 100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "oil > max triggers tempWarn"},
+        {"args": [100.0, 100.0, 100.0], "expected": {"valid": true,  "reason": ""},                    "note": "both equal to max; condition uses strict > so tempWarn=false"},
+        {"args": [101.0, 99.0,  100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "coolant marginally above max"},
+        {"args": [95.0,  110.0, 100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "oil marginally above max"},
+        {"args": [-30.0, -20.0, 0.0],   "expected": {"valid": true,  "reason": ""},                    "note": "negative temps below max=0; both <= 0 so tempWarn=false"}
+      ]
     }
   },
 

@@ -1205,6 +1205,19 @@ pub fn render_harness(
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_state = read_validator_has_state(&scxml_path)?;
             }
+            FixtureSpec::Condition { function, .. } => {
+                // RFC §5.J.2 §3 D1: C11 condition exports a fully-qualified
+                // `<m.name>_check` symbol (mirrors transform's `_compute_<id>`
+                // shape). Rewrite the harness's bare callsite so it lands on
+                // the qualified symbol; non-C11 backends keep the original
+                // function name and rely on namespace/package scoping.
+                if matches!(language, Language::C11) {
+                    *function = format!(
+                        "{}_check",
+                        crate::filters::to_snake_case(fixture_name.clone()),
+                    );
+                }
+            }
             FixtureSpec::Transform { output, compound_outputs, .. } => {
                 // RFC §5.J.2 §3 D1: prefix transform function names with the
                 // fixture name in C11 so the harness call sites match what

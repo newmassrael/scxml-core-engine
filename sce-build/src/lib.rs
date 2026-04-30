@@ -778,9 +778,15 @@ fn discover_primary_function(
                 generator::Language::Cpp | generator::Language::Kotlin => {
                     filters::to_camel_case(m.name.clone())
                 }
+                // RFC §5.J.2 §3 D1: C11 cross-file callsites compose
+                // `<namespace>_<this>` via build_qualified_call. Mirror
+                // the transform `compute_<id>` pattern with a constant
+                // `check` suffix so the resolver lands on the function
+                // emitted by render_condition's C11 arm
+                // (`<m.name>_check`) instead of doubling the prefix.
+                generator::Language::C11 => "check".to_string(),
                 generator::Language::Rust
-                | generator::Language::Python
-                | generator::Language::C11 => {
+                | generator::Language::Python => {
                     filters::to_snake_case(m.name.clone())
                 }
                 generator::Language::Go => {
