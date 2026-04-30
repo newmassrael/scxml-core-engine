@@ -2673,14 +2673,9 @@ Revised in Session E (path B, 2026-04-14): deploy.yaml declares **topology and r
 # SCE Mesh Deployment Descriptor
 version: "1.0"
 
-scheduler:
-  type: event_driven | real_time | game_loop | cooperative
-  cycle_ms: <integer>               # real_time, cooperative
-  tick_rate: <integer>              # game_loop
-
 topology:
   <device_name>:
-    platform: linux | qnx | autosar | windows
+    platform: linux | qnx | autosar | windows  # device-level build target hint
     target: x86_64 | aarch64 | arm32
 
     # Device-shared transport sessions. Each transport may reference an external
@@ -2696,6 +2691,40 @@ topology:
     machines:
       <scxml_name>:
         source: <path.scxml>
+
+        # Per-machine platform descriptor (watching-zenoh RFC §5.K, Phase A2).
+        # Optional. When present, `class` and `os` must be mutually admissible:
+        # `class: mcu` admits os ∈ {bare_metal, rtos}; `class: ap` admits
+        # os ∈ {linux, qnx, macos, freebsd, windows}. Numeric / required-when
+        # checks on the cache and core-count fields land alongside their
+        # codegen consumer in Phase A3+ (RFC §5.J / §5.E).
+        platform:
+          class: ap | mcu
+          os: linux | qnx | macos | freebsd | windows | bare_metal | rtos
+          has_dcache: true | false           # optional; consumed by §5.E cache-policy
+          dcache_line_size: <integer>        # optional; bytes (e.g. 32, 64)
+          has_speculative_prefetch: true | false   # optional; M7+ / A-class
+          core_count: <integer>              # optional; >=1
+
+        # Per-machine scheduler descriptor (RFC §5.K, Phase A2). Optional.
+        # `kind: cooperative` REQUIRES `worker_stack_budget` — the cooperative
+        # worker drains `<send>` queues in a fixed stack frame and a missing
+        # budget would let TLV-decode recursion silently overflow.
+        scheduler:
+          kind: tokio | cooperative | rt
+          worker_stack_budget: <integer>     # bytes; required when kind=cooperative
+
+        # Per-machine memory layout (RFC §5.K, Phase A2). Optional. Region
+        # attributes ride as raw strings; structural interpretation lives in
+        # the §5.E placement consumer (Phase B+).
+        memory:
+          sram_regions:
+            <region_name>:
+              base: <integer | hex>
+              size: <integer>
+              attr: [<attr>, ...]            # e.g. [dma_coherent, cacheable]
+          dma_channels: [<channel_id>, ...]
+
         bindings:
           "<target_id>":
             transport: someip | can | zenoh | shm | dds | dbus | grpc | ...

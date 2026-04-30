@@ -380,7 +380,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (156 codes)
+## Appendix — `DiagnosticCode` index (158 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -507,6 +507,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/partition-wire21-custom-tcp-unimplemented` | Mesh Deploy |
 | `mesh/distributability-r1-shared-write` | Mesh Deploy |
 | `mesh/distributability-r2-cross-region-transition` | Mesh Deploy |
+| `mesh/deploy-platform-class-os-mismatch` | Mesh Deploy |
+| `mesh/deploy-scheduler-cooperative-missing-stack-budget` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

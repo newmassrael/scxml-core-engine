@@ -908,6 +908,41 @@ pub enum DeployError {
         parallel: String,
         regions: Vec<String>,
     },
+
+    /// A machine declared `platform.class` and `platform.os` that are
+    /// not mutually admissible per [`crate::mesh::deploy::PlatformClass::admits_os`]
+    /// (SCE Mesh §14, watching-zenoh RFC §5.K). `class: mcu` admits only
+    /// `bare_metal` / `rtos`; `class: ap` admits only the general-purpose
+    /// OS values. Rejected at parse time so a contradictory pairing
+    /// cannot reach the codegen-matrix walker (RFC §5.J.4 / §5.J.5).
+    #[error("machine '{machine}': platform.class '{class}' is not compatible with \
+             platform.os '{os}'. SCE Mesh §14 (RFC §5.K) admits 'mcu' with \
+             os ∈ {{bare_metal, rtos}} and 'ap' with os ∈ {{linux, qnx, macos, \
+             freebsd, windows}}. Repair: change either field so the pair becomes \
+             admissible, or drop the platform: section to leave the machine \
+             unclassified.")]
+    PlatformClassOsMismatch {
+        machine: String,
+        class: &'static str,
+        os: &'static str,
+    },
+
+    /// A machine declared `scheduler.kind: cooperative` without
+    /// `scheduler.worker_stack_budget` (SCE Mesh §14, watching-zenoh RFC
+    /// §5.K line 2160-2164). The cooperative worker drives `<send>` queue
+    /// draining inside a fixed stack frame; without an authored bound,
+    /// codegen has no static budget to gate TLV-decode recursion against.
+    /// Rejected at parse time.
+    #[error("machine '{machine}': scheduler.kind 'cooperative' requires \
+             scheduler.worker_stack_budget (bytes). SCE Mesh §14 (RFC §5.K) — \
+             cooperative drives the `<send>` queue inside a fixed stack frame; \
+             a missing budget would let TLV-decode recursion silently overflow. \
+             Repair: add `worker_stack_budget: <bytes>` under `scheduler:` (e.g. \
+             4096), or change `kind:` to `tokio` / `rt` to inherit the host \
+             runtime's stack defaults.")]
+    SchedulerCooperativeMissingStackBudget {
+        machine: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -2056,6 +2091,30 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 k.extend(regions.iter().cloned());
                 k
             },
+        },
+        DeployError::PlatformClassOsMismatch {
+            machine,
+            class,
+            os,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPlatformClassOsMismatch,
+            stage: Stage::MeshDeploy,
+            actual: Some((*os).to_string()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                (*class).to_string(),
+                (*os).to_string(),
+            ],
+        },
+        DeployError::SchedulerCooperativeMissingStackBudget { machine } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySchedulerCooperativeMissingStackBudget,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone()],
         },
     }
 }

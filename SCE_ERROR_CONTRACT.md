@@ -273,6 +273,8 @@ references against a real document and drift silently.
 | `mesh/deploy-parse` | `mesh-deploy` | no | SCE Mesh §14 |
 | `mesh/deploy-unsupported-version` | `mesh-deploy` | `replace_one_of` | SCE Mesh §14 |
 | `mesh/deploy-duplicate-machine` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-platform-class-os-mismatch` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-scheduler-cooperative-missing-stack-budget` | `mesh-deploy` | no | SCE Mesh §14 |
 | `mesh/external-read` | `mesh-external` | no | |
 | `mesh/external-parse` | `mesh-external` | no | |
 | `mesh/external-unresolved-names` | `mesh-external` | no | |

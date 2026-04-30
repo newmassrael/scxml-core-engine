@@ -342,6 +342,201 @@ pub struct PartitionInvokeRef {
     pub invoke: String,
 }
 
+/// Per-machine platform classification (SCE Mesh §14, watching-zenoh
+/// RFC §5.K). The class axis chooses between MCU-class targets (small,
+/// bare-metal / RTOS, no general-purpose OS) and AP-class targets
+/// (Linux/QNX/macOS/FreeBSD/Windows). The class gates downstream
+/// codegen-matrix decisions (e.g. only `class: mcu` admits the C11
+/// backend's MCU-only kinds — see RFC §5.J.4 / §5.J.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlatformClass {
+    /// Application processor: Linux / QNX / macOS / FreeBSD / Windows host.
+    Ap,
+    /// Microcontroller-class target: bare-metal or RTOS, no general-purpose OS.
+    Mcu,
+}
+
+/// Per-machine OS axis (SCE Mesh §14, watching-zenoh RFC §5.K).
+///
+/// Authored values are gated against `class` by
+/// [`validate_platform_class_os_consistency`]: when `class: mcu`, only
+/// `bare_metal` / `rtos` are admitted; when `class: ap`, only the
+/// general-purpose OS values are admitted. The split mirrors the RFC's
+/// implementation-phase plan (Phase A serves bare_metal / MCU; Phase D+
+/// adds linux / qnx; Phase E+ reserves the other AP slots) without
+/// hard-coding phase order into the schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OsKind {
+    BareMetal,
+    Rtos,
+    Linux,
+    Qnx,
+    Macos,
+    Freebsd,
+    Windows,
+}
+
+impl OsKind {
+    /// Human-readable token used in diagnostics. Matches the YAML serde rename.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OsKind::BareMetal => "bare_metal",
+            OsKind::Rtos => "rtos",
+            OsKind::Linux => "linux",
+            OsKind::Qnx => "qnx",
+            OsKind::Macos => "macos",
+            OsKind::Freebsd => "freebsd",
+            OsKind::Windows => "windows",
+        }
+    }
+}
+
+impl PlatformClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PlatformClass::Ap => "ap",
+            PlatformClass::Mcu => "mcu",
+        }
+    }
+
+    /// Returns `true` iff `os` is admissible under this class.
+    /// Single source of truth for [`validate_platform_class_os_consistency`].
+    pub fn admits_os(self, os: OsKind) -> bool {
+        match self {
+            PlatformClass::Mcu => matches!(os, OsKind::BareMetal | OsKind::Rtos),
+            PlatformClass::Ap => matches!(
+                os,
+                OsKind::Linux | OsKind::Qnx | OsKind::Macos | OsKind::Freebsd | OsKind::Windows
+            ),
+        }
+    }
+}
+
+/// Per-machine platform descriptor (SCE Mesh §14, watching-zenoh RFC
+/// §5.K). Captures the target's class/OS plus cache and core-count
+/// invariants the codegen-matrix walker (RFC §5.J.4 / §5.J.5) and the
+/// §5.E cache-policy validator consume.
+///
+/// Field-specific numeric checks (e.g. `dcache_line_size` power-of-2 or
+/// `has_speculative_prefetch` REQUIRED when `has_dcache=true`) are not
+/// enforced here at schema time — they land alongside their codegen
+/// consumer in Phase A3+ per the RFC §7 sequence. The single
+/// invariant validated at parse time is `class` ↔ `os` consistency
+/// (`validate_platform_class_os_consistency`), which is intrinsic to
+/// the schema rather than a downstream codegen rule.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatformConfig {
+    /// Target class. Required when the section is present.
+    pub class: PlatformClass,
+    /// Target OS. Required when the section is present.
+    pub os: OsKind,
+    /// `true` when the target core has a data cache. Drives §5.E
+    /// cache-maintenance emission (cache invalidate before DMA-RX,
+    /// flush after DMA-TX). Optional at parse time; consumer-specific
+    /// follow-up rules (e.g. `has_speculative_prefetch` REQUIRED when
+    /// `has_dcache=true` on M7+ class cores) land with the codegen
+    /// consumer per RFC §5.K.
+    #[serde(default)]
+    pub has_dcache: Option<bool>,
+    /// Cache-line granularity in bytes (e.g. 32, 64). Consumed by
+    /// §5.E cache-maintenance emission. Optional at parse time.
+    #[serde(default)]
+    pub dcache_line_size: Option<u32>,
+    /// `true` for cores with speculative load / hardware prefetcher
+    /// (Cortex-M7, M85, A-class). Drives §5.E pre-DMA-RX invalidate
+    /// emission. Optional at parse time.
+    #[serde(default)]
+    pub has_speculative_prefetch: Option<bool>,
+    /// Number of cores; enables cross-core ordering checks in later
+    /// phases. Optional at parse time.
+    #[serde(default)]
+    pub core_count: Option<u32>,
+}
+
+/// Per-machine scheduler descriptor (SCE Mesh §14, watching-zenoh RFC
+/// §5.K).
+///
+/// `kind = cooperative` REQUIRES `worker_stack_budget`
+/// ([`validate_scheduler_cooperative_stack_budget`]): the cooperative
+/// worker drives `<send>` queue draining inside a fixed stack frame,
+/// and a missing budget would let TLV-decode recursion silently
+/// blow the stack. Other knobs from RFC §5.K (`tick_period_us`,
+/// `worker_slot_budget_us`, `keepalive_jitter_budget_us`) land
+/// alongside their codegen consumer in Phase A4+ per the RFC §7
+/// sequence.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineSchedulerConfig {
+    /// Scheduler kind. Required when the section is present.
+    pub kind: SchedulerKind,
+    /// Worker-stack budget in bytes. REQUIRED when `kind: cooperative`;
+    /// optional otherwise (other kinds use thread-stack defaults from
+    /// the host runtime, not a build-time bound).
+    #[serde(default)]
+    pub worker_stack_budget: Option<u32>,
+}
+
+/// Per-machine scheduler kind axis (SCE Mesh §14, watching-zenoh RFC
+/// §5.K). `tokio` and `rt` host the scheduler in async / RTOS-task
+/// contexts; `cooperative` is the SCE-built single-thread tick loop
+/// used on bare-metal MCUs (Phase A target).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SchedulerKind {
+    Tokio,
+    Cooperative,
+    Rt,
+}
+
+impl SchedulerKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SchedulerKind::Tokio => "tokio",
+            SchedulerKind::Cooperative => "cooperative",
+            SchedulerKind::Rt => "rt",
+        }
+    }
+}
+
+/// SRAM region descriptor (SCE Mesh §14, watching-zenoh RFC §5.K).
+/// Region attributes ride as raw strings at parse time so the schema
+/// admits forward-extension ("dma_coherent", "non_cacheable", "fast",
+/// "nocache") without a closed enum here; the §5.E placement validator
+/// is the consumer that interprets them.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SramRegionConfig {
+    /// Base address. Accepts integer or `0x`-prefixed hex via YAML
+    /// native parsing.
+    pub base: u64,
+    /// Region size in bytes. The YAML scalar form (`64K`, `512K`) is
+    /// not interpreted here — authors write decimal or hex; size-suffix
+    /// parsing lives in the §5.E consumer when introduced.
+    pub size: u64,
+    /// Region attributes (e.g. `["dma_coherent", "cacheable"]`).
+    #[serde(default)]
+    pub attr: Vec<String>,
+}
+
+/// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §5.K).
+/// SRAM region map and DMA-channel inventory feed §5.E placement /
+/// cache-policy validation in Phase B+; admitted at parse time so the
+/// MCU author can declare the layout in deploy.yaml without waiting
+/// for the consumer wiring.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryConfig {
+    /// SRAM region map keyed by region name.
+    #[serde(default)]
+    pub sram_regions: HashMap<String, SramRegionConfig>,
+    /// DMA channel inventory (target-specific identifiers).
+    #[serde(default)]
+    pub dma_channels: Vec<String>,
+}
+
 /// Device-level configuration (one entry per device/ECU in the topology).
 ///
 /// `transports` is where device-shared session config lives. Fields outside
@@ -836,6 +1031,30 @@ pub struct MachineConfig {
     /// quoted hex string (preferred). Per RFC F.X-4 D3.
     #[serde(default, deserialize_with = "deserialize_someip_machine_liveness_service_id")]
     pub someip_machine_liveness_service_id: Option<u16>,
+
+    /// Per-machine platform descriptor (SCE Mesh §14, watching-zenoh RFC
+    /// §5.K). Absent ⇒ no platform classification declared on this
+    /// machine; downstream codegen-matrix consumers fall back to their
+    /// own defaults. Present ⇒ class/os pair is admissible per
+    /// [`PlatformClass::admits_os`], enforced at parse time by
+    /// [`validate_platform_class_os_consistency`].
+    #[serde(default)]
+    pub platform: Option<PlatformConfig>,
+
+    /// Per-machine scheduler descriptor (SCE Mesh §14, watching-zenoh RFC
+    /// §5.K). Absent ⇒ machine inherits the partition / device runtime
+    /// defaults. Present ⇒ `kind` is required, and `kind: cooperative`
+    /// requires `worker_stack_budget` ([`validate_scheduler_cooperative_stack_budget`]).
+    #[serde(default)]
+    pub scheduler: Option<MachineSchedulerConfig>,
+
+    /// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §5.K).
+    /// Absent ⇒ no SRAM/DMA layout declared; the §5.E placement
+    /// validator skips this machine. Present ⇒ region attributes ride as
+    /// raw strings; structural interpretation lives in the §5.E
+    /// consumer (Phase B+).
+    #[serde(default)]
+    pub memory: Option<MemoryConfig>,
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].
@@ -1283,8 +1502,65 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_someip_scxml_invoke_service_ids(&cfg)?;
     validate_someip_liveness_service_ids(&cfg)?;
     validate_someip_machine_liveness_service_ids(&cfg)?;
+    validate_platform_class_os_consistency(&cfg)?;
+    validate_scheduler_cooperative_stack_budget(&cfg)?;
 
     Ok(cfg)
+}
+
+/// SCE Mesh §14 (watching-zenoh RFC §5.K) — when a machine declares a
+/// `platform:` block, the `class` axis (`mcu` / `ap`) and the `os`
+/// axis must be mutually admissible per [`PlatformClass::admits_os`].
+/// `class: mcu` admits only `bare_metal` / `rtos`; `class: ap` admits
+/// only the general-purpose OS values (`linux`, `qnx`, `macos`,
+/// `freebsd`, `windows`).
+///
+/// Enforced at parse time so a contradictory pairing (e.g. `class: mcu`
+/// + `os: linux`) cannot reach the codegen-matrix walker (RFC §5.J.4 /
+/// §5.J.5) that consumes `class` to gate MCU-only kinds.
+fn validate_platform_class_os_consistency(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(platform) = machine.platform.as_ref() else {
+                continue;
+            };
+            if !platform.class.admits_os(platform.os) {
+                return Err(DeployError::PlatformClassOsMismatch {
+                    machine: machine_name.clone(),
+                    class: platform.class.as_str(),
+                    os: platform.os.as_str(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// SCE Mesh §14 (watching-zenoh RFC §5.K, line 2160-2164) — when a
+/// machine's scheduler runs in cooperative mode, `worker_stack_budget`
+/// is REQUIRED. The cooperative worker drives `<send>` queue draining
+/// inside a fixed stack frame; without an authored bound the codegen
+/// has no static budget to check TLV-decode recursion against, and a
+/// malformed TLV-chain could silently overflow at runtime.
+///
+/// Rejected at parse time so a `kind: cooperative` block cannot reach
+/// the §5.J.1 cooperative tick template emitter without a budget.
+fn validate_scheduler_cooperative_stack_budget(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(sched) = machine.scheduler.as_ref() else {
+                continue;
+            };
+            if matches!(sched.kind, SchedulerKind::Cooperative)
+                && sched.worker_stack_budget.is_none()
+            {
+                return Err(DeployError::SchedulerCooperativeMissingStackBudget {
+                    machine: machine_name.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// SCE Mesh §14 rule 5 — author-declared machine ids must not use the
@@ -5205,5 +5481,240 @@ topology:
         // 0x8180 would be out-of-range for an invoke participant, but
         // brake is not a participant (no SOMEIP binding). Accept.
         parse_deploy_str(yaml).expect("non-participant pin must be silently ignored");
+    }
+
+    // ── §14 / RFC §5.K Phase A2 — per-machine platform/scheduler/memory ──
+
+    #[test]
+    fn platform_mcu_with_baremetal_parses() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+          has_dcache: true
+          dcache_line_size: 32
+          has_speculative_prefetch: false
+          core_count: 1
+"##;
+        let cfg = parse_deploy_str(yaml).expect("mcu+bare_metal must parse");
+        let machine = cfg
+            .topology
+            .get("ecu1")
+            .and_then(|d| d.machines.get("mcu_node"))
+            .expect("machine present");
+        let platform = machine.platform.as_ref().expect("platform parsed");
+        assert_eq!(platform.class, PlatformClass::Mcu);
+        assert_eq!(platform.os, OsKind::BareMetal);
+        assert_eq!(platform.has_dcache, Some(true));
+        assert_eq!(platform.dcache_line_size, Some(32));
+        assert_eq!(platform.has_speculative_prefetch, Some(false));
+        assert_eq!(platform.core_count, Some(1));
+    }
+
+    #[test]
+    fn platform_ap_with_linux_parses() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  host:
+    machines:
+      ap_node:
+        source: ap.scxml
+        platform:
+          class: ap
+          os: linux
+"##;
+        let cfg = parse_deploy_str(yaml).expect("ap+linux must parse");
+        let platform = cfg
+            .topology
+            .get("host")
+            .and_then(|d| d.machines.get("ap_node"))
+            .and_then(|m| m.platform.as_ref())
+            .expect("platform parsed");
+        assert_eq!(platform.class, PlatformClass::Ap);
+        assert_eq!(platform.os, OsKind::Linux);
+    }
+
+    #[test]
+    fn platform_class_os_mismatch_mcu_linux_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      bad:
+        source: bad.scxml
+        platform:
+          class: mcu
+          os: linux
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PlatformClassOsMismatch {
+                machine,
+                class,
+                os,
+            }) => {
+                assert_eq!(machine, "bad");
+                assert_eq!(class, "mcu");
+                assert_eq!(os, "linux");
+            }
+            other => panic!("expected PlatformClassOsMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn platform_class_os_mismatch_ap_baremetal_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      bad:
+        source: bad.scxml
+        platform:
+          class: ap
+          os: bare_metal
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PlatformClassOsMismatch { class, os, .. }) => {
+                assert_eq!(class, "ap");
+                assert_eq!(os, "bare_metal");
+            }
+            other => panic!("expected PlatformClassOsMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scheduler_cooperative_with_budget_parses() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      worker:
+        source: worker.scxml
+        scheduler:
+          kind: cooperative
+          worker_stack_budget: 4096
+"##;
+        let cfg = parse_deploy_str(yaml).expect("cooperative+budget must parse");
+        let sched = cfg
+            .topology
+            .get("ecu1")
+            .and_then(|d| d.machines.get("worker"))
+            .and_then(|m| m.scheduler.as_ref())
+            .expect("scheduler parsed");
+        assert_eq!(sched.kind, SchedulerKind::Cooperative);
+        assert_eq!(sched.worker_stack_budget, Some(4096));
+    }
+
+    #[test]
+    fn scheduler_cooperative_without_budget_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      worker:
+        source: worker.scxml
+        scheduler:
+          kind: cooperative
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::SchedulerCooperativeMissingStackBudget { machine }) => {
+                assert_eq!(machine, "worker");
+            }
+            other => panic!("expected SchedulerCooperativeMissingStackBudget, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scheduler_tokio_without_budget_parses() {
+        // Only `kind: cooperative` requires worker_stack_budget; tokio / rt
+        // inherit host runtime stack defaults.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      worker:
+        source: worker.scxml
+        scheduler:
+          kind: tokio
+"##;
+        let cfg = parse_deploy_str(yaml).expect("tokio without budget must parse");
+        let sched = cfg
+            .topology
+            .get("ecu1")
+            .and_then(|d| d.machines.get("worker"))
+            .and_then(|m| m.scheduler.as_ref())
+            .expect("scheduler parsed");
+        assert_eq!(sched.kind, SchedulerKind::Tokio);
+        assert_eq!(sched.worker_stack_budget, None);
+    }
+
+    #[test]
+    fn memory_sram_and_dma_parses() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu.scxml
+        memory:
+          sram_regions:
+            dtcm:
+              base: 0x20000000
+              size: 65536
+              attr: [fast, nocache]
+            sram1:
+              base: 0x08000000
+              size: 524288
+              attr: [dma_coherent, cacheable]
+          dma_channels: [DW0_CH0, DW0_CH1]
+"##;
+        let cfg = parse_deploy_str(yaml).expect("memory section must parse");
+        let mem = cfg
+            .topology
+            .get("ecu1")
+            .and_then(|d| d.machines.get("mcu_node"))
+            .and_then(|m| m.memory.as_ref())
+            .expect("memory parsed");
+        assert_eq!(mem.sram_regions.len(), 2);
+        let dtcm = mem.sram_regions.get("dtcm").expect("dtcm region");
+        assert_eq!(dtcm.base, 0x20000000);
+        assert_eq!(dtcm.size, 65536);
+        assert_eq!(dtcm.attr, vec!["fast".to_string(), "nocache".to_string()]);
+        assert_eq!(mem.dma_channels.len(), 2);
+        assert_eq!(mem.dma_channels[0], "DW0_CH0");
+    }
+
+    #[test]
+    fn machine_without_platform_section_parses_unclassified() {
+        // The §14 sections are all optional; absence ⇒ no classification.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      bare:
+        source: bare.scxml
+"##;
+        let cfg = parse_deploy_str(yaml).expect("absent platform/scheduler/memory must parse");
+        let machine = cfg
+            .topology
+            .get("ecu1")
+            .and_then(|d| d.machines.get("bare"))
+            .expect("machine present");
+        assert!(machine.platform.is_none());
+        assert!(machine.scheduler.is_none());
+        assert!(machine.memory.is_none());
     }
 }

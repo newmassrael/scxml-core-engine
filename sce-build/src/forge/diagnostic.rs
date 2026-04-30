@@ -568,6 +568,11 @@ pub enum DiagnosticCode {
     MeshDistributabilityR1SharedWrite,
     #[serde(rename = "mesh/distributability-r2-cross-region-transition")]
     MeshDistributabilityR2CrossRegionTransition,
+    // §14 per-machine platform/scheduler schema (RFC §5.K, Phase A2)
+    #[serde(rename = "mesh/deploy-platform-class-os-mismatch")]
+    MeshDeployPlatformClassOsMismatch,
+    #[serde(rename = "mesh/deploy-scheduler-cooperative-missing-stack-budget")]
+    MeshDeploySchedulerCooperativeMissingStackBudget,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -801,6 +806,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshPartitionWire21CustomTcpUnimplemented,
         MeshDistributabilityR1SharedWrite,
         MeshDistributabilityR2CrossRegionTransition,
+        MeshDeployPlatformClassOsMismatch,
+        MeshDeploySchedulerCooperativeMissingStackBudget,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -996,7 +1003,9 @@ impl DiagnosticCode {
             | MeshDeployPartitionPartialCoverageRequiresDefault
             | MeshDeployPartitionPoolMachine
             | MeshDeployPartitionTransportBindingUnsupported
-            | MeshDeployPartitionBarrierTimeoutInvalid => Some("SCE Mesh §14"),
+            | MeshDeployPartitionBarrierTimeoutInvalid
+            | MeshDeployPlatformClassOsMismatch
+            | MeshDeploySchedulerCooperativeMissingStackBudget => Some("SCE Mesh §14"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
             MeshPartitionParallelRootUndesignated
@@ -1238,6 +1247,8 @@ impl DiagnosticCode {
             MeshPartitionWire21CustomTcpUnimplemented => "mesh/partition-wire21-custom-tcp-unimplemented",
             MeshDistributabilityR1SharedWrite => "mesh/distributability-r1-shared-write",
             MeshDistributabilityR2CrossRegionTransition => "mesh/distributability-r2-cross-region-transition",
+            MeshDeployPlatformClassOsMismatch => "mesh/deploy-platform-class-os-mismatch",
+            MeshDeploySchedulerCooperativeMissingStackBudget => "mesh/deploy-scheduler-cooperative-missing-stack-budget",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -3602,6 +3613,24 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:2dcde5ac51ed902f","code":"mesh/distributability-r2-cross-region-transition","stage":"mesh-deploy","spec":"SCE Mesh §16.3","message":"machine 'motor', `<parallel id=\"root\">`: R2 cross-region transition — regions 'left', 'right' are connected by a transition that crosses the region boundary. SCE_MESH.md §16.3 R2 forbids this because distribution cannot preserve the W3C exit-set/enter-set computation atomically across partitions. Either merge the regions into one partition, or refactor the transition target to an ancestor of the `<parallel>` (which exits it wholesale and is distribution-safe). (Set `distributability: permissive` in deploy.yaml to auto-merge instead of failing the build.)"}"#,
             ),
             (
+                "mesh/deploy-platform-class-os-mismatch",
+                DeployError::PlatformClassOsMismatch {
+                    machine: "mcu_node".into(),
+                    class: "mcu",
+                    os: "linux",
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9195176fda736ee8","code":"mesh/deploy-platform-class-os-mismatch","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'mcu_node': platform.class 'mcu' is not compatible with platform.os 'linux'. SCE Mesh §14 (RFC §5.K) admits 'mcu' with os ∈ {bare_metal, rtos} and 'ap' with os ∈ {linux, qnx, macos, freebsd, windows}. Repair: change either field so the pair becomes admissible, or drop the platform: section to leave the machine unclassified.","actual":"linux"}"#,
+            ),
+            (
+                "mesh/deploy-scheduler-cooperative-missing-stack-budget",
+                DeployError::SchedulerCooperativeMissingStackBudget {
+                    machine: "mcu_node".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1bf3b1c517af4dd0","code":"mesh/deploy-scheduler-cooperative-missing-stack-budget","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.worker_stack_budget (bytes). SCE Mesh §14 (RFC §5.K) — cooperative drives the `<send>` queue inside a fixed stack frame; a missing budget would let TLV-decode recursion silently overflow. Repair: add `worker_stack_budget: <bytes>` under `scheduler:` (e.g. 4096), or change `kind:` to `tokio` / `rt` to inherit the host runtime's stack defaults.","actual":"mcu_node"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -4363,6 +4392,8 @@ mod tests {
             | MeshPartitionWire21CustomTcpUnimplemented
             | MeshDistributabilityR1SharedWrite
             | MeshDistributabilityR2CrossRegionTransition
+            | MeshDeployPlatformClassOsMismatch
+            | MeshDeploySchedulerCooperativeMissingStackBudget
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -4684,6 +4715,8 @@ mod tests {
                 | MeshPartitionWire21CustomTcpUnimplemented
                 | MeshDistributabilityR1SharedWrite
                 | MeshDistributabilityR2CrossRegionTransition
+                | MeshDeployPlatformClassOsMismatch
+                | MeshDeploySchedulerCooperativeMissingStackBudget
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -4718,12 +4751,12 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            156,
+            158,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 156 distinct variants to match the DiagnosticCode \
-             enum (watching-zenoh RFC §5.J.4 / §5.J.5 added \
-             CodegenMcuClassKindOnNonMcuLanguage + \
-             CodegenGenericKindBackendEmitMissing shells; 154 → 156).",
+             expected 158 distinct variants to match the DiagnosticCode \
+             enum (watching-zenoh RFC §5.K Phase A2 added \
+             MeshDeployPlatformClassOsMismatch + \
+             MeshDeploySchedulerCooperativeMissingStackBudget; 156 → 158).",
         );
     }
 
