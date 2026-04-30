@@ -648,6 +648,7 @@ pub fn generate_cpp_with_imports(
     template_dir: &Path,
     imports: &[ImportContext],
 ) -> Result<GeneratedOutput, ForgeError> {
+    crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Cpp)?;
     let forge_dir = template_dir.join("forge/cpp");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
@@ -1727,6 +1728,7 @@ pub fn generate_kotlin_with_imports(
     template_dir: &Path,
     imports: &[ImportContext],
 ) -> Result<GeneratedOutput, ForgeError> {
+    crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Kotlin)?;
     let forge_dir = template_dir.join("forge/kotlin");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
@@ -1784,6 +1786,7 @@ pub fn generate_rust_with_imports(
     template_dir: &Path,
     imports: &[ImportContext],
 ) -> Result<GeneratedOutput, ForgeError> {
+    crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Rust)?;
     let forge_dir = template_dir.join("forge/rust");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
@@ -1858,6 +1861,7 @@ pub fn generate_go_with_imports(
     template_dir: &Path,
     imports: &[ImportContext],
 ) -> Result<GeneratedOutput, ForgeError> {
+    crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Go)?;
     let forge_dir = template_dir.join("forge/go");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
@@ -1915,6 +1919,7 @@ pub fn generate_python_with_imports(
     template_dir: &Path,
     imports: &[ImportContext],
 ) -> Result<GeneratedOutput, ForgeError> {
+    crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Python)?;
     let forge_dir = template_dir.join("forge/python");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
@@ -1966,6 +1971,7 @@ pub fn generate_c11_with_imports(
     template_dir: &Path,
     imports: &[ImportContext],
 ) -> Result<GeneratedOutput, ForgeError> {
+    crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::C11)?;
     let forge_dir = template_dir.join("forge/c");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
