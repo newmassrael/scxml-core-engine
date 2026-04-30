@@ -30,14 +30,16 @@ typedef enum {
 } crossfile_procedure_codec_event_t;
 
 /* ── Cross-file import wrappers ─────────────────────────────────── */
-/* Each stateful import (codec/filter/...) exposes its API as a free
-   function returning its own typedef'd `_encoded_t` shape. The
-   procedure's `<send sce:payload>` slot, however, is the runtime's
-   stack-bounded `sce_forge_bytes_t`. C11 has no implicit struct
-   conversion, so a per-procedure inline wrapper bridges the two by
-   copying the encoded buffer into a `sce_forge_bytes_t` value. The
-   wrapper name embeds both the procedure and the alias so distinct
-   procedures importing the same codec do not collide. */
+/* Codec imports expose `encode()` as a free function returning the
+   codec's own typedef'd `_encoded_t` shape. The procedure's
+   `<send sce:payload>` slot, however, is the runtime's stack-bounded
+   `sce_forge_bytes_t`. C11 has no implicit struct conversion, so a
+   per-procedure inline wrapper bridges the two by copying the encoded
+   buffer into a `sce_forge_bytes_t` value. The wrapper name embeds
+   both the procedure and the alias so distinct procedures importing
+   the same codec do not collide. Other stateful kinds (filter,
+   observer, ...) emit the wrapper-free direct dispatch via
+   `expr::ImportLowering::methods` and produce no entries here. */
 static inline sce_forge_bytes_t crossfile_procedure_codec__frame_encode(const codec_simple_frame_t *self) {
     codec_simple_frame_encoded_t _enc = codec_simple_frame_encode(self);
     sce_forge_bytes_t _r;

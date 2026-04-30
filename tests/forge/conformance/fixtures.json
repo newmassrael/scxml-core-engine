@@ -148,6 +148,12 @@
       "args": ["u8"]
     },
     {
+      "name": "crossfile_procedure_filter",
+      "kind": "procedure",
+      "ref_section": "pure_functions",
+      "args": ["f64"]
+    },
+    {
       "name": "procedure_security_access",
       "kind": "procedure",
       "ref_section": "pure_functions",

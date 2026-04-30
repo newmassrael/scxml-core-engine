@@ -1041,6 +1041,11 @@ fn forge_c11_crossfile_procedure_codec_mutate() {
     assert_standalone_forge_c("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.c.h");
 }
 
+#[test]
+fn forge_c11_crossfile_procedure_filter() {
+    assert_standalone_forge_c("crossfile_procedure_filter", "crossfile_procedure_filter.c.h");
+}
+
 // ── Validator conformance (C++) ──────────────────────────────
 
 #[test]
@@ -1321,6 +1326,31 @@ fn forge_crossfile_procedure_codec_mutate_go() {
 #[test]
 fn forge_crossfile_procedure_codec_mutate_python() {
     assert_standalone_forge_python("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.py");
+}
+
+#[test]
+fn forge_crossfile_procedure_filter_cpp() {
+    assert_standalone_forge("crossfile_procedure_filter", "crossfile_procedure_filter.h");
+}
+
+#[test]
+fn forge_crossfile_procedure_filter_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_procedure_filter", "CrossfileProcedureFilter.kt");
+}
+
+#[test]
+fn forge_crossfile_procedure_filter_rust() {
+    assert_standalone_forge_rust("crossfile_procedure_filter", "crossfile_procedure_filter.rs");
+}
+
+#[test]
+fn forge_crossfile_procedure_filter_go() {
+    assert_standalone_forge_go("crossfile_procedure_filter", "crossfile_procedure_filter.go");
+}
+
+#[test]
+fn forge_crossfile_procedure_filter_python() {
+    assert_standalone_forge_python("crossfile_procedure_filter", "crossfile_procedure_filter.py");
 }
 
 #[test]
@@ -2049,6 +2079,11 @@ fn crossfile_matrix_procedure_codec() {
 #[test]
 fn crossfile_matrix_procedure_codec_mutate() {
     assert_crossfile_codegen_languages("crossfile_procedure_codec_mutate", SIX_BACKENDS);
+}
+
+#[test]
+fn crossfile_matrix_procedure_filter() {
+    assert_crossfile_codegen_languages("crossfile_procedure_filter", SIX_BACKENDS);
 }
 
 #[test]

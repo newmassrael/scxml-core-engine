@@ -734,16 +734,44 @@ fn discover_stateful_member_fields(
 /// type-level calls invoked as `TypeName.decode(...)`, not `alias.decode(...)`,
 /// so they are not member methods on the imported alias.
 ///
-/// Currently only Codec kinds expose instance methods (`encode()` → `Bytes`).
-/// Future stateful kinds (e.g., Filter::update, Observer::update) can be
-/// added here as the pipeline discovers them.
+/// Match is exhaustive over every `ForgeDocument` variant so that adding a
+/// new kind to the model forces a compile error here, ruling out the
+/// silently-broken case where a new stateful kind exposes methods that the
+/// type inference pipeline does not know about. Stateless kinds (transform,
+/// condition, lookup, interpolation) never reach this function via the
+/// caller's `is_stateful` gate but are listed for the same exhaustiveness
+/// guarantee — they return an empty Vec.
 fn discover_stateful_member_methods(
     doc: &forge::model::ForgeDocument,
 ) -> Vec<(String, Vec<forge::model::SceType>, forge::model::SceType)> {
     use forge::model::{ForgeDocument, SceType};
     match doc {
         ForgeDocument::Codec(_) => vec![("encode".to_string(), vec![], SceType::Bytes)],
-        _ => Vec::new(),
+        ForgeDocument::Filter(m) => vec![(
+            "update".to_string(),
+            vec![m.input.sce_type.clone()],
+            m.output.sce_type.clone(),
+        )],
+        // Stateful kinds whose method APIs are not yet imported by any
+        // conformance fixture. Each returns an empty Vec until the first
+        // load-bearing consumer lands; the comment lists the methods that
+        // would belong here so the next contributor extends rather than
+        // re-discovers them.
+        // - Validator: validate(args) → ValidationResult
+        // - Procedure: execute(handler, args) → ProcedureRunResult
+        // - Observer:  update(args) → ()
+        // - Timer:     fire() → ()
+        ForgeDocument::Validator(_)
+        | ForgeDocument::Procedure(_)
+        | ForgeDocument::Observer(_)
+        | ForgeDocument::Timer(_) => Vec::new(),
+        // Stateless kinds: caller filters via `is_stateful` before reaching
+        // here. Listed so the match stays exhaustive — adding a new
+        // ForgeDocument variant forces a decision at this site.
+        ForgeDocument::Transform(_)
+        | ForgeDocument::Condition(_)
+        | ForgeDocument::Lookup(_)
+        | ForgeDocument::Interpolation(_) => Vec::new(),
     }
 }
 

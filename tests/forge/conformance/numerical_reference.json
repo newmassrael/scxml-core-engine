@@ -158,6 +158,16 @@
         }
       ]
     },
+    "crossfile_procedure_filter": {
+      "fixture": "CrossfileProcedureFilter::execute",
+      "signature": "(raw_sample: f64) -> ProcedureRunResult{completed, final_state}",
+      "description": "Procedure imports a stateful filter and dispatches the filter's update() method via <assign location='smoothed' expr='smoother.update(rawSample)'/>. Verifies that cross-file member-method calls on a non-codec stateful kind route through the same expression pipeline as codec.encode() across all six backends. Filter return is a primitive (float64) so the C11 lowering calls `<snake>_update(&_st->member, ...)` directly — no wrapper conversion is needed because there is no codec-style payload contract to bridge. The expected outcome is that the procedure reaches the `done` final state regardless of the raw sample value; numerical correctness of the filter itself is exercised by the standalone `filter_low_pass` fixture, so this case validates the cross-file dispatch wiring rather than the filter math.",
+      "cases": [
+        {"args": [10.0], "expected": {"completed": true, "final_state": "done"}, "note": "first sample — fresh filter passes through warm-up"},
+        {"args": [0.0], "expected": {"completed": true, "final_state": "done"}, "note": "zero sample"},
+        {"args": [-3.5], "expected": {"completed": true, "final_state": "done"}, "note": "negative sample"}
+      ]
+    },
     "crossfile_procedure_codec_mutate": {
       "fixture": "CrossfileProcedureCodecMutate::execute",
       "signature": "(msg_id: u8) -> ProcedureRunResult{completed, final_state, dispatched_payload_bytes}",

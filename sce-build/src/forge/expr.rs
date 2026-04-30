@@ -147,27 +147,39 @@ pub fn transpile_typed(
 /// functions taking an explicit `const struct_t *self` first argument
 /// (`tools/codegen/templates/forge/c/codec.h.jinja2:42`). When a procedure
 /// embeds the codec by-value, a method-style call like `frame.encode(args)`
-/// must lower to `<free_fn_prefix>_<method>(<prepended_arg>, args...)`. The
-/// textual rename map cannot express the prepended-argument injection on
-/// its own, so the C11 transpile entry runs an AST pre-pass keyed by this
-/// descriptor before the standard infer/rename/emit pipeline.
+/// must lower to `<free_fn>(<prepended_arg>, args...)` where `<free_fn>` is
+/// looked up per method in [`ImportLowering::methods`]. The textual rename
+/// map cannot express the prepended-argument injection on its own, so the
+/// C11 transpile entry runs an AST pre-pass keyed by this descriptor before
+/// the standard infer/rename/emit pipeline.
+///
+/// **Per-method routing**: each `(method_name, free_fn)` entry maps the
+/// SCXML-source method spelling (`"encode"`, `"update"`, ...) to the actual
+/// C11 free-function symbol the lowering should emit. This split lets the
+/// codec lowering point at a per-procedure wrapper that converts the
+/// codec's `<snake>_encoded_t` to `sce_forge_bytes_t` while the filter
+/// lowering points directly at the kind's `<snake>_update` free function
+/// (filter returns a primitive — no wrapper conversion needed). Calls
+/// whose `(alias, method)` pair is not registered here fall through to the
+/// normal pipeline, which surfaces them as a renamed-Member miss in the
+/// rename pass — exactly the diagnostic the caller wants for typos.
 #[derive(Debug, Clone)]
 pub(crate) struct ImportLowering {
     /// SCXML `<sce:import as="...">` alias the procedure addresses the
     /// import by (e.g. `frame`). Matched against the bare-Ident object of
     /// every `Call{Member{Ident(alias), method}, args}` site.
     pub alias: String,
-    /// Snake-cased prefix of the free-function name (e.g.
-    /// `codec_simple_frame`), formed from the import target's file stem.
-    /// The pre-pass concatenates `<free_fn_prefix>_<method>` to produce the
-    /// callee identifier — this matches the C11 codec template's emit
-    /// shape (`{snake}_encode`, `{snake}_decode`).
-    pub free_fn_prefix: String,
     /// Pre-rendered first-argument expression (e.g. `&_st->frame_`). The
     /// pre-pass installs it as a `Raw` node at index 0 of the rewritten
     /// Call's args, so the existing emit_c walker stamps it out verbatim
-    /// without further coercion.
+    /// without further coercion. Identical for every method on a given
+    /// import — the prepended `self` reference does not vary by method.
     pub prepended_arg: String,
+    /// Per-method routing: `(method_name, free_fn)` pairs. The pre-pass
+    /// looks up the source-level method name and rewrites the Call's
+    /// callee to the matching free-function symbol verbatim. Unmatched
+    /// methods are left untouched — see the type-level doc for rationale.
+    pub methods: Vec<(String, String)>,
 }
 
 /// Transpile a procedure expression for the C11 backend with stateful
@@ -238,33 +250,35 @@ fn lower_stateful_import_calls(
                     if let Some(lowering) =
                         lowerings.iter().find(|l| l.alias == *alias)
                     {
-                        let free_fn = format!(
-                            "{}_{}",
-                            lowering.free_fn_prefix, property
-                        );
-                        let prepended = TypedExpr {
-                            kind: ExprKind::Raw(lowering.prepended_arg.clone()),
-                            ty: InferredType::Unknown,
-                        };
-                        let new_callee = Box::new(TypedExpr {
-                            kind: ExprKind::Raw(free_fn),
-                            ty: InferredType::Unknown,
-                        });
-                        let mut new_args = Vec::with_capacity(args.len() + 1);
-                        new_args.push(prepended);
-                        new_args.append(args);
-                        // Original args may contain nested Call{Member{...}}
-                        // sites (e.g. one codec.encode() passed into another
-                        // codec's method). Recurse over the rewritten args
-                        // before returning so every inner site lowers too.
-                        for arg in new_args.iter_mut().skip(1) {
-                            lower_stateful_import_calls(arg, lowerings);
+                        if let Some((_, free_fn)) = lowering
+                            .methods
+                            .iter()
+                            .find(|(name, _)| name == property)
+                        {
+                            let prepended = TypedExpr {
+                                kind: ExprKind::Raw(lowering.prepended_arg.clone()),
+                                ty: InferredType::Unknown,
+                            };
+                            let new_callee = Box::new(TypedExpr {
+                                kind: ExprKind::Raw(free_fn.clone()),
+                                ty: InferredType::Unknown,
+                            });
+                            let mut new_args = Vec::with_capacity(args.len() + 1);
+                            new_args.push(prepended);
+                            new_args.append(args);
+                            // Original args may contain nested Call{Member{...}}
+                            // sites (e.g. one codec.encode() passed into another
+                            // codec's method). Recurse over the rewritten args
+                            // before returning so every inner site lowers too.
+                            for arg in new_args.iter_mut().skip(1) {
+                                lower_stateful_import_calls(arg, lowerings);
+                            }
+                            ast.kind = ExprKind::Call {
+                                callee: new_callee,
+                                args: new_args,
+                            };
+                            return;
                         }
-                        ast.kind = ExprKind::Call {
-                            callee: new_callee,
-                            args: new_args,
-                        };
-                        return;
                     }
                 }
             }

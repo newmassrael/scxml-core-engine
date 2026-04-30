@@ -84,6 +84,21 @@ pub struct ImportContext {
     /// and do not appear as `alias.method()` in user expressions.
     #[serde(skip)]
     pub member_method_sigs: Vec<(String, Vec<SceType>, SceType)>,
+    /// Go-only initialization expression for a stateful import in the
+    /// procedure's `newPolicy()` constructor. Empty when zero-value
+    /// initialization is correct (e.g. codec — pure-data struct, all
+    /// fields zero-init OK), non-empty when the imported kind requires
+    /// an explicit constructor call (e.g. filter — internal pointer to
+    /// the runtime state needs `New<Pascal>()` to allocate).
+    ///
+    /// Other backends never read this field: cpp uses `{{ member_name }}{}`
+    /// brace-init; rust uses `{{ member_type }}::new()`; python/kotlin
+    /// invoke `{{ member_type }}()` unconditionally; C11 zero-inits the
+    /// state struct and the kind's update function lazy-initializes its
+    /// internal slot on first call. Skipped in serialization for non-Go
+    /// templates so they never see a stray `go_init_expr` key.
+    #[serde(rename = "go_init_expr", skip_serializing_if = "String::is_empty")]
+    pub go_init_expr: String,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -210,6 +225,7 @@ fn resolve_single_import(
                 ret_type: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
+                go_init_expr: String::new(),
             }
         }
         crate::generator::Language::Kotlin => {
@@ -236,6 +252,7 @@ fn resolve_single_import(
                 ret_type: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
+                go_init_expr: String::new(),
             }
         }
         crate::generator::Language::Rust => {
@@ -264,6 +281,7 @@ fn resolve_single_import(
                 ret_type: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
+                go_init_expr: String::new(),
             }
         }
         crate::generator::Language::Go => {
@@ -276,6 +294,34 @@ fn resolve_single_import(
                 .expect("resolve_imports must validate go_module_prefix before reaching Go arm");
             let import_path = format!("{prefix}/{snake}");
             let go_pascal = filters::to_pascal_case(imp.alias.to_string());
+            // Per-kind init expression for the procedure's newPolicy()
+            // constructor. Empty for kinds whose Go zero-value happens to
+            // be a valid initial state (codec is plain-data — every field
+            // zero-init OK); non-empty for kinds whose runtime state needs
+            // an explicit factory call (filter holds an internal pointer
+            // to the runtime's filter implementation, which must be
+            // allocated by `New<Pascal>()` to avoid a nil-deref on the
+            // first Update call). The match is keyed on `imp.kind` so
+            // adding a new stateful kind to the model lands a decision at
+            // this site rather than silently zero-initializing a
+            // pointer-bearing struct.
+            let go_init_expr = if is_stateful {
+                match imp.kind {
+                    ForgeKind::Filter => format!("*{snake}.New{pascal}()"),
+                    // Codec: plain-data struct, zero-value is the
+                    // canonical "empty frame" initial state.
+                    ForgeKind::Codec => String::new(),
+                    // Other stateful kinds (validator/procedure/observer/
+                    // timer) have no fixture consumer for cross-file
+                    // import yet. When the first one lands, decide here
+                    // whether zero-init is correct or a factory call is
+                    // needed by inspecting the kind's Go runtime
+                    // contract (e.g. observer's monitor-fn wiring).
+                    _ => String::new(),
+                }
+            } else {
+                String::new()
+            };
             ImportContext {
                 alias: imp.alias.clone(),
                 kind: imp.kind.to_string(),
@@ -290,6 +336,7 @@ fn resolve_single_import(
                 ret_type: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
+                go_init_expr,
             }
         }
         crate::generator::Language::Python => {
@@ -318,6 +365,7 @@ fn resolve_single_import(
                 ret_type: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
+                go_init_expr: String::new(),
             }
         }
         crate::generator::Language::C11 => {
@@ -347,6 +395,7 @@ fn resolve_single_import(
                 ret_type: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
+                go_init_expr: String::new(),
             }
         }
     }
@@ -2578,17 +2627,27 @@ fn render_procedure_c_l2(
     // donedata, transition assigns) routes through the same descriptor
     // list. Empty for procedures with no `<sce:import>` declarations.
     //
-    // Each method call site flows through a per-procedure wrapper rather
-    // than calling the codec's free function directly: the codec emits
-    // `encode` as `<snake>_encode(...) → <snake>_encoded_t`, but the
-    // procedure's `<send sce:payload>` slot is `sce_forge_bytes_t` (a
-    // distinct typedef). C11 has no implicit struct conversion, so the
-    // wrapper sits between the two and copies field-by-field. The
-    // wrapper name is `<procedure_snake>__<alias>_<method>` so that
-    // distinct procedures importing the same codec do not collide.
+    // Per-kind routing (see `expr::ImportLowering` for the contract):
+    //   • Codec.encode  → per-procedure wrapper
+    //     `<procedure>__<alias>_encode`. The codec's `<snake>_encode`
+    //     returns `<snake>_encoded_t` but the procedure's
+    //     `<send sce:payload>` slot is `sce_forge_bytes_t`. C11 has no
+    //     implicit struct conversion, so the wrapper copies field-by-field.
+    //     The wrapper itself is rendered into the `import_wrappers` template
+    //     block below.
+    //   • Filter.update → direct dispatch into the kind's free function
+    //     `<imp.namespace>_update`. Filter returns a primitive
+    //     (i32/f64/...), so no struct→bytes conversion is needed and the
+    //     wrapper layer would be ceremony with no payload contract to
+    //     bridge.
+    //
+    // `import_wrappers` is gated on `imp.kind == "codec"` so a filter (or
+    // any other non-codec stateful import) does not emit a stale
+    // `_encode` wrapper that would reference a non-existent
+    // `<snake>_encoded_t` typedef.
     let import_wrappers: Vec<serde_json::Value> = imports
         .iter()
-        .filter(|imp| imp.is_stateful)
+        .filter(|imp| imp.is_stateful && imp.kind.as_str() == "codec")
         .map(|imp| {
             let wrapper_prefix = format!("{}__{}", &snake, imp.alias);
             serde_json::json!({
@@ -2602,10 +2661,30 @@ fn render_procedure_c_l2(
     let import_lowerings: Vec<expr::ImportLowering> = imports
         .iter()
         .filter(|imp| imp.is_stateful)
-        .map(|imp| expr::ImportLowering {
-            alias: imp.alias.clone(),
-            free_fn_prefix: format!("{}__{}", &snake, imp.alias),
-            prepended_arg: format!("&_st->{}", imp.member_name),
+        .map(|imp| {
+            let methods: Vec<(String, String)> = match imp.kind.as_str() {
+                "codec" => vec![(
+                    "encode".to_string(),
+                    format!("{}__{}_encode", &snake, imp.alias),
+                )],
+                "filter" => vec![(
+                    "update".to_string(),
+                    format!("{}_update", imp.namespace),
+                )],
+                // Future stateful kinds (validator/procedure/observer/timer)
+                // register their methods here when the first conformance
+                // fixture imports them. Empty Vec leaves member-call sites
+                // to fall through to the rename map's qualified-key lookup,
+                // which currently has no entry for those kinds either —
+                // emitting a Member node verbatim, which the C compiler
+                // rejects with an unknown-identifier diagnostic.
+                _ => Vec::new(),
+            };
+            expr::ImportLowering {
+                alias: imp.alias.clone(),
+                prepended_arg: format!("&_st->{}", imp.member_name),
+                methods,
+            }
         })
         .collect();
 
@@ -2906,63 +2985,69 @@ fn stateful_import_method_renames(
         if !imp.is_stateful {
             continue;
         }
-        match imp.kind.as_str() {
-            "codec" => {
-                // Codec exposes `encode()` on an instance; `decode(raw)` is a
-                // package-level free function in Go (`DecodeCodecSimpleFrame`)
-                // and a static/class method in C++/Kotlin/Python/Rust, so the
-                // mapping shape diverges per language. Until a fixture
-                // actually uses `alias.decode(...)`, we only emit `encode`
-                // entries — adding `decode` without a load-bearing consumer
-                // risks baking the wrong Go expansion into the helper. Grow
-                // this list when the first decode-using fixture lands.
-                for method in ["encode"] {
-                    let qualified_key = format!("{}.{}", imp.alias, method);
-                    // Per-language expansions mirror the member-access
-                    // prefix each procedure template actually emits:
-                    //   C++      `{member}_.method()`        no `this->`
-                    //   Kotlin   `{member}.method()`         no prefix
-                    //   Rust     `self.{member}.method()`    `self.`
-                    //   Go       `p.{Member}.Method()`       `p.`, PascalCase
-                    //   Python   `self.{member}.method()`    `self.`
-                    let expansion = match language {
-                        generator::Language::Cpp | generator::Language::Kotlin => {
-                            format!("{}.{}", imp.member_name, method)
-                        }
-                        generator::Language::Rust | generator::Language::Python => {
-                            format!("self.{}.{}", imp.member_name, method)
-                        }
-                        generator::Language::Go => {
-                            let target_method = filters::to_pascal_case(method.to_string());
-                            format!("p.{}.{}", imp.member_name, target_method)
-                        }
-                        // C11 cannot express method-call lowering through a
-                        // string rename: the codec emit shape is a free
-                        // function taking an explicit `&struct_t *` first
-                        // arg, so the rewrite must inject an argument that
-                        // a `Member→Raw` collapse cannot produce. The
-                        // matching transform happens in the C11-only AST
-                        // pre-pass `expr::lower_stateful_import_calls`
-                        // invoked through `expr::transpile_typed_with_import_lowering`;
-                        // by the time the rename pass runs, the Member
-                        // node is already gone and there is no qualified
-                        // key left to collapse. Skipping this kind here
-                        // keeps the rename map free of stale entries that
-                        // would silently shadow a future bare-Member usage
-                        // (e.g. taking a method's address).
-                        generator::Language::C11 => continue,
-                    };
-                    out.push((qualified_key, expansion));
+        // Per-kind method inventory. Each entry is the source-level method
+        // name that the user spells in expressions; the per-language arm
+        // below maps that name to the actual emit form. Adding a new
+        // method here without a load-bearing consumer risks baking the
+        // wrong Go-PascalCase expansion in — grow each list when the
+        // first conformance fixture imports the corresponding call.
+        let methods: &[&str] = match imp.kind.as_str() {
+            // Codec exposes `encode()` on an instance; `decode(raw)` is a
+            // static/package-level call in every backend except C11 and
+            // currently has no fixture consumer.
+            "codec" => &["encode"],
+            // Filter exposes `update(input) → output` and `reset()` on
+            // an instance. Only `update` has a fixture consumer
+            // (`crossfile_procedure_filter`); `reset` would be the next
+            // entry when a fixture exercises it.
+            "filter" => &["update"],
+            // Observer/Validator/Procedure/Timer have no fixture
+            // consumer for any of their methods yet. Each arm is listed
+            // so adding a new stateful kind to the model forces a
+            // decision at this site rather than silently falling through.
+            "observer" | "validator" | "procedure" | "timer" => &[],
+            // Stateless kinds never reach here (caller filters via
+            // `is_stateful`). Listed for exhaustiveness — if a new kind
+            // appears in the model the test bench will fail to find its
+            // method renames here, which is the correct signal.
+            _ => &[],
+        };
+        for method in methods {
+            let qualified_key = format!("{}.{}", imp.alias, method);
+            // Per-language expansions mirror the member-access prefix
+            // each procedure template actually emits:
+            //   C++      `{member}_.method()`        no `this->`
+            //   Kotlin   `{member}.method()`         no prefix
+            //   Rust     `self.{member}.method()`    `self.`
+            //   Go       `p.{Member}.Method()`       `p.`, PascalCase
+            //   Python   `self.{member}.method()`    `self.`
+            let expansion = match language {
+                generator::Language::Cpp | generator::Language::Kotlin => {
+                    format!("{}.{}", imp.member_name, method)
                 }
-            }
-            // Other stateful kinds (filter, observer, validator, procedure)
-            // expose their own method APIs (`update`, `validate`, ...), but
-            // no conformance fixture currently imports them as stateful
-            // aliases inside another kind. Adding entries here without a
-            // load-bearing consumer would be dormant infrastructure — grow
-            // this arm when a future fixture imports a filter/observer
-            // method call and the byte golden fails to compile.
-            _ => {}
+                generator::Language::Rust | generator::Language::Python => {
+                    format!("self.{}.{}", imp.member_name, method)
+                }
+                generator::Language::Go => {
+                    let target_method = filters::to_pascal_case(method.to_string());
+                    format!("p.{}.{}", imp.member_name, target_method)
+                }
+                // C11 cannot express method-call lowering through a
+                // string rename: the kind's emit shape is a free
+                // function taking an explicit `<snake>_t *self` first
+                // arg, so the rewrite must inject an argument that a
+                // `Member→Raw` collapse cannot produce. The matching
+                // transform happens in the C11-only AST pre-pass
+                // `expr::lower_stateful_import_calls` invoked through
+                // `expr::transpile_typed_with_import_lowering`; by the
+                // time the rename pass runs, the Member node is already
+                // gone and there is no qualified key left to collapse.
+                // Skipping every kind here keeps the rename map free of
+                // stale entries that would silently shadow a future
+                // bare-Member usage (e.g. taking a method's address).
+                generator::Language::C11 => continue,
+            };
+            out.push((qualified_key, expansion));
         }
     }
     out
@@ -6408,6 +6493,7 @@ mod tests {
                 ret_type: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
+                go_init_expr: String::new(),
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -6423,6 +6509,7 @@ mod tests {
                 ret_type: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
+                go_init_expr: String::new(),
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

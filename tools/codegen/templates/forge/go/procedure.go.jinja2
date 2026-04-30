@@ -84,6 +84,17 @@ func newPolicy(handler forge.ServiceHandler{% for h in helper_fields %}, {{ h.id
 		{{ f.id }}: {{ f.default_value }},
 {% endif %}
 {% endfor %}
+{# Stateful imports whose Go zero-value is not a valid initial state
+   need an explicit factory call (e.g. filter's `New<Pascal>()` allocates
+   the runtime's filter implementation). The `go_init_expr` field is
+   populated only for those kinds; codec leaves it empty because its
+   pure-data struct zero-init is the canonical empty-frame state. See
+   `ImportContext::go_init_expr` for the per-kind decision matrix. #}
+{% for imp in imports %}
+{% if imp.go_init_expr %}
+		{{ imp.member_name }}: {{ imp.go_init_expr }},
+{% endif %}
+{% endfor %}
 {% for h in helper_fields %}
 		{{ h.id }}: {{ h.id }},
 {% endfor %}
