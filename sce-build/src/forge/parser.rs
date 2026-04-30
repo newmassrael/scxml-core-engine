@@ -983,14 +983,29 @@ fn parse_procedure(
         }
     }
 
-    Ok(ProcedureModel {
+    let model = ProcedureModel {
         name: label.identifier.to_string(),
         inputs,
         internals,
         helpers,
         initial,
         states,
-    })
+    };
+
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: catch
+    // self-contradicting bytes max-size declarations before any
+    // backend codegen runs. The runtime β path (error.execution
+    // raised at the actual cap-violation site in the generated
+    // procedure runtime) covers data exceeding a consistently
+    // declared cap; this static pass covers the orthogonal class of
+    // declarations whose source cap is *itself* larger than the
+    // destination cap. Anchored at the procedure root so the
+    // diagnostic carries its identifier in the message.
+    if let Err(err) = crate::forge::validate::validate_bytes_max_size_consistency(&model) {
+        return Err(located_at_line(label.diagnostic_label, None, err));
+    }
+
+    Ok(model)
 }
 
 /// Validate that `name` matches `[A-Za-z_][A-Za-z0-9_]*` — the common

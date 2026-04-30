@@ -381,6 +381,17 @@ pub enum ValidationError {
     /// are mutually exclusive (SCE_MESH.md §9.5).
     #[error("<invoke type=\"sce:mesh-rpc\"> declares both `src` and `srcexpr` — they are mutually exclusive. Keep only the one matching how the target is chosen (static vs runtime).")]
     MeshRpcDuplicateTarget,
+
+    /// A bytes-typed slot's declared cap is exceeded by an upstream
+    /// source's declared cap (helper return, `<send>` response). The
+    /// inconsistency is static — the declarations themselves contradict
+    /// each other before any runtime data flows. See
+    /// `claudedocs/rfc-forge-bytes-bounded.md` §3 B1+B4.
+    #[error("{procedure}: {detail}")]
+    BytesMaxSizeViolation {
+        procedure: String,
+        detail: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

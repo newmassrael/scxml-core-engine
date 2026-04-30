@@ -374,6 +374,14 @@ pub enum DiagnosticCode {
     ValidationMeshRpcDuplicateTarget,
     #[serde(rename = "validation/removed-attribute")]
     ValidationRemovedAttribute,
+    // ── Forge bytes-typed slot capacity contract (RFC
+    //    `claudedocs/rfc-forge-bytes-bounded.md` §3 B1+B4). The
+    //    inconsistency is between two SCXML-declared caps (e.g.
+    //    `sce:response-max-size` on a `<send>` exceeds
+    //    `sce:max-size` on the destination `<data>` slot), caught
+    //    at parse time before any backend codegen. ────────────
+    #[serde(rename = "validation/bytes-max-size-violation")]
+    ValidationBytesMaxSizeViolation,
 
     // ── SCXML semantic-validation (RFC §W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
@@ -692,6 +700,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
         ValidationRemovedAttribute,
+        ValidationBytesMaxSizeViolation,
         // SCXML semantic (RFC §W5)
         ScxmlTopLevelScriptUnloaded,
         // Expression
@@ -1037,6 +1046,7 @@ impl DiagnosticCode {
             | ValidationSingletonViolation
             | ValidationRequireEither
             | ValidationDynamicFeatures
+            | ValidationBytesMaxSizeViolation
             | ImportFileNotFound
             | ImportKindMismatch
             | ImportNotForge
@@ -1131,6 +1141,7 @@ impl DiagnosticCode {
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
             ValidationRemovedAttribute => "validation/removed-attribute",
+            ValidationBytesMaxSizeViolation => "validation/bytes-max-size-violation",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
@@ -1890,6 +1901,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: Vec::new(),
+        },
+        ValidationError::BytesMaxSizeViolation { procedure, detail } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationBytesMaxSizeViolation,
+            stage: Stage::Validation,
+            // The repair is "edit one of the two declared caps so they
+            // agree" — open-ended numeric choice rather than a closed
+            // candidate list, so `fix` stays `None`. The `detail`
+            // string is the load-bearing context (which slot, which
+            // upstream source, which numbers) and rides
+            // `key_fragments` for content-hash uniqueness.
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![procedure.clone(), detail.clone()],
         },
     }
 }
@@ -2721,6 +2746,15 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:79f17de8d89256c7","code":"validation/removed-attribute","stage":"validation","spec":"SCE Mesh §13","message":"deprecated attribute sce:qos on <send event=\"brake.activate\"> was removed in SCE Mesh §13 path B; pattern is now inferred from event-name conventions and RPC reply pairing from topology structure. Remove the attribute.","actual":"sce:qos","fix":{"kind":"remove_fields","location":"<send event=\"brake.activate\">","fields":["sce:qos"]}}"#,
+            ),
+            (
+                "forge/bytes-max-size-violation",
+                ValidationError::BytesMaxSizeViolation {
+                    procedure: "security_access".into(),
+                    detail: "<send sce:service=\"SecurityAccess\"> sce:response-max-size=128 exceeds destination slot 'seed' sce:max-size=64".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:45992402abee5c5d","code":"validation/bytes-max-size-violation","stage":"validation","message":"security_access: <send sce:service=\"SecurityAccess\"> sce:response-max-size=128 exceeds destination slot 'seed' sce:max-size=64"}"#,
             ),
             (
                 // RFC §W5: SCXML semantic family — TopLevelScriptUnloaded
@@ -4197,6 +4231,7 @@ mod tests {
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
+            | ValidationBytesMaxSizeViolation
             | ScxmlTopLevelScriptUnloaded
             | ExpressionEmpty
             | ExpressionLex
@@ -4532,6 +4567,7 @@ mod tests {
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
+                | ValidationBytesMaxSizeViolation
                 | ScxmlTopLevelScriptUnloaded
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
@@ -4622,7 +4658,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            153,
+            154,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 153 distinct variants to match the DiagnosticCode \
              enum (RFC §W5 added ScxmlTopLevelScriptUnloaded; 152 → 153).",
