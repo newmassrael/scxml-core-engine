@@ -1,0 +1,106 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+/* Timer HAL — vtable interface. cpp uses `class ITimer { virtual ... };`;
+ * the C11 mirror is a struct of method pointers. Concrete timer impls
+ * embed this struct as their first member and downcast inside method
+ * bodies (offsetof = 0 by struct-layout convention). */
+typedef void (*{{ snake }}_timer_cb_t)(void *ctx);
+
+typedef struct {{ snake }}_itimer {
+    void (*start_periodic)(struct {{ snake }}_itimer *self, uint32_t interval_ms,
+                           {{ snake }}_timer_cb_t cb, void *cb_ctx);
+    void (*start_one_shot)(struct {{ snake }}_itimer *self, uint32_t delay_ms,
+                           {{ snake }}_timer_cb_t cb, void *cb_ctx);
+    void (*cancel)(struct {{ snake }}_itimer *self);
+} {{ snake }}_itimer_t;
+
+/* Handler — user-supplied per-callback function pointers. cpp uses duck
+ * typing on a Handler template parameter (compile-time check) and
+ * imposes a `fire<Pascal>` method naming convention. C11 mirrors that
+ * convention with `fire_<snake>` field names so the manifest oracle
+ * keys (`"callback": "fireTesterPresent"`) map 1:1 to handler slots
+ * after snake_case normalisation. NULL pointers are dropped silently
+ * at trampoline time (cpp's duck-typed missing method would not
+ * compile, but C11 has no equivalent compile-time check). */
+typedef struct {
+    void *user_data;
+{% for cb in unique_callbacks %}
+    void (*fire_{{ cb.callback_snake }})(void *user_data);
+{% endfor %}
+} {{ snake }}_handler_t;
+
+/* Scheduler state — wraps handler + N timer pointers (one per <data> with
+ * sce:timer). cpp keeps `Handler&` and `ITimer&` references; C11 stores
+ * the handler by value (function-pointer struct, cheap to copy) and the
+ * itimer instances by pointer (ownership stays with the user). */
+typedef struct {
+    {{ snake }}_handler_t handler;
+{% for timer in timers %}
+    {{ snake }}_itimer_t *{{ timer.id_snake }}_timer;
+{% endfor %}
+} {{ snake }}_t;
+
+static inline void {{ snake }}_init({{ snake }}_t *self,
+        {{ snake }}_handler_t handler{% for timer in timers %},
+        {{ snake }}_itimer_t *{{ timer.id_snake }}_timer{% endfor %}) {
+    self->handler = handler;
+{% for timer in timers %}
+    self->{{ timer.id_snake }}_timer = {{ timer.id_snake }}_timer;
+{% endfor %}
+}
+
+/* Per-callback trampolines. cpp uses `static_cast<Self*>(ctx)->handler_.<cb>()`;
+ * the C11 mirror recovers the scheduler from `ctx`, then dispatches
+ * through the user's handler function pointer (NULL-checked). The
+ * trampoline name is `<snake>_on_fire_<callback_snake>` to mirror the
+ * handler field's `fire_<snake>` form. */
+{% for cb in unique_callbacks %}
+static inline void {{ snake }}_on_fire_{{ cb.callback_snake }}(void *ctx) {
+    {{ snake }}_t *self = ({{ snake }}_t *)ctx;
+    if (self->handler.fire_{{ cb.callback_snake }} != NULL) {
+        self->handler.fire_{{ cb.callback_snake }}(self->handler.user_data);
+    }
+}
+{% endfor %}
+
+/* Per-timer start/cancel pairs. cpp emits `start<TimerPascal>()` /
+ * `cancel<TimerPascal>()`; C11 uses `<snake>_start_<id_snake>` /
+ * `<snake>_cancel_<id_snake>` to fit C's lower_snake_case convention
+ * without name-mangling. */
+{% for timer in timers %}
+
+static inline void {{ snake }}_start_{{ timer.id_snake }}({{ snake }}_t *self) {
+{% if timer.is_periodic %}
+    self->{{ timer.id_snake }}_timer->start_periodic(
+        self->{{ timer.id_snake }}_timer, {{ timer.time_ms }},
+        {{ snake }}_on_fire_{{ timer.callback_snake }}, self);
+{% else %}
+    self->{{ timer.id_snake }}_timer->start_one_shot(
+        self->{{ timer.id_snake }}_timer, {{ timer.time_ms }},
+        {{ snake }}_on_fire_{{ timer.callback_snake }}, self);
+{% endif %}
+}
+
+static inline void {{ snake }}_cancel_{{ timer.id_snake }}({{ snake }}_t *self) {
+    self->{{ timer.id_snake }}_timer->cancel(self->{{ timer.id_snake }}_timer);
+}
+{% endfor %}
+
+#endif  /* {{ guard }} */

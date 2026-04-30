@@ -857,7 +857,19 @@ fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // bake-at-codegen sidesteps the lack of generics). Static const
         // breakpoint + value tables are emitted at codegen time.
         FixtureSpec::Interpolation { .. } => true,
-        _ => false,
+        // RFC §5.J.2 Phase E-4: timer scheduler. C11 emits a
+        // vtable-based ITimer interface + function-pointer handler
+        // struct + per-timer start/cancel pairs. cpp uses
+        // `class ITimer { virtual ... };` + a `Handler&` template
+        // parameter (duck typing); the C11 mirror is an explicit
+        // method-pointer struct + a NULL-checked handler dispatch in
+        // the trampoline.
+        //
+        // After Phase E-4, the C11 backend covers every `FixtureSpec`
+        // variant — all 10 forge kinds emit through the same C11
+        // codegen path. Remove the catch-all so a future kind addition
+        // forces an explicit decision here.
+        FixtureSpec::Timer { .. } => true,
     }
 }
 

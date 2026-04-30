@@ -97,6 +97,12 @@ endif()
 #                C11 inlines the linear/bilinear algorithm per fixture
 #                with array sizes substituted in (cpp/Rust use templates
 #                over array sizes — C11 has no generics).
+#   * Phase E-4: Timer (1 fixture — timer_diag_scheduler). C11 emits a
+#                vtable-based ITimer interface + function-pointer
+#                handler struct + per-timer start/cancel pairs (cpp uses
+#                a virtual ITimer + duck-typed Handler template param).
+#                After E-4: every forge kind covered, all 11 forge kinds
+#                except Phase F's inline-kind statechart embedding.
 set(C11_FIXTURES
     transform_temperature
     transform_bitwise
@@ -128,6 +134,7 @@ set(C11_FIXTURES
     observer_coolant
     interpolation_1d_linear
     interpolation_2d_bilinear
+    timer_diag_scheduler
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

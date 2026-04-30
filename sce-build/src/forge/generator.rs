@@ -1752,14 +1752,7 @@ pub fn generate_c11_with_imports(
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Timer(_) => {
-            return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for the Timer kind is \
-                 RFC \u{00A7}5.J.2 Phase E-4 work."
-                    .into(),
-            )
-            .into());
-        }
+        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::C11)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -5505,6 +5498,18 @@ fn render_timer(
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
     ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+
+    // RFC §5.J.2 Phase E-4: C11 emits a vtable-based ITimer interface +
+    // a function-pointer handler struct + per-timer start/cancel pairs
+    // (no runtime header surface). Adds `<snake>` so emitted typedefs
+    // and trampoline functions are scheduler-prefixed and don't collide
+    // across schedulers sharing a translation unit.
+    if matches!(lang, crate::generator::Language::C11) {
+        ctx.insert(
+            "snake".into(),
+            filters::to_snake_case(m.name.clone()).into(),
+        );
+    }
 
     render_phase3(env, &format!("timer.{}.jinja2", l.template_ext()), ctx)
 }
