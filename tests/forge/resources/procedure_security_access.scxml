@@ -3,10 +3,10 @@
        sce:kind="procedure" initial="sendTesterPresent" version="1.0">
   <datamodel>
     <data id="ecuAddr" sce:type="uint32" sce:direction="in"/>
-    <data id="seed" sce:type="bytes" sce:direction="internal"/>
+    <data id="seed" sce:type="bytes" sce:direction="internal" sce:max-size="64"/>
     <data id="maxRetries" expr="3" sce:type="int32" sce:direction="internal"/>
     <data id="retryCount" expr="0" sce:type="int32" sce:direction="internal"/>
-    <sce:helper name="computeKey" args="bytes" returns="bytes"/>
+    <sce:helper name="computeKey" args="bytes" returns="bytes" sce:returns-max-size="64"/>
   </datamodel>
 
   <state id="sendTesterPresent">
@@ -19,7 +19,7 @@
 
   <state id="requestSeed">
     <onentry>
-      <send sce:service="SecurityAccess" sce:subfunc="0x01"/>
+      <send sce:service="SecurityAccess" sce:subfunc="0x01" sce:response-max-size="64"/>
     </onentry>
     <transition event="ok" target="sendKey">
       <assign location="seed" expr="_event.data"/>
