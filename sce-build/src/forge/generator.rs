@@ -1792,7 +1792,16 @@ fn render_procedure_cpp(
 
     // Collect unique events: original SCXML string → PascalCase enum name.
     // BTreeMap orders by raw SCXML event string (key).
+    //
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4: `error.execution`
+    // is always emitted in the cpp procedure Event enum so the
+    // assign-time cap-check codegen can raise it through the shared
+    // run_procedure() loop's normal transition machinery, even when the
+    // current fixture has no explicit `<transition event="error.execution">`
+    // (in which case processTransition simply returns nullopt and the
+    // procedure terminates uncompleted — W3C-correct).
     let mut event_raw_to_pascal: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    event_raw_to_pascal.insert("error.execution".to_string(), "ErrorExecution".to_string());
     event_raw_to_pascal.insert("ok".to_string(), "Ok".to_string());
     event_raw_to_pascal.insert("fail".to_string(), "Fail".to_string());
     for s in &m.states {
@@ -2730,6 +2739,25 @@ fn build_procedure_states_with_assigns(
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     assign_rename_map: &std::collections::HashMap<&str, &str>,
 ) -> Vec<serde_json::Value> {
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4: bytes-typed
+    // slot id → resolved cap. Only the cpp branch consumes these
+    // fields today (commit 3a). Other backends ignore the extra JSON
+    // properties; their per-language commits land later (commits
+    // 3b/3c/3d/3e per RFC §8 split).
+    let bytes_slot_caps: std::collections::HashMap<&str, u32> = m
+        .inputs
+        .iter()
+        .chain(m.internals.iter())
+        .filter(|f| matches!(f.sce_type, crate::forge::model::SceType::Bytes))
+        .map(|f| {
+            (
+                f.id.as_str(),
+                crate::forge::limits::resolve_bytes_max(f.max_size),
+            )
+        })
+        .collect();
+    let cap_check_target = matches!(target, ExprTarget::Cpp);
+
     m.states
         .iter()
         .filter(|s| s.transitions.iter().any(|tr| !tr.assigns.is_empty()))
@@ -2770,9 +2798,24 @@ fn build_procedure_states_with_assigns(
                             } else {
                                 transpiled
                             };
+                            // Cap-check fires when (a) the destination
+                            // slot is bytes-typed with a known cap and
+                            // (b) the current target language has its
+                            // procedure runtime wired for the
+                            // error.execution raise path. cpp is the
+                            // first such backend.
+                            let slot_cap = bytes_slot_caps.get(a.location.as_str()).copied();
+                            let is_bytes_with_cap = cap_check_target
+                                && slot_cap.is_some()
+                                && matches!(
+                                    lhs_ty,
+                                    crate::forge::types::InferredType::Bytes
+                                );
                             serde_json::json!({
                                 "location": location_emitted,
                                 "expr": wrapped,
+                                "is_bytes_with_cap": is_bytes_with_cap,
+                                "cap": slot_cap.unwrap_or(0),
                             })
                         })
                         .collect();

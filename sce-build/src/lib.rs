@@ -2332,6 +2332,77 @@ mod tests {
     //
     // Sister tests for FromStr live in `generator::tests`.
 
+    /// Forge cpp procedure codegen emits the bytes-typed cap-check
+    /// guard around an `<assign location="X" expr="_event.data"/>` when
+    /// `X` is a `<data sce:type="bytes" sce:max-size="N"/>` slot. This
+    /// pins the RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4
+    /// cpp half: heap-backed runtime raises `error.execution` through
+    /// the shared `run_procedure` loop instead of throwing or letting
+    /// the assign silently overflow. Companion tests in
+    /// `forge::validate` cover the static (parse-time) cap-consistency
+    /// check; this test covers the runtime-emitted guard.
+    #[test]
+    fn forge_cpp_procedure_emits_bytes_cap_check() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="req" version="1.0">
+  <datamodel>
+    <data id="seed" sce:type="bytes" sce:direction="internal" sce:max-size="32"/>
+  </datamodel>
+  <state id="req">
+    <onentry><send sce:service="Probe" sce:response-max-size="32"/></onentry>
+    <transition event="ok" target="done">
+      <assign location="seed" expr="_event.data"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "bytes_probe",
+            diagnostic_label: "bytes_probe.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Cpp)
+            .expect("forge cpp codegen must succeed for a bytes-bounded probe");
+        assert_eq!(out.files.len(), 1);
+        let (_, body) = &out.files[0];
+
+        // Event enum must always include ErrorExecution so the cap-check
+        // guard has a target — even when no fixture transition matches it.
+        assert!(
+            body.contains("ErrorExecution"),
+            "Event::ErrorExecution must be emitted; full source:\n{body}",
+        );
+
+        // executeTransitionActions returns std::optional<Event> so an
+        // assign-time raise can be routed back through processTransition.
+        assert!(
+            body.contains("std::optional<Event> executeTransitionActions"),
+            "executeTransitionActions must return std::optional<Event>; full source:\n{body}",
+        );
+
+        // The bytes-typed assign must be wrapped with the cap-check
+        // pattern: capture into temp, check size against the resolved
+        // cap (32 from the explicit annotation), raise ErrorExecution
+        // on overflow, otherwise std::move into the slot.
+        assert!(
+            body.contains("_scope_tmp"),
+            "bytes-typed assign must use the temp-then-check shape; full source:\n{body}",
+        );
+        assert!(
+            body.contains("if (_scope_tmp.size() > 32)"),
+            "cap-check must use the resolved cap (32 from sce:max-size); full source:\n{body}",
+        );
+        assert!(
+            body.contains("return Event::ErrorExecution"),
+            "cap violation path must raise Event::ErrorExecution; full source:\n{body}",
+        );
+        assert!(
+            body.contains("seed_ = std::move(_scope_tmp)"),
+            "successful path must std::move into the slot; full source:\n{body}",
+        );
+    }
+
     #[test]
     fn compile_from_string_lang_c11_emits_h_and_c_pair() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>

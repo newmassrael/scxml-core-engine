@@ -55,7 +55,7 @@ inline constexpr int kProcedureMaxIterations = 1000;
 ///   std::pair<Event, std::string> executeEntryActions(State);
 ///   std::optional<std::tuple<State, std::size_t, bool>>
 ///       processTransition(State, Event) const;
-///   void executeTransitionActions(State source, std::size_t trIndex);
+///   std::optional<Event> executeTransitionActions(State source, std::size_t trIndex);
 ///
 ///   // Engine-visible datamodel slots.
 ///   void setPendingEventData(std::string);
@@ -66,6 +66,17 @@ inline constexpr int kProcedureMaxIterations = 1000;
 /// (when hasAssigns) → entry actions of the new state. The next event
 /// is the one returned by the latest entry-action call; an empty event
 /// (Event equal to `noneEvent()`) drives eventless transitions.
+///
+/// `executeTransitionActions` returns `std::nullopt` for normal flow
+/// (transition completes and the loop advances to the target state).
+/// A non-empty return signals that an assign-time check (e.g.
+/// `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes cap violation)
+/// fired; the loop re-processes the *source* state with that event so
+/// the fixture's `<transition event="error.execution">` (or any other
+/// internal-event handler) can pick it up. If the source state has no
+/// matching transition, `processTransition` returns `nullopt` and the
+/// procedure terminates uncompleted — W3C-correct for an unhandled
+/// internal event.
 template <typename Policy>
 ProcedureRunResult run_procedure(Policy &policy) {
     using State = typename Policy::State;
@@ -92,7 +103,17 @@ ProcedureRunResult run_procedure(Policy &policy) {
         bool hasAssigns;
         std::tie(next, trIndex, hasAssigns) = *transition;
         if (hasAssigns) {
-            policy.executeTransitionActions(current, trIndex);
+            auto raised = policy.executeTransitionActions(current, trIndex);
+            if (raised.has_value()) {
+                // Assign-time check raised an internal event; re-process the
+                // source state with it instead of advancing to `next`. The
+                // source's transitions decide whether to handle the event
+                // (e.g. `<transition event="error.execution" target="error"/>`)
+                // or let `processTransition` return nullopt next iteration so
+                // the procedure terminates uncompleted.
+                event = *raised;
+                continue;
+            }
         }
         current = next;
         event = Policy::noneEvent();

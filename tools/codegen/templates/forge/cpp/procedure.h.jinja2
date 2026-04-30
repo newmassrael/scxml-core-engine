@@ -221,19 +221,36 @@ public:
     }
 
     // ── Transition actions (<assign> in transitions) ─────────────
+    //
+    // Returns std::nullopt for normal flow; std::optional<Event> with a
+    // value when an assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
+    // §3 B4 bytes cap violation) raises an internal event. The shared
+    // run_procedure() loop re-processes the source state with that event
+    // so a fixture's `<transition event="error.execution">` can pick it up.
 
-    void executeTransitionActions([[maybe_unused]] State source, [[maybe_unused]] std::size_t trIndex) {
+    [[nodiscard]] std::optional<Event> executeTransitionActions([[maybe_unused]] State source, [[maybe_unused]] std::size_t trIndex) {
 {% for s in states_with_assigns %}
         if (source == State::{{ s.name }}) {
 {% for tr in s.assign_transitions %}
             if (trIndex == {{ tr.index }}) {
 {% for a in tr.assigns %}
+{% if a.is_bytes_with_cap %}
+                {
+                    auto _scope_tmp = {{ a.expr }};
+                    if (_scope_tmp.size() > {{ a.cap }}) {
+                        return Event::ErrorExecution;
+                    }
+                    {{ a.location }} = std::move(_scope_tmp);
+                }
+{% else %}
                 {{ a.location }} = {{ a.expr }};
+{% endif %}
 {% endfor %}
             }
 {% endfor %}
         }
 {% endfor %}
+        return std::nullopt;
     }
 
     // ── Engine-visible datamodel slots (called by run_procedure) ──
