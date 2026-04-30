@@ -105,8 +105,22 @@ pub trait ProcedurePolicy {
         state: Self::State,
         event: Self::Event,
     ) -> Option<(Self::State, usize, bool)>;
-    /// Execute <assign> actions for a transition.
-    fn execute_transition_actions(&mut self, source: Self::State, tr_index: usize);
+    /// Execute `<assign>` actions for a transition.
+    ///
+    /// Returns `None` for normal flow (transition completes and the loop
+    /// advances to the target state). A `Some(Event)` return signals that
+    /// an assign-time check (e.g. RFC `claudedocs/rfc-forge-bytes-bounded.md`
+    /// §3 B4 bytes cap violation) raised an internal event; the loop
+    /// re-processes the *source* state with that event so the fixture's
+    /// `<transition event="error.execution">` (or any other internal-event
+    /// handler) can pick it up. If the source has no matching transition,
+    /// `process_transition` returns `None` and the procedure terminates
+    /// uncompleted — W3C-correct for an unhandled internal event.
+    fn execute_transition_actions(
+        &mut self,
+        source: Self::State,
+        tr_index: usize,
+    ) -> Option<Self::Event>;
 }
 
 // ── Execution engine ────────────────────────────────────────────
@@ -138,7 +152,12 @@ pub fn run_procedure<P: ProcedurePolicy>(policy: &mut P) -> ProcedureRunResult {
             None => break,
         };
         if transition.2 {
-            policy.execute_transition_actions(current, transition.1);
+            // Assign-time check may raise an internal event; re-process
+            // the source with it instead of advancing to the target.
+            if let Some(raised) = policy.execute_transition_actions(current, transition.1) {
+                event = raised;
+                continue;
+            }
         }
         current = transition.0;
         let (e, data) = policy.execute_entry_actions(current);

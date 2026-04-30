@@ -2403,6 +2403,72 @@ mod tests {
         );
     }
 
+    /// Forge Rust procedure codegen mirrors cpp's contract (commit 3a)
+    /// for the cap-check raise path: a bytes-typed assign wraps in a
+    /// temp+check shape, returns `Some(Event::ErrorExecution)` on
+    /// overflow, and the procedure runtime's `execute_transition_actions`
+    /// signature returns `Option<Event>`. Companion to
+    /// `forge_cpp_procedure_emits_bytes_cap_check`; together they pin the
+    /// 1:1 lift required by RFC `claudedocs/rfc-forge-bytes-bounded.md`
+    /// §8 split between commits 3a and 3b.
+    #[test]
+    fn forge_rust_procedure_emits_bytes_cap_check() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="req" version="1.0">
+  <datamodel>
+    <data id="seed" sce:type="bytes" sce:direction="internal" sce:max-size="32"/>
+  </datamodel>
+  <state id="req">
+    <onentry><send sce:service="Probe" sce:response-max-size="32"/></onentry>
+    <transition event="ok" target="done">
+      <assign location="seed" expr="_event.data"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "bytes_probe",
+            diagnostic_label: "bytes_probe.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .expect("forge rust codegen must succeed for a bytes-bounded probe");
+        assert_eq!(out.files.len(), 1);
+        let (_, body) = &out.files[0];
+
+        // Always-emitted Event::ErrorExecution variant.
+        assert!(
+            body.contains("ErrorExecution"),
+            "Event::ErrorExecution must be emitted in Rust enum; full source:\n{body}",
+        );
+
+        // execute_transition_actions returns Option<Event> (signature
+        // mirror of cpp's std::optional<Event>).
+        assert!(
+            body.contains("fn execute_transition_actions(&mut self, source: State, tr_index: usize) -> Option<Event>"),
+            "execute_transition_actions must return Option<Event>; full source:\n{body}",
+        );
+
+        // Bytes-typed assign uses the temp-then-check shape.
+        assert!(
+            body.contains("let _scope_tmp"),
+            "bytes-typed assign must use temp shape; full source:\n{body}",
+        );
+        assert!(
+            body.contains("if _scope_tmp.len() > 32"),
+            "cap-check must use the resolved cap (32 from sce:max-size); full source:\n{body}",
+        );
+        assert!(
+            body.contains("return Some(Event::ErrorExecution)"),
+            "cap violation path must raise Event::ErrorExecution; full source:\n{body}",
+        );
+        assert!(
+            body.contains("self.seed = _scope_tmp"),
+            "successful path must move into the slot; full source:\n{body}",
+        );
+    }
+
     #[test]
     fn compile_from_string_lang_c11_emits_h_and_c_pair() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>

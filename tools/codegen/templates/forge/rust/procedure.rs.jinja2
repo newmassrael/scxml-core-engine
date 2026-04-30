@@ -230,18 +230,34 @@ impl ProcedurePolicy for {{ struct_name }} {
         None
     }
 
-    fn execute_transition_actions(&mut self, source: State, tr_index: usize) {
+    fn execute_transition_actions(&mut self, source: State, tr_index: usize) -> Option<Event> {
+        // Returns None for normal flow; Some(Event) when an assign-time
+        // check (RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes
+        // cap violation) raises an internal event that the shared
+        // run_procedure() loop re-pumps through process_transition.
+        let _ = (source, tr_index);  // pacify unused-warning for empty bodies
 {% for s in states_with_assigns %}
         if source == State::{{ s.name }} {
 {% for tr in s.assign_transitions %}
             if tr_index == {{ tr.index }} {
 {% for a in tr.assigns %}
+{% if a.is_bytes_with_cap %}
+                {
+                    let _scope_tmp = {{ a.expr }};
+                    if _scope_tmp.len() > {{ a.cap }} {
+                        return Some(Event::ErrorExecution);
+                    }
+                    {{ a.location }} = _scope_tmp;
+                }
+{% else %}
                 {{ a.location }} = {{ a.expr }};
+{% endif %}
 {% endfor %}
             }
 {% endfor %}
         }
 {% endfor %}
+        None
     }
 }
 

@@ -2504,7 +2504,7 @@ struct ProcedureCommon {
 }
 
 /// Build language-independent procedure data (state/event enums, final states).
-fn build_procedure_common(m: &ProcedureModel) -> ProcedureCommon {
+fn build_procedure_common(m: &ProcedureModel, include_error_execution: bool) -> ProcedureCommon {
     let state_enum: Vec<serde_json::Value> = m
         .states
         .iter()
@@ -2519,6 +2519,15 @@ fn build_procedure_common(m: &ProcedureModel) -> ProcedureCommon {
 
     let mut event_raw_to_pascal: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4: backends that
+    // wire their procedure runtime for the assign-time cap-check raise
+    // path opt in via `include_error_execution = true`. The cpp backend
+    // (commit 3a) uses its own inline event-enum builder; this shared
+    // helper is consumed by Rust (commit 3b) and the Kotlin/Go/Python
+    // 1:1 lifts that follow per RFC §8 split.
+    if include_error_execution {
+        event_raw_to_pascal.insert("error.execution".to_string(), "ErrorExecution".to_string());
+    }
     event_raw_to_pascal.insert("ok".to_string(), "Ok".to_string());
     event_raw_to_pascal.insert("fail".to_string(), "Fail".to_string());
     for s in &m.states {
@@ -2756,7 +2765,7 @@ fn build_procedure_states_with_assigns(
             )
         })
         .collect();
-    let cap_check_target = matches!(target, ExprTarget::Cpp);
+    let cap_check_target = matches!(target, ExprTarget::Cpp | ExprTarget::Rust);
 
     m.states
         .iter()
@@ -2910,7 +2919,7 @@ fn render_procedure_kotlin(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
-    let common = build_procedure_common(m);
+    let common = build_procedure_common(m, false);
 
     // Input fields
     let input_fields: Vec<serde_json::Value> = m
@@ -3085,7 +3094,11 @@ fn render_procedure_rust(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
-    let common = build_procedure_common(m);
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 commit 3b: Rust
+    // procedure runtime now consumes Option<Event> from
+    // execute_transition_actions, so opt into the always-emit
+    // ErrorExecution variant to support the cap-check raise path.
+    let common = build_procedure_common(m, true);
 
     // Build rename map: varName → self.var_name
     let var_name_strings: Vec<String> = m
@@ -3351,7 +3364,7 @@ fn render_procedure_go(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
-    let common = build_procedure_common(m);
+    let common = build_procedure_common(m, false);
 
     // Build rename map: varName → p.varName (Go struct field access)
     let var_name_strings: Vec<String> = m
@@ -3570,7 +3583,7 @@ fn render_procedure_python(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
-    let common = build_procedure_common(m);
+    let common = build_procedure_common(m, false);
 
     // Build rename map: varName → self._var_name
     let var_name_strings: Vec<String> = m
