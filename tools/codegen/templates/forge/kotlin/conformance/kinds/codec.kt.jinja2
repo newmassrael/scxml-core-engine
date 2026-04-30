@@ -29,10 +29,17 @@
             val roundTripped = {{ f.name | to_pascal_case }}.decode(expectedBytes)
                 ?: error("{{ f.name }} case $i decode returned null")
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
+            assertTrue(
+                roundTripped.{{ field.name }}.contentEquals(input{{ field.name | to_pascal_case }}),
+                "{{ f.name }} case $i decode {{ field.name }}: actual_size=${roundTripped.{{ field.name }}.size} expected_size=${input{{ field.name | to_pascal_case }}.size}",
+            )
+{% else %}
             assertEquals(
                 input{{ field.name | to_pascal_case }},
                 roundTripped.{{ field.name }},
                 "{{ f.name }} case $i decode {{ field.name }}",
             )
+{% endif %}
 {% endfor %}
         }

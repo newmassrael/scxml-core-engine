@@ -418,6 +418,28 @@
         {"decoded": {"priority": 1, "channel": 2, "direction": 2}, "encoded": [42],  "note": "(1<<5)|(2<<2)|2 = 32|8|2 = 42"},
         {"decoded": {"priority": 4, "channel": 5, "direction": 0}, "encoded": [148], "note": "(4<<5)|(5<<2)|0 = 128|20|0 = 148"}
       ]
+    },
+    "codec_tail": {
+      "fixture": "CodecTail",
+      "signature": "(raw: &[u8]) <-> {msgId: u8 @ byte 0, status: u8 @ byte 1, payload: bytes @ byte 2 tail (max 32)}",
+      "description": "Variable-length tail payload codec (sce:bit-size=\"tail\"). Bytes 0 and 1 carry msgId + status; everything from byte 2 onward is the raw payload up to the end of the frame. Encode appends the payload after the 2-byte header; decode slices from byte 2 to the buffer end. Exercises the BitSize::Tail arm and the V5 builder-pattern encode lift across all six backends.",
+      "cases": [
+        {"decoded": {"msgId": 1,   "status": 0, "payload": [10, 20, 30]},    "encoded": [1, 0, 10, 20, 30],    "note": "3-byte payload"},
+        {"decoded": {"msgId": 0,   "status": 0, "payload": []},              "encoded": [0, 0],                "note": "empty payload"},
+        {"decoded": {"msgId": 255, "status": 1, "payload": [171, 205]},      "encoded": [255, 1, 171, 205],    "note": "0xAB 0xCD"},
+        {"decoded": {"msgId": 7,   "status": 2, "payload": [0, 1, 2, 3, 4]}, "encoded": [7, 2, 0, 1, 2, 3, 4], "note": "5-byte payload"}
+      ]
+    },
+    "codec_length_ref": {
+      "fixture": "CodecLengthRef",
+      "signature": "(raw: &[u8]) <-> {msgId: u8 @ byte 0, len: u8 @ byte 1, payload: bytes @ byte 2 length-ref:len (max 32)}",
+      "description": "Length-prefixed payload codec (sce:bit-size=\"length-ref\" + sce:length-field=\"len\"). The byte at offset 1 explicitly states the payload length, so decode reads exactly len bytes starting at byte 2. Each oracle case keeps len consistent with payload.length so the round-trip exercises both directions without corrupting the length field. Closes the second of two BitSize variants left unimplemented in the c11 codec emitter.",
+      "cases": [
+        {"decoded": {"msgId": 1,   "len": 3, "payload": [10, 20, 30]},    "encoded": [1, 3, 10, 20, 30],    "note": "len=3 matches payload"},
+        {"decoded": {"msgId": 0,   "len": 0, "payload": []},              "encoded": [0, 0],                "note": "len=0, empty payload"},
+        {"decoded": {"msgId": 255, "len": 2, "payload": [171, 205]},      "encoded": [255, 2, 171, 205],    "note": "len=2"},
+        {"decoded": {"msgId": 5,   "len": 5, "payload": [9, 8, 7, 6, 5]}, "encoded": [5, 5, 9, 8, 7, 6, 5], "note": "len=5"}
+      ]
     }
   },
 

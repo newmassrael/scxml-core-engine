@@ -27,16 +27,27 @@
   "definitions": {
     "CanonicalType": {
       "description": "Canonical primitive types used across the manifest. Each per-language template maps these to its native type system.",
-      "type": "string",
-      "enum": [
-        "bool",
-        "i32",
-        "u8",
-        "u16",
-        "u32",
-        "f32",
-        "f64",
-        "string"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "bool",
+            "i32",
+            "u8",
+            "u16",
+            "u32",
+            "f32",
+            "f64",
+            "string"
+          ]
+        },
+        {
+          "description": "Variable-length byte sequence. Codec fields with `sce:bit-size=\"tail\"` or `\"length-ref\"` surface as `bytes` in the manifest. Round-trip oracle cases carry the decoded payload as a JSON array of integers.",
+          "type": "string",
+          "enum": [
+            "bytes"
+          ]
+        }
       ]
     },
     "CompareMode": {

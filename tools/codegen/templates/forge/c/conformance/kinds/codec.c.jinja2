@@ -3,20 +3,36 @@
 
 {# Codec kind — round-trip { decoded, encoded } cases. C11 uses the
    header's `<f.name>_t` struct + `<f.name>_encoded_t` β-shape return
-   from encode() and bool/out-param decode() per RFC §5.J.2 §3 D2. #}
+   from encode() and bool/out-param decode() per RFC §5.J.2 §3 D2.
+
+   Bytes fields surface as a buffer + len pair on both the case struct
+   and the codec struct (V1β); they assign via `memcpy` and round-trip
+   via `memcmp` + length compare. Buffer width is fixed at the runtime
+   `BYTES_DEFAULT_MAX` (256) so the case struct fits every codec
+   fixture without per-fixture resizing. #}
 static void test_{{ f.name }}(void) {
     typedef struct {
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
+        uint8_t input_{{ field.name | to_snake_case }}[256];
+        size_t  input_{{ field.name | to_snake_case }}_len;
+{% else %}
         {{ field.type | c_type }} input_{{ field.name | to_snake_case }};
+{% endif %}
 {% endfor %}
         size_t expected_len;
-        uint8_t expected_bytes[16];
+        uint8_t expected_bytes[256];
     } {{ f.name }}_case_t;
     static const {{ f.name }}_case_t cases[] = {
 {% for c in f.cases %}
         {
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
             .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
+            .input_{{ field.name | to_snake_case }}_len = {{ c.decoded[field.name] | length }},
+{% else %}
+            .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
+{% endif %}
 {% endfor %}
             .expected_len = {{ c.encoded | length }},
             .expected_bytes = { {% for b in c.encoded %}{{ b }}{% if not loop.last %}, {% endif %}{% endfor %} },
@@ -27,7 +43,12 @@ static void test_{{ f.name }}(void) {
     for (size_t i = 0; i < n; ++i) {
         {{ f.name }}_t val;
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
+        memcpy(val.{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}_len);
+        val.{{ field.name | to_snake_case }}_len = cases[i].input_{{ field.name | to_snake_case }}_len;
+{% else %}
         val.{{ field.name | to_snake_case }} = cases[i].input_{{ field.name | to_snake_case }};
+{% endif %}
 {% endfor %}
         {{ f.name }}_encoded_t encoded = {{ f.name }}_encode(&val);
         if (encoded.len != cases[i].expected_len ||
@@ -45,12 +66,22 @@ static void test_{{ f.name }}(void) {
             continue;
         }
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
+        if (round_tripped.{{ field.name | to_snake_case }}_len != cases[i].input_{{ field.name | to_snake_case }}_len ||
+            memcmp(round_tripped.{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}_len) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual_len=%zu expected_len=%zu\n",
+                i, round_tripped.{{ field.name | to_snake_case }}_len, cases[i].input_{{ field.name | to_snake_case }}_len);
+            ++g_failures;
+        }
+{% else %}
         if (round_tripped.{{ field.name | to_snake_case }} != cases[i].input_{{ field.name | to_snake_case }}) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual=%lld expected=%lld\n",
                 i, (long long)round_tripped.{{ field.name | to_snake_case }}, (long long)cases[i].input_{{ field.name | to_snake_case }});
             ++g_failures;
         }
+{% endif %}
 {% endfor %}
     }
 }

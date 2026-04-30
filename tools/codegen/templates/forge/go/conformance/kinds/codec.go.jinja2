@@ -43,8 +43,21 @@
 			continue
 		}
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
+		if len(roundTripped.{{ field.name | to_pascal_case }}) != len(d.{{ field.name | to_pascal_case }}) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: length actual=%d expected=%d", i, len(roundTripped.{{ field.name | to_pascal_case }}), len(d.{{ field.name | to_pascal_case }}))
+		} else {
+			for j := range d.{{ field.name | to_pascal_case }} {
+				if roundTripped.{{ field.name | to_pascal_case }}[j] != d.{{ field.name | to_pascal_case }}[j] {
+					t.Errorf("{{ f.name }} case %d decode {{ field.name }} byte %d: actual=%d expected=%d", i, j, roundTripped.{{ field.name | to_pascal_case }}[j], d.{{ field.name | to_pascal_case }}[j])
+					break
+				}
+			}
+		}
+{% else %}
 		if roundTripped.{{ field.name | to_pascal_case }} != d.{{ field.name | to_pascal_case }} {
 			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, roundTripped.{{ field.name | to_pascal_case }}, d.{{ field.name | to_pascal_case }})
 		}
+{% endif %}
 {% endfor %}
 	}

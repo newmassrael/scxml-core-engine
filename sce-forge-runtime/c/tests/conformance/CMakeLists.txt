@@ -117,6 +117,8 @@ set(C11_FIXTURES
     codec_simple_frame
     codec_subbyte
     codec_little_endian
+    codec_tail
+    codec_length_ref
     validator_range_only
     validator_plausibility_only
     validator_rpm_check

@@ -41,6 +41,10 @@
             CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual=%d expected=%d",
                   i, static_cast<int>(round_tripped->{{ field.name }}), static_cast<int>(input_{{ field.name }}));
+{% elif field.type == "bytes" %}
+            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+                  "{{ f.name }} case %d decode {{ field.name }}: actual_size=%zu expected_size=%zu",
+                  i, round_tripped->{{ field.name }}.size(), input_{{ field.name }}.size());
 {% else %}
             CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual=%s expected=%s",

@@ -32,7 +32,11 @@
 
         let encoded = {{ f.name | to_pascal_case }} {
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
+            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.clone(),
+{% else %}
             {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }},
+{% endif %}
 {% endfor %}
         }
         .encode();

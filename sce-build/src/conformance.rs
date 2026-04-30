@@ -32,6 +32,11 @@ pub enum CanonicalType {
     F32,
     F64,
     String,
+    /// Variable-length byte sequence. Codec fields with
+    /// `sce:bit-size="tail"` or `"length-ref"` surface as
+    /// `bytes` in the manifest. Round-trip oracle cases carry
+    /// the decoded payload as a JSON array of integers.
+    Bytes,
 }
 
 /// Floating-point comparison vs exact equality.
@@ -388,6 +393,7 @@ pub fn rust_type_for(ty: &str) -> &'static str {
         "f32" => "f32",
         "f64" => "f64",
         "string" => "&str",
+        "bytes" => "Vec<u8>",
         _ => "/* unknown canonical type */ ()",
     }
 }
@@ -404,6 +410,11 @@ pub fn rust_unmarshal_expr(raw: &str, ty: &str) -> String {
         "u16" => format!("{raw}.as_u64().expect(\"u64\") as u16"),
         "u32" => format!("{raw}.as_u64().expect(\"u64\") as u32"),
         "string" => format!("{raw}.as_str().expect(\"string\")"),
+        "bytes" => format!(
+            "{raw}.as_array().expect(\"array\").iter()\
+             .map(|x| x.as_u64().expect(\"u64\") as u8)\
+             .collect::<Vec<u8>>()"
+        ),
         _ => format!("/* unknown canonical type {ty} */"),
     }
 }
@@ -419,6 +430,7 @@ pub fn cpp_type_for(ty: &str) -> &'static str {
         "u16" => "std::uint16_t",
         "u32" => "std::uint32_t",
         "string" => "std::string",
+        "bytes" => "std::vector<std::uint8_t>",
         _ => "/* unknown canonical type */ void",
     }
 }
@@ -436,12 +448,16 @@ pub fn go_type_for(ty: &str) -> &'static str {
         "u16" => "uint16",
         "u32" => "uint32",
         "string" => "string",
+        "bytes" => "[]byte",
         _ => "/* unknown canonical type */ interface{}",
     }
 }
 
-/// Map a canonical type to its C11 native type name. Phase A (transform)
-/// only exercises numeric types — string/bytes paths land in Phase B+.
+/// Map a canonical type to its C11 native type name. Codec `bytes`
+/// fields land as a fixed-buffer + len pair under V1β
+/// (`forge_c11_phase_a_landed`), so this helper reports just the buffer
+/// element type — the harness fragment generates the matching `[N]`
+/// declaration alongside an explicit `_len` companion.
 pub fn c_type_for(ty: &str) -> &'static str {
     match ty {
         "bool" => "bool",
@@ -451,10 +467,8 @@ pub fn c_type_for(ty: &str) -> &'static str {
         "u8" => "uint8_t",
         "u16" => "uint16_t",
         "u32" => "uint32_t",
-        // Phase B: codec/condition introduce string + bytes via const
-        // pointer + length pairs; placeholder here keeps the match
-        // exhaustive without an unimplemented path.
         "string" => "const char *",
+        "bytes" => "uint8_t",
         _ => "/* unknown canonical type */ void",
     }
 }
@@ -497,6 +511,28 @@ pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
             }
         }
         (serde_json::Value::String(s), _) => format!("\"{s}\""),
+        // Codec `bytes` field (sce:bit-size="tail" / "length-ref"):
+        // oracle JSON shape is `[10, 20, 30]`; emit a C array initializer
+        // so the harness fragment can drop it directly into a
+        // `uint8_t input_<f>[<MAX>]` declaration. Empty payloads
+        // collapse to `{ 0 }` because ISO C forbids `{ }` until C23.
+        (serde_json::Value::Array(elems), "bytes") => {
+            if elems.is_empty() {
+                "{ 0 }".into()
+            } else {
+                let inner: Vec<String> = elems
+                    .iter()
+                    .map(|e| match e {
+                        serde_json::Value::Number(n) => n
+                            .as_u64()
+                            .map(|u| u.to_string())
+                            .unwrap_or_else(|| n.to_string()),
+                        _ => "/* non-int bytes element */".into(),
+                    })
+                    .collect();
+                format!("{{ {} }}", inner.join(", "))
+            }
+        }
         // Null / array / object are not valid scalar oracle values for
         // Phase A's transform fixtures; emit a syntactic marker so the C
         // compiler rejects with a clear message if reached.
@@ -515,6 +551,7 @@ pub fn kt_type_for(ty: &str) -> &'static str {
         "u16" => "UShort",
         "u32" => "UInt",
         "string" => "String",
+        "bytes" => "ByteArray",
         _ => "/* unknown canonical type */ Any",
     }
 }
@@ -531,6 +568,9 @@ pub fn kt_unmarshal_expr(raw: &str, ty: &str) -> String {
         "u16" => format!("{raw}.jsonPrimitive.int.toUShort()"),
         "u32" => format!("{raw}.jsonPrimitive.int.toUInt()"),
         "string" => format!("{raw}.jsonPrimitive.content"),
+        "bytes" => format!(
+            "{raw}.jsonArray.map {{ it.jsonPrimitive.int.toByte() }}.toByteArray()"
+        ),
         _ => format!("/* unknown canonical type {ty} */"),
     }
 }

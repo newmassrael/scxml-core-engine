@@ -9,7 +9,11 @@
         for i, case in enumerate(spec["cases"]):
             decoded = case["decoded"]
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
+            input_{{ field.name | to_snake_case }} = bytes(decoded["{{ field.name }}"])
+{% else %}
             input_{{ field.name | to_snake_case }} = decoded["{{ field.name }}"]
+{% endif %}
 {% endfor %}
             expected_bytes = bytes(case["encoded"])
 
