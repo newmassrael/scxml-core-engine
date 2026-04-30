@@ -34,8 +34,6 @@ pub struct DeployConfig {
     /// Schema version. The compiler rejects unknown versions to prevent
     /// silent misinterpretation when the schema evolves.
     pub version: Option<String>,
-    /// Scheduler configuration (future expansion).
-    pub scheduler: Option<SchedulerConfig>,
     /// Device → `DeviceConfig` map.
     pub topology: HashMap<String, DeviceConfig>,
     /// Reserved `discovery:` top-level key. Parsed as opaque `Value` so
@@ -342,17 +340,6 @@ pub struct PartitionInvokeRef {
     /// `<invoke id>` of the invoke. May be a synthesized
     /// `<parent>__sce_synth_invoke__<id>` identifier per §9.6.6.
     pub invoke: String,
-}
-
-/// Scheduler configuration stub (future expansion).
-#[derive(Debug, Clone, Deserialize)]
-pub struct SchedulerConfig {
-    /// Scheduler type: "tick", "event-driven", "cooperative".
-    #[serde(rename = "type")]
-    pub scheduler_type: Option<String>,
-    /// Scheduler-native settings passed through to templates.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_yaml_ng::Value>,
 }
 
 /// Device-level configuration (one entry per device/ECU in the topology).
