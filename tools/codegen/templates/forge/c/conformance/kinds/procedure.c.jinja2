@@ -1,6 +1,118 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
+{% if f.is_l2 %}
+{# Procedure L2 — handler dispatch + helper DI + payload capture
+   shape mirrors the cpp conformance fragment (procedure.cpp.jinja2):
+   each fixture gets a per-test global state struct that captures
+   dispatched payload bytes (since C closures don't exist), a handler
+   that returns the case-specific handler_response_data, and helper
+   stubs (XOR-bytes today). Oracle is pre-baked into static const
+   arrays per RFC §5.J.2 F7 — no runtime JSON parser. #}
+
+static struct {
+    sce_forge_bytes_t captured[16];
+    size_t captured_count;
+    const char *handler_response_data;
+} g_test_{{ f.name }}_state;
+
+static sce_forge_procedure_service_response_t test_{{ f.name }}_handler(
+    const sce_forge_procedure_service_request_t *req,
+    void *user_data) {
+    (void)user_data;
+    if (req->has_payload) {
+        if (g_test_{{ f.name }}_state.captured_count < 16) {
+            g_test_{{ f.name }}_state.captured[g_test_{{ f.name }}_state.captured_count++] =
+                req->payload;
+        }
+    }
+    sce_forge_procedure_service_response_t resp = {0};
+    resp.success = true;
+    const char *s = g_test_{{ f.name }}_state.handler_response_data;
+    if (s != NULL) {
+        size_t len = strlen(s);
+        if (len > SCE_FORGE_BYTES_DEFAULT_MAX) {
+            len = SCE_FORGE_BYTES_DEFAULT_MAX;
+        }
+        memcpy(resp.data.data, s, len);
+        resp.data.len = len;
+    }
+    return resp;
+}
+
+{% for h in f.helpers_ordered %}
+{% if h.stub.kind == "xor_bytes" %}
+/* <sce:helper name="{{ h.name }}"> stub — XOR every byte with {{ h.stub.mask }}. */
+static sce_forge_bytes_t test_{{ f.name }}_stub_{{ h.name }}(sce_forge_bytes_t input) {
+    sce_forge_bytes_t output = {0};
+    output.len = input.len;
+    for (size_t i = 0; i < input.len; ++i) {
+        output.data[i] = (uint8_t)(input.data[i] ^ {{ h.stub.mask }});
+    }
+    return output;
+}
+{% endif %}
+{% endfor %}
+
+static void test_{{ f.name }}(void) {
+{% for c in f.cases %}
+    /* Case {{ loop.index0 }}: {{ c.note | default("") }} */
+    {
+        g_test_{{ f.name }}_state.captured_count = 0;
+        g_test_{{ f.name }}_state.handler_response_data = "{{ c.handler_response_data }}";
+        sce_forge_procedure_run_result_t r = {{ f.name | to_snake_case }}_execute(
+            test_{{ f.name }}_handler,
+            NULL{% for h in f.helpers_ordered %},
+            test_{{ f.name }}_stub_{{ h.name }}{% endfor %}{% for arg_ty in f.args %},
+            {{ c.args[loop.index0] | c_literal(arg_ty) }}{% endfor %}
+        );
+        if (r.completed != {{ c.expected.completed | string | lower }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case {{ loop.index0 }} completed: actual=%d expected=%d\n",
+                (int)r.completed, {{ c.expected.completed | string | lower }});
+            ++g_failures;
+        }
+        if (strcmp(r.final_state, "{{ c.expected.final_state }}") != 0) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case {{ loop.index0 }} final_state: actual=\"%s\" expected=\"{{ c.expected.final_state }}\"\n",
+                r.final_state);
+            ++g_failures;
+        }
+{% set expected_payloads = c.expected.dispatched_payload_bytes | default([]) %}
+        if (g_test_{{ f.name }}_state.captured_count != {{ expected_payloads | length }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case {{ loop.index0 }} captured count: actual=%zu expected={{ expected_payloads | length }}\n",
+                g_test_{{ f.name }}_state.captured_count);
+            ++g_failures;
+        }
+{% for payload in expected_payloads %}
+        {
+            static const uint8_t expected_payload_{{ loop.index0 }}[] = {
+                {% for b in payload %}{{ b }}{% if not loop.last %}, {% endif %}{% endfor %}
+            };
+            const size_t expected_len_{{ loop.index0 }} =
+                sizeof(expected_payload_{{ loop.index0 }}) / sizeof(expected_payload_{{ loop.index0 }}[0]);
+            if (g_test_{{ f.name }}_state.captured_count > {{ loop.index0 }}) {
+                if (g_test_{{ f.name }}_state.captured[{{ loop.index0 }}].len != expected_len_{{ loop.index0 }}) {
+                    fprintf(stderr,
+                        "FAIL: {{ f.name }} case {{ loop.parent.loop.index0 }} payload[{{ loop.index0 }}].len: actual=%zu expected=%zu\n",
+                        g_test_{{ f.name }}_state.captured[{{ loop.index0 }}].len, expected_len_{{ loop.index0 }});
+                    ++g_failures;
+                } else if (memcmp(
+                    g_test_{{ f.name }}_state.captured[{{ loop.index0 }}].data,
+                    expected_payload_{{ loop.index0 }},
+                    expected_len_{{ loop.index0 }}) != 0) {
+                    fprintf(stderr,
+                        "FAIL: {{ f.name }} case {{ loop.parent.loop.index0 }} payload[{{ loop.index0 }}] bytes mismatch\n");
+                    ++g_failures;
+                }
+            }
+        }
+{% endfor %}
+    }
+{% endfor %}
+}
+{% else %}
 {# Procedure kind — D-1 (L1) only. Pure guard-only diamonds; the oracle
    exposes `args` + `expected.{completed, final_state}` per case, no
    payload bytes / no donedata until D-2 lands. The pre-baked oracle
@@ -34,3 +146,4 @@ static void test_{{ f.name }}(void) {
         }
     }
 }
+{% endif %}

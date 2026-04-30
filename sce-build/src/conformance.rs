@@ -242,6 +242,16 @@ pub enum FixtureSpec {
         /// gating change — the import shape is independent of L1/L2).
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         is_l2: bool,
+        /// Derived at harness-rendering time from the SCXML — true iff
+        /// the procedure declares any `<sce:import>` (cross-file
+        /// composition with another forge document). The C11 backend's
+        /// per-phase fixture filter uses this to gate D-2 (`is_l2: true`,
+        /// `has_imports: false`) separately from D-3 (cross-file imports),
+        /// so D-2 can land before the cross-file import codegen path.
+        /// Must be absent in the manifest JSON — the user cannot override
+        /// what the SCXML structurally declares.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        has_imports: bool,
     },
     Lookup {
         args: Vec<CanonicalType>,
@@ -827,7 +837,16 @@ fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         | FixtureSpec::Lookup { .. }
         | FixtureSpec::Codec { .. }
         | FixtureSpec::Validator { .. } => true,
-        FixtureSpec::Procedure { is_l2, .. } => !*is_l2,
+        // RFC `claudedocs/rfc-forge-bytes-bounded.md` §8 commit 4b lifts
+        // the L2 gate: the L2 codegen path (commit 4a) + this conformance
+        // harness L2 fragment drive Procedure L2 fixtures end-to-end on
+        // C11 with the same handler/helpers/payload-capture shape the
+        // cpp/Rust/Kotlin/Go/Python harnesses already use. Cross-file
+        // procedure fixtures (`crossfile_procedure_codec*`) stay gated
+        // until the C11 cross-file import codegen path lands (RFC §5.J.2
+        // Phase D-3); their `<sce:import>` declarations require the
+        // generator's import resolver, separate surface from this RFC.
+        FixtureSpec::Procedure { has_imports, .. } => !*has_imports,
         _ => false,
     }
 }
@@ -941,6 +960,24 @@ pub(crate) fn read_procedure_is_l2(scxml_path: &Path) -> Result<bool, String> {
     }
 
     Ok(false)
+}
+
+/// Read the procedure SCXML and return whether it declares any
+/// `<sce:import>` element (cross-file composition). The C11 backend's
+/// per-phase fixture filter uses this to gate D-2 fixtures separately
+/// from D-3 cross-file imports.
+pub(crate) fn read_procedure_has_imports(scxml_path: &Path) -> Result<bool, String> {
+    let text = std::fs::read_to_string(scxml_path)
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
+    let doc = roxmltree::Document::parse(&text)
+        .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
+    let sce_ns = crate::forge::model::SCE_NAMESPACE;
+    let root = doc.root_element();
+    Ok(root.descendants().any(|n| {
+        n.is_element()
+            && n.tag_name().name() == "import"
+            && n.tag_name().namespace() == Some(sce_ns)
+    }))
 }
 
 /// Parse a `<scxml sce:kind="lookup">` source file and return the
@@ -1154,6 +1191,7 @@ pub fn render_harness(
                 helpers,
                 helpers_ordered,
                 is_l2,
+                has_imports,
                 ..
             } => {
                 // Parse the SCXML for <sce:helper> declarations and cross-check
@@ -1199,6 +1237,9 @@ pub fn render_harness(
                 // (`c11_supported_kind`) can gate by procedure level
                 // without re-parsing each candidate fixture.
                 *is_l2 = read_procedure_is_l2(&scxml_path)?;
+                // Same idea for the cross-file gate (RFC §5.J.2 Phase
+                // D-3 vs D-2 separation).
+                *has_imports = read_procedure_has_imports(&scxml_path)?;
             }
             _ => {}
         }

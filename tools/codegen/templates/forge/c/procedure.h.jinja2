@@ -46,9 +46,8 @@ typedef struct {
     sce_forge_procedure_service_handler_t service_handler;
     void *service_handler_user_data;
 {% for h in helper_fields %}
-    /* Helper DI: <sce:helper name="{{ h.id }}"> */
-    {{ h.return_type }} (*{{ h.id }})({{ h.params_type }}, void *);
-    void *{{ h.id }}_user_data;
+    /* Helper DI: <sce:helper name="{{ h.id }}"> (by-value args, no user_data) */
+    {{ h.return_type }} (*{{ h.id }})({{ h.params_type }});
 {% endfor %}
     /* W3C SCXML 5.10: pending _event.data binding (bytes-typed). */
     sce_forge_bytes_t pending_event_data;
@@ -190,14 +189,13 @@ static inline sce_forge_procedure_raise_t {{ snake }}_execute_transition_actions
 static inline sce_forge_procedure_run_result_t {{ execute_func }}(
     sce_forge_procedure_service_handler_t _handler,
     void *_handler_user_data{% for h in helper_fields %},
-    {{ h.return_type }} (*{{ h.id }})({{ h.params_type }}, void *), void *{{ h.id }}_user_data{% endfor %}{% for f in input_fields %},
+    {{ h.return_type }} (*{{ h.id }})({{ h.params_type }}){% endfor %}{% for f in input_fields %},
     {{ f.c_param_type }} {{ f.id }}{% endfor %}) {
     {{ state_struct }} _st = {0};
     _st.service_handler = _handler;
     _st.service_handler_user_data = _handler_user_data;
 {% for h in helper_fields %}
     _st.{{ h.id }} = {{ h.id }};
-    _st.{{ h.id }}_user_data = {{ h.id }}_user_data;
 {% endfor %}
 {% for f in input_fields %}
     _st.{{ f.id }} = {{ f.id }};

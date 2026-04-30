@@ -109,6 +109,7 @@ set(C11_FIXTURES
     procedure_linear
     procedure_diamond
     procedure_startup_check
+    procedure_security_access
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

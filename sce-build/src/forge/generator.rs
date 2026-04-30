@@ -2434,21 +2434,23 @@ fn render_procedure_c_l2(
         })
         .collect();
 
-    // Helper closures: function pointer + user_data slot. C function
-    // pointer grammar requires the identifier inside the parens
-    // (`ret (*name)(args)`), so the template builds the declaration
-    // from `return_type` + `params_type` rather than concatenating a
-    // pre-formed type string after a separate id.
+    // Helper closures: function pointer with by-value args, no
+    // user_data slot. By-value matches the call-site shape (the
+    // expression pipeline renames `computeKey(seed)` →
+    // `_st->compute_key(_st->seed)` without inserting a `&` or extra
+    // arg), at the cost of one 256-byte struct copy per invocation.
+    // Helpers are not on a hot path; the Forge profile does not
+    // warrant a pointer-based shape that would require expression-
+    // pipeline rewrites for `&` insertion. Service handlers keep
+    // user_data because their use case (transport client capture) is
+    // the primary motivation for that slot.
     let helper_fields: Vec<serde_json::Value> = m
         .helpers
         .iter()
         .map(|h| {
             let ret = c_l2_type(&h.returns);
-            let params: Vec<String> = h
-                .args
-                .iter()
-                .map(|t| format!("const {} *", c_l2_type(t)))
-                .collect();
+            let params: Vec<String> =
+                h.args.iter().map(|t| c_l2_type(t)).collect();
             serde_json::json!({
                 "id": filters::to_snake_case(h.name.clone()),
                 "return_type": ret,
@@ -2661,13 +2663,36 @@ fn render_procedure_c_l2(
     // States with assigns + cap-check info (shared with cpp/Rust
     // backends via build_procedure_states_with_assigns; the C target
     // emits `_st->{location}` because assign_rename_map maps
-    // identifiers to the state struct member shape).
-    let states_with_assigns = build_procedure_states_with_assigns(
+    // identifiers to the state struct member shape). The shared helper
+    // emits `name` as PascalCase (cpp idiom: `State::RequestSeed`); C
+    // needs the upper-snake enum form, so we post-process to add an
+    // `enum_name` sibling that the template consumes.
+    let mut states_with_assigns = build_procedure_states_with_assigns(
         m,
         ExprTarget::C,
         &procedure_type_ctx,
         &assign_rename_map,
     );
+    // States in m.states keep their raw id; pair them up by index so
+    // the post-process is independent of how PascalCase rendered.
+    let assign_state_ids: Vec<&str> = m
+        .states
+        .iter()
+        .filter(|s| s.transitions.iter().any(|tr| !tr.assigns.is_empty()))
+        .map(|s| s.id.as_str())
+        .collect();
+    for (entry, raw_id) in states_with_assigns.iter_mut().zip(assign_state_ids.iter()) {
+        if let Some(obj) = entry.as_object_mut() {
+            obj.insert(
+                "enum_name".to_string(),
+                serde_json::Value::String(format!(
+                    "{}_STATE_{}",
+                    upper,
+                    to_upper_snake(raw_id)
+                )),
+            );
+        }
+    }
 
     let initial_state_enum =
         format!("{}_STATE_{}", upper, to_upper_snake(&m.initial));

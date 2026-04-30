@@ -226,6 +226,10 @@
                 "$ref": "#/definitions/CanonicalType"
               }
             },
+            "has_imports": {
+              "description": "Derived at harness-rendering time from the SCXML — true iff the procedure declares any `<sce:import>` (cross-file composition with another forge document). The C11 backend's per-phase fixture filter uses this to gate D-2 (`is_l2: true`, `has_imports: false`) separately from D-3 (cross-file imports), so D-2 can land before the cross-file import codegen path. Must be absent in the manifest JSON — the user cannot override what the SCXML structurally declares.",
+              "type": "boolean"
+            },
             "helpers": {
               "description": "Raw helper stub declarations from fixtures.json — a name-keyed dict (`{\"computeKey\": {\"kind\": \"xor_bytes\", \"mask\": 165}}`) whose keys must match `<sce:helper name=\"...\">` declarations in the fixture's SCXML. Keying the dict by name rather than storing an ordered list makes drift between fixtures.json and SCXML structurally impossible: a mismatch fails loudly at [`render_harness`] time rather than drifting silently into positional argument swaps.",
               "type": "object",
