@@ -1,0 +1,119 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="filter") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+{% if filter_type == "low_pass" %}
+/* First-order exponential low-pass: y[n] = alpha * x[n] + (1 - alpha) * y[n-1].
+ * On the first sample, y[0] = x[0] (no warm-up bias toward zero).
+ * Operand order matches the cpp/Rust runtimes for byte-equal cross-language
+ * conformance (alpha * input) + ((1 - alpha) * state). */
+typedef struct {
+    {{ output_type }} state;
+    bool initialized;
+} {{ snake }}_t;
+
+static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *self, {{ input_type }} {{ input_id_snake }}) {
+    if (!self->initialized) {
+        self->state = ({{ output_type }}){{ input_id_snake }};
+        self->initialized = true;
+    } else {
+        self->state = ({{ output_type }}){{ alpha }} * ({{ output_type }}){{ input_id_snake }}
+                    + (({{ output_type }})1 - ({{ output_type }}){{ alpha }}) * self->state;
+    }
+    return self->state;
+}
+
+static inline void {{ snake }}_reset({{ snake }}_t *self) {
+    self->state = ({{ output_type }})0;
+    self->initialized = false;
+}
+{% elif filter_type == "moving_average" %}
+/* Sliding-window arithmetic mean. Until the buffer is full, returns the mean
+ * of samples seen so far; after fill, returns the mean of the most recent
+ * WINDOW samples. */
+typedef struct {
+    {{ output_type }} buffer[{{ window }}];
+    size_t index;
+    bool filled;
+} {{ snake }}_t;
+
+static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *self, {{ input_type }} {{ input_id_snake }}) {
+    self->buffer[self->index] = ({{ output_type }}){{ input_id_snake }};
+    self->index = (self->index + 1) % {{ window }};
+    if (!self->filled && self->index == 0) {
+        self->filled = true;
+    }
+    size_t count = self->filled ? (size_t){{ window }} : self->index;
+    {{ output_type }} sum = ({{ output_type }})0;
+    for (size_t i = 0; i < count; ++i) {
+        sum += self->buffer[i];
+    }
+    return sum / ({{ output_type }})count;
+}
+
+static inline void {{ snake }}_reset({{ snake }}_t *self) {
+    for (size_t i = 0; i < {{ window }}; ++i) {
+        self->buffer[i] = ({{ output_type }})0;
+    }
+    self->index = 0;
+    self->filled = false;
+}
+{% elif filter_type == "debounce" %}
+/* Output latches to a new value only after WINDOW consecutive identical
+ * samples. Until the buffer fills, the most recent input passes through. */
+typedef struct {
+    {{ output_type }} buffer[{{ window }}];
+    size_t index;
+    bool filled;
+    {{ output_type }} output;
+} {{ snake }}_t;
+
+static inline {{ output_type }} {{ snake }}_update({{ snake }}_t *self, {{ input_type }} {{ input_id_snake }}) {
+    self->buffer[self->index] = ({{ output_type }}){{ input_id_snake }};
+    self->index = (self->index + 1) % {{ window }};
+    if (!self->filled && self->index == 0) {
+        self->filled = true;
+    }
+    if (self->filled) {
+        bool stable = true;
+        for (size_t i = 1; i < {{ window }}; ++i) {
+            if (self->buffer[i] != self->buffer[0]) {
+                stable = false;
+                break;
+            }
+        }
+        if (stable) {
+            self->output = self->buffer[0];
+        }
+    } else {
+        self->output = ({{ output_type }}){{ input_id_snake }};
+    }
+    return self->output;
+}
+
+static inline void {{ snake }}_reset({{ snake }}_t *self) {
+    for (size_t i = 0; i < {{ window }}; ++i) {
+        self->buffer[i] = ({{ output_type }})0;
+    }
+    self->index = 0;
+    self->filled = false;
+    self->output = ({{ output_type }})0;
+}
+{% endif %}
+
+#endif  /* {{ guard }} */

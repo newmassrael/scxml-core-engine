@@ -1749,12 +1749,12 @@ pub fn generate_c11_with_imports(
                 render_procedure_c(&env, m, imports)?
             }
         }
-        ForgeDocument::Filter(_)
-        | ForgeDocument::Interpolation(_)
+        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Interpolation(_)
         | ForgeDocument::Timer(_)
         | ForgeDocument::Observer(_) => {
             return Err(GenerateError::UnsupportedFeature(
-                "C11 forge codegen for kinds Filter/Interpolation/Timer/Observer is \
+                "C11 forge codegen for kinds Interpolation/Timer/Observer is \
                  RFC \u{00A7}5.J.2 Phase E work."
                     .into(),
             )
@@ -5365,6 +5365,22 @@ fn render_filter(
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
     ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+
+    // RFC §5.J.2 Phase E-1: C11 emits per-fixture state struct + free
+    // functions (`<snake>_t`, `<snake>_update`, `<snake>_reset`) instead
+    // of a runtime header (codec/transform's bake-at-codegen pattern).
+    // The unified template references `{{ snake }}` and `{{ input_id_snake }}`
+    // for these; cpp/Rust/Kotlin/Go/Python ignore the keys.
+    if matches!(lang, crate::generator::Language::C11) {
+        ctx.insert(
+            "snake".into(),
+            filters::to_snake_case(m.name.clone()).into(),
+        );
+        ctx.insert(
+            "input_id_snake".into(),
+            filters::to_snake_case(m.input.id.clone()).into(),
+        );
+    }
 
     render_phase3(env, &format!("filter.{}.jinja2", l.template_ext()), ctx)
 }

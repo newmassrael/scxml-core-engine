@@ -836,6 +836,13 @@ fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // (expr::lower_stateful_import_calls). Cross-file procedure
         // fixtures now flow through the same harness as in-file ones.
         FixtureSpec::Procedure { .. } => true,
+        // RFC §5.J.2 Phase E-1: signal filter kinds (low_pass /
+        // moving_average / debounce). C11 bakes the algorithm at codegen
+        // time per fixture (no runtime header surface) — matches codec's
+        // bake-at-codegen pattern. The unified `render_filter` adds
+        // `<snake>` + `<input_id_snake>` to its context so the C11
+        // template emits free functions instead of templated classes.
+        FixtureSpec::Filter { .. } => true,
         _ => false,
     }
 }

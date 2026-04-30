@@ -87,6 +87,9 @@ endif()
 #                D-2 widens by `procedure_security_access` once the
 #                runtime header lands; D-3 widens by the two
 #                crossfile_procedure_codec[_mutate] cross-file imports.
+#   * Phase E-1: Filter (3 fixtures — low_pass / moving_average /
+#                debounce). C11 bakes the algorithm per fixture at
+#                codegen time (no runtime header surface).
 set(C11_FIXTURES
     transform_temperature
     transform_bitwise
@@ -112,6 +115,9 @@ set(C11_FIXTURES
     procedure_security_access
     crossfile_procedure_codec
     crossfile_procedure_codec_mutate
+    filter_low_pass
+    filter_moving_average
+    filter_debounce
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
