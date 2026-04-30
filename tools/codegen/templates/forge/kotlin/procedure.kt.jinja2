@@ -157,18 +157,33 @@ class {{ class_name }} : ProcedureStateMachine<State, Event>() {
         return null
     }
 
-    override fun executeTransitionActions(source: State, trIndex: Int) {
+    // Returns null for normal flow; a non-null Event signals that an
+    // assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
+    // §3 B4 bytes cap violation) raised an internal event that the
+    // shared runToCompletion loop re-pumps through processTransition.
+    override fun executeTransitionActions(source: State, trIndex: Int): Event? {
 {% for s in states_with_assigns %}
         if (source == State.{{ s.name }}) {
 {% for tr in s.assign_transitions %}
             if (trIndex == {{ tr.index }}) {
 {% for a in tr.assigns %}
+{% if a.is_bytes_with_cap %}
+                run {
+                    val scopeTmp = {{ a.expr }}
+                    if (scopeTmp.size > {{ a.cap }}) {
+                        return Event.ErrorExecution
+                    }
+                    {{ a.location }} = scopeTmp
+                }
+{% else %}
                 {{ a.location }} = {{ a.expr }}
+{% endif %}
 {% endfor %}
             }
 {% endfor %}
         }
 {% endfor %}
+        return null
     }
 
     companion object {

@@ -54,7 +54,21 @@ abstract class ProcedureStateMachine<S : Enum<S>, E : Enum<E>> {
         for (i in 0 until MAX_ITERATIONS) {
             if (isFinal(current)) break
             val transition = processTransition(current, event) ?: break
-            if (transition.third) executeTransitionActions(current, transition.second)
+            if (transition.third) {
+                // Assign-time check may raise an internal event (RFC
+                // claudedocs/rfc-forge-bytes-bounded.md §3 B4 bytes cap
+                // violation); re-process the source with it instead of
+                // advancing to the target. The fixture's
+                // <transition event="error.execution"> picks it up;
+                // otherwise processTransition returns null next iteration
+                // and the procedure terminates uncompleted (W3C-correct
+                // for an unhandled internal event).
+                val raised = executeTransitionActions(current, transition.second)
+                if (raised != null) {
+                    event = raised
+                    continue
+                }
+            }
             current = transition.first
             event = noneEvent
             val entry = executeEntryActions(current)
@@ -95,6 +109,14 @@ abstract class ProcedureStateMachine<S : Enum<S>, E : Enum<E>> {
     /** Process a transition; returns (nextState, transitionIndex, hasAssigns) or null. */
     protected abstract fun processTransition(state: S, event: E): Triple<S, Int, Boolean>?
 
-    /** Execute <assign> actions for a transition. */
-    protected abstract fun executeTransitionActions(source: S, trIndex: Int)
+    /**
+     * Execute `<assign>` actions for a transition.
+     *
+     * Returns null for normal flow; a non-null Event signals that an
+     * assign-time check raised an internal event that the run loop
+     * re-pumps through processTransition. See RFC
+     * `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 for the bytes
+     * cap-violation case.
+     */
+    protected abstract fun executeTransitionActions(source: S, trIndex: Int): E?
 }

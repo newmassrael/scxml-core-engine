@@ -2765,7 +2765,10 @@ fn build_procedure_states_with_assigns(
             )
         })
         .collect();
-    let cap_check_target = matches!(target, ExprTarget::Cpp | ExprTarget::Rust);
+    let cap_check_target = matches!(
+        target,
+        ExprTarget::Cpp | ExprTarget::Rust | ExprTarget::Kotlin
+    );
 
     m.states
         .iter()
@@ -2919,7 +2922,11 @@ fn render_procedure_kotlin(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
-    let common = build_procedure_common(m, false);
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 commit 3c: Kotlin
+    // ProcedureStateMachine.executeTransitionActions now returns Event?,
+    // so opt into the always-emit ErrorExecution variant for the
+    // cap-check raise path.
+    let common = build_procedure_common(m, true);
 
     // Input fields
     let input_fields: Vec<serde_json::Value> = m

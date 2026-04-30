@@ -2469,6 +2469,58 @@ mod tests {
         );
     }
 
+    /// Forge Kotlin procedure codegen mirrors cpp/Rust commit 3a/3b
+    /// contract: bytes-typed assigns wrap in temp+check, return
+    /// Event.ErrorExecution on overflow, executeTransitionActions
+    /// signature now returns `Event?` per RFC §8 commit 3c.
+    #[test]
+    fn forge_kotlin_procedure_emits_bytes_cap_check() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="req" version="1.0">
+  <datamodel>
+    <data id="seed" sce:type="bytes" sce:direction="internal" sce:max-size="32"/>
+  </datamodel>
+  <state id="req">
+    <onentry><send sce:service="Probe" sce:response-max-size="32"/></onentry>
+    <transition event="ok" target="done">
+      <assign location="seed" expr="_event.data"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "bytes_probe",
+            diagnostic_label: "bytes_probe.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Kotlin)
+            .expect("forge kotlin codegen must succeed for a bytes-bounded probe");
+        assert_eq!(out.files.len(), 1);
+        let (_, body) = &out.files[0];
+
+        assert!(
+            body.contains("ErrorExecution"),
+            "Event.ErrorExecution must be emitted in Kotlin enum; full source:\n{body}",
+        );
+        assert!(
+            body.contains("override fun executeTransitionActions(source: State, trIndex: Int): Event?"),
+            "executeTransitionActions must return Event?; full source:\n{body}",
+        );
+        assert!(
+            body.contains("scopeTmp"),
+            "bytes-typed assign must use temp shape; full source:\n{body}",
+        );
+        assert!(
+            body.contains("if (scopeTmp.size > 32)"),
+            "cap-check must use the resolved cap (32 from sce:max-size); full source:\n{body}",
+        );
+        assert!(
+            body.contains("return Event.ErrorExecution"),
+            "cap violation path must raise Event.ErrorExecution; full source:\n{body}",
+        );
+    }
+
     #[test]
     fn compile_from_string_lang_c11_emits_h_and_c_pair() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
