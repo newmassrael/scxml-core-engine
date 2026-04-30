@@ -553,6 +553,11 @@ fn forge_codec_tail() {
     assert_standalone_forge("codec_tail", "codec_tail.h");
 }
 
+#[test]
+fn forge_codec_length_ref() {
+    assert_standalone_forge("codec_length_ref", "codec_length_ref.h");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Kotlin conformance tests ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -645,6 +650,11 @@ fn forge_kotlin_codec_tail() {
     assert_standalone_forge_kotlin("codec_tail", "CodecTail.kt");
 }
 
+#[test]
+fn forge_kotlin_codec_length_ref() {
+    assert_standalone_forge_kotlin("codec_length_ref", "CodecLengthRef.kt");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Rust conformance tests ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -735,6 +745,11 @@ fn forge_rust_codec_subbyte() {
 #[test]
 fn forge_rust_codec_tail() {
     assert_standalone_forge_rust("codec_tail", "codec_tail.rs");
+}
+
+#[test]
+fn forge_rust_codec_length_ref() {
+    assert_standalone_forge_rust("codec_length_ref", "codec_length_ref.rs");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -838,6 +853,11 @@ fn forge_go_codec_tail() {
     assert_standalone_forge_go("codec_tail", "codec_tail.go");
 }
 
+#[test]
+fn forge_go_codec_length_ref() {
+    assert_standalone_forge_go("codec_length_ref", "codec_length_ref.go");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Python conformance tests ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -939,6 +959,11 @@ fn forge_python_codec_tail() {
     assert_standalone_forge_python("codec_tail", "codec_tail.py");
 }
 
+#[test]
+fn forge_python_codec_length_ref() {
+    assert_standalone_forge_python("codec_length_ref", "codec_length_ref.py");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── C11 conformance tests ────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -972,6 +997,11 @@ fn forge_c11_codec_subbyte() {
 #[test]
 fn forge_c11_codec_tail() {
     assert_standalone_forge_c("codec_tail", "codec_tail.c.h");
+}
+
+#[test]
+fn forge_c11_codec_length_ref() {
+    assert_standalone_forge_c("codec_length_ref", "codec_length_ref.c.h");
 }
 
 // ── Crossfile codec (C11) ───────────────────────────────────

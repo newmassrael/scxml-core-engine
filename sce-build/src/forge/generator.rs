@@ -905,10 +905,14 @@ fn render_codec(
         .fields
         .iter()
         .map(|f| {
+            let length_byte_off = resolve_length_field_byte_off(&m.fields, f);
             let mut obj = serde_json::Map::new();
             obj.insert("id".into(), l.codec_field_id(&f.id).into());
             obj.insert(type_key.into(), l.type_name(&f.sce_type).into());
-            obj.insert("decode_expr".into(), generate_decode_expr(f, m.default_endian, lang).into());
+            obj.insert(
+                "decode_expr".into(),
+                generate_decode_expr(f, m.default_endian, lang, length_byte_off).into(),
+            );
             obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
             obj.insert("byte_off".into(), f.byte_offset.into());
             if f.is_variable_length() {
@@ -968,11 +972,35 @@ fn render_codec(
 
 // ── Codec expression generation (unified) ─────────────────────
 
+/// Resolve the byte offset of a field's `length_field` reference within
+/// the codec's own `fields` slice. Returns `None` when the field has no
+/// `length_field` attribute or when no peer matches the referenced id.
+fn resolve_length_field_byte_off(
+    fields: &[CodecField],
+    field: &CodecField,
+) -> Option<u32> {
+    field.length_field.as_ref().and_then(|name| {
+        fields.iter().find(|x| x.id == *name).map(|x| x.byte_offset)
+    })
+}
+
 /// Generate decode expression for a single codec field.
+///
+/// `length_field_byte_off` is pre-resolved by the caller for
+/// `BitSize::LengthRef` fields: in 5/6 backends the decode body is one
+/// struct-construction expression, so the rhs cannot read the
+/// just-initialised sibling `length_field` by name (C++ designated-init,
+/// Kotlin data-class call, Rust struct literal, Go composite literal,
+/// Python keyword args all evaluate in the *outer* scope where the field
+/// name is shadowed by a builtin or undefined). The arms therefore index
+/// `raw[len_byte_off]` directly. C11 emits multi-statement decode and
+/// reads `out->{length_field}` after the prior assignment, so this
+/// parameter is unused there.
 fn generate_decode_expr(
     field: &CodecField,
     default_endian: Endian,
     lang: crate::generator::Language,
+    length_field_byte_off: Option<u32>,
 ) -> String {
     use crate::generator::Language;
     let byte_off = field.byte_offset;
@@ -1025,18 +1053,22 @@ fn generate_decode_expr(
             Language::C11 => String::new(),
         },
         BitSize::LengthRef => {
-            let len_field = field.length_field.as_deref().unwrap_or("0");
+            // Single-statement decode bodies cannot reference the just-set
+            // sibling field — index `raw` at the resolved length-field
+            // byte offset instead. C11 reads the post-assignment struct
+            // field through `out->...` in a separate template branch.
+            let len_off = length_field_byte_off.unwrap_or(0);
             match lang {
                 Language::Cpp =>
-                    format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + {len_field})"),
+                    format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + raw[{len_off}])"),
                 Language::Kotlin =>
-                    format!("raw.copyOfRange({byte_off}, {byte_off} + {len_field}.toInt())"),
+                    format!("raw.copyOfRange({byte_off}, {byte_off} + raw[{len_off}].toInt())"),
                 Language::Rust =>
-                    format!("raw[{byte_off}..{byte_off} + {len_field} as usize].to_vec()"),
+                    format!("raw[{byte_off}..{byte_off} + raw[{len_off}] as usize].to_vec()"),
                 Language::Go =>
-                    format!("raw[{byte_off}:{byte_off}+int({len_field})]"),
+                    format!("raw[{byte_off}:{byte_off}+int(raw[{len_off}])]"),
                 Language::Python =>
-                    format!("raw[{byte_off}:{byte_off} + {len_field}]"),
+                    format!("raw[{byte_off}:{byte_off} + raw[{len_off}]]"),
                 Language::C11 => String::new(),
             }
         }
@@ -4965,7 +4997,7 @@ fn render_inline_codec_member(
                  \x20           return {struct_name}{{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Cpp);
+                let decode = generate_decode_expr(f, default_endian, Language::Cpp, resolve_length_field_byte_off(codec_fields, f));
                 code.push_str(&format!("                .{} = {},\n", f.id, decode));
             }
             code.push_str("            };\n        }\n");
@@ -5002,7 +5034,7 @@ fn render_inline_codec_member(
                  \x20               return {struct_name}(\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Kotlin);
+                let decode = generate_decode_expr(f, default_endian, Language::Kotlin, resolve_length_field_byte_off(codec_fields, f));
                 code.push_str(&format!("                    {},\n", decode));
             }
             code.push_str("                )\n            }\n        }\n");
@@ -5039,7 +5071,7 @@ fn render_inline_codec_member(
                  \x20       Some(Self {{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Rust);
+                let decode = generate_decode_expr(f, default_endian, Language::Rust, resolve_length_field_byte_off(codec_fields, f));
                 let field_id = filters::to_snake_case(f.id.clone());
                 type_def.push_str(&format!("            {field_id}: {decode},\n"));
             }
@@ -5076,7 +5108,7 @@ fn render_inline_codec_member(
                  \treturn &{struct_name}{{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Go);
+                let decode = generate_decode_expr(f, default_endian, Language::Go, resolve_length_field_byte_off(codec_fields, f));
                 let field_id = filters::to_pascal_case(f.id.clone());
                 type_def.push_str(&format!("\t\t{field_id}: {decode},\n"));
             }
@@ -5116,7 +5148,7 @@ fn render_inline_codec_member(
                  \x20           return {struct_name}(\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Python);
+                let decode = generate_decode_expr(f, default_endian, Language::Python, resolve_length_field_byte_off(codec_fields, f));
                 code.push_str(&format!("                {decode},\n"));
             }
             code.push_str("            )\n");
@@ -5173,7 +5205,7 @@ fn render_inline_codec_member(
             ));
             for f in codec_fields {
                 let field_id = filters::to_snake_case(f.id.clone());
-                let decode = generate_decode_expr(f, default_endian, Language::C11);
+                let decode = generate_decode_expr(f, default_endian, Language::C11, resolve_length_field_byte_off(codec_fields, f));
                 code.push_str(&format!("    out->{field_id} = {decode};\n"));
             }
             code.push_str("    return true;\n}\n\n");
