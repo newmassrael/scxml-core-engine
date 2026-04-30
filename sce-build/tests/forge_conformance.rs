@@ -1398,6 +1398,31 @@ fn forge_crossfile_validator_lookup_python() {
     assert_standalone_forge_python("crossfile_validator_lookup", "crossfile_validator_lookup.py");
 }
 
+#[test]
+fn forge_crossfile_validator_interpolation_cpp() {
+    assert_standalone_forge("crossfile_validator_interpolation", "crossfile_validator_interpolation.h");
+}
+
+#[test]
+fn forge_crossfile_validator_interpolation_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_validator_interpolation", "CrossfileValidatorInterpolation.kt");
+}
+
+#[test]
+fn forge_crossfile_validator_interpolation_rust() {
+    assert_standalone_forge_rust("crossfile_validator_interpolation", "crossfile_validator_interpolation.rs");
+}
+
+#[test]
+fn forge_crossfile_validator_interpolation_go() {
+    assert_standalone_forge_go("crossfile_validator_interpolation", "crossfile_validator_interpolation.go");
+}
+
+#[test]
+fn forge_crossfile_validator_interpolation_python() {
+    assert_standalone_forge_python("crossfile_validator_interpolation", "crossfile_validator_interpolation.py");
+}
+
 // ── Inline kind conformance ──────────────────────────────────
 
 #[test]
@@ -2054,6 +2079,11 @@ fn crossfile_matrix_validator_condition() {
 #[test]
 fn crossfile_matrix_validator_lookup() {
     assert_crossfile_codegen_languages("crossfile_validator_lookup", SIX_BACKENDS);
+}
+
+#[test]
+fn crossfile_matrix_validator_interpolation() {
+    assert_crossfile_codegen_languages("crossfile_validator_interpolation", SIX_BACKENDS);
 }
 
 // ═══════════════════════════════════════════════════════════════

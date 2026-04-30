@@ -407,6 +407,25 @@
         {"args": [-1],  "expected": {"valid": false, "reason": "code_out_of_range"},   "note": "code=-1 -> below range; range check fires first, lookup never runs"},
         {"args": [1001],"expected": {"valid": false, "reason": "code_out_of_range"},   "note": "code=1001 -> above range; same range-first ordering"}
       ]
+    },
+    "crossfile_validator_interpolation": {
+      "fixture": "CrossfileValidatorInterpolation::validate",
+      "signature": "(rpm: u16) -> ValidationResult{valid, reason}",
+      "description": "Cross-file composition fixture: validator imports interpolation_1d_linear as `torqueLimitFor` and uses the result inside a plausibility predicate (`torqueLimitFor(rpm) > 200.0`). The imported interpolation has axis-rpm = [800, 1200, 2000, 3000, 4000, 6000] and values = [120, 145, 200, 230, 210, 180] with out-of-bounds=clamp, so the call result is always a plain f64 — no Option unwrap, mirrors crossfile_validator_transform's direct-call shape. The C11 backend's flat-scope `discover_primary_function` returns the constant `\"lookup\"` for interpolation, which composes with the namespace into `<m.name>_lookup` matching `render_interpolation`'s C11 emit; this fixture is the first cross-file consumer that pins that contract. Range constraint on `rpm` is `[500, 7000]` so out-of-range cases never reach the interpolation.",
+      "sequence": [
+        {"args": [800],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "exact key -> torque=120; 120 > 200 false"},
+        {"args": [1200], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "exact key -> torque=145"},
+        {"args": [2000], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "exact key -> torque=200; strict > 200 false"},
+        {"args": [2500], "expected": {"valid": true,  "reason": ""},                    "note": "interp midpoint -> 200 + 0.5*(230-200) = 215; plausibility passes"},
+        {"args": [3000], "expected": {"valid": true,  "reason": ""},                    "note": "exact key -> torque=230; passes"},
+        {"args": [4000], "expected": {"valid": true,  "reason": ""},                    "note": "exact key -> torque=210; passes"},
+        {"args": [5000], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "interp midpoint between 4000/6000 -> 210 + 0.5*(180-210) = 195"},
+        {"args": [6000], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "exact key -> torque=180"},
+        {"args": [500],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "in range but below first axis (800); clamp -> 120"},
+        {"args": [7000], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "in range but above last axis (6000); clamp -> 180"},
+        {"args": [499],  "expected": {"valid": false, "reason": "rpm_out_of_range"},    "note": "below range; check fires first, interp never runs"},
+        {"args": [7001], "expected": {"valid": false, "reason": "rpm_out_of_range"},    "note": "above range; same range-first ordering"}
+      ]
     }
   },
 

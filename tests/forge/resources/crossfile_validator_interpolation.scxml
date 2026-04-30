@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — validator importing interpolation.
+     Validator's plausibility predicate calls into an imported 1D linear interpolation
+     so the C11 backend's flat-scope identifier resolution is exercised across the
+     import boundary the same way crossfile_validator_transform / _condition / _lookup
+     exercise their kinds. The imported interpolation uses out-of-bounds="clamp" so
+     the call result is always a plain f64 with no Option unwrap, letting the
+     plausibility comparison flow directly per language. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="interpolation_1d_linear.scxml" kind="interpolation" as="torqueLimitFor"/>
+
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"
+          sce:range-min="500" sce:range-max="7000"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="torqueLimitFor(rpm) > 200.0"/>
+  </datamodel>
+</scxml>

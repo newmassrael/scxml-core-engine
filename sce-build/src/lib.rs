@@ -821,13 +821,29 @@ fn discover_primary_function(
                 }
             })
         }
-        forge::model::ForgeDocument::Interpolation(_) => {
+        forge::model::ForgeDocument::Interpolation(m) => {
+            // Cpp / Kotlin / Rust render_interpolation emits a struct/object/
+            // impl wrapper named `<Pascal>` with a `lookup` member. The
+            // bare callsite `lookup(...)` resolves only when called from
+            // inside that wrapper; cross-file consumers need the wrapper
+            // qualifier (cpp `<Pascal>::lookup`, kotlin `<Pascal>.lookup`,
+            // rust `<Pascal>::lookup`). Go / Python / C11 emit free
+            // functions / package-level `Lookup` so the bare name is
+            // already resolvable through the import include_stmt. This
+            // mirrors the conformance harness fragments (cpp uses
+            // `<Pascal>::<Pascal>::lookup`, rust `<Pascal>::lookup`,
+            // kotlin `<Pascal>.lookup`) — the cross-file callsite
+            // contract has to match those for the imported symbol to
+            // resolve.
+            let pascal = filters::to_pascal_case(m.name.clone());
             Some(match language {
-                generator::Language::Cpp | generator::Language::Kotlin => {
-                    "lookup".to_string()
+                generator::Language::Cpp | generator::Language::Rust => {
+                    format!("{pascal}::lookup")
                 }
-                generator::Language::Rust
-                | generator::Language::Python
+                generator::Language::Kotlin => {
+                    format!("{pascal}.lookup")
+                }
+                generator::Language::Python
                 | generator::Language::C11 => {
                     "lookup".to_string()
                 }
