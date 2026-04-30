@@ -2767,7 +2767,7 @@ fn build_procedure_states_with_assigns(
         .collect();
     let cap_check_target = matches!(
         target,
-        ExprTarget::Cpp | ExprTarget::Rust | ExprTarget::Kotlin
+        ExprTarget::Cpp | ExprTarget::Rust | ExprTarget::Kotlin | ExprTarget::Go
     );
 
     m.states
@@ -3371,7 +3371,11 @@ fn render_procedure_go(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
-    let common = build_procedure_common(m, false);
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 commit 3d: Go
+    // ProcedurePolicy.ExecuteTransitionActions now returns (raised,
+    // ok); opt into the always-emit ErrorExecution event constant for
+    // the cap-check raise path.
+    let common = build_procedure_common(m, true);
 
     // Build rename map: varName → p.varName (Go struct field access)
     let var_name_strings: Vec<String> = m

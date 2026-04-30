@@ -66,7 +66,15 @@ type ProcedurePolicy interface {
 	// ProcessTransition processes a transition; returns (nextState, trIndex, hasAssigns, ok).
 	ProcessTransition(state int, event int) (nextState int, trIndex int, hasAssigns bool, ok bool)
 	// ExecuteTransitionActions executes <assign> actions for a transition.
-	ExecuteTransitionActions(source int, trIndex int)
+	//
+	// Returns (raised, ok). When ok is false, the transition completed
+	// normally and the loop advances to the target state. When ok is
+	// true, an assign-time check raised the internal event `raised`
+	// (e.g. RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes
+	// cap violation); the loop re-pumps the source state with that
+	// event so a fixture's `<transition event="error.execution">`
+	// picks it up.
+	ExecuteTransitionActions(source int, trIndex int) (raised int, ok bool)
 }
 
 // ── Execution engine ────────────────────────────────────────────
@@ -96,7 +104,12 @@ func RunProcedure(policy ProcedurePolicy) ProcedureRunResult {
 			break
 		}
 		if hasAssigns {
-			policy.ExecuteTransitionActions(current, trIndex)
+			if raised, raisedOk := policy.ExecuteTransitionActions(current, trIndex); raisedOk {
+				// Re-pump the source state with the raised event
+				// instead of advancing to nextState.
+				event = raised
+				continue
+			}
 		}
 		current = nextState
 		event = policy.NoneEvent()
