@@ -37,8 +37,9 @@ enum class State : uint8_t {
 
 enum class Event : uint8_t {
     NONE = 0,
-    Fail = 1,
-    Ok = 2
+    ErrorExecution = 1,
+    Fail = 2,
+    Ok = 3
 };
 
 // ── State machine class ──────────────────────────────────────────
@@ -172,8 +173,15 @@ public:
     }
 
     // ── Transition actions (<assign> in transitions) ─────────────
+    //
+    // Returns std::nullopt for normal flow; std::optional<Event> with a
+    // value when an assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
+    // §3 B4 bytes cap violation) raises an internal event. The shared
+    // run_procedure() loop re-processes the source state with that event
+    // so a fixture's `<transition event="error.execution">` can pick it up.
 
-    void executeTransitionActions([[maybe_unused]] State source, [[maybe_unused]] std::size_t trIndex) {
+    [[nodiscard]] std::optional<Event> executeTransitionActions([[maybe_unused]] State source, [[maybe_unused]] std::size_t trIndex) {
+        return std::nullopt;
     }
 
     // ── Engine-visible datamodel slots (called by run_procedure) ──

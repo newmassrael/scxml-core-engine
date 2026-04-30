@@ -28,8 +28,9 @@ const (
 
 const (
 	eventNone = 0
-	eventFail = 1
-	eventOk = 2
+	eventErrorExecution = 1
+	eventFail = 2
+	eventOk = 3
 )
 
 // ── Generated procedure policy ──────────────────────────────────
@@ -118,12 +119,25 @@ func (p *policy) ProcessTransition(s int, ev int) (int, int, bool, bool) {
 	return 0, 0, false, false
 }
 
-func (p *policy) ExecuteTransitionActions(source int, trIndex int) {
+// Returns (raised, ok). When ok is true the loop re-processes the
+// source state with the raised event (RFC
+// `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes cap violation
+// raises eventErrorExecution); ok=false signals normal flow.
+func (p *policy) ExecuteTransitionActions(source int, trIndex int) (int, bool) {
+	_ = source
+	_ = trIndex
 	if source == stateSendRequest {
 		if trIndex == 0 {
-			p.response = []byte(p.pendingEventData)
+			{
+				scopeTmp := []byte(p.pendingEventData)
+				if len(scopeTmp) > 256 {
+					return eventErrorExecution, true
+				}
+				p.response = scopeTmp
+			}
 		}
 	}
+	return 0, false
 }
 
 // ── Convenience wrapper function ────────────────────────────────

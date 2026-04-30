@@ -32,8 +32,9 @@ class State(IntEnum):
 
 class Event(IntEnum):
     NONE = 0
-    Fail = 1
-    Ok = 2
+    ErrorExecution = 1
+    Fail = 2
+    Ok = 3
 
 
 _FINAL_STATES = frozenset([State.Done, State.Error])
@@ -103,10 +104,19 @@ class CrossfileProcedureCodec(ProcedureStateMachine):
 
     def _execute_transition_actions(
         self, source: int, tr_index: int
-    ) -> None:
+    ) -> Optional[int]:
+        # Returns None for normal flow; non-None signals that an
+        # assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
+        # §3 B4 bytes cap violation) raised an internal event that the
+        # shared run_to_completion loop re-pumps through
+        # _process_transition.
         if source == State.SendRequest:
             if tr_index == 0:
-                self._response = self._pending_event_data.encode()
+                _scope_tmp = self._pending_event_data.encode()
+                if len(_scope_tmp) > 256:
+                    return Event.ErrorExecution
+                self._response = _scope_tmp
+        return None
 
 
 # ── Convenience wrapper function ─────────────────────────────────

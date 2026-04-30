@@ -42,8 +42,9 @@ pub enum State {
 #[allow(dead_code)]
 pub enum Event {
     None = 0,
-    Fail = 1,
-    Ok = 2,
+    ErrorExecution = 1,
+    Fail = 2,
+    Ok = 3,
 }
 
 // ── Generated procedure policy ──────────────────────────────────
@@ -167,12 +168,18 @@ impl ProcedurePolicy for CrossfileProcedureCodecMutate {
         None
     }
 
-    fn execute_transition_actions(&mut self, source: State, tr_index: usize) {
+    fn execute_transition_actions(&mut self, source: State, tr_index: usize) -> Option<Event> {
+        // Returns None for normal flow; Some(Event) when an assign-time
+        // check (RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes
+        // cap violation) raises an internal event that the shared
+        // run_procedure() loop re-pumps through process_transition.
+        let _ = (source, tr_index);  // pacify unused-warning for empty bodies
         if source == State::Init {
             if tr_index == 0 {
                 self.frame.msg_id = self.msg_id;
             }
         }
+        None
     }
 }
 

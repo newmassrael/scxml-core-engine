@@ -22,6 +22,7 @@ enum class State {
 
 enum class Event {
     NONE,
+    ErrorExecution,
     Fail,
     Ok
 }
@@ -83,7 +84,12 @@ class ProcedureStartupCheck : ProcedureStateMachine<State, Event>() {
         return null
     }
 
-    override fun executeTransitionActions(source: State, trIndex: Int) {
+    // Returns null for normal flow; a non-null Event signals that an
+    // assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
+    // §3 B4 bytes cap violation) raised an internal event that the
+    // shared runToCompletion loop re-pumps through processTransition.
+    override fun executeTransitionActions(source: State, trIndex: Int): Event? {
+        return null
     }
 
     companion object {
