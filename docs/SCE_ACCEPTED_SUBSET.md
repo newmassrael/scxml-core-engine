@@ -380,7 +380,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (153 codes)
+## Appendix — `DiagnosticCode` index (156 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -552,6 +552,8 @@ or SCE-internal issues.
 | `generate/template-load` | Generate | SCE template asset load failure |
 | `generate/template-render` | Generate | SCE template rendering failure |
 | `generate/unsupported-feature` | Generate | SCXML construct exists in the model but the requested target language has no codegen path for it (e.g. `<invoke type="sce:mesh-rpc">` with `--lang rust`) |
+| `codegen/mcu-class-kind-on-non-mcu-language` | Generate | Shell-only at PR-0; producer + matrix walker land with the algorithm kind in Phase A3. MCU-class kind authored against a non-MCU language target (watching-zenoh RFC §5.J.4) |
+| `codegen/generic-kind-backend-emit-missing` | Generate | Shell-only at PR-0; producer lands with the matrix walker. Generic-class kind expected to emit on a backend per the parity matrix but the per-kind template is absent (SCE bug, watching-zenoh RFC §5.J.5) |
 | `io/filesystem` | Io | Generic filesystem failure |
 | `cli/read-input` | Cli | Input file read error |
 | `cli/write-output` | Cli | Output file write error |

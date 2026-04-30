@@ -435,6 +435,17 @@ pub enum DiagnosticCode {
     #[serde(rename = "generate/unsupported-feature")]
     GenerateUnsupportedFeature,
 
+    // ── Codegen matrix invariants (watching-zenoh RFC §5.J.4 / §5.J.5).
+    //    Shell-only at PR-0 (Phase A1): variants present so downstream
+    //    consumers can pin the wire IDs; producer + matrix walker land
+    //    with the algorithm kind in Phase A3. Stage = Generate
+    //    (codegen-time errors share the existing repair-routing key).
+    //    See `docs/rfc-sce-protocol-synthesis.md` §5.J.4 commitment. ──
+    #[serde(rename = "codegen/mcu-class-kind-on-non-mcu-language")]
+    CodegenMcuClassKindOnNonMcuLanguage,
+    #[serde(rename = "codegen/generic-kind-backend-emit-missing")]
+    CodegenGenericKindBackendEmitMissing,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -726,6 +737,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         GenerateTemplateLoad,
         GenerateTemplateRender,
         GenerateUnsupportedFeature,
+        // Codegen matrix shells (watching-zenoh RFC §5.J.4 / §5.J.5)
+        CodegenMcuClassKindOnNonMcuLanguage,
+        CodegenGenericKindBackendEmitMissing,
         // Io
         IoFilesystem,
         // Cli
@@ -1057,6 +1071,8 @@ impl DiagnosticCode {
             | GenerateTemplateLoad
             | GenerateTemplateRender
             | GenerateUnsupportedFeature
+            | CodegenMcuClassKindOnNonMcuLanguage
+            | CodegenGenericKindBackendEmitMissing
             | IoFilesystem
             | CliUnknownLanguage
             | CliUnsupportedLanguage
@@ -1162,6 +1178,8 @@ impl DiagnosticCode {
             GenerateTemplateLoad => "generate/template-load",
             GenerateTemplateRender => "generate/template-render",
             GenerateUnsupportedFeature => "generate/unsupported-feature",
+            CodegenMcuClassKindOnNonMcuLanguage => "codegen/mcu-class-kind-on-non-mcu-language",
+            CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2098,6 +2116,22 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
+        GenerateError::CodegenMcuClassKindOnNonMcuLanguage { kind, language } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(language.clone()),
+            fix: None,
+            key_fragments: vec![kind.clone(), language.clone()],
+        },
+        GenerateError::CodegenGenericKindBackendEmitMissing { kind, language } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenGenericKindBackendEmitMissing,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![kind.clone(), language.clone()],
+        },
     }
 }
 
@@ -3032,6 +3066,27 @@ mod tests {
                 })
                 .into(),
                 r#"{"v":1,"id":"fnv1a:b3b0c2c9723a4ca2","code":"xml/template-too-deep","stage":"xml","message":"<sce:use> template nesting exceeds depth limit of 10"}"#,
+            ),
+            // ── Watching-zenoh RFC §5.J.4 / §5.J.5 codegen matrix shells.
+            //    Producer constructors are reachable; matrix walker that
+            //    invokes them lands with the algorithm kind in Phase A3. ──
+            (
+                "forge/codegen-mcu-class-kind-on-non-mcu-language",
+                GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
+                    kind: "link".into(),
+                    language: "kotlin".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0e78c9c56b3c4d51","code":"codegen/mcu-class-kind-on-non-mcu-language","stage":"generate","message":"MCU-class kind 'link' cannot be lowered to language 'kotlin': only rust and c11 have MCU substrate (watching-zenoh RFC §5.J.4)","actual":"kotlin"}"#,
+            ),
+            (
+                "forge/codegen-generic-kind-backend-emit-missing",
+                GenerateError::CodegenGenericKindBackendEmitMissing {
+                    kind: "algorithm".into(),
+                    language: "python".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (watching-zenoh RFC §5.J.4 expects all six backends to emit)"}"#,
             ),
         ]
     }
@@ -4251,6 +4306,8 @@ mod tests {
             | GenerateTemplateLoad
             | GenerateTemplateRender
             | GenerateUnsupportedFeature
+            | CodegenMcuClassKindOnNonMcuLanguage
+            | CodegenGenericKindBackendEmitMissing
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -4577,7 +4634,10 @@ mod tests {
                 | ImportKindMismatch | ImportNotForge | ImportReadError
                 | ManifestCircularDependency | ManifestIo | GenerateInvalidConfig
                 | GenerateTemplateLoad | GenerateTemplateRender
-                | GenerateUnsupportedFeature | IoFilesystem
+                | GenerateUnsupportedFeature
+                | CodegenMcuClassKindOnNonMcuLanguage
+                | CodegenGenericKindBackendEmitMissing
+                | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
                 | CliMissingMetadataField | CliNotADirectory
@@ -4658,10 +4718,12 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            154,
+            156,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 153 distinct variants to match the DiagnosticCode \
-             enum (RFC §W5 added ScxmlTopLevelScriptUnloaded; 152 → 153).",
+             expected 156 distinct variants to match the DiagnosticCode \
+             enum (watching-zenoh RFC §5.J.4 / §5.J.5 added \
+             CodegenMcuClassKindOnNonMcuLanguage + \
+             CodegenGenericKindBackendEmitMissing shells; 154 → 156).",
         );
     }
 

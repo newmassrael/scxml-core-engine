@@ -511,6 +511,30 @@ pub enum GenerateError {
     /// `--lang` or wait on backend support.
     #[error("feature unsupported in this language: {0}")]
     UnsupportedFeature(String),
+
+    /// Watching-zenoh RFC §5.J.4: an MCU-class kind (link / worker /
+    /// buffer-pool / reassembly, or an MCU-only codec sub-feature)
+    /// was authored against a language target outside `(rust, c11)`.
+    /// MCU-class kinds bottom out on the rust/c11 substrate only;
+    /// binding them to cpp/kotlin/go/python has no defined emitter
+    /// shape. Producer + matrix walker land with the algorithm kind
+    /// in Phase A3.
+    #[error(
+        "MCU-class kind '{kind}' cannot be lowered to language '{language}': \
+         only rust and c11 have MCU substrate (watching-zenoh RFC §5.J.4)"
+    )]
+    CodegenMcuClassKindOnNonMcuLanguage { kind: String, language: String },
+
+    /// Watching-zenoh RFC §5.J.5: a generic-class kind expected to
+    /// emit on every backend per the parity matrix is missing its
+    /// per-kind Jinja2 template for the requested language. Template
+    /// absence is an SCE bug, not a downstream concern. Producer +
+    /// matrix walker land with the algorithm kind in Phase A3.
+    #[error(
+        "generic-class kind '{kind}': template missing for language '{language}' \
+         (watching-zenoh RFC §5.J.4 expects all six backends to emit)"
+    )]
+    CodegenGenericKindBackendEmitMissing { kind: String, language: String },
 }
 
 /// CLI exit code by error category.
