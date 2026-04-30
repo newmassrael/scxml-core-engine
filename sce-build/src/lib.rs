@@ -2630,6 +2630,66 @@ mod tests {
         );
     }
 
+    /// Forge C11 procedure L2 codegen completes the 6-backend
+    /// contract (cpp/Rust/Kotlin/Go/Python + C11) for the bytes
+    /// cap-check raise path. C uses a stack-bounded
+    /// sce_forge_bytes_t struct (no heap, RFC §5.J.2 F1) and a
+    /// (raised, event) tuple analogue from
+    /// sce/forge/procedure.h. RFC §8 commit 4a — codegen path
+    /// only; conformance harness wiring lands in commit 4b.
+    #[test]
+    fn forge_c11_procedure_emits_bytes_cap_check() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="req" version="1.0">
+  <datamodel>
+    <data id="seed" sce:type="bytes" sce:direction="internal" sce:max-size="32"/>
+  </datamodel>
+  <state id="req">
+    <onentry><send sce:service="Probe" sce:response-max-size="32"/></onentry>
+    <transition event="ok" target="done">
+      <assign location="seed" expr="_event.data"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "bytes_probe",
+            diagnostic_label: "bytes_probe.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("forge c11 codegen must succeed for a bytes-bounded probe");
+        assert_eq!(out.files.len(), 1);
+        let (_, body) = &out.files[0];
+
+        // Always-emitted EVENT_ERROR_EXECUTION enum value.
+        assert!(
+            body.contains("EVENT_ERROR_EXECUTION"),
+            "C11 enum must include EVENT_ERROR_EXECUTION; full source:\n{body}",
+        );
+        // Cap-check raise typedef from the new runtime header.
+        assert!(
+            body.contains("sce_forge_procedure_raise_t"),
+            "execute_transition_actions must return sce_forge_procedure_raise_t; full source:\n{body}",
+        );
+        // Bytes-typed assign uses the temp+check shape with the
+        // resolved cap (32 from sce:max-size).
+        assert!(
+            body.contains("sce_forge_bytes_t _scope_tmp"),
+            "bytes-typed assign must use _scope_tmp shape; full source:\n{body}",
+        );
+        assert!(
+            body.contains("if (_scope_tmp.len > 32)"),
+            "cap-check must use the resolved cap (32); full source:\n{body}",
+        );
+        // Raise path sets _r.raised + _r.event = ErrorExecution.
+        assert!(
+            body.contains("_r.raised = true"),
+            "cap violation path must set _r.raised; full source:\n{body}",
+        );
+    }
+
     #[test]
     fn compile_from_string_lang_c11_emits_h_and_c_pair() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>

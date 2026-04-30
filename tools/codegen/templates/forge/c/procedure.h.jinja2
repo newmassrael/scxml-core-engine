@@ -4,13 +4,6 @@
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure") */
 /* Runtime: {{ runtime_dep }} */
 /* Do not edit — regenerate from the source SCXML file. */
-/*
- * RFC §5.J.2 Phase D-1: L1 (guard-only) procedure path. Pure switch/case
- * over a state enum, driven by a 1000-iteration safety loop. No service
- * handler, no helper DI, no event queue, no donedata — those land in
- * Phase D-2 once the matching `sce-forge-runtime/c/include/sce/forge/
- * procedure.h` runtime header arrives.
- */
 
 #ifndef {{ guard }}
 #define {{ guard }}
@@ -19,6 +12,249 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
+{% if is_l2 %}
+#include "sce/forge/limits.h"
+#include "sce/forge/procedure.h"
+
+/* ── State and Event enums ─────────────────────────────────────── */
+
+typedef enum {
+{% for s in state_enum %}
+    {{ s.enum_name }} = {{ s.index }}{% if not loop.last %},{% endif %}
+
+{% endfor %}
+} {{ state_typedef }};
+
+typedef enum {
+    {{ event_none }} = 0,
+{% for e in event_enum %}
+    {{ e.enum_name }} = {{ e.index }}{% if not loop.last %},{% endif %}
+
+{% endfor %}
+} {{ event_typedef }};
+
+/* ── State struct (one instance per execute() call) ─────────────── */
+
+typedef struct {
+{% for f in input_fields %}
+    {{ f.c_type }} {{ f.id }};
+{% endfor %}
+{% for f in internal_fields %}
+    {{ f.c_type }} {{ f.id }};
+{% endfor %}
+    /* Service handler (set by execute()) */
+    sce_forge_procedure_service_handler_t service_handler;
+    void *service_handler_user_data;
+{% for h in helper_fields %}
+    /* Helper DI: <sce:helper name="{{ h.id }}"> */
+    {{ h.return_type }} (*{{ h.id }})({{ h.params_type }}, void *);
+    void *{{ h.id }}_user_data;
+{% endfor %}
+    /* W3C SCXML 5.10: pending _event.data binding (bytes-typed). */
+    sce_forge_bytes_t pending_event_data;
+} {{ state_struct }};
+
+/* ── Done data storage (one static const array per <final> state) ── */
+{% for s in final_states_with_donedata %}
+
+static const sce_forge_procedure_done_param_t {{ snake }}_done_data_{{ s.name_snake }}[] = {
+{% for p in s.done_params %}
+    { "{{ p.name }}", {{ p.expr }} }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+};
+static const size_t {{ snake }}_done_data_{{ s.name_snake }}_count =
+    sizeof({{ snake }}_done_data_{{ s.name_snake }})
+        / sizeof({{ snake }}_done_data_{{ s.name_snake }}[0]);
+{% endfor %}
+
+/* ── Static step functions ─────────────────────────────────────── */
+
+static inline {{ event_typedef }} {{ snake }}_execute_entry_actions(
+    {{ state_struct }} *_st, {{ state_typedef }} _state) {
+    (void)_st;
+    switch (_state) {
+{% for s in states_with_entry %}
+        case {{ s.enum_name }}: {
+{% for send in s.sends %}
+            if (_st->service_handler != NULL) {
+                sce_forge_procedure_service_request_t _req = {0};
+                _req.service = "{{ send.service }}";
+{% if send.subfunc %}
+                _req.has_subfunc = true;
+                _req.subfunc = "{{ send.subfunc }}";
+{% endif %}
+{% if send.has_addr %}
+                _req.has_addr = true;
+                _req.addr = {{ send.addr_expr }};
+{% endif %}
+{% if send.payload %}
+                _req.has_payload = true;
+                _req.payload = {{ send.payload_expr }};
+{% endif %}
+                sce_forge_procedure_service_response_t _resp =
+                    _st->service_handler(&_req, _st->service_handler_user_data);
+                _st->pending_event_data = _resp.data;
+                return _resp.success ? {{ event_ok }} : {{ event_fail }};
+            }
+{% endfor %}
+            break;
+        }
+{% endfor %}
+        default: break;
+    }
+    return {{ event_none }};
+}
+
+/* Returns true iff a transition fired; populates *out_next_state, *out_tr_index, *out_has_assigns. */
+static inline bool {{ snake }}_process_transition(
+    const {{ state_struct }} *_st, {{ state_typedef }} _state, {{ event_typedef }} _event,
+    {{ state_typedef }} *out_next, size_t *out_tr_index, bool *out_has_assigns) {
+    (void)_st;
+    switch (_state) {
+{% for s in non_final_states %}
+        case {{ s.enum_name }}:
+{% for tr in s.transitions %}
+{% if tr.has_event %}
+            if (_event == {{ tr.event_enum }}) {
+{% if tr.has_cond %}
+                if ({{ tr.cond }}) {
+                    *out_next = {{ tr.target_enum }};
+                    *out_tr_index = {{ tr.index }};
+                    *out_has_assigns = {{ tr.has_assigns | lower }};
+                    return true;
+                }
+{% else %}
+                *out_next = {{ tr.target_enum }};
+                *out_tr_index = {{ tr.index }};
+                *out_has_assigns = {{ tr.has_assigns | lower }};
+                return true;
+{% endif %}
+            }
+{% else %}
+            if (_event == {{ event_none }}) {
+{% if tr.has_cond %}
+                if ({{ tr.cond }}) {
+                    *out_next = {{ tr.target_enum }};
+                    *out_tr_index = {{ tr.index }};
+                    *out_has_assigns = {{ tr.has_assigns | lower }};
+                    return true;
+                }
+{% else %}
+                *out_next = {{ tr.target_enum }};
+                *out_tr_index = {{ tr.index }};
+                *out_has_assigns = {{ tr.has_assigns | lower }};
+                return true;
+{% endif %}
+            }
+{% endif %}
+{% endfor %}
+            return false;
+{% endfor %}
+        default: return false;
+    }
+}
+
+static inline sce_forge_procedure_raise_t {{ snake }}_execute_transition_actions(
+    {{ state_struct }} *_st, {{ state_typedef }} _source, size_t _tr_index) {
+    (void)_st; (void)_source; (void)_tr_index;
+    sce_forge_procedure_raise_t _r = { false, 0 };
+{% for s in states_with_assigns %}
+    if (_source == {{ s.enum_name }}) {
+{% for tr in s.assign_transitions %}
+        if (_tr_index == {{ tr.index }}) {
+{% for a in tr.assigns %}
+{% if a.is_bytes_with_cap %}
+            {
+                sce_forge_bytes_t _scope_tmp = {{ a.expr }};
+                if (_scope_tmp.len > {{ a.cap }}) {
+                    _r.raised = true;
+                    _r.event = {{ event_error_execution }};
+                    return _r;
+                }
+                {{ a.location }} = _scope_tmp;
+            }
+{% else %}
+            {{ a.location }} = {{ a.expr }};
+{% endif %}
+{% endfor %}
+        }
+{% endfor %}
+    }
+{% endfor %}
+    return _r;
+}
+
+/* ── Main run function ─────────────────────────────────────────── */
+
+static inline sce_forge_procedure_run_result_t {{ execute_func }}(
+    sce_forge_procedure_service_handler_t _handler,
+    void *_handler_user_data{% for h in helper_fields %},
+    {{ h.return_type }} (*{{ h.id }})({{ h.params_type }}, void *), void *{{ h.id }}_user_data{% endfor %}{% for f in input_fields %},
+    {{ f.c_param_type }} {{ f.id }}{% endfor %}) {
+    {{ state_struct }} _st = {0};
+    _st.service_handler = _handler;
+    _st.service_handler_user_data = _handler_user_data;
+{% for h in helper_fields %}
+    _st.{{ h.id }} = {{ h.id }};
+    _st.{{ h.id }}_user_data = {{ h.id }}_user_data;
+{% endfor %}
+{% for f in input_fields %}
+    _st.{{ f.id }} = {{ f.id }};
+{% endfor %}
+{% for f in internal_fields %}
+{% if f.default_value %}
+    _st.{{ f.id }} = {{ f.default_value }};
+{% endif %}
+{% endfor %}
+
+    {{ state_typedef }} _current = {{ initial_state_enum }};
+    {{ event_typedef }} _event = {{ snake }}_execute_entry_actions(&_st, _current);
+
+    for (int _iter = 0; _iter < 1000; ++_iter) {
+        switch (_current) {
+{% for s in final_states %}
+            case {{ s.enum_name }}: {
+                sce_forge_procedure_run_result_t _result = { true, "{{ s.id }}", NULL, 0 };
+{% if s.has_donedata %}
+                _result.done_data = {{ snake }}_done_data_{{ s.name_snake }};
+                _result.done_data_count = {{ snake }}_done_data_{{ s.name_snake }}_count;
+{% endif %}
+                /* Execute donedata side effects via entry-actions
+                 * dispatch (mirrors cpp parity even though _event is
+                 * unused for final states). */
+                (void){{ snake }}_execute_entry_actions(&_st, _current);
+                return _result;
+            }
+{% endfor %}
+            default: break;
+        }
+
+        {{ state_typedef }} _next;
+        size_t _tr_index;
+        bool _has_assigns;
+        if (!{{ snake }}_process_transition(&_st, _current, _event, &_next, &_tr_index, &_has_assigns)) {
+            break;
+        }
+        if (_has_assigns) {
+            sce_forge_procedure_raise_t _r =
+                {{ snake }}_execute_transition_actions(&_st, _current, _tr_index);
+            if (_r.raised) {
+                /* Re-pump source state with the raised event. */
+                _event = ({{ event_typedef }})_r.event;
+                continue;
+            }
+        }
+        _current = _next;
+        _event = {{ snake }}_execute_entry_actions(&_st, _current);
+    }
+
+    sce_forge_procedure_run_result_t _result = { false, "", NULL, 0 };
+    return _result;
+}
+
+{% else %}
+/* L1 procedure: pure guard-only diamond. RFC §5.J.2 Phase D-1. */
 
 typedef enum {
 {% for s in state_enum %}
@@ -70,5 +306,6 @@ static inline {{ result_typedef }} {{ execute_func }}({{ params }}) {
     /* Safety cap exceeded — never expected for L1 acyclic guard flows. */
     return ({{ result_typedef }}){false, ""};
 }
+{% endif %}
 
 #endif  /* {{ guard }} */
