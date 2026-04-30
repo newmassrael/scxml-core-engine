@@ -303,6 +303,12 @@ pub struct ForgeField {
     /// Documentation-only unit (no codegen effect).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
+    /// Per-slot capacity for `bytes`-typed fields, declared via
+    /// `sce:max-size="N"`. `None` ⇒ fall back to
+    /// [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored for non-bytes
+    /// types. See `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u32>,
 }
 
 // ── Transform kind ─────────────────────────────────────────────
@@ -474,6 +480,12 @@ pub struct ProcedureSendAction {
     /// Payload expression (sce:payload attribute). Optional.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<String>,
+    /// Cap on the bytes the service handler may return as `_event.data`,
+    /// declared via `sce:response-max-size="N"`. `None` ⇒ fall back to
+    /// [`crate::forge::limits::BYTES_DEFAULT_MAX`]. See
+    /// `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_max_size: Option<u32>,
 }
 
 /// An `<assign>` action within a `<transition>` body.
@@ -564,6 +576,13 @@ pub struct ProcedureHelper {
     pub args: Vec<SceType>,
     /// Return type.
     pub returns: SceType,
+    /// Cap on the bytes the helper closure may return when `returns =
+    /// bytes`, declared via `sce:returns-max-size="N"`. `None` ⇒ fall
+    /// back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored
+    /// when `returns` is non-bytes. See
+    /// `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub returns_max_size: Option<u32>,
 }
 
 /// Procedure: sequential branching logic with states and guarded transitions.

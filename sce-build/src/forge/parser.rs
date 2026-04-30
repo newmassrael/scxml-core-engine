@@ -1090,10 +1090,16 @@ fn parse_procedure_helper(
             },
         )
     })?;
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: optional cap
+    // on a bytes-typed return. Validator pass flags it if `returns` is
+    // not bytes.
+    let returns_max_size = sce_attr(node, "returns-max-size").and_then(|s| parse_int(&s));
+
     Ok(ProcedureHelper {
         name: helper_name,
         args,
         returns,
+        returns_max_size,
     })
 }
 
@@ -1215,11 +1221,16 @@ fn parse_procedure_onentry(
             let subfunc = sce_attr(&child, "subfunc");
             let addr = sce_attr(&child, "addr");
             let payload = sce_attr(&child, "payload");
+            // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: cap on
+            // the bytes the service handler may return as `_event.data`.
+            let response_max_size = sce_attr(&child, "response-max-size")
+                .and_then(|s| parse_int(&s));
             sends.push(ProcedureSendAction {
                 service,
                 subfunc,
                 addr,
                 payload,
+                response_max_size,
             });
         }
     }
@@ -2291,6 +2302,10 @@ fn parse_forge_field(
 
     let expr = data.attribute("expr").map(|s| s.to_string());
     let unit = sce_attr(data, "unit");
+    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: optional cap
+    // on bytes-typed slots. Parsed for every field; the validator pass
+    // (RFC §7) decides whether to flag it on a non-bytes field.
+    let max_size = sce_attr(data, "max-size").and_then(|s| parse_int(&s));
 
     Ok(ForgeField {
         id,
@@ -2298,6 +2313,7 @@ fn parse_forge_field(
         direction,
         expr,
         unit,
+        max_size,
     })
 }
 

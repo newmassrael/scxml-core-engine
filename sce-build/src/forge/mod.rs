@@ -8,6 +8,7 @@
 
 pub mod diagnostic;
 pub mod error;
+pub mod limits;
 pub mod model;
 pub mod parser;
 pub mod types;
