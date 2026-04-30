@@ -1608,34 +1608,34 @@ fn forge_go_crossfile_rejects_whitespace_in_module_prefix() {
 // ═══════════════════════════════════════════════════════════════
 
 /// Dynamically verify that cross-file import combinations produce
-/// syntactically valid code for all 5 languages. No golden files needed —
-/// codegen success + syn parse (for Rust) is the gate.
+/// syntactically valid code across the listed backends. No golden files
+/// needed — codegen success + syn parse (for Rust) is the gate.
 ///
 /// Tests import patterns beyond the existing 3 golden-backed combos:
 ///   - filter → transform (stateful imports stateless)
 ///   - observer → condition (stateful imports stateless)
 ///   - validator → lookup (stateful imports stateless)
 ///
+/// `languages` parameter lets per-test callers narrow the matrix when a
+/// backend has not landed the importing kind yet (e.g. C11 supports
+/// procedure/codec/validator imports but filter/observer arrive in
+/// Phase E — adding C11 to those rows would panic on `unimplemented!`).
+///
 /// Each combination:
 ///   1. Reads the importing kind's SCXML with an <sce:import> reference
-///   2. Runs compile_forge_with_imports for all 5 languages
+///   2. Runs compile_forge_with_imports for every listed backend
 ///   3. Asserts codegen succeeds and output is non-empty
 ///   4. For Rust output, syn::parse_file verifies syntax validity
-fn assert_crossfile_codegen_all_languages(scxml_name: &str) {
+fn assert_crossfile_codegen_languages(
+    scxml_name: &str,
+    languages: &[sce_build::generator::Language],
+) {
     let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
     let content = std::fs::read_to_string(&scxml_path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
     let base_dir = scxml_path.parent().unwrap();
 
-    let languages = [
-        sce_build::generator::Language::Cpp,
-        sce_build::generator::Language::Kotlin,
-        sce_build::generator::Language::Rust,
-        sce_build::generator::Language::Go,
-        sce_build::generator::Language::Python,
-    ];
-
-    for lang in &languages {
+    for lang in languages {
         let options = golden_options(*lang);
         let result = sce_build::compile_forge_with_imports(
             &content,
@@ -1670,35 +1670,56 @@ fn assert_crossfile_codegen_all_languages(scxml_name: &str) {
     }
 }
 
+/// Cpp/Kotlin/Rust/Go/Python — every backend that supports the importing
+/// kind. C11 is added per-test below for kinds whose C11 codegen has
+/// landed (procedure/validator); filter/observer C11 paths arrive in
+/// Phase E and would panic on `unimplemented!` if listed here.
+const FIVE_BACKENDS: &[sce_build::generator::Language] = &[
+    sce_build::generator::Language::Cpp,
+    sce_build::generator::Language::Kotlin,
+    sce_build::generator::Language::Rust,
+    sce_build::generator::Language::Go,
+    sce_build::generator::Language::Python,
+];
+
+const SIX_BACKENDS: &[sce_build::generator::Language] = &[
+    sce_build::generator::Language::Cpp,
+    sce_build::generator::Language::Kotlin,
+    sce_build::generator::Language::Rust,
+    sce_build::generator::Language::Go,
+    sce_build::generator::Language::Python,
+    sce_build::generator::Language::C11,
+];
+
 /// Existing golden-backed combos, verified here as codegen-all-languages too.
 #[test]
 fn crossfile_matrix_procedure_codec() {
-    assert_crossfile_codegen_all_languages("crossfile_procedure_codec");
+    assert_crossfile_codegen_languages("crossfile_procedure_codec", SIX_BACKENDS);
 }
 
 #[test]
 fn crossfile_matrix_procedure_codec_mutate() {
-    assert_crossfile_codegen_all_languages("crossfile_procedure_codec_mutate");
+    assert_crossfile_codegen_languages("crossfile_procedure_codec_mutate", SIX_BACKENDS);
 }
 
 #[test]
 fn crossfile_matrix_validator_transform() {
-    assert_crossfile_codegen_all_languages("crossfile_validator_transform");
+    assert_crossfile_codegen_languages("crossfile_validator_transform", SIX_BACKENDS);
 }
 
 #[test]
 fn crossfile_matrix_filter_transform() {
-    assert_crossfile_codegen_all_languages("crossfile_filter_transform");
+    assert_crossfile_codegen_languages("crossfile_filter_transform", FIVE_BACKENDS);
 }
 
 #[test]
 fn crossfile_matrix_observer_condition() {
-    assert_crossfile_codegen_all_languages("crossfile_observer_condition");
+    assert_crossfile_codegen_languages("crossfile_observer_condition", FIVE_BACKENDS);
 }
 
 #[test]
 fn crossfile_matrix_validator_codec() {
-    assert_crossfile_codegen_all_languages("crossfile_validator_codec");
+    assert_crossfile_codegen_languages("crossfile_validator_codec", SIX_BACKENDS);
 }
 
 // ═══════════════════════════════════════════════════════════════

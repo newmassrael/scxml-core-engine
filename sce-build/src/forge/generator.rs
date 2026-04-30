@@ -325,6 +325,14 @@ fn resolve_single_import(
             // No namespace concept exists; the module name is encoded as a
             // function prefix at every callsite (see `build_qualified_call`).
             // The shape mirrors C++ but routes through the M2+ C11 emitter.
+            //
+            // For stateful imports (codec/filter/observer/validator/procedure),
+            // `member_type` is the imported document's typedef'd struct name
+            // (`<snake>_t`) so the procedure's state struct can declare it
+            // by-value. The C11 codec template emits `typedef struct {...}
+            // <snake>_t;` (`tools/codegen/templates/forge/c/codec.h.jinja2:23-27`),
+            // which is what the procedure embeds and addresses via
+            // `&_st->{member_name}` when calling the matching free function.
             ImportContext {
                 alias: imp.alias.clone(),
                 kind: imp.kind.to_string(),
@@ -332,7 +340,7 @@ fn resolve_single_import(
                 type_name: pascal.clone(),
                 is_stateful,
                 member_name: format!("{}_", imp.alias),
-                member_type: snake.clone(),
+                member_type: format!("{snake}_t"),
                 namespace: snake.clone(),
                 qualified_call: String::new(),
                 param_types: Vec::new(),
@@ -2107,6 +2115,7 @@ fn render_procedure_cpp(
         ExprTarget::Cpp,
         &procedure_type_ctx,
         &assign_rename_map,
+        &[],
     );
 
     // Collect raw sce:payload expressions for header dependency comment (CR#6)
@@ -2492,6 +2501,16 @@ fn render_procedure_c_l2(
     for (k, v) in &helper_call_pairs {
         owned_rename.insert(k.as_str(), v.clone());
     }
+    // Cross-file stateful-import field renames: `frame.msgId` →
+    // `_st->frame_.msg_id`. The matching method-call rewrite (e.g.
+    // `frame.encode()` → `codec_simple_frame_encode(&_st->frame_)`) flows
+    // through the C11 AST pre-pass, not this rename map — see
+    // `stateful_import_method_renames` for the rationale.
+    let import_field_renames =
+        stateful_import_field_renames(imports, &generator::Language::C11);
+    for (k, v) in &import_field_renames {
+        owned_rename.insert(k.as_str(), v.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -2501,6 +2520,42 @@ fn render_procedure_c_l2(
     let assign_rename_map: std::collections::HashMap<&str, &str> = owned_assign_rename
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+
+    // C11 stateful-import method-call lowering specs. Built once so every
+    // expression site in this function (entry sends, transition guards,
+    // donedata, transition assigns) routes through the same descriptor
+    // list. Empty for procedures with no `<sce:import>` declarations.
+    //
+    // Each method call site flows through a per-procedure wrapper rather
+    // than calling the codec's free function directly: the codec emits
+    // `encode` as `<snake>_encode(...) → <snake>_encoded_t`, but the
+    // procedure's `<send sce:payload>` slot is `sce_forge_bytes_t` (a
+    // distinct typedef). C11 has no implicit struct conversion, so the
+    // wrapper sits between the two and copies field-by-field. The
+    // wrapper name is `<procedure_snake>__<alias>_<method>` so that
+    // distinct procedures importing the same codec do not collide.
+    let import_wrappers: Vec<serde_json::Value> = imports
+        .iter()
+        .filter(|imp| imp.is_stateful)
+        .map(|imp| {
+            let wrapper_prefix = format!("{}__{}", &snake, imp.alias);
+            serde_json::json!({
+                "wrapper_encode": format!("{}_encode", wrapper_prefix),
+                "codec_struct_t": format!("{}_t", imp.namespace),
+                "codec_encoded_t": format!("{}_encoded_t", imp.namespace),
+                "codec_encode_fn": format!("{}_encode", imp.namespace),
+            })
+        })
+        .collect();
+    let import_lowerings: Vec<expr::ImportLowering> = imports
+        .iter()
+        .filter(|imp| imp.is_stateful)
+        .map(|imp| expr::ImportLowering {
+            alias: imp.alias.clone(),
+            free_fn_prefix: format!("{}__{}", &snake, imp.alias),
+            prepended_arg: format!("&_st->{}", imp.member_name),
+        })
         .collect();
 
     // States with onentry sends.
@@ -2522,12 +2577,12 @@ fn render_procedure_c_l2(
                         // Pragmatic shortcut for D-2: emit the
                         // identifier rename only — the test fixture's
                         // handler does not inspect addr.
-                        let renamed = transpile_procedure_expr(
+                        let renamed = transpile_procedure_expr_c11(
                             a,
-                            ExprTarget::C,
                             &procedure_type_ctx,
                             &rename_map,
                             crate::forge::types::InferredType::Unknown,
+                            &import_lowerings,
                         );
                         // Build a const-string expression: just empty
                         // string for now — the handler in
@@ -2539,12 +2594,12 @@ fn render_procedure_c_l2(
                         "\"\"".to_string()
                     });
                     let payload_expr = send.payload.as_ref().map(|p| {
-                        transpile_procedure_expr(
+                        transpile_procedure_expr_c11(
                             p,
-                            ExprTarget::C,
                             &procedure_type_ctx,
                             &rename_map,
                             crate::forge::types::InferredType::Bytes,
+                            &import_lowerings,
                         )
                     });
                     serde_json::json!({
@@ -2574,12 +2629,12 @@ fn render_procedure_c_l2(
                 .done_params
                 .iter()
                 .map(|p| {
-                    let transpiled = transpile_procedure_expr(
+                    let transpiled = transpile_procedure_expr_c11(
                         &p.expr,
-                        ExprTarget::C,
                         &procedure_type_ctx,
                         &rename_map,
                         crate::forge::types::InferredType::Str,
+                        &import_lowerings,
                     );
                     serde_json::json!({
                         "name": p.name,
@@ -2634,12 +2689,12 @@ fn render_procedure_c_l2(
                         format!("{}_EVENT_{}", upper, to_upper_snake(&pascal))
                     });
                     let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        transpile_procedure_expr(
+                        transpile_procedure_expr_c11(
                             c,
-                            ExprTarget::C,
                             &procedure_type_ctx,
                             &rename_map,
                             crate::forge::types::InferredType::Bool,
+                            &import_lowerings,
                         )
                     });
                     serde_json::json!({
@@ -2672,6 +2727,7 @@ fn render_procedure_c_l2(
         ExprTarget::C,
         &procedure_type_ctx,
         &assign_rename_map,
+        &import_lowerings,
     );
     // States in m.states keep their raw id; pair them up by index so
     // the post-process is independent of how PascalCase rendered.
@@ -2705,6 +2761,10 @@ fn render_procedure_c_l2(
         .get_template("procedure.h.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
 
+    // Cross-file imports: stateful imports become state-struct members;
+    // every import (stateful or not) contributes a `#include` statement.
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         is_l2 => true,
         guard => guard,
@@ -2729,6 +2789,10 @@ fn render_procedure_c_l2(
         final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
         non_final_states => minijinja::Value::from_serialize(&non_final_states),
         states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
+        import_wrappers => minijinja::Value::from_serialize(&import_wrappers),
     };
     Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
@@ -2821,9 +2885,21 @@ fn stateful_import_method_renames(
                             let target_method = filters::to_pascal_case(method.to_string());
                             format!("p.{}.{}", imp.member_name, target_method)
                         }
-                        generator::Language::C11 => unimplemented!(
-                            "C11 stateful import method rename is RFC \u{00A7}5.J.1 M3+ work"
-                        ),
+                        // C11 cannot express method-call lowering through a
+                        // string rename: the codec emit shape is a free
+                        // function taking an explicit `&struct_t *` first
+                        // arg, so the rewrite must inject an argument that
+                        // a `Member→Raw` collapse cannot produce. The
+                        // matching transform happens in the C11-only AST
+                        // pre-pass `expr::lower_stateful_import_calls`
+                        // invoked through `expr::transpile_typed_with_import_lowering`;
+                        // by the time the rename pass runs, the Member
+                        // node is already gone and there is no qualified
+                        // key left to collapse. Skipping this kind here
+                        // keeps the rename map free of stale entries that
+                        // would silently shadow a future bare-Member usage
+                        // (e.g. taking a method's address).
+                        generator::Language::C11 => continue,
                     };
                     out.push((qualified_key, expansion));
                 }
@@ -2886,9 +2962,18 @@ fn stateful_import_field_renames(
                     let snake_field = filters::to_snake_case(field.to_string());
                     format!("self.{}.{}", imp.member_name, snake_field)
                 }
-                generator::Language::C11 => unimplemented!(
-                    "C11 stateful import field rename is RFC \u{00A7}5.J.1 M3+ work"
-                ),
+                // C11 dereferences the procedure's by-value codec member
+                // through the state-struct pointer (`_st->{member}`), and
+                // codec field ids are snake_cased at codec emit time
+                // (`LangCtx::codec_field_id` for C11) so the LHS spelling
+                // here must match (`msgId` → `msg_id`). This mirrors the
+                // Rust/Python field-rename arms, just with the
+                // pointer-deref prefix swapped in for the value-receiver
+                // form they use.
+                generator::Language::C11 => {
+                    let snake_field = filters::to_snake_case(field.to_string());
+                    format!("_st->{}.{}", imp.member_name, snake_field)
+                }
             };
             out.push((qualified_key.clone(), expansion));
         }
@@ -2912,6 +2997,35 @@ fn transpile_procedure_expr(
     expected: crate::forge::types::InferredType,
 ) -> String {
     match expr::transpile_typed(raw, target, type_ctx, renames, expected) {
+        Ok(result) => result,
+        Err(e) => format!("/* SCE_TRANSPILE_ERROR: {} */ {}", e, raw),
+    }
+}
+
+/// C11 procedure expression transpile that runs the stateful-import
+/// method-call lowering pre-pass before the standard pipeline. Falls back
+/// to the plain [`transpile_procedure_expr`] when `lowerings` is empty so
+/// the caller can use the same wrapper for procedures with or without
+/// imports without branching.
+fn transpile_procedure_expr_c11(
+    raw: &str,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &std::collections::HashMap<&str, &str>,
+    expected: crate::forge::types::InferredType,
+    lowerings: &[expr::ImportLowering],
+) -> String {
+    if lowerings.is_empty() {
+        return transpile_procedure_expr(
+            raw,
+            ExprTarget::C,
+            type_ctx,
+            renames,
+            expected,
+        );
+    }
+    match expr::transpile_typed_with_import_lowering(
+        raw, type_ctx, renames, expected, lowerings,
+    ) {
         Ok(result) => result,
         Err(e) => format!("/* SCE_TRANSPILE_ERROR: {} */ {}", e, raw),
     }
@@ -3176,6 +3290,7 @@ fn build_procedure_states_with_assigns(
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     assign_rename_map: &std::collections::HashMap<&str, &str>,
+    import_lowerings: &[expr::ImportLowering],
 ) -> Vec<serde_json::Value> {
     // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4: bytes-typed
     // slot id → resolved cap. Only the cpp branch consumes these
@@ -3230,13 +3345,30 @@ fn build_procedure_states_with_assigns(
                                     crate::forge::types::InferredType::Unknown,
                                 )
                             });
-                            let transpiled = transpile_procedure_expr(
-                                &a.expr,
-                                target,
-                                type_ctx,
-                                assign_rename_map,
-                                lhs_ty,
-                            );
+                            // C11 stateful-import lowering: assign RHS may
+                            // call an imported codec's instance method
+                            // (e.g. `frame.encode()`), which needs the
+                            // free-function rewrite pre-pass before the
+                            // shared infer/rename/emit pipeline. Other
+                            // backends route through `transpile_procedure_expr`
+                            // unchanged.
+                            let transpiled = if matches!(target, ExprTarget::C) {
+                                transpile_procedure_expr_c11(
+                                    &a.expr,
+                                    type_ctx,
+                                    assign_rename_map,
+                                    lhs_ty,
+                                    import_lowerings,
+                                )
+                            } else {
+                                transpile_procedure_expr(
+                                    &a.expr,
+                                    target,
+                                    type_ctx,
+                                    assign_rename_map,
+                                    lhs_ty,
+                                )
+                            };
                             let wrapped = if matches!(lhs_ty, crate::forge::types::InferredType::Bytes)
                                 && a.expr.trim() == "_event.data"
                             {
@@ -3499,6 +3631,7 @@ fn render_procedure_kotlin(
         ExprTarget::Kotlin,
         &procedure_type_ctx,
         &assign_rename_map,
+        &[],
     );
 
     let tmpl = env
@@ -3770,6 +3903,7 @@ fn render_procedure_rust(
         ExprTarget::Rust,
         &procedure_type_ctx,
         &assign_rename_map,
+        &[],
     );
 
     let tmpl = env
@@ -3991,6 +4125,7 @@ fn render_procedure_go(
         ExprTarget::Go,
         &procedure_type_ctx,
         &assign_rename_map,
+        &[],
     );
 
     let tmpl = env
@@ -4196,6 +4331,7 @@ fn render_procedure_python(
         ExprTarget::Python,
         &procedure_type_ctx,
         &assign_rename_map,
+        &[],
     );
 
     let tmpl = env

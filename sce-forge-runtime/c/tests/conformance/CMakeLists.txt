@@ -110,6 +110,8 @@ set(C11_FIXTURES
     procedure_diamond
     procedure_startup_check
     procedure_security_access
+    crossfile_procedure_codec
+    crossfile_procedure_codec_mutate
 )
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

@@ -141,6 +141,167 @@ pub fn transpile_typed(
     }
 }
 
+/// Per-import lowering descriptor consumed by [`transpile_typed_with_import_lowering`].
+///
+/// The C11 codec template emits its API as a typedef'd struct + free
+/// functions taking an explicit `const struct_t *self` first argument
+/// (`tools/codegen/templates/forge/c/codec.h.jinja2:42`). When a procedure
+/// embeds the codec by-value, a method-style call like `frame.encode(args)`
+/// must lower to `<free_fn_prefix>_<method>(<prepended_arg>, args...)`. The
+/// textual rename map cannot express the prepended-argument injection on
+/// its own, so the C11 transpile entry runs an AST pre-pass keyed by this
+/// descriptor before the standard infer/rename/emit pipeline.
+#[derive(Debug, Clone)]
+pub(crate) struct ImportLowering {
+    /// SCXML `<sce:import as="...">` alias the procedure addresses the
+    /// import by (e.g. `frame`). Matched against the bare-Ident object of
+    /// every `Call{Member{Ident(alias), method}, args}` site.
+    pub alias: String,
+    /// Snake-cased prefix of the free-function name (e.g.
+    /// `codec_simple_frame`), formed from the import target's file stem.
+    /// The pre-pass concatenates `<free_fn_prefix>_<method>` to produce the
+    /// callee identifier — this matches the C11 codec template's emit
+    /// shape (`{snake}_encode`, `{snake}_decode`).
+    pub free_fn_prefix: String,
+    /// Pre-rendered first-argument expression (e.g. `&_st->frame_`). The
+    /// pre-pass installs it as a `Raw` node at index 0 of the rewritten
+    /// Call's args, so the existing emit_c walker stamps it out verbatim
+    /// without further coercion.
+    pub prepended_arg: String,
+}
+
+/// Transpile a procedure expression for the C11 backend with stateful
+/// import method-call lowering.
+///
+/// Same pipeline as [`transpile_typed`] (target = `ExprTarget::C`,
+/// expected ECMAScript subset), but inserts a C11-specific AST rewrite
+/// before the infer/rename/emit chain: every `Call{Member{Ident(alias),
+/// method}, args}` whose `alias` matches a [`ImportLowering`] entry is
+/// rewritten to the equivalent free-function call form documented on
+/// [`ImportLowering`]. Sites whose alias does not match are left
+/// untouched, falling through to the normal pipeline (where they would
+/// surface as an unknown-identifier rename — exactly the diagnostic the
+/// caller wants for typos in `<sce:import as="...">` references).
+pub(crate) fn transpile_typed_with_import_lowering(
+    expr: &str,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: InferredType,
+    lowerings: &[ImportLowering],
+) -> Result<String, ExprError> {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return Err(ExprError::Empty { what: "expression" });
+    }
+
+    let tokens = tokenize(expr)?;
+    let mut ast = Parser::new(&tokens).parse_expression()?;
+    // C11-only lowering must run *before* infer/rename: the rewritten Call
+    // node's callee is a `Raw` fragment (free-function name) and its first
+    // arg is a `Raw` fragment (`&_st->member`), both of which `infer_types`
+    // and `rename_identifiers` already document as inert under their walks.
+    // The remaining args still carry Ident leaves that the standard pipeline
+    // resolves through `ctx` and `renames` exactly as if no lowering had
+    // happened — keeping the expression-pipeline's existing contract intact.
+    if !lowerings.is_empty() {
+        lower_stateful_import_calls(&mut ast, lowerings);
+    }
+    infer_types(&mut ast, ctx);
+    if !renames.is_empty() {
+        rename_identifiers(&mut ast, renames);
+    }
+    Ok(emit_c(&ast, expected))
+}
+
+/// Walk a TypedExpr in place and rewrite every `Call{Member{Ident(alias),
+/// method}, args}` site whose `alias` matches one of `lowerings` into a
+/// free-function form per the [`ImportLowering`] contract.
+///
+/// Member nodes that are NOT inside a Call (e.g. `frame.msgId` on the LHS
+/// of `<assign location="...">`) are left untouched — those flow through
+/// the standard rename map's qualified-key collapse path
+/// (`stateful_import_field_renames` for C11 emits `_st->{member}.{field}`),
+/// which the rename pass handles after this rewrite returns. Splitting the
+/// two cases at AST shape — Call vs. bare Member — keeps each pass's
+/// responsibility one-thing-only.
+fn lower_stateful_import_calls(
+    ast: &mut TypedExpr,
+    lowerings: &[ImportLowering],
+) {
+    match &mut ast.kind {
+        ExprKind::Call { callee, args } => {
+            // Try the lowering match first so a successful rewrite does not
+            // double-walk the (now-replaced) callee through the recursive
+            // arms below.
+            if let ExprKind::Member { object, property } = &callee.kind {
+                if let ExprKind::Ident(alias) = &object.kind {
+                    if let Some(lowering) =
+                        lowerings.iter().find(|l| l.alias == *alias)
+                    {
+                        let free_fn = format!(
+                            "{}_{}",
+                            lowering.free_fn_prefix, property
+                        );
+                        let prepended = TypedExpr {
+                            kind: ExprKind::Raw(lowering.prepended_arg.clone()),
+                            ty: InferredType::Unknown,
+                        };
+                        let new_callee = Box::new(TypedExpr {
+                            kind: ExprKind::Raw(free_fn),
+                            ty: InferredType::Unknown,
+                        });
+                        let mut new_args = Vec::with_capacity(args.len() + 1);
+                        new_args.push(prepended);
+                        new_args.append(args);
+                        // Original args may contain nested Call{Member{...}}
+                        // sites (e.g. one codec.encode() passed into another
+                        // codec's method). Recurse over the rewritten args
+                        // before returning so every inner site lowers too.
+                        for arg in new_args.iter_mut().skip(1) {
+                            lower_stateful_import_calls(arg, lowerings);
+                        }
+                        ast.kind = ExprKind::Call {
+                            callee: new_callee,
+                            args: new_args,
+                        };
+                        return;
+                    }
+                }
+            }
+            // Fall-through: not a stateful-import call site, recurse normally.
+            lower_stateful_import_calls(callee, lowerings);
+            for arg in args {
+                lower_stateful_import_calls(arg, lowerings);
+            }
+        }
+        ExprKind::Binary { left, right, .. } => {
+            lower_stateful_import_calls(left, lowerings);
+            lower_stateful_import_calls(right, lowerings);
+        }
+        ExprKind::Unary { operand, .. } => {
+            lower_stateful_import_calls(operand, lowerings);
+        }
+        ExprKind::Conditional { condition, consequent, alternate } => {
+            lower_stateful_import_calls(condition, lowerings);
+            lower_stateful_import_calls(consequent, lowerings);
+            lower_stateful_import_calls(alternate, lowerings);
+        }
+        ExprKind::Member { object, .. } => {
+            lower_stateful_import_calls(object, lowerings);
+        }
+        ExprKind::Index { object, index } => {
+            lower_stateful_import_calls(object, lowerings);
+            lower_stateful_import_calls(index, lowerings);
+        }
+        ExprKind::Raw(_)
+        | ExprKind::Ident(_)
+        | ExprKind::NumberLit(_)
+        | ExprKind::StringLit { .. }
+        | ExprKind::BoolLit(_)
+        | ExprKind::NullLit => {}
+    }
+}
+
 /// Transpile an assignment *left-hand side* (an SCXML `<assign location="…"/>`
 /// attribute) to the target language, using the same pipeline as
 /// [`transpile_typed`] for right-hand-side expressions.
