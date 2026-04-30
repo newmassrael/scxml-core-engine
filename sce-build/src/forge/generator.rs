@@ -909,6 +909,23 @@ fn render_codec(
             obj.insert("id".into(), l.codec_field_id(&f.id).into());
             obj.insert(type_key.into(), l.type_name(&f.sce_type).into());
             obj.insert("decode_expr".into(), generate_decode_expr(f, m.default_endian, lang).into());
+            obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
+            obj.insert("byte_off".into(), f.byte_offset.into());
+            if f.is_variable_length() {
+                let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
+                obj.insert("max_size".into(), resolved.into());
+                let kind = match &f.bit_size {
+                    BitSize::Tail => "tail",
+                    BitSize::LengthRef => "length-ref",
+                    BitSize::Fixed { .. } => unreachable!("is_variable_length excludes Fixed"),
+                };
+                obj.insert("bit_size_kind".into(), kind.into());
+                if matches!(f.bit_size, BitSize::LengthRef) {
+                    if let Some(lf) = &f.length_field {
+                        obj.insert("length_field".into(), l.codec_field_id(lf).into());
+                    }
+                }
+            }
             if matches!(lang, crate::generator::Language::Kotlin) {
                 obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
             }
@@ -924,13 +941,15 @@ fn render_codec(
     let mut ctx = l.base_context(&m.name);
     ctx.insert("fields".into(), serde_json::json!(fields));
     ctx.insert("min_bytes".into(), m.min_frame_bytes().into());
+    ctx.insert("max_bytes".into(), m.max_frame_bytes().into());
+    ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
 
     // C11 (RFC §5.J.2 §3 D2): full-qual flat-scope identifiers.
     // Decode = α (`bool fn(raw, len, *out)`); encode = β (return-by-value
-    // `<name>_encoded_t { bytes[MAX]; len }`). MAX collapses to MIN for
-    // fixed-only fixtures (Phase B-3 set); Tail/LengthRef fixtures will
-    // surface a max-side computation when their first fixture lands.
+    // `<name>_encoded_t { bytes[MAX]; len }`). MAX = MIN + Σ(max_size of
+    // variable-length fields), resolved through `BYTES_DEFAULT_MAX` when
+    // `sce:max-size` is absent (RFC §3 B2).
     if matches!(lang, crate::generator::Language::C11) {
         let snake = filters::to_snake_case(m.name.clone());
         let upper = to_upper_snake(&m.name);
@@ -999,10 +1018,11 @@ fn generate_decode_expr(
                 format!("raw[{byte_off}..].to_vec()"),
             Language::Go | Language::Python =>
                 format!("raw[{byte_off}:]"),
-            Language::C11 => unimplemented!(
-                "C11 codec BitSize::Tail emitter is RFC \u{00A7}5.J.1 M3+ work \
-                 (codec DSL emitter follows lookup vertical slice)"
-            ),
+            // C11 V1β/V2b: variable-length decode is multi-statement
+            // (bounds check + memcpy + len assignment), so the template
+            // branches on `field.is_variable` and emits a block instead
+            // of consuming this single-rhs `decode_expr`.
+            Language::C11 => String::new(),
         },
         BitSize::LengthRef => {
             let len_field = field.length_field.as_deref().unwrap_or("0");
@@ -1017,9 +1037,7 @@ fn generate_decode_expr(
                     format!("raw[{byte_off}:{byte_off}+int({len_field})]"),
                 Language::Python =>
                     format!("raw[{byte_off}:{byte_off} + {len_field}]"),
-                Language::C11 => unimplemented!(
-                    "C11 codec BitSize::LengthRef emitter is RFC \u{00A7}5.J.1 M3+ work"
-                ),
+                Language::C11 => String::new(),
             }
         }
     }
@@ -1112,11 +1130,11 @@ fn generate_encode_exprs(
         std::collections::BTreeMap::new();
 
     for field in fields {
-        if field.is_variable_length() {
-            exprs.push(l.codec_comment(
-                &format!("variable-length field '{}' requires manual encode", field.id)
-            ));
-        } else {
+        // Variable-length fields are emitted by the per-backend template
+        // through the `is_variable` branch on each field meta — the
+        // template appends them after the fixed `encode_exprs` byte
+        // literals. They never enter `byte_groups`.
+        if !field.is_variable_length() {
             byte_groups.entry(field.byte_offset).or_default().push(field);
         }
     }

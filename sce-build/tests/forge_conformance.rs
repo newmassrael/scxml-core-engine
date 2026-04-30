@@ -548,6 +548,11 @@ fn forge_codec_subbyte() {
     assert_standalone_forge("codec_subbyte", "codec_subbyte.h");
 }
 
+#[test]
+fn forge_codec_tail() {
+    assert_standalone_forge("codec_tail", "codec_tail.h");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Kotlin conformance tests ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -635,6 +640,11 @@ fn forge_kotlin_codec_subbyte() {
     assert_standalone_forge_kotlin("codec_subbyte", "CodecSubbyte.kt");
 }
 
+#[test]
+fn forge_kotlin_codec_tail() {
+    assert_standalone_forge_kotlin("codec_tail", "CodecTail.kt");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Rust conformance tests ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -720,6 +730,11 @@ fn forge_rust_codec_little_endian() {
 #[test]
 fn forge_rust_codec_subbyte() {
     assert_standalone_forge_rust("codec_subbyte", "codec_subbyte.rs");
+}
+
+#[test]
+fn forge_rust_codec_tail() {
+    assert_standalone_forge_rust("codec_tail", "codec_tail.rs");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -818,6 +833,11 @@ fn forge_go_codec_subbyte() {
     assert_standalone_forge_go("codec_subbyte", "codec_subbyte.go");
 }
 
+#[test]
+fn forge_go_codec_tail() {
+    assert_standalone_forge_go("codec_tail", "codec_tail.go");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Python conformance tests ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -914,6 +934,11 @@ fn forge_python_codec_subbyte() {
     assert_standalone_forge_python("codec_subbyte", "codec_subbyte.py");
 }
 
+#[test]
+fn forge_python_codec_tail() {
+    assert_standalone_forge_python("codec_tail", "codec_tail.py");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── C11 conformance tests ────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -942,6 +967,11 @@ fn forge_c11_codec_little_endian() {
 #[test]
 fn forge_c11_codec_subbyte() {
     assert_standalone_forge_c("codec_subbyte", "codec_subbyte.c.h");
+}
+
+#[test]
+fn forge_c11_codec_tail() {
+    assert_standalone_forge_c("codec_tail", "codec_tail.c.h");
 }
 
 // ── Crossfile codec (C11) ───────────────────────────────────

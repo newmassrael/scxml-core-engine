@@ -21,11 +21,26 @@ data class {{ struct_name }}(
     var {{ field.id }}: {{ field.kt_type }} = {{ field.kt_default }}{{ "," if not loop.last else "" }}
 {% endfor %}
 ) {
+{% if has_variable_fields %}
+    fun encode(): ByteArray {
+        val r = mutableListOf<Byte>()
+{% for expr in encode_exprs %}
+        r.add({{ expr }})
+{% endfor %}
+{% for field in fields %}
+{% if field.is_variable %}
+        r.addAll({{ field.id }}.toList())
+{% endif %}
+{% endfor %}
+        return r.toByteArray()
+    }
+{% else %}
     fun encode(): ByteArray = byteArrayOf(
 {% for expr in encode_exprs %}
         {{ expr }}{{ "," if not loop.last else "" }}
 {% endfor %}
     )
+{% endif %}
 
     companion object {
         fun decode(raw: ByteArray): {{ struct_name }}? {

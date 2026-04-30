@@ -37,9 +37,22 @@ func Decode{{ struct_name }}(raw []byte) *{{ struct_name }} {
 
 // Encode serializes the {{ struct_name }} into raw bytes.
 func (s *{{ struct_name }}) Encode() []byte {
+{% if has_variable_fields %}
+	r := make([]byte, 0, {{ max_bytes }})
+{% for expr in encode_exprs %}
+	r = append(r, {{ expr }})
+{% endfor %}
+{% for field in fields %}
+{% if field.is_variable %}
+	r = append(r, s.{{ field.id }}...)
+{% endif %}
+{% endfor %}
+	return r
+{% else %}
 	return []byte{
 {% for expr in encode_exprs %}
 		{{ expr }},
 {% endfor %}
 	}
+{% endif %}
 }

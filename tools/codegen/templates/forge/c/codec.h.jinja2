@@ -11,6 +11,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+{% if has_variable_fields %}
+#include <string.h>
+{% endif %}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -18,11 +21,17 @@
 {% endif %}
 
 #define {{ c_min_bytes_macro }} {{ min_bytes }}
-#define {{ c_max_bytes_macro }} {{ min_bytes }}
+#define {{ c_max_bytes_macro }} {{ max_bytes }}
 
 typedef struct {
 {% for field in fields %}
+{% if field.is_variable %}
+    /* variable-length payload (sce:bit-size="{{ field.bit_size_kind }}", sce:max-size="{{ field.max_size }}") */
+    uint8_t {{ field.id }}[{{ field.max_size }}];
+    size_t  {{ field.id }}_len;
+{% else %}
     {{ field.c_type }} {{ field.id }};
+{% endif %}
 {% endfor %}
 } {{ c_struct_typedef }};
 
@@ -34,7 +43,25 @@ typedef struct {
 static inline bool {{ c_decode_func }}(const uint8_t *raw, size_t len, {{ c_struct_typedef }} *out) {
     if (len < {{ c_min_bytes_macro }}) return false;
 {% for field in fields %}
+{% if field.is_variable %}
+{% if field.bit_size_kind == "tail" %}
+    {
+        size_t _n = len - {{ field.byte_off }};
+        if (_n > {{ field.max_size }}) return false;
+        memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
+        out->{{ field.id }}_len = _n;
+    }
+{% else %}{# length-ref #}
+    {
+        size_t _n = (size_t)out->{{ field.length_field }};
+        if (_n > {{ field.max_size }} || {{ field.byte_off }} + _n > len) return false;
+        memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
+        out->{{ field.id }}_len = _n;
+    }
+{% endif %}
+{% else %}
     out->{{ field.id }} = {{ field.decode_expr }};
+{% endif %}
 {% endfor %}
     return true;
 }
@@ -44,6 +71,14 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
     r.len = {{ c_min_bytes_macro }};
 {% for expr in encode_exprs %}
     r.bytes[{{ loop.index0 }}] = {{ expr }};
+{% endfor %}
+{% for field in fields %}
+{% if field.is_variable %}
+    if (self->{{ field.id }}_len <= {{ field.max_size }}) {
+        memcpy(&r.bytes[{{ field.byte_off }}], self->{{ field.id }}, self->{{ field.id }}_len);
+        r.len = {{ field.byte_off }} + self->{{ field.id }}_len;
+    }
+{% endif %}
 {% endfor %}
     return r;
 }

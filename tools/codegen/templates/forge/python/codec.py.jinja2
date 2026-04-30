@@ -33,8 +33,21 @@ class {{ struct_name }}:
         )
 
     def encode(self) -> bytes:
+{% if has_variable_fields %}
+        r = bytearray()
+{% for expr in encode_exprs %}
+        r.append({{ expr }})
+{% endfor %}
+{% for field in fields %}
+{% if field.is_variable %}
+        r.extend(self.{{ field.id }})
+{% endif %}
+{% endfor %}
+        return bytes(r)
+{% else %}
         return bytes([
 {% for expr in encode_exprs %}
             {{ expr }},
 {% endfor %}
         ])
+{% endif %}

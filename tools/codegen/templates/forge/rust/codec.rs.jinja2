@@ -45,10 +45,23 @@ impl {{ struct_name }} {
     }
 
     pub fn encode(&self) -> Vec<u8> {
+{% if has_variable_fields %}
+        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
+{% for expr in encode_exprs %}
+        r.push({{ expr }});
+{% endfor %}
+{% for field in fields %}
+{% if field.is_variable %}
+        r.extend_from_slice(&self.{{ field.id }});
+{% endif %}
+{% endfor %}
+        r
+{% else %}
         vec![
 {% for expr in encode_exprs %}
             {{ expr }},
 {% endfor %}
         ]
+{% endif %}
     }
 }

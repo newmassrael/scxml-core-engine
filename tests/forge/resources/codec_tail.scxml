@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec kind — variable-length tail payload (sce:bit-size="tail") -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_tail">
+  <datamodel>
+    <data id="msgId"   sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="status"  sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <data id="payload" sce:type="bytes" sce:byte="2" sce:bit-size="tail" sce:max-size="32"/>
+  </datamodel>
+</scxml>

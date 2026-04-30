@@ -36,11 +36,25 @@ struct {{ struct_name }} {
     }
 
     std::vector<uint8_t> encode() const {
+{% if has_variable_fields %}
+        std::vector<uint8_t> r;
+        r.reserve({{ max_bytes }});
+{% for expr in encode_exprs %}
+        r.push_back({{ expr }});
+{% endfor %}
+{% for field in fields %}
+{% if field.is_variable %}
+        r.insert(r.end(), {{ field.id }}.begin(), {{ field.id }}.end());
+{% endif %}
+{% endfor %}
+        return r;
+{% else %}
         return {
 {% for expr in encode_exprs %}
             {{ expr }}{{ "," if not loop.last else "" }}
 {% endfor %}
         };
+{% endif %}
     }
 };
 

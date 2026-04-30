@@ -730,6 +730,27 @@ impl CodecModel {
         }
         max_end
     }
+
+    /// Maximum frame bytes for encode buffer sizing: fixed bytes plus the
+    /// resolved `sce:max-size` cap of every variable-length field
+    /// (`tail` / `length-ref`). Caps fall back to
+    /// [`crate::forge::limits::BYTES_DEFAULT_MAX`] when absent.
+    pub fn max_frame_bytes(&self) -> u32 {
+        let var_max: u32 = self
+            .fields
+            .iter()
+            .filter(|f| f.is_variable_length())
+            .map(|f| crate::forge::limits::resolve_bytes_max(f.max_size))
+            .sum();
+        self.min_frame_bytes() + var_max
+    }
+
+    /// Whether the codec has any variable-length field. Drives the
+    /// per-backend encode-template branch (initializer-list literal for
+    /// fixed-only fixtures vs builder-pattern for variable-length).
+    pub fn has_variable_fields(&self) -> bool {
+        self.fields.iter().any(|f| f.is_variable_length())
+    }
 }
 
 // ── Filter kind ───────────────────────────────────────────────
