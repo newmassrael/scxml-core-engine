@@ -90,6 +90,10 @@ pub enum ForgeKind {
     Timer,
     /// Threshold monitoring with hysteresis (Phase 3).
     Observer,
+    /// Pure synchronous function with bounded loops and mutable locals
+    /// — watching-zenoh RFC §5.A (Phase A3). Free function emit on
+    /// every backend (`#![no_std]`-clean on Rust when no bytes param).
+    Algorithm,
 }
 
 impl ForgeKind {
@@ -109,6 +113,7 @@ impl ForgeKind {
         "interpolation",
         "timer",
         "observer",
+        "algorithm",
     ];
 
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
@@ -125,6 +130,7 @@ impl ForgeKind {
             "interpolation" => Some(Self::Interpolation),
             "timer" => Some(Self::Timer),
             "observer" => Some(Self::Observer),
+            "algorithm" => Some(Self::Algorithm),
             _ => None,
         }
     }
@@ -132,6 +138,11 @@ impl ForgeKind {
     /// Whether this kind can appear inline within a statechart `<data>` element.
     /// Only stateless kinds are inline-eligible.
     pub fn is_inline_eligible(&self) -> bool {
+        // RFC §5.A: Algorithm emits a free function (stateless) but is
+        // a top-level kind imported via `<sce:import>` rather than
+        // inlined into a statechart `<data>` element. Future RFC
+        // revisions may flip this when an inline-Algorithm consumer
+        // appears; today every fixture imports.
         matches!(
             self,
             Self::Transform | Self::Lookup | Self::Condition | Self::Codec
@@ -149,6 +160,8 @@ impl ForgeKind {
             Self::Transform | Self::Lookup | Self::Condition => false,
             Self::Interpolation => false,
             Self::Statechart => false,
+            // RFC §5.A: Algorithm is a free function — no instance state.
+            Self::Algorithm => false,
         }
     }
 
@@ -169,6 +182,10 @@ impl ForgeKind {
             Self::Filter | Self::Interpolation | Self::Observer => RuntimeDep::ForgeRuntime,
             Self::Timer => RuntimeDep::ForgeRuntimeHal,
             Self::Statechart => RuntimeDep::SceRuntime,
+            // RFC §5.A: Algorithm bottom-outs to language-native loops
+            // and locals, no helper crate. `#![no_std]`-clean on Rust
+            // when no `bytes` parameter.
+            Self::Algorithm => RuntimeDep::None,
         }
     }
 
@@ -187,6 +204,7 @@ impl ForgeKind {
                 | Self::Interpolation
                 | Self::Timer
                 | Self::Observer
+                | Self::Algorithm
         )
     }
 }
@@ -205,6 +223,7 @@ impl std::fmt::Display for ForgeKind {
             Self::Interpolation => write!(f, "interpolation"),
             Self::Timer => write!(f, "timer"),
             Self::Observer => write!(f, "observer"),
+            Self::Algorithm => write!(f, "algorithm"),
         }
     }
 }
@@ -1079,6 +1098,118 @@ pub struct InlineKind {
     pub data: InlineKindData,
 }
 
+// ── Algorithm kind (RFC §5.A) ──────────────────────────────────
+
+/// One parameter of an algorithm signature. Parameters are by-value
+/// scalars or by-reference slices for `bytes`. Read-only in v1
+/// (assigning to a parameter raises `algorithm/lvalue-unsupported`).
+#[derive(Debug, Clone, Serialize)]
+pub struct AlgorithmParam {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub sce_type: SceType,
+}
+
+/// Algorithm signature — parameters and return type. `return_type =
+/// None` denotes void (no `<sce:return type=...>`); a body without a
+/// terminal `<sce:return>` raises `algorithm/return-missing` only when
+/// `return_type` is Some.
+#[derive(Debug, Clone, Serialize)]
+pub struct AlgorithmSignature {
+    pub params: Vec<AlgorithmParam>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_type: Option<SceType>,
+}
+
+/// Build-time const inside an algorithm body. v1 only handles scalar
+/// `<sce:const>` values whose `init` is a literal expression. The
+/// `array<T, N>` form referenced in RFC §5.A's CRC table example
+/// resolves through §5.F build-time const-fold (Phase A4) and is
+/// out of scope for A3.
+#[derive(Debug, Clone, Serialize)]
+pub struct AlgorithmConst {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub sce_type: SceType,
+    /// Raw expression source. Lowered at codegen time via the typed
+    /// expression pipeline (`forge::expr`).
+    pub init: String,
+    /// `sce:compute-at="build"` flag (§5.F hook). Always false in v1
+    /// since A4 has not landed.
+    #[serde(skip_serializing_if = "is_false")]
+    pub compute_at_build: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// One statement in an algorithm body. Lowered to language-idiomatic
+/// constructs by each backend (RFC §5.J.5 emitter table).
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "stmt", rename_all = "snake_case")]
+pub enum AlgorithmStmt {
+    /// `<sce:var name=... type=... init=.../>` — local mutable binding.
+    Var {
+        name: String,
+        #[serde(rename = "type")]
+        sce_type: SceType,
+        init: String,
+    },
+    /// `<sce:assign target="lvalue" expr=".../>"` — mutates an existing
+    /// l-value. v1 l-values are identifier, member access, or index
+    /// (RFC §5.A "LValue scope v1"). Stored as raw string and validated
+    /// by the parser.
+    Assign { target: String, expr: String },
+    /// `<sce:if cond="..."> ... <sce:else>...</sce:else></sce:if>`.
+    If {
+        cond: String,
+        then_body: Vec<AlgorithmStmt>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        else_body: Option<Vec<AlgorithmStmt>>,
+    },
+    /// `<sce:while cond="..." max-iter="N">...</sce:while>` — counted
+    /// loop. `max_iter = None` is allowed only when the `cond`
+    /// expression bounds itself; on MCU targets unbounded loops fire
+    /// `algorithm/while-unbounded` (Phase B once deploy.yaml MCU
+    /// detection lands).
+    While {
+        cond: String,
+        body: Vec<AlgorithmStmt>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_iter: Option<u32>,
+    },
+    /// `<sce:foreach item="b" in="data">...</sce:foreach>` — iterate
+    /// over a collection. Lowers to a counted byte-loop on `bytes`-typed
+    /// sources.
+    Foreach {
+        item: String,
+        source: String,
+        body: Vec<AlgorithmStmt>,
+    },
+    /// `<sce:return expr=".../>"` — terminate body with an optional
+    /// expression. Required at the body terminus when the signature
+    /// declares a non-void `return_type`.
+    Return {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        expr: Option<String>,
+    },
+    /// `<sce:call target="other_algo" args="a, b"/>` — invoke another
+    /// algorithm kind imported via `<sce:import>`. v1 forbids
+    /// recursion (`algorithm/call-cycle`).
+    Call { target: String, args: Vec<String> },
+}
+
+/// Algorithm document — pure synchronous function (RFC §5.A).
+#[derive(Debug, Clone, Serialize)]
+pub struct AlgorithmModel {
+    pub name: String,
+    pub signature: AlgorithmSignature,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub consts: Vec<AlgorithmConst>,
+    pub body: Vec<AlgorithmStmt>,
+}
+
 // ── Forge document ─────────────────────────────────────────────
 
 /// Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.
@@ -1105,6 +1236,8 @@ pub enum ForgeDocument {
     Timer(TimerModel),
     #[serde(rename = "observer")]
     Observer(ObserverModel),
+    #[serde(rename = "algorithm")]
+    Algorithm(AlgorithmModel),
 }
 
 impl ForgeDocument {
@@ -1120,6 +1253,7 @@ impl ForgeDocument {
             Self::Interpolation(m) => &m.name,
             Self::Timer(m) => &m.name,
             Self::Observer(m) => &m.name,
+            Self::Algorithm(m) => &m.name,
         }
     }
 
@@ -1135,6 +1269,7 @@ impl ForgeDocument {
             Self::Interpolation(_) => ForgeKind::Interpolation,
             Self::Timer(_) => ForgeKind::Timer,
             Self::Observer(_) => ForgeKind::Observer,
+            Self::Algorithm(_) => ForgeKind::Algorithm,
         }
     }
 
@@ -1158,6 +1293,8 @@ impl ForgeDocument {
             Self::Procedure(m) => {
                 if m.is_l2() { RuntimeDep::ForgeRuntime } else { RuntimeDep::None }
             }
+            // RFC §5.A: free function over language-native loops/locals.
+            Self::Algorithm(_) => RuntimeDep::None,
         }
     }
 }

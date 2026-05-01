@@ -719,10 +719,13 @@ fn discover_stateful_member_fields(
         }
         ForgeDocument::Timer(_) => {}
         // Stateless kinds handled via stateless_signature path.
+        // Algorithm (RFC §5.A) is a stateless free function; no member
+        // fields exposed to user expressions.
         ForgeDocument::Transform(_)
         | ForgeDocument::Condition(_)
         | ForgeDocument::Lookup(_)
-        | ForgeDocument::Interpolation(_) => {}
+        | ForgeDocument::Interpolation(_)
+        | ForgeDocument::Algorithm(_) => {}
     }
     out
 }
@@ -768,10 +771,12 @@ fn discover_stateful_member_methods(
         // Stateless kinds: caller filters via `is_stateful` before reaching
         // here. Listed so the match stays exhaustive — adding a new
         // ForgeDocument variant forces a decision at this site.
+        // Algorithm (RFC §5.A) is a free function with no instance methods.
         ForgeDocument::Transform(_)
         | ForgeDocument::Condition(_)
         | ForgeDocument::Lookup(_)
-        | ForgeDocument::Interpolation(_) => Vec::new(),
+        | ForgeDocument::Interpolation(_)
+        | ForgeDocument::Algorithm(_) => Vec::new(),
     }
 }
 
@@ -889,6 +894,23 @@ fn discover_primary_function(
         | forge::model::ForgeDocument::Filter(_)
         | forge::model::ForgeDocument::Observer(_)
         | forge::model::ForgeDocument::Timer(_) => None,
+        // RFC §5.A Algorithm: free function whose name is the
+        // SCXML-author-declared `name=` attribute, lowered to each
+        // language's idiomatic identifier per RFC §5.J.5. The
+        // cross-file consumer of `<sce:call target="algo_name"/>`
+        // resolves through this name.
+        forge::model::ForgeDocument::Algorithm(m) => {
+            Some(match language {
+                generator::Language::Rust
+                | generator::Language::Python
+                | generator::Language::C11 => filters::to_snake_case(m.name.clone()),
+                generator::Language::Cpp => filters::to_snake_case(m.name.clone()),
+                generator::Language::Kotlin => {
+                    format!("{}.call", filters::to_pascal_case(m.name.clone()))
+                }
+                generator::Language::Go => filters::to_pascal_case(m.name.clone()),
+            })
+        }
     }
 }
 

@@ -1,0 +1,28 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// RFC §5.A: free function in `namespace SCE::Generated::<Name>`. No
+// STL containers, no exceptions. `bytes` lowers to `std::span<const
+// std::uint8_t>` (RFC §5.J.5 emitter table).
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstddef>
+#include <cstdint>
+{% if needs_span %}#include <span>
+{% endif %}
+namespace SCE::Generated::{{ namespace }} {
+
+inline {{ return_type }} {{ name }}({{ params_str }}) {
+{{ body }}
+}
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

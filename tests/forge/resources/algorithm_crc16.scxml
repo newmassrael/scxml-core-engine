@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CRC16-CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflect, no xor-out).
+
+  Bit-by-bit byte-loop form per RFC §5.A Appendix A — uses only the
+  algorithm body primitives that land in Phase A3 (no <sce:const>
+  table; the §5.F build-time const-fold gate lands in A4). Verifies
+  the cross-language byte-equivalence acceptance gate (RFC §A6).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="crc" type="uint16" init="0xFFFF"/>
+    <sce:foreach item="b" in="data">
+      <sce:var name="hi" type="uint16" init="b"/>
+      <sce:assign target="crc" expr="crc ^ (hi &lt;&lt; 8)"/>
+      <sce:var name="i" type="uint8" init="0"/>
+      <sce:while cond="i &lt; 8" max-iter="8">
+        <sce:if cond="(crc &amp; 0x8000) !== 0">
+          <sce:assign target="crc" expr="(crc &lt;&lt; 1) ^ 0x1021"/>
+          <sce:else>
+            <sce:assign target="crc" expr="crc &lt;&lt; 1"/>
+          </sce:else>
+        </sce:if>
+        <sce:assign target="i" expr="i + 1"/>
+      </sce:while>
+    </sce:foreach>
+    <sce:return expr="crc"/>
+  </sce:body>
+</scxml>

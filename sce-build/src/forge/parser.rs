@@ -151,6 +151,7 @@ fn parse_forge_from_node(
         ForgeKind::Interpolation => parse_interpolation(root, label).map(ForgeDocument::Interpolation),
         ForgeKind::Timer => parse_timer(root, label).map(ForgeDocument::Timer),
         ForgeKind::Observer => parse_observer(root, label).map(ForgeDocument::Observer),
+        ForgeKind::Algorithm => parse_algorithm(root, label).map(ForgeDocument::Algorithm),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -2038,6 +2039,424 @@ fn parse_observer(
         inputs,
         monitors,
         event_domain,
+    })
+}
+
+// ── Algorithm parsing (RFC §5.A) ──────────────────────────────
+
+fn parse_algorithm(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<AlgorithmModel, Located<ForgeError>> {
+    let signature_node = find_sce_child(root, "signature").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Algorithm,
+                element: "sce:signature".into(),
+            },
+        )
+    })?;
+    let signature = parse_algorithm_signature(&signature_node, label.diagnostic_label)?;
+
+    let mut consts = Vec::new();
+    for child in root.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() == Some(SCE_NAMESPACE)
+            && child.tag_name().name() == "const"
+        {
+            consts.push(parse_algorithm_const(&child, label.diagnostic_label)?);
+        }
+    }
+
+    let body_node = find_sce_child(root, "body").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Algorithm,
+                element: "sce:body".into(),
+            },
+        )
+    })?;
+    let body = parse_algorithm_body(&body_node, label.diagnostic_label)?;
+    if body.is_empty() {
+        return Err(located(
+            &body_node,
+            label.diagnostic_label,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Algorithm,
+                what: "body statement".into(),
+            },
+        ));
+    }
+
+    // RFC §5.A `algorithm/lvalue-unsupported`: assigning to a parameter
+    // is forbidden in v1. Walk the parsed body once at parse time so
+    // diagnostics anchor at the body element rather than at codegen.
+    reject_param_assignment(&body, &signature, &body_node, label.diagnostic_label)?;
+
+    Ok(AlgorithmModel {
+        name: label.identifier.to_string(),
+        signature,
+        consts,
+        body,
+    })
+}
+
+fn parse_algorithm_signature(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<AlgorithmSignature, Located<ForgeError>> {
+    let mut params = Vec::new();
+    let mut return_type: Option<SceType> = None;
+    let mut seen_return = false;
+
+    for child in node.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        match child.tag_name().name() {
+            "param" => {
+                let name = child
+                    .attribute("name")
+                    .ok_or_else(|| {
+                        located(
+                            &child,
+                            doc_name,
+                            ValidationError::MissingAttribute {
+                                element: "<sce:param>".into(),
+                                attr: "name".into(),
+                            },
+                        )
+                    })?
+                    .to_string();
+                let type_str = child.attribute("type").ok_or_else(|| {
+                    located(
+                        &child,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: format!("<sce:param name=\"{name}\">"),
+                            attr: "type".into(),
+                        },
+                    )
+                })?;
+                let sce_type = SceType::from_attr(type_str).ok_or_else(|| {
+                    located(
+                        &child,
+                        doc_name,
+                        ValidationError::InvalidAttribute {
+                            element: format!("<sce:param name=\"{name}\">"),
+                            attr: "type".into(),
+                            value: type_str.into(),
+                            expected: "uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32, float64, bool, string, bytes".into(),
+                        },
+                    )
+                })?;
+                params.push(AlgorithmParam { name, sce_type });
+            }
+            "return" => {
+                if seen_return {
+                    return Err(located(
+                        &child,
+                        doc_name,
+                        ValidationError::DuplicateId {
+                            kind: ForgeKind::Algorithm,
+                            what: "return declaration".into(),
+                            id: "sce:return".into(),
+                        },
+                    ));
+                }
+                seen_return = true;
+                if let Some(type_str) = child.attribute("type") {
+                    let sce_type = SceType::from_attr(type_str).ok_or_else(|| {
+                        located(
+                            &child,
+                            doc_name,
+                            ValidationError::InvalidAttribute {
+                                element: "<sce:return>".into(),
+                                attr: "type".into(),
+                                value: type_str.into(),
+                                expected: "uint8..uint64, int8..int64, float32, float64, bool, string, bytes".into(),
+                            },
+                        )
+                    })?;
+                    return_type = Some(sce_type);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(AlgorithmSignature {
+        params,
+        return_type,
+    })
+}
+
+fn parse_algorithm_const(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<AlgorithmConst, Located<ForgeError>> {
+    let name = node
+        .attribute("name")
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: "<sce:const>".into(),
+                    attr: "name".into(),
+                },
+            )
+        })?
+        .to_string();
+    let type_str = node.attribute("type").ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("<sce:const name=\"{name}\">"),
+                attr: "type".into(),
+            },
+        )
+    })?;
+    let sce_type = SceType::from_attr(type_str).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:const name=\"{name}\">"),
+                attr: "type".into(),
+                value: type_str.into(),
+                expected: "uint8..uint64, int8..int64, float32, float64, bool, string".into(),
+            },
+        )
+    })?;
+    let init = node
+        .attribute("init")
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: format!("<sce:const name=\"{name}\">"),
+                    attr: "init".into(),
+                },
+            )
+        })?
+        .to_string();
+    let compute_at_build = sce_attr(node, "compute-at").as_deref() == Some("build");
+    Ok(AlgorithmConst {
+        name,
+        sce_type,
+        init,
+        compute_at_build,
+    })
+}
+
+fn parse_algorithm_body(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<AlgorithmStmt>, Located<ForgeError>> {
+    let mut stmts = Vec::new();
+    for child in node.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        stmts.push(parse_algorithm_stmt(&child, doc_name)?);
+    }
+    Ok(stmts)
+}
+
+fn parse_algorithm_stmt(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<AlgorithmStmt, Located<ForgeError>> {
+    let local = node.tag_name().name();
+    match local {
+        "var" => {
+            let name = require_attr(node, "name", "<sce:var>", doc_name)?;
+            let type_str = require_attr(node, "type", "<sce:var>", doc_name)?;
+            let sce_type = SceType::from_attr(&type_str).ok_or_else(|| {
+                located(
+                    node,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: format!("<sce:var name=\"{name}\">"),
+                        attr: "type".into(),
+                        value: type_str.clone(),
+                        expected: "uint8..uint64, int8..int64, float32, float64, bool, string, bytes".into(),
+                    },
+                )
+            })?;
+            let init = require_attr(node, "init", "<sce:var>", doc_name)?;
+            Ok(AlgorithmStmt::Var {
+                name,
+                sce_type,
+                init,
+            })
+        }
+        "assign" => {
+            let target = require_attr(node, "target", "<sce:assign>", doc_name)?;
+            let expr = require_attr(node, "expr", "<sce:assign>", doc_name)?;
+            Ok(AlgorithmStmt::Assign { target, expr })
+        }
+        "if" => {
+            let cond = require_attr(node, "cond", "<sce:if>", doc_name)?;
+            let mut then_body = Vec::new();
+            let mut else_body: Option<Vec<AlgorithmStmt>> = None;
+            for child in node.children().filter(|n| n.is_element()) {
+                if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+                    continue;
+                }
+                if child.tag_name().name() == "else" {
+                    if else_body.is_some() {
+                        return Err(located(
+                            &child,
+                            doc_name,
+                            ValidationError::DuplicateId {
+                                kind: ForgeKind::Algorithm,
+                                what: "else branch".into(),
+                                id: "sce:else".into(),
+                            },
+                        ));
+                    }
+                    let mut else_stmts = Vec::new();
+                    for c in child.children().filter(|n| n.is_element()) {
+                        if c.tag_name().namespace() == Some(SCE_NAMESPACE) {
+                            else_stmts.push(parse_algorithm_stmt(&c, doc_name)?);
+                        }
+                    }
+                    else_body = Some(else_stmts);
+                } else {
+                    then_body.push(parse_algorithm_stmt(&child, doc_name)?);
+                }
+            }
+            Ok(AlgorithmStmt::If {
+                cond,
+                then_body,
+                else_body,
+            })
+        }
+        "while" => {
+            let cond = require_attr(node, "cond", "<sce:while>", doc_name)?;
+            let max_iter = sce_attr(node, "max-iter").and_then(|s| parse_int(&s));
+            let body = parse_algorithm_body(node, doc_name)?;
+            Ok(AlgorithmStmt::While {
+                cond,
+                body,
+                max_iter,
+            })
+        }
+        "foreach" => {
+            let item = require_attr(node, "item", "<sce:foreach>", doc_name)?;
+            let source = require_attr(node, "in", "<sce:foreach>", doc_name)?;
+            let body = parse_algorithm_body(node, doc_name)?;
+            Ok(AlgorithmStmt::Foreach { item, source, body })
+        }
+        "return" => {
+            let expr = node.attribute("expr").map(|s| s.to_string());
+            Ok(AlgorithmStmt::Return { expr })
+        }
+        "call" => {
+            let target = require_attr(node, "target", "<sce:call>", doc_name)?;
+            let args = node
+                .attribute("args")
+                .map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(AlgorithmStmt::Call { target, args })
+        }
+        other => Err(located(
+            node,
+            doc_name,
+            ValidationError::UnsupportedKind(format!("<sce:{other}> in algorithm body")),
+        )),
+    }
+}
+
+/// RFC §5.A `algorithm/lvalue-unsupported`: parameters are read-only
+/// in v1. Walks the body recursively. Anchors at `body_node` because
+/// the offending `<sce:assign>` may be deeply nested; the body is the
+/// nearest container element the diagnostic can point to without
+/// re-threading nodes through the IR.
+fn reject_param_assignment(
+    stmts: &[AlgorithmStmt],
+    sig: &AlgorithmSignature,
+    body_node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Assign { target, .. } => {
+                let head = target.split(['.', '[']).next().unwrap_or(target).trim();
+                if sig.params.iter().any(|p| p.name == head) {
+                    return Err(located(
+                        body_node,
+                        doc_name,
+                        ValidationError::InvalidAttribute {
+                            element: "<sce:assign>".into(),
+                            attr: "target".into(),
+                            value: target.clone(),
+                            expected: "non-parameter l-value (algorithm parameters are read-only)".into(),
+                        },
+                    ));
+                }
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                reject_param_assignment(then_body, sig, body_node, doc_name)?;
+                if let Some(eb) = else_body {
+                    reject_param_assignment(eb, sig, body_node, doc_name)?;
+                }
+            }
+            AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
+                reject_param_assignment(body, sig, body_node, doc_name)?;
+            }
+            AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+fn require_attr(
+    node: &roxmltree::Node,
+    attr: &str,
+    element: &str,
+    doc_name: &str,
+) -> Result<String, Located<ForgeError>> {
+    node.attribute(attr)
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: element.into(),
+                    attr: attr.into(),
+                },
+            )
+        })
+}
+
+fn find_sce_child<'a>(
+    node: &'a roxmltree::Node,
+    local: &str,
+) -> Option<roxmltree::Node<'a, 'a>> {
+    node.children().find(|n| {
+        n.is_element()
+            && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+            && n.tag_name().name() == local
     })
 }
 

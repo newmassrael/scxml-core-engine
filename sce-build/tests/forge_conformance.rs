@@ -463,6 +463,13 @@ fn assert_inline_codec_structural(
     }
 }
 
+// ── Algorithm conformance (RFC §5.A, Phase A3) ────────────────
+
+#[test]
+fn forge_algorithm_crc16_cpp() {
+    assert_standalone_forge("algorithm_crc16", "algorithm_crc16.h");
+}
+
 // ── Transform conformance (3 tests) ────────────────────────────
 
 #[test]
@@ -668,6 +675,13 @@ fn forge_kotlin_codec_length_ref() {
 // ══════════════════════════════════════════════════════════════
 // ── Rust conformance tests ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════
+
+// ── Algorithm (Rust, RFC §5.A) ───────────────────────────────
+
+#[test]
+fn forge_rust_algorithm_crc16() {
+    assert_standalone_forge_rust("algorithm_crc16", "algorithm_crc16.rs");
+}
 
 // ── Transform (Rust) ─────────────────────────────────────────
 

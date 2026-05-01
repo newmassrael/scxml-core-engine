@@ -665,6 +665,7 @@ pub fn generate_cpp_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Cpp)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -1745,6 +1746,7 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Kotlin)?,
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -1803,6 +1805,7 @@ pub fn generate_rust_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Rust)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -1878,6 +1881,7 @@ pub fn generate_go_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Go)?,
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -1936,6 +1940,7 @@ pub fn generate_python_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Python)?,
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -1994,6 +1999,7 @@ pub fn generate_c11_with_imports(
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::C11)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -6027,6 +6033,417 @@ fn render_observer(
     }
 
     render_phase3(env, &format!("observer.{}.jinja2", l.template_ext()), ctx)
+}
+
+// ── Algorithm (RFC §5.A) ──────────────────────────────────────
+
+/// Per-language parameter type for an algorithm signature.
+///
+/// RFC §5.A diverges from `cpp_param_type` for `bytes`: algorithms
+/// emit a non-owning view (`std::span<const uint8_t>`) rather than
+/// `const std::vector<uint8_t>&`, because RFC §5.J.5 forbids STL
+/// containers in the algorithm emit and span is the named
+/// alternative. Other types and other languages reuse the existing
+/// `param_type` helper unchanged.
+fn algorithm_param_type(lang: crate::generator::Language, ty: &SceType) -> String {
+    use crate::generator::Language;
+    match (lang, ty) {
+        (Language::Cpp, SceType::Bytes) => "std::span<const std::uint8_t>".to_string(),
+        _ => LangCtx::new(lang).param_type(ty),
+    }
+}
+
+/// Format a single algorithm parameter per RFC §5.J.5 emitter table.
+fn algorithm_format_param(lang: crate::generator::Language, name: &str, ty: &SceType) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Cpp => format!("{} {}", algorithm_param_type(lang, ty), name),
+        Language::Kotlin => format!("{}: {}", name, kotlin_type(ty)),
+        Language::Rust => format!(
+            "{}: {}",
+            filters::to_snake_case(name.to_string()),
+            algorithm_param_type(lang, ty)
+        ),
+        Language::Go => format!("{} {}", go_escape_builtin(name), go_type(ty)),
+        Language::Python => format!(
+            "{}: {}",
+            filters::to_snake_case(name.to_string()),
+            python_type(ty)
+        ),
+        Language::C11 => format!(
+            "{} {}",
+            algorithm_param_type(lang, ty),
+            filters::to_snake_case(name.to_string())
+        ),
+    }
+}
+
+/// Collect every (name, type) introduced inside an algorithm body —
+/// `<sce:var>` locals and `<sce:foreach item>` loop variables — so the
+/// caller can build a flat TypeCtx covering params + locals.
+///
+/// Errors when a name shadows a previously-collected one (parameters
+/// or earlier locals). RFC §5.A `algorithm/local-shadows-param`
+/// diagnostic surface lands here; the codegen-side `InvalidConfig`
+/// shape is temporary until A3-δ adds the `algorithm/*` wire codes
+/// (see `next_watching_zenoh_rfc_phase_a.md`).
+fn collect_algorithm_local_types(
+    stmts: &[AlgorithmStmt],
+    out: &mut Vec<(String, SceType)>,
+    seen: &mut std::collections::BTreeSet<String>,
+) -> Result<(), ForgeError> {
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Var { name, sce_type, .. } => {
+                if !seen.insert(name.clone()) {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "algorithm: local '{name}' shadows another binding (RFC §5.A algorithm/local-shadows-param)"
+                    ))
+                    .into());
+                }
+                out.push((name.clone(), sce_type.clone()));
+            }
+            AlgorithmStmt::Foreach { item, body, .. } => {
+                if !seen.insert(item.clone()) {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "algorithm: foreach item '{item}' shadows another binding"
+                    ))
+                    .into());
+                }
+                // Foreach over `bytes` exposes the item as Uint8.
+                out.push((item.clone(), SceType::Uint8));
+                collect_algorithm_local_types(body, out, seen)?;
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_algorithm_local_types(then_body, out, seen)?;
+                if let Some(eb) = else_body {
+                    collect_algorithm_local_types(eb, out, seen)?;
+                }
+            }
+            AlgorithmStmt::While { body, .. } => {
+                collect_algorithm_local_types(body, out, seen)?;
+            }
+            AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+/// Lower an algorithm body into a multi-line code string in the
+/// target language. Each statement consumes the type context built by
+/// `collect_algorithm_local_types`; nested blocks reuse the same flat
+/// context (shadowing is forbidden, so flat is sufficient).
+fn lower_algorithm_body(
+    stmts: &[AlgorithmStmt],
+    lang: crate::generator::Language,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    indent: usize,
+) -> Result<String, ForgeError> {
+    let mut out = String::new();
+    let pad = "    ".repeat(indent);
+    let l = LangCtx::new(lang);
+    let no_renames: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for s in stmts {
+        lower_algorithm_stmt(s, lang, type_ctx, &l, &no_renames, &pad, indent, &mut out)?;
+    }
+    Ok(out.trim_end().to_string())
+}
+
+fn lower_algorithm_stmt(
+    s: &AlgorithmStmt,
+    lang: crate::generator::Language,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    l: &LangCtx,
+    renames: &std::collections::HashMap<&str, &str>,
+    pad: &str,
+    indent: usize,
+    out: &mut String,
+) -> Result<(), ForgeError> {
+    use crate::forge::types::InferredType;
+    use crate::generator::Language;
+    match s {
+        AlgorithmStmt::Var {
+            name,
+            sce_type,
+            init,
+        } => {
+            let init_lowered = expr::transpile_typed(
+                init,
+                l.expr_target(),
+                type_ctx,
+                renames,
+                InferredType::from_sce_type(sce_type),
+            )?;
+            let local = l.local_id(name);
+            let line = match lang {
+                Language::Rust => format!(
+                    "{pad}let mut {local}: {ty} = {init_lowered};\n",
+                    ty = l.type_name(sce_type)
+                ),
+                Language::Cpp | Language::C11 => {
+                    format!(
+                        "{pad}{ty} {local} = {init_lowered};\n",
+                        ty = l.type_name(sce_type)
+                    )
+                }
+                Language::Kotlin => format!(
+                    "{pad}var {local}: {ty} = {init_lowered}\n",
+                    ty = l.type_name(sce_type)
+                ),
+                Language::Go => format!(
+                    "{pad}var {local} {ty} = {init_lowered}\n",
+                    ty = l.type_name(sce_type)
+                ),
+                Language::Python => format!("{pad}{local}: {ty} = {init_lowered}\n", ty = l.type_name(sce_type)),
+            };
+            out.push_str(&line);
+        }
+        AlgorithmStmt::Assign { target, expr: rhs } => {
+            let (lhs, lhs_ty) = expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)?;
+            let rhs_lowered = expr::transpile_typed(
+                rhs,
+                l.expr_target(),
+                type_ctx,
+                renames,
+                lhs_ty,
+            )?;
+            let semi = if matches!(lang, Language::Kotlin | Language::Python) { "" } else { ";" };
+            out.push_str(&format!("{pad}{lhs} = {rhs_lowered}{semi}\n"));
+        }
+        AlgorithmStmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            let cond_lowered = expr::transpile_typed(
+                cond,
+                l.expr_target(),
+                type_ctx,
+                renames,
+                InferredType::Bool,
+            )?;
+            match lang {
+                Language::Python => {
+                    out.push_str(&format!("{pad}if {cond_lowered}:\n"));
+                    let inner_pad = "    ".repeat(indent + 1);
+                    for st in then_body {
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                    }
+                    if let Some(eb) = else_body {
+                        out.push_str(&format!("{pad}else:\n"));
+                        for st in eb {
+                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                        }
+                    }
+                }
+                _ => {
+                    out.push_str(&format!("{pad}if ({cond_lowered}) {{\n"));
+                    let inner_pad = "    ".repeat(indent + 1);
+                    for st in then_body {
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                    }
+                    if let Some(eb) = else_body {
+                        out.push_str(&format!("{pad}}} else {{\n"));
+                        for st in eb {
+                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                        }
+                    }
+                    out.push_str(&format!("{pad}}}\n"));
+                }
+            }
+        }
+        AlgorithmStmt::While { cond, body, max_iter } => {
+            let cond_lowered = expr::transpile_typed(
+                cond,
+                l.expr_target(),
+                type_ctx,
+                renames,
+                InferredType::Bool,
+            )?;
+            let _ = max_iter; // RFC §5.A runtime-counter guard lands in A4 (build-time fold).
+            match lang {
+                Language::Python => {
+                    out.push_str(&format!("{pad}while {cond_lowered}:\n"));
+                    let inner_pad = "    ".repeat(indent + 1);
+                    for st in body {
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                    }
+                }
+                _ => {
+                    out.push_str(&format!("{pad}while ({cond_lowered}) {{\n"));
+                    let inner_pad = "    ".repeat(indent + 1);
+                    for st in body {
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                    }
+                    out.push_str(&format!("{pad}}}\n"));
+                }
+            }
+        }
+        AlgorithmStmt::Foreach { item, source, body } => {
+            // RFC §5.A v1: foreach iterates a `bytes` source — the item
+            // is a `u8`. Future versions over bounded-collection (§5.L)
+            // generalize the loop type.
+            let src_lowered = expr::transpile_typed(
+                source,
+                l.expr_target(),
+                type_ctx,
+                renames,
+                InferredType::Unknown,
+            )?;
+            let it = l.local_id(item);
+            let header = match lang {
+                Language::Rust => format!("{pad}for &{it} in {src_lowered}.iter() {{\n"),
+                Language::Cpp => format!("{pad}for (std::uint8_t {it} : {src_lowered}) {{\n"),
+                Language::C11 => format!(
+                    "{pad}for (size_t __i = 0; __i < {src_lowered}.len; ++__i) {{\n{pad}    uint8_t {it} = {src_lowered}.data[__i];\n"
+                ),
+                Language::Kotlin => format!("{pad}for ({it} in {src_lowered}) {{\n"),
+                Language::Go => format!("{pad}for _, {it} := range {src_lowered} {{\n"),
+                Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
+            };
+            out.push_str(&header);
+            let inner_indent = if matches!(lang, Language::Python) { indent + 1 } else { indent + 1 };
+            let inner_pad = "    ".repeat(inner_indent);
+            for st in body {
+                lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, inner_indent, out)?;
+            }
+            if !matches!(lang, Language::Python) {
+                out.push_str(&format!("{pad}}}\n"));
+            }
+        }
+        AlgorithmStmt::Return { expr: e } => {
+            let line = match e {
+                Some(rhs) => {
+                    let lowered = expr::transpile_typed(
+                        rhs,
+                        l.expr_target(),
+                        type_ctx,
+                        renames,
+                        InferredType::Unknown,
+                    )?;
+                    match lang {
+                        Language::Python => format!("{pad}return {lowered}\n"),
+                        Language::Kotlin => format!("{pad}return {lowered}\n"),
+                        _ => format!("{pad}return {lowered};\n"),
+                    }
+                }
+                None => match lang {
+                    Language::Python | Language::Kotlin => format!("{pad}return\n"),
+                    _ => format!("{pad}return;\n"),
+                },
+            };
+            out.push_str(&line);
+        }
+        AlgorithmStmt::Call { target, args } => {
+            let lowered_args: Vec<String> = args
+                .iter()
+                .map(|a| {
+                    expr::transpile_typed(
+                        a,
+                        l.expr_target(),
+                        type_ctx,
+                        renames,
+                        InferredType::Unknown,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let semi = if matches!(lang, Language::Kotlin | Language::Python) { "" } else { ";" };
+            out.push_str(&format!(
+                "{pad}{target}({args}){semi}\n",
+                args = lowered_args.join(", ")
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn render_algorithm(
+    env: &minijinja::Environment,
+    m: &AlgorithmModel,
+    _imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, ForgeError> {
+    use crate::forge::types::{InferredType, TypeCtx};
+    let l = LangCtx::new(lang);
+    let mut ctx = l.base_context(&m.name);
+
+    // Build TypeCtx from params + collected local vars / foreach items.
+    // Owned strings live in `env_pairs` for the lifetime of `type_ctx`.
+    let mut env_pairs: Vec<(String, SceType)> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for p in &m.signature.params {
+        if !seen.insert(p.name.clone()) {
+            return Err(GenerateError::InvalidConfig(format!(
+                "algorithm '{}': duplicate parameter '{}'",
+                m.name, p.name
+            ))
+            .into());
+        }
+        env_pairs.push((p.name.clone(), p.sce_type.clone()));
+    }
+    collect_algorithm_local_types(&m.body, &mut env_pairs, &mut seen)?;
+
+    let mut type_ctx = TypeCtx::new();
+    for (name, ty) in &env_pairs {
+        type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+    }
+
+    // Per-RFC §5.J.5 signature emit.
+    let params_str = m
+        .signature
+        .params
+        .iter()
+        .map(|p| algorithm_format_param(lang, &p.name, &p.sce_type))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    use crate::generator::Language;
+    let return_type = match &m.signature.return_type {
+        Some(t) => l.type_name(t).to_string(),
+        None => match lang {
+            Language::Cpp | Language::C11 | Language::Rust => "()".to_string(), // overridden below
+            Language::Go => "".to_string(),
+            Language::Kotlin => "Unit".to_string(),
+            Language::Python => "None".to_string(),
+        },
+    };
+    // C/Cpp use literal `void`; Rust uses `()`; the above default for
+    // Cpp/C11/Rust collapses to `()` which Rust accepts but C/C++ do not.
+    let return_type = match (&m.signature.return_type, lang) {
+        (None, Language::Cpp) | (None, Language::C11) => "void".to_string(),
+        (None, Language::Rust) => "()".to_string(),
+        _ => return_type,
+    };
+
+    let body = lower_algorithm_body(&m.body, lang, &type_ctx, 1)?;
+
+    let needs_span = m
+        .signature
+        .params
+        .iter()
+        .any(|p| matches!(p.sce_type, SceType::Bytes));
+
+    let snake = filters::to_snake_case(m.name.clone());
+    ctx.insert("name".into(), snake.clone().into());
+    ctx.insert("name_pascal".into(), filters::to_pascal_case(m.name.clone()).into());
+    ctx.insert("params_str".into(), params_str.into());
+    ctx.insert("return_type".into(), return_type.into());
+    ctx.insert(
+        "has_return".into(),
+        m.signature.return_type.is_some().into(),
+    );
+    ctx.insert("body".into(), body.into());
+    ctx.insert("needs_span".into(), needs_span.into());
+    // RFC §5.A: Rust `#![no_std]`-clean when no `bytes` parameter.
+    ctx.insert("no_std_clean".into(), (!needs_span).into());
+
+    l.render(env, "algorithm", ctx)
 }
 
 // ── Naming helpers (delegating to filters where possible) ──────

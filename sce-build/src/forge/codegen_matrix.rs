@@ -72,7 +72,8 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         | ForgeKind::Filter
         | ForgeKind::Interpolation
         | ForgeKind::Timer
-        | ForgeKind::Observer => KindClass::Generic,
+        | ForgeKind::Observer
+        | ForgeKind::Algorithm => KindClass::Generic,
     }
 }
 
@@ -104,6 +105,14 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Go
             | Language::Python
             | Language::C11 => true,
+        },
+        // RFC §5.A Algorithm: Phase A3 lands Rust + Cpp emitters
+        // (RFC §7 line 3381). Kotlin/Go/Python/C11 fire
+        // `codegen/generic-kind-backend-emit-missing` until their
+        // templates ship in subsequent Phase A PRs.
+        ForgeKind::Algorithm => match lang {
+            Language::Rust | Language::Cpp => true,
+            Language::Kotlin | Language::Go | Language::Python | Language::C11 => false,
         },
     }
 }
@@ -204,6 +213,32 @@ mod tests {
                 assert_eq!(lookup(k, l), EmitOutcome::Emit, "({k:?}, {l:?})");
                 assert!(check(k, l).is_ok(), "check({k:?}, {l:?})");
             }
+        }
+    }
+
+    /// RFC §5.A Phase A3: Algorithm ships on Rust + Cpp; the four
+    /// other backends fire `codegen/generic-kind-backend-emit-missing`.
+    #[test]
+    fn algorithm_kind_ships_on_rust_and_cpp_only() {
+        assert_eq!(kind_class(ForgeKind::Algorithm), KindClass::Generic);
+        assert_eq!(lookup(ForgeKind::Algorithm, Language::Rust), EmitOutcome::Emit);
+        assert_eq!(lookup(ForgeKind::Algorithm, Language::Cpp), EmitOutcome::Emit);
+        for lang in [Language::Kotlin, Language::Go, Language::Python, Language::C11] {
+            assert_eq!(
+                lookup(ForgeKind::Algorithm, lang),
+                EmitOutcome::TemplateMissing,
+                "({:?}, {:?}) should fire generic-kind-backend-emit-missing",
+                ForgeKind::Algorithm,
+                lang,
+            );
+            let err = check(ForgeKind::Algorithm, lang).expect_err("matrix walker rejects");
+            assert!(
+                matches!(err, GenerateError::CodegenGenericKindBackendEmitMissing { .. }),
+                "wrong diagnostic variant for ({:?}, {:?}): {:?}",
+                ForgeKind::Algorithm,
+                lang,
+                err,
+            );
         }
     }
 

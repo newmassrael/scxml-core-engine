@@ -45,6 +45,8 @@
       <xs:enumeration value="interpolation"/>
       <xs:enumeration value="timer"/>
       <xs:enumeration value="observer"/>
+      <!-- watching-zenoh RFC §5.A (Phase A3) -->
+      <xs:enumeration value="algorithm"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -325,16 +327,132 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- Parameter declaration inside a template file. `name` is always
-       required. `required="true"` and `default="..."` are mutually
-       exclusive per RFC §3.1; XSD 1.0 cannot express that constraint
-       natively (assertions are XSD 1.1), so the expander enforces it at
-       build time and raises xml/template-malformed on collision. -->
+  <!-- Parameter declaration. Two roles:
+       * Inside <sce:template>: name + (required | default), per RFC §3.1.
+       * Inside <sce:signature> (algorithm kind, RFC §5.A): name + type.
+       The parser distinguishes by enclosing element; the schema permits
+       both shapes via separate optional attributes. -->
   <xs:element name="param">
     <xs:complexType>
       <xs:attribute name="name" type="sce:paramNameType" use="required"/>
       <xs:attribute name="required" type="xs:boolean"/>
       <xs:attribute name="default" type="xs:string"/>
+      <!-- RFC §5.A signature param: by-value scalar or by-reference bytes. -->
+      <xs:attribute name="type" type="sce:sceType"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       Algorithm kind body (watching-zenoh RFC §5.A, Phase A3)
+
+       Pure synchronous functions with bounded loops and mutable
+       locals. Body statements are <sce:var>/<sce:assign>/<sce:if>/
+       <sce:while>/<sce:foreach>/<sce:return>/<sce:call>; nested
+       blocks recurse via xs:any lax. The parser
+       (`forge::parser::parse_algorithm`) enforces structural
+       constraints (e.g. statement order, max-iter on while, l-value
+       shape on assign). The schema only declares element/attribute
+       presence so libxml2 stops accepting freeform body markup.
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <xs:element name="signature">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="##any" processContents="lax"
+                minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="return">
+    <xs:complexType>
+      <!-- type=  inside <sce:signature>; expr=  inside body. The two
+           are not mutually exclusive at schema level — the parser
+           rejects `<sce:return type expr/>` collisions. -->
+      <xs:attribute name="type" type="sce:sceType"/>
+      <xs:attribute name="expr" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="body">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="##any" processContents="lax"
+                minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="var">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:NCName" use="required"/>
+      <xs:attribute name="type" type="sce:sceType" use="required"/>
+      <xs:attribute name="init" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="assign">
+    <xs:complexType>
+      <xs:attribute name="target" type="xs:string" use="required"/>
+      <xs:attribute name="expr" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="if">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="##any" processContents="lax"
+                minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="cond" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="else">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="##any" processContents="lax"
+                minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="while">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="##any" processContents="lax"
+                minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="cond" type="xs:string" use="required"/>
+      <xs:attribute name="max-iter" type="xs:nonNegativeInteger"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="foreach">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="##any" processContents="lax"
+                minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="item" type="xs:NCName" use="required"/>
+      <xs:attribute name="in" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="const">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:NCName" use="required"/>
+      <xs:attribute name="type" type="sce:sceType" use="required"/>
+      <xs:attribute name="init" type="xs:string" use="required"/>
+      <!-- §5.F build-time fold hook (Phase A4); A3 ignores the value. -->
+      <xs:attribute name="compute-at" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="call">
+    <xs:complexType>
+      <xs:attribute name="target" type="xs:NCName" use="required"/>
+      <xs:attribute name="args" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 
