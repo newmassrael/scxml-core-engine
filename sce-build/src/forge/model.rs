@@ -1121,21 +1121,138 @@ pub struct AlgorithmSignature {
     pub return_type: Option<SceType>,
 }
 
-/// Build-time const inside an algorithm body. v1 only handles scalar
-/// `<sce:const>` values whose `init` is a literal expression. The
-/// `array<T, N>` form referenced in RFC §5.A's CRC table example
-/// resolves through §5.F build-time const-fold (Phase A4) and is
-/// out of scope for A3.
+/// Type carried by an `<sce:const>` declaration. Scalar form is the
+/// only shape produced by hand-authored algorithm bodies (RFC §5.A);
+/// the array form is reserved for `sce:compute-at="build"` consts
+/// whose body is an `<sce:fold>` block (RFC §5.F build-time const-fold).
+/// Keeping array out of [`SceType`] keeps the parameter / var / field
+/// surfaces scalar-only, which is the v1 contract everywhere else.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum AlgorithmConstType {
+    /// Scalar form (any `SceType`). Emitted as a language-native const.
+    Scalar(SceType),
+    /// Array form `array<T, N>` — emitted as a language-native static
+    /// array literal once §5.F const-fold lands. Length is the fixed
+    /// element count; element type is one of the scalar `SceType`s.
+    Array {
+        elem: SceType,
+        len: u32,
+    },
+}
+
+impl AlgorithmConstType {
+    /// Element type of an array shape, or the scalar's own type. Used
+    /// by the host interpreter (Phase A4-β) to coerce yielded values
+    /// before serializing the array literal, and by the §5.J.5 emitters
+    /// to derive the per-language type name.
+    pub fn elem_or_scalar(&self) -> &SceType {
+        match self {
+            Self::Scalar(t) => t,
+            Self::Array { elem, .. } => elem,
+        }
+    }
+
+    /// Parse the textual `type=` attribute of `<sce:const>`. Accepts
+    /// any scalar [`SceType`] keyword as well as the
+    /// `array<<elem>, <len>>` form (e.g. `array<u16, 256>`,
+    /// `array<uint16, 256>`). `<elem>` accepts both Rust-style
+    /// (`u8`..`u64`, `i8`..`i64`, `f32`/`f64`) and SCXML-style
+    /// (`uint8`..`uint64`, `int8`..`int64`, `float32`/`float64`)
+    /// spellings; the alias map mirrors RFC §5.F's example which uses
+    /// `array<u16, 256>` while the rest of the schema uses the
+    /// long-form spelling. Returns `None` on any other input — caller
+    /// raises a `ValidationError::InvalidAttribute` that names both
+    /// forms in the `expected:` field.
+    pub fn from_attr(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if let Some(rest) = s.strip_prefix("array<").and_then(|t| t.strip_suffix('>')) {
+            let (elem_str, len_str) = rest.split_once(',')?;
+            let elem = parse_scetype_with_aliases(elem_str.trim())?;
+            let len: u32 = len_str.trim().parse().ok()?;
+            return Some(Self::Array { elem, len });
+        }
+        SceType::from_attr(s).map(Self::Scalar)
+    }
+}
+
+/// Recognises both SCXML-style (`uint16`) and Rust-style (`u16`)
+/// scalar type spellings. RFC §5.F's worked example uses the short
+/// form (`array<u16, 256>`) while the rest of the IR speaks the long
+/// form — accepting both keeps authoring fluent without forking the
+/// canonical `SceType` enum.
+fn parse_scetype_with_aliases(s: &str) -> Option<SceType> {
+    if let Some(t) = SceType::from_attr(s) {
+        return Some(t);
+    }
+    Some(match s {
+        "u8" => SceType::Uint8,
+        "u16" => SceType::Uint16,
+        "u32" => SceType::Uint32,
+        "u64" => SceType::Uint64,
+        "i8" => SceType::Int8,
+        "i16" => SceType::Int16,
+        "i32" => SceType::Int32,
+        "i64" => SceType::Int64,
+        "f32" => SceType::Float32,
+        "f64" => SceType::Float64,
+        _ => return None,
+    })
+}
+
+/// Body of an `<sce:fold>` element — RFC §5.F build-time evaluation.
+///
+/// Iterates `iter_var` over `[range_start, range_end)`, executing
+/// `body` against a fresh local scope per iteration and emitting
+/// `yield_expr` (typed at `elem_type`) as one element of the produced
+/// array.
+#[derive(Debug, Clone, Serialize)]
+pub struct FoldBody {
+    /// Inclusive lower bound of the integer range driving the fold.
+    pub range_start: u32,
+    /// Exclusive upper bound of the integer range driving the fold.
+    pub range_end: u32,
+    /// Loop-variable name visible inside the fold body.
+    pub iter_var: String,
+    /// Element type — must match the array shape's `elem` and the
+    /// static type of `yield_expr` (validated by Phase A4-γ
+    /// diagnostic `algorithm/const-yield-type-mismatch`).
+    pub elem_type: SceType,
+    /// Statements executed per iteration before `yield_expr`. Re-uses
+    /// the algorithm-body statement vocabulary (Var / Assign / If /
+    /// While / Foreach). `Return` and `Call` are forbidden inside a
+    /// fold body (the host interpreter rejects them with
+    /// `algorithm/const-not-foldable`).
+    pub body: Vec<AlgorithmStmt>,
+    /// Per-iteration yielded expression — its evaluated value at
+    /// `elem_type` becomes the next array element.
+    pub yield_expr: String,
+}
+
+/// Build-time const inside an algorithm body. RFC §5.A v1 admits the
+/// scalar literal form (`<sce:const name=... type=... init="..."/>`).
+/// The `<sce:const sce:compute-at="build">` form with an `<sce:fold>`
+/// body resolves through RFC §5.F build-time const-fold; the IR shape
+/// lands in Phase A4-α (parser + model), the host interpreter and
+/// per-language emit land in A4-β.
 #[derive(Debug, Clone, Serialize)]
 pub struct AlgorithmConst {
     pub name: String,
     #[serde(rename = "type")]
-    pub sce_type: SceType,
-    /// Raw expression source. Lowered at codegen time via the typed
-    /// expression pipeline (`forge::expr`).
-    pub init: String,
-    /// `sce:compute-at="build"` flag (§5.F hook). Always false in v1
-    /// since A4 has not landed.
+    pub sce_type: AlgorithmConstType,
+    /// Literal init expression for scalar consts. Lowered at codegen
+    /// time via the typed expression pipeline (`forge::expr`). `None`
+    /// when the const carries a `<sce:fold>` body instead — the
+    /// parser enforces "exactly one of `init` / `fold`".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub init: Option<String>,
+    /// `<sce:fold>` body for `sce:compute-at="build"` consts. `None`
+    /// for scalar consts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fold: Option<FoldBody>,
+    /// `sce:compute-at="build"` flag (§5.F hook). Required to be
+    /// `true` when [`AlgorithmConst::fold`] is `Some`, and required
+    /// to be `false` otherwise. The parser enforces this invariant.
     #[serde(skip_serializing_if = "is_false")]
     pub compute_at_build: bool,
 }

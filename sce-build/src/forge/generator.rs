@@ -6375,6 +6375,23 @@ fn render_algorithm(
     let l = LangCtx::new(lang);
     let mut ctx = l.base_context(&m.name);
 
+    // RFC §5.F gate: build-time const-fold (`<sce:const sce:compute-at="build">`)
+    // requires the host interpreter that lands in Phase A4-β. The IR + parser
+    // surface lives in α; encountering a fold-bodied const at codegen time
+    // before β ships is a clean stop, not silent emission. Once β lands, the
+    // host evaluator (`forge::const_fold`) replaces this guard with the real
+    // array-literal lowering.
+    if let Some(const_def) = m.consts.iter().find(|c| c.fold.is_some()) {
+        return Err(GenerateError::UnsupportedFeature(format!(
+            "algorithm '{}': <sce:const name=\"{}\"> uses sce:compute-at=\"build\" \
+             with an <sce:fold> body — RFC §5.F build-time const-fold is parsed \
+             (Phase A4-α) but the host interpreter that lowers it to a static \
+             array literal lands in Phase A4-β",
+            m.name, const_def.name,
+        ))
+        .into());
+    }
+
     // Build TypeCtx from params + collected local vars / foreach items.
     // Owned strings live in `env_pairs` for the lifetime of `type_ctx`.
     let mut env_pairs: Vec<(String, SceType)> = Vec::new();

@@ -470,6 +470,103 @@ fn forge_algorithm_crc16_cpp() {
     assert_standalone_forge("algorithm_crc16", "algorithm_crc16.h");
 }
 
+// ── §5.F build-time const-fold (Phase A4-α — IR + parser only) ──
+
+/// RFC §5.F α gate: `<sce:const sce:compute-at="build">` with an
+/// `<sce:fold>` body parses into the new IR shape.
+///
+/// Pins three contracts the host interpreter (β) will inherit:
+///   1. `array<u16, N>` outer-type syntax accepted (Rust-style alias).
+///   2. `<sce:fold range="START..END" as="i" elem-type="...">` body
+///      parses with the algorithm-statement vocabulary inside it.
+///   3. `<sce:yield expr="..."/>` is the fold's terminal child.
+///
+/// The host interpreter itself lands in β; until then codegen on this
+/// fixture deliberately fires `GenerateError::UnsupportedFeature` —
+/// see `forge_const_fold_smoke_unsupported_until_phase_b` below.
+#[test]
+fn forge_algorithm_const_fold_smoke_parses() {
+    use sce_build::forge::model::{
+        AlgorithmConstType, ForgeDocument, SceType,
+    };
+    use sce_build::forge::parser::parse_forge;
+    use sce_build::DocumentLabel;
+
+    let scxml_path = resource_dir().join("algorithm_const_fold_smoke.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
+
+    let doc = parse_forge(&content, DocumentLabel::symmetric("algorithm_const_fold_smoke"))
+        .expect("fold-form const must parse cleanly")
+        .expect("fixture is sce:kind=\"algorithm\"");
+    let alg = match doc {
+        ForgeDocument::Algorithm(m) => m,
+        other => panic!("expected Algorithm doc, got {:?}", other.kind()),
+    };
+
+    assert_eq!(alg.consts.len(), 1, "fixture declares exactly one const");
+    let c = &alg.consts[0];
+    assert_eq!(c.name, "DOUBLED");
+    assert!(
+        c.compute_at_build,
+        "compute_at_build must be set when <sce:fold> body is present"
+    );
+    assert!(
+        c.init.is_none(),
+        "fold-form const must not carry init=; got {:?}",
+        c.init
+    );
+
+    match &c.sce_type {
+        AlgorithmConstType::Array { elem, len } => {
+            assert_eq!(*elem, SceType::Uint16, "Rust-style `u16` alias must map to Uint16");
+            assert_eq!(*len, 4, "array<u16, 4> declared length");
+        }
+        other => panic!("fold-form const must carry array shape, got {other:?}"),
+    }
+
+    let fold = c.fold.as_ref().expect("fold-form const carries FoldBody");
+    assert_eq!(fold.range_start, 0);
+    assert_eq!(fold.range_end, 4);
+    assert_eq!(fold.iter_var, "i");
+    assert_eq!(fold.elem_type, SceType::Uint16);
+    assert_eq!(fold.yield_expr, "doubled");
+    assert_eq!(
+        fold.body.len(),
+        1,
+        "fixture's fold body has one <sce:var> before <sce:yield>"
+    );
+}
+
+/// RFC §5.F α gate: until the host interpreter lands in β, codegen on
+/// a fold-form const must stop with a precise `UnsupportedFeature`
+/// error rather than silently dropping the const from output. The
+/// error message must name both the algorithm and the const so the
+/// authoring loop can find the offending element.
+#[test]
+fn forge_const_fold_smoke_unsupported_until_phase_b() {
+    let scxml_path = resource_dir().join("algorithm_const_fold_smoke.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
+
+    let opts = sce_build::ForgeCompileOptions::default();
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("algorithm_const_fold_smoke"),
+        sce_build::generator::Language::Rust,
+        scxml_path.parent().unwrap(),
+        &opts,
+    );
+    let err = match result {
+        Ok(_) => panic!("fold-form const must not silently emit before β"),
+        Err(e) => e,
+    };
+    let msg = err.to_string();
+    assert!(
+        msg.contains("DOUBLED") && msg.contains("RFC §5.F") && msg.contains("Phase A4-β"),
+        "error must name the const, RFC section, and the phase that ships the interpreter; \
+         got: {msg}"
+    );
+}
+
 // ── Transform conformance (3 tests) ────────────────────────────
 
 #[test]

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Smoke fixture for RFC §5.F build-time const-fold Phase A4-α.
+
+  Pins the parser surface for `<sce:const sce:compute-at="build">` with
+  an `<sce:fold>` body, including:
+
+    - `array<elem, len>` outer-type syntax accepted via
+      `AlgorithmConstType::from_attr` (Rust-style alias `u16` exercised).
+    - `<sce:fold range="START..END" as="i" elem-type="uint16">` shape
+      including a per-iteration `<sce:var>` reusing the algorithm-body
+      statement vocabulary.
+    - Terminal `<sce:yield expr="..."/>` driving each emitted element.
+
+  The IR + parser + XSD surface lands in α; the host interpreter that
+  evaluates the fold body and lowers it to a static array literal lands
+  in Phase A4-β. Until β ships, codegen on this fixture deliberately
+  fires `GenerateError::UnsupportedFeature` (verified by the
+  `forge_const_fold_smoke_unsupported_until_phase_b` conformance test).
+
+  No CRC table here — that requires the `<sce:if>` family + bit-shift
+  operators inside the fold body. The CRC16-table-form acceptance gate
+  (RFC §A6) lands together with the host interpreter in β.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:const name="DOUBLED" type="array&lt;u16, 4&gt;" sce:compute-at="build">
+    <sce:fold range="0..4" as="i" elem-type="uint16">
+      <sce:var name="doubled" type="uint16" init="i + i"/>
+      <sce:yield expr="doubled"/>
+    </sce:fold>
+  </sce:const>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>

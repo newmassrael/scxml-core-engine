@@ -2235,7 +2235,7 @@ fn parse_algorithm_const(
             },
         )
     })?;
-    let sce_type = SceType::from_attr(type_str).ok_or_else(|| {
+    let sce_type = AlgorithmConstType::from_attr(type_str).ok_or_else(|| {
         located(
             node,
             doc_name,
@@ -2243,30 +2243,329 @@ fn parse_algorithm_const(
                 element: format!("<sce:const name=\"{name}\">"),
                 attr: "type".into(),
                 value: type_str.into(),
-                expected: "uint8..uint64, int8..int64, float32, float64, bool, string".into(),
+                expected: "scalar (uint8..uint64, int8..int64, float32, float64, bool, string) \
+                           or array<elem, len> (RFC §5.F)"
+                    .into(),
             },
         )
     })?;
-    let init = node
-        .attribute("init")
+
+    // RFC §5.F: `sce:compute-at="build"` is the only legal value for
+    // the attribute. Anything else is a hard error so future values
+    // (e.g. `link`/`runtime`) can be added without silently sliding
+    // past the parser. `None` (attribute absent) is the v1 default.
+    let compute_at_attr = sce_attr(node, "compute-at");
+    let compute_at_build = match compute_at_attr.as_deref() {
+        None => false,
+        Some("build") => true,
+        Some(other) => {
+            return Err(located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:const name=\"{name}\">"),
+                    attr: "sce:compute-at".into(),
+                    value: other.into(),
+                    expected: "build (RFC §5.F build-time const-fold)".into(),
+                },
+            ));
+        }
+    };
+
+    let fold_node = node.children().find(|n| {
+        n.is_element()
+            && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+            && n.tag_name().name() == "fold"
+    });
+    let init_attr = node.attribute("init").map(str::to_string);
+
+    let const_label = format!("<sce:const name=\"{name}\">");
+    // RFC §5.F: a `<sce:const>` is either a scalar literal
+    // (`init=`) or a build-time fold (`<sce:fold>` body with
+    // `sce:compute-at="build"`). The two forms are mutually exclusive.
+    match (init_attr, fold_node, compute_at_build) {
+        (Some(_), Some(fold), _) => Err(located(
+            &fold,
+            doc_name,
+            ValidationError::IncompatibleAttributes {
+                element: const_label.clone(),
+                detail: "init= attribute conflicts with <sce:fold> body — \
+                         scalar consts use init=, build-time consts use <sce:fold>"
+                    .into(),
+            },
+        )),
+        (None, None, _) => Err(located(
+            node,
+            doc_name,
+            ValidationError::RequireEither {
+                element: const_label.clone(),
+                alternatives: vec!["init= attribute".into(), "<sce:fold> body".into()],
+            },
+        )),
+        (Some(_), None, true) => Err(located(
+            node,
+            doc_name,
+            ValidationError::IncompatibleAttributes {
+                element: const_label.clone(),
+                detail: "init= attribute conflicts with sce:compute-at=\"build\" — \
+                         scalar literal consts cannot declare compute-at; \
+                         use <sce:fold> for build-time evaluation"
+                    .into(),
+            },
+        )),
+        (Some(init), None, false) => {
+            // Scalar literal form must declare a scalar type — array
+            // forms only exist for fold-bodies.
+            if matches!(sce_type, AlgorithmConstType::Array { .. }) {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::IncompatibleAttributes {
+                        element: const_label.clone(),
+                        detail: format!(
+                            "type=\"{type_str}\" requires <sce:fold> body — \
+                             array<...> consts cannot use init= \
+                             (RFC §5.F build-time const-fold)"
+                        ),
+                    },
+                ));
+            }
+            Ok(AlgorithmConst {
+                name,
+                sce_type,
+                init: Some(init),
+                fold: None,
+                compute_at_build: false,
+            })
+        }
+        (None, Some(fold_node), compute_at) => {
+            if !compute_at {
+                return Err(located(
+                    &fold_node,
+                    doc_name,
+                    ValidationError::RequireEither {
+                        element: const_label.clone(),
+                        alternatives: vec!["sce:compute-at=\"build\" with <sce:fold> body".into()],
+                    },
+                ));
+            }
+            // A fold body requires an `array<elem, len>` outer type;
+            // the host interpreter (Phase A4-β) emits one element per
+            // iteration into a fixed-length array.
+            let (expected_elem, expected_len) = match &sce_type {
+                AlgorithmConstType::Array { elem, len } => (elem.clone(), *len),
+                AlgorithmConstType::Scalar(_) => {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::IncompatibleAttributes {
+                            element: const_label.clone(),
+                            detail: format!(
+                                "type=\"{type_str}\" is scalar but body is <sce:fold> — \
+                                 fold-form consts require an array<elem, len> outer type"
+                            ),
+                        },
+                    ));
+                }
+            };
+            let fold = parse_fold_body(&fold_node, doc_name, &expected_elem, expected_len)?;
+            Ok(AlgorithmConst {
+                name,
+                sce_type,
+                init: None,
+                fold: Some(fold),
+                compute_at_build: true,
+            })
+        }
+    }
+}
+
+/// Parse an `<sce:fold>` element. Validates structure (range, iter
+/// var, elem-type, terminating `<sce:yield>`) and that the outer
+/// const's `array<elem, len>` matches the fold's declared `elem-type`
+/// and the implied length (`range_end - range_start`).
+fn parse_fold_body(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    expected_elem: &SceType,
+    expected_len: u32,
+) -> Result<FoldBody, Located<ForgeError>> {
+    let range_str = require_attr(node, "range", "<sce:fold>", doc_name)?;
+    let (range_start, range_end) = parse_fold_range(&range_str, node, doc_name)?;
+    let iter_var = require_attr(node, "as", "<sce:fold>", doc_name)?;
+    let elem_type_str = require_attr(node, "elem-type", "<sce:fold>", doc_name)?;
+    let elem_type = parse_scetype_with_aliases_or_err(&elem_type_str, node, doc_name)?;
+
+    if &elem_type != expected_elem {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::IncompatibleAttributes {
+                element: "<sce:fold>".into(),
+                detail: format!(
+                    "elem-type=\"{elem_type_str}\" does not match outer const's \
+                     array element ({expected_elem:?}) — \
+                     fold's elem-type must match the surrounding const's element type"
+                ),
+            },
+        ));
+    }
+
+    let actual_len = range_end.saturating_sub(range_start);
+    if actual_len != expected_len {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::CountMismatch {
+                kind: ForgeKind::Algorithm,
+                detail: format!(
+                    "<sce:fold> range produces {actual_len} elements but \
+                     outer const declares array length {expected_len}"
+                ),
+            },
+        ));
+    }
+
+    // Walk children: every sce:* element except the trailing
+    // <sce:yield/> reuses the algorithm-statement vocabulary.
+    let mut body: Vec<AlgorithmStmt> = Vec::new();
+    let mut yield_expr: Option<String> = None;
+    for child in node.children().filter(|c| c.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        let local = child.tag_name().name();
+        if local == "yield" {
+            if yield_expr.is_some() {
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::SingletonViolation {
+                        kind: ForgeKind::Algorithm,
+                        attr: "<sce:yield> in <sce:fold>".into(),
+                    },
+                ));
+            }
+            yield_expr = Some(require_attr(&child, "expr", "<sce:yield>", doc_name)?);
+            continue;
+        }
+        if yield_expr.is_some() {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::UnsupportedKind(format!(
+                    "<sce:{local}> after <sce:yield> in <sce:fold>; \
+                     yield must be the terminal element"
+                )),
+            ));
+        }
+        body.push(parse_algorithm_stmt(&child, doc_name)?);
+    }
+    let yield_expr = yield_expr.ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Algorithm,
+                element: "<sce:yield> as terminal child of <sce:fold>".into(),
+            },
+        )
+    })?;
+
+    Ok(FoldBody {
+        range_start,
+        range_end,
+        iter_var,
+        elem_type,
+        body,
+        yield_expr,
+    })
+}
+
+/// Parse `<sce:fold range="START..END">`. RFC §5.F worked example
+/// uses the exclusive `0..256` form; that's the only shape accepted.
+/// Negative starts and inclusive `..=` form are deferred until a
+/// fixture actually demands them.
+fn parse_fold_range(
+    s: &str,
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<(u32, u32), Located<ForgeError>> {
+    let s = s.trim();
+    let (lo, hi) = s.split_once("..").ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: "<sce:fold>".into(),
+                attr: "range".into(),
+                value: s.into(),
+                expected: "START..END (exclusive upper bound, RFC §5.F)".into(),
+            },
+        )
+    })?;
+    let lo: u32 = lo.trim().parse().map_err(|_| {
+        located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: "<sce:fold>".into(),
+                attr: "range".into(),
+                value: s.into(),
+                expected: "START..END with non-negative u32 endpoints".into(),
+            },
+        )
+    })?;
+    let hi: u32 = hi.trim().parse().map_err(|_| {
+        located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: "<sce:fold>".into(),
+                attr: "range".into(),
+                value: s.into(),
+                expected: "START..END with non-negative u32 endpoints".into(),
+            },
+        )
+    })?;
+    if hi < lo {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: "<sce:fold>".into(),
+                attr: "range".into(),
+                value: s.into(),
+                expected: "START..END with END >= START".into(),
+            },
+        ));
+    }
+    Ok((lo, hi))
+}
+
+fn parse_scetype_with_aliases_or_err(
+    s: &str,
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<SceType, Located<ForgeError>> {
+    crate::forge::model::AlgorithmConstType::from_attr(s)
+        .and_then(|t| match t {
+            crate::forge::model::AlgorithmConstType::Scalar(s) => Some(s),
+            _ => None,
+        })
         .ok_or_else(|| {
             located(
                 node,
                 doc_name,
-                ValidationError::MissingAttribute {
-                    element: format!("<sce:const name=\"{name}\">"),
-                    attr: "init".into(),
+                ValidationError::InvalidAttribute {
+                    element: "<sce:fold>".into(),
+                    attr: "elem-type".into(),
+                    value: s.into(),
+                    expected: "scalar SceType (uint8..uint64, int8..int64, float32, float64)"
+                        .into(),
                 },
             )
-        })?
-        .to_string();
-    let compute_at_build = sce_attr(node, "compute-at").as_deref() == Some("build");
-    Ok(AlgorithmConst {
-        name,
-        sce_type,
-        init,
-        compute_at_build,
-    })
+        })
 }
 
 fn parse_algorithm_body(

@@ -222,6 +222,14 @@
   <xs:attribute name="on-enter" type="xs:string"/>
   <xs:attribute name="on-leave" type="xs:string"/>
 
+  <!-- Section 5.F: build-time const-fold trigger. Declared globally so
+       it carries the `sce:` prefix in instance documents (matching the
+       RFC §5.F worked example: `<sce:const sce:compute-at="build">`).
+       Local `compute-at` declarations on individual elements would land
+       unprefixed under the schema's `attributeFormDefault="unqualified"`
+       and conflict with the parser's `sce_attr` lookup. -->
+  <xs:attribute name="compute-at" type="xs:string"/>
+
   <!-- ═══════════════════════════════════════════════════════════════
        Attribute Declarations — SCE Mesh (runtime transport)
        ═══════════════════════════════════════════════════════════════ -->
@@ -439,13 +447,64 @@
     </xs:complexType>
   </xs:element>
 
+  <!--
+    Build-time const (RFC §5.A scalar form, RFC §5.F build-time fold form).
+
+    Two shapes accepted by `forge::parser::parse_algorithm_const`:
+
+      Scalar (RFC §5.A v1):
+        <sce:const name="N" type="uint16" init="0xFFFF"/>
+
+      Build-time array (RFC §5.F):
+        <sce:const name="TABLE" type="array<u16, 256>" sce:compute-at="build">
+          <sce:fold range="0..256" as="i" elem-type="u16">
+            ...statements...
+            <sce:yield expr="..."/>
+          </sce:fold>
+        </sce:const>
+
+    `type` is relaxed from `sce:sceType` (scalar enum) to `xs:string` so
+    the `array<elem, len>` form passes XSD validation; the parser
+    rejects ill-formed values with a precise diagnostic.
+
+    `init` is no longer `use="required"` — the parser enforces "exactly
+    one of `init=` or `<sce:fold>` body" with a structural diagnostic
+    that is more useful than a missing-attribute error from XSD.
+  -->
   <xs:element name="const">
     <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:fold" minOccurs="0"/>
+      </xs:sequence>
       <xs:attribute name="name" type="xs:NCName" use="required"/>
-      <xs:attribute name="type" type="sce:sceType" use="required"/>
-      <xs:attribute name="init" type="xs:string" use="required"/>
-      <!-- §5.F build-time fold hook (Phase A4); A3 ignores the value. -->
-      <xs:attribute name="compute-at" type="xs:string"/>
+      <xs:attribute name="type" type="xs:string" use="required"/>
+      <xs:attribute name="init" type="xs:string"/>
+      <xs:attribute ref="sce:compute-at"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    RFC §5.F build-time fold body. `range="START..END"` is exclusive
+    upper-bound; `as` names the loop variable; `elem-type` is the
+    yielded element's scalar type. The terminal `<sce:yield>` carries
+    the per-iteration expression.
+  -->
+  <xs:element name="fold">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="##any" processContents="lax"
+                minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="range" type="xs:string" use="required"/>
+      <xs:attribute name="as" type="xs:NCName" use="required"/>
+      <xs:attribute name="elem-type" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- RFC §5.F: terminal element of an `<sce:fold>` body. -->
+  <xs:element name="yield">
+    <xs:complexType>
+      <xs:attribute name="expr" type="xs:string" use="required"/>
     </xs:complexType>
   </xs:element>
 
