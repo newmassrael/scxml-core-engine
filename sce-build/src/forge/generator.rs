@@ -6049,12 +6049,17 @@ fn render_observer(
 /// emit a non-owning view (`std::span<const uint8_t>`) rather than
 /// `const std::vector<uint8_t>&`, because RFC §5.J.5 forbids STL
 /// containers in the algorithm emit and span is the named
-/// alternative. Other types and other languages reuse the existing
-/// `param_type` helper unchanged.
+/// alternative. C11 lowers `bytes` to the runtime's stack-bounded
+/// `sce_forge_bytes_t` value type — its `.data[i]` / `.len` shape is
+/// what `lower_algorithm_stmt`'s foreach arm reads, and pass-by-value
+/// matches the procedure runtime contract (RFC §5.J.2 F1: no heap,
+/// fixed-cap copies). Other types and other languages reuse the
+/// existing `param_type` helper unchanged.
 fn algorithm_param_type(lang: crate::generator::Language, ty: &SceType) -> String {
     use crate::generator::Language;
     match (lang, ty) {
         (Language::Cpp, SceType::Bytes) => "std::span<const std::uint8_t>".to_string(),
+        (Language::C11, SceType::Bytes) => "sce_forge_bytes_t".to_string(),
         _ => LangCtx::new(lang).param_type(ty),
     }
 }

@@ -1452,6 +1452,23 @@ fn forge_c11_timer_diag_scheduler() {
     assert_standalone_forge_c("timer_diag_scheduler", "timer_diag_scheduler.c.h");
 }
 
+// ── Algorithm (C11, RFC §5.A — Phase A5 closes the §5.J.4 matrix) ──
+
+#[test]
+fn forge_c11_algorithm_crc16() {
+    assert_standalone_forge_c("algorithm_crc16", "algorithm_crc16.c.h");
+}
+
+#[test]
+fn forge_c11_algorithm_crc16_table() {
+    assert_standalone_forge_c("algorithm_crc16_table", "algorithm_crc16_table.c.h");
+}
+
+#[test]
+fn forge_c11_algorithm_const_fold_smoke() {
+    assert_standalone_forge_c("algorithm_const_fold_smoke", "algorithm_const_fold_smoke.c.h");
+}
+
 // ── Validator conformance (C++) ──────────────────────────────
 
 #[test]

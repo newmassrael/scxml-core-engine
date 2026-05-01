@@ -1,0 +1,24 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+/* */
+/* RFC §5.A: free function with bounded loops, no allocs, no I/O. */
+/* RFC §5.J.5 emitter table: `static T <snake>(...)` with `bytes` */
+/* lowered to the runtime's stack-bounded `sce_forge_bytes_t`. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+{% if needs_span %}#include "sce/forge/procedure.h"  /* sce_forge_bytes_t */
+{% endif %}
+{{ consts_prelude }}static inline {{ return_type }} {{ name }}({{ params_str }}) {
+{{ body }}
+}
+
+#endif  /* {{ guard }} */

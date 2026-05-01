@@ -106,13 +106,13 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Python
             | Language::C11 => true,
         },
-        // RFC §5.A Algorithm: Phase A3 lands Rust + Cpp emitters
-        // (RFC §7 line 3381). Kotlin/Go/Python/C11 fire
-        // `codegen/generic-kind-backend-emit-missing` until their
-        // templates ship in subsequent Phase A PRs.
+        // RFC §5.A Algorithm: Phase A3 lands Rust + Cpp; Phase A5
+        // closes the matrix to C11 (RFC §7 line 3382). Kotlin / Go /
+        // Python templates ship in subsequent Phase A follow-ups and
+        // fire `codegen/generic-kind-backend-emit-missing` until then.
         ForgeKind::Algorithm => match lang {
-            Language::Rust | Language::Cpp => true,
-            Language::Kotlin | Language::Go | Language::Python | Language::C11 => false,
+            Language::Rust | Language::Cpp | Language::C11 => true,
+            Language::Kotlin | Language::Go | Language::Python => false,
         },
     }
 }
@@ -216,14 +216,28 @@ mod tests {
         }
     }
 
-    /// RFC §5.A Phase A3: Algorithm ships on Rust + Cpp; the four
-    /// other backends fire `codegen/generic-kind-backend-emit-missing`.
+    /// RFC §5.A Phase A3 + A5: Algorithm ships on Rust + Cpp + C11;
+    /// Kotlin / Go / Python fire `codegen/generic-kind-backend-emit-missing`
+    /// until their templates ship in subsequent Phase A follow-ups.
     #[test]
-    fn algorithm_kind_ships_on_rust_and_cpp_only() {
+    fn algorithm_kind_ships_on_rust_cpp_c11() {
         assert_eq!(kind_class(ForgeKind::Algorithm), KindClass::Generic);
-        assert_eq!(lookup(ForgeKind::Algorithm, Language::Rust), EmitOutcome::Emit);
-        assert_eq!(lookup(ForgeKind::Algorithm, Language::Cpp), EmitOutcome::Emit);
-        for lang in [Language::Kotlin, Language::Go, Language::Python, Language::C11] {
+        for lang in [Language::Rust, Language::Cpp, Language::C11] {
+            assert_eq!(
+                lookup(ForgeKind::Algorithm, lang),
+                EmitOutcome::Emit,
+                "({:?}, {:?}) should emit",
+                ForgeKind::Algorithm,
+                lang,
+            );
+            assert!(
+                check(ForgeKind::Algorithm, lang).is_ok(),
+                "check({:?}, {:?}) should succeed",
+                ForgeKind::Algorithm,
+                lang,
+            );
+        }
+        for lang in [Language::Kotlin, Language::Go, Language::Python] {
             assert_eq!(
                 lookup(ForgeKind::Algorithm, lang),
                 EmitOutcome::TemplateMissing,
