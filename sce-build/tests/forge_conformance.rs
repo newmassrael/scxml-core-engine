@@ -577,13 +577,22 @@ fn forge_algorithm_crc16_table_cpp() {
     );
 }
 
-/// RFC §5.F β CLI knob: an iteration budget set below the fold's
-/// element count must surface as a `const-fold-budget-exceeded`
-/// error rather than silently truncating the table. Pins the
+/// RFC §5.F γ wire codes: each of the three `algorithm/const-*`
+/// diagnostics maps a §5.F failure mode onto a typed
+/// [`GenerateError`] variant. β shipped these as
+/// `generate/unsupported-feature` slug payloads; γ promotes them to
+/// first-class wire codes so consumers dispatch on the structured
+/// `ForgeError` variant rather than substring-matching the message.
+///
+/// `algorithm/const-fold-budget-exceeded` — an iteration budget set
+/// below the fold's element count surfaces as `ConstFoldBudgetExceeded`
+/// with the configured `budget` quoted verbatim. Pins the
 /// `--const-fold-budget=N` plumbing through
 /// `ForgeCompileOptions::const_fold_budget`.
 #[test]
 fn forge_const_fold_budget_exceeded_rejects_oversized_fold() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
     let scxml_path = resource_dir().join("algorithm_const_fold_smoke.scxml");
     let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
 
@@ -599,15 +608,79 @@ fn forge_const_fold_budget_exceeded_rejects_oversized_fold() {
         &opts,
     );
     let err = match result {
-        Ok(_) => panic!(
-            "budget=2 must reject the smoke fixture's 4-element fold"
-        ),
+        Ok(_) => panic!("budget=2 must reject the smoke fixture's 4-element fold"),
         Err(e) => e,
     };
-    let msg = err.to_string();
     assert!(
-        msg.contains("const-fold-budget-exceeded"),
-        "budget-exceeded error must name the diagnostic slug; got: {msg}"
+        matches!(
+            err.error,
+            ForgeError::Generate(GenerateError::ConstFoldBudgetExceeded { budget: 2, .. })
+        ),
+        "budget-exceeded error must surface as the typed variant; got: {err:?}"
+    );
+}
+
+/// `algorithm/const-not-foldable` — fold body referencing an
+/// identifier outside fold scope cannot reduce to a build-time value.
+#[test]
+fn forge_const_not_foldable_rejects_unscoped_ident() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let scxml_path = resource_dir().join("algorithm_const_not_foldable.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
+
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("algorithm_const_not_foldable"),
+        sce_build::generator::Language::Rust,
+        scxml_path.parent().unwrap(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("unscoped ident in fold body must reject"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Generate(GenerateError::ConstNotFoldable { ref detail, .. })
+                if detail.contains("unbound_outer")
+        ),
+        "unscoped-ident failure must surface as ConstNotFoldable naming the offender; got: {err:?}"
+    );
+}
+
+/// `algorithm/const-yield-type-mismatch` — a fold whose yield
+/// expression produces a float cannot be coerced into a uint16 slot.
+#[test]
+fn forge_const_yield_type_mismatch_rejects_float_into_uint() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+    use sce_build::forge::model::SceType;
+
+    let scxml_path = resource_dir().join("algorithm_const_yield_type_mismatch.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
+
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("algorithm_const_yield_type_mismatch"),
+        sce_build::generator::Language::Rust,
+        scxml_path.parent().unwrap(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("float-into-uint16 yield must reject"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Generate(GenerateError::ConstYieldTypeMismatch {
+                expected: SceType::Uint16,
+                ref actual,
+                ..
+            }) if actual == "float"
+        ),
+        "float-yield must surface as typed ConstYieldTypeMismatch with expected=Uint16; got: {err:?}"
     );
 }
 

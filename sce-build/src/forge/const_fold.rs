@@ -36,6 +36,77 @@ use crate::forge::expr::{self, BinOp, ExprKind, TypedExpr, UnaryOp};
 use crate::forge::model::{AlgorithmStmt, FoldBody, SceType};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Internal error kind — boundary-lifted to typed `GenerateError`
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Context-free shape for the three RFC §5.F wire codes. Internal
+/// helpers raise these without knowing which algorithm + const
+/// declaration owns the failure; the public entry points
+/// ([`evaluate_fold`] / [`evaluate_scalar_init`]) attach the locator
+/// from a [`ConstSite`] when crossing into the typed `GenerateError`
+/// surface, producing wire-stable codes:
+///
+/// | variant | wire code |
+/// |--|--|
+/// | `NotFoldable`        | `algorithm/const-not-foldable` |
+/// | `BudgetExceeded`     | `algorithm/const-fold-budget-exceeded` |
+/// | `YieldTypeMismatch`  | `algorithm/const-yield-type-mismatch` |
+#[derive(Debug)]
+enum ConstFoldKind {
+    /// Body construct outside the foldable substrate. `detail` quotes
+    /// the specific clause (member access, runtime ident, malformed
+    /// literal, …) so consumers reading the message text retain the
+    /// β-era diagnostic shape.
+    NotFoldable(String),
+    /// Iteration budget exhausted. `budget` is the *configured* maximum
+    /// (not the remaining count), so the message can quote the policy
+    /// the operator is hitting verbatim.
+    BudgetExceeded { budget: u64 },
+    /// Coercion to the declared scalar / element type rejected. Mirrors
+    /// the β slug payload (`actual → expected`).
+    YieldTypeMismatch { expected: SceType, actual: String },
+}
+
+impl ConstFoldKind {
+    /// Boundary lift. Attaches `algorithm` + `const_name` to produce
+    /// the typed [`GenerateError`] variant the diagnostic wire layer
+    /// dispatches on. Called only from [`evaluate_fold`] /
+    /// [`evaluate_scalar_init`] — internal helpers stay
+    /// context-agnostic so a future caller (e.g. a unit test or a new
+    /// fold-form site) can re-route the same logic with its own
+    /// locator.
+    fn into_generate_error(self, site: ConstSite<'_>) -> GenerateError {
+        match self {
+            Self::NotFoldable(detail) => GenerateError::ConstNotFoldable {
+                algorithm: site.algorithm.to_string(),
+                const_name: site.const_name.to_string(),
+                detail,
+            },
+            Self::BudgetExceeded { budget } => GenerateError::ConstFoldBudgetExceeded {
+                algorithm: site.algorithm.to_string(),
+                const_name: Some(site.const_name.to_string()),
+                budget,
+            },
+            Self::YieldTypeMismatch { expected, actual } => GenerateError::ConstYieldTypeMismatch {
+                algorithm: site.algorithm.to_string(),
+                const_name: site.const_name.to_string(),
+                expected,
+                actual,
+            },
+        }
+    }
+}
+
+/// Locator threaded into every [`evaluate_fold`] /
+/// [`evaluate_scalar_init`] call so error lifting can name the offending
+/// declaration without re-parsing the message text.
+#[derive(Clone, Copy)]
+pub(crate) struct ConstSite<'a> {
+    pub algorithm: &'a str,
+    pub const_name: &'a str,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Public surface
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -48,8 +119,13 @@ use crate::forge::model::{AlgorithmStmt, FoldBody, SceType};
 /// `sce-build` into a general-purpose compute platform. CLI knob lives
 /// at [`crate::ForgeCompileOptions::const_fold_budget`]; the default
 /// constant is the single source of truth.
+///
+/// Tracks both the configured maximum (`max`) and the running
+/// `remaining` count so [`ConstFoldKind::BudgetExceeded`] can quote
+/// the policy the operator is hitting.
 #[derive(Clone, Copy, Debug)]
 pub struct Budget {
+    max: u64,
     remaining: u64,
 }
 
@@ -58,17 +134,15 @@ impl Budget {
     pub const DEFAULT_MAX_ITERS: u64 = 1_000_000;
 
     pub fn new(max_iters: u64) -> Self {
-        Self { remaining: max_iters }
+        Self {
+            max: max_iters,
+            remaining: max_iters,
+        }
     }
 
-    fn consume(&mut self) -> Result<(), GenerateError> {
+    fn consume(&mut self) -> Result<(), ConstFoldKind> {
         if self.remaining == 0 {
-            return Err(GenerateError::UnsupportedFeature(
-                "const-fold-budget-exceeded: total iteration count exceeded the \
-                 configured budget (RFC §5.F bound 1; override with \
-                 --const-fold-budget=N)"
-                    .to_string(),
-            ));
+            return Err(ConstFoldKind::BudgetExceeded { budget: self.max });
         }
         self.remaining -= 1;
         Ok(())
@@ -130,22 +204,30 @@ impl ConstValue {
 /// The returned vector has length `range_end - range_start` and
 /// every element's type equals `fold.elem_type`.
 ///
-/// Errors surface as [`GenerateError`] (β shape — γ adds typed wire
-/// codes per `algorithm/const-not-foldable`,
-/// `algorithm/const-fold-budget-exceeded`,
-/// `algorithm/const-yield-type-mismatch`).
+/// `site` locates the offending declaration so the boundary lift to
+/// the typed [`GenerateError`] can route through the wire codes
+/// `algorithm/const-not-foldable`,
+/// `algorithm/const-fold-budget-exceeded`, and
+/// `algorithm/const-yield-type-mismatch`.
 pub(crate) fn evaluate_fold(
     fold: &FoldBody,
     budget: &mut Budget,
+    site: ConstSite<'_>,
 ) -> Result<Vec<ConstValue>, GenerateError> {
+    evaluate_fold_inner(fold, budget).map_err(|k| k.into_generate_error(site))
+}
+
+fn evaluate_fold_inner(
+    fold: &FoldBody,
+    budget: &mut Budget,
+) -> Result<Vec<ConstValue>, ConstFoldKind> {
     let len = (fold.range_end - fold.range_start) as usize;
     let mut out = Vec::with_capacity(len);
 
     for i in fold.range_start..fold.range_end {
         budget.consume()?;
         let mut scope = Scope::new();
-        let iter_value = scalar_from_i128(i as i128, &iter_var_type(&fold.elem_type, i))
-            .map_err(map_eval)?;
+        let iter_value = scalar_from_i128(i as i128, &iter_var_type(&fold.elem_type, i))?;
         scope.declare(&fold.iter_var, iter_value);
 
         eval_stmts(&fold.body, &mut scope, budget)?;
@@ -163,9 +245,10 @@ pub(crate) fn evaluate_fold(
 pub(crate) fn evaluate_scalar_init(
     init_expr: &str,
     declared: &SceType,
+    site: ConstSite<'_>,
 ) -> Result<ConstValue, GenerateError> {
     let scope = Scope::new();
-    eval_expr_typed(init_expr, &scope, declared)
+    eval_expr_typed(init_expr, &scope, declared).map_err(|k| k.into_generate_error(site))
 }
 
 /// Iter-variable type. RFC §5.F worked example uses `i: u32` over
@@ -292,10 +375,10 @@ impl Scope {
         self.vars.insert(name.to_string(), value);
     }
 
-    fn assign(&mut self, name: &str, value: ConstValue) -> Result<(), GenerateError> {
+    fn assign(&mut self, name: &str, value: ConstValue) -> Result<(), ConstFoldKind> {
         if !self.vars.contains_key(name) {
-            return Err(GenerateError::UnsupportedFeature(format!(
-                "const-not-foldable: assignment target '{name}' is not in scope \
+            return Err(ConstFoldKind::NotFoldable(format!(
+                "assignment target '{name}' is not in scope \
                  (fold-body assigns must reference an earlier <sce:var>)"
             )));
         }
@@ -337,12 +420,12 @@ impl EvalValue {
         }
     }
 
-    fn to_bool(self) -> Result<bool, GenerateError> {
+    fn to_bool(self) -> Result<bool, ConstFoldKind> {
         match self {
             Self::Bool(b) => Ok(b),
             Self::Int(i) => Ok(i != 0),
-            Self::Float(_) => Err(GenerateError::UnsupportedFeature(
-                "const-not-foldable: cannot use float as boolean".to_string(),
+            Self::Float(_) => Err(ConstFoldKind::NotFoldable(
+                "cannot use float as boolean".to_string(),
             )),
         }
     }
@@ -352,7 +435,7 @@ fn eval_stmts(
     stmts: &[AlgorithmStmt],
     scope: &mut Scope,
     budget: &mut Budget,
-) -> Result<(), GenerateError> {
+) -> Result<(), ConstFoldKind> {
     for s in stmts {
         eval_stmt(s, scope, budget)?;
     }
@@ -363,7 +446,7 @@ fn eval_stmt(
     s: &AlgorithmStmt,
     scope: &mut Scope,
     budget: &mut Budget,
-) -> Result<(), GenerateError> {
+) -> Result<(), ConstFoldKind> {
     match s {
         AlgorithmStmt::Var { name, sce_type, init } => {
             let value = eval_expr_typed(init, scope, sce_type)?;
@@ -377,15 +460,14 @@ fn eval_stmt(
             // is the surrounding `array<elem, len>`, not an inner
             // mutable structure.
             if !is_simple_ident(target) {
-                return Err(GenerateError::UnsupportedFeature(format!(
-                    "const-not-foldable: assign target '{target}' is not a \
-                     bare identifier (fold bodies cannot mutate members or \
-                     indexed slots in v1)"
+                return Err(ConstFoldKind::NotFoldable(format!(
+                    "assign target '{target}' is not a bare identifier \
+                     (fold bodies cannot mutate members or indexed slots in v1)"
                 )));
             }
             let prev = scope.lookup(target).ok_or_else(|| {
-                GenerateError::UnsupportedFeature(format!(
-                    "const-not-foldable: assign target '{target}' is not in scope"
+                ConstFoldKind::NotFoldable(format!(
+                    "assign target '{target}' is not in scope"
                 ))
             })?;
             let new = eval_expr_typed(expr, scope, &prev.declared_type())?;
@@ -406,8 +488,8 @@ fn eval_stmt(
             let mut ticks = 0u32;
             while eval_expr(cond, scope)?.to_bool()? {
                 if ticks >= cap {
-                    return Err(GenerateError::UnsupportedFeature(format!(
-                        "const-not-foldable: while loop exceeded max-iter={cap} \
+                    return Err(ConstFoldKind::NotFoldable(format!(
+                        "while loop exceeded max-iter={cap} \
                          (fold-body while loops must terminate within max-iter)"
                     )));
                 }
@@ -427,24 +509,23 @@ fn eval_stmt(
             // constraint — but a clean diagnostic guards us if a
             // future fixture changes that.
             let _ = (item, source, body);
-            Err(GenerateError::UnsupportedFeature(
-                "const-not-foldable: <sce:foreach> not supported inside a \
-                 fold body in v1 (fold scope contains only scalar locals; \
-                 bytes-typed iteration would require a `bytes` source \
-                 binding which is not constructible at fold time)"
+            Err(ConstFoldKind::NotFoldable(
+                "<sce:foreach> not supported inside a fold body in v1 \
+                 (fold scope contains only scalar locals; bytes-typed \
+                 iteration would require a `bytes` source binding which \
+                 is not constructible at fold time)"
                     .to_string(),
             ))
         }
-        AlgorithmStmt::Return { .. } => Err(GenerateError::UnsupportedFeature(
-            "const-not-foldable: <sce:return> is forbidden inside a fold \
-             body (RFC §5.F — fold elements are produced by <sce:yield>, \
-             not by early return)"
+        AlgorithmStmt::Return { .. } => Err(ConstFoldKind::NotFoldable(
+            "<sce:return> is forbidden inside a fold body (RFC §5.F — \
+             fold elements are produced by <sce:yield>, not by early return)"
                 .to_string(),
         )),
-        AlgorithmStmt::Call { target, .. } => Err(GenerateError::UnsupportedFeature(format!(
-            "const-not-foldable: <sce:call target=\"{target}\"> is forbidden \
-             inside a fold body (RFC §5.F bound 3 — host interpreter is \
-             pure; cross-algorithm calls require runtime resolution)"
+        AlgorithmStmt::Call { target, .. } => Err(ConstFoldKind::NotFoldable(format!(
+            "<sce:call target=\"{target}\"> is forbidden inside a fold body \
+             (RFC §5.F bound 3 — host interpreter is pure; cross-algorithm \
+             calls require runtime resolution)"
         ))),
     }
 }
@@ -467,7 +548,7 @@ fn eval_expr_typed(
     expr_text: &str,
     scope: &Scope,
     expected: &SceType,
-) -> Result<ConstValue, GenerateError> {
+) -> Result<ConstValue, ConstFoldKind> {
     let value = eval_expr(expr_text, scope)?;
     coerce_to_const(value, expected)
 }
@@ -476,35 +557,33 @@ fn eval_expr_typed(
 /// coercion. Used at every site that does not store the result
 /// (If.cond, While.cond) and as the inner step of
 /// [`eval_expr_typed`].
-fn eval_expr(expr_text: &str, scope: &Scope) -> Result<EvalValue, GenerateError> {
+fn eval_expr(expr_text: &str, scope: &Scope) -> Result<EvalValue, ConstFoldKind> {
     let ast = expr::parse_to_ast(expr_text).map_err(map_expr_err)?;
     eval_node(&ast, scope)
 }
 
-fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, GenerateError> {
+fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind> {
     match &node.kind {
         ExprKind::NumberLit(s) => parse_number_lit(s),
         ExprKind::BoolLit(b) => Ok(EvalValue::Bool(*b)),
-        ExprKind::NullLit => Err(GenerateError::UnsupportedFeature(
-            "const-not-foldable: `null` literal has no fold-time value".to_string(),
+        ExprKind::NullLit => Err(ConstFoldKind::NotFoldable(
+            "`null` literal has no fold-time value".to_string(),
         )),
-        ExprKind::StringLit { .. } => Err(GenerateError::UnsupportedFeature(
-            "const-not-foldable: string literals are not foldable to a \
-             scalar array element"
-                .to_string(),
+        ExprKind::StringLit { .. } => Err(ConstFoldKind::NotFoldable(
+            "string literals are not foldable to a scalar array element".to_string(),
         )),
         ExprKind::Ident(name) => scope
             .lookup(name)
             .map(EvalValue::from_const)
             .ok_or_else(|| {
-                GenerateError::UnsupportedFeature(format!(
-                    "const-not-foldable: identifier '{name}' is not in fold scope \
+                ConstFoldKind::NotFoldable(format!(
+                    "identifier '{name}' is not in fold scope \
                      (fold bodies see only the iter variable, locals declared \
                      by <sce:var>, and literals)"
                 ))
             }),
-        ExprKind::Raw(s) => Err(GenerateError::UnsupportedFeature(format!(
-            "const-not-foldable: pre-rendered fragment '{s}' has no fold-time value"
+        ExprKind::Raw(s) => Err(ConstFoldKind::NotFoldable(format!(
+            "pre-rendered fragment '{s}' has no fold-time value"
         ))),
         ExprKind::Binary { op, left, right } => {
             let l = eval_node(left, scope)?;
@@ -523,25 +602,25 @@ fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, GenerateError
                 eval_node(alternate, scope)
             }
         }
-        ExprKind::Member { .. } => Err(GenerateError::UnsupportedFeature(
-            "const-not-foldable: member access is not supported inside a \
-             fold body (cross-record references require runtime resolution)"
+        ExprKind::Member { .. } => Err(ConstFoldKind::NotFoldable(
+            "member access is not supported inside a fold body \
+             (cross-record references require runtime resolution)"
                 .to_string(),
         )),
-        ExprKind::Index { .. } => Err(GenerateError::UnsupportedFeature(
-            "const-not-foldable: indexed access is not supported inside a \
-             fold body (v1 fold scope contains only scalar locals)"
+        ExprKind::Index { .. } => Err(ConstFoldKind::NotFoldable(
+            "indexed access is not supported inside a fold body \
+             (v1 fold scope contains only scalar locals)"
                 .to_string(),
         )),
-        ExprKind::Call { .. } => Err(GenerateError::UnsupportedFeature(
-            "const-not-foldable: function calls are not supported inside a \
-             fold body (RFC §5.F bound 3 — host interpreter is pure)"
+        ExprKind::Call { .. } => Err(ConstFoldKind::NotFoldable(
+            "function calls are not supported inside a fold body \
+             (RFC §5.F bound 3 — host interpreter is pure)"
                 .to_string(),
         )),
     }
 }
 
-fn eval_binop(op: BinOp, l: EvalValue, r: EvalValue) -> Result<EvalValue, GenerateError> {
+fn eval_binop(op: BinOp, l: EvalValue, r: EvalValue) -> Result<EvalValue, ConstFoldKind> {
     use EvalValue as V;
     match op {
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
@@ -550,8 +629,8 @@ fn eval_binop(op: BinOp, l: EvalValue, r: EvalValue) -> Result<EvalValue, Genera
                 (V::Float(a), V::Float(b)) => Ok(V::Float(arith_float(op, a, b)?)),
                 (V::Int(a), V::Float(b)) => Ok(V::Float(arith_float(op, a as f64, b)?)),
                 (V::Float(a), V::Int(b)) => Ok(V::Float(arith_float(op, a, b as f64)?)),
-                _ => Err(GenerateError::UnsupportedFeature(
-                    "const-not-foldable: arithmetic on non-numeric operand".to_string(),
+                _ => Err(ConstFoldKind::NotFoldable(
+                    "arithmetic on non-numeric operand".to_string(),
                 )),
             }
         }
@@ -562,8 +641,8 @@ fn eval_binop(op: BinOp, l: EvalValue, r: EvalValue) -> Result<EvalValue, Genera
             (V::Float(a), V::Float(b)) => Ok(V::Bool(cmp_float(op, a, b))),
             (V::Int(a), V::Float(b)) => Ok(V::Bool(cmp_float(op, a as f64, b))),
             (V::Float(a), V::Int(b)) => Ok(V::Bool(cmp_float(op, a, b as f64))),
-            _ => Err(GenerateError::UnsupportedFeature(
-                "const-not-foldable: comparison on non-numeric operand".to_string(),
+            _ => Err(ConstFoldKind::NotFoldable(
+                "comparison on non-numeric operand".to_string(),
             )),
         },
         BinOp::And => Ok(V::Bool(l.to_bool()? && r.to_bool()?)),
@@ -576,7 +655,7 @@ fn eval_binop(op: BinOp, l: EvalValue, r: EvalValue) -> Result<EvalValue, Genera
     }
 }
 
-fn arith_int(op: BinOp, a: i128, b: i128) -> Result<i128, GenerateError> {
+fn arith_int(op: BinOp, a: i128, b: i128) -> Result<i128, ConstFoldKind> {
     match op {
         // Wrapping at i128 width — this is wider than every target's
         // fixed-width int, so the eventual coerce-to-stored-type
@@ -586,16 +665,16 @@ fn arith_int(op: BinOp, a: i128, b: i128) -> Result<i128, GenerateError> {
         BinOp::Mul => Ok(a.wrapping_mul(b)),
         BinOp::Div => {
             if b == 0 {
-                return Err(GenerateError::UnsupportedFeature(
-                    "const-not-foldable: integer division by zero".to_string(),
+                return Err(ConstFoldKind::NotFoldable(
+                    "integer division by zero".to_string(),
                 ));
             }
             Ok(a.wrapping_div(b))
         }
         BinOp::Mod => {
             if b == 0 {
-                return Err(GenerateError::UnsupportedFeature(
-                    "const-not-foldable: integer modulo by zero".to_string(),
+                return Err(ConstFoldKind::NotFoldable(
+                    "integer modulo by zero".to_string(),
                 ));
             }
             Ok(a.wrapping_rem(b))
@@ -604,7 +683,7 @@ fn arith_int(op: BinOp, a: i128, b: i128) -> Result<i128, GenerateError> {
     }
 }
 
-fn arith_float(op: BinOp, a: f64, b: f64) -> Result<f64, GenerateError> {
+fn arith_float(op: BinOp, a: f64, b: f64) -> Result<f64, ConstFoldKind> {
     match op {
         BinOp::Add => Ok(a + b),
         BinOp::Sub => Ok(a - b),
@@ -635,23 +714,23 @@ fn cmp_float(op: BinOp, a: f64, b: f64) -> bool {
     }
 }
 
-fn bitwise_int(op: BinOp, a: i128, b: i128) -> Result<i128, GenerateError> {
+fn bitwise_int(op: BinOp, a: i128, b: i128) -> Result<i128, ConstFoldKind> {
     match op {
         BinOp::BitAnd => Ok(a & b),
         BinOp::BitOr => Ok(a | b),
         BinOp::BitXor => Ok(a ^ b),
         BinOp::Shl => {
             if !(0..128).contains(&b) {
-                return Err(GenerateError::UnsupportedFeature(format!(
-                    "const-not-foldable: shift count {b} out of range"
+                return Err(ConstFoldKind::NotFoldable(format!(
+                    "shift count {b} out of range"
                 )));
             }
             Ok(a.wrapping_shl(b as u32))
         }
         BinOp::Shr | BinOp::UShr => {
             if !(0..128).contains(&b) {
-                return Err(GenerateError::UnsupportedFeature(format!(
-                    "const-not-foldable: shift count {b} out of range"
+                return Err(ConstFoldKind::NotFoldable(format!(
+                    "shift count {b} out of range"
                 )));
             }
             // RFC §5.F evaluator follows arithmetic-right-shift on
@@ -667,12 +746,12 @@ fn bitwise_int(op: BinOp, a: i128, b: i128) -> Result<i128, GenerateError> {
     }
 }
 
-fn require_int(v: EvalValue) -> Result<i128, GenerateError> {
+fn require_int(v: EvalValue) -> Result<i128, ConstFoldKind> {
     match v {
         EvalValue::Int(i) => Ok(i),
         EvalValue::Bool(b) => Ok(if b { 1 } else { 0 }),
-        EvalValue::Float(_) => Err(GenerateError::UnsupportedFeature(
-            "const-not-foldable: bitwise operation on float operand".to_string(),
+        EvalValue::Float(_) => Err(ConstFoldKind::NotFoldable(
+            "bitwise operation on float operand".to_string(),
         )),
     }
 }
@@ -688,28 +767,28 @@ fn eq(a: EvalValue, b: EvalValue) -> bool {
     }
 }
 
-fn eval_unop(op: UnaryOp, v: EvalValue) -> Result<EvalValue, GenerateError> {
+fn eval_unop(op: UnaryOp, v: EvalValue) -> Result<EvalValue, ConstFoldKind> {
     use EvalValue as V;
     match op {
         UnaryOp::Pos => Ok(v),
         UnaryOp::Neg => match v {
             V::Int(i) => Ok(V::Int(i.wrapping_neg())),
             V::Float(f) => Ok(V::Float(-f)),
-            V::Bool(_) => Err(GenerateError::UnsupportedFeature(
-                "const-not-foldable: unary minus on bool".to_string(),
+            V::Bool(_) => Err(ConstFoldKind::NotFoldable(
+                "unary minus on bool".to_string(),
             )),
         },
         UnaryOp::Not => Ok(V::Bool(!v.to_bool()?)),
         UnaryOp::BitNot => match v {
             V::Int(i) => Ok(V::Int(!i)),
-            _ => Err(GenerateError::UnsupportedFeature(
-                "const-not-foldable: bitwise NOT on non-integer".to_string(),
+            _ => Err(ConstFoldKind::NotFoldable(
+                "bitwise NOT on non-integer".to_string(),
             )),
         },
     }
 }
 
-fn parse_number_lit(s: &str) -> Result<EvalValue, GenerateError> {
+fn parse_number_lit(s: &str) -> Result<EvalValue, ConstFoldKind> {
     let s = s.trim();
     let is_float = s.contains('.')
         || s.chars().any(|c| c == 'e' || c == 'E')
@@ -717,57 +796,48 @@ fn parse_number_lit(s: &str) -> Result<EvalValue, GenerateError> {
             && !s.starts_with("0X");
     if is_float {
         s.parse::<f64>().map(EvalValue::Float).map_err(|e| {
-            GenerateError::UnsupportedFeature(format!(
-                "const-not-foldable: malformed float literal '{s}': {e}"
-            ))
+            ConstFoldKind::NotFoldable(format!("malformed float literal '{s}': {e}"))
         })
     } else if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         i128::from_str_radix(rest, 16)
             .map(EvalValue::Int)
             .map_err(|e| {
-                GenerateError::UnsupportedFeature(format!(
-                    "const-not-foldable: malformed hex literal '{s}': {e}"
-                ))
+                ConstFoldKind::NotFoldable(format!("malformed hex literal '{s}': {e}"))
             })
     } else if let Some(rest) = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")) {
         i128::from_str_radix(rest, 2).map(EvalValue::Int).map_err(|e| {
-            GenerateError::UnsupportedFeature(format!(
-                "const-not-foldable: malformed binary literal '{s}': {e}"
-            ))
+            ConstFoldKind::NotFoldable(format!("malformed binary literal '{s}': {e}"))
         })
     } else if let Some(rest) = s.strip_prefix("0o").or_else(|| s.strip_prefix("0O")) {
         i128::from_str_radix(rest, 8).map(EvalValue::Int).map_err(|e| {
-            GenerateError::UnsupportedFeature(format!(
-                "const-not-foldable: malformed octal literal '{s}': {e}"
-            ))
+            ConstFoldKind::NotFoldable(format!("malformed octal literal '{s}': {e}"))
         })
     } else {
         s.parse::<i128>().map(EvalValue::Int).map_err(|e| {
-            GenerateError::UnsupportedFeature(format!(
-                "const-not-foldable: malformed integer literal '{s}': {e}"
-            ))
+            ConstFoldKind::NotFoldable(format!("malformed integer literal '{s}': {e}"))
         })
     }
 }
 
-fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, GenerateError> {
+fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFoldKind> {
     use SceType::*;
     match (value, ty) {
         (EvalValue::Bool(b), Bool) => Ok(ConstValue::Bool(b)),
         (EvalValue::Int(i), Bool) => Ok(ConstValue::Bool(i != 0)),
-        (EvalValue::Bool(_), _) => Err(GenerateError::UnsupportedFeature(format!(
-            "const-yield-type-mismatch: cannot coerce bool to {ty:?}"
-        ))),
+        (EvalValue::Bool(_), _) => Err(ConstFoldKind::YieldTypeMismatch {
+            expected: ty.clone(),
+            actual: "bool".to_string(),
+        }),
 
         (EvalValue::Float(f), Float32) => Ok(ConstValue::F32(f as f32)),
         (EvalValue::Float(f), Float64) => Ok(ConstValue::F64(f)),
         (EvalValue::Int(i), Float32) => Ok(ConstValue::F32(i as f32)),
         (EvalValue::Int(i), Float64) => Ok(ConstValue::F64(i as f64)),
 
-        (EvalValue::Float(_), _) => Err(GenerateError::UnsupportedFeature(format!(
-            "const-yield-type-mismatch: cannot coerce float to {ty:?} \
-             (declared element type is integer)"
-        ))),
+        (EvalValue::Float(_), _) => Err(ConstFoldKind::YieldTypeMismatch {
+            expected: ty.clone(),
+            actual: "float".to_string(),
+        }),
 
         (EvalValue::Int(i), Uint8) => Ok(ConstValue::U8((i as u128 & 0xFF) as u8)),
         (EvalValue::Int(i), Uint16) => Ok(ConstValue::U16((i as u128 & 0xFFFF) as u16)),
@@ -782,25 +852,23 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, Generat
         (EvalValue::Int(i), Int32) => Ok(ConstValue::I32(i as i32)),
         (EvalValue::Int(i), Int64) => Ok(ConstValue::I64(i as i64)),
 
-        (_, String | Bytes) => Err(GenerateError::UnsupportedFeature(format!(
-            "const-yield-type-mismatch: scalar fold yield cannot be coerced to {ty:?} \
-             (string/bytes are not RFC §5.F element types)"
-        ))),
+        // String / Bytes are not RFC §5.F element types — the parser
+        // already rejects them on `array<elem>` so this arm is
+        // unreachable for fixtures, but keeping the explicit error
+        // closes the typed-coercion match exhaustively.
+        (_, String | Bytes) => Err(ConstFoldKind::YieldTypeMismatch {
+            expected: ty.clone(),
+            actual: "scalar fold yield".to_string(),
+        }),
     }
 }
 
-fn scalar_from_i128(i: i128, ty: &SceType) -> Result<ConstValue, GenerateError> {
+fn scalar_from_i128(i: i128, ty: &SceType) -> Result<ConstValue, ConstFoldKind> {
     coerce_to_const(EvalValue::Int(i), ty)
 }
 
-fn map_expr_err(e: ExprError) -> GenerateError {
-    GenerateError::UnsupportedFeature(format!(
-        "const-not-foldable: failed to parse fold-body expression: {e}"
-    ))
-}
-
-fn map_eval(e: GenerateError) -> GenerateError {
-    e
+fn map_expr_err(e: ExprError) -> ConstFoldKind {
+    ConstFoldKind::NotFoldable(format!("failed to parse fold-body expression: {e}"))
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -811,6 +879,13 @@ fn map_eval(e: GenerateError) -> GenerateError {
 mod tests {
     use super::*;
     use crate::forge::model::{AlgorithmStmt, FoldBody, SceType};
+
+    /// Test-only locator. Real call sites pass authoring identifiers;
+    /// unit tests don't care about the wire-locator content.
+    const TEST_SITE: ConstSite<'static> = ConstSite {
+        algorithm: "test_alg",
+        const_name: "test_const",
+    };
 
     /// Smoke evaluator: `array<u16, 4> { i + i }` over `0..4`
     /// should produce `[0, 2, 4, 6]`.
@@ -829,7 +904,7 @@ mod tests {
             yield_expr: "doubled".into(),
         };
         let mut budget = Budget::default();
-        let out = evaluate_fold(&fold, &mut budget).unwrap();
+        let out = evaluate_fold(&fold, &mut budget, TEST_SITE).unwrap();
         assert_eq!(
             out,
             vec![
@@ -888,7 +963,7 @@ mod tests {
             yield_expr: "c".into(),
         };
         let mut budget = Budget::default();
-        let out = evaluate_fold(&fold, &mut budget).expect("CRC16 fold must evaluate");
+        let out = evaluate_fold(&fold, &mut budget, TEST_SITE).expect("CRC16 fold must evaluate");
         // Reference values verified against the canonical CRC16-CCITT-FALSE
         // table (poly 0x1021, init 0xFFFF, no reflect, no xor-out — RFC 1662
         // / ISO/IEC 13239 / X.25). Spot-checks in each octet of the index
@@ -915,9 +990,9 @@ mod tests {
             yield_expr: "i".into(),
         };
         let mut budget = Budget::new(3);
-        let err = evaluate_fold(&fold, &mut budget).unwrap_err();
+        let err = evaluate_fold(&fold, &mut budget, TEST_SITE).unwrap_err();
         assert!(
-            matches!(err, GenerateError::UnsupportedFeature(ref m) if m.contains("const-fold-budget-exceeded")),
+            matches!(err, GenerateError::ConstFoldBudgetExceeded { budget: 3, .. }),
             "budget-exceeded error must surface; got {err:?}"
         );
     }
@@ -938,10 +1013,14 @@ mod tests {
         let ret_err = evaluate_fold(
             &make_fold(AlgorithmStmt::Return { expr: Some("0".into()) }),
             &mut budget,
+            TEST_SITE,
         )
         .unwrap_err();
         assert!(
-            matches!(ret_err, GenerateError::UnsupportedFeature(ref m) if m.contains("<sce:return>")),
+            matches!(
+                ret_err,
+                GenerateError::ConstNotFoldable { ref detail, .. } if detail.contains("<sce:return>")
+            ),
             "return inside fold must be rejected; got {ret_err:?}"
         );
 
@@ -952,10 +1031,14 @@ mod tests {
                 args: vec![],
             }),
             &mut budget,
+            TEST_SITE,
         )
         .unwrap_err();
         assert!(
-            matches!(call_err, GenerateError::UnsupportedFeature(ref m) if m.contains("<sce:call")),
+            matches!(
+                call_err,
+                GenerateError::ConstNotFoldable { ref detail, .. } if detail.contains("<sce:call")
+            ),
             "call inside fold must be rejected; got {call_err:?}"
         );
     }
@@ -976,9 +1059,12 @@ mod tests {
             yield_expr: "i".into(),
         };
         let mut budget = Budget::default();
-        let err = evaluate_fold(&fold, &mut budget).unwrap_err();
+        let err = evaluate_fold(&fold, &mut budget, TEST_SITE).unwrap_err();
         assert!(
-            matches!(err, GenerateError::UnsupportedFeature(ref m) if m.contains("max-iter")),
+            matches!(
+                err,
+                GenerateError::ConstNotFoldable { ref detail, .. } if detail.contains("max-iter")
+            ),
             "while max-iter must be enforced; got {err:?}"
         );
     }
@@ -987,7 +1073,7 @@ mod tests {
     /// scalar type, mirroring the typed-Var path.
     #[test]
     fn scalar_init_evaluates_hex_to_u16() {
-        let v = evaluate_scalar_init("0xFFFF", &SceType::Uint16).unwrap();
+        let v = evaluate_scalar_init("0xFFFF", &SceType::Uint16, TEST_SITE).unwrap();
         assert_eq!(v, ConstValue::U16(0xFFFF));
     }
 

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Negative fixture for RFC §5.F Phase A4-γ wire code
+  `algorithm/const-not-foldable`.
+
+  The fold body references identifier `unbound_outer` which is not in
+  fold scope (fold bodies see only the iter variable and locals
+  declared by `<sce:var>`). The host interpreter rejects with
+  `ConstFoldKind::NotFoldable` → `GenerateError::ConstNotFoldable`,
+  exercising the typed-error refactor that landed in γ.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:const name="BAD_TABLE" type="array&lt;u16, 4&gt;" sce:compute-at="build">
+    <sce:fold range="0..4" as="i" elem-type="uint16">
+      <sce:yield expr="unbound_outer + i"/>
+    </sce:fold>
+  </sce:const>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>

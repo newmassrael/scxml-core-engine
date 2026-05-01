@@ -6532,14 +6532,13 @@ fn lower_algorithm_consts(
     let mut out = String::new();
     for c in consts {
         let upper = to_upper_snake(&c.name);
+        let site = const_fold::ConstSite {
+            algorithm: algorithm_name,
+            const_name: &c.name,
+        };
         match (&c.sce_type, &c.fold, &c.init) {
             (AlgorithmConstType::Array { elem, len }, Some(fold), None) => {
-                let values = const_fold::evaluate_fold(fold, budget).map_err(|e| {
-                    GenerateError::UnsupportedFeature(format!(
-                        "algorithm '{algorithm_name}': <sce:const name=\"{}\">: {e}",
-                        c.name
-                    ))
-                })?;
+                let values = const_fold::evaluate_fold(fold, budget, site)?;
                 if values.len() as u32 != *len {
                     return Err(GenerateError::UnsupportedFeature(format!(
                         "algorithm '{algorithm_name}': <sce:const name=\"{}\">: \
@@ -6554,12 +6553,7 @@ fn lower_algorithm_consts(
                 out.push_str(&emit_array_const(lang, &l, &upper, elem, *len, &body));
             }
             (AlgorithmConstType::Scalar(ty), None, Some(init_expr)) => {
-                let value = const_fold::evaluate_scalar_init(init_expr, ty).map_err(|e| {
-                    GenerateError::UnsupportedFeature(format!(
-                        "algorithm '{algorithm_name}': <sce:const name=\"{}\">: {e}",
-                        c.name
-                    ))
-                })?;
+                let value = const_fold::evaluate_scalar_init(init_expr, ty, site)?;
                 let lit = const_fold::serialize_array_literal_body(
                     std::slice::from_ref(&value),
                     lang,

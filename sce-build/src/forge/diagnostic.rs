@@ -460,6 +460,23 @@ pub enum DiagnosticCode {
     #[serde(rename = "codegen/generic-kind-backend-emit-missing")]
     CodegenGenericKindBackendEmitMissing,
 
+    // ── §5.F build-time const-fold (watching-zenoh RFC §5.F, Phase A4-γ).
+    //    The host interpreter (`forge::const_fold`) emits these
+    //    codegen-time errors when a `<sce:fold>` body — or a scalar
+    //    `<sce:const init=...>` — fails the foldable substrate, blows
+    //    the iteration budget, or produces a value the declared
+    //    element / scalar type cannot hold. Stage = Generate (the
+    //    interpreter runs inside `lower_algorithm_consts` during
+    //    template rendering). β shipped these as
+    //    `generate/unsupported-feature` slug payloads; γ promotes
+    //    them to first-class wire codes. ──
+    #[serde(rename = "algorithm/const-not-foldable")]
+    AlgorithmConstNotFoldable,
+    #[serde(rename = "algorithm/const-fold-budget-exceeded")]
+    AlgorithmConstFoldBudgetExceeded,
+    #[serde(rename = "algorithm/const-yield-type-mismatch")]
+    AlgorithmConstYieldTypeMismatch,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -763,6 +780,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Codegen matrix shells (watching-zenoh RFC §5.J.4 / §5.J.5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
+        // Algorithm §5.F const-fold (watching-zenoh RFC §5.F, Phase A4-γ)
+        AlgorithmConstNotFoldable,
+        AlgorithmConstFoldBudgetExceeded,
+        AlgorithmConstYieldTypeMismatch,
         // Io
         IoFilesystem,
         // Cli
@@ -960,6 +981,11 @@ impl DiagnosticCode {
             AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing => Some("watching-zenoh RFC §5.A"),
+
+            // ── Algorithm §5.F build-time const-fold ─────────────
+            AlgorithmConstNotFoldable
+            | AlgorithmConstFoldBudgetExceeded
+            | AlgorithmConstYieldTypeMismatch => Some("watching-zenoh RFC §5.F"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1215,6 +1241,9 @@ impl DiagnosticCode {
             GenerateUnsupportedFeature => "generate/unsupported-feature",
             CodegenMcuClassKindOnNonMcuLanguage => "codegen/mcu-class-kind-on-non-mcu-language",
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
+            AlgorithmConstNotFoldable => "algorithm/const-not-foldable",
+            AlgorithmConstFoldBudgetExceeded => "algorithm/const-fold-budget-exceeded",
+            AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2196,6 +2225,61 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![kind.clone(), language.clone()],
         },
+        GenerateError::ConstNotFoldable {
+            algorithm,
+            const_name,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmConstNotFoldable,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(const_name.clone()),
+            fix: None,
+            key_fragments: vec![algorithm.clone(), const_name.clone(), detail.clone()],
+        },
+        GenerateError::ConstFoldBudgetExceeded {
+            algorithm,
+            const_name,
+            budget,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmConstFoldBudgetExceeded,
+            stage: Stage::Generate,
+            expected: None,
+            actual: const_name.clone(),
+            fix: None,
+            key_fragments: {
+                let mut k = vec![algorithm.clone()];
+                if let Some(n) = const_name {
+                    k.push(n.clone());
+                }
+                k.push(budget.to_string());
+                k
+            },
+        },
+        GenerateError::ConstYieldTypeMismatch {
+            algorithm,
+            const_name,
+            expected,
+            actual,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmConstYieldTypeMismatch,
+            stage: Stage::Generate,
+            // The declared element / scalar type rides `key_fragments`
+            // rather than the wire `expected` field — `expected` is
+            // reserved for the `ExpectedIsMetadata` bucket
+            // (`expression/parse-mismatch`-style parser expectations);
+            // type-coercion failures sit in the `NeutralOrDeterministic`
+            // bucket alongside `validation/numeric-parse`.
+            expected: None,
+            actual: Some(actual.clone()),
+            fix: None,
+            key_fragments: vec![
+                algorithm.clone(),
+                const_name.clone(),
+                format!("{expected:?}"),
+                actual.clone(),
+            ],
+        },
     }
 }
 
@@ -3175,6 +3259,38 @@ mod tests {
                 "forge/algorithm-return-missing",
                 ValidationError::AlgorithmReturnMissing.into(),
                 r#"{"v":1,"id":"fnv1a:e2582bd483bbf621","code":"algorithm/return-missing","stage":"validation","spec":"watching-zenoh RFC §5.A","message":"algorithm: signature declares return type but body's last statement is not <sce:return>"}"#,
+            ),
+            // ── §5.F build-time const-fold (watching-zenoh RFC §5.F) ─
+            (
+                "forge/algorithm-const-not-foldable",
+                GenerateError::ConstNotFoldable {
+                    algorithm: "crc16".into(),
+                    const_name: "table".into(),
+                    detail: "arithmetic on non-numeric operand".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f005de566be48738","code":"algorithm/const-not-foldable","stage":"generate","spec":"watching-zenoh RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-not-foldable: arithmetic on non-numeric operand","actual":"table"}"#,
+            ),
+            (
+                "forge/algorithm-const-fold-budget-exceeded",
+                GenerateError::ConstFoldBudgetExceeded {
+                    algorithm: "crc16".into(),
+                    const_name: Some("table".into()),
+                    budget: 1_000_000,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d1dee18e4cb7eeba","code":"algorithm/const-fold-budget-exceeded","stage":"generate","spec":"watching-zenoh RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-fold-budget-exceeded: total iteration count exceeded the configured budget of 1000000 (RFC §5.F bound 1; override with --const-fold-budget=N)","actual":"table"}"#,
+            ),
+            (
+                "forge/algorithm-const-yield-type-mismatch",
+                GenerateError::ConstYieldTypeMismatch {
+                    algorithm: "crc16".into(),
+                    const_name: "table".into(),
+                    expected: crate::forge::model::SceType::Uint16,
+                    actual: "float".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5d993dd11e2f6ddb","code":"algorithm/const-yield-type-mismatch","stage":"generate","spec":"watching-zenoh RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-yield-type-mismatch: cannot coerce float to Uint16","actual":"float"}"#,
             ),
         ]
     }
@@ -4417,6 +4533,9 @@ mod tests {
             | GenerateUnsupportedFeature
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
+            | AlgorithmConstNotFoldable
+            | AlgorithmConstFoldBudgetExceeded
+            | AlgorithmConstYieldTypeMismatch
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -4751,6 +4870,9 @@ mod tests {
                 | GenerateUnsupportedFeature
                 | CodegenMcuClassKindOnNonMcuLanguage
                 | CodegenGenericKindBackendEmitMissing
+                | AlgorithmConstNotFoldable
+                | AlgorithmConstFoldBudgetExceeded
+                | AlgorithmConstYieldTypeMismatch
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -4834,12 +4956,13 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            161,
+            164,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 158 distinct variants to match the DiagnosticCode \
-             enum (watching-zenoh RFC §5.K Phase A2 added \
-             MeshDeployPlatformClassOsMismatch + \
-             MeshDeploySchedulerCooperativeMissingStackBudget; 156 → 158).",
+             expected 164 distinct variants to match the DiagnosticCode \
+             enum (watching-zenoh RFC §5.F Phase A4-γ promoted three \
+             slug-payload §5.F failures to first-class wire codes: \
+             AlgorithmConstNotFoldable + AlgorithmConstFoldBudgetExceeded \
+             + AlgorithmConstYieldTypeMismatch; 161 → 164).",
         );
     }
 

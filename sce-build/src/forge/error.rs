@@ -12,7 +12,7 @@
 //   Generate   → stage 7   (template rendering in generator.rs)
 //   Io         → cross-cutting filesystem errors
 
-use crate::forge::model::ForgeKind;
+use crate::forge::model::{ForgeKind, SceType};
 use std::path::PathBuf;
 
 /// Source location attached to an error for machine-readable diagnostics.
@@ -561,6 +561,63 @@ pub enum GenerateError {
          (watching-zenoh RFC §5.J.4 expects all six backends to emit)"
     )]
     CodegenGenericKindBackendEmitMissing { kind: String, language: String },
+
+    /// RFC §5.F: a `<sce:fold>` body or a `<sce:const init=...>` scalar
+    /// expression cannot be reduced to a build-time value. The host
+    /// interpreter rejects every construct outside the §5.F substrate
+    /// (member access, function calls, runtime-only identifiers, string
+    /// or null literals, malformed numeric literals, …) under this
+    /// single wire code; `detail` quotes the specific clause that
+    /// triggered. `algorithm` + `const_name` locate the offending
+    /// declaration so the consumer can route the repair without parsing
+    /// the message.
+    #[error(
+        "algorithm '{algorithm}': <sce:const name=\"{const_name}\">: \
+         const-not-foldable: {detail}"
+    )]
+    ConstNotFoldable {
+        algorithm: String,
+        const_name: String,
+        detail: String,
+    },
+
+    /// RFC §5.F bound 1: total iteration count across the body of a
+    /// single `<sce:fold>` (or its nested while/foreach loops) exceeded
+    /// the configured budget. Default is
+    /// [`crate::forge::const_fold::Budget::DEFAULT_MAX_ITERS`]
+    /// (1_000_000); the CLI knob is `--const-fold-budget=N`.
+    /// `const_name` is `Some` when the budget tripped inside a specific
+    /// const declaration (the common case); a future caller that drives
+    /// the interpreter outside `lower_algorithm_consts` can pass `None`.
+    #[error(
+        "algorithm '{algorithm}': {}const-fold-budget-exceeded: \
+         total iteration count exceeded the configured budget of {budget} \
+         (RFC §5.F bound 1; override with --const-fold-budget=N)",
+        match const_name { Some(n) => format!("<sce:const name=\"{n}\">: "), None => String::new() }
+    )]
+    ConstFoldBudgetExceeded {
+        algorithm: String,
+        const_name: Option<String>,
+        budget: u64,
+    },
+
+    /// RFC §5.F: the value yielded by a `<sce:fold>` body (or the init
+    /// expression of a scalar `<sce:const>`) cannot be coerced to the
+    /// declared element / scalar type. `expected` is the declared slot
+    /// type; `actual` is a short tag describing the produced value's
+    /// domain (e.g. `"bool"`, `"float"`) — substring `"bool→Uint16"` /
+    /// `"float→Int32"` patterns the prior β slug emitted, preserved for
+    /// consumers dispatching on the message text.
+    #[error(
+        "algorithm '{algorithm}': <sce:const name=\"{const_name}\">: \
+         const-yield-type-mismatch: cannot coerce {actual} to {expected:?}"
+    )]
+    ConstYieldTypeMismatch {
+        algorithm: String,
+        const_name: String,
+        expected: SceType,
+        actual: String,
+    },
 }
 
 /// CLI exit code by error category.

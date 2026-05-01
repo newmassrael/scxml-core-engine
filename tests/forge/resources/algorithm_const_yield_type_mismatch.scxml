@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Negative fixture for RFC §5.F Phase A4-γ wire code
+  `algorithm/const-yield-type-mismatch`.
+
+  The fold declares `elem-type="uint16"` (an integer) but its
+  `<sce:yield>` expression evaluates to a float (`1.5 * i`). The
+  host interpreter cannot coerce a float to a Uint16 slot and rejects
+  with `ConstFoldKind::YieldTypeMismatch` →
+  `GenerateError::ConstYieldTypeMismatch`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:const name="MISMATCHED" type="array&lt;u16, 4&gt;" sce:compute-at="build">
+    <sce:fold range="0..4" as="i" elem-type="uint16">
+      <sce:yield expr="1.5 * i"/>
+    </sce:fold>
+  </sce:const>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
