@@ -106,16 +106,13 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Python
             | Language::C11 => true,
         },
-        // RFC §5.A Algorithm: Phase A3 lands Rust + Cpp; Phase A5
-        // closes the matrix to C11 (RFC §7 line 3382). Go + Kotlin
-        // shipped post-A6 alongside their byte-goldens + conformance
-        // fragment trios; Python remains and fires
-        // `codegen/generic-kind-backend-emit-missing` until its
-        // template ships.
+        // RFC §5.A Algorithm: closed across all six backends.
+        // A3 lands Rust + Cpp; A5 closes C11 (RFC §7 line 3382);
+        // post-A6 follow-up trio adds Go + Kotlin + Python in three
+        // independent commits.
         ForgeKind::Algorithm => match lang {
             Language::Rust | Language::Cpp | Language::C11
-            | Language::Go | Language::Kotlin => true,
-            Language::Python => false,
+            | Language::Go | Language::Kotlin | Language::Python => true,
         },
     }
 }
@@ -219,12 +216,11 @@ mod tests {
         }
     }
 
-    /// RFC §5.A Phase A3 + A5 + Go/Kotlin follow-ups: Algorithm ships
-    /// on Rust + Cpp + C11 + Go + Kotlin; Python alone fires
-    /// `codegen/generic-kind-backend-emit-missing` until its template
-    /// ships.
+    /// RFC §5.A §5.J.4 matrix closure: Algorithm ships on all six
+    /// backends after the post-A6 Go / Kotlin / Python follow-up trio.
+    /// No backend remains gated by `codegen/generic-kind-backend-emit-missing`.
     #[test]
-    fn algorithm_kind_ships_on_rust_cpp_c11_go_kotlin() {
+    fn algorithm_kind_ships_on_all_backends() {
         assert_eq!(kind_class(ForgeKind::Algorithm), KindClass::Generic);
         for lang in [
             Language::Rust,
@@ -232,6 +228,7 @@ mod tests {
             Language::C11,
             Language::Go,
             Language::Kotlin,
+            Language::Python,
         ] {
             assert_eq!(
                 lookup(ForgeKind::Algorithm, lang),
@@ -245,23 +242,6 @@ mod tests {
                 "check({:?}, {:?}) should succeed",
                 ForgeKind::Algorithm,
                 lang,
-            );
-        }
-        for lang in [Language::Python] {
-            assert_eq!(
-                lookup(ForgeKind::Algorithm, lang),
-                EmitOutcome::TemplateMissing,
-                "({:?}, {:?}) should fire generic-kind-backend-emit-missing",
-                ForgeKind::Algorithm,
-                lang,
-            );
-            let err = check(ForgeKind::Algorithm, lang).expect_err("matrix walker rejects");
-            assert!(
-                matches!(err, GenerateError::CodegenGenericKindBackendEmitMissing { .. }),
-                "wrong diagnostic variant for ({:?}, {:?}): {:?}",
-                ForgeKind::Algorithm,
-                lang,
-                err,
             );
         }
     }

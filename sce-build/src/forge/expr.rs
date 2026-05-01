@@ -2344,7 +2344,35 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             let r = if child_needs_parens(right, *op, false, python_precedence) {
                 format!("({r_raw})")
             } else { r_raw };
-            format!("{l} {} {r}", python_binop(*op))
+            let raw = format!("{l} {} {r}", python_binop(*op));
+            // RFC §5.A: Python's `int` is arbitrary-precision, so an
+            // operation that would truncate on a fixed-width unsigned
+            // type in C/Rust (e.g. `crc << 1` where crc is u16, then
+            // `^ 0x1021`) keeps growing. To preserve byte-equivalence
+            // with the other five backends, mask the result back to
+            // the declared bit-width — but only for ops that can
+            // produce values exceeding the operand range:
+            //   * `+ - *` carry a value beyond the inputs' max.
+            //   * `<<` shifts bits past the high end.
+            // `^ | &` stay within `max(left, right)`; comparison /
+            // logic produce booleans; division shrinks. Skipping
+            // those ops avoids redundant masks like `byte & 0x0F &
+            // 0xFF` on a body whose authors already wrote a
+            // bit-mask, keeping the Python emit close to the
+            // hand-authored shape on existing fixtures.
+            let needs_mask = match op {
+                BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Shl => true,
+                _ => false,
+            };
+            if needs_mask {
+                if let InferredType::Int { signed: false, bits } = expr.ty {
+                    if bits <= 32 {
+                        let mask: u64 = (1u64 << bits) - 1;
+                        return format!("({raw}) & 0x{mask:X}");
+                    }
+                }
+            }
+            raw
         }
         ExprKind::Unary { op, operand } => {
             let inner = emit_python(operand, expr.ty);

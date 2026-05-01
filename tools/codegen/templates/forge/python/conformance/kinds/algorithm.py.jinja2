@@ -1,0 +1,27 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Algorithm kind (RFC §5.A) — single-output free function. Cross-language
+   byte-equivalence acceptance gate (RFC §A6); Python shipped post-A6
+   alongside its byte-golden + matrix flip, closing §5.J.4 to all six
+   backends.
+
+   `bytes` args lower to Python's `bytes` (RFC §5.J.5). Numeric scalar
+   args route through Python's dynamic typing, so the JSON values are
+   passed through directly. The oracle delivers `bytes` arguments as a
+   JSON array of integers, which we convert via `bytes(...)`. #}
+        for case in spec["cases"]:
+{% for arg_ty in f.args %}
+{% if arg_ty == "bytes" %}
+            arg{{ loop.index0 }} = bytes(case["args"][{{ loop.index0 }}])
+{% else %}
+            arg{{ loop.index0 }} = case["args"][{{ loop.index0 }}]
+{% endif %}
+{% endfor %}
+            expected = case["expected"]
+            actual = {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if f.output.compare == "tolerance" %}
+            self.assert_close(actual, expected, "{{ f.name }}")
+{% else %}
+            self.assertEqual(actual, expected, "{{ f.name }}")
+{% endif %}

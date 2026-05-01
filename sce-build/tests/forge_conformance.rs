@@ -1251,6 +1251,23 @@ fn forge_python_codec_length_ref() {
     assert_standalone_forge_python("codec_length_ref", "codec_length_ref.py");
 }
 
+// ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
+
+#[test]
+fn forge_python_algorithm_crc16() {
+    assert_standalone_forge_python("algorithm_crc16", "algorithm_crc16.py");
+}
+
+#[test]
+fn forge_python_algorithm_crc16_table() {
+    assert_standalone_forge_python("algorithm_crc16_table", "algorithm_crc16_table.py");
+}
+
+#[test]
+fn forge_python_algorithm_const_fold_smoke() {
+    assert_standalone_forge_python("algorithm_const_fold_smoke", "algorithm_const_fold_smoke.py");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── C11 conformance tests ────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
