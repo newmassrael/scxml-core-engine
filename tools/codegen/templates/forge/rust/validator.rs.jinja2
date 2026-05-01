@@ -49,15 +49,31 @@ impl {{ struct_name }} {
 
     pub fn validate(&mut self, {{ params }}) -> ValidationResult {
 {% for rule in range_rules %}
-{# Unsigned + min "0": elide the lower-bound term. `unsigned < 0` is a
-   tautology that rustc surfaces as -Dunused_comparisons → -Dwarnings in
-   this workspace's deny-warnings build. The semantic is unchanged because
-   the unsigned domain already excludes negative values by definition.
-   Mirrors the C11 template's `elide_lower` pattern. #}
+{# Two tautology elisions for rustc's -Dunused_comparisons (workspace
+   deny-warnings build):
+     • `elide_lower`: unsigned + min "0" — `unsigned < 0` is
+       tautologically false; the unsigned domain already excludes
+       negative values by definition.
+     • `elide_upper`: rule.max equals the type's natural ceiling
+       (e.g. u8 with max=255). `u8 > 255` is tautologically false;
+       rustc rejects it under -Dunused_comparisons. The
+       `is_max_at_type_max` flag is computed generator-side via
+       string-comparison against the type's natural ceiling so a
+       user who writes `range-max="200"` for a uint8 still gets
+       the comparison emitted (not tautological).
+   Mirrors the C11 template's `elide_lower` / `elide_upper` pair. #}
 {% set elide_lower = rule.is_unsigned and rule.min == "0" %}
+{% set elide_upper = rule.is_max_at_type_max %}
 {% if rule.has_min and rule.has_max %}
-{% if elide_lower %}
+{% if elide_lower and elide_upper %}
+{# Both bounds at the type's natural extremes — every value of the
+   type is in range, so emit no check at all. #}
+{% elif elide_lower %}
         if {{ rule.id }} > {{ rule.max }} {
+            return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_out_of_range".to_string() };
+        }
+{% elif elide_upper %}
+        if {{ rule.id }} < {{ rule.min }} {
             return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_out_of_range".to_string() };
         }
 {% else %}
@@ -72,9 +88,11 @@ impl {{ struct_name }} {
         }
 {% endif %}
 {% elif rule.has_max %}
+{% if not elide_upper %}
         if {{ rule.id }} > {{ rule.max }} {
             return ValidationResult { valid: false, reason: "{{ rule.reason_id }}_out_of_range".to_string() };
         }
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for rule in roc_rules %}

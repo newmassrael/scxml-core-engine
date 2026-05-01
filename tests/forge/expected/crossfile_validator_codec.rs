@@ -27,9 +27,6 @@ impl CrossfileValidatorCodec {
     }
 
     pub fn validate(&mut self, msg_id: u8, payload: u16) -> ValidationResult {
-        if msg_id > 255 {
-            return ValidationResult { valid: false, reason: "msg_id_out_of_range".to_string() };
-        }
         if payload > 4095 {
             return ValidationResult { valid: false, reason: "payload_out_of_range".to_string() };
         }
