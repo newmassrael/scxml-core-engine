@@ -791,6 +791,127 @@ fn forge_codec_vle_zint_u64() {
     assert_standalone_forge("codec_vle_zint_u64", "codec_vle_zint_u64.h");
 }
 
+// ── RFC §5.B variant primitive (B1-β trunk) ──────────────────
+// `codec_variant_dispatch` imports two arm-body codecs and exposes
+// the discriminated-union shape across Rust + Cpp. Sub-codecs ship
+// their own goldens so the syn / cpp parser gates compile each
+// fixture in isolation; the dispatch fixture references them via
+// `super::...` (Rust) / `::SCE::Generated::...` (Cpp) qualified
+// paths that resolve at link time when all three goldens are in
+// scope (the conformance harness wiring lands in a follow-up).
+
+#[test]
+fn forge_codec_variant_session_open_cpp() {
+    assert_standalone_forge(
+        "codec_variant_session_open",
+        "codec_variant_session_open.h",
+    );
+}
+
+#[test]
+fn forge_codec_variant_session_close_cpp() {
+    assert_standalone_forge(
+        "codec_variant_session_close",
+        "codec_variant_session_close.h",
+    );
+}
+
+#[test]
+fn forge_codec_variant_dispatch_cpp() {
+    assert_standalone_forge(
+        "codec_variant_dispatch",
+        "codec_variant_dispatch.h",
+    );
+}
+
+/// RFC §5.B B1-β: `codec/variant-arm-unreachable` build-time check —
+/// a `<sce:variant>` over a uint8 tag with two arms and no
+/// `<sce:default>` leaves 254 tag values uncovered, so the parser
+/// must reject with the typed diagnostic naming the codec, the tag,
+/// the tag's type, the arm count, and the practically-enumerable
+/// domain size. The rejection is what makes the runtime decode
+/// total — generated codegen omits the unreachable fallback branch.
+#[test]
+fn forge_codec_variant_missing_default_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="missing_default">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <sce:import src="codec_variant_session_close.scxml" kind="codec" as="codec_variant_session_close"/>
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="msg_id">
+      <sce:arm value="0x01" type="codec_variant_session_open"/>
+      <sce:arm value="0x02" type="codec_variant_session_close"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("missing_default"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "missing-default + non-exhaustive arms must reject with codec/variant-arm-unreachable"
+        ),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Validation(ValidationError::CodecVariantArmUnreachable {
+                ref tag_field,
+                arm_count: 2,
+                domain_size: Some(256),
+                ..
+            }) if tag_field == "msg_id"
+        ),
+        "must surface as ValidationError::CodecVariantArmUnreachable with the offending tag and arm count; got: {inner:?}"
+    );
+}
+
+/// RFC §5.B B1-β trunk gate: only Rust + Cpp emit variant codecs in
+/// trunk; Kotlin / Go / C11 / Python land in B1-β closures. Until
+/// then, `compile_forge_with_imports` must reject with
+/// `generate/unsupported-feature` naming the language so authors
+/// don't ship silently-broken codegen.
+#[test]
+fn forge_codec_variant_kotlin_gate_rejects_until_closure() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let scxml_path = resource_dir().join("codec_variant_dispatch.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read variant fixture");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_dispatch"),
+        sce_build::generator::Language::Kotlin,
+        scxml_path.parent().unwrap(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "B1-β trunk must gate <sce:variant> on Kotlin; codegen would otherwise ship broken output"
+        ),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
+                if msg.contains("codec_variant_dispatch") && msg.contains("Kotlin")
+        ),
+        "must surface as GenerateError::UnsupportedFeature naming the codec and language; got: {inner:?}"
+    );
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Kotlin conformance tests ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -1022,6 +1143,32 @@ fn forge_rust_codec_tail() {
 #[test]
 fn forge_rust_codec_length_ref() {
     assert_standalone_forge_rust("codec_length_ref", "codec_length_ref.rs");
+}
+
+// ── RFC §5.B variant primitive (Rust, B1-β trunk) ────────────
+
+#[test]
+fn forge_rust_codec_variant_session_open() {
+    assert_standalone_forge_rust(
+        "codec_variant_session_open",
+        "codec_variant_session_open.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_variant_session_close() {
+    assert_standalone_forge_rust(
+        "codec_variant_session_close",
+        "codec_variant_session_close.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_variant_dispatch() {
+    assert_standalone_forge_rust(
+        "codec_variant_dispatch",
+        "codec_variant_dispatch.rs",
+    );
 }
 
 // ══════════════════════════════════════════════════════════════

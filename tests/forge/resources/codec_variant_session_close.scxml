@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: variant arm body — session-close frame.
+     Imported by codec_variant_dispatch.scxml; carries a single
+     uint8 reason code. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_variant_session_close">
+  <datamodel>
+    <data id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>

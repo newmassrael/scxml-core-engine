@@ -418,6 +418,30 @@ pub enum ValidationError {
     /// path tracking lands with §5.F (A4).
     #[error("algorithm: signature declares return type but body's last statement is not <sce:return>")]
     AlgorithmReturnMissing,
+
+    /// RFC §5.B variant primitive (B1-β): the variant's enumerated
+    /// arms don't cover the tag field's value domain AND no
+    /// `<sce:default>` arm catches the unenumerated values. At least
+    /// one tag value would reach the runtime decoder with no matching
+    /// branch — author resolves by adding `<sce:default type="..."/>`
+    /// or by enumerating every missing tag value explicitly. The
+    /// `domain_size` is `Some(N)` for practically enumerable tag types
+    /// (uint8 = 256, uint16 = 65536); `None` for uint32 / uint64 whose
+    /// domain is too large to enumerate.
+    #[error(
+        "codec '{codec}': variant on tag '{tag_field}' (type {tag_type}) has {arm_count} arm(s) but no <sce:default> declared{} — at least one tag value would have no matching arm at runtime; add <sce:default type=\"...\"/> or enumerate the missing values explicitly",
+        match domain_size {
+            Some(n) => format!(" (tag type domain has {n} values)"),
+            None => String::new(),
+        }
+    )]
+    CodecVariantArmUnreachable {
+        codec: String,
+        tag_field: String,
+        tag_type: String,
+        arm_count: usize,
+        domain_size: Option<u64>,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

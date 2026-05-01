@@ -13,6 +13,9 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+{% if has_variant %}
+#include <variant>
+{% endif %}
 
 #include "sce/forge/codec.h"
 {% if all_imports %}
@@ -23,10 +26,34 @@
 
 namespace SCE::Generated::{{ namespace }} {
 
+{% if has_variant %}
+// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// codec's tag-field suffix. `std::variant` carries one of N arm bodies
+// (each an imported codec type); the optional Default arm is a small
+// struct that bundles the runtime tag value with the catch-all body.
+{% if variant.default_arm %}
+struct {{ struct_name }}{{ variant.default_arm.variant_name }} {
+    {{ variant.tag_native_type }} tag;
+    {{ variant.default_arm.body_type }} body;
+};
+{% endif %}
+using {{ struct_name }}Body = std::variant<
+{% for arm in variant.arms %}
+    {{ arm.body_type }}{{ "," if not loop.last or variant.default_arm else "" }}
+{% endfor %}
+{% if variant.default_arm %}
+    {{ struct_name }}{{ variant.default_arm.variant_name }}
+{% endif %}
+>;
+
+{% endif %}
 struct {{ struct_name }} {
 {% for field in fields %}
     {{ field.cpp_type }} {{ field.id }};
 {% endfor %}
+{% if has_variant %}
+    {{ struct_name }}Body body;
+{% endif %}
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -35,7 +62,47 @@ struct {{ struct_name }} {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor) {
-{% if has_vle_fields %}
+{% if has_variant %}
+        // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+        const std::uint8_t* raw = cursor.peek_slice({{ min_bytes }});
+        if (raw == nullptr) return std::nullopt;
+{% for field in fields %}
+        {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
+{% endfor %}
+        if (!cursor.advance({{ min_bytes }})) return std::nullopt;
+        // Dispatch on tag value into the matching arm body.
+        {{ struct_name }}Body body;
+        switch ({{ variant.tag_field }}) {
+{% for arm in variant.arms %}
+            case {{ arm.value_literal }}: {
+                auto _arm = {{ arm.body_type }}::decode(cursor);
+                if (!_arm.has_value()) return std::nullopt;
+                body = *_arm;
+                break;
+            }
+{% endfor %}
+            default: {
+{% if variant.default_arm %}
+                auto _arm = {{ variant.default_arm.body_type }}::decode(cursor);
+                if (!_arm.has_value()) return std::nullopt;
+                body = {{ struct_name }}{{ variant.default_arm.variant_name }}{
+                    .tag = {{ variant.tag_field }},
+                    .body = *_arm,
+                };
+                break;
+{% else %}
+                // codec/variant-arm-unreachable rejected this case at parse time.
+                return std::nullopt;
+{% endif %}
+            }
+        }
+        return {{ struct_name }}{
+{% for field in fields %}
+            .{{ field.id }} = {{ field.id }},
+{% endfor %}
+            .body = body,
+        };
+{% elif has_vle_fields %}
         // Streaming codec: each field reads from the cursor directly
         // (VLE base-128 chain, 1..=ceil(N/7) bytes per field).
 {% for field in fields %}
@@ -74,7 +141,28 @@ struct {{ struct_name }} {
     }
 
     std::vector<uint8_t> encode() const {
-{% if has_vle_fields %}
+{% if has_variant %}
+        // Encode fixed prefix (tag field bytes are part of the prefix).
+        std::vector<uint8_t> r;
+        r.reserve({{ max_bytes }});
+{% for expr in encode_exprs %}
+        r.push_back({{ expr }});
+{% endfor %}
+        // Append the active arm body's encoded bytes.
+{% for arm in variant.arms %}
+        if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
+            auto _sub = _p->encode();
+            r.insert(r.end(), _sub.begin(), _sub.end());
+        }
+{% endfor %}
+{% if variant.default_arm %}
+        if (auto _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) {
+            auto _sub = _p->body.encode();
+            r.insert(r.end(), _sub.begin(), _sub.end());
+        }
+{% endif %}
+        return r;
+{% elif has_vle_fields %}
         std::vector<uint8_t> r;
         r.reserve({{ max_bytes }});
 {% for field in fields %}

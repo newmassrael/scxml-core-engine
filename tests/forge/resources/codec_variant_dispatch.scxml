@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec variant primitive (RFC §5.B B1-β).
+     Reads a uint8 message-id tag, then dispatches into one of two
+     enumerated arm bodies (SessionOpen / SessionClose) imported as
+     codec aliases. The <sce:default> arm catches unenumerated tag
+     values and preserves the runtime tag on the decoded sum-type
+     so encode can round-trip it back onto the wire. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_variant_dispatch">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <sce:import src="codec_variant_session_close.scxml" kind="codec" as="codec_variant_session_close"/>
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="msg_id">
+      <sce:arm value="0x01" type="codec_variant_session_open"/>
+      <sce:arm value="0x02" type="codec_variant_session_close"/>
+      <sce:default type="codec_variant_session_close"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

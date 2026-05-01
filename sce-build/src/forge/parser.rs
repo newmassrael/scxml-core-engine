@@ -549,12 +549,247 @@ fn parse_codec(
         ));
     }
 
+    // RFC §5.B variant primitive (B1-β): optional <sce:variant> suffix
+    // under <datamodel>. Resolves the tag field reference against the
+    // codec's own field list; arm body aliases (resolved against
+    // <sce:import> aliases) are validated downstream by the codegen
+    // step which has the import set.
+    let variant = parse_codec_variant(&datamodel, &fields, label)?;
+
     Ok(CodecModel {
         name: label.identifier.to_string(),
         default_endian,
         input_length,
         fields,
+        variant,
     })
+}
+
+/// RFC §5.B variant primitive — parse `<sce:variant>` element under
+/// `<datamodel>`. Returns `None` when the codec has no variant suffix.
+///
+/// Validates intra-codec references (`tag=` resolves to a field, and
+/// the field type is unsigned-int). Arm body alias resolution against
+/// `<sce:import>` aliases happens downstream at codegen time when the
+/// import set is in scope.
+///
+/// Fires `codec/variant-arm-unreachable` when no `<sce:default>` arm
+/// is declared and the enumerated arms don't cover the tag field's
+/// value domain. v1 considers uint8 (256 values) and uint16 (65536
+/// values) practically enumerable; uint32 / uint64 always require a
+/// default arm.
+fn parse_codec_variant(
+    datamodel: &roxmltree::Node,
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+) -> Result<Option<CodecVariant>, Located<ForgeError>> {
+    let variant_node = match datamodel.children().find(|n| {
+        n.is_element()
+            && n.tag_name().name() == "variant"
+            && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+    }) {
+        Some(n) => n,
+        None => return Ok(None),
+    };
+
+    // RFC §5.B uses unqualified attributes on <sce:variant>/<sce:arm>/
+    // <sce:default> child elements (matches the <sce:entry key="..."/>
+    // convention for SCE-element-internal attributes; SCE-namespaced
+    // attributes are reserved for attributes declared on non-SCE host
+    // elements like <data sce:byte=...>).
+    let tag_field = variant_node
+        .attribute("tag")
+        .ok_or_else(|| {
+            located(
+                &variant_node,
+                label.diagnostic_label,
+                ValidationError::MissingAttribute {
+                    element: "<sce:variant>".into(),
+                    attr: "tag".into(),
+                },
+            )
+        })?
+        .to_string();
+
+    // Resolve tag against the codec's own fields and capture its type
+    // for arm-domain reasoning. The tag field MUST be unsigned-int
+    // (uint8/uint16/uint32/uint64) because the arm `value=` matches a
+    // wire-decoded unsigned scalar; signed / bytes / float tags have
+    // no valid discriminator semantics.
+    let tag_type = match fields.iter().find(|f| f.id == tag_field) {
+        Some(f) if f.sce_type.is_unsigned() => f.sce_type.clone(),
+        Some(f) => {
+            return Err(located(
+                &variant_node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:variant>".into(),
+                    attr: "sce:tag".into(),
+                    value: tag_field.clone(),
+                    expected: format!(
+                        "tag field must be unsigned-int (uint8/uint16/uint32/uint64); '{tag_field}' is {:?}",
+                        f.sce_type
+                    ),
+                },
+            ));
+        }
+        None => {
+            let available: Vec<String> = fields.iter().map(|f| f.id.clone()).collect();
+            return Err(located(
+                &variant_node,
+                label.diagnostic_label,
+                ValidationError::InvalidReference {
+                    kind: ForgeKind::Codec,
+                    name: tag_field.clone(),
+                    what: "field".into(),
+                    available: available.join(", "),
+                },
+            ));
+        }
+    };
+
+    let mut arms: Vec<VariantArm> = Vec::new();
+    let mut default_arm: Option<VariantArm> = None;
+
+    for child in variant_node.children().filter(|n| n.is_element()) {
+        let local = child.tag_name().name();
+        let ns = child.tag_name().namespace();
+        if ns != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        match local {
+            "arm" => {
+                let value_str = child.attribute("value").ok_or_else(|| {
+                    located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:arm>".into(),
+                            attr: "value".into(),
+                        },
+                    )
+                })?;
+                let value = parse_int_u64(value_str).ok_or_else(|| {
+                    located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::NumericParse {
+                            element: "<sce:arm>".into(),
+                            attr: "value".into(),
+                            value: value_str.to_string(),
+                            detail: "expected unsigned integer (decimal or 0x-hex)".into(),
+                        },
+                    )
+                })?;
+                let body_alias = child
+                    .attribute("type")
+                    .ok_or_else(|| {
+                        located(
+                            &child,
+                            label.diagnostic_label,
+                            ValidationError::MissingAttribute {
+                                element: format!("<sce:arm value=\"{value_str}\">"),
+                                attr: "type".into(),
+                            },
+                        )
+                    })?
+                    .to_string();
+                arms.push(VariantArm { value, body_alias });
+            }
+            "default" => {
+                if default_arm.is_some() {
+                    return Err(located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::SingletonViolation {
+                            kind: ForgeKind::Codec,
+                            attr: "<sce:default>".into(),
+                        },
+                    ));
+                }
+                let body_alias = child
+                    .attribute("type")
+                    .ok_or_else(|| {
+                        located(
+                            &child,
+                            label.diagnostic_label,
+                            ValidationError::MissingAttribute {
+                                element: "<sce:default>".into(),
+                                attr: "type".into(),
+                            },
+                        )
+                    })?
+                    .to_string();
+                // The default arm carries no compile-time discriminator;
+                // its runtime tag value is preserved on the decoded
+                // sum-type variant by the codegen. v1 stores `value: 0`
+                // as a sentinel — codegen never reads this field for
+                // default arms (it dispatches via the catch-all branch).
+                default_arm = Some(VariantArm { value: 0, body_alias });
+            }
+            _ => {
+                return Err(located(
+                    &child,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:variant>".into(),
+                        attr: "child element".into(),
+                        value: local.to_string(),
+                        expected: "<sce:arm> or <sce:default>".into(),
+                    },
+                ));
+            }
+        }
+    }
+
+    if arms.is_empty() && default_arm.is_none() {
+        return Err(located(
+            &variant_node,
+            label.diagnostic_label,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Codec,
+                what: "<sce:arm> child of <sce:variant>".into(),
+            },
+        ));
+    }
+
+    // RFC §5.B `codec/variant-arm-unreachable`: when no <sce:default>
+    // arm is declared, the enumerated arms must cover the tag field's
+    // entire value domain — otherwise some incoming tag value would
+    // reach the runtime decoder with no matching branch. v1 considers
+    // uint8 (256) and uint16 (65536) practically enumerable; uint32 /
+    // uint64 always require a default.
+    if default_arm.is_none() {
+        let domain_size: Option<u64> = match tag_type {
+            SceType::Uint8 => Some(256),
+            SceType::Uint16 => Some(65_536),
+            _ => None,
+        };
+        let arm_count = arms.len();
+        let exhaustive = match domain_size {
+            Some(n) => (arm_count as u64) >= n,
+            None => false,
+        };
+        if !exhaustive {
+            return Err(located(
+                &variant_node,
+                label.diagnostic_label,
+                ValidationError::CodecVariantArmUnreachable {
+                    codec: label.identifier.to_string(),
+                    tag_field: tag_field.clone(),
+                    tag_type: format!("{tag_type:?}").to_lowercase(),
+                    arm_count,
+                    domain_size,
+                },
+            ));
+        }
+    }
+
+    Ok(Some(CodecVariant {
+        tag_field,
+        arms,
+        default_arm,
+    }))
 }
 
 /// Unified codec field parser — works for both `<data>` and `<sce:field>` elements.
@@ -3107,5 +3342,17 @@ fn parse_int(s: &str) -> Option<u32> {
         u32::from_str_radix(hex, 16).ok()
     } else {
         s.parse::<u32>().ok()
+    }
+}
+
+/// Parse a u64 integer from a string (supports 0x hex prefix). Used by
+/// RFC §5.B variant arm `value=` attributes which must hold any tag
+/// width up to uint64.
+fn parse_int_u64(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse::<u64>().ok()
     }
 }

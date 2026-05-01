@@ -961,6 +961,28 @@ fn render_codec(
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
+    // RFC §5.B variant primitive (B1-β trunk): only Rust + Cpp emit
+    // variant codecs in trunk. The remaining backends (Kotlin / Go /
+    // C11 / Python) gate here with a clear `generate/unsupported-feature`
+    // until their per-language closure lands. Without this gate the
+    // template would silently render a struct missing the variant body
+    // — author would ship broken decode/encode against an apparently
+    // valid codec golden.
+    if m.variant.is_some()
+        && !matches!(
+            lang,
+            crate::generator::Language::Rust | crate::generator::Language::Cpp
+        )
+    {
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "codec '{name}': <sce:variant> emit is not implemented for language '{lang:?}' \
+                 (RFC §5.B B1-β trunk ships Rust + Cpp; Kotlin / Go / C11 / Python land in B1-β closures)",
+                name = m.name,
+            )),
+        ));
+    }
+
     let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
 
     let fields: Vec<serde_json::Value> = m
@@ -1028,6 +1050,84 @@ fn render_codec(
     ctx.insert("has_vle_fields".into(), has_vle_fields.into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
 
+    // RFC §5.B variant primitive (B1-β trunk): build per-arm rendering
+    // context. Each arm's `body_alias` resolves against the codec's
+    // `<sce:import>` table → ImportContext gives us the per-language
+    // qualified type name. Tag-type literal suffix (e.g. `0x01u8`) is
+    // language-derived so the match pattern type-checks without coercion.
+    if let Some(v) = &m.variant {
+        let tag_type = m
+            .fields
+            .iter()
+            .find(|f| f.id == v.tag_field)
+            .map(|f| f.sce_type.clone())
+            .expect("parser validated tag_field references an existing field");
+        let tag_native = l.type_name(&tag_type).to_string();
+        let arm_value_suffix = match (lang, &tag_type) {
+            (crate::generator::Language::Rust, SceType::Uint8) => "u8",
+            (crate::generator::Language::Rust, SceType::Uint16) => "u16",
+            (crate::generator::Language::Rust, SceType::Uint32) => "u32",
+            (crate::generator::Language::Rust, SceType::Uint64) => "u64",
+            // Cpp `case` labels accept the integer literal directly;
+            // implicit promotion to the switch value type covers u8/u16/u32.
+            // u64 needs an explicit `ULL` to avoid -Werror=narrowing on
+            // `case 0xFFFFFFFFFFFFFFFF:` against an int-typed switch.
+            (crate::generator::Language::Cpp, SceType::Uint64) => "ULL",
+            _ => "",
+        };
+        let arm_ctx: Vec<serde_json::Value> = v
+            .arms
+            .iter()
+            .map(|arm| {
+                let body_type = resolve_variant_arm_body_type(
+                    &m.name,
+                    &arm.body_alias,
+                    imports,
+                    lang,
+                )?;
+                let variant_name =
+                    filters::to_pascal_case(arm.body_alias.clone());
+                let value_literal = format!("{}{}", arm.value, arm_value_suffix);
+                let mut obj = serde_json::Map::new();
+                obj.insert("value_literal".into(), value_literal.into());
+                obj.insert("variant_name".into(), variant_name.into());
+                obj.insert("body_type".into(), body_type.into());
+                Ok::<_, ForgeError>(serde_json::Value::Object(obj))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let default_ctx: Option<serde_json::Value> = v
+            .default_arm
+            .as_ref()
+            .map(|d| {
+                let body_type = resolve_variant_arm_body_type(
+                    &m.name,
+                    &d.body_alias,
+                    imports,
+                    lang,
+                )?;
+                let mut obj = serde_json::Map::new();
+                obj.insert(
+                    "variant_name".into(),
+                    "Default".to_string().into(),
+                );
+                obj.insert("body_type".into(), body_type.into());
+                Ok::<_, ForgeError>(serde_json::Value::Object(obj))
+            })
+            .transpose()?;
+
+        let mut variant_obj = serde_json::Map::new();
+        variant_obj.insert("tag_field".into(), l.codec_field_id(&v.tag_field).into());
+        variant_obj.insert("tag_native_type".into(), tag_native.into());
+        variant_obj.insert("arms".into(), serde_json::Value::Array(arm_ctx));
+        if let Some(d) = default_ctx {
+            variant_obj.insert("default_arm".into(), d);
+        }
+        ctx.insert("has_variant".into(), true.into());
+        ctx.insert("variant".into(), serde_json::Value::Object(variant_obj));
+    } else {
+        ctx.insert("has_variant".into(), false.into());
+    }
+
     // C11 (RFC §5.J.2 §3 D2): full-qual flat-scope identifiers.
     // Decode = α (`bool fn(raw, len, *out)`); encode = β (return-by-value
     // `<name>_encoded_t { bytes[MAX]; len }`). MAX = MIN + Σ(max_size of
@@ -1047,6 +1147,44 @@ fn render_codec(
     l.insert_imports(&mut ctx, imports);
 
     l.render(env, "codec", ctx)
+}
+
+/// RFC §5.B variant primitive (B1-β): map a variant arm's body alias
+/// to the per-language qualified type name. The alias must match an
+/// `<sce:import as="...">` entry whose imported kind is `codec`. On
+/// miss → `GenerateError::UnsupportedFeature` naming the alias and the
+/// available imports so the author can fix the typo or add the import.
+fn resolve_variant_arm_body_type(
+    codec_name: &str,
+    body_alias: &str,
+    imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, ForgeError> {
+    let imp = imports.iter().find(|i| i.alias == body_alias).ok_or_else(|| {
+        let available: Vec<&str> =
+            imports.iter().map(|i| i.alias.as_str()).collect();
+        ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(
+            format!(
+                "codec '{codec_name}': <sce:variant> arm references unknown import alias '{body_alias}' \
+                 (available aliases: [{}]) — add `<sce:import src=\"{body_alias}.scxml\" kind=\"codec\" as=\"{body_alias}\"/>`",
+                available.join(", ")
+            ),
+        ))
+    })?;
+    if imp.kind != "codec" {
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "codec '{codec_name}': <sce:variant> arm '{body_alias}' resolves to import kind '{}', \
+                 but variant arms require kind=\"codec\" (RFC §5.B B1-β v1)",
+                imp.kind
+            )),
+        ));
+    }
+    Ok(match lang {
+        crate::generator::Language::Rust => imp.type_name.clone(),
+        crate::generator::Language::Cpp => imp.member_type.clone(),
+        _ => unreachable!("variant emit gated to Rust + Cpp in B1-β trunk"),
+    })
 }
 
 // ── Codec expression generation (unified) ─────────────────────

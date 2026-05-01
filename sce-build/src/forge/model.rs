@@ -756,6 +756,44 @@ impl CodecField {
     }
 }
 
+/// One arm of a discriminated-union variant suffix on a codec.
+/// `body_alias` references an `<sce:import>` alias whose imported codec
+/// type provides the arm's body. RFC §5.B "Discriminated union":
+/// `<sce:arm value="0x01" type="SessionOpen"/>` where `SessionOpen` is
+/// an imported codec alias (B1-β v1 limits arm bodies to imported codec
+/// kinds; primitive arm bodies and `<sce:default>` body inheritance
+/// arrive when their first reachable consumer ships).
+#[derive(Debug, Clone, Serialize)]
+pub struct VariantArm {
+    /// Discriminator value (matches the tag field's read value).
+    /// Held as `u64` to fit any unsigned tag width up to uint64.
+    pub value: u64,
+    /// Import alias naming the body codec for this arm.
+    pub body_alias: String,
+}
+
+/// Discriminated-union suffix on a codec — RFC §5.B Codec DSL.
+///
+/// Decode reads the named tag field, then dispatches into the matching
+/// arm's body codec. Encode writes the tag bytes followed by the active
+/// arm's body bytes. The optional `<sce:default>` arm catches any tag
+/// value not enumerated; absent default + non-exhaustive arm coverage
+/// fires `codec/variant-arm-unreachable` at build time (see RFC §5.B).
+#[derive(Debug, Clone, Serialize)]
+pub struct CodecVariant {
+    /// `id` of the field (within this codec's `fields`) whose decoded
+    /// value selects an arm. Must reference an unsigned-int field
+    /// (uint8/uint16/uint32/uint64) — enforced at parse time.
+    pub tag_field: String,
+    /// Enumerated arms in document order.
+    pub arms: Vec<VariantArm>,
+    /// Catch-all arm for tag values outside the enumerated set.
+    /// `None` ⇒ build-time `codec/variant-arm-unreachable` when the
+    /// tag domain isn't fully covered by `arms`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_arm: Option<VariantArm>,
+}
+
 /// Codec: byte-level encode/decode. Generates struct with decode/encode methods.
 #[derive(Debug, Clone, Serialize)]
 pub struct CodecModel {
@@ -767,6 +805,12 @@ pub struct CodecModel {
     pub input_length: Option<u32>,
     /// Ordered list of fields in the codec.
     pub fields: Vec<CodecField>,
+    /// Optional discriminated-union suffix — RFC §5.B variant primitive
+    /// (B1-β). When present the codec emits a sum type per language
+    /// (Rust enum, Kotlin sealed class, C11 tagged union, etc.) rather
+    /// than a flat struct.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<CodecVariant>,
 }
 
 impl CodecModel {

@@ -276,6 +276,54 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- ═══════════════════════════════════════════════════════════════
+       RFC §5.B variant primitive (B1-β)
+
+       Discriminated-union suffix on a codec. The `<sce:variant>` element
+       sits under <datamodel> alongside <sce:field> declarations; its
+       `tag` attribute references a sibling field (must be unsigned-int)
+       whose decoded value selects an arm. Each `<sce:arm value="..."
+       type="alias"/>` names an imported codec alias as the arm body;
+       `<sce:default type="alias"/>` is the catch-all for unenumerated
+       tag values. When no <sce:default> is declared and the arms don't
+       cover the tag's value domain, the build fires
+       `codec/variant-arm-unreachable`.
+
+       Attributes are unqualified inside <sce:*> elements (matches the
+       <sce:entry key/value> convention; SCE-namespaced attrs are
+       reserved for the W3C-element host case like <data sce:byte=...>).
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <xs:element name="arm">
+    <xs:complexType>
+      <!-- Discriminator value (decimal or 0x-hex). Parser carries u64
+           internally to fit any unsigned tag width up to uint64. -->
+      <xs:attribute name="value" type="xs:string" use="required"/>
+      <!-- Body codec alias; must resolve to an <sce:import as="alias"/>
+           in the same document. Resolution happens at codegen time. -->
+      <xs:attribute name="type" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="variant">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:arm" minOccurs="0" maxOccurs="unbounded"/>
+        <!-- The local name `default` does not collide with the global
+             <xs:attribute name="default"/> declared earlier; XSD
+             attribute and element symbol spaces are independent. -->
+        <xs:element name="default" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="type" type="xs:NCName" use="required"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <!-- Tag field id; must reference a sibling <sce:field>/<data> with
+           an unsigned-int sce:type. Validated by sce-build. -->
+      <xs:attribute name="tag" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
   <!--
     Section 4.7: Validator rules use data-attribute form only.
     Validation attributes (sce:range-min, sce:range-max, sce:max-delta,

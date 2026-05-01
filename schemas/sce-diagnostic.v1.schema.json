@@ -93,6 +93,7 @@
         "algorithm/const-not-foldable",
         "algorithm/const-fold-budget-exceeded",
         "algorithm/const-yield-type-mismatch",
+        "codec/variant-arm-unreachable",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

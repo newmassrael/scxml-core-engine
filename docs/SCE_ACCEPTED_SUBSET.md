@@ -449,6 +449,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `algorithm/const-not-foldable` | Generate |
 | `algorithm/const-fold-budget-exceeded` | Generate |
 | `algorithm/const-yield-type-mismatch` | Generate |
+| `codec/variant-arm-unreachable` | Validation |
 | `scxml/top-level-script-unloaded` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |

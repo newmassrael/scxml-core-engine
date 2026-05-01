@@ -477,6 +477,17 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/const-yield-type-mismatch")]
     AlgorithmConstYieldTypeMismatch,
 
+    // ── §5.B variant primitive (watching-zenoh RFC §5.B, B1-β).
+    //    Build-time check on `<sce:variant>` codec suffix: the
+    //    enumerated `<sce:arm value=...>` set must cover the tag
+    //    field's value domain when no `<sce:default>` is declared,
+    //    otherwise some incoming tag value would have no matching
+    //    branch at runtime. v1 considers uint8 (256) and uint16
+    //    (65536) practically enumerable; uint32 / uint64 always
+    //    require a default. Stage = Validation. ──
+    #[serde(rename = "codec/variant-arm-unreachable")]
+    CodecVariantArmUnreachable,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -784,6 +795,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmConstNotFoldable,
         AlgorithmConstFoldBudgetExceeded,
         AlgorithmConstYieldTypeMismatch,
+        // Codec §5.B variant primitive (watching-zenoh RFC §5.B, B1-β)
+        CodecVariantArmUnreachable,
         // Io
         IoFilesystem,
         // Cli
@@ -986,6 +999,9 @@ impl DiagnosticCode {
             AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch => Some("watching-zenoh RFC §5.F"),
+
+            // ── Codec §5.B variant primitive (B1-β) ──────────────
+            CodecVariantArmUnreachable => Some("watching-zenoh RFC §5.B"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1244,6 +1260,7 @@ impl DiagnosticCode {
             AlgorithmConstNotFoldable => "algorithm/const-not-foldable",
             AlgorithmConstFoldBudgetExceeded => "algorithm/const-fold-budget-exceeded",
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
+            CodecVariantArmUnreachable => "codec/variant-arm-unreachable",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2026,6 +2043,37 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: Vec::new(),
+        },
+        ValidationError::CodecVariantArmUnreachable {
+            codec,
+            tag_field,
+            tag_type,
+            arm_count,
+            domain_size,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantArmUnreachable,
+            stage: Stage::Validation,
+            // Repair is open-ended ("add <sce:default>" OR "enumerate
+            // missing values") rather than a closed candidate list, so
+            // `fix` stays `None`. The structural context (codec name,
+            // tag field, tag type, arm count, domain size) rides
+            // `key_fragments` for content-hash uniqueness across
+            // distinct variant declarations on different codecs.
+            expected: None,
+            actual: Some(tag_field.clone()),
+            fix: None,
+            key_fragments: {
+                let mut k = vec![
+                    codec.clone(),
+                    tag_field.clone(),
+                    tag_type.clone(),
+                    arm_count.to_string(),
+                ];
+                if let Some(n) = domain_size {
+                    k.push(n.to_string());
+                }
+                k
+            },
         },
     }
 }
@@ -3292,6 +3340,19 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5d993dd11e2f6ddb","code":"algorithm/const-yield-type-mismatch","stage":"generate","spec":"watching-zenoh RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-yield-type-mismatch: cannot coerce float to Uint16","actual":"float"}"#,
             ),
+            // ── §5.B variant primitive (watching-zenoh RFC §5.B, B1-β) ─
+            (
+                "forge/codec-variant-arm-unreachable",
+                ValidationError::CodecVariantArmUnreachable {
+                    codec: "session_envelope".into(),
+                    tag_field: "msg_id".into(),
+                    tag_type: "uint8".into(),
+                    arm_count: 3,
+                    domain_size: Some(256),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fb2f4b7fefc04603","code":"codec/variant-arm-unreachable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant on tag 'msg_id' (type uint8) has 3 arm(s) but no <sce:default> declared (tag type domain has 256 values) — at least one tag value would have no matching arm at runtime; add <sce:default type=\"...\"/> or enumerate the missing values explicitly","actual":"msg_id"}"#,
+            ),
         ]
     }
 
@@ -4536,6 +4597,7 @@ mod tests {
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
+            | CodecVariantArmUnreachable
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -4873,6 +4935,7 @@ mod tests {
                 | AlgorithmConstNotFoldable
                 | AlgorithmConstFoldBudgetExceeded
                 | AlgorithmConstYieldTypeMismatch
+                | CodecVariantArmUnreachable
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -4956,13 +5019,12 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            164,
+            165,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 164 distinct variants to match the DiagnosticCode \
-             enum (watching-zenoh RFC §5.F Phase A4-γ promoted three \
-             slug-payload §5.F failures to first-class wire codes: \
-             AlgorithmConstNotFoldable + AlgorithmConstFoldBudgetExceeded \
-             + AlgorithmConstYieldTypeMismatch; 161 → 164).",
+             expected 165 distinct variants to match the DiagnosticCode \
+             enum (watching-zenoh RFC §5.B B1-β added the variant \
+             primitive's build-time exhaustiveness check: \
+             CodecVariantArmUnreachable; 164 → 165).",
         );
     }
 
