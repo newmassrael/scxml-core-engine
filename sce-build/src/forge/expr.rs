@@ -381,6 +381,23 @@ pub fn transpile_lvalue(
     Ok((emitted, ty))
 }
 
+/// Parse an expression string into the typed AST without running
+/// type inference or any rename pass.
+///
+/// Used by [`crate::forge::const_fold`] — the RFC §5.F build-time
+/// host interpreter walks the raw AST shape and evaluates leaves
+/// against typed `ConstValue` storage. The inference layer is
+/// irrelevant there because the evaluator carries `SceType`
+/// annotations on every storage site (Var/Assign/yield) instead.
+pub(crate) fn parse_to_ast(expr: &str) -> Result<TypedExpr, ExprError> {
+    let trimmed = expr.trim();
+    if trimmed.is_empty() {
+        return Err(ExprError::Empty { what: "expression" });
+    }
+    let tokens = tokenize(trimmed)?;
+    Parser::new(&tokens).parse_expression()
+}
+
 /// Validate that a parsed expression's shape is a legal assignment target.
 /// See [`transpile_lvalue`] for the full rule set.
 fn validate_lvalue_shape(kind: &ExprKind, location: &str) -> Result<(), ExprError> {
@@ -1913,10 +1930,21 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
         ExprKind::Index { object, index } => {
+            // Rust slice/array indexing requires `usize`. Concrete
+            // integer-typed indices (declared via `<sce:var name=...
+            // type="u16">`, parameters, member fields) need an
+            // explicit `as usize` cast or rustc's strict typecheck
+            // refuses the access. `UntypedInt` literals (e.g.
+            // `arr[0]`) are accepted by rustc directly and stay
+            // un-wrapped to keep prior goldens byte-stable.
+            let idx_raw = emit_rust(index, InferredType::Unknown)?;
+            let idx_emit = match index.ty {
+                InferredType::Int { .. } => format!("({idx_raw}) as usize"),
+                _ => idx_raw,
+            };
             format!(
-                "{}[{}]",
+                "{}[{idx_emit}]",
                 wrap_postfix(object, emit_rust(object, InferredType::Unknown)?),
-                emit_rust(index, InferredType::Unknown)?,
             )
         }
         ExprKind::Call { callee, args } => {

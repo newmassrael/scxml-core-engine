@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CRC16-CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflect, no xor-out)
+  in the **table form** — RFC §5.F build-time const-fold acceptance
+  fixture for Phase A4-β.
+
+  The 256-entry `array<u16, 256>` table is computed at code-generation
+  time by the host interpreter (`forge::const_fold::evaluate_fold`)
+  and emitted as a per-language static array literal. The body then
+  uses one byte-keyed table lookup per input byte, replacing the
+  inner 8-iteration bit-by-bit loop carried by `algorithm_crc16.scxml`
+  (RFC §5.A Appendix A).
+
+  Both fixtures compute the same CRC16-CCITT-FALSE checksum byte-for-
+  byte (the cross-(Rust, C11) runtime equivalence is the §A6
+  acceptance gate, scheduled for A4-A5-A6); for β, the byte-equivalence
+  is enforced at the host-interpreter layer by
+  `crc16_ccitt_false_table_matches_reference` in `forge::const_fold`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:const name="CRC16_TABLE" type="array&lt;u16, 256&gt;" sce:compute-at="build">
+    <sce:fold range="0..256" as="i" elem-type="uint16">
+      <sce:var name="c" type="uint16" init="i &lt;&lt; 8"/>
+      <sce:var name="bit" type="uint16" init="0"/>
+      <sce:while cond="bit &lt; 8" max-iter="8">
+        <sce:if cond="(c &amp; 0x8000) !== 0">
+          <sce:assign target="c" expr="(c &lt;&lt; 1) ^ 0x1021"/>
+          <sce:else>
+            <sce:assign target="c" expr="c &lt;&lt; 1"/>
+          </sce:else>
+        </sce:if>
+        <sce:assign target="bit" expr="bit + 1"/>
+      </sce:while>
+      <sce:yield expr="c"/>
+    </sce:fold>
+  </sce:const>
+  <sce:body>
+    <sce:var name="crc" type="uint16" init="0xFFFF"/>
+    <sce:foreach item="b" in="data">
+      <sce:var name="idx" type="uint16" init="((crc &gt;&gt; 8) ^ b) &amp; 0xFF"/>
+      <sce:assign target="crc" expr="(crc &lt;&lt; 8) ^ CRC16_TABLE[idx]"/>
+    </sce:foreach>
+    <sce:return expr="crc"/>
+  </sce:body>
+</scxml>

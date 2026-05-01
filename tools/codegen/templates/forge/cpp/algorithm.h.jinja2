@@ -13,13 +13,14 @@
 #ifndef {{ guard }}
 #define {{ guard }}
 
-#include <cstddef>
+{% if needs_std_array %}#include <array>
+{% endif %}#include <cstddef>
 #include <cstdint>
 {% if needs_span %}#include <span>
 {% endif %}
 namespace SCE::Generated::{{ namespace }} {
 
-inline {{ return_type }} {{ name }}({{ params_str }}) {
+{{ consts_prelude }}inline {{ return_type }} {{ name }}({{ params_str }}) {
 {{ body }}
 }
 

@@ -470,20 +470,15 @@ fn forge_algorithm_crc16_cpp() {
     assert_standalone_forge("algorithm_crc16", "algorithm_crc16.h");
 }
 
-// ── §5.F build-time const-fold (Phase A4-α — IR + parser only) ──
+// ── §5.F build-time const-fold (Phase A4-β — host interpreter) ──
 
-/// RFC §5.F α gate: `<sce:const sce:compute-at="build">` with an
-/// `<sce:fold>` body parses into the new IR shape.
-///
-/// Pins three contracts the host interpreter (β) will inherit:
+/// RFC §5.F α-residual contract: parser still produces the
+/// `<sce:fold>` IR shape that the host interpreter consumes in β.
+/// Pins three structural contracts the evaluator depends on:
 ///   1. `array<u16, N>` outer-type syntax accepted (Rust-style alias).
 ///   2. `<sce:fold range="START..END" as="i" elem-type="...">` body
 ///      parses with the algorithm-statement vocabulary inside it.
 ///   3. `<sce:yield expr="..."/>` is the fold's terminal child.
-///
-/// The host interpreter itself lands in β; until then codegen on this
-/// fixture deliberately fires `GenerateError::UnsupportedFeature` —
-/// see `forge_const_fold_smoke_unsupported_until_phase_b` below.
 #[test]
 fn forge_algorithm_const_fold_smoke_parses() {
     use sce_build::forge::model::{
@@ -537,17 +532,65 @@ fn forge_algorithm_const_fold_smoke_parses() {
     );
 }
 
-/// RFC §5.F α gate: until the host interpreter lands in β, codegen on
-/// a fold-form const must stop with a precise `UnsupportedFeature`
-/// error rather than silently dropping the const from output. The
-/// error message must name both the algorithm and the const so the
-/// authoring loop can find the offending element.
+/// RFC §5.F β happy-path: codegen on the smoke fixture lifts the
+/// fold-form const to a per-language static array literal. Two
+/// language goldens (Rust + Cpp) pin the §5.J.5 emit syntax — the
+/// host interpreter is single-source, so the underlying numeric
+/// data is byte-equivalent across backends by construction.
 #[test]
-fn forge_const_fold_smoke_unsupported_until_phase_b() {
+fn forge_const_fold_smoke_emits_rust() {
+    assert_standalone_forge_rust(
+        "algorithm_const_fold_smoke",
+        "algorithm_const_fold_smoke.rs",
+    );
+}
+
+#[test]
+fn forge_const_fold_smoke_emits_cpp() {
+    assert_standalone_forge(
+        "algorithm_const_fold_smoke",
+        "algorithm_const_fold_smoke.h",
+    );
+}
+
+/// RFC §5.F β acceptance fixture: CRC16-CCITT-FALSE in
+/// **table form** with a 256-entry build-time-evaluated table. Two
+/// language goldens pin the cross-backend emit shape; the
+/// underlying `crc16_ccitt_false_table_matches_reference` unit
+/// test in `forge::const_fold` proves byte-equivalence with the
+/// canonical CRC16-CCITT-FALSE reference table at the
+/// host-interpreter layer (RFC §A6 cross-language runtime
+/// equivalence remains scheduled for A4-A5-A6).
+#[test]
+fn forge_algorithm_crc16_table_rust() {
+    assert_standalone_forge_rust(
+        "algorithm_crc16_table",
+        "algorithm_crc16_table.rs",
+    );
+}
+
+#[test]
+fn forge_algorithm_crc16_table_cpp() {
+    assert_standalone_forge(
+        "algorithm_crc16_table",
+        "algorithm_crc16_table.h",
+    );
+}
+
+/// RFC §5.F β CLI knob: an iteration budget set below the fold's
+/// element count must surface as a `const-fold-budget-exceeded`
+/// error rather than silently truncating the table. Pins the
+/// `--const-fold-budget=N` plumbing through
+/// `ForgeCompileOptions::const_fold_budget`.
+#[test]
+fn forge_const_fold_budget_exceeded_rejects_oversized_fold() {
     let scxml_path = resource_dir().join("algorithm_const_fold_smoke.scxml");
     let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
 
-    let opts = sce_build::ForgeCompileOptions::default();
+    let opts = sce_build::ForgeCompileOptions {
+        const_fold_budget: Some(2), // smoke fixture has 4 elements
+        ..Default::default()
+    };
     let result = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("algorithm_const_fold_smoke"),
@@ -556,14 +599,15 @@ fn forge_const_fold_smoke_unsupported_until_phase_b() {
         &opts,
     );
     let err = match result {
-        Ok(_) => panic!("fold-form const must not silently emit before β"),
+        Ok(_) => panic!(
+            "budget=2 must reject the smoke fixture's 4-element fold"
+        ),
         Err(e) => e,
     };
     let msg = err.to_string();
     assert!(
-        msg.contains("DOUBLED") && msg.contains("RFC §5.F") && msg.contains("Phase A4-β"),
-        "error must name the const, RFC section, and the phase that ships the interpreter; \
-         got: {msg}"
+        msg.contains("const-fold-budget-exceeded"),
+        "budget-exceeded error must name the diagnostic slug; got: {msg}"
     );
 }
 
@@ -2297,6 +2341,7 @@ fn forge_go_crossfile_rejects_missing_module_prefix() {
 fn forge_go_crossfile_rejects_empty_module_prefix() {
     let options = sce_build::ForgeCompileOptions {
         go_module_prefix: Some("///".to_string()),
+        ..Default::default()
     };
     let err = expect_go_crossfile_err(options, "empty prefix");
     assert!(
@@ -2309,6 +2354,7 @@ fn forge_go_crossfile_rejects_empty_module_prefix() {
 fn forge_go_crossfile_rejects_whitespace_in_module_prefix() {
     let options = sce_build::ForgeCompileOptions {
         go_module_prefix: Some("github.com/acme/proj generated".to_string()),
+        ..Default::default()
     };
     let err = expect_go_crossfile_err(options, "whitespace prefix");
     assert!(

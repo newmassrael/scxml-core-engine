@@ -639,7 +639,7 @@ fn inject_runtime_dep_global(env: &mut minijinja::Environment, doc: &ForgeDocume
 
 /// Generate code from a ForgeDocument for C++ using Jinja2 templates.
 pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_cpp_with_imports(doc, template_dir, &[])
+    generate_cpp_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
 }
 
 /// Generate C++ code with cross-file import support.
@@ -647,6 +647,7 @@ pub fn generate_cpp_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Cpp)?;
     let forge_dir = template_dir.join("forge/cpp");
@@ -665,7 +666,7 @@ pub fn generate_cpp_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Cpp)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Cpp, options)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -1720,7 +1721,7 @@ fn render_validator(
 
 /// Generate code from a ForgeDocument for Kotlin using Jinja2 templates.
 pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_kotlin_with_imports(doc, template_dir, &[])
+    generate_kotlin_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
 }
 
 /// Generate Kotlin code with cross-file import support.
@@ -1728,6 +1729,7 @@ pub fn generate_kotlin_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Kotlin)?;
     let forge_dir = template_dir.join("forge/kotlin");
@@ -1746,7 +1748,7 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Kotlin, options)?,
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -1779,7 +1781,7 @@ fn kotlin_default_value(kt_type: &str) -> &'static str {
 
 /// Generate code from a ForgeDocument for Rust using Jinja2 templates.
 pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_rust_with_imports(doc, template_dir, &[])
+    generate_rust_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
 }
 
 /// Generate Rust code with cross-file import support.
@@ -1787,6 +1789,7 @@ pub fn generate_rust_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Rust)?;
     let forge_dir = template_dir.join("forge/rust");
@@ -1805,7 +1808,7 @@ pub fn generate_rust_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Rust, options)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -1855,7 +1858,7 @@ fn go_escape_builtin(name: &str) -> String {
 
 /// Generate code from a ForgeDocument for Go using Jinja2 templates.
 pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_go_with_imports(doc, template_dir, &[])
+    generate_go_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
 }
 
 /// Generate Go code with cross-file import support.
@@ -1863,6 +1866,7 @@ pub fn generate_go_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Go)?;
     let forge_dir = template_dir.join("forge/go");
@@ -1881,7 +1885,7 @@ pub fn generate_go_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Go)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Go, options)?,
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -1914,7 +1918,7 @@ fn python_type(ty: &SceType) -> &'static str {
 
 /// Generate code from a ForgeDocument for Python using Jinja2 templates.
 pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_python_with_imports(doc, template_dir, &[])
+    generate_python_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
 }
 
 /// Generate Python code with cross-file import support.
@@ -1922,6 +1926,7 @@ pub fn generate_python_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Python)?;
     let forge_dir = template_dir.join("forge/python");
@@ -1940,7 +1945,7 @@ pub fn generate_python_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Python, options)?,
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -1960,7 +1965,7 @@ pub fn generate_python_with_imports(
 
 /// Generate code from a ForgeDocument for C11 using Jinja2 templates.
 pub fn generate_c11(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_c11_with_imports(doc, template_dir, &[])
+    generate_c11_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
 }
 
 /// Generate C11 code with cross-file import support.
@@ -1975,6 +1980,7 @@ pub fn generate_c11_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
     imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::C11)?;
     let forge_dir = template_dir.join("forge/c");
@@ -1999,7 +2005,7 @@ pub fn generate_c11_with_imports(
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::C11, options)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -6145,14 +6151,14 @@ fn lower_algorithm_body(
     stmts: &[AlgorithmStmt],
     lang: crate::generator::Language,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &std::collections::HashMap<&str, &str>,
     indent: usize,
 ) -> Result<String, ForgeError> {
     let mut out = String::new();
     let pad = "    ".repeat(indent);
     let l = LangCtx::new(lang);
-    let no_renames: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
     for s in stmts {
-        lower_algorithm_stmt(s, lang, type_ctx, &l, &no_renames, &pad, indent, &mut out)?;
+        lower_algorithm_stmt(s, lang, type_ctx, &l, renames, &pad, indent, &mut out)?;
     }
     Ok(out.trim_end().to_string())
 }
@@ -6370,27 +6376,33 @@ fn render_algorithm(
     m: &AlgorithmModel,
     _imports: &[ImportContext],
     lang: crate::generator::Language,
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     use crate::forge::types::{InferredType, TypeCtx};
     let l = LangCtx::new(lang);
     let mut ctx = l.base_context(&m.name);
 
-    // RFC §5.F gate: build-time const-fold (`<sce:const sce:compute-at="build">`)
-    // requires the host interpreter that lands in Phase A4-β. The IR + parser
-    // surface lives in α; encountering a fold-bodied const at codegen time
-    // before β ships is a clean stop, not silent emission. Once β lands, the
-    // host evaluator (`forge::const_fold`) replaces this guard with the real
-    // array-literal lowering.
-    if let Some(const_def) = m.consts.iter().find(|c| c.fold.is_some()) {
-        return Err(GenerateError::UnsupportedFeature(format!(
-            "algorithm '{}': <sce:const name=\"{}\"> uses sce:compute-at=\"build\" \
-             with an <sce:fold> body — RFC §5.F build-time const-fold is parsed \
-             (Phase A4-α) but the host interpreter that lowers it to a static \
-             array literal lands in Phase A4-β",
-            m.name, const_def.name,
-        ))
-        .into());
-    }
+    // RFC §5.F: lower every `<sce:const>` declaration into the target
+    // language's const-prelude. Two shapes share one prelude:
+    //   - Scalar (`init="..."`): host-evaluated to a `ConstValue`,
+    //     emitted as a per-language const declaration.
+    //   - Fold (`<sce:fold>` body): host-evaluated via the bounded
+    //     interpreter (`forge::const_fold::evaluate_fold`) into a
+    //     `Vec<ConstValue>`, emitted as a per-language array literal.
+    //
+    // Cross-backend byte-equivalence holds by construction — the same
+    // single-source Rust evaluator drives every target.
+    let max_iters = options
+        .const_fold_budget
+        .unwrap_or(crate::forge::const_fold::Budget::DEFAULT_MAX_ITERS);
+    let mut budget = crate::forge::const_fold::Budget::new(max_iters);
+    let consts_prelude = lower_algorithm_consts(&m.consts, lang, &mut budget, &m.name)?;
+    // C++ `inline constexpr std::array<...>` declarations need
+    // `<array>`; gate the include so algorithms without array
+    // consts keep their previous header surface byte-equivalent.
+    let needs_std_array = m.consts.iter().any(|c| {
+        matches!(c.sce_type, crate::forge::model::AlgorithmConstType::Array { .. })
+    });
 
     // Build TypeCtx from params + collected local vars / foreach items.
     // Owned strings live in `env_pairs` for the lifetime of `type_ctx`.
@@ -6440,7 +6452,23 @@ fn render_algorithm(
         _ => return_type,
     };
 
-    let body = lower_algorithm_body(&m.body, lang, &type_ctx, 1)?;
+    // RFC §5.F: const names are emitted at SCREAMING_SNAKE_CASE in
+    // every backend; without a rename here, the per-language
+    // expression emitter would re-case the body's reference and the
+    // declared symbol would no longer match. The rename map produces
+    // a `Raw(name)` AST node, which every emitter prints verbatim.
+    let const_renames_owned: Vec<String> = m
+        .consts
+        .iter()
+        .map(|c| to_upper_snake(&c.name))
+        .collect();
+    let const_renames: std::collections::HashMap<&str, &str> = m
+        .consts
+        .iter()
+        .zip(const_renames_owned.iter())
+        .map(|(c, screaming)| (c.name.as_str(), screaming.as_str()))
+        .collect();
+    let body = lower_algorithm_body(&m.body, lang, &type_ctx, &const_renames, 1)?;
 
     let needs_span = m
         .signature
@@ -6459,10 +6487,172 @@ fn render_algorithm(
     );
     ctx.insert("body".into(), body.into());
     ctx.insert("needs_span".into(), needs_span.into());
-    // RFC §5.A: Rust `#![no_std]`-clean when no `bytes` parameter.
+    // RFC §5.A: Rust `#![no_std]`-clean when no `bytes` parameter
+    // *and* no array-form consts (the latter pull in
+    // `core::array`-equivalent imports on some target backends —
+    // RFC §5.F emit syntax is `pub static NAME: [T; N]`, no_std-clean,
+    // so this stays false-on-array-consts only when language-specific
+    // surface demands it; today only Cpp's `<array>` matters).
     ctx.insert("no_std_clean".into(), (!needs_span).into());
+    // RFC §5.F: per-language const-prelude (scalar literals + fold-form
+    // array tables). Empty string when the algorithm has no consts.
+    ctx.insert("consts_prelude".into(), consts_prelude.into());
+    ctx.insert("needs_std_array".into(), needs_std_array.into());
 
     l.render(env, "algorithm", ctx)
+}
+
+/// Lower every `<sce:const>` declaration in an `AlgorithmModel` to a
+/// per-language const-prelude block (RFC §5.F).
+///
+/// Scalar consts (`init="..."`) are evaluated through the same host
+/// interpreter as fold-form consts (zero-iteration scope); the result
+/// becomes a language-native const declaration. Fold-form consts
+/// (`<sce:fold>` body) drive the bounded interpreter and emit a
+/// language-native static array literal whose element type derives
+/// from the surrounding `array<elem, len>` annotation.
+///
+/// Returns the empty string when `consts` is empty, so the
+/// `{{ consts_prelude }}` insertion point remains a no-op for
+/// algorithms that don't declare any consts.
+fn lower_algorithm_consts(
+    consts: &[crate::forge::model::AlgorithmConst],
+    lang: crate::generator::Language,
+    budget: &mut crate::forge::const_fold::Budget,
+    algorithm_name: &str,
+) -> Result<String, ForgeError> {
+    use crate::forge::const_fold;
+    use crate::forge::model::AlgorithmConstType;
+
+    if consts.is_empty() {
+        return Ok(String::new());
+    }
+
+    let l = LangCtx::new(lang);
+    let mut out = String::new();
+    for c in consts {
+        let upper = to_upper_snake(&c.name);
+        match (&c.sce_type, &c.fold, &c.init) {
+            (AlgorithmConstType::Array { elem, len }, Some(fold), None) => {
+                let values = const_fold::evaluate_fold(fold, budget).map_err(|e| {
+                    GenerateError::UnsupportedFeature(format!(
+                        "algorithm '{algorithm_name}': <sce:const name=\"{}\">: {e}",
+                        c.name
+                    ))
+                })?;
+                if values.len() as u32 != *len {
+                    return Err(GenerateError::UnsupportedFeature(format!(
+                        "algorithm '{algorithm_name}': <sce:const name=\"{}\">: \
+                         fold produced {actual} elements but array<{elem:?}, {len}> \
+                         declares {len}",
+                        c.name,
+                        actual = values.len(),
+                    ))
+                    .into());
+                }
+                let body = const_fold::serialize_array_literal_body(&values, lang);
+                out.push_str(&emit_array_const(lang, &l, &upper, elem, *len, &body));
+            }
+            (AlgorithmConstType::Scalar(ty), None, Some(init_expr)) => {
+                let value = const_fold::evaluate_scalar_init(init_expr, ty).map_err(|e| {
+                    GenerateError::UnsupportedFeature(format!(
+                        "algorithm '{algorithm_name}': <sce:const name=\"{}\">: {e}",
+                        c.name
+                    ))
+                })?;
+                let lit = const_fold::serialize_array_literal_body(
+                    std::slice::from_ref(&value),
+                    lang,
+                );
+                out.push_str(&emit_scalar_const(lang, &l, &upper, ty, &lit));
+            }
+            // Parser invariants: scalar consts are paired with `init`
+            // and never carry a fold; fold-form consts always carry an
+            // array shape and never carry init. Anything else here
+            // would be an upstream model-shape bug.
+            _ => {
+                return Err(GenerateError::UnsupportedFeature(format!(
+                    "algorithm '{algorithm_name}': <sce:const name=\"{}\">: \
+                     internal error — model carries inconsistent scalar/fold pairing",
+                    c.name
+                ))
+                .into());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Emit a per-language array-const declaration. Body is the
+/// already-serialised comma-separated literal list.
+fn emit_array_const(
+    lang: crate::generator::Language,
+    l: &LangCtx,
+    name: &str,
+    elem: &SceType,
+    len: u32,
+    body: &str,
+) -> String {
+    use crate::generator::Language;
+    let elem_name = l.type_name(elem);
+    match lang {
+        Language::Rust => format!(
+            "pub static {name}: [{elem_name}; {len}] = [{body}];\n\n"
+        ),
+        Language::Cpp => format!(
+            "inline constexpr std::array<{elem_name}, {len}> {name} = {{ {body} }};\n\n"
+        ),
+        Language::C11 => format!(
+            "static const {elem_name} {name}[{len}] = {{ {body} }};\n\n"
+        ),
+        Language::Kotlin => format!(
+            "val {name}: {arr} = {arr}({body})\n\n",
+            arr = kotlin_array_type(elem),
+        ),
+        Language::Go => format!(
+            "var {name} = [{len}]{elem_name}{{ {body} }}\n\n"
+        ),
+        Language::Python => format!(
+            "{name}: tuple = ({body},)\n\n"
+        ),
+    }
+}
+
+/// Emit a per-language scalar-const declaration. `lit` is the
+/// already-serialised value literal.
+fn emit_scalar_const(
+    lang: crate::generator::Language,
+    l: &LangCtx,
+    name: &str,
+    ty: &SceType,
+    lit: &str,
+) -> String {
+    use crate::generator::Language;
+    let ty_name = l.type_name(ty);
+    match lang {
+        Language::Rust => format!("pub const {name}: {ty_name} = {lit};\n\n"),
+        Language::Cpp => format!("inline constexpr {ty_name} {name} = {lit};\n\n"),
+        Language::C11 => format!("static const {ty_name} {name} = {lit};\n\n"),
+        Language::Kotlin => format!("const val {name}: {ty_name} = {lit}\n\n"),
+        Language::Go => format!("const {name} {ty_name} = {lit}\n\n"),
+        Language::Python => format!("{name}: {ty_name} = {lit}\n\n"),
+    }
+}
+
+/// Kotlin native array type for an `array<elem, _>` const. Kotlin
+/// distinguishes `IntArray` from `Array<Int>`; the unboxed primitive
+/// arrays are the right call for fixed-element-type tables.
+fn kotlin_array_type(elem: &SceType) -> &'static str {
+    match elem {
+        SceType::Uint8 | SceType::Int8 => "ByteArray",
+        SceType::Uint16 | SceType::Int16 => "ShortArray",
+        SceType::Uint32 | SceType::Int32 => "IntArray",
+        SceType::Uint64 | SceType::Int64 => "LongArray",
+        SceType::Float32 => "FloatArray",
+        SceType::Float64 => "DoubleArray",
+        SceType::Bool => "BooleanArray",
+        SceType::String | SceType::Bytes => "Array<Any>",
+    }
 }
 
 // ── Naming helpers (delegating to filters where possible) ──────
@@ -6789,6 +6979,7 @@ mod tests {
     fn go_prefix_strips_trailing_slash() {
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/gen/".to_string()),
+            ..Default::default()
         };
         assert_eq!(normalized_go_prefix(&opts), Some("github.com/acme/gen"));
     }
@@ -6797,6 +6988,7 @@ mod tests {
     fn go_prefix_no_trailing_slash() {
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/gen".to_string()),
+            ..Default::default()
         };
         assert_eq!(normalized_go_prefix(&opts), Some("github.com/acme/gen"));
     }
@@ -6805,6 +6997,7 @@ mod tests {
     fn go_prefix_none() {
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: None,
+            ..Default::default()
         };
         assert_eq!(normalized_go_prefix(&opts), None);
     }
@@ -6813,6 +7006,7 @@ mod tests {
     fn go_prefix_multiple_trailing_slashes() {
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme///".to_string()),
+            ..Default::default()
         };
         assert_eq!(normalized_go_prefix(&opts), Some("github.com/acme"));
     }
@@ -6827,7 +7021,7 @@ mod tests {
             alias: "t".to_string(),
             line: None,
         }];
-        let opts = crate::ForgeCompileOptions { go_module_prefix: None };
+        let opts = crate::ForgeCompileOptions { go_module_prefix: None, ..Default::default() };
         let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
         assert!(result.is_err());
     }
@@ -6842,6 +7036,7 @@ mod tests {
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("".to_string()),
+            ..Default::default()
         };
         let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
         assert!(result.is_err());
@@ -6857,6 +7052,7 @@ mod tests {
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme /gen".to_string()),
+            ..Default::default()
         };
         let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
         assert!(result.is_err());
@@ -6872,6 +7068,7 @@ mod tests {
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/gen".to_string()),
+            ..Default::default()
         };
         let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
         assert!(result.is_ok());
@@ -6879,7 +7076,7 @@ mod tests {
 
     #[test]
     fn validate_go_no_imports_no_prefix_ok() {
-        let opts = crate::ForgeCompileOptions { go_module_prefix: None };
+        let opts = crate::ForgeCompileOptions { go_module_prefix: None, ..Default::default() };
         let result = validate_options(&[], &crate::generator::Language::Go, &opts);
         assert!(result.is_ok());
     }
@@ -6892,7 +7089,7 @@ mod tests {
             alias: "t".to_string(),
             line: None,
         }];
-        let opts = crate::ForgeCompileOptions { go_module_prefix: None };
+        let opts = crate::ForgeCompileOptions { go_module_prefix: None, ..Default::default() };
         let result = validate_options(&imports, &crate::generator::Language::Cpp, &opts);
         assert!(result.is_ok());
     }
@@ -6972,6 +7169,7 @@ mod tests {
         let imp = test_import();
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/gen".to_string()),
+            ..Default::default()
         };
         let ctx = resolve_single_import(&imp, &crate::generator::Language::Go, &opts);
         assert_eq!(

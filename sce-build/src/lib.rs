@@ -433,6 +433,13 @@ pub struct ForgeCompileOptions {
     /// module, so `resolve_imports` hard-errors when imports are present
     /// for `Language::Go` but this field is `None` — no silent fallback.
     pub go_module_prefix: Option<String>,
+    /// RFC §5.F build-time const-fold iteration budget. When set, caps
+    /// the total iteration count across every `<sce:fold>` body in the
+    /// document. `None` = use the SSoT default
+    /// ([`forge::const_fold::Budget::DEFAULT_MAX_ITERS`] = 1_000_000),
+    /// matching the RFC's "default 1M" wording. The CLI surfaces this
+    /// as `--const-fold-budget=N` on the `generate` subcommand.
+    pub const_fold_budget: Option<u64>,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -478,22 +485,22 @@ pub fn compile_forge_with_imports(
 
     let output = match language {
         generator::Language::Cpp => {
-            forge::generator::generate_cpp_with_imports(&parsed.document, &template_base, &import_ctx)
+            forge::generator::generate_cpp_with_imports(&parsed.document, &template_base, &import_ctx, options)
         }
         generator::Language::Kotlin => {
-            forge::generator::generate_kotlin_with_imports(&parsed.document, &template_base, &import_ctx)
+            forge::generator::generate_kotlin_with_imports(&parsed.document, &template_base, &import_ctx, options)
         }
         generator::Language::Rust => {
-            forge::generator::generate_rust_with_imports(&parsed.document, &template_base, &import_ctx)
+            forge::generator::generate_rust_with_imports(&parsed.document, &template_base, &import_ctx, options)
         }
         generator::Language::Go => {
-            forge::generator::generate_go_with_imports(&parsed.document, &template_base, &import_ctx)
+            forge::generator::generate_go_with_imports(&parsed.document, &template_base, &import_ctx, options)
         }
         generator::Language::Python => {
-            forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx)
+            forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx, options)
         }
         generator::Language::C11 => {
-            forge::generator::generate_c11_with_imports(&parsed.document, &template_base, &import_ctx)
+            forge::generator::generate_c11_with_imports(&parsed.document, &template_base, &import_ctx, options)
         }
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;

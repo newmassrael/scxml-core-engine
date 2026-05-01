@@ -346,6 +346,17 @@ enum Commands {
         /// legacy single-partition path.
         #[arg(long)]
         partition: Option<String>,
+        /// RFC §5.F build-time const-fold iteration budget.
+        ///
+        /// Caps the total iteration count across every `<sce:fold>`
+        /// body in the document — every fold tick and every nested
+        /// while/foreach iteration decrements one shared counter so
+        /// pathological const-fold bodies cannot turn `sce-build`
+        /// into a general-purpose compute platform. Omit to use the
+        /// SSoT default (1_000_000); set higher for legitimate large
+        /// tables, lower for tighter CI budgets.
+        #[arg(long)]
+        const_fold_budget: Option<u64>,
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
@@ -469,6 +480,7 @@ fn main() {
             no_format,
             deploy,
             partition,
+            const_fold_budget,
         } => cmd_generate(
             &scxml,
             &language,
@@ -481,6 +493,7 @@ fn main() {
             no_format,
             deploy.as_deref(),
             partition.as_deref(),
+            const_fold_budget,
             error_format,
         ),
         Commands::GenerateW3c {
@@ -531,6 +544,7 @@ fn cmd_generate(
     no_format: bool,
     deploy_path: Option<&str>,
     for_partition: Option<&str>,
+    const_fold_budget: Option<u64>,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -587,6 +601,7 @@ fn cmd_generate(
                 .unwrap_or_else(|| Path::new("."));
             let forge_opts = sce_build::ForgeCompileOptions {
                 go_module_prefix: go_module_prefix.map(str::to_owned),
+                const_fold_budget,
             };
             match sce_build::compile_forge_with_imports(
                 &scxml_content,

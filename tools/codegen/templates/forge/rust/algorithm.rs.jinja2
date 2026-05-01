@@ -9,7 +9,7 @@
 // function, no instance state. `#![no_std]`-clean when no `bytes`
 // parameter (this fixture: no_std_clean = {{ no_std_clean }}).
 
-#[allow(clippy::all)]
+{{ consts_prelude }}#[allow(clippy::all)]
 #[allow(unused_assignments)]
 pub fn {{ name }}({{ params_str }}){% if has_return %} -> {{ return_type }}{% endif %} {
 {{ body }}
