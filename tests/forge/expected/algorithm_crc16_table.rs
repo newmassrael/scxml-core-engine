@@ -13,7 +13,7 @@ pub static CRC16_TABLE: [u16; 256] = [0, 4129, 8258, 12387, 16516, 20645, 24774,
 pub fn algorithm_crc16_table(data: &[u8]) -> u16 {
     let mut crc: u16 = 0xFFFF;
     for &b in data.iter() {
-        let mut idx: u16 = (crc >> 8 ^ b as u16) & 0xFF;
+        let idx: u16 = (crc >> 8 ^ b as u16) & 0xFF;
         crc = crc << 8 ^ CRC16_TABLE[(idx) as usize];
     }
     return crc;

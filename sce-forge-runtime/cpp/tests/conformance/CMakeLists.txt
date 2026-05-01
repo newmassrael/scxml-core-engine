@@ -20,7 +20,15 @@
 cmake_minimum_required(VERSION 3.16)
 project(sce_forge_numerical_conformance CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# RFC §7 A6: §5.A algorithm kind joins the cpp conformance harness. The
+# A3 cpp algorithm template lowers `bytes` parameters to
+# `std::span<const std::uint8_t>` per RFC §5.J.5 (non-owning view, the
+# C++ idiom that avoids the "no STL containers" rule's intent of
+# forbidding owning collections in MCU-targeted emit). `std::span` is
+# C++20, so the harness bumps from C++17 → C++20 to compile the
+# algorithm fixtures alongside the existing 11 baseline kinds. The
+# baseline kinds remain C++17-clean, so this is purely additive.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

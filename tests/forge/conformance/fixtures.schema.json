@@ -389,6 +389,37 @@
               }
             }
           }
+        },
+        {
+          "description": "RFC §5.A pure free function with bounded loops. Mirrors `Transform`'s `(args -> scalar output)` shape but admits `bytes` parameters because the algorithm body's `<sce:foreach>` over bytes is the canonical surface for byte-stream computations (CRC, parity, hash). The `function` field carries the algorithm's exported symbol name so the fragment can call it directly; in C11 the harness prepends the fixture name (mirrors `Transform`'s flat-scope prefix).",
+          "type": "object",
+          "required": [
+            "args",
+            "function",
+            "kind",
+            "output"
+          ],
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/CanonicalType"
+              }
+            },
+            "function": {
+              "description": "Exported function symbol — equals the algorithm `<sce:name>` in snake-case for Rust/C11. Carried in the manifest because RFC §5.A allows the algorithm name to differ from the fixture file name (the algorithm fixture's SCXML root carries `sce:kind=\"algorithm\"` and the function's identity comes from the model, not the filename). C11 harness rendering rewrites this to the prefixed form `<fixture>_<function>` to match the flat-scope identifier.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "algorithm"
+              ]
+            },
+            "output": {
+              "$ref": "#/definitions/ScalarOutput"
+            }
+          }
         }
       ],
       "required": [

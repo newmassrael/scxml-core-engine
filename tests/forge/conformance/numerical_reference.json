@@ -260,6 +260,35 @@
         {"args": [0],   "expected": 0, "note": "miss -> default fallback"},
         {"args": [999], "expected": 0, "note": "miss -> default fallback (above any key)"}
       ]
+    },
+
+    "algorithm_crc16": {
+      "fixture": "algorithm_crc16",
+      "signature": "(data: bytes) -> u16",
+      "formula": "CRC16-CCITT-FALSE: poly=0x1021, init=0xFFFF, no reflect, no xor-out (RFC §5.A Appendix A bit-by-bit)",
+      "cases": [
+        {"args": [[]],                       "expected": 65535, "note": "empty input -> init value 0xFFFF"},
+        {"args": [[65]],                     "expected": 47381, "note": "single byte 'A' (0x41) -> 0xB915"},
+        {"args": [[49, 50, 51, 52, 53, 54, 55, 56, 57]], "expected": 10673, "note": "canonical '123456789' -> 0x29B1 (CRC16-CCITT-FALSE reference vector)"},
+        {"args": [[0]],                      "expected": 57840, "note": "single 0x00 -> 0xE1F0"},
+        {"args": [[255]],                    "expected": 65280, "note": "single 0xFF -> 0xFF00"},
+        {"args": [[0, 255, 170, 85]],        "expected": 45894, "note": "[0x00, 0xFF, 0xAA, 0x55] -> 0xB346"},
+        {"args": [[0, 0, 0, 0, 0, 0, 0, 0]], "expected": 12606, "note": "8 zeros -> 0x313E"}
+      ]
+    },
+    "algorithm_crc16_table": {
+      "fixture": "algorithm_crc16_table",
+      "signature": "(data: bytes) -> u16",
+      "formula": "CRC16-CCITT-FALSE table form (RFC §5.F build-time const-fold). Output MUST equal algorithm_crc16 for every input — A6 cross-form byte-equivalence acceptance gate.",
+      "cases": [
+        {"args": [[]],                       "expected": 65535, "note": "empty input -> init value 0xFFFF"},
+        {"args": [[65]],                     "expected": 47381, "note": "single byte 'A' (0x41) -> 0xB915"},
+        {"args": [[49, 50, 51, 52, 53, 54, 55, 56, 57]], "expected": 10673, "note": "canonical '123456789' -> 0x29B1 (CRC16-CCITT-FALSE reference vector)"},
+        {"args": [[0]],                      "expected": 57840, "note": "single 0x00 -> 0xE1F0"},
+        {"args": [[255]],                    "expected": 65280, "note": "single 0xFF -> 0xFF00"},
+        {"args": [[0, 255, 170, 85]],        "expected": 45894, "note": "[0x00, 0xFF, 0xAA, 0x55] -> 0xB346"},
+        {"args": [[0, 0, 0, 0, 0, 0, 0, 0]], "expected": 12606, "note": "8 zeros -> 0x313E"}
+      ]
     }
   },
 

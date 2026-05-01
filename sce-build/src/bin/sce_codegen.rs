@@ -2427,8 +2427,28 @@ fn cmd_list_fixtures(manifest_path: &str, format: &str, language: Option<&str>) 
         .fixtures
         .iter()
         .filter(|f| match lang_filter {
-            Some(Language::C11) => sce_build::conformance::c11_supported_kind(&f.spec),
-            _ => true,
+            // RFC §5.J.4 single-source-of-truth gate: skip any fixture
+            // whose product template hasn't shipped on the requested
+            // language. Mirrors the matrix-aware filter that `render_harness`
+            // applies before invoking per-language conformance fragments,
+            // so cmake `list-fixtures` returns only the fixtures the
+            // harness actually compiles.
+            Some(lang) => {
+                let Some(kind) = sce_build::forge::model::ForgeKind::from_attr(
+                    f.spec.kind_str(),
+                ) else {
+                    return false;
+                };
+                if !sce_build::forge::codegen_matrix::template_ships(kind, lang) {
+                    return false;
+                }
+                if matches!(lang, Language::C11) {
+                    sce_build::conformance::c11_supported_kind(&f.spec)
+                } else {
+                    true
+                }
+            }
+            None => true,
         })
         .map(|f| f.name.as_str())
         .collect();

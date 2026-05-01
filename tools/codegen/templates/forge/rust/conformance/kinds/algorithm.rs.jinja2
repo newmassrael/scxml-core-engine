@@ -1,0 +1,28 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Algorithm kind (RFC §5.A) — single-output free function. Cross-(Rust,
+   C11) byte-equivalence acceptance gate (RFC §A6). The Rust algorithm
+   template emits `pub fn <name>(<param>: &[u8], ...) -> T`, so bytes
+   args bind to a `Vec<u8>` from the oracle and pass `&arg<i>` at the
+   call site; numeric args bind to their native Rust scalar.
+
+   Single-output only — RFC §5.A defines algorithms as one-return-value
+   bodies. Compound outputs would require structuring the return type,
+   which is Transform's territory. #}
+{% if f.output.compare == "tolerance" %}
+    let tol = tolerance(&reference);
+{% endif %}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for case in spec["cases"].as_array().expect("cases must be array") {
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% endfor %}
+        let expected = {{ "case[\"expected\"]" | rust_unmarshal(f.output.type) }};
+        let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
+{% if f.output.compare == "tolerance" %}
+        assert_close(actual as f64, expected as f64, tol, "{{ f.name }}");
+{% else %}
+        assert_eq!(actual, expected, "{{ f.name }}");
+{% endif %}
+    }

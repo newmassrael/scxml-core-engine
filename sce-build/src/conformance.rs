@@ -335,6 +335,25 @@ pub enum FixtureSpec {
     Timer {
         timers: Vec<TimerFixtureEntry>,
     },
+    /// RFC §5.A pure free function with bounded loops. Mirrors `Transform`'s
+    /// `(args -> scalar output)` shape but admits `bytes` parameters because
+    /// the algorithm body's `<sce:foreach>` over bytes is the canonical
+    /// surface for byte-stream computations (CRC, parity, hash). The
+    /// `function` field carries the algorithm's exported symbol name so the
+    /// fragment can call it directly; in C11 the harness prepends the
+    /// fixture name (mirrors `Transform`'s flat-scope prefix).
+    Algorithm {
+        args: Vec<CanonicalType>,
+        output: ScalarOutput,
+        /// Exported function symbol — equals the algorithm `<sce:name>` in
+        /// snake-case for Rust/C11. Carried in the manifest because RFC §5.A
+        /// allows the algorithm name to differ from the fixture file name
+        /// (the algorithm fixture's SCXML root carries `sce:kind="algorithm"`
+        /// and the function's identity comes from the model, not the
+        /// filename). C11 harness rendering rewrites this to the prefixed
+        /// form `<fixture>_<function>` to match the flat-scope identifier.
+        function: String,
+    },
 }
 
 impl FixtureSpec {
@@ -354,6 +373,7 @@ impl FixtureSpec {
             FixtureSpec::Validator { .. } => "validator",
             FixtureSpec::Codec { .. } => "codec",
             FixtureSpec::Timer { .. } => "timer",
+            FixtureSpec::Algorithm { .. } => "algorithm",
         }
     }
 
@@ -769,6 +789,24 @@ impl Manifest {
                         ));
                     }
                 }
+                FixtureSpec::Algorithm { args, function, .. } => {
+                    if function.is_empty() {
+                        return Err(format!(
+                            "fixture {}: algorithm `function` must not be \
+                             empty — it names the exported symbol the \
+                             harness calls",
+                            f.name
+                        ));
+                    }
+                    if args.is_empty() {
+                        return Err(format!(
+                            "fixture {}: algorithm requires at least one \
+                             `args` entry — a zero-arg algorithm has no \
+                             oracle-driven cases to compare",
+                            f.name
+                        ));
+                    }
+                }
                 FixtureSpec::Interpolation { .. }
                 | FixtureSpec::Condition { .. }
                 | FixtureSpec::Filter { .. }
@@ -915,6 +953,13 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // codegen path. Remove the catch-all so a future kind addition
         // forces an explicit decision here.
         FixtureSpec::Timer { .. } => true,
+        // RFC §7 A6: §5.A algorithm kind. The C11 algorithm template
+        // (`tools/codegen/templates/forge/c/algorithm.h.jinja2`) shipped
+        // at A5; A6 promotes the byte-equivalence preview to a permanent
+        // ctest gate by routing the two CRC16 fixtures through the
+        // conformance harness. `bytes` arg lowers to `sce_forge_bytes_t`
+        // value-type per the A5 `algorithm_param_type` arm.
+        FixtureSpec::Algorithm { .. } => true,
     }
 }
 
@@ -1283,6 +1328,16 @@ pub fn render_harness(
                     }
                 }
             }
+            FixtureSpec::Algorithm { function, .. } => {
+                // RFC §7 A5/A6: C11 algorithm template emits a free function
+                // named exactly `<algorithm_snake>` (no fixture prefix because
+                // the algorithm name *is* the fixture stem in every shipped
+                // SCXML). Rust mirrors via the per-fixture `pub mod` indirection
+                // already imposed by the harness scaffold. No rewrite is
+                // needed; the manifest's `function` value points at the live
+                // symbol on every backend.
+                let _ = function;
+            }
             FixtureSpec::Procedure {
                 helpers,
                 helpers_ordered,
@@ -1337,12 +1392,26 @@ pub fn render_harness(
         }
     }
 
-    // RFC §5.J.2: the C11 backend lands kinds in phases (A: Transform,
-    // B: Lookup/Condition/Codec, …). Only fixtures whose kind has a
-    // matching `kinds/<kind>.c.jinja2` fragment may flow through; the
-    // harness scaffold's dynamic `{% include %}` would otherwise fail
-    // at render time. Each new phase widens this filter by adding the
-    // newly-supported kind to `c11_supported_kind`.
+    // Matrix-aware fixture filter (RFC §5.J.4 single source of truth).
+    // The forge codegen matrix at `forge::codegen_matrix::template_ships`
+    // declares which `(kind, language)` pairs have a shipped product
+    // template. The conformance harness piggy-backs on the same gate
+    // because the conformance fragment is co-shipped with the product
+    // template — there is no fixture whose product emits but whose
+    // conformance fragment is missing, so a single matrix flip closes
+    // both sides at once. C11 layers an extra phase-specific predicate
+    // on top via `c11_supported_kind` (kept as a separate function so
+    // a future C11-internal subset stays expressible without polluting
+    // the language-agnostic matrix).
+    fixtures.retain(|f| {
+        let Some(kind) = crate::forge::model::ForgeKind::from_attr(f.spec.kind_str()) else {
+            // FixtureSpec::kind_str() returns canonical attr names that
+            // ForgeKind::from_attr always accepts; a None here would be
+            // an upstream inconsistency, so drop the fixture defensively.
+            return false;
+        };
+        crate::forge::codegen_matrix::template_ships(kind, language)
+    });
     if matches!(language, Language::C11) {
         fixtures.retain(|f| c11_supported_kind(&f.spec));
     }

@@ -6162,10 +6162,61 @@ fn lower_algorithm_body(
     let mut out = String::new();
     let pad = "    ".repeat(indent);
     let l = LangCtx::new(lang);
+    // Pre-pass: collect every local that an `<sce:assign target>` targets
+    // anywhere in the body so the Var arm can choose `let` vs `let mut`
+    // on Rust without triggering `unused_mut` under workspace
+    // `warnings = "deny"`. Other backends are unaffected — Cpp/C11 emit
+    // bare `T name = expr;` (no mut/const keyword), Kotlin uses `var`
+    // unconditionally (mutability discipline is the consumer's concern),
+    // Go uses `var name T = expr` (mutability not statement-level), and
+    // Python is dynamic.
+    let mut assigned: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    collect_algorithm_assigned_roots(stmts, &mut assigned);
     for s in stmts {
-        lower_algorithm_stmt(s, lang, type_ctx, &l, renames, &pad, indent, &mut out)?;
+        lower_algorithm_stmt(s, lang, type_ctx, &l, renames, &pad, indent, &assigned, &mut out)?;
     }
     Ok(out.trim_end().to_string())
+}
+
+/// Walk an algorithm body and collect every identifier that appears as
+/// the root of an `<sce:assign target>` lvalue. RFC §5.A v1 lvalues are
+/// identifier, member access (`obj.field`), and index (`arr[i]`) — the
+/// root in every case is the leading identifier, which we extract with
+/// a simple character scan. Subsequent passes use this set to decide
+/// `let` vs `let mut` per Rust's deny(unused_mut) workspace lint.
+fn collect_algorithm_assigned_roots(
+    stmts: &[AlgorithmStmt],
+    out: &mut std::collections::HashSet<String>,
+) {
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Assign { target, .. } => {
+                let root: String = target
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                if !root.is_empty() {
+                    out.insert(root);
+                }
+            }
+            AlgorithmStmt::If { then_body, else_body, .. } => {
+                collect_algorithm_assigned_roots(then_body, out);
+                if let Some(eb) = else_body {
+                    collect_algorithm_assigned_roots(eb, out);
+                }
+            }
+            AlgorithmStmt::While { body, .. } => {
+                collect_algorithm_assigned_roots(body, out);
+            }
+            AlgorithmStmt::Foreach { body, .. } => {
+                collect_algorithm_assigned_roots(body, out);
+            }
+            AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. } => {}
+        }
+    }
 }
 
 fn lower_algorithm_stmt(
@@ -6176,6 +6227,7 @@ fn lower_algorithm_stmt(
     renames: &std::collections::HashMap<&str, &str>,
     pad: &str,
     indent: usize,
+    assigned: &std::collections::HashSet<String>,
     out: &mut String,
 ) -> Result<(), ForgeError> {
     use crate::forge::types::InferredType;
@@ -6194,9 +6246,22 @@ fn lower_algorithm_stmt(
                 InferredType::from_sce_type(sce_type),
             )?;
             let local = l.local_id(name);
+            // Rust: emit `let mut` only when the local is reassigned
+            // somewhere in the body (workspace `warnings = "deny"` makes
+            // an unused `mut` an error). The `<sce:assign>` pre-pass at
+            // the body root populates `assigned`; identifier-rooted
+            // lvalues are checked against the *original* SCXML name (not
+            // the snake-cased `local`) because `<sce:assign target>`
+            // mirrors the SCXML id verbatim.
+            let rust_mut = if assigned.contains(name.as_str()) {
+                "mut "
+            } else {
+                ""
+            };
             let line = match lang {
                 Language::Rust => format!(
-                    "{pad}let mut {local}: {ty} = {init_lowered};\n",
+                    "{pad}let {mut_kw}{local}: {ty} = {init_lowered};\n",
+                    mut_kw = rust_mut,
                     ty = l.type_name(sce_type)
                 ),
                 Language::Cpp | Language::C11 => {
@@ -6241,30 +6306,40 @@ fn lower_algorithm_stmt(
                 renames,
                 InferredType::Bool,
             )?;
+            // Rust forbids the `if (cond)` paren wrap under
+            // `unused_parens` (workspace-wide deny-warnings). Other curly-
+            // brace targets (Cpp/C11/Kotlin/Go) accept either form, but
+            // we keep parens there to mirror the source SCXML's typical
+            // C-flavored author intent. Python uses no parens and a
+            // colon-terminated header.
             match lang {
                 Language::Python => {
                     out.push_str(&format!("{pad}if {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}else:\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
                         }
                     }
                 }
                 _ => {
-                    out.push_str(&format!("{pad}if ({cond_lowered}) {{\n"));
+                    let header_open = match lang {
+                        Language::Rust => format!("{pad}if {cond_lowered} {{\n"),
+                        _ => format!("{pad}if ({cond_lowered}) {{\n"),
+                    };
+                    out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}}} else {{\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
                         }
                     }
                     out.push_str(&format!("{pad}}}\n"));
@@ -6280,19 +6355,25 @@ fn lower_algorithm_stmt(
                 InferredType::Bool,
             )?;
             let _ = max_iter; // RFC §5.A runtime-counter guard lands in A4 (build-time fold).
+            // Same paren policy as `if` above — Rust loop conditions
+            // refuse the C-flavoured paren wrap under unused_parens.
             match lang {
                 Language::Python => {
                     out.push_str(&format!("{pad}while {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
                     }
                 }
                 _ => {
-                    out.push_str(&format!("{pad}while ({cond_lowered}) {{\n"));
+                    let header_open = match lang {
+                        Language::Rust => format!("{pad}while {cond_lowered} {{\n"),
+                        _ => format!("{pad}while ({cond_lowered}) {{\n"),
+                    };
+                    out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
                     }
                     out.push_str(&format!("{pad}}}\n"));
                 }
@@ -6324,7 +6405,7 @@ fn lower_algorithm_stmt(
             let inner_indent = if matches!(lang, Language::Python) { indent + 1 } else { indent + 1 };
             let inner_pad = "    ".repeat(inner_indent);
             for st in body {
-                lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, inner_indent, out)?;
+                lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, inner_indent, assigned, out)?;
             }
             if !matches!(lang, Language::Python) {
                 out.push_str(&format!("{pad}}}\n"));

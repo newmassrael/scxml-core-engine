@@ -11,11 +11,11 @@
 pub fn algorithm_crc16(data: &[u8]) -> u16 {
     let mut crc: u16 = 0xFFFF;
     for &b in data.iter() {
-        let mut hi: u16 = b as u16;
+        let hi: u16 = b as u16;
         crc = crc ^ hi << 8;
         let mut i: u8 = 0;
-        while (i < 8) {
-            if (crc & 0x8000 != 0) {
+        while i < 8 {
+            if crc & 0x8000 != 0 {
                 crc = crc << 1 ^ 0x1021;
             } else {
                 crc = crc << 1;

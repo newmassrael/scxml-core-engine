@@ -12,11 +12,12 @@
     "lookup":        "Finite key→value mapping. Free function lookup_<name>(key) -> V|Option<V>. Numeric outputs use direct comparison; string outputs return language-specific enums verified via oracle string matching. Reference section: pure_functions (numeric) or string_lookups (enum).",
     "timer":         "Timer scheduler. Generated struct wraps N timer HAL instances. Conformance verifies registration metadata (type, interval_ms) and callback dispatch via recording mocks. Reference section: timers.",
     "validator":     "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators.",
-    "codec":         "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional). Oracle cases are `{decoded, encoded}` pairs exercising round-trip symmetry in both directions. Field layout lives in SCXML (sce:byte, sce:bit-offset, sce:bit-size, sce:default-endian); the manifest entry only mirrors field names and canonical types so fragments can iterate them. Field names use SCXML source case (camelCase) as the canonical key across oracle and manifest; each per-language fragment applies its own case filter (Rust/Python snake_case, Go PascalCase, C++/Kotlin as-is camelCase). Reference section: codecs."
+    "codec":         "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional). Oracle cases are `{decoded, encoded}` pairs exercising round-trip symmetry in both directions. Field layout lives in SCXML (sce:byte, sce:bit-offset, sce:bit-size, sce:default-endian); the manifest entry only mirrors field names and canonical types so fragments can iterate them. Field names use SCXML source case (camelCase) as the canonical key across oracle and manifest; each per-language fragment applies its own case filter (Rust/Python snake_case, Go PascalCase, C++/Kotlin as-is camelCase). Reference section: codecs.",
+    "algorithm":     "RFC §5.A pure free function with bounded loops. Free function `<name>(args) -> scalar` with optional bytes parameters lowering to the language's native byte-stream view (`sce_forge_bytes_t` on C11, `&[u8]` on Rust). Cross-(Rust, C11) byte-equivalence is the §A6 acceptance gate; A6 wires the two CRC16-CCITT-FALSE fixtures (bit-by-bit + table-fold) through the conformance harness so any future codegen drift fails ctest. Reference section: pure_functions."
   },
   "canonical_types": {
-    "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++).",
-    "types": ["bool", "i32", "u8", "u16", "u32", "f32", "f64", "string"]
+    "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++). `bytes` is the variable-length byte sequence; in args it represents a `sce_forge_bytes_t` view on C11 / `&[u8]` on Rust.",
+    "types": ["bool", "i32", "u8", "u16", "u32", "f32", "f64", "string", "bytes"]
   },
   "fixtures": [
     {
@@ -366,6 +367,23 @@
       "on_miss": "default",
       "args": ["u8"],
       "output": {"type": "string", "compare": "equality"}
+    },
+
+    {
+      "name": "algorithm_crc16",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_crc16",
+      "args": ["bytes"],
+      "output": {"type": "u16", "compare": "equality"}
+    },
+    {
+      "name": "algorithm_crc16_table",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_crc16_table",
+      "args": ["bytes"],
+      "output": {"type": "u16", "compare": "equality"}
     }
   ]
 }
