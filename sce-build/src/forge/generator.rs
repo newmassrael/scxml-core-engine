@@ -6096,18 +6096,20 @@ fn collect_algorithm_local_types(
         match s {
             AlgorithmStmt::Var { name, sce_type, .. } => {
                 if !seen.insert(name.clone()) {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "algorithm: local '{name}' shadows another binding (RFC §5.A algorithm/local-shadows-param)"
-                    ))
+                    return Err(crate::forge::error::ValidationError::AlgorithmLocalShadowsParam {
+                        name: name.clone(),
+                        what: "another binding (param or earlier local)".into(),
+                    }
                     .into());
                 }
                 out.push((name.clone(), sce_type.clone()));
             }
             AlgorithmStmt::Foreach { item, body, .. } => {
                 if !seen.insert(item.clone()) {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "algorithm: foreach item '{item}' shadows another binding"
-                    ))
+                    return Err(crate::forge::error::ValidationError::AlgorithmLocalShadowsParam {
+                        name: item.clone(),
+                        what: "another binding (param or earlier local)".into(),
+                    }
                     .into());
                 }
                 // Foreach over `bytes` exposes the item as Uint8.

@@ -383,6 +383,20 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/bytes-max-size-violation")]
     ValidationBytesMaxSizeViolation,
 
+    // ── Algorithm kind (watching-zenoh RFC §5.A, Phase A3).
+    //    Parser-stage sema for the new pure-function kind. Three
+    //    of the six RFC §5.A diagnostics land in A3-δ; the rest
+    //    (`return-type-mismatch`, `while-unbounded`,
+    //    `call-cycle`) need typed expression flow / deploy-yaml
+    //    MCU detection / cross-file import resolution and are
+    //    deferred to A4+. ────────────────────────────────────
+    #[serde(rename = "algorithm/local-shadows-param")]
+    AlgorithmLocalShadowsParam,
+    #[serde(rename = "algorithm/lvalue-unsupported")]
+    AlgorithmLvalueUnsupported,
+    #[serde(rename = "algorithm/return-missing")]
+    AlgorithmReturnMissing,
+
     // ── SCXML semantic-validation (RFC §W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
     //    codes per the W4 D4 fold precedent — concept identity:
@@ -717,6 +731,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMeshRpcDuplicateTarget,
         ValidationRemovedAttribute,
         ValidationBytesMaxSizeViolation,
+        // Algorithm (watching-zenoh RFC §5.A, Phase A3)
+        AlgorithmLocalShadowsParam,
+        AlgorithmLvalueUnsupported,
+        AlgorithmReturnMissing,
         // SCXML semantic (RFC §W5)
         ScxmlTopLevelScriptUnloaded,
         // Expression
@@ -937,6 +955,11 @@ impl DiagnosticCode {
 
             // ── SCXML §5.8 top-level script (RFC §W5) ─────────────
             ScxmlTopLevelScriptUnloaded => Some("W3C SCXML §5.8"),
+
+            // ── Algorithm kind (watching-zenoh RFC §5.A) ──────────
+            AlgorithmLocalShadowsParam
+            | AlgorithmLvalueUnsupported
+            | AlgorithmReturnMissing => Some("watching-zenoh RFC §5.A"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1167,6 +1190,9 @@ impl DiagnosticCode {
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
             ValidationRemovedAttribute => "validation/removed-attribute",
             ValidationBytesMaxSizeViolation => "validation/bytes-max-size-violation",
+            AlgorithmLocalShadowsParam => "algorithm/local-shadows-param",
+            AlgorithmLvalueUnsupported => "algorithm/lvalue-unsupported",
+            AlgorithmReturnMissing => "algorithm/return-missing",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
@@ -1944,6 +1970,33 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: vec![procedure.clone(), detail.clone()],
+        },
+        ValidationError::AlgorithmLocalShadowsParam { name, what } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmLocalShadowsParam,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), what.clone()],
+        },
+        ValidationError::AlgorithmLvalueUnsupported {
+            target,
+            restriction,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmLvalueUnsupported,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(target.clone()),
+            fix: None,
+            key_fragments: vec![target.clone(), restriction.clone()],
+        },
+        ValidationError::AlgorithmReturnMissing => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmReturnMissing,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: Vec::new(),
         },
     }
 }
@@ -3098,6 +3151,30 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (watching-zenoh RFC §5.J.4 expects all six backends to emit)"}"#,
+            ),
+            // ── Algorithm kind sema (watching-zenoh RFC §5.A) ───────
+            (
+                "forge/algorithm-local-shadows-param",
+                ValidationError::AlgorithmLocalShadowsParam {
+                    name: "data".into(),
+                    what: "param".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:438800138df5f1c2","code":"algorithm/local-shadows-param","stage":"validation","spec":"watching-zenoh RFC §5.A","message":"algorithm: identifier 'data' shadows param","actual":"data"}"#,
+            ),
+            (
+                "forge/algorithm-lvalue-unsupported",
+                ValidationError::AlgorithmLvalueUnsupported {
+                    target: "data".into(),
+                    restriction: "algorithm parameters are read-only in v1".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:397b595293daf8ef","code":"algorithm/lvalue-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.A","message":"<sce:assign target=\"data\">: algorithm parameters are read-only in v1","actual":"data"}"#,
+            ),
+            (
+                "forge/algorithm-return-missing",
+                ValidationError::AlgorithmReturnMissing.into(),
+                r#"{"v":1,"id":"fnv1a:e2582bd483bbf621","code":"algorithm/return-missing","stage":"validation","spec":"watching-zenoh RFC §5.A","message":"algorithm: signature declares return type but body's last statement is not <sce:return>"}"#,
             ),
         ]
     }
@@ -4316,6 +4393,9 @@ mod tests {
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
             | ValidationBytesMaxSizeViolation
+            | AlgorithmLocalShadowsParam
+            | AlgorithmLvalueUnsupported
+            | AlgorithmReturnMissing
             | ScxmlTopLevelScriptUnloaded
             | ExpressionEmpty
             | ExpressionLex
@@ -4656,6 +4736,9 @@ mod tests {
                 | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
                 | ValidationBytesMaxSizeViolation
+                | AlgorithmLocalShadowsParam
+                | AlgorithmLvalueUnsupported
+                | AlgorithmReturnMissing
                 | ScxmlTopLevelScriptUnloaded
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
@@ -4751,7 +4834,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            158,
+            161,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 158 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.K Phase A2 added \

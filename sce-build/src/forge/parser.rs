@@ -2096,6 +2096,20 @@ fn parse_algorithm(
     // diagnostics anchor at the body element rather than at codegen.
     reject_param_assignment(&body, &signature, &body_node, label.diagnostic_label)?;
 
+    // RFC §5.A `algorithm/return-missing`: when the signature declares
+    // a non-void return type, the body's terminal statement must be
+    // `<sce:return>`. v1 only checks the trivial last-statement form;
+    // flow-sensitive path coverage lands with §5.F (Phase A4).
+    if signature.return_type.is_some()
+        && !matches!(body.last(), Some(AlgorithmStmt::Return { .. }))
+    {
+        return Err(located(
+            &body_node,
+            label.diagnostic_label,
+            ValidationError::AlgorithmReturnMissing,
+        ));
+    }
+
     Ok(AlgorithmModel {
         name: label.identifier.to_string(),
         signature,
@@ -2399,11 +2413,9 @@ fn reject_param_assignment(
                     return Err(located(
                         body_node,
                         doc_name,
-                        ValidationError::InvalidAttribute {
-                            element: "<sce:assign>".into(),
-                            attr: "target".into(),
-                            value: target.clone(),
-                            expected: "non-parameter l-value (algorithm parameters are read-only)".into(),
+                        ValidationError::AlgorithmLvalueUnsupported {
+                            target: target.clone(),
+                            restriction: "algorithm parameters are read-only in v1".into(),
                         },
                     ));
                 }

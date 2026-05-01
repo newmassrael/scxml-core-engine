@@ -392,6 +392,32 @@ pub enum ValidationError {
         procedure: String,
         detail: String,
     },
+
+    /// RFC §5.A: a local `<sce:var>` or `<sce:foreach item>` reuses
+    /// the name of a parameter (or another local) inside the same
+    /// algorithm body. Read/write access becomes ambiguous in v1, so
+    /// the parser rejects the reuse before lowering.
+    #[error("algorithm: identifier '{name}' shadows {what}")]
+    AlgorithmLocalShadowsParam { name: String, what: String },
+
+    /// RFC §5.A: `<sce:assign target=...>` writes to an l-value the
+    /// algorithm body cannot mutate. v1 forbids assigning to a
+    /// parameter (parameters are read-only) and to the foreach loop
+    /// variable. `target` is the offending l-value text;
+    /// `restriction` names which rule was hit.
+    #[error("<sce:assign target=\"{target}\">: {restriction}")]
+    AlgorithmLvalueUnsupported {
+        target: String,
+        restriction: String,
+    },
+
+    /// RFC §5.A: an algorithm declares a non-void `<sce:return type>`
+    /// in the signature but the body contains no terminal
+    /// `<sce:return expr>` along every code path. v1 detects only the
+    /// trivial case (last statement is not a return); flow-sensitive
+    /// path tracking lands with §5.F (A4).
+    #[error("algorithm: signature declares return type but body's last statement is not <sce:return>")]
+    AlgorithmReturnMissing,
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────
