@@ -11,6 +11,8 @@
 #include <optional>
 #include <vector>
 
+#include "sce/forge/codec.h"
+
 namespace SCE::Generated::CodecSubbyte {
 
 struct CodecSubbyte {
@@ -18,13 +20,22 @@ struct CodecSubbyte {
     uint8_t channel;
     uint8_t direction;
 
-    static std::optional<CodecSubbyte> decode(const uint8_t* raw, size_t len) {
-        if (len < 1) return std::nullopt;
-        return CodecSubbyte{
+    /// Decode the next frame from `cursor`. On success the cursor
+    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
+    /// is left untouched so the caller can resume after appending more
+    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// `NeedMoreBytes` boundary; later phases attach a typed error via
+    /// `cursor.last_error()`.
+    static std::optional<CodecSubbyte> decode(::SCE::Forge::SceCursor& cursor) {
+        const std::uint8_t* raw = cursor.peek_slice(1);
+        if (raw == nullptr) return std::nullopt;
+        CodecSubbyte value{
             .priority = static_cast<uint8_t>((raw[0] >> 5) & 0x07),
             .channel = static_cast<uint8_t>((raw[0] >> 2) & 0x07),
             .direction = static_cast<uint8_t>((raw[0] >> 0) & 0x03),
         };
+        if (!cursor.advance(1)) return std::nullopt;
+        return value;
     }
 
     std::vector<uint8_t> encode() const {

@@ -4,6 +4,10 @@
 
 package codec_subbyte
 
+import (
+	"github.com/newmassrael/sce-forge-runtime/codec"
+)
+
 // CodecSubbyte represents the codec frame layout.
 type CodecSubbyte struct {
 	Priority uint8
@@ -11,17 +15,24 @@ type CodecSubbyte struct {
 	Direction uint8
 }
 
-// DecodeCodecSubbyte decodes raw bytes into a CodecSubbyte.
-// Returns nil if the input is too short.
-func DecodeCodecSubbyte(raw []byte) *CodecSubbyte {
-	if len(raw) < 1 {
-		return nil
+// DecodeCodecSubbyte decodes the next frame from cursor.
+// On success the cursor advances past the consumed bytes; returns
+// `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
+// is shorter than the declared minimum frame (RFC §5.B L494-519).
+func DecodeCodecSubbyte(cursor *codec.SceCursor) (*CodecSubbyte, error) {
+	raw, err := cursor.PeekSlice(1)
+	if err != nil {
+		return nil, err
 	}
-	return &CodecSubbyte{
+	value := &CodecSubbyte{
 		Priority: (raw[0] >> 5) & 0x07,
 		Channel: (raw[0] >> 2) & 0x07,
 		Direction: (raw[0] >> 0) & 0x03,
 	}
+	if err := cursor.Advance(1); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 // Encode serializes the CodecSubbyte into raw bytes.

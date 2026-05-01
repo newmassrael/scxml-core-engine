@@ -1426,6 +1426,9 @@ pub fn render_harness(
     let has_timer = fixtures
         .iter()
         .any(|f| matches!(f.spec, FixtureSpec::Timer { .. }));
+    let has_codec = fixtures
+        .iter()
+        .any(|f| matches!(f.spec, FixtureSpec::Codec { .. }));
 
     // C11 (RFC §5.J.2 F7): pre-bake the oracle into the harness source.
     // Other backends parse `numerical_reference.json` at test-runtime via
@@ -1509,6 +1512,7 @@ pub fn render_harness(
         fixtures => fixtures_value,
         has_procedure => has_procedure,
         has_timer => has_timer,
+        has_codec => has_codec,
         float_tolerance => float_tolerance,
     };
 

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from sce_forge_runtime.codec import NeedMoreBytes, SceCursor
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -15,14 +17,25 @@ class CodecLittleEndian:
     status: int = 0
 
     @classmethod
-    def decode(cls, raw: bytes) -> Optional[CodecLittleEndian]:
-        if len(raw) < 4:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecLittleEndian]:
+        """Decode the next frame from ``cursor``. Returns ``None`` when
+        the cursor's tail is shorter than the declared minimum frame
+        (RFC §5.B L494-519); on success the cursor advances past the
+        consumed bytes."""
+        try:
+            raw = cursor.peek_slice(4)
+        except NeedMoreBytes:
             return None
-        return cls(
+        value = cls(
             sensor_id=raw[0],
             value=raw[1] | (raw[2] << 8),
             status=raw[3],
         )
+        try:
+            cursor.advance(4)
+        except NeedMoreBytes:
+            return None
+        return value
 
     def encode(self) -> bytes:
         return bytes([

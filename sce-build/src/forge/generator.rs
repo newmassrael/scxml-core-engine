@@ -5231,15 +5231,20 @@ fn render_inline_codec_member(
                 ));
             }
             code.push_str(&format!(
-                "\n        static std::optional<{struct_name}> decode(const uint8_t* raw, size_t len) {{\n\
-                 \x20           if (len < {min_bytes}) return std::nullopt;\n\
-                 \x20           return {struct_name}{{\n"
+                "\n        static std::optional<{struct_name}> decode(::SCE::Forge::SceCursor& cursor) {{\n\
+                 \x20           const std::uint8_t* raw = cursor.peek_slice({min_bytes});\n\
+                 \x20           if (raw == nullptr) return std::nullopt;\n\
+                 \x20           {struct_name} value{{\n"
             ));
             for f in codec_fields {
                 let decode = generate_decode_expr(f, default_endian, Language::Cpp, resolve_length_field_byte_off(codec_fields, f));
                 code.push_str(&format!("                .{} = {},\n", f.id, decode));
             }
-            code.push_str("            };\n        }\n");
+            code.push_str("            };\n");
+            code.push_str(&format!(
+                "            if (!cursor.advance({min_bytes})) return std::nullopt;\n\
+                 \x20           return value;\n        }}\n"
+            ));
             let encode_exprs =
                 generate_encode_exprs(codec_fields, default_endian, Language::Cpp);
             code.push_str(
@@ -5268,15 +5273,19 @@ fn render_inline_codec_member(
             }
             code.push_str("    ) {\n        companion object {\n");
             code.push_str(&format!(
-                "            fun decode(raw: ByteArray): {struct_name}? {{\n\
-                 \x20               if (raw.size < {min_bytes}) return null\n\
-                 \x20               return {struct_name}(\n"
+                "            fun decode(cursor: com.sce.forge.runtime.SceCursor): {struct_name}? {{\n\
+                 \x20               val raw = cursor.peekSlice({min_bytes}) ?: return null\n\
+                 \x20               val value = {struct_name}(\n"
             ));
             for f in codec_fields {
                 let decode = generate_decode_expr(f, default_endian, Language::Kotlin, resolve_length_field_byte_off(codec_fields, f));
                 code.push_str(&format!("                    {},\n", decode));
             }
-            code.push_str("                )\n            }\n        }\n");
+            code.push_str("                )\n");
+            code.push_str(&format!(
+                "                if (!cursor.advance({min_bytes})) return null\n\
+                 \x20               return value\n            }}\n        }}\n"
+            ));
             let encode_exprs =
                 generate_encode_exprs(codec_fields, default_endian, Language::Kotlin);
             code.push_str(
@@ -5305,16 +5314,19 @@ fn render_inline_codec_member(
             type_def.push_str("}\n\n");
             type_def.push_str(&format!("impl {struct_name} {{\n"));
             type_def.push_str(&format!(
-                "    pub fn decode(raw: &[u8]) -> Option<Self> {{\n\
-                 \x20       if raw.len() < {min_bytes} {{ return None; }}\n\
-                 \x20       Some(Self {{\n"
+                "    pub fn decode(cursor: &mut ::sce_forge_runtime::codec::SceCursor<'_>) -> Result<Self, ::sce_forge_runtime::codec::CodecError> {{\n\
+                 \x20       let raw = cursor.peek_slice({min_bytes})?;\n\
+                 \x20       let value = Self {{\n"
             ));
             for f in codec_fields {
                 let decode = generate_decode_expr(f, default_endian, Language::Rust, resolve_length_field_byte_off(codec_fields, f));
                 let field_id = filters::to_snake_case(f.id.clone());
                 type_def.push_str(&format!("            {field_id}: {decode},\n"));
             }
-            type_def.push_str("        })\n    }\n\n");
+            type_def.push_str("        };\n");
+            type_def.push_str(&format!(
+                "        cursor.advance({min_bytes})?;\n        Ok(value)\n    }}\n\n"
+            ));
             let encode_exprs =
                 generate_encode_exprs(codec_fields, default_endian, Language::Rust);
             type_def.push_str("    pub fn encode(&self) -> Vec<u8> {\n        vec![\n");
@@ -5339,19 +5351,30 @@ fn render_inline_codec_member(
                 ));
             }
             type_def.push_str("}\n\n");
+            // Inline-codec import path: emitted by state_machine.go
+            // codegen, which doesn't share the standalone codec.go.jinja2
+            // import block. Hard-code the codec runtime package import
+            // here so the inline emit compiles without a separate go.mod
+            // dependency surface from the host statechart file.
+            type_def.push_str("// codec runtime import for cursor-based decode (RFC §5.B L494-519)\n");
+            type_def.push_str("// import \"github.com/newmassrael/sce-forge-runtime/codec\"\n");
             type_def.push_str(&format!(
-                "func Decode{struct_name}(raw []byte) (*{struct_name}, error) {{\n\
-                 \tif len(raw) < {min_bytes} {{\n\
-                 \t\treturn nil, fmt.Errorf(\"frame too short: %d < {min_bytes}\", len(raw))\n\
+                "func Decode{struct_name}(cursor *codec.SceCursor) (*{struct_name}, error) {{\n\
+                 \traw, err := cursor.PeekSlice({min_bytes})\n\
+                 \tif err != nil {{\n\
+                 \t\treturn nil, err\n\
                  \t}}\n\
-                 \treturn &{struct_name}{{\n"
+                 \tvalue := &{struct_name}{{\n"
             ));
             for f in codec_fields {
                 let decode = generate_decode_expr(f, default_endian, Language::Go, resolve_length_field_byte_off(codec_fields, f));
                 let field_id = filters::to_pascal_case(f.id.clone());
                 type_def.push_str(&format!("\t\t{field_id}: {decode},\n"));
             }
-            type_def.push_str("\t}, nil\n}\n\n");
+            type_def.push_str(&format!(
+                "\t}}\n\tif err := cursor.Advance({min_bytes}); err != nil {{\n\
+                 \t\treturn nil, err\n\t}}\n\treturn value, nil\n}}\n\n"
+            ));
             let encode_exprs =
                 generate_encode_exprs(codec_fields, default_endian, Language::Go);
             type_def.push_str(&format!(
@@ -5381,16 +5404,22 @@ fn render_inline_codec_member(
             }
             code.push_str(&format!(
                 "\n        @staticmethod\n\
-                 \x20       def decode(raw: bytes) -> '{struct_name} | None':\n\
-                 \x20           if len(raw) < {min_bytes}:\n\
+                 \x20       def decode(cursor) -> '{struct_name} | None':\n\
+                 \x20           from sce_forge_runtime.codec import NeedMoreBytes\n\
+                 \x20           try:\n\
+                 \x20               raw = cursor.peek_slice({min_bytes})\n\
+                 \x20           except NeedMoreBytes:\n\
                  \x20               return None\n\
-                 \x20           return {struct_name}(\n"
+                 \x20           value = {struct_name}(\n"
             ));
             for f in codec_fields {
                 let decode = generate_decode_expr(f, default_endian, Language::Python, resolve_length_field_byte_off(codec_fields, f));
                 code.push_str(&format!("                {decode},\n"));
             }
             code.push_str("            )\n");
+            code.push_str(&format!(
+                "            try:\n                cursor.advance({min_bytes})\n            except NeedMoreBytes:\n                return None\n            return value\n"
+            ));
             let encode_exprs =
                 generate_encode_exprs(codec_fields, default_endian, Language::Python);
             code.push_str("        def encode(self) -> bytes:\n            return bytes([\n");
@@ -5439,15 +5468,19 @@ fn render_inline_codec_member(
             code.push_str(&format!("}} {encoded_typedef};\n\n"));
 
             code.push_str(&format!(
-                "static inline bool {decode_func}(const uint8_t *raw, size_t len, {struct_typedef} *out) {{\n\
-                 \x20   if (len < {min_macro}) return false;\n"
+                "static inline sce_forge_codec_status_t {decode_func}(sce_forge_cursor_t *cursor, {struct_typedef} *out) {{\n\
+                 \x20   const uint8_t *raw = sce_forge_cursor_peek(cursor, {min_macro});\n\
+                 \x20   if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n"
             ));
             for f in codec_fields {
                 let field_id = filters::to_snake_case(f.id.clone());
                 let decode = generate_decode_expr(f, default_endian, Language::C11, resolve_length_field_byte_off(codec_fields, f));
                 code.push_str(&format!("    out->{field_id} = {decode};\n"));
             }
-            code.push_str("    return true;\n}\n\n");
+            code.push_str(&format!(
+                "    if (!sce_forge_cursor_advance(cursor, {min_macro})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n\
+                 \x20   return SCE_FORGE_CODEC_OK;\n}}\n\n"
+            ));
 
             let encode_exprs =
                 generate_encode_exprs(codec_fields, default_endian, Language::C11);

@@ -4,7 +4,8 @@
 {# Codec kind — round-trip { decoded, encoded } cases. The Kotlin data
    class keeps the SCXML source case (camelCase) as-is, so field accesses
    use `{{ field.name }}` without a case filter. `decode` is on the
-   companion object; `encode` is an instance method returning ByteArray. #}
+   companion object and takes a `com.sce.forge.runtime.SceCursor`;
+   `encode` is an instance method returning ByteArray. #}
         val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
         spec["cases"]!!.jsonArray.forEachIndexed { i, caseEl ->
             val decoded = caseEl.jsonObject["decoded"]!!.jsonObject
@@ -26,7 +27,8 @@
                 "{{ f.name }} case $i encode: actual=${encoded.joinToString()} expected=${expectedBytes.joinToString()}",
             )
 
-            val roundTripped = {{ f.name | to_pascal_case }}.decode(expectedBytes)
+            val cursor = com.sce.forge.runtime.SceCursor(expectedBytes)
+            val roundTripped = {{ f.name | to_pascal_case }}.decode(cursor)
                 ?: error("{{ f.name }} case $i decode returned null")
 {% for field in f.fields %}
 {% if field.type == "bytes" %}

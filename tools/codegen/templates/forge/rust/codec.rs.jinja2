@@ -4,6 +4,8 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
+
+use sce_forge_runtime::codec::{CodecError, SceCursor};
 {% if all_imports %}
 
 {% for imp in all_imports %}
@@ -33,15 +35,37 @@ impl {{ struct_name }} {
         Self::default()
     }
 
-    pub fn decode(raw: &[u8]) -> Option<Self> {
-        if raw.len() < {{ min_bytes }} {
-            return None;
+    /// Decode the next frame from `cursor`. On success the cursor
+    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
+    /// is left untouched so the caller can resume after appending more
+    /// bytes (RFC §5.B L494-519).
+    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+{% if has_variable_fields %}
+        // Variable-length codec: tail / length-ref fields consume bytes
+        // beyond the fixed prefix. B1-prep treats the entire cursor
+        // remaining as one frame (matches the harness "one frame per
+        // call" pattern). Stream-correct length-ref consumption (advance
+        // by `min_bytes + length_value` only) lands with its first
+        // multi-frame consumer in a later B-stage.
+        let _frame_len = cursor.remaining();
+        if _frame_len < {{ min_bytes }} {
+            return Err(CodecError::NeedMoreBytes);
         }
-        Some(Self {
+        let raw = cursor.peek_slice(_frame_len)?;
+{% else %}
+        let raw = cursor.peek_slice({{ min_bytes }})?;
+{% endif %}
+        let value = Self {
 {% for field in fields %}
             {{ field.id }}: {{ field.decode_expr }},
 {% endfor %}
-        })
+        };
+{% if has_variable_fields %}
+        cursor.advance(_frame_len)?;
+{% else %}
+        cursor.advance({{ min_bytes }})?;
+{% endif %}
+        Ok(value)
     }
 
     pub fn encode(&self) -> Vec<u8> {

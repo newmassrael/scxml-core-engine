@@ -28,6 +28,9 @@ import (
 	"runtime"
 	"testing"
 
+{% if has_codec %}
+	"github.com/newmassrael/sce-forge-runtime/codec"
+{% endif %}
 {% if has_procedure %}
 	"github.com/newmassrael/sce-forge-runtime/forge"
 {% endif %}

@@ -5,13 +5,15 @@
         val payload: UShort
     ) {
         companion object {
-            fun decode(raw: ByteArray): Frame? {
-                if (raw.size < 4) return null
-                return Frame(
+            fun decode(cursor: com.sce.forge.runtime.SceCursor): Frame? {
+                val raw = cursor.peekSlice(4) ?: return null
+                val value = Frame(
                     raw[0].toUByte(),
                     raw[1].toUByte(),
                     (((raw[2].toInt() and 0xFF) shl 8) or (raw[3].toInt() and 0xFF)).toUShort(),
                 )
+                if (!cursor.advance(4)) return null
+                return value
             }
         }
         fun encode(): ByteArray = byteArrayOf(

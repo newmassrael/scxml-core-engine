@@ -31,8 +31,8 @@
               "{{ f.name }} case %d encode: size actual=%zu expected=%zu",
               i, encoded.size(), expected_bytes.size());
 
-        auto round_tripped = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(
-            expected_bytes.data(), expected_bytes.size());
+        ::SCE::Forge::SceCursor cursor(expected_bytes.data(), expected_bytes.size());
+        auto round_tripped = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(cursor);
         CHECK(round_tripped.has_value(),
               "{{ f.name }} case %d decode returned nullopt", i);
         if (round_tripped.has_value()) {

@@ -7,13 +7,15 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn decode(raw: &[u8]) -> Option<Self> {
-        if raw.len() < 4 { return None; }
-        Some(Self {
+    pub fn decode(cursor: &mut ::sce_forge_runtime::codec::SceCursor<'_>) -> Result<Self, ::sce_forge_runtime::codec::CodecError> {
+        let raw = cursor.peek_slice(4)?;
+        let value = Self {
             msg_id: raw[0],
             length: raw[1],
             payload: ((raw[2] as u16) << 8) | raw[3] as u16,
-        })
+        };
+        cursor.advance(4)?;
+        Ok(value)
     }
 
     pub fn encode(&self) -> Vec<u8> {

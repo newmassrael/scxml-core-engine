@@ -2,6 +2,8 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
+use sce_forge_runtime::codec::{CodecError, SceCursor};
+
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -24,15 +26,29 @@ impl CodecTail {
         Self::default()
     }
 
-    pub fn decode(raw: &[u8]) -> Option<Self> {
-        if raw.len() < 2 {
-            return None;
+    /// Decode the next frame from `cursor`. On success the cursor
+    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
+    /// is left untouched so the caller can resume after appending more
+    /// bytes (RFC §5.B L494-519).
+    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+        // Variable-length codec: tail / length-ref fields consume bytes
+        // beyond the fixed prefix. B1-prep treats the entire cursor
+        // remaining as one frame (matches the harness "one frame per
+        // call" pattern). Stream-correct length-ref consumption (advance
+        // by `min_bytes + length_value` only) lands with its first
+        // multi-frame consumer in a later B-stage.
+        let _frame_len = cursor.remaining();
+        if _frame_len < 2 {
+            return Err(CodecError::NeedMoreBytes);
         }
-        Some(Self {
+        let raw = cursor.peek_slice(_frame_len)?;
+        let value = Self {
             msg_id: raw[0],
             status: raw[1],
             payload: raw[2..].to_vec(),
-        })
+        };
+        cursor.advance(_frame_len)?;
+        Ok(value)
     }
 
     pub fn encode(&self) -> Vec<u8> {

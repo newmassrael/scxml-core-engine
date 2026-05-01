@@ -417,8 +417,8 @@ fn assert_inline_codec_structural(
                 "Kotlin: missing data class for inline codec");
             assert!(member_fns.contains("companion object"),
                 "Kotlin: missing companion object hosting decode");
-            assert!(member_fns.contains("fun decode(raw: ByteArray): Frame?"),
-                "Kotlin: missing decode signature");
+            assert!(member_fns.contains("fun decode(cursor: com.sce.forge.runtime.SceCursor): Frame?"),
+                "Kotlin: missing cursor-based decode signature");
             assert!(member_fns.contains("fun encode(): ByteArray = byteArrayOf("),
                 "Kotlin: missing encode signature");
         }
@@ -427,16 +427,18 @@ fn assert_inline_codec_structural(
                 "Rust: missing pub struct in type_defs");
             assert!(type_defs.contains("#[derive(Debug, Clone)]"),
                 "Rust: missing derives on codec struct");
-            assert!(type_defs.contains("pub fn decode(raw: &[u8]) -> Option<Self>"),
-                "Rust: missing decode signature");
+            assert!(type_defs.contains(
+                "pub fn decode(cursor: &mut ::sce_forge_runtime::codec::SceCursor<'_>) -> \
+                 Result<Self, ::sce_forge_runtime::codec::CodecError>"
+            ), "Rust: missing cursor-based decode signature");
             assert!(type_defs.contains("pub fn encode(&self) -> Vec<u8>"),
                 "Rust: missing encode signature");
         }
         Language::Go => {
             assert!(type_defs.contains("type Frame struct"),
                 "Go: missing struct in type_defs");
-            assert!(type_defs.contains("func DecodeFrame(raw []byte) (*Frame, error)"),
-                "Go: missing exported Decode function");
+            assert!(type_defs.contains("func DecodeFrame(cursor *codec.SceCursor) (*Frame, error)"),
+                "Go: missing cursor-based exported Decode function");
             assert!(type_defs.contains("func (s *Frame) Encode() []byte"),
                 "Go: missing receiver Encode method");
         }
@@ -448,9 +450,9 @@ fn assert_inline_codec_structural(
             assert!(member_fns.contains("} inline_codec_frame_encoded_t;"),
                 "C11: missing encoded envelope typedef");
             assert!(member_fns.contains(
-                "static inline bool inline_codec_frame_decode(\
-                 const uint8_t *raw, size_t len, inline_codec_frame_t *out)"
-            ), "C11: missing decode signature");
+                "static inline sce_forge_codec_status_t inline_codec_frame_decode(\
+                 sce_forge_cursor_t *cursor, inline_codec_frame_t *out)"
+            ), "C11: missing cursor-based decode signature");
             assert!(member_fns.contains(
                 "static inline inline_codec_frame_encoded_t \
                  inline_codec_frame_encode(const inline_codec_frame_t *self)"

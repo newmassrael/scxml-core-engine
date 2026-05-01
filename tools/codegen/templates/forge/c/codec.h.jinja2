@@ -14,6 +14,8 @@
 {% if has_variable_fields %}
 #include <string.h>
 {% endif %}
+
+#include "sce/forge/codec.h"
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -40,21 +42,39 @@ typedef struct {
     size_t  len;
 } {{ c_encoded_typedef }};
 
-static inline bool {{ c_decode_func }}(const uint8_t *raw, size_t len, {{ c_struct_typedef }} *out) {
-    if (len < {{ c_min_bytes_macro }}) return false;
+/* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
+ * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
+ * (without advancing) when the cursor's tail is shorter than the
+ * declared minimum frame (RFC §5.B L494-519). */
+static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out) {
+{% if has_variable_fields %}
+    /* Variable-length codec: tail / length-ref fields consume bytes
+     * beyond the fixed prefix. B1-prep treats the entire cursor
+     * remaining as one frame; stream-correct length-ref consumption
+     * lands with its first multi-frame consumer in a later B-stage. */
+    size_t _frame_len = sce_forge_cursor_remaining(cursor);
+    if (_frame_len < {{ c_min_bytes_macro }}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    const uint8_t *raw = sce_forge_cursor_peek(cursor, _frame_len);
+    if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    size_t len = _frame_len;  /* alias for legacy tail decode_expr */
+    (void)len;
+{% else %}
+    const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
+    if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% endif %}
 {% for field in fields %}
 {% if field.is_variable %}
 {% if field.bit_size_kind == "tail" %}
     {
-        size_t _n = len - {{ field.byte_off }};
-        if (_n > {{ field.max_size }}) return false;
+        size_t _n = _frame_len - {{ field.byte_off }};
+        if (_n > {{ field.max_size }}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
     }
 {% else %}{# length-ref #}
     {
         size_t _n = (size_t)out->{{ field.length_field }};
-        if (_n > {{ field.max_size }} || {{ field.byte_off }} + _n > len) return false;
+        if (_n > {{ field.max_size }} || {{ field.byte_off }} + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
     }
@@ -63,7 +83,12 @@ static inline bool {{ c_decode_func }}(const uint8_t *raw, size_t len, {{ c_stru
     out->{{ field.id }} = {{ field.decode_expr }};
 {% endif %}
 {% endfor %}
-    return true;
+{% if has_variable_fields %}
+    if (!sce_forge_cursor_advance(cursor, _frame_len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% else %}
+    if (!sce_forge_cursor_advance(cursor, {{ c_min_bytes_macro }})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% endif %}
+    return SCE_FORGE_CODEC_OK;
 }
 
 static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_typedef }} *self) {

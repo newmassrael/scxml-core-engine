@@ -4,6 +4,10 @@
 
 package codec_simple_frame
 
+import (
+	"github.com/newmassrael/sce-forge-runtime/codec"
+)
+
 // CodecSimpleFrame represents the codec frame layout.
 type CodecSimpleFrame struct {
 	MsgId uint8
@@ -11,17 +15,24 @@ type CodecSimpleFrame struct {
 	Payload uint16
 }
 
-// DecodeCodecSimpleFrame decodes raw bytes into a CodecSimpleFrame.
-// Returns nil if the input is too short.
-func DecodeCodecSimpleFrame(raw []byte) *CodecSimpleFrame {
-	if len(raw) < 4 {
-		return nil
+// DecodeCodecSimpleFrame decodes the next frame from cursor.
+// On success the cursor advances past the consumed bytes; returns
+// `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
+// is shorter than the declared minimum frame (RFC §5.B L494-519).
+func DecodeCodecSimpleFrame(cursor *codec.SceCursor) (*CodecSimpleFrame, error) {
+	raw, err := cursor.PeekSlice(4)
+	if err != nil {
+		return nil, err
 	}
-	return &CodecSimpleFrame{
+	value := &CodecSimpleFrame{
 		MsgId: raw[0],
 		Length: raw[1],
 		Payload: uint16(raw[2])<<8 | uint16(raw[3]),
 	}
+	if err := cursor.Advance(4); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 // Encode serializes the CodecSimpleFrame into raw bytes.

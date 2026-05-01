@@ -4,6 +4,8 @@
 
 package com.sce.generated.codec_subbyte
 
+import com.sce.forge.runtime.SceCursor
+
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `CodecSubbyte()` before any encode()/decode() call. Defaults
@@ -18,13 +20,19 @@ data class CodecSubbyte(
     )
 
     companion object {
-        fun decode(raw: ByteArray): CodecSubbyte? {
-            if (raw.size < 1) return null
-            return CodecSubbyte(
+        /// Decode the next frame from `cursor`. On success the cursor
+        /// advances past the consumed bytes; returns `null` when the
+        /// cursor's tail is shorter than the declared minimum frame
+        /// (RFC §5.B L494-519).
+        fun decode(cursor: SceCursor): CodecSubbyte? {
+            val raw = cursor.peekSlice(1) ?: return null
+            val value = CodecSubbyte(
                 priority = ((raw[0].toInt() ushr 5) and 0x07).toUByte(),
                 channel = ((raw[0].toInt() ushr 2) and 0x07).toUByte(),
                 direction = ((raw[0].toInt() ushr 0) and 0x03).toUByte()
             )
+            if (!cursor.advance(1)) return null
+            return value
         }
     }
 }

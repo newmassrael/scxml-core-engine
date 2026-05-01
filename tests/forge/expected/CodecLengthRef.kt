@@ -4,6 +4,8 @@
 
 package com.sce.generated.codec_length_ref
 
+import com.sce.forge.runtime.SceCursor
+
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `CodecLengthRef()` before any encode()/decode() call. Defaults
@@ -22,13 +24,24 @@ data class CodecLengthRef(
     }
 
     companion object {
-        fun decode(raw: ByteArray): CodecLengthRef? {
-            if (raw.size < 2) return null
-            return CodecLengthRef(
+        /// Decode the next frame from `cursor`. On success the cursor
+        /// advances past the consumed bytes; returns `null` when the
+        /// cursor's tail is shorter than the declared minimum frame
+        /// (RFC §5.B L494-519).
+        fun decode(cursor: SceCursor): CodecLengthRef? {
+            // Variable-length codec: tail / length-ref fields consume bytes
+            // beyond the fixed prefix. B1-prep treats the entire cursor
+            // remaining as one frame.
+            val frameLen = cursor.remaining()
+            if (frameLen < 2) return null
+            val raw = cursor.peekSlice(frameLen) ?: return null
+            val value = CodecLengthRef(
                 msgId = raw[0].toUByte(),
                 len = raw[1].toUByte(),
                 payload = raw.copyOfRange(2, 2 + raw[1].toInt())
             )
+            if (!cursor.advance(frameLen)) return null
+            return value
         }
     }
 }

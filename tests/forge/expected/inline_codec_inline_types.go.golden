@@ -5,15 +5,22 @@ type Frame struct {
 	Payload uint16
 }
 
-func DecodeFrame(raw []byte) (*Frame, error) {
-	if len(raw) < 4 {
-		return nil, fmt.Errorf("frame too short: %d < 4", len(raw))
+// codec runtime import for cursor-based decode (RFC §5.B L494-519)
+// import "github.com/newmassrael/sce-forge-runtime/codec"
+func DecodeFrame(cursor *codec.SceCursor) (*Frame, error) {
+	raw, err := cursor.PeekSlice(4)
+	if err != nil {
+		return nil, err
 	}
-	return &Frame{
+	value := &Frame{
 		MsgId: raw[0],
 		Length: raw[1],
 		Payload: uint16(raw[2])<<8 | uint16(raw[3]),
-	}, nil
+	}
+	if err := cursor.Advance(4); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 func (s *Frame) Encode() []byte {

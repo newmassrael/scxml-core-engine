@@ -15,6 +15,7 @@
 
 #![no_std]
 
+pub mod codec;
 pub mod filter;
 pub mod interpolation;
 pub mod lookup;

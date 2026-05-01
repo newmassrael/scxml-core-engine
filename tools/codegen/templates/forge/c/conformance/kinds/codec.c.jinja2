@@ -3,7 +3,7 @@
 
 {# Codec kind — round-trip { decoded, encoded } cases. C11 uses the
    header's `<f.name>_t` struct + `<f.name>_encoded_t` β-shape return
-   from encode() and bool/out-param decode() per RFC §5.J.2 §3 D2.
+   from encode() and cursor-based status decode() per RFC §5.B L494-519.
 
    Bytes fields surface as a buffer + len pair on both the case struct
    and the codec struct (V1β); they assign via `memcpy` and round-trip
@@ -60,8 +60,9 @@ static void test_{{ f.name }}(void) {
             continue;
         }
         {{ f.name }}_t round_tripped;
-        if (!{{ f.name }}_decode(cases[i].expected_bytes, cases[i].expected_len, &round_tripped)) {
-            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode: returned false\n", i);
+        sce_forge_cursor_t cursor = sce_forge_cursor_init(cases[i].expected_bytes, cases[i].expected_len);
+        if ({{ f.name }}_decode(&cursor, &round_tripped) != SCE_FORGE_CODEC_OK) {
+            fprintf(stderr, "FAIL: {{ f.name }} case %zu decode: returned non-ok\n", i);
             ++g_failures;
             continue;
         }

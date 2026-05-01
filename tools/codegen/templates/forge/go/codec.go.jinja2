@@ -6,14 +6,15 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package {{ package }}
-{% if all_imports %}
 
 import (
+	"github.com/newmassrael/sce-forge-runtime/codec"
+{% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}
-)
 {% endif %}
+)
 
 // {{ struct_name }} represents the codec frame layout.
 type {{ struct_name }} struct {
@@ -22,17 +23,44 @@ type {{ struct_name }} struct {
 {% endfor %}
 }
 
-// Decode{{ struct_name }} decodes raw bytes into a {{ struct_name }}.
-// Returns nil if the input is too short.
-func Decode{{ struct_name }}(raw []byte) *{{ struct_name }} {
-	if len(raw) < {{ min_bytes }} {
-		return nil
+// Decode{{ struct_name }} decodes the next frame from cursor.
+// On success the cursor advances past the consumed bytes; returns
+// `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
+// is shorter than the declared minimum frame (RFC §5.B L494-519).
+func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error) {
+{% if has_variable_fields %}
+	// Variable-length codec: tail / length-ref fields consume bytes
+	// beyond the fixed prefix. B1-prep treats the entire cursor
+	// remaining as one frame.
+	frameLen := cursor.Remaining()
+	if frameLen < {{ min_bytes }} {
+		return nil, codec.ErrNeedMoreBytes
 	}
-	return &{{ struct_name }}{
+	raw, err := cursor.PeekSlice(frameLen)
+	if err != nil {
+		return nil, err
+	}
+{% else %}
+	raw, err := cursor.PeekSlice({{ min_bytes }})
+	if err != nil {
+		return nil, err
+	}
+{% endif %}
+	value := &{{ struct_name }}{
 {% for field in fields %}
 		{{ field.id }}: {{ field.decode_expr }},
 {% endfor %}
 	}
+{% if has_variable_fields %}
+	if err := cursor.Advance(frameLen); err != nil {
+		return nil, err
+	}
+{% else %}
+	if err := cursor.Advance({{ min_bytes }}); err != nil {
+		return nil, err
+	}
+{% endif %}
+	return value, nil
 }
 
 // Encode serializes the {{ struct_name }} into raw bytes.

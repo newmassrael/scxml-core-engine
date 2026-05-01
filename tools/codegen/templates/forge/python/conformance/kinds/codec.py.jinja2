@@ -4,8 +4,8 @@
 {# Codec kind — round-trip { decoded, encoded } cases. Python's generated
    dataclass uses snake_case field names, so every SCXML-source-case
    (camelCase) name in fixtures.json is converted via `to_snake_case`.
-   `encode()` returns `bytes`; `decode(raw)` is a classmethod returning
-   `Optional[...]`. #}
+   `encode()` returns `bytes`; `decode(cursor)` is a classmethod taking
+   an `sce_forge_runtime.codec.SceCursor` and returning `Optional[...]`. #}
         for i, case in enumerate(spec["cases"]):
             decoded = case["decoded"]
 {% for field in f.fields %}
@@ -29,7 +29,9 @@
                 f"{{ f.name }} case {i} encode",
             )
 
-            round_tripped = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(expected_bytes)
+            from sce_forge_runtime.codec import SceCursor as _SceCursor
+            cursor = _SceCursor(expected_bytes)
+            round_tripped = {{ f.name }}.{{ f.name | to_pascal_case }}.decode(cursor)
             self.assertIsNotNone(
                 round_tripped,
                 f"{{ f.name }} case {i} decode returned None",

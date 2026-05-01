@@ -2,6 +2,8 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
+use sce_forge_runtime::codec::{CodecError, SceCursor};
+
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -24,15 +26,19 @@ impl CodecSimpleFrame {
         Self::default()
     }
 
-    pub fn decode(raw: &[u8]) -> Option<Self> {
-        if raw.len() < 4 {
-            return None;
-        }
-        Some(Self {
+    /// Decode the next frame from `cursor`. On success the cursor
+    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
+    /// is left untouched so the caller can resume after appending more
+    /// bytes (RFC §5.B L494-519).
+    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+        let raw = cursor.peek_slice(4)?;
+        let value = Self {
             msg_id: raw[0],
             length: raw[1],
             payload: ((raw[2] as u16) << 8) | raw[3] as u16,
-        })
+        };
+        cursor.advance(4)?;
+        Ok(value)
     }
 
     pub fn encode(&self) -> Vec<u8> {

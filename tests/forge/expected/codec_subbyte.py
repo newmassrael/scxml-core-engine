@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from sce_forge_runtime.codec import NeedMoreBytes, SceCursor
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -15,14 +17,25 @@ class CodecSubbyte:
     direction: int = 0
 
     @classmethod
-    def decode(cls, raw: bytes) -> Optional[CodecSubbyte]:
-        if len(raw) < 1:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecSubbyte]:
+        """Decode the next frame from ``cursor``. Returns ``None`` when
+        the cursor's tail is shorter than the declared minimum frame
+        (RFC §5.B L494-519); on success the cursor advances past the
+        consumed bytes."""
+        try:
+            raw = cursor.peek_slice(1)
+        except NeedMoreBytes:
             return None
-        return cls(
+        value = cls(
             priority=(raw[0] >> 5) & 0x07,
             channel=(raw[0] >> 2) & 0x07,
             direction=(raw[0] >> 0) & 0x03,
         )
+        try:
+            cursor.advance(1)
+        except NeedMoreBytes:
+            return None
+        return value
 
     def encode(self) -> bytes:
         return bytes([

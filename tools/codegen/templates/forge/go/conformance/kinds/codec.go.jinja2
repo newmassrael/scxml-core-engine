@@ -2,8 +2,8 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# Codec kind — round-trip { decoded, encoded } cases. The generated Go
-   package exposes `Decode<PascalName>(raw []byte) *<PascalName>` and
-   `func (s *<PascalName>) Encode() []byte`. SCXML source case (camelCase)
+   package exposes `Decode<PascalName>(cursor *codec.SceCursor) (*<PascalName>, error)`
+   and `func (s *<PascalName>) Encode() []byte`. SCXML source case (camelCase)
    is converted to PascalCase for Go struct fields via the `to_pascal_case`
    filter, matching the generator's naming convention. #}
 	cases := ref.codecCases(t, "{{ f.ref_section }}", "{{ f.name }}")
@@ -37,9 +37,10 @@
 			}
 		}
 
-		roundTripped := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(expectedBytes)
-		if roundTripped == nil {
-			t.Errorf("{{ f.name }} case %d decode returned nil", i)
+		cursor := codec.NewSceCursor(expectedBytes)
+		roundTripped, err := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(&cursor)
+		if err != nil {
+			t.Errorf("{{ f.name }} case %d decode returned error: %v", i, err)
 			continue
 		}
 {% for field in f.fields %}

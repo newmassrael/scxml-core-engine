@@ -78,13 +78,16 @@ struct inline_codecPolicy {
         uint8_t length;
         uint16_t payload;
 
-        static std::optional<Frame> decode(const uint8_t* raw, size_t len) {
-            if (len < 4) return std::nullopt;
-            return Frame{
+        static std::optional<Frame> decode(::SCE::Forge::SceCursor& cursor) {
+            const std::uint8_t* raw = cursor.peek_slice(4);
+            if (raw == nullptr) return std::nullopt;
+            Frame value{
                 .msgId = raw[0],
                 .length = raw[1],
                 .payload = (static_cast<uint16_t>(raw[2]) << 8) | raw[3],
             };
+            if (!cursor.advance(4)) return std::nullopt;
+            return value;
         }
 
         std::vector<uint8_t> encode() const {

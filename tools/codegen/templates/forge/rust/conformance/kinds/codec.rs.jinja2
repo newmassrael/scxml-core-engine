@@ -4,8 +4,8 @@
 {# Codec kind — round-trip { decoded, encoded } cases. Each case binds the
    per-field oracle values under an `input_<field>` prefix, inlines the
    struct literal into the `encode()` call (so no intermediate variable can
-   shadow a field name), then decodes `expected_bytes` back and asserts
-   every field matches the `input_<field>` value.
+   shadow a field name), then wraps `expected_bytes` in `SceCursor` and
+   asserts the decoded value matches the input.
 
    Naming convention is shared with C++/Kotlin/Python codec fragments:
    `input_<field>` for oracle-derived values, `round_tripped` for the
@@ -45,7 +45,8 @@
             "{{ f.name }} case {i} encode"
         );
 
-        let round_tripped = {{ f.name | to_pascal_case }}::decode(&expected_bytes)
+        let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&expected_bytes);
+        let round_tripped = {{ f.name | to_pascal_case }}::decode(&mut cursor)
             .expect("{{ f.name }} decode must succeed");
 {% for field in f.fields %}
         assert_eq!(

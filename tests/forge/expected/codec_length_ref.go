@@ -4,6 +4,10 @@
 
 package codec_length_ref
 
+import (
+	"github.com/newmassrael/sce-forge-runtime/codec"
+)
+
 // CodecLengthRef represents the codec frame layout.
 type CodecLengthRef struct {
 	MsgId uint8
@@ -11,17 +15,31 @@ type CodecLengthRef struct {
 	Payload []byte
 }
 
-// DecodeCodecLengthRef decodes raw bytes into a CodecLengthRef.
-// Returns nil if the input is too short.
-func DecodeCodecLengthRef(raw []byte) *CodecLengthRef {
-	if len(raw) < 2 {
-		return nil
+// DecodeCodecLengthRef decodes the next frame from cursor.
+// On success the cursor advances past the consumed bytes; returns
+// `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
+// is shorter than the declared minimum frame (RFC §5.B L494-519).
+func DecodeCodecLengthRef(cursor *codec.SceCursor) (*CodecLengthRef, error) {
+	// Variable-length codec: tail / length-ref fields consume bytes
+	// beyond the fixed prefix. B1-prep treats the entire cursor
+	// remaining as one frame.
+	frameLen := cursor.Remaining()
+	if frameLen < 2 {
+		return nil, codec.ErrNeedMoreBytes
 	}
-	return &CodecLengthRef{
+	raw, err := cursor.PeekSlice(frameLen)
+	if err != nil {
+		return nil, err
+	}
+	value := &CodecLengthRef{
 		MsgId: raw[0],
 		Len: raw[1],
 		Payload: raw[2:2+int(raw[1])],
 	}
+	if err := cursor.Advance(frameLen); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 // Encode serializes the CodecLengthRef into raw bytes.

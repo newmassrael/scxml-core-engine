@@ -11,6 +11,8 @@
 #include <optional>
 #include <vector>
 
+#include "sce/forge/codec.h"
+
 namespace SCE::Generated::CodecLittleEndian {
 
 struct CodecLittleEndian {
@@ -18,13 +20,22 @@ struct CodecLittleEndian {
     uint16_t value;
     uint8_t status;
 
-    static std::optional<CodecLittleEndian> decode(const uint8_t* raw, size_t len) {
-        if (len < 4) return std::nullopt;
-        return CodecLittleEndian{
+    /// Decode the next frame from `cursor`. On success the cursor
+    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
+    /// is left untouched so the caller can resume after appending more
+    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// `NeedMoreBytes` boundary; later phases attach a typed error via
+    /// `cursor.last_error()`.
+    static std::optional<CodecLittleEndian> decode(::SCE::Forge::SceCursor& cursor) {
+        const std::uint8_t* raw = cursor.peek_slice(4);
+        if (raw == nullptr) return std::nullopt;
+        CodecLittleEndian value{
             .sensorId = raw[0],
             .value = raw[1] | (static_cast<uint16_t>(raw[2]) << 8),
             .status = raw[3],
         };
+        if (!cursor.advance(4)) return std::nullopt;
+        return value;
     }
 
     std::vector<uint8_t> encode() const {

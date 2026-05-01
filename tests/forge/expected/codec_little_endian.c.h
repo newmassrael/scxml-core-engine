@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "sce/forge/codec.h"
+
 #define CODEC_LITTLE_ENDIAN_MIN_BYTES 4
 #define CODEC_LITTLE_ENDIAN_MAX_BYTES 4
 
@@ -23,12 +25,18 @@ typedef struct {
     size_t  len;
 } codec_little_endian_encoded_t;
 
-static inline bool codec_little_endian_decode(const uint8_t *raw, size_t len, codec_little_endian_t *out) {
-    if (len < CODEC_LITTLE_ENDIAN_MIN_BYTES) return false;
+/* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
+ * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
+ * (without advancing) when the cursor's tail is shorter than the
+ * declared minimum frame (RFC §5.B L494-519). */
+static inline sce_forge_codec_status_t codec_little_endian_decode(sce_forge_cursor_t *cursor, codec_little_endian_t *out) {
+    const uint8_t *raw = sce_forge_cursor_peek(cursor, CODEC_LITTLE_ENDIAN_MIN_BYTES);
+    if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     out->sensor_id = raw[0];
     out->value = raw[1] | ((uint16_t)raw[2] << 8);
     out->status = raw[3];
-    return true;
+    if (!sce_forge_cursor_advance(cursor, CODEC_LITTLE_ENDIAN_MIN_BYTES)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    return SCE_FORGE_CODEC_OK;
 }
 
 static inline codec_little_endian_encoded_t codec_little_endian_encode(const codec_little_endian_t *self) {
