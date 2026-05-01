@@ -1106,6 +1106,23 @@ fn forge_go_codec_length_ref() {
     assert_standalone_forge_go("codec_length_ref", "codec_length_ref.go");
 }
 
+// ── Algorithm (Go, RFC §5.A — post-A6 matrix follow-up) ────
+
+#[test]
+fn forge_go_algorithm_crc16() {
+    assert_standalone_forge_go("algorithm_crc16", "algorithm_crc16.go");
+}
+
+#[test]
+fn forge_go_algorithm_crc16_table() {
+    assert_standalone_forge_go("algorithm_crc16_table", "algorithm_crc16_table.go");
+}
+
+#[test]
+fn forge_go_algorithm_const_fold_smoke() {
+    assert_standalone_forge_go("algorithm_const_fold_smoke", "algorithm_const_fold_smoke.go");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Python conformance tests ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════

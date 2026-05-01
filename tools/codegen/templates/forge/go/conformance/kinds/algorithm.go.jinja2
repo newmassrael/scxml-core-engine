@@ -1,0 +1,40 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Algorithm kind (RFC §5.A) — single-output free function. Cross-language
+   byte-equivalence acceptance gate (RFC §A6); Go shipped post-A6 alongside
+   its byte-golden + matrix flip.
+
+   Bytes args lower to `[]byte` per RFC §5.J.5 (algorithm_param_type Go arm
+   via the LangCtx::param_type fallback). Go's encoding/json treats `[]byte`
+   as a base64-encoded string rather than a JSON array of integers, so the
+   oracle's `[10, 20, 30]` array shape unmarshals through `[]int` first and
+   is then converted to `[]byte` at the call site — same workaround the
+   codec fragment uses for `Encoded []int` (see harness.go.jinja2 codecCase).
+   Numeric args unmarshal directly into their canonical Go scalar type. #}
+	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
+	for _, c := range cases {
+{% for arg_ty in f.args %}
+{% if arg_ty == "bytes" %}
+		var arg{{ loop.index0 }}_buf []int
+		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}_buf, "{{ f.name }} arg{{ loop.index0 }}")
+		arg{{ loop.index0 }} := make([]byte, len(arg{{ loop.index0 }}_buf))
+		for __i, __v := range arg{{ loop.index0 }}_buf {
+			arg{{ loop.index0 }}[__i] = byte(__v)
+		}
+{% else %}
+		var arg{{ loop.index0 }} {{ arg_ty | go_type }}
+		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
+{% endif %}
+{% endfor %}
+		var expected {{ f.output.type | go_type }}
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		actual := {{ f.name }}.{{ f.function | to_pascal_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if f.output.compare == "tolerance" %}
+		assertClose(t, float64(actual), float64(expected), ref.FloatTolerance, "{{ f.name }}")
+{% else %}
+		if actual != expected {
+			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
+		}
+{% endif %}
+	}

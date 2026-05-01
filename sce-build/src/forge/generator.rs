@@ -6366,8 +6366,13 @@ fn lower_algorithm_stmt(
                     }
                 }
                 _ => {
+                    // Go has no `while` keyword — `for cond { }` is the
+                    // sole condition-only loop form. Cpp/C11/Kotlin all
+                    // accept `while (cond) { }`; Rust drops the paren
+                    // wrap under `unused_parens`.
                     let header_open = match lang {
                         Language::Rust => format!("{pad}while {cond_lowered} {{\n"),
+                        Language::Go => format!("{pad}for {cond_lowered} {{\n"),
                         _ => format!("{pad}while ({cond_lowered}) {{\n"),
                     };
                     out.push_str(&header_open);
