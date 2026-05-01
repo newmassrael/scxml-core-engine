@@ -1,53 +1,185 @@
 {
   "version": 1,
-  "description": "Cross-language numerical conformance reference for sce_forge_runtime generated code. All five languages (C++, Rust, Python, Kotlin, Go) MUST produce these exact outputs. Every entry is computed by hand from the algorithms in sce-forge-runtime/rust/src/ and verified against the live Rust smoke tests. If any language disagrees, the bug is in that language's codegen template or runtime helper — not in this file.",
+  "description": "Cross-language numerical conformance reference for sce_forge_runtime generated code. All five languages (C++, Rust, Python, Kotlin, Go) MUST produce these exact outputs. Every entry is computed by hand from the algorithms in sce-forge-runtime/rust/src/ and verified against the live Rust smoke tests. If any language disagrees, the bug is in that language's codegen template or runtime helper \u2014 not in this file.",
   "float_tolerance": 1e-12,
   "expected_shape": "For fixtures with a single output, 'expected' is a scalar (number or bool). For compound-output fixtures (procedures returning ProcedureResult, transforms with multiple <data direction=out>), 'expected' is a JSON object whose keys are the SCXML data ids in snake_case. Each language test must map those canonical keys to its own identifier case (camelCase / PascalCase / snake_case).",
-
   "pure_functions": {
     "interpolation_1d_linear": {
       "fixture": "Interpolation1dLinear::lookup",
       "signature": "(rpm: u16) -> f64",
-      "axis_rpm": [800, 1200, 2000, 3000, 4000, 6000],
-      "values": [120.0, 145.0, 200.0, 230.0, 210.0, 180.0],
+      "axis_rpm": [
+        800,
+        1200,
+        2000,
+        3000,
+        4000,
+        6000
+      ],
+      "values": [
+        120.0,
+        145.0,
+        200.0,
+        230.0,
+        210.0,
+        180.0
+      ],
       "cases": [
-        {"args": [800],  "expected": 120.0,   "note": "exact low boundary"},
-        {"args": [1200], "expected": 145.0,   "note": "exact knot"},
-        {"args": [1500], "expected": 165.625, "note": "interior: 145 + 0.375*(200-145)"},
-        {"args": [3000], "expected": 230.0,   "note": "exact knot"},
-        {"args": [500],  "expected": 120.0,   "note": "below range, clamped to values[0]"},
-        {"args": [7000], "expected": 180.0,   "note": "above range, clamped to values[N-1]"}
+        {
+          "args": [
+            800
+          ],
+          "expected": 120.0,
+          "note": "exact low boundary"
+        },
+        {
+          "args": [
+            1200
+          ],
+          "expected": 145.0,
+          "note": "exact knot"
+        },
+        {
+          "args": [
+            1500
+          ],
+          "expected": 165.625,
+          "note": "interior: 145 + 0.375*(200-145)"
+        },
+        {
+          "args": [
+            3000
+          ],
+          "expected": 230.0,
+          "note": "exact knot"
+        },
+        {
+          "args": [
+            500
+          ],
+          "expected": 120.0,
+          "note": "below range, clamped to values[0]"
+        },
+        {
+          "args": [
+            7000
+          ],
+          "expected": 180.0,
+          "note": "above range, clamped to values[N-1]"
+        }
       ]
     },
     "interpolation_2d_bilinear": {
       "fixture": "Interpolation2dBilinear::lookup",
       "signature": "(rpm: u16, load: u8) -> f64",
-      "axis_rpm":  [800, 1200, 2000, 3000],
-      "axis_load": [10, 50, 100],
+      "axis_rpm": [
+        800,
+        1200,
+        2000,
+        3000
+      ],
+      "axis_load": [
+        10,
+        50,
+        100
+      ],
       "values": [
-        [2.1, 4.5, 7.0],
-        [2.5, 5.0, 8.0],
-        [3.0, 6.0, 9.5],
-        [3.5, 7.0, 11.0]
+        [
+          2.1,
+          4.5,
+          7.0
+        ],
+        [
+          2.5,
+          5.0,
+          8.0
+        ],
+        [
+          3.0,
+          6.0,
+          9.5
+        ],
+        [
+          3.5,
+          7.0,
+          11.0
+        ]
       ],
       "cases": [
-        {"args": [2000, 50],  "expected": 6.0,   "note": "exact grid point values[2][1]"},
-        {"args": [800, 10],   "expected": 2.1,   "note": "lower corner"},
-        {"args": [3000, 100], "expected": 11.0,  "note": "upper corner"},
-        {"args": [1000, 30],  "expected": 3.525, "note": "interior: tx=0.5 ty=0.5, (2.1,4.5,2.5,5.0) -> 3.525"},
-        {"args": [500, 5],    "expected": 2.1,   "note": "below both axes, clamped to corner"}
+        {
+          "args": [
+            2000,
+            50
+          ],
+          "expected": 6.0,
+          "note": "exact grid point values[2][1]"
+        },
+        {
+          "args": [
+            800,
+            10
+          ],
+          "expected": 2.1,
+          "note": "lower corner"
+        },
+        {
+          "args": [
+            3000,
+            100
+          ],
+          "expected": 11.0,
+          "note": "upper corner"
+        },
+        {
+          "args": [
+            1000,
+            30
+          ],
+          "expected": 3.525,
+          "note": "interior: tx=0.5 ty=0.5, (2.1,4.5,2.5,5.0) -> 3.525"
+        },
+        {
+          "args": [
+            500,
+            5
+          ],
+          "expected": 2.1,
+          "note": "below both axes, clamped to corner"
+        }
       ]
     },
-
     "transform_temperature": {
       "fixture": "compute_temperature",
       "signature": "(raw: u16) -> f64",
       "formula": "raw * 0.1 - 40.0",
       "cases": [
-        {"args": [0],     "expected": -40.0,  "note": "raw=0 -> -40 C sentinel"},
-        {"args": [400],   "expected": 0.0,    "note": "freezing point"},
-        {"args": [1000],  "expected": 60.0,   "note": "typical running temperature"},
-        {"args": [2000],  "expected": 160.0,  "note": "high temperature"}
+        {
+          "args": [
+            0
+          ],
+          "expected": -40.0,
+          "note": "raw=0 -> -40 C sentinel"
+        },
+        {
+          "args": [
+            400
+          ],
+          "expected": 0.0,
+          "note": "freezing point"
+        },
+        {
+          "args": [
+            1000
+          ],
+          "expected": 60.0,
+          "note": "typical running temperature"
+        },
+        {
+          "args": [
+            2000
+          ],
+          "expected": 160.0,
+          "note": "high temperature"
+        }
       ]
     },
     "transform_bitwise": {
@@ -55,11 +187,56 @@
       "signature": "(byte: u8) -> {high_nibble: u8, low_nibble: u8}",
       "formula": "high = (byte >> 4) & 0x0F; low = byte & 0x0F",
       "cases": [
-        {"args": [171], "expected": {"high_nibble": 10, "low_nibble": 11}, "note": "0xAB"},
-        {"args": [0],   "expected": {"high_nibble": 0,  "low_nibble": 0},  "note": "0x00"},
-        {"args": [255], "expected": {"high_nibble": 15, "low_nibble": 15}, "note": "0xFF"},
-        {"args": [240], "expected": {"high_nibble": 15, "low_nibble": 0},  "note": "0xF0"},
-        {"args": [15],  "expected": {"high_nibble": 0,  "low_nibble": 15}, "note": "0x0F"}
+        {
+          "args": [
+            171
+          ],
+          "expected": {
+            "high_nibble": 10,
+            "low_nibble": 11
+          },
+          "note": "0xAB"
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": {
+            "high_nibble": 0,
+            "low_nibble": 0
+          },
+          "note": "0x00"
+        },
+        {
+          "args": [
+            255
+          ],
+          "expected": {
+            "high_nibble": 15,
+            "low_nibble": 15
+          },
+          "note": "0xFF"
+        },
+        {
+          "args": [
+            240
+          ],
+          "expected": {
+            "high_nibble": 15,
+            "low_nibble": 0
+          },
+          "note": "0xF0"
+        },
+        {
+          "args": [
+            15
+          ],
+          "expected": {
+            "high_nibble": 0,
+            "low_nibble": 15
+          },
+          "note": "0x0F"
+        }
       ]
     },
     "transform_multi_output": {
@@ -67,22 +244,89 @@
       "signature": "(celsius: f64) -> {fahrenheit: f64, kelvin: f64}",
       "formula": "fahrenheit = celsius * 9 / 5 + 32; kelvin = celsius + 273.15",
       "cases": [
-        {"args": [0.0],   "expected": {"fahrenheit": 32.0,   "kelvin": 273.15}, "note": "freezing point"},
-        {"args": [100.0], "expected": {"fahrenheit": 212.0,  "kelvin": 373.15}, "note": "boiling point"},
-        {"args": [-40.0], "expected": {"fahrenheit": -40.0,  "kelvin": 233.15}, "note": "scales cross at -40"},
-        {"args": [37.0],  "expected": {"fahrenheit": 98.6,   "kelvin": 310.15}, "note": "body temperature"}
+        {
+          "args": [
+            0.0
+          ],
+          "expected": {
+            "fahrenheit": 32.0,
+            "kelvin": 273.15
+          },
+          "note": "freezing point"
+        },
+        {
+          "args": [
+            100.0
+          ],
+          "expected": {
+            "fahrenheit": 212.0,
+            "kelvin": 373.15
+          },
+          "note": "boiling point"
+        },
+        {
+          "args": [
+            -40.0
+          ],
+          "expected": {
+            "fahrenheit": -40.0,
+            "kelvin": 233.15
+          },
+          "note": "scales cross at -40"
+        },
+        {
+          "args": [
+            37.0
+          ],
+          "expected": {
+            "fahrenheit": 98.6,
+            "kelvin": 310.15
+          },
+          "note": "body temperature"
+        }
       ]
     },
-
     "condition_threshold": {
       "fixture": "condition_threshold",
       "signature": "(coolant_temp: f64, oil_temp: f64, max_temp: f64) -> bool",
       "formula": "coolant_temp > max_temp || oil_temp > max_temp",
       "cases": [
-        {"args": [90.0,  95.0,  100.0], "expected": false, "note": "both below"},
-        {"args": [105.0, 95.0,  100.0], "expected": true,  "note": "coolant exceeds"},
-        {"args": [90.0,  110.0, 100.0], "expected": true,  "note": "oil exceeds"},
-        {"args": [100.0, 100.0, 100.0], "expected": false, "note": "equal to max is not >"}
+        {
+          "args": [
+            90.0,
+            95.0,
+            100.0
+          ],
+          "expected": false,
+          "note": "both below"
+        },
+        {
+          "args": [
+            105.0,
+            95.0,
+            100.0
+          ],
+          "expected": true,
+          "note": "coolant exceeds"
+        },
+        {
+          "args": [
+            90.0,
+            110.0,
+            100.0
+          ],
+          "expected": true,
+          "note": "oil exceeds"
+        },
+        {
+          "args": [
+            100.0,
+            100.0,
+            100.0
+          ],
+          "expected": false,
+          "note": "equal to max is not >"
+        }
       ]
     },
     "condition_range": {
@@ -90,11 +334,51 @@
       "signature": "(rpm: u32, min_rpm: u32, max_rpm: u32) -> bool",
       "formula": "rpm >= min_rpm && rpm <= max_rpm",
       "cases": [
-        {"args": [1000, 500, 2000], "expected": true,  "note": "interior"},
-        {"args": [500,  500, 2000], "expected": true,  "note": "inclusive low boundary"},
-        {"args": [2000, 500, 2000], "expected": true,  "note": "inclusive high boundary"},
-        {"args": [499,  500, 2000], "expected": false, "note": "one below low"},
-        {"args": [2001, 500, 2000], "expected": false, "note": "one above high"}
+        {
+          "args": [
+            1000,
+            500,
+            2000
+          ],
+          "expected": true,
+          "note": "interior"
+        },
+        {
+          "args": [
+            500,
+            500,
+            2000
+          ],
+          "expected": true,
+          "note": "inclusive low boundary"
+        },
+        {
+          "args": [
+            2000,
+            500,
+            2000
+          ],
+          "expected": true,
+          "note": "inclusive high boundary"
+        },
+        {
+          "args": [
+            499,
+            500,
+            2000
+          ],
+          "expected": false,
+          "note": "one below low"
+        },
+        {
+          "args": [
+            2001,
+            500,
+            2000
+          ],
+          "expected": false,
+          "note": "one above high"
+        }
       ]
     },
     "condition_programming": {
@@ -102,20 +386,65 @@
       "signature": "(engine_stop: bool, ignition: bool) -> bool",
       "formula": "engine_stop == true && ignition == true",
       "cases": [
-        {"args": [true,  true],  "expected": true,  "note": "both on"},
-        {"args": [true,  false], "expected": false, "note": "no ignition"},
-        {"args": [false, true],  "expected": false, "note": "engine running"},
-        {"args": [false, false], "expected": false, "note": "both off"}
+        {
+          "args": [
+            true,
+            true
+          ],
+          "expected": true,
+          "note": "both on"
+        },
+        {
+          "args": [
+            true,
+            false
+          ],
+          "expected": false,
+          "note": "no ignition"
+        },
+        {
+          "args": [
+            false,
+            true
+          ],
+          "expected": false,
+          "note": "engine running"
+        },
+        {
+          "args": [
+            false,
+            false
+          ],
+          "expected": false,
+          "note": "both off"
+        }
       ]
     },
-
     "procedure_linear": {
       "fixture": "ProcedureLinear::execute",
       "signature": "(value: i32) -> ProcedureResult{completed, final_state}",
       "description": "Unconditional pipeline stage_a -> stage_b -> stage_c -> done. All inputs reach done.",
       "cases": [
-        {"args": [42], "expected": {"completed": true, "final_state": "done"}, "note": "typical"},
-        {"args": [0],  "expected": {"completed": true, "final_state": "done"}, "note": "zero still reaches done"}
+        {
+          "args": [
+            42
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "done"
+          },
+          "note": "typical"
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "done"
+          },
+          "note": "zero still reaches done"
+        }
       ]
     },
     "procedure_diamond": {
@@ -123,10 +452,50 @@
       "signature": "(sensor_value: u16, mode: string) -> ProcedureResult{completed, final_state}",
       "description": "classify -> {high_path|mid_path|low_path} -> {accept|reject}. high_path rejects only in strict mode; mid/low always accept.",
       "cases": [
-        {"args": [1500, "strict"], "expected": {"completed": true, "final_state": "reject"}, "note": "high path + strict -> reject"},
-        {"args": [1500, "normal"], "expected": {"completed": true, "final_state": "accept"}, "note": "high path + non-strict -> accept"},
-        {"args": [750,  "strict"], "expected": {"completed": true, "final_state": "accept"}, "note": "mid path accepts regardless of mode"},
-        {"args": [100,  "strict"], "expected": {"completed": true, "final_state": "accept"}, "note": "low path accepts regardless of mode"}
+        {
+          "args": [
+            1500,
+            "strict"
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "reject"
+          },
+          "note": "high path + strict -> reject"
+        },
+        {
+          "args": [
+            1500,
+            "normal"
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "accept"
+          },
+          "note": "high path + non-strict -> accept"
+        },
+        {
+          "args": [
+            750,
+            "strict"
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "accept"
+          },
+          "note": "mid path accepts regardless of mode"
+        },
+        {
+          "args": [
+            100,
+            "strict"
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "accept"
+          },
+          "note": "low path accepts regardless of mode"
+        }
       ]
     },
     "procedure_startup_check": {
@@ -134,12 +503,72 @@
       "signature": "(voltage: f32, temperature: f32) -> ProcedureResult{completed, final_state}",
       "description": "check_voltage (11.5 <= v <= 14.5) -> check_temp (< 80.0) -> success. Out-of-range voltage -> fail_voltage; overtemp -> fail_overtemp.",
       "cases": [
-        {"args": [12.5, 60.0], "expected": {"completed": true, "final_state": "success"},       "note": "nominal"},
-        {"args": [10.0, 60.0], "expected": {"completed": true, "final_state": "fail_voltage"},  "note": "undervoltage"},
-        {"args": [15.0, 60.0], "expected": {"completed": true, "final_state": "fail_voltage"},  "note": "overvoltage"},
-        {"args": [12.5, 90.0], "expected": {"completed": true, "final_state": "fail_overtemp"}, "note": "overtemp"},
-        {"args": [11.5, 79.5], "expected": {"completed": true, "final_state": "success"},       "note": "inclusive voltage low boundary"},
-        {"args": [14.5, 79.5], "expected": {"completed": true, "final_state": "success"},       "note": "inclusive voltage high boundary"}
+        {
+          "args": [
+            12.5,
+            60.0
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "success"
+          },
+          "note": "nominal"
+        },
+        {
+          "args": [
+            10.0,
+            60.0
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "fail_voltage"
+          },
+          "note": "undervoltage"
+        },
+        {
+          "args": [
+            15.0,
+            60.0
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "fail_voltage"
+          },
+          "note": "overvoltage"
+        },
+        {
+          "args": [
+            12.5,
+            90.0
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "fail_overtemp"
+          },
+          "note": "overtemp"
+        },
+        {
+          "args": [
+            11.5,
+            79.5
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "success"
+          },
+          "note": "inclusive voltage low boundary"
+        },
+        {
+          "args": [
+            14.5,
+            79.5
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "success"
+          },
+          "note": "inclusive voltage high boundary"
+        }
       ]
     },
     "crossfile_procedure_codec": {
@@ -148,11 +577,20 @@
       "description": "Procedure with an <sce:import kind=codec> member. The sendRequest state emits <send sce:payload='frame.encode()'>, dispatching the codec's 4-byte encoding through the service handler. Frame is default-initialized by the generated procedure ctor, so encode() returns [0, 0, 0, 0]. Loud-failing on drift proves that cross-file codec member calls are wired into the procedure's payload capture path end-to-end across all five languages.",
       "cases": [
         {
-          "args": [305419896],
+          "args": [
+            305419896
+          ],
           "expected": {
             "completed": true,
             "final_state": "done",
-            "dispatched_payload_bytes": [[0, 0, 0, 0]]
+            "dispatched_payload_bytes": [
+              [
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
           },
           "note": "default-initialized frame emits zero bytes; no codec-state mutation path yet"
         }
@@ -161,11 +599,38 @@
     "crossfile_procedure_filter": {
       "fixture": "CrossfileProcedureFilter::execute",
       "signature": "(raw_sample: f64) -> ProcedureRunResult{completed, final_state}",
-      "description": "Procedure imports a stateful filter and dispatches the filter's update() method via <assign location='smoothed' expr='smoother.update(rawSample)'/>. Verifies that cross-file member-method calls on a non-codec stateful kind route through the same expression pipeline as codec.encode() across all six backends. Filter return is a primitive (float64) so the C11 lowering calls `<snake>_update(&_st->member, ...)` directly — no wrapper conversion is needed because there is no codec-style payload contract to bridge. The expected outcome is that the procedure reaches the `done` final state regardless of the raw sample value; numerical correctness of the filter itself is exercised by the standalone `filter_low_pass` fixture, so this case validates the cross-file dispatch wiring rather than the filter math.",
+      "description": "Procedure imports a stateful filter and dispatches the filter's update() method via <assign location='smoothed' expr='smoother.update(rawSample)'/>. Verifies that cross-file member-method calls on a non-codec stateful kind route through the same expression pipeline as codec.encode() across all six backends. Filter return is a primitive (float64) so the C11 lowering calls `<snake>_update(&_st->member, ...)` directly \u2014 no wrapper conversion is needed because there is no codec-style payload contract to bridge. The expected outcome is that the procedure reaches the `done` final state regardless of the raw sample value; numerical correctness of the filter itself is exercised by the standalone `filter_low_pass` fixture, so this case validates the cross-file dispatch wiring rather than the filter math.",
       "cases": [
-        {"args": [10.0], "expected": {"completed": true, "final_state": "done"}, "note": "first sample — fresh filter passes through warm-up"},
-        {"args": [0.0], "expected": {"completed": true, "final_state": "done"}, "note": "zero sample"},
-        {"args": [-3.5], "expected": {"completed": true, "final_state": "done"}, "note": "negative sample"}
+        {
+          "args": [
+            10.0
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "done"
+          },
+          "note": "first sample \u2014 fresh filter passes through warm-up"
+        },
+        {
+          "args": [
+            0.0
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "done"
+          },
+          "note": "zero sample"
+        },
+        {
+          "args": [
+            -3.5
+          ],
+          "expected": {
+            "completed": true,
+            "final_state": "done"
+          },
+          "note": "negative sample"
+        }
       ]
     },
     "crossfile_procedure_codec_mutate": {
@@ -174,20 +639,38 @@
       "description": "Procedure that imports a codec, mutates one field via <assign location='frame.msgId' expr='msgId'/>, then dispatches frame.encode() through the service handler. Proves end-to-end that the unified LHS pipeline + stateful_import_field_renames correctly wire dotted member assignment into codec mutation across all five languages.",
       "cases": [
         {
-          "args": [42],
+          "args": [
+            42
+          ],
           "expected": {
             "completed": true,
             "final_state": "done",
-            "dispatched_payload_bytes": [[42, 0, 0, 0]]
+            "dispatched_payload_bytes": [
+              [
+                42,
+                0,
+                0,
+                0
+              ]
+            ]
           },
           "note": "frame.msgId = 42 -> encode -> [42, 0, 0, 0]; length and payload remain default-zero"
         },
         {
-          "args": [255],
+          "args": [
+            255
+          ],
           "expected": {
             "completed": true,
             "final_state": "done",
-            "dispatched_payload_bytes": [[255, 0, 0, 0]]
+            "dispatched_payload_bytes": [
+              [
+                255,
+                0,
+                0,
+                0
+              ]
+            ]
           },
           "note": "frame.msgId = 255 -> encode -> [255, 0, 0, 0]; max uint8 boundary"
         }
@@ -199,28 +682,66 @@
       "description": "UDS Security Access flow with a first-class <sce:helper name='computeKey'> DI injection point. The generator emits computeKey as a typed closure member + setter on the generated state machine (mirroring serviceHandler); the conformance harness passes in a deterministic stub (XOR each byte with 0xA5) as an additional execute() wrapper argument across all 5 languages. The handler's response data is 'SEED' on every call, so the RequestSeed -> SendKey transition's <assign location='seed' expr='_event.data'/> populates seed with the 4 bytes [0x53, 0x45, 0x45, 0x44]; SendKey then dispatches computeKey(seed) = [0xF6, 0xE0, 0xE0, 0xE1] through the capture channel. Verifies end-to-end: multi-state multi-send, transition-assign from _event.data, guarded eventless transitions (retry loop structurally emitted but not exercised in the happy path), and the helper-DI wiring proving the framework's first-class solution to the 'user-provided expression helpers' escape hatch.",
       "cases": [
         {
-          "args": [305419896],
+          "args": [
+            305419896
+          ],
           "handler_response_data": "SEED",
           "expected": {
             "completed": true,
             "final_state": "done",
-            "dispatched_payload_bytes": [[246, 224, 224, 225]]
+            "dispatched_payload_bytes": [
+              [
+                246,
+                224,
+                224,
+                225
+              ]
+            ]
           },
           "note": "happy path: handler returns 'SEED' (0x53,0x45,0x45,0x44) on every call -> seed assigned on RequestSeed edge -> SendKey dispatches computeKey stub output (XOR 0xA5) = [0xF6,0xE0,0xE0,0xE1] = [246,224,224,225]"
         }
       ]
     },
-
     "lookup_alarm_code": {
       "fixture": "lookup_severity",
       "signature": "(code: i32) -> Option<i32>",
       "description": "Fault code -> severity level. Exact-match lookup with error-on-miss; happy-path inputs only (every key hits the table).",
       "cases": [
-        {"args": [100], "expected": 1, "note": "low alarm"},
-        {"args": [200], "expected": 2, "note": "medium alarm"},
-        {"args": [300], "expected": 3, "note": "high alarm"},
-        {"args": [400], "expected": 2, "note": "duplicate value (medium) — exercises non-injective mapping"},
-        {"args": [500], "expected": 4, "note": "critical alarm"}
+        {
+          "args": [
+            100
+          ],
+          "expected": 1,
+          "note": "low alarm"
+        },
+        {
+          "args": [
+            200
+          ],
+          "expected": 2,
+          "note": "medium alarm"
+        },
+        {
+          "args": [
+            300
+          ],
+          "expected": 3,
+          "note": "high alarm"
+        },
+        {
+          "args": [
+            400
+          ],
+          "expected": 2,
+          "note": "duplicate value (medium) \u2014 exercises non-injective mapping"
+        },
+        {
+          "args": [
+            500
+          ],
+          "expected": 4,
+          "note": "critical alarm"
+        }
       ]
     },
     "lookup_state_action": {
@@ -228,10 +749,34 @@
       "signature": "(state: i32) -> Option<i32>",
       "description": "State code -> action code. Exact-match lookup with error-on-miss.",
       "cases": [
-        {"args": [0], "expected": 10, "note": "idle -> noop+10"},
-        {"args": [1], "expected": 20, "note": "ready -> noop+20"},
-        {"args": [2], "expected": 30, "note": "running -> noop+30"},
-        {"args": [3], "expected": 40, "note": "done -> noop+40"}
+        {
+          "args": [
+            0
+          ],
+          "expected": 10,
+          "note": "idle -> noop+10"
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": 20,
+          "note": "ready -> noop+20"
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": 30,
+          "note": "running -> noop+30"
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 40,
+          "note": "done -> noop+40"
+        }
       ]
     },
     "lookup_unit_scale": {
@@ -239,12 +784,48 @@
       "signature": "(unit: i32) -> Option<f64>",
       "description": "Unit enum (1=mm, 2=cm, 3=dm, 4=m, 5=dam, 6=hm) -> metres-per-unit. Float-output lookup; the existing string-output enum-dispatch path cannot represent f64 values.",
       "cases": [
-        {"args": [1], "expected": 0.001, "note": "millimetre"},
-        {"args": [2], "expected": 0.01,  "note": "centimetre"},
-        {"args": [3], "expected": 0.1,   "note": "decimetre"},
-        {"args": [4], "expected": 1.0,   "note": "metre"},
-        {"args": [5], "expected": 10.0,  "note": "decametre"},
-        {"args": [6], "expected": 100.0, "note": "hectometre"}
+        {
+          "args": [
+            1
+          ],
+          "expected": 0.001,
+          "note": "millimetre"
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": 0.01,
+          "note": "centimetre"
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": 0.1,
+          "note": "decimetre"
+        },
+        {
+          "args": [
+            4
+          ],
+          "expected": 1.0,
+          "note": "metre"
+        },
+        {
+          "args": [
+            5
+          ],
+          "expected": 10.0,
+          "note": "decametre"
+        },
+        {
+          "args": [
+            6
+          ],
+          "expected": 100.0,
+          "note": "hectometre"
+        }
       ]
     },
     "lookup_severity_default": {
@@ -252,46 +833,230 @@
       "signature": "(code: i32) -> i32",
       "description": "Fault code -> severity level with `sce:default=\"0\"` so missing keys return 0 directly. The first numeric+default lookup whose return value is non-Optional, used by crossfile_validator_lookup as a clean cross-file callsite (validator's plausibility predicate compares the result against 0 without any language-specific Option unwrap).",
       "cases": [
-        {"args": [100], "expected": 1, "note": "low alarm"},
-        {"args": [200], "expected": 2, "note": "medium alarm"},
-        {"args": [300], "expected": 3, "note": "high alarm"},
-        {"args": [400], "expected": 2, "note": "duplicate value (medium) — exercises non-injective mapping"},
-        {"args": [500], "expected": 4, "note": "critical alarm"},
-        {"args": [0],   "expected": 0, "note": "miss -> default fallback"},
-        {"args": [999], "expected": 0, "note": "miss -> default fallback (above any key)"}
+        {
+          "args": [
+            100
+          ],
+          "expected": 1,
+          "note": "low alarm"
+        },
+        {
+          "args": [
+            200
+          ],
+          "expected": 2,
+          "note": "medium alarm"
+        },
+        {
+          "args": [
+            300
+          ],
+          "expected": 3,
+          "note": "high alarm"
+        },
+        {
+          "args": [
+            400
+          ],
+          "expected": 2,
+          "note": "duplicate value (medium) \u2014 exercises non-injective mapping"
+        },
+        {
+          "args": [
+            500
+          ],
+          "expected": 4,
+          "note": "critical alarm"
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": 0,
+          "note": "miss -> default fallback"
+        },
+        {
+          "args": [
+            999
+          ],
+          "expected": 0,
+          "note": "miss -> default fallback (above any key)"
+        }
       ]
     },
-
     "algorithm_crc16": {
       "fixture": "algorithm_crc16",
       "signature": "(data: bytes) -> u16",
-      "formula": "CRC16-CCITT-FALSE: poly=0x1021, init=0xFFFF, no reflect, no xor-out (RFC §5.A Appendix A bit-by-bit)",
+      "formula": "CRC16-CCITT-FALSE: poly=0x1021, init=0xFFFF, no reflect, no xor-out (RFC \u00a75.A Appendix A bit-by-bit)",
       "cases": [
-        {"args": [[]],                       "expected": 65535, "note": "empty input -> init value 0xFFFF"},
-        {"args": [[65]],                     "expected": 47381, "note": "single byte 'A' (0x41) -> 0xB915"},
-        {"args": [[49, 50, 51, 52, 53, 54, 55, 56, 57]], "expected": 10673, "note": "canonical '123456789' -> 0x29B1 (CRC16-CCITT-FALSE reference vector)"},
-        {"args": [[0]],                      "expected": 57840, "note": "single 0x00 -> 0xE1F0"},
-        {"args": [[255]],                    "expected": 65280, "note": "single 0xFF -> 0xFF00"},
-        {"args": [[0, 255, 170, 85]],        "expected": 45894, "note": "[0x00, 0xFF, 0xAA, 0x55] -> 0xB346"},
-        {"args": [[0, 0, 0, 0, 0, 0, 0, 0]], "expected": 12606, "note": "8 zeros -> 0x313E"}
+        {
+          "args": [
+            []
+          ],
+          "expected": 65535,
+          "note": "empty input -> init value 0xFFFF"
+        },
+        {
+          "args": [
+            [
+              65
+            ]
+          ],
+          "expected": 47381,
+          "note": "single byte 'A' (0x41) -> 0xB915"
+        },
+        {
+          "args": [
+            [
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57
+            ]
+          ],
+          "expected": 10673,
+          "note": "canonical '123456789' -> 0x29B1 (CRC16-CCITT-FALSE reference vector)"
+        },
+        {
+          "args": [
+            [
+              0
+            ]
+          ],
+          "expected": 57840,
+          "note": "single 0x00 -> 0xE1F0"
+        },
+        {
+          "args": [
+            [
+              255
+            ]
+          ],
+          "expected": 65280,
+          "note": "single 0xFF -> 0xFF00"
+        },
+        {
+          "args": [
+            [
+              0,
+              255,
+              170,
+              85
+            ]
+          ],
+          "expected": 45894,
+          "note": "[0x00, 0xFF, 0xAA, 0x55] -> 0xB346"
+        },
+        {
+          "args": [
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "expected": 12606,
+          "note": "8 zeros -> 0x313E"
+        }
       ]
     },
     "algorithm_crc16_table": {
       "fixture": "algorithm_crc16_table",
       "signature": "(data: bytes) -> u16",
-      "formula": "CRC16-CCITT-FALSE table form (RFC §5.F build-time const-fold). Output MUST equal algorithm_crc16 for every input — A6 cross-form byte-equivalence acceptance gate.",
+      "formula": "CRC16-CCITT-FALSE table form (RFC \u00a75.F build-time const-fold). Output MUST equal algorithm_crc16 for every input \u2014 A6 cross-form byte-equivalence acceptance gate.",
       "cases": [
-        {"args": [[]],                       "expected": 65535, "note": "empty input -> init value 0xFFFF"},
-        {"args": [[65]],                     "expected": 47381, "note": "single byte 'A' (0x41) -> 0xB915"},
-        {"args": [[49, 50, 51, 52, 53, 54, 55, 56, 57]], "expected": 10673, "note": "canonical '123456789' -> 0x29B1 (CRC16-CCITT-FALSE reference vector)"},
-        {"args": [[0]],                      "expected": 57840, "note": "single 0x00 -> 0xE1F0"},
-        {"args": [[255]],                    "expected": 65280, "note": "single 0xFF -> 0xFF00"},
-        {"args": [[0, 255, 170, 85]],        "expected": 45894, "note": "[0x00, 0xFF, 0xAA, 0x55] -> 0xB346"},
-        {"args": [[0, 0, 0, 0, 0, 0, 0, 0]], "expected": 12606, "note": "8 zeros -> 0x313E"}
+        {
+          "args": [
+            []
+          ],
+          "expected": 65535,
+          "note": "empty input -> init value 0xFFFF"
+        },
+        {
+          "args": [
+            [
+              65
+            ]
+          ],
+          "expected": 47381,
+          "note": "single byte 'A' (0x41) -> 0xB915"
+        },
+        {
+          "args": [
+            [
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57
+            ]
+          ],
+          "expected": 10673,
+          "note": "canonical '123456789' -> 0x29B1 (CRC16-CCITT-FALSE reference vector)"
+        },
+        {
+          "args": [
+            [
+              0
+            ]
+          ],
+          "expected": 57840,
+          "note": "single 0x00 -> 0xE1F0"
+        },
+        {
+          "args": [
+            [
+              255
+            ]
+          ],
+          "expected": 65280,
+          "note": "single 0xFF -> 0xFF00"
+        },
+        {
+          "args": [
+            [
+              0,
+              255,
+              170,
+              85
+            ]
+          ],
+          "expected": 45894,
+          "note": "[0x00, 0xFF, 0xAA, 0x55] -> 0xB346"
+        },
+        {
+          "args": [
+            [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          ],
+          "expected": 12606,
+          "note": "8 zeros -> 0x313E"
+        }
       ]
     }
   },
-
   "stateful_filters": {
     "filter_moving_average": {
       "fixture": "FilterMovingAverage",
@@ -300,13 +1065,41 @@
       "element_type": "f64",
       "description": "Sliding arithmetic mean. Before buffer is full, returns mean of samples seen so far.",
       "sequence": [
-        {"input": 1.0, "expected": 1.0, "note": "count=1 sum=1"},
-        {"input": 2.0, "expected": 1.5, "note": "count=2 sum=3"},
-        {"input": 3.0, "expected": 2.0, "note": "count=3 sum=6"},
-        {"input": 4.0, "expected": 2.5, "note": "count=4 sum=10"},
-        {"input": 5.0, "expected": 3.0, "note": "filled count=5 sum=15"},
-        {"input": 6.0, "expected": 4.0, "note": "window [6,2,3,4,5] sum=20"},
-        {"input": 7.0, "expected": 5.0, "note": "window [6,7,3,4,5] sum=25"}
+        {
+          "input": 1.0,
+          "expected": 1.0,
+          "note": "count=1 sum=1"
+        },
+        {
+          "input": 2.0,
+          "expected": 1.5,
+          "note": "count=2 sum=3"
+        },
+        {
+          "input": 3.0,
+          "expected": 2.0,
+          "note": "count=3 sum=6"
+        },
+        {
+          "input": 4.0,
+          "expected": 2.5,
+          "note": "count=4 sum=10"
+        },
+        {
+          "input": 5.0,
+          "expected": 3.0,
+          "note": "filled count=5 sum=15"
+        },
+        {
+          "input": 6.0,
+          "expected": 4.0,
+          "note": "window [6,2,3,4,5] sum=20"
+        },
+        {
+          "input": 7.0,
+          "expected": 5.0,
+          "note": "window [6,7,3,4,5] sum=25"
+        }
       ]
     },
     "filter_debounce": {
@@ -316,14 +1109,46 @@
       "element_type": "bool",
       "description": "Output latches only when all WINDOW buffer entries match. Before buffer fills, raw input passes through.",
       "sequence": [
-        {"input": true,  "expected": true,  "note": "not filled, pass-through"},
-        {"input": false, "expected": false, "note": "not filled, pass-through"},
-        {"input": true,  "expected": false, "note": "buffer [T,F,T] filled but unstable; output holds previous (false)"},
-        {"input": true,  "expected": false, "note": "buffer [T,F,T] still unstable; output holds"},
-        {"input": true,  "expected": true,  "note": "buffer [T,T,T] stable; latch to T"},
-        {"input": false, "expected": true,  "note": "buffer [T,T,F] unstable; hold"},
-        {"input": false, "expected": true,  "note": "buffer [F,T,F] unstable; hold"},
-        {"input": false, "expected": false, "note": "buffer [F,F,F] stable; latch to F"}
+        {
+          "input": true,
+          "expected": true,
+          "note": "not filled, pass-through"
+        },
+        {
+          "input": false,
+          "expected": false,
+          "note": "not filled, pass-through"
+        },
+        {
+          "input": true,
+          "expected": false,
+          "note": "buffer [T,F,T] filled but unstable; output holds previous (false)"
+        },
+        {
+          "input": true,
+          "expected": false,
+          "note": "buffer [T,F,T] still unstable; output holds"
+        },
+        {
+          "input": true,
+          "expected": true,
+          "note": "buffer [T,T,T] stable; latch to T"
+        },
+        {
+          "input": false,
+          "expected": true,
+          "note": "buffer [T,T,F] unstable; hold"
+        },
+        {
+          "input": false,
+          "expected": true,
+          "note": "buffer [F,T,F] unstable; hold"
+        },
+        {
+          "input": false,
+          "expected": false,
+          "note": "buffer [F,F,F] stable; latch to F"
+        }
       ]
     },
     "filter_low_pass": {
@@ -333,30 +1158,115 @@
       "element_type": "f64",
       "description": "First-order exponential low-pass: y[n] = alpha*x[n] + (1-alpha)*y[n-1]. First sample initializes state (no warm-up bias). Step response shown below: unit step from 0 to 100 at n=1, then back to 0 at n=6. Expected values computed in IEEE 754 f64 with operand order (alpha * input) + ((1 - alpha) * state); all 5 languages must preserve this order.",
       "sequence": [
-        {"input": 0.0,   "expected": 0.0,       "note": "first sample, state initialized to input"},
-        {"input": 100.0, "expected": 10.0,      "note": "step: 0.1*100 + 0.9*0"},
-        {"input": 100.0, "expected": 19.0,      "note": "0.1*100 + 0.9*10"},
-        {"input": 100.0, "expected": 27.1,      "note": "0.1*100 + 0.9*19"},
-        {"input": 100.0, "expected": 34.39,     "note": "0.1*100 + 0.9*27.1"},
-        {"input": 100.0, "expected": 40.951,    "note": "0.1*100 + 0.9*34.39"},
-        {"input": 0.0,   "expected": 36.8559,   "note": "step back: 0.9*40.951"},
-        {"input": 0.0,   "expected": 33.17031,  "note": "0.9*36.8559, decay continues"}
+        {
+          "input": 0.0,
+          "expected": 0.0,
+          "note": "first sample, state initialized to input"
+        },
+        {
+          "input": 100.0,
+          "expected": 10.0,
+          "note": "step: 0.1*100 + 0.9*0"
+        },
+        {
+          "input": 100.0,
+          "expected": 19.0,
+          "note": "0.1*100 + 0.9*10"
+        },
+        {
+          "input": 100.0,
+          "expected": 27.1,
+          "note": "0.1*100 + 0.9*19"
+        },
+        {
+          "input": 100.0,
+          "expected": 34.39,
+          "note": "0.1*100 + 0.9*27.1"
+        },
+        {
+          "input": 100.0,
+          "expected": 40.951,
+          "note": "0.1*100 + 0.9*34.39"
+        },
+        {
+          "input": 0.0,
+          "expected": 36.8559,
+          "note": "step back: 0.9*40.951"
+        },
+        {
+          "input": 0.0,
+          "expected": 33.17031,
+          "note": "0.9*36.8559, decay continues"
+        }
       ]
     }
   },
-
   "validators": {
     "validator_range_only": {
       "fixture": "ValidatorRangeOnly::validate",
       "signature": "(temperature: f64) -> ValidationResult{valid, reason}",
-      "description": "Stateless single-argument range check on [-40.0, 150.0] inclusive. No state, no ROC, no plausibility — the simplest validator shape.",
+      "description": "Stateless single-argument range check on [-40.0, 150.0] inclusive. No state, no ROC, no plausibility \u2014 the simplest validator shape.",
       "sequence": [
-        {"args": [25.0],   "expected": {"valid": true,  "reason": ""},                            "note": "mid-range"},
-        {"args": [-40.0],  "expected": {"valid": true,  "reason": ""},                            "note": "inclusive low boundary"},
-        {"args": [150.0],  "expected": {"valid": true,  "reason": ""},                            "note": "inclusive high boundary"},
-        {"args": [-40.1],  "expected": {"valid": false, "reason": "temperature_out_of_range"},    "note": "one ulp below low"},
-        {"args": [150.1],  "expected": {"valid": false, "reason": "temperature_out_of_range"},    "note": "one ulp above high"},
-        {"args": [0.0],    "expected": {"valid": true,  "reason": ""},                            "note": "recover after out-of-range (no state to invalidate)"}
+        {
+          "args": [
+            25.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "mid-range"
+        },
+        {
+          "args": [
+            -40.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "inclusive low boundary"
+        },
+        {
+          "args": [
+            150.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "inclusive high boundary"
+        },
+        {
+          "args": [
+            -40.1
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "temperature_out_of_range"
+          },
+          "note": "one ulp below low"
+        },
+        {
+          "args": [
+            150.1
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "temperature_out_of_range"
+          },
+          "note": "one ulp above high"
+        },
+        {
+          "args": [
+            0.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "recover after out-of-range (no state to invalidate)"
+        }
       ]
     },
     "validator_plausibility_only": {
@@ -364,28 +1274,178 @@
       "signature": "(voltage: f64, current: f64) -> ValidationResult{valid, reason}",
       "description": "Stateless two-argument plausibility: voltage * current <= 1000.0. Negative products pass (<= 1000). Boundary product == 1000 passes. Exercises the `!(expr)` path used when plausibility is the only rule.",
       "sequence": [
-        {"args": [10.0,  50.0],  "expected": {"valid": true,  "reason": ""},                    "note": "product 500 well under limit"},
-        {"args": [20.0,  50.0],  "expected": {"valid": true,  "reason": ""},                    "note": "product 1000 exactly at boundary"},
-        {"args": [20.0,  50.1],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "product 1002 just over limit"},
-        {"args": [100.0, 11.0],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "product 1100"},
-        {"args": [0.0,   999.0], "expected": {"valid": true,  "reason": ""},                    "note": "zero voltage -> zero product"},
-        {"args": [-10.0, -50.0], "expected": {"valid": true,  "reason": ""},                    "note": "two negatives -> positive product 500"},
-        {"args": [-10.0, 200.0], "expected": {"valid": true,  "reason": ""},                    "note": "negative product -2000 passes (-2000 <= 1000)"}
+        {
+          "args": [
+            10.0,
+            50.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "product 500 well under limit"
+        },
+        {
+          "args": [
+            20.0,
+            50.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "product 1000 exactly at boundary"
+        },
+        {
+          "args": [
+            20.0,
+            50.1
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "product 1002 just over limit"
+        },
+        {
+          "args": [
+            100.0,
+            11.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "product 1100"
+        },
+        {
+          "args": [
+            0.0,
+            999.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "zero voltage -> zero product"
+        },
+        {
+          "args": [
+            -10.0,
+            -50.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "two negatives -> positive product 500"
+        },
+        {
+          "args": [
+            -10.0,
+            200.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "negative product -2000 passes (-2000 <= 1000)"
+        }
       ]
     },
     "validator_rpm_check": {
       "fixture": "ValidatorRpmCheck::validate",
       "signature": "(rpm: u16, engine_state: string) -> ValidationResult{valid, reason}",
-      "description": "Stateful validator: range [0,8000] -> ROC (|rpm - prev_rpm| > 500 fails, initial prev_rpm=0) -> plausibility (rpm==0 OR engine_state!=\"STOP\"). Order matters: the Rust golden evaluates range first, then ROC, then plausibility. State (prev_rpm) advances ONLY on a successful validation — every failure case in this sequence implicitly asserts that the following step still sees the previous prev_rpm.",
+      "description": "Stateful validator: range [0,8000] -> ROC (|rpm - prev_rpm| > 500 fails, initial prev_rpm=0) -> plausibility (rpm==0 OR engine_state!=\"STOP\"). Order matters: the Rust golden evaluates range first, then ROC, then plausibility. State (prev_rpm) advances ONLY on a successful validation \u2014 every failure case in this sequence implicitly asserts that the following step still sees the previous prev_rpm.",
       "sequence": [
-        {"args": [0,    "STOP"], "expected": {"valid": true,  "reason": ""},                             "note": "initial step: rpm=0 allowed at STOP by plausibility clause; prev_rpm 0 -> 0"},
-        {"args": [400,  "RUN"],  "expected": {"valid": true,  "reason": ""},                             "note": "delta=400 within ROC; prev_rpm -> 400"},
-        {"args": [1000, "RUN"],  "expected": {"valid": false, "reason": "rpm_rate_of_change_exceeded"},  "note": "delta=600 > 500; state must NOT update (prev_rpm stays 400)"},
-        {"args": [900,  "RUN"],  "expected": {"valid": true,  "reason": ""},                             "note": "proves prior failure did not advance state: delta from 400 is 500 (not > 500); prev_rpm -> 900"},
-        {"args": [900,  "STOP"], "expected": {"valid": false, "reason": "plausibility_failed"},          "note": "rpm!=0 AND engine_state==STOP fails plausibility; prev_rpm stays 900"},
-        {"args": [8500, "RUN"],  "expected": {"valid": false, "reason": "rpm_out_of_range"},             "note": "range check runs before ROC; prev_rpm stays 900"},
-        {"args": [1400, "RUN"],  "expected": {"valid": true,  "reason": ""},                             "note": "delta from 900 is 500 (ok); prev_rpm -> 1400"},
-        {"args": [0,    "RUN"],  "expected": {"valid": false, "reason": "rpm_rate_of_change_exceeded"},  "note": "delta=1400 > 500 even though rpm=0 would satisfy plausibility; ROC fires first"}
+        {
+          "args": [
+            0,
+            "STOP"
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "initial step: rpm=0 allowed at STOP by plausibility clause; prev_rpm 0 -> 0"
+        },
+        {
+          "args": [
+            400,
+            "RUN"
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "delta=400 within ROC; prev_rpm -> 400"
+        },
+        {
+          "args": [
+            1000,
+            "RUN"
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "rpm_rate_of_change_exceeded"
+          },
+          "note": "delta=600 > 500; state must NOT update (prev_rpm stays 400)"
+        },
+        {
+          "args": [
+            900,
+            "RUN"
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "proves prior failure did not advance state: delta from 400 is 500 (not > 500); prev_rpm -> 900"
+        },
+        {
+          "args": [
+            900,
+            "STOP"
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "rpm!=0 AND engine_state==STOP fails plausibility; prev_rpm stays 900"
+        },
+        {
+          "args": [
+            8500,
+            "RUN"
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "rpm_out_of_range"
+          },
+          "note": "range check runs before ROC; prev_rpm stays 900"
+        },
+        {
+          "args": [
+            1400,
+            "RUN"
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "delta from 900 is 500 (ok); prev_rpm -> 1400"
+        },
+        {
+          "args": [
+            0,
+            "RUN"
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "rpm_rate_of_change_exceeded"
+          },
+          "note": "delta=1400 > 500 even though rpm=0 would satisfy plausibility; ROC fires first"
+        }
       ]
     },
     "validator_signed_roc": {
@@ -393,130 +1453,709 @@
       "signature": "(speed: i32, altitude: f64) -> ValidationResult{valid, reason}",
       "description": "Stateful validator with per-field rate-of-change memory (prev_speed, prev_altitude), both starting at 0. Evaluation order: speed range [-100,500] -> altitude range (<=50000, no min) -> speed ROC (|delta|>50) -> altitude ROC (|delta|>100.0). State for BOTH fields updates atomically only on success.",
       "sequence": [
-        {"args": [50,   100.0],   "expected": {"valid": true,  "reason": ""},                               "note": "initial step: speed delta=50 (ok), altitude delta=100.0 (ok, boundary); prev -> (50, 100)"},
-        {"args": [100,  200.0],   "expected": {"valid": true,  "reason": ""},                               "note": "both deltas at boundary (50, 100); prev -> (100, 200)"},
-        {"args": [200,  200.0],   "expected": {"valid": false, "reason": "speed_rate_of_change_exceeded"},  "note": "speed delta 100 > 50; state stays (100, 200)"},
-        {"args": [150,  350.0],   "expected": {"valid": false, "reason": "altitude_rate_of_change_exceeded"}, "note": "speed delta 50 ok, altitude delta 150 > 100; speed ROC must run before altitude ROC"},
-        {"args": [-101, 200.0],   "expected": {"valid": false, "reason": "speed_out_of_range"},             "note": "speed range fires before anything else"},
-        {"args": [150,  50001.0], "expected": {"valid": false, "reason": "altitude_out_of_range"},          "note": "speed range ok then altitude range fails"},
-        {"args": [150,  300.0],   "expected": {"valid": true,  "reason": ""},                               "note": "recovery: from (100, 200) deltas are (50, 100) ok; prev -> (150, 300)"},
-        {"args": [100,  200.0],   "expected": {"valid": true,  "reason": ""},                               "note": "reverse step also at boundary; prev -> (100, 200)"}
+        {
+          "args": [
+            50,
+            100.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "initial step: speed delta=50 (ok), altitude delta=100.0 (ok, boundary); prev -> (50, 100)"
+        },
+        {
+          "args": [
+            100,
+            200.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "both deltas at boundary (50, 100); prev -> (100, 200)"
+        },
+        {
+          "args": [
+            200,
+            200.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "speed_rate_of_change_exceeded"
+          },
+          "note": "speed delta 100 > 50; state stays (100, 200)"
+        },
+        {
+          "args": [
+            150,
+            350.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "altitude_rate_of_change_exceeded"
+          },
+          "note": "speed delta 50 ok, altitude delta 150 > 100; speed ROC must run before altitude ROC"
+        },
+        {
+          "args": [
+            -101,
+            200.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "speed_out_of_range"
+          },
+          "note": "speed range fires before anything else"
+        },
+        {
+          "args": [
+            150,
+            50001.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "altitude_out_of_range"
+          },
+          "note": "speed range ok then altitude range fails"
+        },
+        {
+          "args": [
+            150,
+            300.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "recovery: from (100, 200) deltas are (50, 100) ok; prev -> (150, 300)"
+        },
+        {
+          "args": [
+            100,
+            200.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "reverse step also at boundary; prev -> (100, 200)"
+        }
       ]
     },
     "crossfile_validator_filter": {
       "fixture": "CrossfileValidatorFilter::validate",
       "signature": "(rawSample: f64, threshold: f64) -> ValidationResult{valid, reason}",
-      "description": "Cross-file composition fixture: validator imports filter_low_pass as `smoother` and calls `smoother.update(rawSample)` inside a plausibility predicate (`smoother.update(rawSample) < threshold`). The validator's state struct embeds the filter's by-value state, so the smoother accumulates across validate() calls — this is a sequence test of cross-file member-method dispatch on a stateful kind. The C11 path goes through `expr::ImportLowering` with `&_st->smoother_` prepended; the five other backends through `stateful_import_method_renames` per-language expansions (Go: `p.Smoother.Update`; rust/python: `self.smoother.update`; cpp/kotlin: `smoother_.update` / `smoother.update`). Filter formula: alpha=0.1 first-order low-pass, y[0]=x[0], y[n]=0.1*x[n]+0.9*y[n-1]. The third case spikes raw to 1e6 while the threshold drops to 50, exercising the smoothing-then-failure path; with the smoother already at ~11 the post-spike y is ~100009.9, well above 50.",
+      "description": "Cross-file composition fixture: validator imports filter_low_pass as `smoother` and calls `smoother.update(rawSample)` inside a plausibility predicate (`smoother.update(rawSample) < threshold`). The validator's state struct embeds the filter's by-value state, so the smoother accumulates across validate() calls \u2014 this is a sequence test of cross-file member-method dispatch on a stateful kind. The C11 path goes through `expr::ImportLowering` with `&_st->smoother_` prepended; the five other backends through `stateful_import_method_renames` per-language expansions (Go: `p.Smoother.Update`; rust/python: `self.smoother.update`; cpp/kotlin: `smoother_.update` / `smoother.update`). Filter formula: alpha=0.1 first-order low-pass, y[0]=x[0], y[n]=0.1*x[n]+0.9*y[n-1]. The third case spikes raw to 1e6 while the threshold drops to 50, exercising the smoothing-then-failure path; with the smoother already at ~11 the post-spike y is ~100009.9, well above 50.",
       "sequence": [
-        {"args": [10.0, 1000.0],     "expected": {"valid": true,  "reason": ""},                    "note": "first sample: smoother init y=10.0; 10 < 1000 -> pass"},
-        {"args": [20.0, 1000.0],     "expected": {"valid": true,  "reason": ""},                    "note": "smoother y = 0.1*20 + 0.9*10 = 11.0; 11 < 1000 -> pass"},
-        {"args": [1000000.0, 50.0],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "raw spikes to 1e6; smoother y ~= 100009.9; 100009.9 < 50 -> fail"},
-        {"args": [1000000.0, 50.0],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "raw stays high; smoother y ~= 190008.91; still well above threshold"}
+        {
+          "args": [
+            10.0,
+            1000.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "first sample: smoother init y=10.0; 10 < 1000 -> pass"
+        },
+        {
+          "args": [
+            20.0,
+            1000.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "smoother y = 0.1*20 + 0.9*10 = 11.0; 11 < 1000 -> pass"
+        },
+        {
+          "args": [
+            1000000.0,
+            50.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "raw spikes to 1e6; smoother y ~= 100009.9; 100009.9 < 50 -> fail"
+        },
+        {
+          "args": [
+            1000000.0,
+            50.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "raw stays high; smoother y ~= 190008.91; still well above threshold"
+        }
       ]
     },
     "crossfile_validator_codec": {
       "fixture": "CrossfileValidatorCodec::validate",
       "signature": "(msgId: u8, payload: u16) -> ValidationResult{valid, reason}",
-      "description": "Cross-file composition fixture: validator imports codec_simple_frame as `frame` and reads the codec's decoded fields inside a plausibility predicate (frame.msgId === msgId AND frame.payload === payload). The validator's stateful import frame is default-initialized so msgId=0 and payload=0 on every call — plausibility passes only when both args match those defaults. This is the load-bearing consumer for validator-host stateful import wiring across all six backends: render_validator now installs alias + field rename maps for the five non-C11 languages, and the C11 path goes through expr::ImportLowering + transpile_typed_with_import_lowering with a `<state_t> *_st` pointer argument so the rename map's `_st->frame_.msg_id` expansion lands on a real slot. Without this fixture the rename gap was masked because the matrix test only checks codegen-success / Rust syn-parse, not compilation.",
+      "description": "Cross-file composition fixture: validator imports codec_simple_frame as `frame` and reads the codec's decoded fields inside a plausibility predicate (frame.msgId === msgId AND frame.payload === payload). The validator's stateful import frame is default-initialized so msgId=0 and payload=0 on every call \u2014 plausibility passes only when both args match those defaults. This is the load-bearing consumer for validator-host stateful import wiring across all six backends: render_validator now installs alias + field rename maps for the five non-C11 languages, and the C11 path goes through expr::ImportLowering + transpile_typed_with_import_lowering with a `<state_t> *_st` pointer argument so the rename map's `_st->frame_.msg_id` expansion lands on a real slot. Without this fixture the rename gap was masked because the matrix test only checks codegen-success / Rust syn-parse, not compilation.",
       "sequence": [
-        {"args": [0, 0],     "expected": {"valid": true,  "reason": ""},                    "note": "matches default-initialized frame fields exactly"},
-        {"args": [1, 0],     "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "msgId mismatch (frame.msgId=0 != 1)"},
-        {"args": [0, 1],     "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "payload mismatch (frame.payload=0 != 1)"},
-        {"args": [255, 4095], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "both fields at upper range bounds but neither matches frame defaults"},
-        {"args": [128, 2048], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "mid-range values; in range but plausibility still fails"}
+        {
+          "args": [
+            0,
+            0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "matches default-initialized frame fields exactly"
+        },
+        {
+          "args": [
+            1,
+            0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "msgId mismatch (frame.msgId=0 != 1)"
+        },
+        {
+          "args": [
+            0,
+            1
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "payload mismatch (frame.payload=0 != 1)"
+        },
+        {
+          "args": [
+            255,
+            4095
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "both fields at upper range bounds but neither matches frame defaults"
+        },
+        {
+          "args": [
+            128,
+            2048
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "mid-range values; in range but plausibility still fails"
+        }
       ]
     },
     "crossfile_validator_transform": {
       "fixture": "CrossfileValidatorTransform::validate",
       "signature": "(rawTemp: u16) -> ValidationResult{valid, reason}",
-      "description": "Cross-file composition fixture: validator imports transform_temperature as `tempConvert` and uses it inside a plausibility predicate. Stateless single-input validator. Evaluation order: range check (rawTemp in [0, 4095]) -> plausibility (tempConvert(rawTemp) > -40 AND tempConvert(rawTemp) < 200). Transform formula: tempConvert(raw) = raw * 0.1 - 40.0, so plausibility passes iff rawTemp ∈ (0, 2400) (both bounds exclusive). The two-rule order means raw values above 4095 always surface as raw_temp_out_of_range, never as plausibility_failed. This is the first conformance entry that exercises sce:import composition through the numerical harness — every language must resolve the imported transform to identical IEEE 754 results so the boundary cases match bytewise.",
+      "description": "Cross-file composition fixture: validator imports transform_temperature as `tempConvert` and uses it inside a plausibility predicate. Stateless single-input validator. Evaluation order: range check (rawTemp in [0, 4095]) -> plausibility (tempConvert(rawTemp) > -40 AND tempConvert(rawTemp) < 200). Transform formula: tempConvert(raw) = raw * 0.1 - 40.0, so plausibility passes iff rawTemp \u2208 (0, 2400) (both bounds exclusive). The two-rule order means raw values above 4095 always surface as raw_temp_out_of_range, never as plausibility_failed. This is the first conformance entry that exercises sce:import composition through the numerical harness \u2014 every language must resolve the imported transform to identical IEEE 754 results so the boundary cases match bytewise.",
       "sequence": [
-        {"args": [400],   "expected": {"valid": true,  "reason": ""},                          "note": "raw=400 -> temp=0.0; well inside both bounds"},
-        {"args": [2000],  "expected": {"valid": true,  "reason": ""},                          "note": "raw=2000 -> temp=160.0; mid-band typical"},
-        {"args": [1],     "expected": {"valid": true,  "reason": ""},                          "note": "raw=1 -> temp=-39.9; just inside the lower exclusive plausibility bound (-40 < temp)"},
-        {"args": [2399],  "expected": {"valid": true,  "reason": ""},                          "note": "raw=2399 -> temp=199.9; just inside the upper exclusive plausibility bound (temp < 200)"},
-        {"args": [0],     "expected": {"valid": false, "reason": "plausibility_failed"},       "note": "raw=0 -> temp=-40.0 exactly; -40 > -40 is false so plausibility fails (range still passes since 0 ∈ [0,4095])"},
-        {"args": [2400],  "expected": {"valid": false, "reason": "plausibility_failed"},       "note": "raw=2400 -> temp=200.0 exactly; 200 < 200 is false so plausibility fails"},
-        {"args": [4095],  "expected": {"valid": false, "reason": "plausibility_failed"},       "note": "raw=4095 -> temp=369.5; in range but well above plausibility upper bound"},
-        {"args": [4096],  "expected": {"valid": false, "reason": "raw_temp_out_of_range"},     "note": "raw=4096 -> just above range; range check fires first, plausibility never runs"},
-        {"args": [10000], "expected": {"valid": false, "reason": "raw_temp_out_of_range"},     "note": "raw=10000 -> well above range; same range-first ordering as the previous case"}
+        {
+          "args": [
+            400
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "raw=400 -> temp=0.0; well inside both bounds"
+        },
+        {
+          "args": [
+            2000
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "raw=2000 -> temp=160.0; mid-band typical"
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "raw=1 -> temp=-39.9; just inside the lower exclusive plausibility bound (-40 < temp)"
+        },
+        {
+          "args": [
+            2399
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "raw=2399 -> temp=199.9; just inside the upper exclusive plausibility bound (temp < 200)"
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "raw=0 -> temp=-40.0 exactly; -40 > -40 is false so plausibility fails (range still passes since 0 \u2208 [0,4095])"
+        },
+        {
+          "args": [
+            2400
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "raw=2400 -> temp=200.0 exactly; 200 < 200 is false so plausibility fails"
+        },
+        {
+          "args": [
+            4095
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "raw=4095 -> temp=369.5; in range but well above plausibility upper bound"
+        },
+        {
+          "args": [
+            4096
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "raw_temp_out_of_range"
+          },
+          "note": "raw=4096 -> just above range; range check fires first, plausibility never runs"
+        },
+        {
+          "args": [
+            10000
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "raw_temp_out_of_range"
+          },
+          "note": "raw=10000 -> well above range; same range-first ordering as the previous case"
+        }
       ]
     },
     "crossfile_validator_condition": {
       "fixture": "CrossfileValidatorCondition::validate",
       "signature": "(coolantTemp: f64, oilTemp: f64, maxTemp: f64) -> ValidationResult{valid, reason}",
-      "description": "Cross-file composition fixture: validator imports condition_threshold as `tempWarn` and negates it inside a plausibility predicate. Stateless three-input validator with no range / ROC rules — the only failure mode is plausibility_failed when the imported condition reports a warning. The condition's expression is `coolantTemp > maxTemp || oilTemp > maxTemp`, so valid=true iff both temps are at-or-below maxTemp. Mirrors crossfile_validator_transform but exercises the condition kind across the import boundary instead of transform; the C11 backend's flat-scope identifier resolution is the most fragile axis here because the imported condition's exported function name must match the call-site spelling under build_qualified_call.",
+      "description": "Cross-file composition fixture: validator imports condition_threshold as `tempWarn` and negates it inside a plausibility predicate. Stateless three-input validator with no range / ROC rules \u2014 the only failure mode is plausibility_failed when the imported condition reports a warning. The condition's expression is `coolantTemp > maxTemp || oilTemp > maxTemp`, so valid=true iff both temps are at-or-below maxTemp. Mirrors crossfile_validator_transform but exercises the condition kind across the import boundary instead of transform; the C11 backend's flat-scope identifier resolution is the most fragile axis here because the imported condition's exported function name must match the call-site spelling under build_qualified_call.",
       "sequence": [
-        {"args": [50.0,  60.0,  100.0], "expected": {"valid": true,  "reason": ""},                    "note": "both temps well below max"},
-        {"args": [110.0, 60.0,  100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "coolant > max triggers tempWarn"},
-        {"args": [50.0,  105.0, 100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "oil > max triggers tempWarn"},
-        {"args": [100.0, 100.0, 100.0], "expected": {"valid": true,  "reason": ""},                    "note": "both equal to max; condition uses strict > so tempWarn=false"},
-        {"args": [101.0, 99.0,  100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "coolant marginally above max"},
-        {"args": [95.0,  110.0, 100.0], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "oil marginally above max"},
-        {"args": [-30.0, -20.0, 0.0],   "expected": {"valid": true,  "reason": ""},                    "note": "negative temps below max=0; both <= 0 so tempWarn=false"}
+        {
+          "args": [
+            50.0,
+            60.0,
+            100.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "both temps well below max"
+        },
+        {
+          "args": [
+            110.0,
+            60.0,
+            100.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "coolant > max triggers tempWarn"
+        },
+        {
+          "args": [
+            50.0,
+            105.0,
+            100.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "oil > max triggers tempWarn"
+        },
+        {
+          "args": [
+            100.0,
+            100.0,
+            100.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "both equal to max; condition uses strict > so tempWarn=false"
+        },
+        {
+          "args": [
+            101.0,
+            99.0,
+            100.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "coolant marginally above max"
+        },
+        {
+          "args": [
+            95.0,
+            110.0,
+            100.0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "oil marginally above max"
+        },
+        {
+          "args": [
+            -30.0,
+            -20.0,
+            0.0
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "negative temps below max=0; both <= 0 so tempWarn=false"
+        }
       ]
     },
     "crossfile_validator_lookup": {
       "fixture": "CrossfileValidatorLookup::validate",
       "signature": "(code: i32) -> ValidationResult{valid, reason}",
-      "description": "Cross-file composition fixture: validator imports lookup_severity_default as `severityFor` and uses the result inside a plausibility predicate (`severityFor(code) > 0`). Mirrors crossfile_validator_transform / _condition but exercises the lookup kind across the import boundary, with numeric+default policy so the call result is non-Optional and the comparison can flow directly per-language. The C11 backend's flat-scope identifier resolution is the most fragile axis here — `discover_primary_function` returns just the output id (`severity`) so build_qualified_call lands on the actual emitted `<m.name>_<output_id>` symbol (`lookup_severity_default_severity`) instead of doubling the prefix. Range constraint on `code` is `[0, 1000]`, so any code outside that surfaces as code_out_of_range without ever calling the lookup.",
+      "description": "Cross-file composition fixture: validator imports lookup_severity_default as `severityFor` and uses the result inside a plausibility predicate (`severityFor(code) > 0`). Mirrors crossfile_validator_transform / _condition but exercises the lookup kind across the import boundary, with numeric+default policy so the call result is non-Optional and the comparison can flow directly per-language. The C11 backend's flat-scope identifier resolution is the most fragile axis here \u2014 `discover_primary_function` returns just the output id (`severity`) so build_qualified_call lands on the actual emitted `<m.name>_<output_id>` symbol (`lookup_severity_default_severity`) instead of doubling the prefix. Range constraint on `code` is `[0, 1000]`, so any code outside that surfaces as code_out_of_range without ever calling the lookup.",
       "sequence": [
-        {"args": [100], "expected": {"valid": true,  "reason": ""},                    "note": "code=100 -> severity=1 > 0; plausibility passes"},
-        {"args": [200], "expected": {"valid": true,  "reason": ""},                    "note": "code=200 -> severity=2 > 0; plausibility passes"},
-        {"args": [500], "expected": {"valid": true,  "reason": ""},                    "note": "code=500 -> severity=4 > 0; plausibility passes"},
-        {"args": [50],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "code=50 -> miss -> severity=0; 0 > 0 false so plausibility fails (range still passes since 50 ∈ [0,1000])"},
-        {"args": [999], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "code=999 -> miss -> severity=0; same default-fallback failure mode"},
-        {"args": [-1],  "expected": {"valid": false, "reason": "code_out_of_range"},   "note": "code=-1 -> below range; range check fires first, lookup never runs"},
-        {"args": [1001],"expected": {"valid": false, "reason": "code_out_of_range"},   "note": "code=1001 -> above range; same range-first ordering"}
+        {
+          "args": [
+            100
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "code=100 -> severity=1 > 0; plausibility passes"
+        },
+        {
+          "args": [
+            200
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "code=200 -> severity=2 > 0; plausibility passes"
+        },
+        {
+          "args": [
+            500
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "code=500 -> severity=4 > 0; plausibility passes"
+        },
+        {
+          "args": [
+            50
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "code=50 -> miss -> severity=0; 0 > 0 false so plausibility fails (range still passes since 50 \u2208 [0,1000])"
+        },
+        {
+          "args": [
+            999
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "code=999 -> miss -> severity=0; same default-fallback failure mode"
+        },
+        {
+          "args": [
+            -1
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "code_out_of_range"
+          },
+          "note": "code=-1 -> below range; range check fires first, lookup never runs"
+        },
+        {
+          "args": [
+            1001
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "code_out_of_range"
+          },
+          "note": "code=1001 -> above range; same range-first ordering"
+        }
       ]
     },
     "crossfile_validator_interpolation": {
       "fixture": "CrossfileValidatorInterpolation::validate",
       "signature": "(rpm: u16) -> ValidationResult{valid, reason}",
-      "description": "Cross-file composition fixture: validator imports interpolation_1d_linear as `torqueLimitFor` and uses the result inside a plausibility predicate (`torqueLimitFor(rpm) > 200.0`). The imported interpolation has axis-rpm = [800, 1200, 2000, 3000, 4000, 6000] and values = [120, 145, 200, 230, 210, 180] with out-of-bounds=clamp, so the call result is always a plain f64 — no Option unwrap, mirrors crossfile_validator_transform's direct-call shape. The C11 backend's flat-scope `discover_primary_function` returns the constant `\"lookup\"` for interpolation, which composes with the namespace into `<m.name>_lookup` matching `render_interpolation`'s C11 emit; this fixture is the first cross-file consumer that pins that contract. Range constraint on `rpm` is `[500, 7000]` so out-of-range cases never reach the interpolation.",
+      "description": "Cross-file composition fixture: validator imports interpolation_1d_linear as `torqueLimitFor` and uses the result inside a plausibility predicate (`torqueLimitFor(rpm) > 200.0`). The imported interpolation has axis-rpm = [800, 1200, 2000, 3000, 4000, 6000] and values = [120, 145, 200, 230, 210, 180] with out-of-bounds=clamp, so the call result is always a plain f64 \u2014 no Option unwrap, mirrors crossfile_validator_transform's direct-call shape. The C11 backend's flat-scope `discover_primary_function` returns the constant `\"lookup\"` for interpolation, which composes with the namespace into `<m.name>_lookup` matching `render_interpolation`'s C11 emit; this fixture is the first cross-file consumer that pins that contract. Range constraint on `rpm` is `[500, 7000]` so out-of-range cases never reach the interpolation.",
       "sequence": [
-        {"args": [800],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "exact key -> torque=120; 120 > 200 false"},
-        {"args": [1200], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "exact key -> torque=145"},
-        {"args": [2000], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "exact key -> torque=200; strict > 200 false"},
-        {"args": [2500], "expected": {"valid": true,  "reason": ""},                    "note": "interp midpoint -> 200 + 0.5*(230-200) = 215; plausibility passes"},
-        {"args": [3000], "expected": {"valid": true,  "reason": ""},                    "note": "exact key -> torque=230; passes"},
-        {"args": [4000], "expected": {"valid": true,  "reason": ""},                    "note": "exact key -> torque=210; passes"},
-        {"args": [5000], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "interp midpoint between 4000/6000 -> 210 + 0.5*(180-210) = 195"},
-        {"args": [6000], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "exact key -> torque=180"},
-        {"args": [500],  "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "in range but below first axis (800); clamp -> 120"},
-        {"args": [7000], "expected": {"valid": false, "reason": "plausibility_failed"}, "note": "in range but above last axis (6000); clamp -> 180"},
-        {"args": [499],  "expected": {"valid": false, "reason": "rpm_out_of_range"},    "note": "below range; check fires first, interp never runs"},
-        {"args": [7001], "expected": {"valid": false, "reason": "rpm_out_of_range"},    "note": "above range; same range-first ordering"}
+        {
+          "args": [
+            800
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "exact key -> torque=120; 120 > 200 false"
+        },
+        {
+          "args": [
+            1200
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "exact key -> torque=145"
+        },
+        {
+          "args": [
+            2000
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "exact key -> torque=200; strict > 200 false"
+        },
+        {
+          "args": [
+            2500
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "interp midpoint -> 200 + 0.5*(230-200) = 215; plausibility passes"
+        },
+        {
+          "args": [
+            3000
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "exact key -> torque=230; passes"
+        },
+        {
+          "args": [
+            4000
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "exact key -> torque=210; passes"
+        },
+        {
+          "args": [
+            5000
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "interp midpoint between 4000/6000 -> 210 + 0.5*(180-210) = 195"
+        },
+        {
+          "args": [
+            6000
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "exact key -> torque=180"
+        },
+        {
+          "args": [
+            500
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "in range but below first axis (800); clamp -> 120"
+        },
+        {
+          "args": [
+            7000
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "in range but above last axis (6000); clamp -> 180"
+        },
+        {
+          "args": [
+            499
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "rpm_out_of_range"
+          },
+          "note": "below range; check fires first, interp never runs"
+        },
+        {
+          "args": [
+            7001
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "rpm_out_of_range"
+          },
+          "note": "above range; same range-first ordering"
+        }
       ]
     }
   },
-
   "observers": {
     "observer_coolant": {
       "fixture": "ObserverCoolant",
       "signature": "update(f64) -> EventQueue<Tag>",
       "description": "Hysteresis. Warning band: enter>110, leave<100. Critical band: enter>120, leave<105 (silent leave, no CLEAR event).",
-      "tags": ["EMIT_WARNING", "CLEAR_WARNING", "EMERGENCY_SHUTDOWN"],
+      "tags": [
+        "EMIT_WARNING",
+        "CLEAR_WARNING",
+        "EMERGENCY_SHUTDOWN"
+      ],
       "sequence": [
-        {"input": 95.0,  "expected_events": [],                      "note": "cold start, both bands inactive"},
-        {"input": 112.0, "expected_events": ["EMIT_WARNING"],        "note": "enter warning"},
-        {"input": 115.0, "expected_events": [],                      "note": "already in warning band, no re-emit"},
-        {"input": 125.0, "expected_events": ["EMERGENCY_SHUTDOWN"],  "note": "enter critical (warning stays)"},
-        {"input": 90.0,  "expected_events": ["CLEAR_WARNING"],       "note": "leave warning; critical also leaves silently (no event)"}
+        {
+          "input": 95.0,
+          "expected_events": [],
+          "note": "cold start, both bands inactive"
+        },
+        {
+          "input": 112.0,
+          "expected_events": [
+            "EMIT_WARNING"
+          ],
+          "note": "enter warning"
+        },
+        {
+          "input": 115.0,
+          "expected_events": [],
+          "note": "already in warning band, no re-emit"
+        },
+        {
+          "input": 125.0,
+          "expected_events": [
+            "EMERGENCY_SHUTDOWN"
+          ],
+          "note": "enter critical (warning stays)"
+        },
+        {
+          "input": 90.0,
+          "expected_events": [
+            "CLEAR_WARNING"
+          ],
+          "note": "leave warning; critical also leaves silently (no event)"
+        }
       ]
     }
   },
-
   "codecs": {
     "codec_little_endian": {
       "fixture": "CodecLittleEndian",
       "signature": "(raw: &[u8]) <-> {sensorId: u8 @ byte 0, value: u16 @ byte 1 little-endian, status: u8 @ byte 3}",
       "description": "Multi-field little-endian frame. Encode emits [sensorId, value_lo, value_hi, status]; decode reverses. Field names use SCXML source case (camelCase) as the canonical oracle key; each language fragment applies its own case filter to match the generated struct's native naming.",
       "cases": [
-        {"decoded": {"sensorId": 42,  "value": 1000,  "status": 1},   "encoded": [42, 232, 3, 1],     "note": "value=0x03E8 -> lo=0xE8=232, hi=0x03=3"},
-        {"decoded": {"sensorId": 0,   "value": 0,     "status": 0},   "encoded": [0, 0, 0, 0],        "note": "all-zero frame"},
-        {"decoded": {"sensorId": 255, "value": 65535, "status": 255}, "encoded": [255, 255, 255, 255], "note": "all-one frame saturates every width"},
-        {"decoded": {"sensorId": 7,   "value": 4660,  "status": 2},   "encoded": [7, 52, 18, 2],      "note": "value=0x1234 -> lo=0x34=52, hi=0x12=18"}
+        {
+          "decoded": {
+            "sensorId": 42,
+            "value": 1000,
+            "status": 1
+          },
+          "encoded": [
+            42,
+            232,
+            3,
+            1
+          ],
+          "note": "value=0x03E8 -> lo=0xE8=232, hi=0x03=3"
+        },
+        {
+          "decoded": {
+            "sensorId": 0,
+            "value": 0,
+            "status": 0
+          },
+          "encoded": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "note": "all-zero frame"
+        },
+        {
+          "decoded": {
+            "sensorId": 255,
+            "value": 65535,
+            "status": 255
+          },
+          "encoded": [
+            255,
+            255,
+            255,
+            255
+          ],
+          "note": "all-one frame saturates every width"
+        },
+        {
+          "decoded": {
+            "sensorId": 7,
+            "value": 4660,
+            "status": 2
+          },
+          "encoded": [
+            7,
+            52,
+            18,
+            2
+          ],
+          "note": "value=0x1234 -> lo=0x34=52, hi=0x12=18"
+        }
       ]
     },
     "codec_simple_frame": {
@@ -524,10 +2163,62 @@
       "signature": "(raw: &[u8]) <-> {msgId: u8 @ byte 0, length: u8 @ byte 1, payload: u16 @ byte 2 big-endian}",
       "description": "Big-endian 4-byte frame. Encode emits [msgId, length, payload_hi, payload_lo]; decode reverses. Byte-order contrast to codec_little_endian proves the encode/decode expressions track sce:default-endian.",
       "cases": [
-        {"decoded": {"msgId": 1,   "length": 10,  "payload": 4660},  "encoded": [1, 10, 18, 52],     "note": "payload=0x1234 -> hi=0x12=18, lo=0x34=52"},
-        {"decoded": {"msgId": 0,   "length": 0,   "payload": 0},     "encoded": [0, 0, 0, 0],        "note": "all-zero frame"},
-        {"decoded": {"msgId": 255, "length": 255, "payload": 65535}, "encoded": [255, 255, 255, 255], "note": "all-one frame"},
-        {"decoded": {"msgId": 128, "length": 4,   "payload": 256},   "encoded": [128, 4, 1, 0],      "note": "payload=0x0100 -> hi=1, lo=0"}
+        {
+          "decoded": {
+            "msgId": 1,
+            "length": 10,
+            "payload": 4660
+          },
+          "encoded": [
+            1,
+            10,
+            18,
+            52
+          ],
+          "note": "payload=0x1234 -> hi=0x12=18, lo=0x34=52"
+        },
+        {
+          "decoded": {
+            "msgId": 0,
+            "length": 0,
+            "payload": 0
+          },
+          "encoded": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "note": "all-zero frame"
+        },
+        {
+          "decoded": {
+            "msgId": 255,
+            "length": 255,
+            "payload": 65535
+          },
+          "encoded": [
+            255,
+            255,
+            255,
+            255
+          ],
+          "note": "all-one frame"
+        },
+        {
+          "decoded": {
+            "msgId": 128,
+            "length": 4,
+            "payload": 256
+          },
+          "encoded": [
+            128,
+            4,
+            1,
+            0
+          ],
+          "note": "payload=0x0100 -> hi=1, lo=0"
+        }
       ]
     },
     "codec_subbyte": {
@@ -535,11 +2226,61 @@
       "signature": "(raw: &[u8]) <-> {priority: u8 @ byte 0 bits[7:5], channel: u8 @ byte 0 bits[4:2], direction: u8 @ byte 0 bits[1:0]}",
       "description": "Sub-byte bit-field extraction packed into a single byte: priority(3b) | channel(3b) | direction(2b). Encode shifts and ORs; decode shifts and masks. Exercises the sub-byte branch of the codec code generator which produces different expressions from whole-byte fields.",
       "cases": [
-        {"decoded": {"priority": 5, "channel": 3, "direction": 1}, "encoded": [173], "note": "(5<<5)|(3<<2)|1 = 160|12|1 = 173"},
-        {"decoded": {"priority": 0, "channel": 0, "direction": 0}, "encoded": [0],   "note": "all-zero"},
-        {"decoded": {"priority": 7, "channel": 7, "direction": 3}, "encoded": [255], "note": "saturated (7<<5)|(7<<2)|3 = 224|28|3 = 255"},
-        {"decoded": {"priority": 1, "channel": 2, "direction": 2}, "encoded": [42],  "note": "(1<<5)|(2<<2)|2 = 32|8|2 = 42"},
-        {"decoded": {"priority": 4, "channel": 5, "direction": 0}, "encoded": [148], "note": "(4<<5)|(5<<2)|0 = 128|20|0 = 148"}
+        {
+          "decoded": {
+            "priority": 5,
+            "channel": 3,
+            "direction": 1
+          },
+          "encoded": [
+            173
+          ],
+          "note": "(5<<5)|(3<<2)|1 = 160|12|1 = 173"
+        },
+        {
+          "decoded": {
+            "priority": 0,
+            "channel": 0,
+            "direction": 0
+          },
+          "encoded": [
+            0
+          ],
+          "note": "all-zero"
+        },
+        {
+          "decoded": {
+            "priority": 7,
+            "channel": 7,
+            "direction": 3
+          },
+          "encoded": [
+            255
+          ],
+          "note": "saturated (7<<5)|(7<<2)|3 = 224|28|3 = 255"
+        },
+        {
+          "decoded": {
+            "priority": 1,
+            "channel": 2,
+            "direction": 2
+          },
+          "encoded": [
+            42
+          ],
+          "note": "(1<<5)|(2<<2)|2 = 32|8|2 = 42"
+        },
+        {
+          "decoded": {
+            "priority": 4,
+            "channel": 5,
+            "direction": 0
+          },
+          "encoded": [
+            148
+          ],
+          "note": "(4<<5)|(5<<2)|0 = 128|20|0 = 148"
+        }
       ]
     },
     "codec_tail": {
@@ -547,10 +2288,77 @@
       "signature": "(raw: &[u8]) <-> {msgId: u8 @ byte 0, status: u8 @ byte 1, payload: bytes @ byte 2 tail (max 32)}",
       "description": "Variable-length tail payload codec (sce:bit-size=\"tail\"). Bytes 0 and 1 carry msgId + status; everything from byte 2 onward is the raw payload up to the end of the frame. Encode appends the payload after the 2-byte header; decode slices from byte 2 to the buffer end. Exercises the BitSize::Tail arm and the V5 builder-pattern encode lift across all six backends.",
       "cases": [
-        {"decoded": {"msgId": 1,   "status": 0, "payload": [10, 20, 30]},    "encoded": [1, 0, 10, 20, 30],    "note": "3-byte payload"},
-        {"decoded": {"msgId": 0,   "status": 0, "payload": []},              "encoded": [0, 0],                "note": "empty payload"},
-        {"decoded": {"msgId": 255, "status": 1, "payload": [171, 205]},      "encoded": [255, 1, 171, 205],    "note": "0xAB 0xCD"},
-        {"decoded": {"msgId": 7,   "status": 2, "payload": [0, 1, 2, 3, 4]}, "encoded": [7, 2, 0, 1, 2, 3, 4], "note": "5-byte payload"}
+        {
+          "decoded": {
+            "msgId": 1,
+            "status": 0,
+            "payload": [
+              10,
+              20,
+              30
+            ]
+          },
+          "encoded": [
+            1,
+            0,
+            10,
+            20,
+            30
+          ],
+          "note": "3-byte payload"
+        },
+        {
+          "decoded": {
+            "msgId": 0,
+            "status": 0,
+            "payload": []
+          },
+          "encoded": [
+            0,
+            0
+          ],
+          "note": "empty payload"
+        },
+        {
+          "decoded": {
+            "msgId": 255,
+            "status": 1,
+            "payload": [
+              171,
+              205
+            ]
+          },
+          "encoded": [
+            255,
+            1,
+            171,
+            205
+          ],
+          "note": "0xAB 0xCD"
+        },
+        {
+          "decoded": {
+            "msgId": 7,
+            "status": 2,
+            "payload": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "encoded": [
+            7,
+            2,
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "note": "5-byte payload"
+        }
       ]
     },
     "codec_length_ref": {
@@ -558,23 +2366,197 @@
       "signature": "(raw: &[u8]) <-> {msgId: u8 @ byte 0, len: u8 @ byte 1, payload: bytes @ byte 2 length-ref:len (max 32)}",
       "description": "Length-prefixed payload codec (sce:bit-size=\"length-ref\" + sce:length-field=\"len\"). The byte at offset 1 explicitly states the payload length, so decode reads exactly len bytes starting at byte 2. Each oracle case keeps len consistent with payload.length so the round-trip exercises both directions without corrupting the length field. Closes the second of two BitSize variants left unimplemented in the c11 codec emitter.",
       "cases": [
-        {"decoded": {"msgId": 1,   "len": 3, "payload": [10, 20, 30]},    "encoded": [1, 3, 10, 20, 30],    "note": "len=3 matches payload"},
-        {"decoded": {"msgId": 0,   "len": 0, "payload": []},              "encoded": [0, 0],                "note": "len=0, empty payload"},
-        {"decoded": {"msgId": 255, "len": 2, "payload": [171, 205]},      "encoded": [255, 2, 171, 205],    "note": "len=2"},
-        {"decoded": {"msgId": 5,   "len": 5, "payload": [9, 8, 7, 6, 5]}, "encoded": [5, 5, 9, 8, 7, 6, 5], "note": "len=5"}
+        {
+          "decoded": {
+            "msgId": 1,
+            "len": 3,
+            "payload": [
+              10,
+              20,
+              30
+            ]
+          },
+          "encoded": [
+            1,
+            3,
+            10,
+            20,
+            30
+          ],
+          "note": "len=3 matches payload"
+        },
+        {
+          "decoded": {
+            "msgId": 0,
+            "len": 0,
+            "payload": []
+          },
+          "encoded": [
+            0,
+            0
+          ],
+          "note": "len=0, empty payload"
+        },
+        {
+          "decoded": {
+            "msgId": 255,
+            "len": 2,
+            "payload": [
+              171,
+              205
+            ]
+          },
+          "encoded": [
+            255,
+            2,
+            171,
+            205
+          ],
+          "note": "len=2"
+        },
+        {
+          "decoded": {
+            "msgId": 5,
+            "len": 5,
+            "payload": [
+              9,
+              8,
+              7,
+              6,
+              5
+            ]
+          },
+          "encoded": [
+            5,
+            5,
+            9,
+            8,
+            7,
+            6,
+            5
+          ],
+          "note": "len=5"
+        }
+      ]
+    },
+    "codec_vle_zint_u64": {
+      "fixture": "CodecVleZintU64",
+      "signature": "base-128 LSB-first VLE; bit 7 = continuation",
+      "cases": [
+        {
+          "decoded": {
+            "value": 0
+          },
+          "encoded": [
+            0
+          ],
+          "note": "min: zero is 1 byte"
+        },
+        {
+          "decoded": {
+            "value": 1
+          },
+          "encoded": [
+            1
+          ],
+          "note": "low single byte"
+        },
+        {
+          "decoded": {
+            "value": 127
+          },
+          "encoded": [
+            127
+          ],
+          "note": "max single byte"
+        },
+        {
+          "decoded": {
+            "value": 128
+          },
+          "encoded": [
+            128,
+            1
+          ],
+          "note": "first 2-byte value"
+        },
+        {
+          "decoded": {
+            "value": 16383
+          },
+          "encoded": [
+            255,
+            127
+          ],
+          "note": "max 2-byte value"
+        },
+        {
+          "decoded": {
+            "value": 16384
+          },
+          "encoded": [
+            128,
+            128,
+            1
+          ],
+          "note": "first 3-byte value"
+        },
+        {
+          "decoded": {
+            "value": 2097151
+          },
+          "encoded": [
+            255,
+            255,
+            127
+          ],
+          "note": "max 3-byte value"
+        },
+        {
+          "decoded": {
+            "value": 18446744073709551615
+          },
+          "encoded": [
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            1
+          ],
+          "note": "u64::MAX \u2192 10 bytes"
+        }
       ]
     }
   },
-
   "timers": {
     "timer_diag_scheduler": {
       "fixture": "TimerDiagScheduler",
       "signature": "start(handler, timers...) -> registrations",
       "description": "Diagnostic scheduler: periodic tester-present at 2s, response timeout at 5s, delayed retry at 10s. Conformance verifies that calling start<Timer>() registers the correct timer type and interval with the HAL mock, and that the stored callback dispatches to the correct handler method.",
       "timers": [
-        {"id": "testerPresent", "type": "periodic", "interval_ms": 2000, "callback": "fireTesterPresent"},
-        {"id": "responseTimeout", "type": "one_shot", "interval_ms": 5000, "callback": "fireHandleTimeout"},
-        {"id": "retryDelay", "type": "one_shot", "interval_ms": 10000, "callback": "fireRetrySecurityAccess"}
+        {
+          "id": "testerPresent",
+          "type": "periodic",
+          "interval_ms": 2000,
+          "callback": "fireTesterPresent"
+        },
+        {
+          "id": "responseTimeout",
+          "type": "one_shot",
+          "interval_ms": 5000,
+          "callback": "fireHandleTimeout"
+        },
+        {
+          "id": "retryDelay",
+          "type": "one_shot",
+          "interval_ms": 10000,
+          "callback": "fireRetrySecurityAccess"
+        }
       ]
     }
   },
@@ -584,12 +2566,48 @@
       "signature": "(engSta: u8) -> Status",
       "description": "Engine status code to status enum. Input is a uint8 diagnostic status byte; output is one of {STOP, RUNNING, FAULT}. Default miss policy returns STOP for any unrecognized input.",
       "cases": [
-        {"args": [0],   "expected": "STOP",    "note": "explicit STOP entry (0x00)"},
-        {"args": [1],   "expected": "STOP",    "note": "explicit STOP entry (0x01)"},
-        {"args": [2],   "expected": "STOP",    "note": "explicit STOP entry (0x02)"},
-        {"args": [3],   "expected": "RUNNING", "note": "explicit RUNNING entry (0x03)"},
-        {"args": [7],   "expected": "FAULT",   "note": "explicit FAULT entry (0x07)"},
-        {"args": [255], "expected": "STOP",    "note": "miss -> default STOP"}
+        {
+          "args": [
+            0
+          ],
+          "expected": "STOP",
+          "note": "explicit STOP entry (0x00)"
+        },
+        {
+          "args": [
+            1
+          ],
+          "expected": "STOP",
+          "note": "explicit STOP entry (0x01)"
+        },
+        {
+          "args": [
+            2
+          ],
+          "expected": "STOP",
+          "note": "explicit STOP entry (0x02)"
+        },
+        {
+          "args": [
+            3
+          ],
+          "expected": "RUNNING",
+          "note": "explicit RUNNING entry (0x03)"
+        },
+        {
+          "args": [
+            7
+          ],
+          "expected": "FAULT",
+          "note": "explicit FAULT entry (0x07)"
+        },
+        {
+          "args": [
+            255
+          ],
+          "expected": "STOP",
+          "note": "miss -> default STOP"
+        }
       ]
     }
   }

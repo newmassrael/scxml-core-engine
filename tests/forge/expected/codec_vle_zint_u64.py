@@ -11,37 +11,29 @@ from typing import Optional
 
 
 @dataclass
-class CodecLittleEndian:
-    sensor_id: int = 0
+class CodecVleZintU64:
     value: int = 0
-    status: int = 0
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecLittleEndian]:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecVleZintU64]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
         try:
-            raw = cursor.peek_slice(4)
-        except NeedMoreBytes:
+            value = cursor.read_vle_u64()
+        except CodecError:
             return None
-        value = cls(
-            sensor_id=raw[0],
-            value=raw[1] | (raw[2] << 8),
-            status=raw[3],
+        return cls(
+            value=value,
         )
-        try:
-            cursor.advance(4)
-        except NeedMoreBytes:
-            return None
-        return value
 
     def encode(self) -> bytes:
-        return bytes([
-            self.sensor_id & 0xFF,
-            self.value & 0xFF,
-            (self.value >> 8) & 0xFF,
-            self.status & 0xFF,
-        ])
+        r = bytearray()
+        _v = int(self.value)
+        while _v >= 0x80:
+            r.append((_v & 0x7F) | 0x80)
+            _v >>= 7
+        r.append(_v)
+        return bytes(r)

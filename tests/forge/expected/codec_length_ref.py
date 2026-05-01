@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
 
 from dataclasses import dataclass
 from typing import Optional
@@ -21,11 +21,9 @@ class CodecLengthRef:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
-        consumed bytes."""
+        consumed bytes. VLE codecs also return ``None`` on
+        ``VleWidthOverflow``."""
         try:
-            # Variable-length codec: tail / length-ref fields consume bytes
-            # beyond the fixed prefix. B1-prep treats the entire cursor
-            # remaining as one frame.
             _frame_len = cursor.remaining()
             if _frame_len < 2:
                 return None

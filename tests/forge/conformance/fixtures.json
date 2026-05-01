@@ -1,311 +1,545 @@
 {
   "$schema": "./fixtures.schema.json",
   "version": 1,
-  "description": "Cross-language conformance fixture catalog. NOTE: the $schema above is editor/IDE only — sce-build/src/conformance.rs hand-rolls runtime validation; the JSON schema is never consulted at codegen time. Each entry declares a fixture's structural metadata (kind, arg types, output shape) so sce-codegen can render per-language test harnesses from a single source. The oracle values — expected outputs — live in numerical_reference.json. Adding a new fixture requires (1) an SCXML file under tests/forge/resources/, (2) an entry here, and (3) an expected-value entry in numerical_reference.json. No language-specific test code should ever need to be hand-written.",
+  "description": "Cross-language conformance fixture catalog. NOTE: the $schema above is editor/IDE only \u2014 sce-build/src/conformance.rs hand-rolls runtime validation; the JSON schema is never consulted at codegen time. Each entry declares a fixture's structural metadata (kind, arg types, output shape) so sce-codegen can render per-language test harnesses from a single source. The oracle values \u2014 expected outputs \u2014 live in numerical_reference.json. Adding a new fixture requires (1) an SCXML file under tests/forge/resources/, (2) an entry here, and (3) an expected-value entry in numerical_reference.json. No language-specific test code should ever need to be hand-written.",
   "kinds": {
     "interpolation": "Pure lookup table with numeric interpolation. Struct::lookup(args) -> scalar. Reference section: pure_functions.",
-    "transform":     "Pure value transform. Free function(s) compute_*(args) -> scalar or multi-output. Reference section: pure_functions.",
-    "condition":     "Pure boolean predicate. Free function <name>(args) -> bool. Reference section: pure_functions.",
-    "filter":        "Stateful signal filter. Instance::update(input) -> output, one output per sequence step. Reference section: stateful_filters.",
-    "observer":      "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
-    "procedure":     "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions.",
-    "lookup":        "Finite key→value mapping. Free function lookup_<name>(key) -> V|Option<V>. Numeric outputs use direct comparison; string outputs return language-specific enums verified via oracle string matching. Reference section: pure_functions (numeric) or string_lookups (enum).",
-    "timer":         "Timer scheduler. Generated struct wraps N timer HAL instances. Conformance verifies registration metadata (type, interval_ms) and callback dispatch via recording mocks. Reference section: timers.",
-    "validator":     "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators.",
-    "codec":         "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional). Oracle cases are `{decoded, encoded}` pairs exercising round-trip symmetry in both directions. Field layout lives in SCXML (sce:byte, sce:bit-offset, sce:bit-size, sce:default-endian); the manifest entry only mirrors field names and canonical types so fragments can iterate them. Field names use SCXML source case (camelCase) as the canonical key across oracle and manifest; each per-language fragment applies its own case filter (Rust/Python snake_case, Go PascalCase, C++/Kotlin as-is camelCase). Reference section: codecs.",
-    "algorithm":     "RFC §5.A pure free function with bounded loops. Free function `<name>(args) -> scalar` with optional bytes parameters lowering to the language's native byte-stream view (`sce_forge_bytes_t` on C11, `&[u8]` on Rust). Cross-(Rust, C11) byte-equivalence is the §A6 acceptance gate; A6 wires the two CRC16-CCITT-FALSE fixtures (bit-by-bit + table-fold) through the conformance harness so any future codegen drift fails ctest. Reference section: pure_functions."
+    "transform": "Pure value transform. Free function(s) compute_*(args) -> scalar or multi-output. Reference section: pure_functions.",
+    "condition": "Pure boolean predicate. Free function <name>(args) -> bool. Reference section: pure_functions.",
+    "filter": "Stateful signal filter. Instance::update(input) -> output, one output per sequence step. Reference section: stateful_filters.",
+    "observer": "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
+    "procedure": "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions.",
+    "lookup": "Finite key\u2192value mapping. Free function lookup_<name>(key) -> V|Option<V>. Numeric outputs use direct comparison; string outputs return language-specific enums verified via oracle string matching. Reference section: pure_functions (numeric) or string_lookups (enum).",
+    "timer": "Timer scheduler. Generated struct wraps N timer HAL instances. Conformance verifies registration metadata (type, interval_ms) and callback dispatch via recording mocks. Reference section: timers.",
+    "validator": "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators.",
+    "codec": "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional). Oracle cases are `{decoded, encoded}` pairs exercising round-trip symmetry in both directions. Field layout lives in SCXML (sce:byte, sce:bit-offset, sce:bit-size, sce:default-endian); the manifest entry only mirrors field names and canonical types so fragments can iterate them. Field names use SCXML source case (camelCase) as the canonical key across oracle and manifest; each per-language fragment applies its own case filter (Rust/Python snake_case, Go PascalCase, C++/Kotlin as-is camelCase). Reference section: codecs.",
+    "algorithm": "RFC \u00a75.A pure free function with bounded loops. Free function `<name>(args) -> scalar` with optional bytes parameters lowering to the language's native byte-stream view (`sce_forge_bytes_t` on C11, `&[u8]` on Rust). Cross-(Rust, C11) byte-equivalence is the \u00a7A6 acceptance gate; A6 wires the two CRC16-CCITT-FALSE fixtures (bit-by-bit + table-fold) through the conformance harness so any future codegen drift fails ctest. Reference section: pure_functions."
   },
   "canonical_types": {
     "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++). `bytes` is the variable-length byte sequence; in args it represents a `sce_forge_bytes_t` view on C11 / `&[u8]` on Rust.",
-    "types": ["bool", "i32", "u8", "u16", "u32", "f32", "f64", "string", "bytes"]
+    "types": [
+      "bool",
+      "i32",
+      "u8",
+      "u16",
+      "u32",
+      "f32",
+      "f64",
+      "string",
+      "bytes"
+    ]
   },
   "fixtures": [
     {
       "name": "interpolation_1d_linear",
       "kind": "interpolation",
       "ref_section": "pure_functions",
-      "args": ["u16"],
-      "output": {"type": "f64", "compare": "tolerance"}
+      "args": [
+        "u16"
+      ],
+      "output": {
+        "type": "f64",
+        "compare": "tolerance"
+      }
     },
     {
       "name": "interpolation_2d_bilinear",
       "kind": "interpolation",
       "ref_section": "pure_functions",
-      "args": ["u16", "u8"],
-      "output": {"type": "f64", "compare": "tolerance"}
+      "args": [
+        "u16",
+        "u8"
+      ],
+      "output": {
+        "type": "f64",
+        "compare": "tolerance"
+      }
     },
-
     {
       "name": "transform_temperature",
       "kind": "transform",
       "ref_section": "pure_functions",
-      "args": ["u16"],
-      "output": {"type": "f64", "compare": "tolerance", "function": "compute_temperature"}
+      "args": [
+        "u16"
+      ],
+      "output": {
+        "type": "f64",
+        "compare": "tolerance",
+        "function": "compute_temperature"
+      }
     },
     {
       "name": "transform_bitwise",
       "kind": "transform",
       "ref_section": "pure_functions",
-      "args": ["u8"],
+      "args": [
+        "u8"
+      ],
       "compound_outputs": [
-        {"key": "high_nibble", "function": "compute_high_nibble", "type": "u8", "compare": "equality"},
-        {"key": "low_nibble",  "function": "compute_low_nibble",  "type": "u8", "compare": "equality"}
+        {
+          "key": "high_nibble",
+          "function": "compute_high_nibble",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "key": "low_nibble",
+          "function": "compute_low_nibble",
+          "type": "u8",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "transform_multi_output",
       "kind": "transform",
       "ref_section": "pure_functions",
-      "args": ["f64"],
+      "args": [
+        "f64"
+      ],
       "compound_outputs": [
-        {"key": "fahrenheit", "function": "compute_fahrenheit", "type": "f64", "compare": "tolerance"},
-        {"key": "kelvin",     "function": "compute_kelvin",     "type": "f64", "compare": "tolerance"}
+        {
+          "key": "fahrenheit",
+          "function": "compute_fahrenheit",
+          "type": "f64",
+          "compare": "tolerance"
+        },
+        {
+          "key": "kelvin",
+          "function": "compute_kelvin",
+          "type": "f64",
+          "compare": "tolerance"
+        }
       ]
     },
-
     {
       "name": "condition_threshold",
       "kind": "condition",
       "ref_section": "pure_functions",
       "function": "condition_threshold",
-      "args": ["f64", "f64", "f64"],
-      "output": {"type": "bool", "compare": "equality"}
+      "args": [
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
     },
     {
       "name": "condition_range",
       "kind": "condition",
       "ref_section": "pure_functions",
       "function": "condition_range",
-      "args": ["u32", "u32", "u32"],
-      "output": {"type": "bool", "compare": "equality"}
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
     },
     {
       "name": "condition_programming",
       "kind": "condition",
       "ref_section": "pure_functions",
       "function": "condition_programming",
-      "args": ["bool", "bool"],
-      "output": {"type": "bool", "compare": "equality"}
+      "args": [
+        "bool",
+        "bool"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
     },
-
     {
       "name": "filter_moving_average",
       "kind": "filter",
       "ref_section": "stateful_filters",
       "input": "f64",
-      "output": {"type": "f64", "compare": "tolerance"}
+      "output": {
+        "type": "f64",
+        "compare": "tolerance"
+      }
     },
     {
       "name": "filter_debounce",
       "kind": "filter",
       "ref_section": "stateful_filters",
       "input": "bool",
-      "output": {"type": "bool", "compare": "equality"}
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
     },
     {
       "name": "filter_low_pass",
       "kind": "filter",
       "ref_section": "stateful_filters",
       "input": "f64",
-      "output": {"type": "f64", "compare": "tolerance"}
+      "output": {
+        "type": "f64",
+        "compare": "tolerance"
+      }
     },
-
     {
       "name": "observer_coolant",
       "kind": "observer",
       "ref_section": "observers",
       "input": "f64",
-      "event_tags": ["EMIT_WARNING", "CLEAR_WARNING", "EMERGENCY_SHUTDOWN"]
+      "event_tags": [
+        "EMIT_WARNING",
+        "CLEAR_WARNING",
+        "EMERGENCY_SHUTDOWN"
+      ]
     },
-
     {
       "name": "procedure_linear",
       "kind": "procedure",
       "ref_section": "pure_functions",
-      "args": ["i32"]
+      "args": [
+        "i32"
+      ]
     },
     {
       "name": "procedure_diamond",
       "kind": "procedure",
       "ref_section": "pure_functions",
-      "args": ["u16", "string"]
+      "args": [
+        "u16",
+        "string"
+      ]
     },
     {
       "name": "procedure_startup_check",
       "kind": "procedure",
       "ref_section": "pure_functions",
-      "args": ["f32", "f32"]
+      "args": [
+        "f32",
+        "f32"
+      ]
     },
     {
       "name": "crossfile_procedure_codec",
       "kind": "procedure",
       "ref_section": "pure_functions",
-      "args": ["u32"]
+      "args": [
+        "u32"
+      ]
     },
     {
       "name": "crossfile_procedure_codec_mutate",
       "kind": "procedure",
       "ref_section": "pure_functions",
-      "args": ["u8"]
+      "args": [
+        "u8"
+      ]
     },
     {
       "name": "crossfile_procedure_filter",
       "kind": "procedure",
       "ref_section": "pure_functions",
-      "args": ["f64"]
+      "args": [
+        "f64"
+      ]
     },
     {
       "name": "procedure_security_access",
       "kind": "procedure",
       "ref_section": "pure_functions",
-      "args": ["u32"],
+      "args": [
+        "u32"
+      ],
       "helpers": {
-        "computeKey": {"kind": "xor_bytes", "mask": 165}
+        "computeKey": {
+          "kind": "xor_bytes",
+          "mask": 165
+        }
       }
     },
-
     {
       "name": "lookup_alarm_code",
       "kind": "lookup",
       "ref_section": "pure_functions",
       "on_miss": "error",
-      "args": ["i32"],
-      "output": {"type": "i32", "compare": "equality"}
+      "args": [
+        "i32"
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
     },
     {
       "name": "lookup_state_action",
       "kind": "lookup",
       "ref_section": "pure_functions",
       "on_miss": "error",
-      "args": ["i32"],
-      "output": {"type": "i32", "compare": "equality"}
+      "args": [
+        "i32"
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
     },
     {
       "name": "lookup_unit_scale",
       "kind": "lookup",
       "ref_section": "pure_functions",
       "on_miss": "error",
-      "args": ["i32"],
-      "output": {"type": "f64", "compare": "tolerance"}
+      "args": [
+        "i32"
+      ],
+      "output": {
+        "type": "f64",
+        "compare": "tolerance"
+      }
     },
     {
       "name": "lookup_severity_default",
       "kind": "lookup",
       "ref_section": "pure_functions",
       "on_miss": "default",
-      "args": ["i32"],
-      "output": {"type": "i32", "compare": "equality"}
+      "args": [
+        "i32"
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
     },
-
     {
       "name": "validator_range_only",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["f64"],
+      "args": [
+        "f64"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "validator_plausibility_only",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["f64", "f64"],
+      "args": [
+        "f64",
+        "f64"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "validator_rpm_check",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["u16", "string"],
+      "args": [
+        "u16",
+        "string"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "validator_signed_roc",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["i32", "f64"],
+      "args": [
+        "i32",
+        "f64"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "crossfile_validator_codec",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["u8", "u16"],
+      "args": [
+        "u8",
+        "u16"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "crossfile_validator_filter",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["f64", "f64"],
+      "args": [
+        "f64",
+        "f64"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "crossfile_validator_transform",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["u16"],
+      "args": [
+        "u16"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "crossfile_validator_condition",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["f64", "f64", "f64"],
+      "args": [
+        "f64",
+        "f64",
+        "f64"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "crossfile_validator_lookup",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["i32"],
+      "args": [
+        "i32"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
     {
       "name": "crossfile_validator_interpolation",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["u16"],
+      "args": [
+        "u16"
+      ],
       "output": [
-        {"name": "valid",  "type": "bool",   "compare": "equality"},
-        {"name": "reason", "type": "string", "compare": "equality"}
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
       ]
     },
-
     {
       "name": "codec_little_endian",
       "kind": "codec",
       "ref_section": "codecs",
       "fields": [
-        {"name": "sensorId", "type": "u8",  "compare": "equality"},
-        {"name": "value",    "type": "u16", "compare": "equality"},
-        {"name": "status",   "type": "u8",  "compare": "equality"}
+        {
+          "name": "sensorId",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "value",
+          "type": "u16",
+          "compare": "equality"
+        },
+        {
+          "name": "status",
+          "type": "u8",
+          "compare": "equality"
+        }
       ]
     },
     {
@@ -313,9 +547,21 @@
       "kind": "codec",
       "ref_section": "codecs",
       "fields": [
-        {"name": "msgId",   "type": "u8",  "compare": "equality"},
-        {"name": "length",  "type": "u8",  "compare": "equality"},
-        {"name": "payload", "type": "u16", "compare": "equality"}
+        {
+          "name": "msgId",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "length",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "payload",
+          "type": "u16",
+          "compare": "equality"
+        }
       ]
     },
     {
@@ -323,9 +569,21 @@
       "kind": "codec",
       "ref_section": "codecs",
       "fields": [
-        {"name": "priority",  "type": "u8", "compare": "equality"},
-        {"name": "channel",   "type": "u8", "compare": "equality"},
-        {"name": "direction", "type": "u8", "compare": "equality"}
+        {
+          "name": "priority",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "channel",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "direction",
+          "type": "u8",
+          "compare": "equality"
+        }
       ]
     },
     {
@@ -333,9 +591,21 @@
       "kind": "codec",
       "ref_section": "codecs",
       "fields": [
-        {"name": "msgId",   "type": "u8",    "compare": "equality"},
-        {"name": "status",  "type": "u8",    "compare": "equality"},
-        {"name": "payload", "type": "bytes", "compare": "equality"}
+        {
+          "name": "msgId",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "status",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "payload",
+          "type": "bytes",
+          "compare": "equality"
+        }
       ]
     },
     {
@@ -343,47 +613,98 @@
       "kind": "codec",
       "ref_section": "codecs",
       "fields": [
-        {"name": "msgId",   "type": "u8",    "compare": "equality"},
-        {"name": "len",     "type": "u8",    "compare": "equality"},
-        {"name": "payload", "type": "bytes", "compare": "equality"}
+        {
+          "name": "msgId",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "len",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "payload",
+          "type": "bytes",
+          "compare": "equality"
+        }
       ]
     },
-
+    {
+      "name": "codec_vle_zint_u64",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {
+          "name": "value",
+          "type": "u64",
+          "compare": "equality"
+        }
+      ]
+    },
     {
       "name": "timer_diag_scheduler",
       "kind": "timer",
       "ref_section": "timers",
       "timers": [
-        {"id": "testerPresent", "timer_type": "periodic", "interval_ms": 2000, "callback": "fireTesterPresent"},
-        {"id": "responseTimeout", "timer_type": "one_shot", "interval_ms": 5000, "callback": "fireHandleTimeout"},
-        {"id": "retryDelay", "timer_type": "one_shot", "interval_ms": 10000, "callback": "fireRetrySecurityAccess"}
+        {
+          "id": "testerPresent",
+          "timer_type": "periodic",
+          "interval_ms": 2000,
+          "callback": "fireTesterPresent"
+        },
+        {
+          "id": "responseTimeout",
+          "timer_type": "one_shot",
+          "interval_ms": 5000,
+          "callback": "fireHandleTimeout"
+        },
+        {
+          "id": "retryDelay",
+          "timer_type": "one_shot",
+          "interval_ms": 10000,
+          "callback": "fireRetrySecurityAccess"
+        }
       ]
     },
-
     {
       "name": "lookup_engine_status",
       "kind": "lookup",
       "ref_section": "string_lookups",
       "on_miss": "default",
-      "args": ["u8"],
-      "output": {"type": "string", "compare": "equality"}
+      "args": [
+        "u8"
+      ],
+      "output": {
+        "type": "string",
+        "compare": "equality"
+      }
     },
-
     {
       "name": "algorithm_crc16",
       "kind": "algorithm",
       "ref_section": "pure_functions",
       "function": "algorithm_crc16",
-      "args": ["bytes"],
-      "output": {"type": "u16", "compare": "equality"}
+      "args": [
+        "bytes"
+      ],
+      "output": {
+        "type": "u16",
+        "compare": "equality"
+      }
     },
     {
       "name": "algorithm_crc16_table",
       "kind": "algorithm",
       "ref_section": "pure_functions",
       "function": "algorithm_crc16_table",
-      "args": ["bytes"],
-      "output": {"type": "u16", "compare": "equality"}
+      "args": [
+        "bytes"
+      ],
+      "output": {
+        "type": "u16",
+        "compare": "equality"
+      }
     }
   ]
 }

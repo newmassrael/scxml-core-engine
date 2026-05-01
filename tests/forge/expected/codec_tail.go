@@ -19,10 +19,8 @@ type CodecTail struct {
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
+// VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecTail(cursor *codec.SceCursor) (*CodecTail, error) {
-	// Variable-length codec: tail / length-ref fields consume bytes
-	// beyond the fixed prefix. B1-prep treats the entire cursor
-	// remaining as one frame.
 	frameLen := cursor.Remaining()
 	if frameLen < 2 {
 		return nil, codec.ErrNeedMoreBytes

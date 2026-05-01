@@ -27,11 +27,22 @@ type {{ struct_name }} struct {
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
+// VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error) {
-{% if has_variable_fields %}
-	// Variable-length codec: tail / length-ref fields consume bytes
-	// beyond the fixed prefix. B1-prep treats the entire cursor
-	// remaining as one frame.
+{% if has_vle_fields %}
+	// Streaming codec: each field reads from cursor directly
+	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
+	// `field.id` — the struct literal's `Foo: Foo` is unambiguous
+	// because the package owns both names.
+{% for field in fields %}
+	{{ field.vle_decode_stmt }}
+{% endfor %}
+	return &{{ struct_name }}{
+{% for field in fields %}
+		{{ field.id }}: {{ field.id }},
+{% endfor %}
+	}, nil
+{% elif has_variable_fields %}
 	frameLen := cursor.Remaining()
 	if frameLen < {{ min_bytes }} {
 		return nil, codec.ErrNeedMoreBytes
@@ -40,32 +51,41 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 	if err != nil {
 		return nil, err
 	}
-{% else %}
-	raw, err := cursor.PeekSlice({{ min_bytes }})
-	if err != nil {
-		return nil, err
-	}
-{% endif %}
 	value := &{{ struct_name }}{
 {% for field in fields %}
 		{{ field.id }}: {{ field.decode_expr }},
 {% endfor %}
 	}
-{% if has_variable_fields %}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err
 	}
+	return value, nil
 {% else %}
+	raw, err := cursor.PeekSlice({{ min_bytes }})
+	if err != nil {
+		return nil, err
+	}
+	value := &{{ struct_name }}{
+{% for field in fields %}
+		{{ field.id }}: {{ field.decode_expr }},
+{% endfor %}
+	}
 	if err := cursor.Advance({{ min_bytes }}); err != nil {
 		return nil, err
 	}
-{% endif %}
 	return value, nil
+{% endif %}
 }
 
 // Encode serializes the {{ struct_name }} into raw bytes.
 func (s *{{ struct_name }}) Encode() []byte {
-{% if has_variable_fields %}
+{% if has_vle_fields %}
+	r := make([]byte, 0, {{ max_bytes }})
+{% for field in fields %}
+{{ field.vle_encode_block }}
+{% endfor %}
+	return r
+{% elif has_variable_fields %}
 	r := make([]byte, 0, {{ max_bytes }})
 {% for expr in encode_exprs %}
 	r = append(r, {{ expr }})

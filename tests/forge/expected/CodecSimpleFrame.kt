@@ -15,12 +15,14 @@ data class CodecSimpleFrame(
     var length: UByte = 0.toUByte(),
     var payload: UShort = 0.toUShort()
 ) {
-    fun encode(): ByteArray = byteArrayOf(
-        msgId.toByte(),
-        length.toByte(),
-        (payload.toInt() ushr 8 and 0xFF).toByte(),
-        (payload.toInt() and 0xFF).toByte()
-    )
+    fun encode(): ByteArray {
+        return byteArrayOf(
+            msgId.toByte(),
+            length.toByte(),
+            (payload.toInt() ushr 8 and 0xFF).toByte(),
+            (payload.toInt() and 0xFF).toByte()
+        )
+    }
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor

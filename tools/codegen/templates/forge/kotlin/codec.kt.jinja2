@@ -23,8 +23,14 @@ data class {{ struct_name }}(
     var {{ field.id }}: {{ field.kt_type }} = {{ field.kt_default }}{{ "," if not loop.last else "" }}
 {% endfor %}
 ) {
-{% if has_variable_fields %}
     fun encode(): ByteArray {
+{% if has_vle_fields %}
+        val r = mutableListOf<Byte>()
+{% for field in fields %}
+{{ field.vle_encode_block }}
+{% endfor %}
+        return r.toByteArray()
+{% elif has_variable_fields %}
         val r = mutableListOf<Byte>()
 {% for expr in encode_exprs %}
         r.add({{ expr }})
@@ -35,14 +41,14 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
         return r.toByteArray()
-    }
 {% else %}
-    fun encode(): ByteArray = byteArrayOf(
+        return byteArrayOf(
 {% for expr in encode_exprs %}
-        {{ expr }}{{ "," if not loop.last else "" }}
+            {{ expr }}{{ "," if not loop.last else "" }}
 {% endfor %}
-    )
+        )
 {% endif %}
+    }
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
@@ -50,27 +56,38 @@ data class {{ struct_name }}(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): {{ struct_name }}? {
-{% if has_variable_fields %}
-            // Variable-length codec: tail / length-ref fields consume bytes
-            // beyond the fixed prefix. B1-prep treats the entire cursor
-            // remaining as one frame.
+{% if has_vle_fields %}
+            // Streaming codec: each field reads from cursor directly
+            // (VLE base-128 chain).
+{% for field in fields %}
+            {{ field.vle_decode_stmt }}
+{% endfor %}
+            return {{ struct_name }}(
+{% for field in fields %}
+                {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
+{% endfor %}
+            )
+{% elif has_variable_fields %}
             val frameLen = cursor.remaining()
             if (frameLen < {{ min_bytes }}) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
-{% else %}
-            val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
-{% endif %}
             val value = {{ struct_name }}(
 {% for field in fields %}
                 {{ field.id }} = {{ field.decode_expr }}{{ "," if not loop.last else "" }}
 {% endfor %}
             )
-{% if has_variable_fields %}
             if (!cursor.advance(frameLen)) return null
-{% else %}
-            if (!cursor.advance({{ min_bytes }})) return null
-{% endif %}
             return value
+{% else %}
+            val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
+            val value = {{ struct_name }}(
+{% for field in fields %}
+                {{ field.id }} = {{ field.decode_expr }}{{ "," if not loop.last else "" }}
+{% endfor %}
+            )
+            if (!cursor.advance({{ min_bytes }})) return null
+            return value
+{% endif %}
         }
     }
 }

@@ -29,6 +29,10 @@ pub enum CanonicalType {
     U8,
     U16,
     U32,
+    /// Used by codec fields declared `sce:type="uint64" sce:bit-size="vle"`
+    /// (RFC §5.B App. B canonical Zenoh ZInt). Round-trip oracle vectors
+    /// store the decoded value as a JSON integer literal up to u64::MAX.
+    U64,
     F32,
     F64,
     String,
@@ -410,6 +414,7 @@ pub fn rust_type_for(ty: &str) -> &'static str {
         "u8" => "u8",
         "u16" => "u16",
         "u32" => "u32",
+        "u64" => "u64",
         "f32" => "f32",
         "f64" => "f64",
         "string" => "&str",
@@ -429,6 +434,7 @@ pub fn rust_unmarshal_expr(raw: &str, ty: &str) -> String {
         "u8" => format!("{raw}.as_u64().expect(\"u64\") as u8"),
         "u16" => format!("{raw}.as_u64().expect(\"u64\") as u16"),
         "u32" => format!("{raw}.as_u64().expect(\"u64\") as u32"),
+        "u64" => format!("{raw}.as_u64().expect(\"u64\")"),
         "string" => format!("{raw}.as_str().expect(\"string\")"),
         "bytes" => format!(
             "{raw}.as_array().expect(\"array\").iter()\
@@ -449,6 +455,7 @@ pub fn cpp_type_for(ty: &str) -> &'static str {
         "u8" => "std::uint8_t",
         "u16" => "std::uint16_t",
         "u32" => "std::uint32_t",
+        "u64" => "std::uint64_t",
         "string" => "std::string",
         "bytes" => "std::vector<std::uint8_t>",
         _ => "/* unknown canonical type */ void",
@@ -467,6 +474,7 @@ pub fn go_type_for(ty: &str) -> &'static str {
         "u8" => "uint8",
         "u16" => "uint16",
         "u32" => "uint32",
+        "u64" => "uint64",
         "string" => "string",
         "bytes" => "[]byte",
         _ => "/* unknown canonical type */ interface{}",
@@ -487,6 +495,7 @@ pub fn c_type_for(ty: &str) -> &'static str {
         "u8" => "uint8_t",
         "u16" => "uint16_t",
         "u32" => "uint32_t",
+        "u64" => "uint64_t",
         "string" => "const char *",
         "bytes" => "uint8_t",
         _ => "/* unknown canonical type */ void",
@@ -518,6 +527,18 @@ pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
                 format!("{f:.1}")
             } else {
                 format!("{f}")
+            }
+        }
+        (serde_json::Value::Number(n), "u64") => {
+            // u64 literals require an explicit ULL suffix in C11 — bare
+            // text exceeding INT_MAX trips -Werror's
+            // "integer constant is so large that it is unsigned"
+            // (the C11 default-typing ladder picks signed long, which
+            // overflows for ZInt u64 oracle vectors near u64::MAX).
+            if let Some(u) = n.as_u64() {
+                format!("{u}uLL")
+            } else {
+                format!("{n}uLL")
             }
         }
         (serde_json::Value::Number(n), _) => {
@@ -570,6 +591,7 @@ pub fn kt_type_for(ty: &str) -> &'static str {
         "u8" => "UByte",
         "u16" => "UShort",
         "u32" => "UInt",
+        "u64" => "ULong",
         "string" => "String",
         "bytes" => "ByteArray",
         _ => "/* unknown canonical type */ Any",
@@ -587,6 +609,7 @@ pub fn kt_unmarshal_expr(raw: &str, ty: &str) -> String {
         "u8" => format!("{raw}.jsonPrimitive.int.toUByte()"),
         "u16" => format!("{raw}.jsonPrimitive.int.toUShort()"),
         "u32" => format!("{raw}.jsonPrimitive.int.toUInt()"),
+        "u64" => format!("{raw}.jsonPrimitive.long.toULong()"),
         "string" => format!("{raw}.jsonPrimitive.content"),
         "bytes" => format!(
             "{raw}.jsonArray.map {{ it.jsonPrimitive.int.toByte() }}.toByteArray()"

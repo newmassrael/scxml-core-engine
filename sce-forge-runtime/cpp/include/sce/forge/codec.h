@@ -21,11 +21,12 @@
 
 namespace SCE::Forge {
 
-/// Typed decode error. `NeedMoreBytes` is the only reachable variant
-/// while every codec field is fixed-width. B1-α adds `VleWidthOverflow`,
-/// B1-β adds `UnknownVariantTag`.
+/// Typed decode error. B1-β adds `UnknownVariantTag`.
 enum class CodecError : std::uint8_t {
     NeedMoreBytes = 1,
+    /// A `vle_u<N>` field's continuation chain implies a value wider
+    /// than the declared type. RFC §5.B `codec/vle-width-overflow`.
+    VleWidthOverflow = 2,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
@@ -57,10 +58,52 @@ public:
         return true;
     }
 
+    /// Read a base-128 variable-length encoded unsigned value of up to
+    /// `max_bits` payload width. Each byte carries 7 data bits in its
+    /// low 7; bit 7 is the continuation flag. LSB-first byte order.
+    /// Returns `std::nullopt` on `NeedMoreBytes` and signals
+    /// `VleWidthOverflow` via `last_vle_overflow()` flag — split from
+    /// the std::optional return to keep the hot decode path branch-light.
+    /// Mirrors the Zenoh ZInt wire format (RFC §5.B Appendix B).
+    std::optional<std::uint64_t> read_vle_u16() noexcept { return read_vle_inner(16); }
+    std::optional<std::uint64_t> read_vle_u32() noexcept { return read_vle_inner(32); }
+    std::optional<std::uint64_t> read_vle_u64() noexcept { return read_vle_inner(64); }
+
+    [[nodiscard]] constexpr bool last_vle_overflow() const noexcept { return vle_overflow_; }
+
 private:
+    std::optional<std::uint64_t> read_vle_inner(std::uint32_t max_bits) noexcept {
+        vle_overflow_ = false;
+        const std::uint32_t max_bytes = (max_bits + 6) / 7;
+        std::uint64_t value = 0;
+        std::uint32_t shift = 0;
+        for (std::uint32_t i = 0; i < max_bytes; ++i) {
+            const std::uint8_t* p = peek_slice(1);
+            if (p == nullptr) return std::nullopt;
+            (void)advance(1);
+            const std::uint64_t payload = static_cast<std::uint64_t>(*p & 0x7F);
+            if (shift + 7 > max_bits) {
+                const std::uint32_t allowed = max_bits - shift;
+                const std::uint64_t max_payload = (1ULL << allowed) - 1ULL;
+                if (payload > max_payload) {
+                    vle_overflow_ = true;
+                    return std::nullopt;
+                }
+            }
+            value |= payload << shift;
+            if ((*p & 0x80) == 0) {
+                return value;
+            }
+            shift += 7;
+        }
+        vle_overflow_ = true;
+        return std::nullopt;
+    }
+
     const std::uint8_t* data_;
     std::size_t len_;
     std::size_t pos_;
+    bool vle_overflow_ = false;
 };
 
 }  // namespace SCE::Forge

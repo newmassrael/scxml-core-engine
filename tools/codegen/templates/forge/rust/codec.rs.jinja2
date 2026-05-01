@@ -40,7 +40,19 @@ impl {{ struct_name }} {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-{% if has_variable_fields %}
+{% if has_vle_fields %}
+        // Streaming codec: each field reads its own bytes from the
+        // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
+        // a fixed window; cursor advances per-field.
+{% for field in fields %}
+        {{ field.vle_decode_stmt }}
+{% endfor %}
+        Ok(Self {
+{% for field in fields %}
+            {{ field.id }},
+{% endfor %}
+        })
+{% elif has_variable_fields %}
         // Variable-length codec: tail / length-ref fields consume bytes
         // beyond the fixed prefix. B1-prep treats the entire cursor
         // remaining as one frame (matches the harness "one frame per
@@ -52,24 +64,33 @@ impl {{ struct_name }} {
             return Err(CodecError::NeedMoreBytes);
         }
         let raw = cursor.peek_slice(_frame_len)?;
-{% else %}
-        let raw = cursor.peek_slice({{ min_bytes }})?;
-{% endif %}
         let value = Self {
 {% for field in fields %}
             {{ field.id }}: {{ field.decode_expr }},
 {% endfor %}
         };
-{% if has_variable_fields %}
         cursor.advance(_frame_len)?;
-{% else %}
-        cursor.advance({{ min_bytes }})?;
-{% endif %}
         Ok(value)
+{% else %}
+        let raw = cursor.peek_slice({{ min_bytes }})?;
+        let value = Self {
+{% for field in fields %}
+            {{ field.id }}: {{ field.decode_expr }},
+{% endfor %}
+        };
+        cursor.advance({{ min_bytes }})?;
+        Ok(value)
+{% endif %}
     }
 
     pub fn encode(&self) -> Vec<u8> {
-{% if has_variable_fields %}
+{% if has_vle_fields %}
+        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
+{% for field in fields %}
+{{ field.vle_encode_block }}
+{% endfor %}
+        r
+{% elif has_variable_fields %}
         let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for expr in encode_exprs %}
         r.push({{ expr }});

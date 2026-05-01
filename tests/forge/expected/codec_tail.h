@@ -27,10 +27,6 @@ struct CodecTail {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecTail> decode(::SCE::Forge::SceCursor& cursor) {
-        // Variable-length codec: tail / length-ref fields consume bytes
-        // beyond the fixed prefix. B1-prep treats the entire cursor
-        // remaining as one frame; stream-correct length-ref consumption
-        // lands with its first multi-frame consumer in a later B-stage.
         std::size_t _frame_len = cursor.remaining();
         if (_frame_len < 2) return std::nullopt;
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);

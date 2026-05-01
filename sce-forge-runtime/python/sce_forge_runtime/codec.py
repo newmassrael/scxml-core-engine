@@ -25,6 +25,12 @@ class NeedMoreBytes(CodecError):
     appending more bytes."""
 
 
+class VleWidthOverflow(CodecError):
+    """Raised when a vle_u<N> field's continuation chain implies a value
+    wider than the declared type. RFC §5.B
+    ``codec/vle-width-overflow``."""
+
+
 class SceCursor:
     """Read-only cursor over a borrowed input ``bytes`` / ``memoryview``.
 
@@ -59,3 +65,40 @@ class SceCursor:
         if self.remaining() < n:
             raise NeedMoreBytes()
         self._pos += n
+
+    def _read_vle_inner(self, max_bits: int) -> int:
+        """Read a base-128 variable-length encoded unsigned value of up
+        to ``max_bits`` payload width. LSB-first byte order; bit 7 is
+        the continuation flag. Mirrors Zenoh ZInt (RFC §5.B Appendix B).
+        """
+        max_bytes = (max_bits + 6) // 7
+        value = 0
+        shift = 0
+        for _ in range(max_bytes):
+            if self.remaining() < 1:
+                raise NeedMoreBytes()
+            b = self._buf[self._pos]
+            self._pos += 1
+            payload = b & 0x7F
+            if shift + 7 > max_bits:
+                allowed = max_bits - shift
+                max_payload = (1 << allowed) - 1
+                if payload > max_payload:
+                    raise VleWidthOverflow()
+            value |= payload << shift
+            if (b & 0x80) == 0:
+                return value
+            shift += 7
+        raise VleWidthOverflow()
+
+    def read_vle_u16(self) -> int:
+        """Read a vle_u16 field (1-3 wire bytes)."""
+        return self._read_vle_inner(16)
+
+    def read_vle_u32(self) -> int:
+        """Read a vle_u32 field (1-5 wire bytes)."""
+        return self._read_vle_inner(32)
+
+    def read_vle_u64(self) -> int:
+        """Read a vle_u64 field (1-10 wire bytes). Canonical Zenoh ZInt."""
+        return self._read_vle_inner(64)

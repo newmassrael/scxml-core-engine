@@ -29,12 +29,13 @@
 extern "C" {
 #endif
 
-/* Typed decode error. NeedMoreBytes is the only reachable variant
- * while every codec field is fixed-width. B1-α adds VleWidthOverflow,
- * B1-β adds UnknownVariantTag. */
+/* Typed decode error. B1-β adds UnknownVariantTag. */
 typedef enum {
     SCE_FORGE_CODEC_OK = 0,
     SCE_FORGE_CODEC_NEED_MORE_BYTES = 1,
+    /* A vle_u<N> field's continuation chain implies a value wider than
+     * the declared type. RFC §5.B `codec/vle-width-overflow`. */
+    SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW = 2,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a
@@ -75,6 +76,57 @@ static inline bool sce_forge_cursor_advance(sce_forge_cursor_t *c, size_t n) {
     if (sce_forge_cursor_remaining(c) < n) return false;
     c->pos += n;
     return true;
+}
+
+/* Read a base-128 variable-length encoded unsigned value of up to
+ * `max_bits` payload width into *out. Each byte carries 7 data bits
+ * in its low 7; bit 7 is the continuation flag. LSB-first byte order.
+ * Mirrors the Zenoh ZInt wire format (RFC §5.B Appendix B).
+ *
+ * Returns SCE_FORGE_CODEC_OK on success, SCE_FORGE_CODEC_NEED_MORE_BYTES
+ * on truncation, SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW when the
+ * continuation chain implies a value wider than max_bits. */
+static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_inner(
+    sce_forge_cursor_t *c, uint32_t max_bits, uint64_t *out) {
+    uint32_t max_bytes = (max_bits + 6u) / 7u;
+    uint64_t value = 0;
+    uint32_t shift = 0;
+    for (uint32_t i = 0; i < max_bytes; ++i) {
+        const uint8_t *p = sce_forge_cursor_peek(c, 1);
+        if (p == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        (void)sce_forge_cursor_advance(c, 1);
+        uint64_t payload = (uint64_t)(*p & 0x7Fu);
+        if (shift + 7u > max_bits) {
+            uint32_t allowed = max_bits - shift;
+            uint64_t max_payload = ((uint64_t)1 << allowed) - 1u;
+            if (payload > max_payload) return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW;
+        }
+        value |= payload << shift;
+        if ((*p & 0x80u) == 0u) {
+            *out = value;
+            return SCE_FORGE_CODEC_OK;
+        }
+        shift += 7u;
+    }
+    return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW;
+}
+
+static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u16(sce_forge_cursor_t *c, uint16_t *out) {
+    uint64_t v;
+    sce_forge_codec_status_t st = sce_forge_cursor_read_vle_inner(c, 16, &v);
+    if (st == SCE_FORGE_CODEC_OK) *out = (uint16_t)v;
+    return st;
+}
+
+static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u32(sce_forge_cursor_t *c, uint32_t *out) {
+    uint64_t v;
+    sce_forge_codec_status_t st = sce_forge_cursor_read_vle_inner(c, 32, &v);
+    if (st == SCE_FORGE_CODEC_OK) *out = (uint32_t)v;
+    return st;
+}
+
+static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u64(sce_forge_cursor_t *c, uint64_t *out) {
+    return sce_forge_cursor_read_vle_inner(c, 64, out);
 }
 
 #ifdef __cplusplus

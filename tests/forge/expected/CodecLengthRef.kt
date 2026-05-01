@@ -29,9 +29,6 @@ data class CodecLengthRef(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecLengthRef? {
-            // Variable-length codec: tail / length-ref fields consume bytes
-            // beyond the fixed prefix. B1-prep treats the entire cursor
-            // remaining as one frame.
             val frameLen = cursor.remaining()
             if (frameLen < 2) return null
             val raw = cursor.peekSlice(frameLen) ?: return null

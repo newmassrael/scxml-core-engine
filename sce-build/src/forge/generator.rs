@@ -961,6 +961,8 @@ fn render_codec(
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
+    let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
+
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
@@ -974,19 +976,35 @@ fn render_codec(
                 generate_decode_expr(f, m.default_endian, lang, length_byte_off).into(),
             );
             obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
+            obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
             obj.insert("byte_off".into(), f.byte_offset.into());
             if f.is_variable_length() {
-                let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
-                obj.insert("max_size".into(), resolved.into());
-                let kind = match &f.bit_size {
-                    BitSize::Tail => "tail",
-                    BitSize::LengthRef => "length-ref",
-                    BitSize::Fixed { .. } => unreachable!("is_variable_length excludes Fixed"),
-                };
-                obj.insert("bit_size_kind".into(), kind.into());
-                if matches!(f.bit_size, BitSize::LengthRef) {
-                    if let Some(lf) = &f.length_field {
-                        obj.insert("length_field".into(), l.codec_field_id(lf).into());
+                if let BitSize::Vle { width_bits } = &f.bit_size {
+                    obj.insert("vle_width_bits".into(), (*width_bits).into());
+                    obj.insert("vle_max_bytes".into(), width_bits.div_ceil(7).into());
+                    obj.insert("bit_size_kind".into(), "vle".into());
+                    obj.insert(
+                        "vle_decode_stmt".into(),
+                        vle_decode_stmt(&l.codec_field_id(&f.id), *width_bits, lang).into(),
+                    );
+                    obj.insert(
+                        "vle_encode_block".into(),
+                        vle_encode_block(&l.codec_field_id(&f.id), *width_bits, lang).into(),
+                    );
+                } else {
+                    let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
+                    obj.insert("max_size".into(), resolved.into());
+                    let kind = match &f.bit_size {
+                        BitSize::Tail => "tail",
+                        BitSize::LengthRef => "length-ref",
+                        BitSize::Fixed { .. } | BitSize::Vle { .. } =>
+                            unreachable!("variable + non-vle path covers Tail/LengthRef only"),
+                    };
+                    obj.insert("bit_size_kind".into(), kind.into());
+                    if matches!(f.bit_size, BitSize::LengthRef) {
+                        if let Some(lf) = &f.length_field {
+                            obj.insert("length_field".into(), l.codec_field_id(lf).into());
+                        }
                     }
                 }
             }
@@ -1007,6 +1025,7 @@ fn render_codec(
     ctx.insert("min_bytes".into(), m.min_frame_bytes().into());
     ctx.insert("max_bytes".into(), m.max_frame_bytes().into());
     ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
+    ctx.insert("has_vle_fields".into(), has_vle_fields.into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
 
     // C11 (RFC §5.J.2 §3 D2): full-qual flat-scope identifiers.
@@ -1042,6 +1061,122 @@ fn resolve_length_field_byte_off(
     field.length_field.as_ref().and_then(|name| {
         fields.iter().find(|x| x.id == *name).map(|x| x.byte_offset)
     })
+}
+
+/// Per-language VLE decode statement: declares a local of the field's
+/// SceType (uint16/uint32/uint64) and reads a `vle_u<N>` value from the
+/// cursor, propagating `NeedMoreBytes` / `VleWidthOverflow` per the
+/// language's idiom (Result `?`, std::optional check, error pair, raise).
+fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match (lang, width_bits) {
+        (Language::Rust, 16) =>
+            format!("let {field_id} = cursor.read_vle_u16()?;"),
+        (Language::Rust, 32) =>
+            format!("let {field_id} = cursor.read_vle_u32()?;"),
+        (Language::Rust, 64) =>
+            format!("let {field_id} = cursor.read_vle_u64()?;"),
+        (Language::Cpp, n) => format!(
+            "auto {field_id}_opt = cursor.read_vle_u{n}();\n        \
+             if (!{field_id}_opt.has_value()) return std::nullopt;\n        \
+             auto {field_id} = static_cast<std::uint{n}_t>(*{field_id}_opt);"
+        ),
+        (Language::C11, n) => format!(
+            "uint{n}_t {field_id};\n    \
+             {{\n        \
+                 sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u{n}(cursor, &{field_id});\n        \
+                 if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;\n    \
+             }}"
+        ),
+        (Language::Kotlin, 16) =>
+            format!("val {field_id} = cursor.readVleU16() ?: return null"),
+        (Language::Kotlin, 32) =>
+            format!("val {field_id} = cursor.readVleU32() ?: return null"),
+        (Language::Kotlin, 64) =>
+            format!("val {field_id} = cursor.readVleU64() ?: return null"),
+        (Language::Go, 16) => format!(
+            "{field_id}, err := cursor.ReadVLEU16()\n\tif err != nil {{ return nil, err }}"
+        ),
+        (Language::Go, 32) => format!(
+            "{field_id}, err := cursor.ReadVLEU32()\n\tif err != nil {{ return nil, err }}"
+        ),
+        (Language::Go, 64) => format!(
+            "{field_id}, err := cursor.ReadVLEU64()\n\tif err != nil {{ return nil, err }}"
+        ),
+        (Language::Python, n) => format!(
+            "{field_id} = cursor.read_vle_u{n}()"
+        ),
+        (_, w) => format!("/* unsupported vle_u{w} on {lang:?} */"),
+    }
+}
+
+/// Per-language VLE encode block: emits the base-128 byte loop into the
+/// language's encode buffer accumulator (`r` for Rust/Cpp/Kotlin/Go,
+/// bytearray for Python, `r.bytes[pos++]` for C11). Width is captured
+/// only for cast/type names — the loop logic is identical across widths.
+fn vle_encode_block(field_id: &str, width_bits: u32, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust => format!(
+            "        {{\n            \
+                 let mut _v = self.{field_id} as u64;\n            \
+                 while _v >= 0x80 {{\n                \
+                     r.push((_v as u8 & 0x7F) | 0x80);\n                \
+                     _v >>= 7;\n            \
+                 }}\n            \
+                 r.push(_v as u8);\n        \
+             }}"
+        ),
+        Language::Cpp => format!(
+            "        {{\n            \
+                 std::uint64_t _v = static_cast<std::uint64_t>({field_id});\n            \
+                 while (_v >= 0x80) {{\n                \
+                     r.push_back(static_cast<std::uint8_t>((_v & 0x7F) | 0x80));\n                \
+                     _v >>= 7;\n            \
+                 }}\n            \
+                 r.push_back(static_cast<std::uint8_t>(_v));\n        \
+             }}"
+        ),
+        Language::C11 => format!(
+            "    {{\n        \
+                 uint64_t _v = (uint64_t)self->{field_id};\n        \
+                 while (_v >= 0x80u) {{\n            \
+                     r.bytes[r.len++] = (uint8_t)((_v & 0x7Fu) | 0x80u);\n            \
+                     _v >>= 7;\n        \
+                 }}\n        \
+                 r.bytes[r.len++] = (uint8_t)_v;\n    \
+             }}"
+        ),
+        Language::Kotlin => format!(
+            "        run {{\n            \
+                 var _v: ULong = {field_id}.toULong()\n            \
+                 while (_v >= 0x80UL) {{\n                \
+                     r.add((_v.toLong() and 0x7F or 0x80).toByte())\n                \
+                     _v = _v shr 7\n            \
+                 }}\n            \
+                 r.add(_v.toByte())\n        \
+             }}"
+        ),
+        Language::Go => format!(
+            "\t{{\n\t\t\
+                 _v := uint64(s.{field_id})\n\t\t\
+                 for _v >= 0x80 {{\n\t\t\t\
+                     r = append(r, byte(_v&0x7F)|0x80)\n\t\t\t\
+                     _v >>= 7\n\t\t\
+                 }}\n\t\t\
+                 r = append(r, byte(_v))\n\t\
+             }}"
+        ),
+        Language::Python => format!(
+            "        _v = int(self.{field_id})\n        \
+             while _v >= 0x80:\n            \
+                 r.append((_v & 0x7F) | 0x80)\n            \
+                 _v >>= 7\n        \
+             r.append(_v)"
+        ),
+        #[allow(unreachable_patterns)]
+        _ => format!("/* unsupported vle_u{width_bits} encode on {lang:?} */"),
+    }
 }
 
 /// Generate decode expression for a single codec field.
@@ -1131,6 +1266,16 @@ fn generate_decode_expr(
                     format!("raw[{byte_off}:{byte_off} + raw[{len_off}]]"),
                 Language::C11 => String::new(),
             }
+        }
+        BitSize::Vle { .. } => {
+            // VLE fields decode via the cursor's streaming reader, not a
+            // positional `raw[off]` slice. The codec template's
+            // streaming branch (gated on `has_vle_fields`) routes per
+            // field to language-specific pre-statements (see the
+            // per-field `vle_*` context entries) — this `decode_expr`
+            // returns the empty string so the positional branch's
+            // struct literal cannot accidentally render it.
+            String::new()
         }
     }
 }

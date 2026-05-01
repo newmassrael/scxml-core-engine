@@ -786,6 +786,11 @@ fn forge_codec_length_ref() {
     assert_standalone_forge("codec_length_ref", "codec_length_ref.h");
 }
 
+#[test]
+fn forge_codec_vle_zint_u64() {
+    assert_standalone_forge("codec_vle_zint_u64", "codec_vle_zint_u64.h");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Kotlin conformance tests ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -886,6 +891,11 @@ fn forge_kotlin_codec_tail() {
 #[test]
 fn forge_kotlin_codec_length_ref() {
     assert_standalone_forge_kotlin("codec_length_ref", "CodecLengthRef.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_vle_zint_u64() {
+    assert_standalone_forge_kotlin("codec_vle_zint_u64", "CodecVleZintU64.kt");
 }
 
 // ── Algorithm (Kotlin, RFC §5.A — post-A6 matrix follow-up) ─
@@ -1125,6 +1135,11 @@ fn forge_go_codec_length_ref() {
     assert_standalone_forge_go("codec_length_ref", "codec_length_ref.go");
 }
 
+#[test]
+fn forge_go_codec_vle_zint_u64() {
+    assert_standalone_forge_go("codec_vle_zint_u64", "codec_vle_zint_u64.go");
+}
+
 // ── Algorithm (Go, RFC §5.A — post-A6 matrix follow-up) ────
 
 #[test]
@@ -1253,6 +1268,11 @@ fn forge_python_codec_length_ref() {
     assert_standalone_forge_python("codec_length_ref", "codec_length_ref.py");
 }
 
+#[test]
+fn forge_python_codec_vle_zint_u64() {
+    assert_standalone_forge_python("codec_vle_zint_u64", "codec_vle_zint_u64.py");
+}
+
 // ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
 
 #[test]
@@ -1308,6 +1328,11 @@ fn forge_c11_codec_tail() {
 #[test]
 fn forge_c11_codec_length_ref() {
     assert_standalone_forge_c("codec_length_ref", "codec_length_ref.c.h");
+}
+
+#[test]
+fn forge_c11_codec_vle_zint_u64() {
+    assert_standalone_forge_c("codec_vle_zint_u64", "codec_vle_zint_u64.c.h");
 }
 
 // ── Crossfile codec (C11) ───────────────────────────────────

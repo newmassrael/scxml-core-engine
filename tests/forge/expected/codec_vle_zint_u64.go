@@ -1,0 +1,45 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+
+package codec_vle_zint_u64
+
+import (
+	"github.com/newmassrael/sce-forge-runtime/codec"
+)
+
+// CodecVleZintU64 represents the codec frame layout.
+type CodecVleZintU64 struct {
+	Value uint64
+}
+
+// DecodeCodecVleZintU64 decodes the next frame from cursor.
+// On success the cursor advances past the consumed bytes; returns
+// `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
+// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// VLE codecs may also return `codec.ErrVLEWidthOverflow`.
+func DecodeCodecVleZintU64(cursor *codec.SceCursor) (*CodecVleZintU64, error) {
+	// Streaming codec: each field reads from cursor directly
+	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
+	// `field.id` — the struct literal's `Foo: Foo` is unambiguous
+	// because the package owns both names.
+	Value, err := cursor.ReadVLEU64()
+	if err != nil { return nil, err }
+	return &CodecVleZintU64{
+		Value: Value,
+	}, nil
+}
+
+// Encode serializes the CodecVleZintU64 into raw bytes.
+func (s *CodecVleZintU64) Encode() []byte {
+	r := make([]byte, 0, 10)
+	{
+		_v := uint64(s.Value)
+		for _v >= 0x80 {
+			r = append(r, byte(_v&0x7F)|0x80)
+			_v >>= 7
+		}
+		r = append(r, byte(_v))
+	}
+	return r
+}

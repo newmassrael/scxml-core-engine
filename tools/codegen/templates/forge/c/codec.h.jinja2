@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-{% if has_variable_fields %}
+{% if has_variable_fields and not has_vle_fields %}
 #include <string.h>
 {% endif %}
 
@@ -27,7 +27,7 @@
 
 typedef struct {
 {% for field in fields %}
-{% if field.is_variable %}
+{% if field.is_variable and not field.is_vle %}
     /* variable-length payload (sce:bit-size="{{ field.bit_size_kind }}", sce:max-size="{{ field.max_size }}") */
     uint8_t {{ field.id }}[{{ field.max_size }}];
     size_t  {{ field.id }}_len;
@@ -45,9 +45,18 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). */
+ * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out) {
-{% if has_variable_fields %}
+{% if has_vle_fields %}
+    /* Streaming codec: each field reads from cursor directly (VLE
+     * base-128 chain, 1..=ceil(N/7) bytes per field). */
+{% for field in fields %}
+    {{ field.vle_decode_stmt }}
+    out->{{ field.id }} = {{ field.id }};
+{% endfor %}
+    return SCE_FORGE_CODEC_OK;
+{% elif has_variable_fields %}
     /* Variable-length codec: tail / length-ref fields consume bytes
      * beyond the fixed prefix. B1-prep treats the entire cursor
      * remaining as one frame; stream-correct length-ref consumption
@@ -58,10 +67,6 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     size_t len = _frame_len;  /* alias for legacy tail decode_expr */
     (void)len;
-{% else %}
-    const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
-    if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-{% endif %}
 {% for field in fields %}
 {% if field.is_variable %}
 {% if field.bit_size_kind == "tail" %}
@@ -83,16 +88,27 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     out->{{ field.id }} = {{ field.decode_expr }};
 {% endif %}
 {% endfor %}
-{% if has_variable_fields %}
     if (!sce_forge_cursor_advance(cursor, _frame_len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-{% else %}
-    if (!sce_forge_cursor_advance(cursor, {{ c_min_bytes_macro }})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-{% endif %}
     return SCE_FORGE_CODEC_OK;
+{% else %}
+    const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
+    if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% for field in fields %}
+    out->{{ field.id }} = {{ field.decode_expr }};
+{% endfor %}
+    if (!sce_forge_cursor_advance(cursor, {{ c_min_bytes_macro }})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    return SCE_FORGE_CODEC_OK;
+{% endif %}
 }
 
 static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_typedef }} *self) {
     {{ c_encoded_typedef }} r;
+{% if has_vle_fields %}
+    r.len = 0;
+{% for field in fields %}
+{{ field.vle_encode_block }}
+{% endfor %}
+{% else %}
     r.len = {{ c_min_bytes_macro }};
 {% for expr in encode_exprs %}
     r.bytes[{{ loop.index0 }}] = {{ expr }};
@@ -105,6 +121,7 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
     }
 {% endif %}
 {% endfor %}
+{% endif %}
     return r;
 }
 

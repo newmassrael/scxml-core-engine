@@ -42,6 +42,13 @@
           ]
         },
         {
+          "description": "Used by codec fields declared `sce:type=\"uint64\" sce:bit-size=\"vle\"` (RFC §5.B App. B canonical Zenoh ZInt). Round-trip oracle vectors store the decoded value as a JSON integer literal up to u64::MAX.",
+          "type": "string",
+          "enum": [
+            "u64"
+          ]
+        },
+        {
           "description": "Variable-length byte sequence. Codec fields with `sce:bit-size=\"tail\"` or `\"length-ref\"` surface as `bytes` in the manifest. Round-trip oracle cases carry the decoded payload as a JSON array of integers.",
           "type": "string",
           "enum": [

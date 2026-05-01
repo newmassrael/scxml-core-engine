@@ -87,7 +87,9 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- Codec field bit-size: fixed integer, "tail", or "length-ref" -->
+  <!-- Codec field bit-size: fixed integer, "tail", "length-ref", or "vle".
+       "vle" pairs with sce:type ∈ {uint16, uint32, uint64} and selects
+       the base-128 variable-length encoding (RFC §5.B App. B). -->
   <xs:simpleType name="bitSizeType">
     <xs:union>
       <xs:simpleType>
@@ -97,6 +99,7 @@
         <xs:restriction base="xs:string">
           <xs:enumeration value="tail"/>
           <xs:enumeration value="length-ref"/>
+          <xs:enumeration value="vle"/>
         </xs:restriction>
       </xs:simpleType>
     </xs:union>

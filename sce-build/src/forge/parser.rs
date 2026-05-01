@@ -635,6 +635,29 @@ pub fn parse_codec_field_from_node(
         match bs.as_str() {
             "tail" => BitSize::Tail,
             "length-ref" => BitSize::LengthRef,
+            "vle" => {
+                // VLE bit-size pairs with the value type to derive the
+                // continuation-chain cap (RFC §5.B Appendix B). Only
+                // unsigned ints are valid carriers; B1-α ships u16/u32/u64.
+                let width_bits = match sce_type {
+                    SceType::Uint16 => 16,
+                    SceType::Uint32 => 32,
+                    SceType::Uint64 => 64,
+                    _ => {
+                        return Err(located(
+                            node,
+                            doc_name,
+                            ValidationError::InvalidAttribute {
+                                element: format!("field '{id}'"),
+                                attr: "sce:bit-size".into(),
+                                value: "vle".into(),
+                                expected: "vle requires sce:type ∈ {uint16, uint32, uint64}".into(),
+                            },
+                        ));
+                    }
+                };
+                BitSize::Vle { width_bits }
+            }
             _ => {
                 let n = parse_int(&bs).ok_or_else(|| {
                     located(
@@ -644,7 +667,7 @@ pub fn parse_codec_field_from_node(
                             element: format!("field '{id}'"),
                             attr: "sce:bit-size".into(),
                             value: bs.clone(),
-                            detail: "expected integer, 'tail', or 'length-ref'".into(),
+                            detail: "expected integer, 'tail', 'length-ref', or 'vle'".into(),
                         },
                     )
                 })?;

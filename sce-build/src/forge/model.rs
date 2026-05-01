@@ -700,6 +700,11 @@ pub enum BitSize {
     Tail,
     /// Size determined by another field's value (see CodecField::length_field).
     LengthRef,
+    /// Variable-length encoded integer (RFC §5.B Appendix B). The
+    /// `width_bits` cap (16/32/64) names the value-type max width;
+    /// wire bytes consumed is `1..=ceil(width_bits / 7)`. Canonical
+    /// Zenoh ZInt is `Vle { width_bits: 64 }`.
+    Vle { width_bits: u32 },
 }
 
 /// A single field in a codec's byte layout.
@@ -733,7 +738,13 @@ impl CodecField {
 
     /// Whether this is a variable-length field.
     pub fn is_variable_length(&self) -> bool {
-        matches!(self.bit_size, BitSize::Tail | BitSize::LengthRef)
+        matches!(self.bit_size, BitSize::Tail | BitSize::LengthRef | BitSize::Vle { .. })
+    }
+
+    /// Whether this field uses VLE encoding (consumes a streaming
+    /// 1..=ceil(N/7) bytes from the cursor instead of a fixed window).
+    pub fn is_vle(&self) -> bool {
+        matches!(self.bit_size, BitSize::Vle { .. })
     }
 
     /// Fixed bit count, or None for variable-length.
@@ -772,15 +783,20 @@ impl CodecModel {
     }
 
     /// Maximum frame bytes for encode buffer sizing: fixed bytes plus the
-    /// resolved `sce:max-size` cap of every variable-length field
-    /// (`tail` / `length-ref`). Caps fall back to
-    /// [`crate::forge::limits::BYTES_DEFAULT_MAX`] when absent.
+    /// resolved per-field cap of every variable-length field. Caps:
+    ///   - `tail` / `length-ref`: `sce:max-size`, fallback to
+    ///     [`crate::forge::limits::BYTES_DEFAULT_MAX`].
+    ///   - `vle { width_bits }`: `ceil(width_bits / 7)` (3 / 5 / 10 for
+    ///     u16 / u32 / u64) — base-128 worst case from RFC §5.B App. B.
     pub fn max_frame_bytes(&self) -> u32 {
         let var_max: u32 = self
             .fields
             .iter()
             .filter(|f| f.is_variable_length())
-            .map(|f| crate::forge::limits::resolve_bytes_max(f.max_size))
+            .map(|f| match &f.bit_size {
+                BitSize::Vle { width_bits } => width_bits.div_ceil(7),
+                _ => crate::forge::limits::resolve_bytes_max(f.max_size),
+            })
             .sum();
         self.min_frame_bytes() + var_max
     }

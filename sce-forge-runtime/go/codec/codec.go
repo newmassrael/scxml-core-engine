@@ -17,8 +17,13 @@ import "errors"
 // buffer is shorter than the codec's declared minimum frame. Caller
 // should resume after appending more bytes.
 //
-// B1-α adds ErrVLEWidthOverflow, B1-β adds ErrUnknownVariantTag.
+// B1-β adds ErrUnknownVariantTag.
 var ErrNeedMoreBytes = errors.New("sce/codec: need more bytes")
+
+// ErrVLEWidthOverflow is returned when a vle_u<N> field's continuation
+// chain implies a value wider than the declared type. RFC §5.B
+// `codec/vle-width-overflow`.
+var ErrVLEWidthOverflow = errors.New("sce/codec: vle width overflow")
 
 // SceCursor is a read-only cursor over a borrowed input slice. Decode
 // bodies use PeekSlice to bounds-check + read fixed-offset bytes
@@ -56,4 +61,51 @@ func (c *SceCursor) Advance(n int) error {
 	}
 	c.pos += n
 	return nil
+}
+
+// readVLEInner reads a base-128 variable-length encoded unsigned value
+// of up to maxBits payload width. LSB-first byte order; bit 7 is the
+// continuation flag. Mirrors Zenoh ZInt (RFC §5.B Appendix B).
+func (c *SceCursor) readVLEInner(maxBits uint32) (uint64, error) {
+	maxBytes := (maxBits + 6) / 7
+	var value uint64
+	var shift uint32
+	for i := uint32(0); i < maxBytes; i++ {
+		if c.Remaining() < 1 {
+			return 0, ErrNeedMoreBytes
+		}
+		b := c.buf[c.pos]
+		c.pos++
+		payload := uint64(b & 0x7F)
+		if shift+7 > maxBits {
+			allowed := maxBits - shift
+			maxPayload := (uint64(1) << allowed) - 1
+			if payload > maxPayload {
+				return 0, ErrVLEWidthOverflow
+			}
+		}
+		value |= payload << shift
+		if (b & 0x80) == 0 {
+			return value, nil
+		}
+		shift += 7
+	}
+	return 0, ErrVLEWidthOverflow
+}
+
+// ReadVLEU16 reads a vle_u16 field (1-3 wire bytes).
+func (c *SceCursor) ReadVLEU16() (uint16, error) {
+	v, err := c.readVLEInner(16)
+	return uint16(v), err
+}
+
+// ReadVLEU32 reads a vle_u32 field (1-5 wire bytes).
+func (c *SceCursor) ReadVLEU32() (uint32, error) {
+	v, err := c.readVLEInner(32)
+	return uint32(v), err
+}
+
+// ReadVLEU64 reads a vle_u64 field (1-10 wire bytes). Canonical Zenoh ZInt.
+func (c *SceCursor) ReadVLEU64() (uint64, error) {
+	return c.readVLEInner(64)
 }

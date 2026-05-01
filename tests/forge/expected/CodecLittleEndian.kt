@@ -15,12 +15,14 @@ data class CodecLittleEndian(
     var value: UShort = 0.toUShort(),
     var status: UByte = 0.toUByte()
 ) {
-    fun encode(): ByteArray = byteArrayOf(
-        sensorId.toByte(),
-        (value.toInt() and 0xFF).toByte(),
-        (value.toInt() ushr 8 and 0xFF).toByte(),
-        status.toByte()
-    )
+    fun encode(): ByteArray {
+        return byteArrayOf(
+            sensorId.toByte(),
+            (value.toInt() and 0xFF).toByte(),
+            (value.toInt() ushr 8 and 0xFF).toByte(),
+            status.toByte()
+        )
+    }
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor

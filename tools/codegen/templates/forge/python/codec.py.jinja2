@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -29,19 +29,26 @@ class {{ struct_name }}:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
-        consumed bytes."""
+        consumed bytes. VLE codecs also return ``None`` on
+        ``VleWidthOverflow``."""
+{% if has_vle_fields %}
         try:
-{% if has_variable_fields %}
-            # Variable-length codec: tail / length-ref fields consume bytes
-            # beyond the fixed prefix. B1-prep treats the entire cursor
-            # remaining as one frame.
+{% for field in fields %}
+            {{ field.vle_decode_stmt }}
+{% endfor %}
+        except CodecError:
+            return None
+        return cls(
+{% for field in fields %}
+            {{ field.id }}={{ field.id }},
+{% endfor %}
+        )
+{% elif has_variable_fields %}
+        try:
             _frame_len = cursor.remaining()
             if _frame_len < {{ min_bytes }}:
                 return None
             raw = cursor.peek_slice(_frame_len)
-{% else %}
-            raw = cursor.peek_slice({{ min_bytes }})
-{% endif %}
         except NeedMoreBytes:
             return None
         value = cls(
@@ -50,17 +57,35 @@ class {{ struct_name }}:
 {% endfor %}
         )
         try:
-{% if has_variable_fields %}
             cursor.advance(_frame_len)
-{% else %}
-            cursor.advance({{ min_bytes }})
-{% endif %}
         except NeedMoreBytes:
             return None
         return value
+{% else %}
+        try:
+            raw = cursor.peek_slice({{ min_bytes }})
+        except NeedMoreBytes:
+            return None
+        value = cls(
+{% for field in fields %}
+            {{ field.id }}={{ field.decode_expr }},
+{% endfor %}
+        )
+        try:
+            cursor.advance({{ min_bytes }})
+        except NeedMoreBytes:
+            return None
+        return value
+{% endif %}
 
     def encode(self) -> bytes:
-{% if has_variable_fields %}
+{% if has_vle_fields %}
+        r = bytearray()
+{% for field in fields %}
+{{ field.vle_encode_block }}
+{% endfor %}
+        return bytes(r)
+{% elif has_variable_fields %}
         r = bytearray()
 {% for expr in encode_exprs %}
         r.append({{ expr }})

@@ -15,9 +15,11 @@ data class CodecSubbyte(
     var channel: UByte = 0.toUByte(),
     var direction: UByte = 0.toUByte()
 ) {
-    fun encode(): ByteArray = byteArrayOf(
-        ((priority.toInt() and 0x07 shl 5) or (channel.toInt() and 0x07 shl 2) or (direction.toInt() and 0x03 shl 0)).toByte()
-    )
+    fun encode(): ByteArray {
+        return byteArrayOf(
+            ((priority.toInt() and 0x07 shl 5) or (channel.toInt() and 0x07 shl 2) or (direction.toInt() and 0x03 shl 0)).toByte()
+        )
+    }
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
