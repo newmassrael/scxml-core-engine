@@ -6158,6 +6158,7 @@ fn lower_algorithm_body(
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &std::collections::HashMap<&str, &str>,
     indent: usize,
+    return_ty: crate::forge::types::InferredType,
 ) -> Result<String, ForgeError> {
     let mut out = String::new();
     let pad = "    ".repeat(indent);
@@ -6174,7 +6175,7 @@ fn lower_algorithm_body(
         std::collections::HashSet::new();
     collect_algorithm_assigned_roots(stmts, &mut assigned);
     for s in stmts {
-        lower_algorithm_stmt(s, lang, type_ctx, &l, renames, &pad, indent, &assigned, &mut out)?;
+        lower_algorithm_stmt(s, lang, type_ctx, &l, renames, &pad, indent, &assigned, return_ty, &mut out)?;
     }
     Ok(out.trim_end().to_string())
 }
@@ -6228,6 +6229,7 @@ fn lower_algorithm_stmt(
     pad: &str,
     indent: usize,
     assigned: &std::collections::HashSet<String>,
+    return_ty: crate::forge::types::InferredType,
     out: &mut String,
 ) -> Result<(), ForgeError> {
     use crate::forge::types::InferredType;
@@ -6317,12 +6319,12 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}if {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}else:\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
+                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
                         }
                     }
                 }
@@ -6334,12 +6336,12 @@ fn lower_algorithm_stmt(
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}}} else {{\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
+                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
                         }
                     }
                     out.push_str(&format!("{pad}}}\n"));
@@ -6362,7 +6364,7 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}while {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
                     }
                 }
                 _ => {
@@ -6378,7 +6380,7 @@ fn lower_algorithm_stmt(
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
                     }
                     out.push_str(&format!("{pad}}}\n"));
                 }
@@ -6402,7 +6404,15 @@ fn lower_algorithm_stmt(
                 Language::C11 => format!(
                     "{pad}for (size_t __i = 0; __i < {src_lowered}.len; ++__i) {{\n{pad}    uint8_t {it} = {src_lowered}.data[__i];\n"
                 ),
-                Language::Kotlin => format!("{pad}for ({it} in {src_lowered}) {{\n"),
+                // Kotlin's `ByteArray` iteration yields signed `Byte`,
+                // but RFC §5.A v1 declares the foreach item as `uint8`
+                // — the type ctx hands the body a `UByte`. Reinterpret
+                // each iteration's `Byte` as `UByte` (bit-pattern
+                // preserved) so subsequent `<sce:var type="uintN" init="b">`
+                // widenings via `.toUShort()` zero-extend correctly.
+                Language::Kotlin => format!(
+                    "{pad}for (__raw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = __raw_{it}.toUByte()\n"
+                ),
                 Language::Go => format!("{pad}for _, {it} := range {src_lowered} {{\n"),
                 Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
             };
@@ -6410,7 +6420,7 @@ fn lower_algorithm_stmt(
             let inner_indent = if matches!(lang, Language::Python) { indent + 1 } else { indent + 1 };
             let inner_pad = "    ".repeat(inner_indent);
             for st in body {
-                lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, inner_indent, assigned, out)?;
+                lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, inner_indent, assigned, return_ty, out)?;
             }
             if !matches!(lang, Language::Python) {
                 out.push_str(&format!("{pad}}}\n"));
@@ -6419,12 +6429,19 @@ fn lower_algorithm_stmt(
         AlgorithmStmt::Return { expr: e } => {
             let line = match e {
                 Some(rhs) => {
+                    // Coerce to the function's declared return type so
+                    // strict-typing targets (Kotlin's `UShort`,
+                    // narrow-unsigned Rust) get the matching cast on
+                    // bare literals (`return 0` → `return 0.toUShort()`).
+                    // C/Cpp rely on implicit narrowing; Go on
+                    // assignability — passing the explicit type lets
+                    // every emitter route through its own coerce path.
                     let lowered = expr::transpile_typed(
                         rhs,
                         l.expr_target(),
                         type_ctx,
                         renames,
-                        InferredType::Unknown,
+                        return_ty,
                     )?;
                     match lang {
                         Language::Python => format!("{pad}return {lowered}\n"),
@@ -6494,6 +6511,23 @@ fn render_algorithm(
     let needs_std_array = m.consts.iter().any(|c| {
         matches!(c.sce_type, crate::forge::model::AlgorithmConstType::Array { .. })
     });
+    // Kotlin: `UByteArray` / `UShortArray` / `UIntArray` / `ULongArray`
+    // are stable since Kotlin 1.9 but still tagged
+    // `@ExperimentalUnsignedTypes`, so a file-level
+    // `@OptIn(ExperimentalUnsignedTypes::class)` is required when the
+    // algorithm's `<sce:const>` block produces an array of unsigned
+    // elements. Other backends are unaffected — Cpp's
+    // `std::array<uint16_t, _>` and Rust's `[u16; _]` are first-class.
+    let kotlin_needs_opt_in_unsigned = m.consts.iter().any(|c| {
+        if let crate::forge::model::AlgorithmConstType::Array { elem, .. } = &c.sce_type {
+            matches!(
+                elem,
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
+            )
+        } else {
+            false
+        }
+    });
 
     // Build TypeCtx from params + collected local vars / foreach items.
     // Owned strings live in `env_pairs` for the lifetime of `type_ctx`.
@@ -6514,6 +6548,22 @@ fn render_algorithm(
     let mut type_ctx = TypeCtx::new();
     for (name, ty) in &env_pairs {
         type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+    }
+    // RFC §5.F `<sce:const name="X" type="array<elem, N>">` registers X
+    // as an indexable container with element type elem so `X[idx]` is
+    // typed as `elem` instead of falling through to `Unknown`. Required
+    // for Kotlin to emit a `.toInt()` wrap when the bitwise XOR widens
+    // a UShort table lookup into Int operand context (see
+    // crc16_table fixture). Other backends are unaffected — Rust /
+    // Cpp / C11 rely on the host language's strict-type checker to
+    // resolve the access at compile time.
+    for c in &m.consts {
+        if let crate::forge::model::AlgorithmConstType::Array { elem, .. } = &c.sce_type {
+            type_ctx.insert_array_elem(
+                c.name.as_str(),
+                InferredType::from_sce_type(elem),
+            );
+        }
     }
 
     // Per-RFC §5.J.5 signature emit.
@@ -6559,7 +6609,13 @@ fn render_algorithm(
         .zip(const_renames_owned.iter())
         .map(|(c, screaming)| (c.name.as_str(), screaming.as_str()))
         .collect();
-    let body = lower_algorithm_body(&m.body, lang, &type_ctx, &const_renames, 1)?;
+    let return_ty_inferred = m
+        .signature
+        .return_type
+        .as_ref()
+        .map(InferredType::from_sce_type)
+        .unwrap_or(InferredType::Unknown);
+    let body = lower_algorithm_body(&m.body, lang, &type_ctx, &const_renames, 1, return_ty_inferred)?;
 
     let needs_span = m
         .signature
@@ -6570,6 +6626,7 @@ fn render_algorithm(
     let snake = filters::to_snake_case(m.name.clone());
     ctx.insert("name".into(), snake.clone().into());
     ctx.insert("name_pascal".into(), filters::to_pascal_case(m.name.clone()).into());
+    ctx.insert("name_camel".into(), filters::to_camel_case(m.name.clone()).into());
     ctx.insert("params_str".into(), params_str.into());
     ctx.insert("return_type".into(), return_type.into());
     ctx.insert(
@@ -6589,6 +6646,10 @@ fn render_algorithm(
     // array tables). Empty string when the algorithm has no consts.
     ctx.insert("consts_prelude".into(), consts_prelude.into());
     ctx.insert("needs_std_array".into(), needs_std_array.into());
+    ctx.insert(
+        "kotlin_needs_opt_in_unsigned".into(),
+        kotlin_needs_opt_in_unsigned.into(),
+    );
 
     l.render(env, "algorithm", ctx)
 }
@@ -6691,8 +6752,9 @@ fn emit_array_const(
             "static const {elem_name} {name}[{len}] = {{ {body} }};\n\n"
         ),
         Language::Kotlin => format!(
-            "val {name}: {arr} = {arr}({body})\n\n",
+            "val {name}: {arr} = {factory}({body})\n\n",
             arr = kotlin_array_type(elem),
+            factory = kotlin_array_factory(elem),
         ),
         Language::Go => format!(
             "var {name} = [{len}]{elem_name}{{ {body} }}\n\n"
@@ -6726,17 +6788,49 @@ fn emit_scalar_const(
 
 /// Kotlin native array type for an `array<elem, _>` const. Kotlin
 /// distinguishes `IntArray` from `Array<Int>`; the unboxed primitive
-/// arrays are the right call for fixed-element-type tables.
+/// arrays are the right call for fixed-element-type tables. Unsigned
+/// element types map to the matching `UByteArray` / `UShortArray` /
+/// `UIntArray` / `ULongArray` so the array's element type matches the
+/// declared `array<u_, _>` shape — without this split, a CRC16 table
+/// would not fit in `ShortArray` (signed 16-bit) for entries above
+/// `0x7FFF`. Unsigned arrays require `@OptIn(ExperimentalUnsignedTypes
+/// ::class)` at the file level (see Kotlin algorithm template).
 fn kotlin_array_type(elem: &SceType) -> &'static str {
     match elem {
-        SceType::Uint8 | SceType::Int8 => "ByteArray",
-        SceType::Uint16 | SceType::Int16 => "ShortArray",
-        SceType::Uint32 | SceType::Int32 => "IntArray",
-        SceType::Uint64 | SceType::Int64 => "LongArray",
+        SceType::Uint8 => "UByteArray",
+        SceType::Int8 => "ByteArray",
+        SceType::Uint16 => "UShortArray",
+        SceType::Int16 => "ShortArray",
+        SceType::Uint32 => "UIntArray",
+        SceType::Int32 => "IntArray",
+        SceType::Uint64 => "ULongArray",
+        SceType::Int64 => "LongArray",
         SceType::Float32 => "FloatArray",
         SceType::Float64 => "DoubleArray",
         SceType::Bool => "BooleanArray",
         SceType::String | SceType::Bytes => "Array<Any>",
+    }
+}
+
+/// Kotlin factory function for the matching `kotlin_array_type`. The
+/// `<lang>ArrayOf(...)` factories take vararg elements of the array's
+/// declared type — `ushortArrayOf` requires each element to be `UShort`,
+/// not `Int`, so the per-element literal serialiser pre-wraps with
+/// `(N).toUShort()` (see `const_fold::FormatValue` Kotlin arms).
+fn kotlin_array_factory(elem: &SceType) -> &'static str {
+    match elem {
+        SceType::Uint8 => "ubyteArrayOf",
+        SceType::Int8 => "byteArrayOf",
+        SceType::Uint16 => "ushortArrayOf",
+        SceType::Int16 => "shortArrayOf",
+        SceType::Uint32 => "uintArrayOf",
+        SceType::Int32 => "intArrayOf",
+        SceType::Uint64 => "ulongArrayOf",
+        SceType::Int64 => "longArrayOf",
+        SceType::Float32 => "floatArrayOf",
+        SceType::Float64 => "doubleArrayOf",
+        SceType::Bool => "booleanArrayOf",
+        SceType::String | SceType::Bytes => "arrayOf",
     }
 }
 

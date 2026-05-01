@@ -886,6 +886,23 @@ fn forge_kotlin_codec_length_ref() {
     assert_standalone_forge_kotlin("codec_length_ref", "CodecLengthRef.kt");
 }
 
+// ── Algorithm (Kotlin, RFC §5.A — post-A6 matrix follow-up) ─
+
+#[test]
+fn forge_kotlin_algorithm_crc16() {
+    assert_standalone_forge_kotlin("algorithm_crc16", "AlgorithmCrc16.kt");
+}
+
+#[test]
+fn forge_kotlin_algorithm_crc16_table() {
+    assert_standalone_forge_kotlin("algorithm_crc16_table", "AlgorithmCrc16Table.kt");
+}
+
+#[test]
+fn forge_kotlin_algorithm_const_fold_smoke() {
+    assert_standalone_forge_kotlin("algorithm_const_fold_smoke", "AlgorithmConstFoldSmoke.kt");
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Rust conformance tests ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════

@@ -235,11 +235,22 @@ pub struct FuncSig {
 pub struct TypeCtx<'a> {
     pub vars: HashMap<&'a str, InferredType>,
     pub funcs: HashMap<&'a str, FuncSig>,
+    /// Per-identifier element type for indexable containers — populated
+    /// by RFC §5.A `<sce:const name=… type="array<elem, N>">` so that
+    /// `CRC16_TABLE[idx]` can be inferred as `elem` instead of falling
+    /// through to `Unknown`. Without this, Kotlin's narrow-unsigned
+    /// arithmetic widening cannot insert `.toInt()` at the index access
+    /// (the index node has no parent-type signal otherwise).
+    pub array_elems: HashMap<&'a str, InferredType>,
 }
 
 impl<'a> TypeCtx<'a> {
     pub fn new() -> Self {
-        Self { vars: HashMap::new(), funcs: HashMap::new() }
+        Self {
+            vars: HashMap::new(),
+            funcs: HashMap::new(),
+            array_elems: HashMap::new(),
+        }
     }
 
     /// Look up an identifier's type. Returns `Unknown` if absent so that
@@ -254,6 +265,13 @@ impl<'a> TypeCtx<'a> {
         self.funcs.get(name)
     }
 
+    /// Look up the element type of an indexable container by name.
+    /// Returns `None` for unknown identifiers — caller falls through to
+    /// `Unknown`-element semantics (mirrors the `lookup_var` contract).
+    pub fn lookup_array_elem(&self, name: &str) -> Option<InferredType> {
+        self.array_elems.get(name).copied()
+    }
+
     /// Insert a typed identifier. Convenience for builders.
     pub fn insert_var(&mut self, name: &'a str, ty: InferredType) {
         self.vars.insert(name, ty);
@@ -262,6 +280,13 @@ impl<'a> TypeCtx<'a> {
     /// Insert a function signature. Convenience for builders.
     pub fn insert_func(&mut self, name: &'a str, sig: FuncSig) {
         self.funcs.insert(name, sig);
+    }
+
+    /// Insert an indexable-container element type for `name`.
+    /// Used by the algorithm renderer to register `<sce:const>` arrays
+    /// so `name[idx]` gets typed as `elem`.
+    pub fn insert_array_elem(&mut self, name: &'a str, elem: InferredType) {
+        self.array_elems.insert(name, elem);
     }
 }
 

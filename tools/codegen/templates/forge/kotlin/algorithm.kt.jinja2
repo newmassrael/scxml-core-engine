@@ -1,0 +1,23 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// RFC §5.A: pure synchronous function with bounded loops. Free
+// function in package `com.sce.generated.{{ package }}`, no instance
+// state. `bytes` parameters lower to `ByteArray` (RFC §5.J.5 emitter
+// table). Iteration over `ByteArray` yields signed `Byte`, so the
+// foreach lowering inserts a `Byte → UByte` reinterpretation per
+// iteration to match the SCXML type-ctx contract that
+// `<sce:foreach item>` is `uint8`.
+{% if kotlin_needs_opt_in_unsigned %}
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+{% endif %}
+
+package com.sce.generated.{{ package }}
+
+{{ consts_prelude }}fun {{ name_camel }}({{ params_str }}){% if has_return %}: {{ return_type }}{% endif %} {
+{{ body }}
+}

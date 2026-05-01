@@ -1,0 +1,28 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# Algorithm kind (RFC §5.A) — single-output free function. Cross-language
+   byte-equivalence acceptance gate (RFC §A6); Kotlin shipped post-A6
+   alongside its byte-golden + matrix flip.
+
+   Bytes args lower to `ByteArray` per RFC §5.J.5. The oracle JSON
+   represents each `bytes` argument as an array of integers
+   (`[10, 20, 30]`); we materialise it via `kt_unmarshal`'s `bytes` arm
+   which produces `ByteArray`. The function-under-test takes the
+   ByteArray directly. Numeric scalar args route through `kt_unmarshal`'s
+   per-type narrow-cast (`.toUShort()` etc.) so the call boundary types
+   line up with the algorithm's signature. #}
+        val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
+        for (case in cases) {
+            val args = case.jsonObject["args"]!!.jsonArray
+{% for arg_ty in f.args %}
+            val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
+{% endfor %}
+            val expected = {{ "case.jsonObject[\"expected\"]!!" | kt_unmarshal(f.output.type) }}
+            val actual = {{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if f.output.compare == "tolerance" %}
+            assertClose(actual.toDouble(), expected.toDouble(), "{{ f.name }}")
+{% else %}
+            assertEquals(expected, actual, "{{ f.name }}")
+{% endif %}
+        }

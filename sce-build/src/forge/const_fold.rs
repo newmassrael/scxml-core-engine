@@ -309,19 +309,50 @@ impl std::fmt::Display for FormatValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use crate::generator::Language;
         match self.value {
-            // Plain decimal integers; the surrounding array type
-            // declaration disambiguates width, so no suffix is
-            // required for byte-equivalence with hand-authored
+            // Plain decimal integers in most backends; the surrounding
+            // array type declaration disambiguates width, so no suffix
+            // is required for byte-equivalence with hand-authored
             // tables. (CRC-class fixtures keep author intent visible
             // by emitting decimal too.)
-            ConstValue::U8(v) => write!(f, "{v}"),
-            ConstValue::U16(v) => write!(f, "{v}"),
-            ConstValue::U32(v) => write!(f, "{v}"),
-            ConstValue::U64(v) => write!(f, "{v}"),
-            ConstValue::I8(v) => write!(f, "{v}"),
-            ConstValue::I16(v) => write!(f, "{v}"),
+            //
+            // Kotlin is the exception: its `ubyteArrayOf` /
+            // `ushortArrayOf` factories take `vararg UByte` /
+            // `vararg UShort`, and Int → narrow-unsigned widening is
+            // not implicit. Each element is wrapped in `(N).toU<T>()`
+            // so the type matches the factory's vararg signature.
+            // Signed `byteArrayOf` / `shortArrayOf` likewise need
+            // `(N).toByte()` / `(N).toShort()` wrappers when an entry
+            // exceeds the destination's positive range; we wrap
+            // unconditionally for stability across input ranges.
+            ConstValue::U8(v) => match self.lang {
+                Language::Kotlin => write!(f, "({v}).toUByte()"),
+                _ => write!(f, "{v}"),
+            },
+            ConstValue::U16(v) => match self.lang {
+                Language::Kotlin => write!(f, "({v}).toUShort()"),
+                _ => write!(f, "{v}"),
+            },
+            ConstValue::U32(v) => match self.lang {
+                Language::Kotlin => write!(f, "{v}u"),
+                _ => write!(f, "{v}"),
+            },
+            ConstValue::U64(v) => match self.lang {
+                Language::Kotlin => write!(f, "{v}uL"),
+                _ => write!(f, "{v}"),
+            },
+            ConstValue::I8(v) => match self.lang {
+                Language::Kotlin => write!(f, "({v}).toByte()"),
+                _ => write!(f, "{v}"),
+            },
+            ConstValue::I16(v) => match self.lang {
+                Language::Kotlin => write!(f, "({v}).toShort()"),
+                _ => write!(f, "{v}"),
+            },
             ConstValue::I32(v) => write!(f, "{v}"),
-            ConstValue::I64(v) => write!(f, "{v}"),
+            ConstValue::I64(v) => match self.lang {
+                Language::Kotlin => write!(f, "{v}L"),
+                _ => write!(f, "{v}"),
+            },
             ConstValue::F32(v) => format_float_lit(f, v as f64, true, self.lang),
             ConstValue::F64(v) => format_float_lit(f, v, false, self.lang),
             ConstValue::Bool(v) => match self.lang {

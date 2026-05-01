@@ -1245,7 +1245,22 @@ fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             infer_types(index, ctx);
             match object.ty {
                 InferredType::Bytes => InferredType::Int { signed: false, bits: 8 },
-                _ => InferredType::Unknown,
+                _ => {
+                    // RFC §5.A: `<sce:const name="X" type="array<elem, N>">`
+                    // registers `X` in `ctx.array_elems`. Recover the
+                    // element type so per-language emitters (Kotlin's
+                    // narrow-unsigned widening, in particular) can wrap
+                    // the index result with the right cast.
+                    if let ExprKind::Ident(name) = &object.kind {
+                        if let Some(elem) = ctx.lookup_array_elem(name.as_str()) {
+                            elem
+                        } else {
+                            InferredType::Unknown
+                        }
+                    } else {
+                        InferredType::Unknown
+                    }
+                }
             }
         }
         ExprKind::Call { callee, args } => {
@@ -1623,6 +1638,26 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
             let inner = format!("{l} {} {r}", kotlin_binop(*op));
             return kotlin_coerce(inner, widened, expected, expr);
         }
+        // Arithmetic on narrow unsigned in Kotlin: `UByte + UByte` is
+        // defined as `this.toUInt() + other.toUInt(): UInt`, so storing
+        // the result back into a `UByte`/`UShort` lvalue triggers an
+        // assignment-type-mismatch in kotlinc. Mirror the bitwise path
+        // above by widening to `UInt`, then coercing the result back to
+        // the caller-requested narrow unsigned via the outer
+        // `kotlin_coerce`'s `.toUByte()` / `.toUShort()` arm.
+        if op.is_arith() && (is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
+            let widened = InferredType::Int { signed: false, bits: 32 };
+            let l_raw = emit_kotlin(left, widened);
+            let r_raw = emit_kotlin(right, widened);
+            let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            let inner = format!("{l} {} {r}", kotlin_binop(*op));
+            return kotlin_coerce(inner, widened, expected, expr);
+        }
     }
     // Push-down: Unary{Neg|Pos} in float context — without this the inner
     // literal stays UntypedInt and the outer `kotlin_coerce` falls back to
@@ -1702,10 +1737,21 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             format!("{}.{property}", wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)))
         }
         ExprKind::Index { object, index } => {
+            // Kotlin's `Array.get(index: Int)` and the unboxed
+            // `XArray.get(Int)` overloads only accept `Int` for the
+            // index. Concrete-typed indices (`<sce:var type="u16">`)
+            // need explicit `.toInt()` or kotlinc rejects with
+            // "argument type mismatch". Mirrors the Rust emitter's
+            // `as usize` insertion for non-`UntypedInt` indices.
+            let idx_raw = emit_kotlin(index, InferredType::Unknown);
+            let idx_emit = match index.ty {
+                InferredType::Int { signed: true, bits: 32 } => idx_raw,
+                InferredType::Int { .. } => format!("{idx_raw}.toInt()"),
+                _ => idx_raw,
+            };
             format!(
-                "{}[{}]",
+                "{}[{idx_emit}]",
                 wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)),
-                emit_kotlin(index, InferredType::Unknown),
             )
         }
         ExprKind::Call { callee, args } => {

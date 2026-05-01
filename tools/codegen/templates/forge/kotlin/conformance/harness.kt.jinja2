@@ -35,7 +35,7 @@ import com.sce.generated.{{ f.name }}.{{ co.function | to_camel_case }}
 {% endfor %}
 {% endif %}
 {% endif %}
-{% if f.kind == "condition" or f.kind == "lookup" %}
+{% if f.kind == "condition" or f.kind == "lookup" or f.kind == "algorithm" %}
 import com.sce.generated.{{ f.name }}.{{ f.function | to_camel_case }}
 {% endif %}
 {% endfor %}

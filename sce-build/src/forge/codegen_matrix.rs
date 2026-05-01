@@ -107,14 +107,15 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::C11 => true,
         },
         // RFC §5.A Algorithm: Phase A3 lands Rust + Cpp; Phase A5
-        // closes the matrix to C11 (RFC §7 line 3382). Kotlin / Python
-        // templates ship in subsequent Phase A follow-ups and fire
-        // `codegen/generic-kind-backend-emit-missing` until then. Go
-        // shipped post-A6 alongside its byte-golden + conformance
-        // fragment trio.
+        // closes the matrix to C11 (RFC §7 line 3382). Go + Kotlin
+        // shipped post-A6 alongside their byte-goldens + conformance
+        // fragment trios; Python remains and fires
+        // `codegen/generic-kind-backend-emit-missing` until its
+        // template ships.
         ForgeKind::Algorithm => match lang {
-            Language::Rust | Language::Cpp | Language::C11 | Language::Go => true,
-            Language::Kotlin | Language::Python => false,
+            Language::Rust | Language::Cpp | Language::C11
+            | Language::Go | Language::Kotlin => true,
+            Language::Python => false,
         },
     }
 }
@@ -218,14 +219,20 @@ mod tests {
         }
     }
 
-    /// RFC §5.A Phase A3 + A5 + Go follow-up: Algorithm ships on Rust
-    /// + Cpp + C11 + Go; Kotlin / Python fire
-    /// `codegen/generic-kind-backend-emit-missing` until their
-    /// templates ship in subsequent Phase A follow-ups.
+    /// RFC §5.A Phase A3 + A5 + Go/Kotlin follow-ups: Algorithm ships
+    /// on Rust + Cpp + C11 + Go + Kotlin; Python alone fires
+    /// `codegen/generic-kind-backend-emit-missing` until its template
+    /// ships.
     #[test]
-    fn algorithm_kind_ships_on_rust_cpp_c11_go() {
+    fn algorithm_kind_ships_on_rust_cpp_c11_go_kotlin() {
         assert_eq!(kind_class(ForgeKind::Algorithm), KindClass::Generic);
-        for lang in [Language::Rust, Language::Cpp, Language::C11, Language::Go] {
+        for lang in [
+            Language::Rust,
+            Language::Cpp,
+            Language::C11,
+            Language::Go,
+            Language::Kotlin,
+        ] {
             assert_eq!(
                 lookup(ForgeKind::Algorithm, lang),
                 EmitOutcome::Emit,
@@ -240,7 +247,7 @@ mod tests {
                 lang,
             );
         }
-        for lang in [Language::Kotlin, Language::Python] {
+        for lang in [Language::Python] {
             assert_eq!(
                 lookup(ForgeKind::Algorithm, lang),
                 EmitOutcome::TemplateMissing,
