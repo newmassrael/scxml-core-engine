@@ -113,6 +113,19 @@ struct {{ struct_name }} {
             .{{ field.id }} = {{ field.id }},
 {% endfor %}
         };
+{% elif has_present_if_fields %}
+        // RFC §5.B B1-δ present-if (trunk): per-field cursor advance.
+        // Gated fields hold std::optional<T>; the predicate test is a
+        // build-time literal mask + shift on the carrier's just-decoded
+        // local — no runtime predicate metadata.
+{% for field in fields %}
+        {{ field.present_if_decode_stmt }}
+{% endfor %}
+        return {{ struct_name }}{
+{% for field in fields %}
+            .{{ field.id }} = {{ field.id }},
+{% endfor %}
+        };
 {% elif has_variable_fields %}
         std::size_t _frame_len = cursor.remaining();
         if (_frame_len < {{ min_bytes }}) return std::nullopt;
@@ -192,6 +205,17 @@ struct {{ struct_name }} {
         r.reserve({{ max_bytes }});
 {% for field in fields %}
 {{ field.vle_encode_block }}
+{% endfor %}
+        return r;
+{% elif has_present_if_fields %}
+        // RFC §5.B B1-δ encode: per-field byte append. Gated fields
+        // skip the append when the optional is empty (author keeps
+        // the carrier's flag bit and the optional's truth value in
+        // sync — same trust contract as the variant primitive).
+        std::vector<uint8_t> r;
+        r.reserve({{ max_bytes }});
+{% for field in fields %}
+{{ field.present_if_encode_block }}
 {% endfor %}
         return r;
 {% elif has_variable_fields %}

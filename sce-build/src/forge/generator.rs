@@ -981,7 +981,49 @@ fn render_codec(
     // until each per-language closure landed; the final closure
     // (Python) deletes the gate entirely.
 
+    // RFC §5.B B1-δ present-if primitive (trunk): only Rust + Cpp
+    // emit gated decode/encode in trunk. Kotlin / Go / C11 / Python
+    // stay gated until each per-language closure lands so the
+    // template never silently drops the optional wrap.
+    if m.has_present_if_fields()
+        && !matches!(
+            lang,
+            crate::generator::Language::Rust | crate::generator::Language::Cpp
+        )
+    {
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "codec '{name}': sce:present-if emit is not implemented for language '{lang:?}' \
+                 (RFC §5.B B1-δ trunk ships Rust + Cpp; Kotlin / Go / C11 / Python land in B1-δ closures)",
+                name = m.name,
+            )),
+        ));
+    }
+
+    // RFC §5.B B1-δ v1 trunk constraint: present-if'd fields must be
+    // BitSize::Fixed. Variable-length carriers (Tail / LengthRef / Vle)
+    // need length-prefix or until-eof support that lands in B2; until
+    // then the parser-side validator rejects the combination so the
+    // gated render is well-defined.
+    if m.has_present_if_fields() {
+        for f in &m.fields {
+            if f.present_if.is_some() && !matches!(f.bit_size, BitSize::Fixed { .. }) {
+                return Err(ForgeError::Generate(
+                    crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                        "codec '{name}': field '{field}' combines sce:present-if with a variable-length \
+                         bit-size (tail / length-ref / vle); v1 trunk only supports present-if on \
+                         fixed-width fields. Variable-length gated fields land alongside the B2 \
+                         len-prefix / until-eof primitives",
+                        name = m.name,
+                        field = f.id,
+                    )),
+                ));
+            }
+        }
+    }
+
     let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
+    let has_present_if_fields = m.has_present_if_fields();
 
     let fields: Vec<serde_json::Value> = m
         .fields
@@ -1072,6 +1114,51 @@ fn render_codec(
                 "flags".into(),
                 serde_json::json!(build_flag_ctx(&f.flags, &f.sce_type, lang)),
             );
+
+            // RFC §5.B B1-δ present-if primitive: when the codec has
+            // any gated field every field renders via the streaming
+            // path so cursor advances are sequential. Per-field we
+            // carry both the streaming decode statement and the
+            // encode block; plain non-gated fields still emit
+            // unconditional reads/writes — the streaming path is
+            // uniform. Type override wraps gated fields in
+            // `Option<T>` / `std::optional<T>` so the struct field
+            // can carry the absent state.
+            obj.insert(
+                "has_present_if".into(),
+                f.present_if.is_some().into(),
+            );
+            if has_present_if_fields {
+                obj.insert(
+                    "present_if_decode_stmt".into(),
+                    present_if_streaming_decode_stmt(
+                        f,
+                        &m.fields,
+                        m.default_endian,
+                        lang,
+                    )
+                    .into(),
+                );
+                obj.insert(
+                    "present_if_encode_block".into(),
+                    present_if_streaming_encode_block(f, m.default_endian, lang)
+                        .into(),
+                );
+                if f.present_if.is_some() {
+                    let inner = l.type_name(&f.sce_type);
+                    let wrapped = match lang {
+                        crate::generator::Language::Rust => {
+                            format!("Option<{inner}>")
+                        }
+                        crate::generator::Language::Cpp => {
+                            format!("std::optional<{inner}>")
+                        }
+                        // Other backends are gated above; never reached.
+                        _ => inner.to_string(),
+                    };
+                    obj.insert(type_key.into(), wrapped.into());
+                }
+            }
             serde_json::Value::Object(obj)
         })
         .collect();
@@ -1122,6 +1209,10 @@ fn render_codec(
     ctx.insert("max_bytes".into(), max_bytes.into());
     ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
     ctx.insert("has_vle_fields".into(), has_vle_fields.into());
+    ctx.insert(
+        "has_present_if_fields".into(),
+        has_present_if_fields.into(),
+    );
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
 
     // RFC §5.B variant primitive (B1-β trunk): build per-arm rendering
@@ -1481,6 +1572,338 @@ fn resolve_length_field_byte_off(
     field.length_field.as_ref().and_then(|name| {
         fields.iter().find(|x| x.id == *name).map(|x| x.byte_offset)
     })
+}
+
+/// RFC §5.B B1-δ present-if helpers.
+///
+/// `present_if_streaming_decode_stmt` returns a single fully-formed
+/// per-field decode statement that consumes from the cursor and binds
+/// `field_id` (or skips/`None`s when the predicate is false). v1 trunk
+/// supports `BitSize::Fixed` only — variable-length fields gated by
+/// present-if defer to the B-stage that introduces a reachable
+/// consumer (the parser rejects v1 mixing).
+///
+/// `predicate` is `None` for unconditionally-present fields and
+/// `Some(&PresentIfPredicate)` for gated ones; the carrier's `flags`
+/// list is read off `fields` so the bit position resolves at codegen
+/// time into a literal mask (no runtime metadata).
+fn present_if_streaming_decode_stmt(
+    field: &CodecField,
+    fields: &[CodecField],
+    default_endian: Endian,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let bits = match field.bit_size {
+        BitSize::Fixed { bits } => bits,
+        // v1 trunk parser rejects this combination — the unreachable
+        // arm is kept so a future relaxation surfaces as a logic error
+        // rather than an empty render.
+        _ => return format!("/* unsupported present-if + non-fixed field shape */"),
+    };
+    let n = bits.div_ceil(8);
+
+    // Build the per-language slice-read body that materializes the
+    // field's value as `_v` typed as the field's natural carrier.
+    let body = streaming_fixed_field_body(field, default_endian, n, lang);
+
+    let id = field.id.as_str();
+    match (lang, &field.present_if) {
+        (Language::Rust, None) => format!(
+            "let {id} = {{\n            \
+                 let raw = cursor.peek_slice({n})?;\n            \
+                 let _v = {body};\n            \
+                 cursor.advance({n})?;\n            \
+                 _v\n        \
+             }};"
+        ),
+        (Language::Rust, Some(p)) => {
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "let {id} = if {test} {{\n            \
+                     let raw = cursor.peek_slice({n})?;\n            \
+                     let _v = {body};\n            \
+                     cursor.advance({n})?;\n            \
+                     Some(_v)\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }};"
+            )
+        }
+        (Language::Cpp, None) => {
+            let ty = cpp_type(&field.sce_type);
+            format!(
+                "{ty} {id};\n        \
+                 {{\n            \
+                     const std::uint8_t* raw = cursor.peek_slice({n});\n            \
+                     if (raw == nullptr) return std::nullopt;\n            \
+                     {id} = static_cast<{ty}>({body});\n            \
+                     if (!cursor.advance({n})) return std::nullopt;\n        \
+                 }}"
+            )
+        }
+        (Language::Cpp, Some(p)) => {
+            let ty = cpp_type(&field.sce_type);
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "std::optional<{ty}> {id};\n        \
+                 if ({test}) {{\n            \
+                     const std::uint8_t* raw = cursor.peek_slice({n});\n            \
+                     if (raw == nullptr) return std::nullopt;\n            \
+                     {id} = static_cast<{ty}>({body});\n            \
+                     if (!cursor.advance({n})) return std::nullopt;\n        \
+                 }}"
+            )
+        }
+        // Other backends are gated up-front in render_codec via
+        // GenerateError::UnsupportedFeature; this arm is unreachable
+        // for has_present_if_fields codecs.
+        _ => String::new(),
+    }
+}
+
+/// Per-language present-if encode block. Plain fields render via the
+/// existing fixed-width byte serializer; gated fields wrap the same
+/// bytes inside an `if Some/has_value` test against the optional.
+fn present_if_streaming_encode_block(
+    field: &CodecField,
+    default_endian: Endian,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let bits = match field.bit_size {
+        BitSize::Fixed { bits } => bits,
+        _ => return String::new(),
+    };
+    let n = bits.div_ceil(8);
+
+    let id = field.id.as_str();
+    match (lang, field.present_if.is_some()) {
+        (Language::Rust, false) => streaming_fixed_field_encode_rust(field, default_endian, n),
+        (Language::Rust, true) => {
+            let inner = streaming_fixed_field_encode_rust_from_local(field, default_endian, n);
+            format!(
+                "        if let Some(_v) = self.{id} {{\n\
+                 {inner}\
+                 \n        }}"
+            )
+        }
+        (Language::Cpp, false) => streaming_fixed_field_encode_cpp(field, default_endian, n),
+        (Language::Cpp, true) => {
+            let inner = streaming_fixed_field_encode_cpp_from_local(field, default_endian, n);
+            format!(
+                "        if ({id}.has_value()) {{\n            \
+                     auto _v = *{id};\n\
+                 {inner}\
+                 \n        }}"
+            )
+        }
+        _ => String::new(),
+    }
+}
+
+/// RHS expression that decodes `n` bytes from a freshly-peeked
+/// `raw[0..n]` slice into the field's natural carrier type. For
+/// 8-bit fields this is just `raw[0]`; multi-byte fields fold byte
+/// shifts in the field's effective endianness. Mirrors
+/// `decode_multibyte_unified` but operates on a 0-based slice
+/// instead of `raw[byte_offset]`.
+fn streaming_fixed_field_body(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let endian = field.effective_endian(default_endian);
+    if n == 1 {
+        return match lang {
+            Language::Cpp => "raw[0]".into(),
+            _ => "raw[0]".into(),
+        };
+    }
+    let target = match (lang, n) {
+        (Language::Rust, 2) => "u16",
+        (Language::Rust, 3 | 4) => "u32",
+        (Language::Rust, _) => "u64",
+        (Language::Cpp, 2) => "uint16_t",
+        (Language::Cpp, 3 | 4) => "uint32_t",
+        (Language::Cpp, _) => "uint64_t",
+        _ => "u64",
+    };
+    let shifts: Vec<String> = (0..n)
+        .map(|i| {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            match lang {
+                Language::Cpp => {
+                    if shift == 0 {
+                        format!("raw[{i}]")
+                    } else {
+                        format!("(static_cast<{target}>(raw[{i}]) << {shift})")
+                    }
+                }
+                _ => {
+                    if shift == 0 {
+                        format!("raw[{i}] as {target}")
+                    } else {
+                        format!("((raw[{i}] as {target}) << {shift})")
+                    }
+                }
+            }
+        })
+        .collect();
+    shifts.join(" | ")
+}
+
+/// Encode block for a non-gated fixed field — Rust. Reads `self.<id>`
+/// and pushes `n` bytes in the field's effective endianness.
+fn streaming_fixed_field_encode_rust(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let id = field.id.as_str();
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    for i in 0..n {
+        let shift = match endian {
+            Endian::Little => i * 8,
+            Endian::Big | Endian::Native => (n - 1 - i) * 8,
+        };
+        if n == 1 {
+            lines.push_str(&format!("        r.push(self.{id});\n"));
+        } else if shift == 0 {
+            lines.push_str(&format!("        r.push(self.{id} as u8);\n"));
+        } else {
+            lines.push_str(&format!(
+                "        r.push((self.{id} >> {shift}) as u8);\n"
+            ));
+        }
+    }
+    lines.trim_end().to_string()
+}
+
+/// Encode block for a gated fixed field — Rust. Reads from `_v` (the
+/// inner of the `Some` arm) instead of `self.<id>`. The caller wraps
+/// this in `if let Some(_v) = self.<id> { ... }`.
+fn streaming_fixed_field_encode_rust_from_local(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    for i in 0..n {
+        let shift = match endian {
+            Endian::Little => i * 8,
+            Endian::Big | Endian::Native => (n - 1 - i) * 8,
+        };
+        if n == 1 {
+            lines.push_str("            r.push(_v);\n");
+        } else if shift == 0 {
+            lines.push_str("            r.push(_v as u8);\n");
+        } else {
+            lines.push_str(&format!("            r.push((_v >> {shift}) as u8);\n"));
+        }
+    }
+    lines.trim_end().to_string()
+}
+
+/// Cpp encode counterpart — non-gated.
+fn streaming_fixed_field_encode_cpp(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let id = field.id.as_str();
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    for i in 0..n {
+        let shift = match endian {
+            Endian::Little => i * 8,
+            Endian::Big | Endian::Native => (n - 1 - i) * 8,
+        };
+        if n == 1 {
+            lines.push_str(&format!("        r.push_back({id});\n"));
+        } else if shift == 0 {
+            lines.push_str(&format!(
+                "        r.push_back(static_cast<std::uint8_t>({id}));\n"
+            ));
+        } else {
+            lines.push_str(&format!(
+                "        r.push_back(static_cast<std::uint8_t>({id} >> {shift}));\n"
+            ));
+        }
+    }
+    lines.trim_end().to_string()
+}
+
+/// Cpp encode counterpart — gated, reads from `_v` local.
+fn streaming_fixed_field_encode_cpp_from_local(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    for i in 0..n {
+        let shift = match endian {
+            Endian::Little => i * 8,
+            Endian::Big | Endian::Native => (n - 1 - i) * 8,
+        };
+        if n == 1 {
+            lines.push_str("            r.push_back(_v);\n");
+        } else if shift == 0 {
+            lines.push_str(
+                "            r.push_back(static_cast<std::uint8_t>(_v));\n",
+            );
+        } else {
+            lines.push_str(&format!(
+                "            r.push_back(static_cast<std::uint8_t>(_v >> {shift}));\n"
+            ));
+        }
+    }
+    lines.trim_end().to_string()
+}
+
+/// Resolves a present-if predicate into a build-time literal bit-test
+/// expression in the target language. The expression references the
+/// just-decoded local `<carrier_id>` (decode site) — encode never needs
+/// it because encode tests the optional itself. Carrier and flag are
+/// guaranteed to exist by `validate_codec_present_if_predicates`.
+fn present_if_test_literal(
+    fields: &[CodecField],
+    pred: &PresentIfPredicate,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let carrier = fields
+        .iter()
+        .find(|f| f.id == pred.field_id)
+        .expect("validator ensured carrier exists");
+    let flag = carrier
+        .flags
+        .iter()
+        .find(|f| f.name == pred.flag_name)
+        .expect("validator ensured flag exists");
+    let mask: u64 = 1u64 << flag.bit;
+    let bit_width = carrier
+        .sce_type
+        .int_bit_width()
+        .expect("validator ensured carrier is unsigned-int");
+    let hex_digits = (bit_width / 4) as usize;
+    let suffix = match (lang, &carrier.sce_type) {
+        (Language::Rust, SceType::Uint8) => "u8",
+        (Language::Rust, SceType::Uint16) => "u16",
+        (Language::Rust, SceType::Uint32) => "u32",
+        (Language::Rust, SceType::Uint64) => "u64",
+        _ => "",
+    };
+    let id = carrier.id.as_str();
+    format!("({id} & 0x{mask:0width$X}{suffix}) != 0", width = hex_digits)
 }
 
 /// Per-language VLE decode statement: declares a local of the field's

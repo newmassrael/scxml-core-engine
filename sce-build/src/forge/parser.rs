@@ -560,6 +560,18 @@ fn parse_codec(
         ));
     }
 
+    // RFC §5.B B1-δ present-if validation — every gated field's
+    // predicate must reference a flags-bearing carrier declared
+    // earlier (so the streaming decoder has already consumed it),
+    // and the named flag must exist on that carrier. Forward
+    // references and unknown carriers split into distinct
+    // diagnostics (`codec/present-if-refs-later-field` for the
+    // ordering case so the author gets a precise repair hint;
+    // `validation/invalid-attribute` for missing carrier or
+    // missing flag, since both reduce to "fix the attribute
+    // text").
+    validate_codec_present_if_predicates(&fields, label, &datamodel)?;
+
     // RFC §5.B variant primitive (B1-β): optional <sce:variant> suffix
     // under <datamodel>. Resolves the tag field reference against the
     // codec's own field list; arm body aliases (resolved against
@@ -589,6 +601,98 @@ fn parse_codec(
 /// value domain. v1 considers uint8 (256 values) and uint16 (65536
 /// values) practically enumerable; uint32 / uint64 always require a
 /// default arm.
+/// RFC §5.B B1-δ present-if cross-field validation. Walks the
+/// declared field list in source order; each field's `present_if`
+/// predicate must reference a *previously-declared* sibling field
+/// that carries the `<sce:flags>` shape (so the streaming decoder
+/// can read the flag bit before reaching the gated field). Forward
+/// references — predicate target declared after the consumer, or
+/// not declared at all — emit
+/// `codec/present-if-refs-later-field`. Carrier-shape and flag-name
+/// mismatches reuse the generic `validation/invalid-attribute`
+/// because the repair is still "fix the attribute text".
+fn validate_codec_present_if_predicates(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    use std::collections::BTreeMap;
+    let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
+    for field in fields {
+        if let Some(predicate) = &field.present_if {
+            match by_id_so_far.get(predicate.field_id.as_str()) {
+                None => {
+                    return Err(located(
+                        datamodel,
+                        label.diagnostic_label,
+                        ValidationError::CodecPresentIfRefsLaterField {
+                            codec: label.identifier.to_string(),
+                            field: field.id.clone(),
+                            refers_to: predicate.field_id.clone(),
+                        },
+                    ));
+                }
+                Some(carrier) => {
+                    if !carrier.is_flags_carrier() {
+                        return Err(located(
+                            datamodel,
+                            label.diagnostic_label,
+                            ValidationError::InvalidAttribute {
+                                element: format!(
+                                    "field '{}' in codec '{}'",
+                                    field.id, label.identifier
+                                ),
+                                attr: "sce:present-if".into(),
+                                value: format!(
+                                    "{}.{}",
+                                    predicate.field_id, predicate.flag_name
+                                ),
+                                expected: format!(
+                                    "predicate LHS must reference a flags-bearing \
+                                     carrier (declared via <sce:flags>); '{}' is \
+                                     a plain field",
+                                    predicate.field_id
+                                ),
+                            },
+                        ));
+                    }
+                    if !carrier
+                        .flags
+                        .iter()
+                        .any(|f| f.name == predicate.flag_name)
+                    {
+                        let known: Vec<&str> =
+                            carrier.flags.iter().map(|f| f.name.as_str()).collect();
+                        return Err(located(
+                            datamodel,
+                            label.diagnostic_label,
+                            ValidationError::InvalidAttribute {
+                                element: format!(
+                                    "field '{}' in codec '{}'",
+                                    field.id, label.identifier
+                                ),
+                                attr: "sce:present-if".into(),
+                                value: format!(
+                                    "{}.{}",
+                                    predicate.field_id, predicate.flag_name
+                                ),
+                                expected: format!(
+                                    "flag name must be declared on carrier \
+                                     '{}': known flags = [{}]",
+                                    predicate.field_id,
+                                    known.join(", ")
+                                ),
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+        by_id_so_far.insert(field.id.as_str(), field);
+    }
+    Ok(())
+}
+
 fn parse_codec_variant(
     datamodel: &roxmltree::Node,
     fields: &[CodecField],
@@ -926,6 +1030,20 @@ pub fn parse_codec_field_from_node(
     let max_size = sce_attr(node, "max-size").and_then(|s| parse_int(&s));
     let length_field = sce_attr(node, "length-field");
 
+    // RFC §5.B B1-δ present-if primitive — accept the attribute and
+    // parse the v1 grammar `<field_id>.<flag_name>` here, but defer
+    // the cross-field forward-reference and flags-carrier-existence
+    // checks to the codec-level pass where the full field set is
+    // known. This keeps `parse_codec_field_from_node` reusable for
+    // both `<sce:field>` and `<sce:flags>` (where the carrier itself
+    // can never carry a present-if attribute, and the v1 grammar
+    // would error on an empty / malformed predicate at attribute
+    // read time).
+    let present_if = match sce_attr(node, "present-if") {
+        None => None,
+        Some(raw) => Some(parse_present_if_predicate(&raw, node, doc_name, &id)?),
+    };
+
     Ok(CodecField {
         id,
         sce_type,
@@ -936,6 +1054,59 @@ pub fn parse_codec_field_from_node(
         max_size,
         length_field,
         flags: Vec::new(),
+        present_if,
+    })
+}
+
+/// RFC §5.B B1-δ present-if predicate grammar (v1): exactly
+/// `<field_id>.<flag_name>`, both halves matching the SCE attribute
+/// name shape (alphanumeric + `_`, non-empty). Richer expressions
+/// (`!flag`, `flag1 && flag2`, `field == value`) defer to a later
+/// B-stage when downstream authoring surfaces a reachable consumer.
+fn parse_present_if_predicate(
+    raw: &str,
+    node: &roxmltree::Node,
+    doc_name: &str,
+    field_id: &str,
+) -> Result<PresentIfPredicate, Located<ForgeError>> {
+    let trimmed = raw.trim();
+    let invalid = || {
+        located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("field '{field_id}'"),
+                attr: "sce:present-if".into(),
+                value: raw.to_string(),
+                expected: "exactly one '<field_id>.<flag_name>' bit-test \
+                           (v1 grammar — both halves are non-empty \
+                           identifiers; richer predicates defer to a \
+                           later RFC §5.B stage)"
+                    .into(),
+            },
+        )
+    };
+    let (lhs, rhs) = trimmed.split_once('.').ok_or_else(invalid)?;
+    let lhs = lhs.trim();
+    let rhs = rhs.trim();
+    if lhs.is_empty() || rhs.is_empty() {
+        return Err(invalid());
+    }
+    let is_ident = |s: &str| {
+        s.chars().enumerate().all(|(i, c)| {
+            if i == 0 {
+                c.is_ascii_alphabetic() || c == '_'
+            } else {
+                c.is_ascii_alphanumeric() || c == '_'
+            }
+        })
+    };
+    if !is_ident(lhs) || !is_ident(rhs) {
+        return Err(invalid());
+    }
+    Ok(PresentIfPredicate {
+        field_id: lhs.to_string(),
+        flag_name: rhs.to_string(),
     })
 }
 
@@ -964,6 +1135,27 @@ fn parse_codec_flags_from_node(
                 attr: "sce:type".into(),
                 value: format!("{:?}", field.sce_type).to_lowercase(),
                 expected: "uint8 / uint16 / uint32 / uint64".into(),
+            },
+        ));
+    }
+
+    // Reject present-if on a flags carrier — a carrier that is itself
+    // gated cannot serve as the LHS of another field's present-if
+    // (the flag bit it carries is unreadable when the carrier is
+    // absent). v1 forbids this composition; later stages can lift
+    // the restriction when a reachable consumer surfaces.
+    if field.present_if.is_some() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:flags id='{}'>", field.id),
+                attr: "sce:present-if".into(),
+                value: "<predicate>".into(),
+                expected: "<sce:flags> carriers cannot themselves be \
+                           gated by present-if (the bit they carry would \
+                           be unreadable when the carrier is absent)"
+                    .into(),
             },
         ));
     }

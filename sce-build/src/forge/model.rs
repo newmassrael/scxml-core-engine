@@ -731,6 +731,22 @@ pub struct FlagDef {
     pub bit: u32,
 }
 
+/// RFC §5.B B1-δ present-if predicate — a single bit-test on a
+/// flags-bearing sibling field declared earlier in the same codec.
+///
+/// v1 grammar is exactly `<field_id>.<flag_name>`: the predicate is
+/// true iff the named flag bit on the carrier is set. Richer
+/// expressions (negation, conjunction, equality against a value) are
+/// deferred to a later B-stage when downstream authoring surfaces a
+/// reachable consumer; the v1 form is sufficient for the Zenoh
+/// optional-field shapes (e.g. attachment, timestamp, encoding-info)
+/// targeted by B4.
+#[derive(Debug, Clone, Serialize)]
+pub struct PresentIfPredicate {
+    pub field_id: String,
+    pub flag_name: String,
+}
+
 /// A single field in a codec's byte layout.
 #[derive(Debug, Clone, Serialize)]
 pub struct CodecField {
@@ -760,6 +776,15 @@ pub struct CodecField {
     /// same bytes as a regular unsigned-int).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub flags: Vec<FlagDef>,
+    /// RFC §5.B B1-δ present-if primitive. `Some(predicate)` when the
+    /// field carries a `sce:present-if="<carrier>.<flag>"` attribute;
+    /// the field's host-language type is wrapped as a per-language
+    /// optional (`Option<T>` / `std::optional<T>` / `T?` / `*T` /
+    /// `Optional[T]` / `bool has_<id>; T <id>` paired in C11) and the
+    /// streaming decode/encode skips the field's bytes when the
+    /// predicate is false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub present_if: Option<PresentIfPredicate>,
 }
 
 impl CodecField {
@@ -777,6 +802,13 @@ impl CodecField {
     /// 1..=ceil(N/7) bytes from the cursor instead of a fixed window).
     pub fn is_vle(&self) -> bool {
         matches!(self.bit_size, BitSize::Vle { .. })
+    }
+
+    /// Whether this field carries a `<sce:flag>` set (RFC §5.B B1-γ).
+    /// Used by the present-if validator (B1-δ) to verify a predicate's
+    /// LHS resolves to a flags-bearing carrier.
+    pub fn is_flags_carrier(&self) -> bool {
+        !self.flags.is_empty()
     }
 
     /// Fixed bit count, or None for variable-length.
@@ -882,6 +914,14 @@ impl CodecModel {
     /// fixed-only fixtures vs builder-pattern for variable-length).
     pub fn has_variable_fields(&self) -> bool {
         self.fields.iter().any(|f| f.is_variable_length())
+    }
+
+    /// Whether the codec has any present-if-gated field (RFC §5.B
+    /// B1-δ). Forces the streaming decode/encode path because a
+    /// gated field's start offset depends on the runtime predicate
+    /// value, and per-language type wraps the field as an optional.
+    pub fn has_present_if_fields(&self) -> bool {
+        self.fields.iter().any(|f| f.present_if.is_some())
     }
 }
 

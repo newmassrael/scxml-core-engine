@@ -442,6 +442,23 @@ pub enum ValidationError {
         arm_count: usize,
         domain_size: Option<u64>,
     },
+
+    /// RFC §5.B present-if primitive (B1-δ): the predicate on a
+    /// `sce:present-if` attribute references a field that is **not**
+    /// declared earlier in the same codec — either declared later
+    /// (a forward reference, which would require a runtime peek the
+    /// streaming decoder cannot perform) or never declared at all.
+    /// Author resolves by reordering field declarations so the
+    /// referenced flags carrier precedes every consumer, or by
+    /// correcting a typo in the predicate's field id.
+    #[error(
+        "codec '{codec}': field '{field}' has sce:present-if=\"{refers_to}.…\" but '{refers_to}' is not declared earlier in this codec — present-if predicates must reference a flags-bearing carrier that the streaming decoder has already consumed; reorder the fields so the carrier comes first, or correct the predicate"
+    )]
+    CodecPresentIfRefsLaterField {
+        codec: String,
+        field: String,
+        refers_to: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

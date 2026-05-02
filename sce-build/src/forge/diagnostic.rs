@@ -488,6 +488,18 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-unreachable")]
     CodecVariantArmUnreachable,
 
+    // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ).
+    //    Build-time check on `<sce:field sce:present-if="X.Y"/>`: the
+    //    referenced field `X` must be declared earlier in the same
+    //    codec so the streaming decoder has already consumed it by
+    //    the time this field's predicate is evaluated. A forward
+    //    reference (predicate target declared after the consumer) is
+    //    rejected here; an unknown predicate target reuses the
+    //    generic `validation/invalid-attribute` code (typos in the
+    //    flag-name half land there too). Stage = Validation. ──
+    #[serde(rename = "codec/present-if-refs-later-field")]
+    CodecPresentIfRefsLaterField,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -797,6 +809,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmConstYieldTypeMismatch,
         // Codec §5.B variant primitive (watching-zenoh RFC §5.B, B1-β)
         CodecVariantArmUnreachable,
+        // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
+        CodecPresentIfRefsLaterField,
         // Io
         IoFilesystem,
         // Cli
@@ -1000,8 +1014,9 @@ impl DiagnosticCode {
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch => Some("watching-zenoh RFC §5.F"),
 
-            // ── Codec §5.B variant primitive (B1-β) ──────────────
-            CodecVariantArmUnreachable => Some("watching-zenoh RFC §5.B"),
+            // ── Codec §5.B variant + present-if primitives (B1-β/δ) ─
+            CodecVariantArmUnreachable
+            | CodecPresentIfRefsLaterField => Some("watching-zenoh RFC §5.B"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1261,6 +1276,7 @@ impl DiagnosticCode {
             AlgorithmConstFoldBudgetExceeded => "algorithm/const-fold-budget-exceeded",
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
             CodecVariantArmUnreachable => "codec/variant-arm-unreachable",
+            CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2074,6 +2090,23 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 }
                 k
             },
+        },
+        ValidationError::CodecPresentIfRefsLaterField {
+            codec,
+            field,
+            refers_to,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecPresentIfRefsLaterField,
+            stage: Stage::Validation,
+            // Repair is positional ("declare the carrier earlier" or
+            // "fix the typo"), not a closed candidate set, so `fix`
+            // stays `None`. The triple (codec, field, refers_to)
+            // uniquely keys the violation across multiple present-if
+            // declarations on the same codec.
+            expected: None,
+            actual: Some(field.clone()),
+            fix: None,
+            key_fragments: vec![codec.clone(), field.clone(), refers_to.clone()],
         },
     }
 }
@@ -3353,6 +3386,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:fb2f4b7fefc04603","code":"codec/variant-arm-unreachable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant on tag 'msg_id' (type uint8) has 3 arm(s) but no <sce:default> declared (tag type domain has 256 values) — at least one tag value would have no matching arm at runtime; add <sce:default type=\"...\"/> or enumerate the missing values explicitly","actual":"msg_id"}"#,
             ),
+            // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ) ─
+            (
+                "forge/codec-present-if-refs-later-field",
+                ValidationError::CodecPresentIfRefsLaterField {
+                    codec: "session_envelope".into(),
+                    field: "key".into(),
+                    refers_to: "trailer_flags".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f6f6bd818f8e28d9","code":"codec/present-if-refs-later-field","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': field 'key' has sce:present-if=\"trailer_flags.…\" but 'trailer_flags' is not declared earlier in this codec — present-if predicates must reference a flags-bearing carrier that the streaming decoder has already consumed; reorder the fields so the carrier comes first, or correct the predicate","actual":"key"}"#,
+            ),
         ]
     }
 
@@ -4598,6 +4642,7 @@ mod tests {
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
             | CodecVariantArmUnreachable
+            | CodecPresentIfRefsLaterField
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -4936,6 +4981,7 @@ mod tests {
                 | AlgorithmConstFoldBudgetExceeded
                 | AlgorithmConstYieldTypeMismatch
                 | CodecVariantArmUnreachable
+                | CodecPresentIfRefsLaterField
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5019,12 +5065,12 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            165,
+            166,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 165 distinct variants to match the DiagnosticCode \
-             enum (watching-zenoh RFC §5.B B1-β added the variant \
-             primitive's build-time exhaustiveness check: \
-             CodecVariantArmUnreachable; 164 → 165).",
+             expected 166 distinct variants to match the DiagnosticCode \
+             enum (watching-zenoh RFC §5.B B1-δ added the present-if \
+             primitive's build-time forward-reference check: \
+             CodecPresentIfRefsLaterField; 165 → 166).",
         );
     }
 

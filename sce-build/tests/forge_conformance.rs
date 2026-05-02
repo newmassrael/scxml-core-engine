@@ -803,6 +803,23 @@ fn forge_codec_flags_basic() {
     assert_standalone_forge("codec_flags_basic", "codec_flags_basic.h");
 }
 
+// ── RFC §5.B B1-δ present-if primitive (trunk) ──────────────
+// `codec_present_if_basic` declares a uint8 flags carrier with one
+// named bit `has_seq` followed by a uint16 BE field gated on that
+// bit. Trunk ships Rust + Cpp byte-stable goldens; Kotlin / Go /
+// C11 / Python land in B1-δ closures (each errors with
+// `generate/unsupported-feature` until then). The fixture round-
+// trips two oracle frames: `set_has_seq(true) + seq=Some(0xCAFE)`
+// → `0x01 0xCA 0xFE`; `set_has_seq(false) + seq=None` → `0x00`.
+
+#[test]
+fn forge_codec_present_if_basic() {
+    assert_standalone_forge(
+        "codec_present_if_basic",
+        "codec_present_if_basic.h",
+    );
+}
+
 // ── RFC §5.B variant primitive (B1-β trunk) ──────────────────
 // `codec_variant_dispatch` imports two arm-body codecs and exposes
 // the discriminated-union shape across Rust + Cpp. Sub-codecs ship
@@ -1160,6 +1177,16 @@ fn forge_rust_codec_length_ref() {
 #[test]
 fn forge_rust_codec_flags_basic() {
     assert_standalone_forge_rust("codec_flags_basic", "codec_flags_basic.rs");
+}
+
+// ── RFC §5.B B1-δ present-if primitive (Rust) ───────────────
+
+#[test]
+fn forge_rust_codec_present_if_basic() {
+    assert_standalone_forge_rust(
+        "codec_present_if_basic",
+        "codec_present_if_basic.rs",
+    );
 }
 
 // ── RFC §5.B variant primitive (Rust, B1-β trunk) ────────────

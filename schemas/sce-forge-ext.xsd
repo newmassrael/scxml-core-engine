@@ -181,6 +181,15 @@
   <xs:attribute name="length" type="xs:nonNegativeInteger"/>
   <xs:attribute name="length-field" type="xs:string"/>
 
+  <!-- RFC §5.B B1-δ present-if primitive (sce:present-if attribute).
+       Predicate grammar v1: exactly `<field_id>.<flag_name>` — the
+       referenced field must be a `<sce:flags>` carrier declared
+       earlier in the same codec. Field shape (string typed at the XSD
+       layer; semantic checks land in sce-build):
+         - forward / unknown carrier → codec/present-if-refs-later-field
+         - non-flags carrier or unknown flag → validation/invalid-attribute -->
+  <xs:attribute name="present-if" type="xs:string"/>
+
   <!-- Section 4.5: Procedure <send> hints -->
   <xs:attribute name="service" type="xs:string"/>
   <xs:attribute name="subfunc" type="xs:string"/>
@@ -273,6 +282,7 @@
       <xs:attribute ref="sce:endian"/>
       <xs:attribute ref="sce:max-size"/>
       <xs:attribute ref="sce:length-field"/>
+      <xs:attribute ref="sce:present-if"/>
     </xs:complexType>
   </xs:element>
 
