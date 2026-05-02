@@ -25,6 +25,35 @@
 #define {{ c_min_bytes_macro }} {{ min_bytes }}
 #define {{ c_max_bytes_macro }} {{ max_bytes }}
 
+{% if has_variant %}
+/* RFC §5.B variant primitive (B1-β): tagged-union body for the codec's
+ * tag-field suffix. `kind` discriminates the active arm; `default_tag`
+ * preserves the runtime tag value when the default arm fires; the inner
+ * union holds one body slot per arm (per-arm fields keep the template
+ * straight when two arms share a body type). */
+typedef enum {
+{% for arm in variant.arms %}
+    {{ arm.c_kind_constant }},
+{% endfor %}
+{% if variant.default_arm %}
+    {{ variant.default_arm.c_kind_constant }},
+{% endif %}
+} {{ variant.c_kind_typedef }};
+
+typedef struct {
+    {{ variant.c_kind_typedef }} kind;
+    {{ variant.tag_native_type }} default_tag;  /* valid only when kind == ..._DEFAULT */
+    union {
+{% for arm in variant.arms %}
+        {{ arm.body_type }} {{ arm.c_union_field }};
+{% endfor %}
+{% if variant.default_arm %}
+        {{ variant.default_arm.body_type }} {{ variant.default_arm.c_union_field }};
+{% endif %}
+    } arm;
+} {{ variant.c_body_typedef }};
+
+{% endif %}
 typedef struct {
 {% for field in fields %}
 {% if field.is_variable and not field.is_vle %}
@@ -35,6 +64,9 @@ typedef struct {
     {{ field.c_type }} {{ field.id }};
 {% endif %}
 {% endfor %}
+{% if has_variant %}
+    {{ variant.c_body_typedef }} body;
+{% endif %}
 } {{ c_struct_typedef }};
 
 typedef struct {
@@ -48,7 +80,41 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out) {
-{% if has_vle_fields %}
+{% if has_variant %}
+    /* Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix). */
+    const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
+    if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% for field in fields %}
+    out->{{ field.id }} = {{ field.decode_expr }};
+{% endfor %}
+    if (!sce_forge_cursor_advance(cursor, {{ c_min_bytes_macro }})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    /* Dispatch on the tag field; each arm decodes its body codec from
+     * the cursor. The default arm (when declared) carries the runtime
+     * tag value so encode can round-trip it back onto the wire. */
+    out->body.default_tag = 0;
+    sce_forge_codec_status_t _arm_st;
+    switch (out->{{ variant.tag_field }}) {
+{% for arm in variant.arms %}
+        case {{ arm.value_literal }}:
+            out->body.kind = {{ arm.c_kind_constant }};
+            _arm_st = {{ arm.body_decoder }}(cursor, &out->body.arm.{{ arm.c_union_field }});
+            if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
+            break;
+{% endfor %}
+        default:
+{% if variant.default_arm %}
+            out->body.kind = {{ variant.default_arm.c_kind_constant }};
+            out->body.default_tag = out->{{ variant.tag_field }};
+            _arm_st = {{ variant.default_arm.body_decoder }}(cursor, &out->body.arm.{{ variant.default_arm.c_union_field }});
+            if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
+            break;
+{% else %}
+            /* codec/variant-arm-unreachable rejected this case at parse time. */
+            return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% endif %}
+    }
+    return SCE_FORGE_CODEC_OK;
+{% elif has_vle_fields %}
     /* Streaming codec: each field reads from cursor directly (VLE
      * base-128 chain, 1..=ceil(N/7) bytes per field). */
 {% for field in fields %}
@@ -103,7 +169,39 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 
 static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_typedef }} *self) {
     {{ c_encoded_typedef }} r;
-{% if has_vle_fields %}
+{% if has_variant %}
+    /* Encode fixed prefix (tag field bytes are part of the prefix).
+     * The tag value is read from the struct field, NOT derived from
+     * the body discriminant — keeping author-set tag / body in sync
+     * is the caller's responsibility (v1 keeps the layout simple). */
+    r.len = {{ c_min_bytes_macro }};
+{% for expr in encode_exprs %}
+    r.bytes[{{ loop.index0 }}] = {{ expr }};
+{% endfor %}
+    /* Append the active arm body's encoded bytes. */
+    switch (self->body.kind) {
+{% for arm in variant.arms %}
+        case {{ arm.c_kind_constant }}: {
+            {{ arm.c_body_encoded_type }} _sub = {{ arm.body_encoder }}(&self->body.arm.{{ arm.c_union_field }});
+            if (r.len + _sub.len <= {{ c_max_bytes_macro }}) {
+                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
+                r.len += _sub.len;
+            }
+            break;
+        }
+{% endfor %}
+{% if variant.default_arm %}
+        case {{ variant.default_arm.c_kind_constant }}: {
+            {{ variant.default_arm.c_body_encoded_type }} _sub = {{ variant.default_arm.body_encoder }}(&self->body.arm.{{ variant.default_arm.c_union_field }});
+            if (r.len + _sub.len <= {{ c_max_bytes_macro }}) {
+                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
+                r.len += _sub.len;
+            }
+            break;
+        }
+{% endif %}
+    }
+{% elif has_vle_fields %}
     r.len = 0;
 {% for field in fields %}
 {{ field.vle_encode_block }}

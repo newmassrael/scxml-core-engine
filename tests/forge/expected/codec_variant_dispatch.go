@@ -88,7 +88,7 @@ func (s *CodecVariantDispatch) Encode() []byte {
 	// The tag value is read from the struct field, NOT derived from
 	// the body discriminant — keeping author-set tag / body in sync
 	// is the caller's responsibility (v1 keeps the layout simple).
-	r := make([]byte, 0, 1)
+	r := make([]byte, 0, 3)
 	r = append(r, byte(s.MsgId))
 	// Append the active arm body's encoded bytes.
 	switch {

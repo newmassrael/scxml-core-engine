@@ -609,6 +609,13 @@ fn validate_and_enrich_imports(
         };
 
         if let Some(doc) = forge::parser::parse_forge(&content, imported_label)? {
+            // RFC §5.B variant primitive (B1-β): codec imports carry
+            // their max_frame_bytes forward so the parent codec's
+            // variant emit can size its encoded buffer to fit the
+            // worst-case arm body. Non-codec imports leave it `None`.
+            if let forge::model::ForgeDocument::Codec(cm) = &doc {
+                ctx.codec_max_bytes = Some(cm.max_frame_bytes());
+            }
             if !ctx.is_stateful {
                 if let Some(name) = discover_primary_function(&doc, language) {
                     ctx.qualified_call = build_qualified_call(&name, &ctx.namespace, language);

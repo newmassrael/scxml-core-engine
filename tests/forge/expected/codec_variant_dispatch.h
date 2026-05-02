@@ -82,7 +82,7 @@ struct CodecVariantDispatch {
     std::vector<uint8_t> encode() const {
         // Encode fixed prefix (tag field bytes are part of the prefix).
         std::vector<uint8_t> r;
-        r.reserve(1);
+        r.reserve(3);
         r.push_back(msg_id);
         // Append the active arm body's encoded bytes.
         if (auto _p = std::get_if<::SCE::Generated::CodecVariantSessionOpen::CodecVariantSessionOpen>(&body)) {

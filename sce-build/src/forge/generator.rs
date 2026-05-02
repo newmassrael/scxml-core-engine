@@ -99,6 +99,15 @@ pub struct ImportContext {
     /// templates so they never see a stray `go_init_expr` key.
     #[serde(rename = "go_init_expr", skip_serializing_if = "String::is_empty")]
     pub go_init_expr: String,
+
+    /// For codec imports: the imported codec's `max_frame_bytes()` value,
+    /// computed at enrichment time from the parsed `CodecModel`.
+    /// Consumed by the variant primitive emit (RFC §5.B B1-β) so the
+    /// parent codec's encoded buffer can be sized to fit the worst-case
+    /// arm body. `None` for non-codec imports and for codec imports
+    /// whose model failed to parse during enrichment.
+    #[serde(skip)]
+    pub codec_max_bytes: Option<u32>,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -226,6 +235,7 @@ fn resolve_single_import(
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
+                codec_max_bytes: None,
             }
         }
         crate::generator::Language::Kotlin => {
@@ -253,6 +263,7 @@ fn resolve_single_import(
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
+                codec_max_bytes: None,
             }
         }
         crate::generator::Language::Rust => {
@@ -282,6 +293,7 @@ fn resolve_single_import(
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
+                codec_max_bytes: None,
             }
         }
         crate::generator::Language::Go => {
@@ -337,6 +349,7 @@ fn resolve_single_import(
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr,
+                codec_max_bytes: None,
             }
         }
         crate::generator::Language::Python => {
@@ -366,6 +379,7 @@ fn resolve_single_import(
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
+                codec_max_bytes: None,
             }
         }
         crate::generator::Language::C11 => {
@@ -396,6 +410,7 @@ fn resolve_single_import(
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
+                codec_max_bytes: None,
             }
         }
     }
@@ -961,13 +976,12 @@ fn render_codec(
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
-    // RFC §5.B variant primitive (B1-β trunk + Kotlin/Go closures):
-    // Rust, Cpp, Kotlin, Go emit variant codecs. The remaining backends
-    // (C11 / Python) gate here with a clear `generate/unsupported-feature`
-    // until their per-language closure lands. Without this gate the
-    // template would silently render a struct missing the variant body
-    // — author would ship broken decode/encode against an apparently
-    // valid codec golden.
+    // RFC §5.B variant primitive (B1-β trunk + Kotlin/Go/C11 closures):
+    // Rust, Cpp, Kotlin, Go, C11 emit variant codecs. Python remains
+    // gated here with a clear `generate/unsupported-feature` until its
+    // per-language closure lands. Without this gate the template would
+    // silently render a struct missing the variant body — author would
+    // ship broken decode/encode against an apparently valid codec golden.
     if m.variant.is_some()
         && !matches!(
             lang,
@@ -975,12 +989,13 @@ fn render_codec(
                 | crate::generator::Language::Cpp
                 | crate::generator::Language::Kotlin
                 | crate::generator::Language::Go
+                | crate::generator::Language::C11
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "codec '{name}': <sce:variant> emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B1-β trunk ships Rust + Cpp + Kotlin + Go; C11 / Python land in B1-β closures)",
+                 (RFC §5.B B1-β trunk ships Rust + Cpp + Kotlin + Go + C11; Python lands in B1-β closure)",
                 name = m.name,
             )),
         ));
@@ -1048,7 +1063,33 @@ fn render_codec(
     let mut ctx = l.base_context(&m.name);
     ctx.insert("fields".into(), serde_json::json!(fields));
     ctx.insert("min_bytes".into(), m.min_frame_bytes().into());
-    ctx.insert("max_bytes".into(), m.max_frame_bytes().into());
+    // RFC §5.B variant primitive (B1-β): the parent codec's worst-case
+    // encoded size is `prefix + max(arm_body_max)` because exactly one
+    // arm fires per frame. Without this adjustment the C11 emit would
+    // size its `bytes[MAX]` array to fit only the prefix, silently
+    // truncating the body on encode; Rust/Cpp/Kotlin/Go would still be
+    // correct (vector growth) but their `with_capacity` / `make` hints
+    // would under-reserve and trigger a reallocation on the first body
+    // append. The body's max comes from each arm import's enrichment-
+    // populated `codec_max_bytes` (see `validate_and_enrich_imports`).
+    let max_bytes = if let Some(v) = &m.variant {
+        let body_max = v
+            .arms
+            .iter()
+            .chain(v.default_arm.iter())
+            .filter_map(|arm| {
+                imports
+                    .iter()
+                    .find(|i| i.alias == arm.body_alias)
+                    .and_then(|i| i.codec_max_bytes)
+            })
+            .max()
+            .unwrap_or(0);
+        m.max_frame_bytes() + body_max
+    } else {
+        m.max_frame_bytes()
+    };
+    ctx.insert("max_bytes".into(), max_bytes.into());
     ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
     ctx.insert("has_vle_fields".into(), has_vle_fields.into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
@@ -1084,6 +1125,11 @@ fn render_codec(
             (crate::generator::Language::Kotlin, SceType::Uint32 | SceType::Uint64) => "L",
             _ => "",
         };
+        // C11 emits a tagged-union body struct, which needs a per-arm
+        // kind enum constant and a per-arm union field name. Computed
+        // alongside the cross-backend arm fields so the same arm_ctx
+        // entry serves every emitter.
+        let c_parent_upper = to_upper_snake(&m.name);
         let arm_ctx: Vec<serde_json::Value> = v
             .arms
             .iter()
@@ -1098,11 +1144,23 @@ fn render_codec(
                     filters::to_pascal_case(arm.body_alias.clone());
                 let value_literal = format!("{}{}", arm.value, arm_value_suffix);
                 let body_decoder = resolve_variant_arm_decoder(&arm.body_alias, lang);
+                let body_encoder = resolve_variant_arm_encoder(&arm.body_alias, lang);
+                let arm_snake = filters::to_snake_case(arm.body_alias.clone());
+                let arm_upper = to_upper_snake(&arm.body_alias);
+                let c_kind_constant = format!("{c_parent_upper}_BODY_KIND_{arm_upper}");
+                // C11 arm body's encoded-bytes typedef — used by the
+                // splice loop in encode() so `_sub` carries the body's
+                // own `<snake>_encoded_t` shape, not the parent's.
+                let c_body_encoded_type = format!("{arm_snake}_encoded_t");
                 let mut obj = serde_json::Map::new();
                 obj.insert("value_literal".into(), value_literal.into());
                 obj.insert("variant_name".into(), variant_name.into());
                 obj.insert("body_type".into(), body_type.into());
                 obj.insert("body_decoder".into(), body_decoder.into());
+                obj.insert("body_encoder".into(), body_encoder.into());
+                obj.insert("c_kind_constant".into(), c_kind_constant.into());
+                obj.insert("c_union_field".into(), arm_snake.into());
+                obj.insert("c_body_encoded_type".into(), c_body_encoded_type.into());
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1117,6 +1175,10 @@ fn render_codec(
                     lang,
                 )?;
                 let body_decoder = resolve_variant_arm_decoder(&d.body_alias, lang);
+                let body_encoder = resolve_variant_arm_encoder(&d.body_alias, lang);
+                let c_kind_constant = format!("{c_parent_upper}_BODY_KIND_DEFAULT");
+                let d_snake = filters::to_snake_case(d.body_alias.clone());
+                let c_body_encoded_type = format!("{d_snake}_encoded_t");
                 let mut obj = serde_json::Map::new();
                 obj.insert(
                     "variant_name".into(),
@@ -1124,6 +1186,12 @@ fn render_codec(
                 );
                 obj.insert("body_type".into(), body_type.into());
                 obj.insert("body_decoder".into(), body_decoder.into());
+                obj.insert("body_encoder".into(), body_encoder.into());
+                obj.insert("c_kind_constant".into(), c_kind_constant.into());
+                // `default_body` field name avoids any collision with an
+                // enumerated arm whose body alias happens to be `default`.
+                obj.insert("c_union_field".into(), "default_body".to_string().into());
+                obj.insert("c_body_encoded_type".into(), c_body_encoded_type.into());
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .transpose()?;
@@ -1131,6 +1199,22 @@ fn render_codec(
         let mut variant_obj = serde_json::Map::new();
         variant_obj.insert("tag_field".into(), l.codec_field_id(&v.tag_field).into());
         variant_obj.insert("tag_native_type".into(), tag_native.into());
+        // C11 emits two new typedefs alongside the codec struct: an
+        // enum naming each kind constant and a struct holding the
+        // discriminant + union of bodies. Names are derived from the
+        // codec name once so the template doesn't have to recompute
+        // the upper/snake case forms inline.
+        if matches!(lang, crate::generator::Language::C11) {
+            let snake = filters::to_snake_case(m.name.clone());
+            variant_obj.insert(
+                "c_kind_typedef".into(),
+                format!("{snake}_body_kind_t").into(),
+            );
+            variant_obj.insert(
+                "c_body_typedef".into(),
+                format!("{snake}_body_t").into(),
+            );
+        }
         // Kotlin: `when` matches an Int (or Long for Uint32/64) against
         // plain integer literals. `tag_field.toInt()` widens UByte/UShort
         // safely; `tag_field.toLong()` is needed for UInt/ULong because
@@ -1246,8 +1330,14 @@ fn resolve_variant_arm_body_type(
         // type, the decoded arm pointer type, and the imported codec's
         // free decoder all line up against the same package alias.
         crate::generator::Language::Go => imp.member_type.clone(),
+        // C11: imported codec emits `typedef struct {...} <snake>_t;`
+        // (`tools/codegen/templates/forge/c/codec.h.jinja2:38`). The
+        // arm's union field is typed against that typedef, which is
+        // exactly what `member_type` already holds for the C11 arm of
+        // `resolve_single_import`.
+        crate::generator::Language::C11 => imp.member_type.clone(),
         _ => unreachable!(
-            "variant emit gated to Rust + Cpp + Kotlin + Go until C11 / Python closures land"
+            "variant emit gated to Rust + Cpp + Kotlin + Go + C11 until Python closure lands"
         ),
     })
 }
@@ -1268,10 +1358,37 @@ fn resolve_variant_arm_decoder(
             let pascal = filters::to_pascal_case(body_alias.to_string());
             format!("{snake}.Decode{pascal}")
         }
+        // C11: imported codecs emit `<snake>_decode(cursor, *out)` —
+        // see `tools/codegen/templates/forge/c/codec.h.jinja2:50`. The
+        // variant decoder calls into that free function once it has
+        // the matching union slot's address.
+        crate::generator::Language::C11 => {
+            let snake = filters::to_snake_case(body_alias.to_string());
+            format!("{snake}_decode")
+        }
         // Rust / Cpp / Kotlin templates already build the call from
         // `body_type` directly (e.g. `{{ body_type }}::decode`); they
         // ignore this field. Returning empty keeps the JSON shape
         // uniform without forcing a per-language template branch.
+        _ => String::new(),
+    }
+}
+
+/// RFC §5.B variant primitive (B1-β): per-language encoder reference
+/// for an arm body. Mirrors `resolve_variant_arm_decoder` for the
+/// encode side. C11's free-function `<snake>_encode` returns a
+/// `<snake>_encoded_t` that the variant emitter splices into the parent
+/// codec's encoded buffer; method-style backends ignore this field
+/// because they call `.encode()` on the body value directly.
+fn resolve_variant_arm_encoder(
+    body_alias: &str,
+    lang: crate::generator::Language,
+) -> String {
+    match lang {
+        crate::generator::Language::C11 => {
+            let snake = filters::to_snake_case(body_alias.to_string());
+            format!("{snake}_encode")
+        }
         _ => String::new(),
     }
 }
@@ -7846,6 +7963,7 @@ mod tests {
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
+                codec_max_bytes: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -7862,6 +7980,7 @@ mod tests {
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
+                codec_max_bytes: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

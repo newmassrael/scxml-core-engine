@@ -86,7 +86,7 @@ impl CodecVariantDispatch {
         // the body discriminant — keeping author-set msg_id / body in
         // sync is the caller's responsibility (v1 keeps the layout
         // simple; future extensions may auto-sync via a typed setter).
-        let mut r: Vec<u8> = Vec::with_capacity(1);
+        let mut r: Vec<u8> = Vec::with_capacity(3);
         r.push(self.msg_id);
         // Append the active arm's encoded bytes.
         match &self.body {

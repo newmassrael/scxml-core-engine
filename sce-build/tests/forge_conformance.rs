@@ -877,14 +877,14 @@ fn forge_codec_variant_missing_default_rejects() {
     );
 }
 
-/// RFC §5.B B1-β: post-Go-closure, only C11 / Python remain gated.
-/// The C11 arm exercises the gate path so a future C11 closure
+/// RFC §5.B B1-β: post-C11-closure, only Python remains gated. The
+/// Python arm exercises the gate path so a future Python closure
 /// regression (forgetting to lift the gate AND add the
 /// `resolve_variant_arm_body_type` arm) lands a typed error instead
-/// of silently-broken codegen. Go closure landed in this commit —
-/// the Go arm of the gate self-deletes here.
+/// of silently-broken codegen. C11 closure landed in this commit —
+/// the C11 arm of the gate self-deletes here.
 #[test]
-fn forge_codec_variant_c11_gate_rejects_until_closure() {
+fn forge_codec_variant_python_gate_rejects_until_closure() {
     use sce_build::forge::error::{ForgeError, GenerateError};
 
     let scxml_path = resource_dir().join("codec_variant_dispatch.scxml");
@@ -892,13 +892,13 @@ fn forge_codec_variant_c11_gate_rejects_until_closure() {
     let result = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_variant_dispatch"),
-        sce_build::generator::Language::C11,
+        sce_build::generator::Language::Python,
         scxml_path.parent().unwrap(),
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
         Ok(_) => panic!(
-            "B1-β must gate <sce:variant> on C11 until its closure lands; codegen would otherwise ship broken output"
+            "B1-β must gate <sce:variant> on Python until its closure lands; codegen would otherwise ship broken output"
         ),
         Err(e) => e,
     };
@@ -907,7 +907,7 @@ fn forge_codec_variant_c11_gate_rejects_until_closure() {
         matches!(
             inner,
             ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("codec_variant_dispatch") && msg.contains("C11")
+                if msg.contains("codec_variant_dispatch") && msg.contains("Python")
         ),
         "must surface as GenerateError::UnsupportedFeature naming the codec and language; got: {inner:?}"
     );
@@ -1533,6 +1533,32 @@ fn forge_c11_codec_length_ref() {
 #[test]
 fn forge_c11_codec_vle_zint_u64() {
     assert_standalone_forge_c("codec_vle_zint_u64", "codec_vle_zint_u64.c.h");
+}
+
+// ── RFC §5.B variant primitive (C11, B1-β closure) ───────────
+
+#[test]
+fn forge_c11_codec_variant_session_open() {
+    assert_standalone_forge_c(
+        "codec_variant_session_open",
+        "codec_variant_session_open.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_variant_session_close() {
+    assert_standalone_forge_c(
+        "codec_variant_session_close",
+        "codec_variant_session_close.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_variant_dispatch() {
+    assert_standalone_forge_c(
+        "codec_variant_dispatch",
+        "codec_variant_dispatch.c.h",
+    );
 }
 
 // ── Crossfile codec (C11) ───────────────────────────────────
