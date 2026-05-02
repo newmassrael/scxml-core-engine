@@ -517,13 +517,12 @@ fn assert_inline_codec_structural(
 
 /// RFC §5.B B2-test-vector closure rotation: the algorithm_crc16
 /// fixture carries a canonical `<sce:test-vector>` row, so codegen
-/// still rejects on Go / Python (trunk shipped Rust + C11; Kotlin
-/// + Cpp closures landed next) with the typed
-/// `generate/unsupported-feature` until each language's closure
-/// lifts the gate (mirrors the B1-β codec_variant_dispatch pattern).
-/// The remaining rejection tests rotate as each closure lands —
-/// the last one to ship sidecar emit removes its rejection test
-/// entirely and restores the standalone golden assertion (now
+/// still rejects on Python (trunk shipped Rust + C11; Kotlin + Cpp
+/// + Go closures landed next) with the typed
+/// `generate/unsupported-feature` until the final closure lifts
+/// the gate (mirrors the B1-β codec_variant_dispatch pattern).
+/// When the Python closure lands, its rejection test is removed
+/// entirely and the standalone golden assertion is restored (now
 /// extended with the per-fixture sidecar golden).
 
 /// RFC §5.B B2-test-vector Cpp closure: the algorithm body itself
@@ -1988,34 +1987,27 @@ fn forge_go_codec_until_eof_basic() {
 
 // ── Algorithm (Go, RFC §5.A — post-A6 matrix follow-up) ────
 
-/// RFC §5.B B2-test-vector trunk gate (Go). See the cpp-side
-/// rejection test above for the rotation contract.
+/// RFC §5.B B2-test-vector Go closure: the algorithm body itself
+/// stays byte-stable against its prior golden — the closure only
+/// adds a sidecar emission, so the primary algorithm output stays
+/// identical to the pre-test-vector form.
 #[test]
-fn forge_go_algorithm_crc16_test_vector_gate_rejects_until_closure() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
-    let scxml_path = resource_dir().join("algorithm_crc16.scxml");
-    let content = std::fs::read_to_string(&scxml_path).expect("read algorithm_crc16 fixture");
-    let result = sce_build::compile_forge_with_imports(
-        &content,
-        sce_build::DocumentLabel::symmetric("algorithm_crc16"),
+fn forge_go_algorithm_crc16() {
+    assert_standalone_forge_go("algorithm_crc16", "algorithm_crc16.go");
+}
+
+/// RFC §5.B B2-test-vector Go closure: pin the per-fixture sidecar
+/// (`<snake>_test.go`) emitted next to the algorithm `.go` in the
+/// per-fixture package directory. Go's per-directory test
+/// discovery picks up `*_test.go` automatically; the existing
+/// recursive `go test ./conformance/...` pattern runs the per-
+/// fixture package tests without any harness scaffolding edits.
+#[test]
+fn forge_go_algorithm_crc16_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "algorithm_crc16",
+        "algorithm_crc16_test.go",
         sce_build::generator::Language::Go,
-        scxml_path.parent().unwrap(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "B2-test-vector trunk must gate <sce:test-vector> on Go"
-        ),
-        Err(e) => e,
-    };
-    let inner = err.error;
-    assert!(
-        matches!(
-            inner,
-            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("algorithm_crc16") && msg.contains("Go")
-        ),
-        "must surface as GenerateError::UnsupportedFeature naming the algorithm and language; got: {inner:?}"
     );
 }
 

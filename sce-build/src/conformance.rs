@@ -1026,7 +1026,11 @@ pub fn lang_supports_fixture(lang: Language, spec: &FixtureSpec) -> bool {
         FixtureSpec::Algorithm { has_test_vectors: true, .. } => {
             matches!(
                 lang,
-                Language::Rust | Language::C11 | Language::Kotlin | Language::Cpp
+                Language::Rust
+                    | Language::C11
+                    | Language::Kotlin
+                    | Language::Cpp
+                    | Language::Go
             )
         }
         _ => true,

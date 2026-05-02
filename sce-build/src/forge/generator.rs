@@ -4969,9 +4969,24 @@ pub fn generate_go_with_imports(
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
-    Ok(GeneratedOutput {
-        files: vec![(filename, code)],
-    })
+    let mut files = vec![(filename, code)];
+    // RFC §5.B B2-test-vector: sidecar `<snake>_test.go` emits
+    // alongside the algorithm `.go` into the same per-fixture
+    // package directory whenever `<sce:test-vector>` rows are
+    // declared. Go's per-directory test discovery picks up
+    // `*_test.go` automatically; the existing recursive
+    // `go test ./conformance/...` pattern runs the per-fixture
+    // package tests without any harness scaffolding edits.
+    if let ForgeDocument::Algorithm(m) = doc {
+        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Go,
+        )? {
+            files.push(sidecar);
+        }
+    }
+    Ok(GeneratedOutput { files })
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -9628,13 +9643,17 @@ fn render_algorithm(
     if !m.test_vectors.is_empty()
         && !matches!(
             lang,
-            Language::Rust | Language::C11 | Language::Kotlin | Language::Cpp
+            Language::Rust
+                | Language::C11
+                | Language::Kotlin
+                | Language::Cpp
+                | Language::Go
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "algorithm '{name}': <sce:test-vector> sidecar emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin + Cpp; Go / Python land in remaining closures)",
+                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin + Cpp + Go; Python lands in the final closure)",
                 name = m.name,
             )),
         ));
@@ -9834,7 +9853,11 @@ fn render_algorithm_test_vector_sidecar(
     }
     if !matches!(
         lang,
-        Language::Rust | Language::C11 | Language::Kotlin | Language::Cpp
+        Language::Rust
+            | Language::C11
+            | Language::Kotlin
+            | Language::Cpp
+            | Language::Go
     ) {
         // Defensive: render_algorithm already gated this combination.
         // Returning the same typed error keeps the contract single-sourced
@@ -9842,7 +9865,7 @@ fn render_algorithm_test_vector_sidecar(
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "algorithm '{name}': <sce:test-vector> sidecar emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin + Cpp; Go / Python land in remaining closures)",
+                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin + Cpp + Go; Python lands in the final closure)",
                 name = m.name,
             )),
         ));
@@ -9919,16 +9942,32 @@ fn render_algorithm_test_vector_sidecar(
                 .collect();
             format!("byteArrayOf({})", parts.join(", "))
         };
+        // Go `[]byte{...}` accepts hex literals 0x00..0xFF directly
+        // because `byte` is an unsigned alias for `uint8` (no narrow-
+        // cast needed unlike Kotlin). Empty hex lowers to `[]byte{}`
+        // so the call site stays a typed slice expression rather than
+        // a `nil` slice.
+        let bytes_literal_go = if tv.hex.is_empty() {
+            "[]byte{}".to_string()
+        } else {
+            let parts: Vec<String> = tv
+                .hex
+                .iter()
+                .map(|b| format!("0x{b:02x}"))
+                .collect();
+            format!("[]byte{{{}}}", parts.join(", "))
+        };
         let hex_str: String = tv
             .hex
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
 
-        let (value_literal_rust, value_literal_c, value_literal_kt, printf_fmt, printf_cast) = match &tv.value {
+        let (value_literal_rust, value_literal_c, value_literal_kt, value_literal_go, printf_fmt, printf_cast) = match &tv.value {
             crate::forge::model::TestVectorValue::Bool(b) => {
                 let lit = if *b { "true" } else { "false" };
                 (
+                    lit.to_string(),
                     lit.to_string(),
                     lit.to_string(),
                     lit.to_string(),
@@ -9971,13 +10010,26 @@ fn render_algorithm_test_vector_sidecar(
                     SceType::Uint64 => "L",
                     _ => "",
                 };
+                // Go uses the `T(value)` type-conversion form. Go
+                // type names are lowercase (`uint16`, etc.) and the
+                // hex literal needs no suffix because integer constant
+                // narrowing is handled by the cast.
+                let go_type = match return_type {
+                    SceType::Uint8 => "uint8",
+                    SceType::Uint16 => "uint16",
+                    SceType::Uint32 => "uint32",
+                    SceType::Uint64 => "uint64",
+                    _ => unreachable!("uint suffix already validated above"),
+                };
                 let rust_lit = format!("0x{u:x}{suffix_rust}");
                 let c_lit = format!("({return_type_native})0x{u:x}u");
                 let kt_lit = format!("0x{u:x}{kt_base_suffix}.{kt_conv}()");
+                let go_lit = format!("{go_type}(0x{u:x})");
                 (
                     rust_lit,
                     c_lit,
                     kt_lit,
+                    go_lit,
                     "0x%llx".to_string(),
                     "unsigned long long".to_string(),
                 )
@@ -10012,13 +10064,22 @@ fn render_algorithm_test_vector_sidecar(
                     SceType::Int64 => "L",
                     _ => "",
                 };
+                let go_type = match return_type {
+                    SceType::Int8 => "int8",
+                    SceType::Int16 => "int16",
+                    SceType::Int32 => "int32",
+                    SceType::Int64 => "int64",
+                    _ => unreachable!("int suffix already validated above"),
+                };
                 let rust_lit = format!("{i}{suffix_rust}");
                 let c_lit = format!("({return_type_native})({i})");
                 let kt_lit = format!("({i}{kt_base_suffix}).{kt_conv}()");
+                let go_lit = format!("{go_type}({i})");
                 (
                     rust_lit,
                     c_lit,
                     kt_lit,
+                    go_lit,
                     "%lld".to_string(),
                     "long long".to_string(),
                 )
@@ -10032,9 +10093,11 @@ fn render_algorithm_test_vector_sidecar(
             "hex_bytes_literal": hex_bytes_literal_c,
             "hex_bytes": !tv.hex.is_empty(),
             "bytes_literal_kt": bytes_literal_kt,
+            "bytes_literal_go": bytes_literal_go,
             "value_literal": value_literal_rust,
             "value_literal_c": value_literal_c,
             "value_literal_kt": value_literal_kt,
+            "value_literal_go": value_literal_go,
             "printf_fmt": printf_fmt,
             "printf_cast": printf_cast,
         }));
@@ -10059,7 +10122,11 @@ fn render_algorithm_test_vector_sidecar(
         ctx.insert("guard".into(), guard.into());
         ctx.insert("has_bytes_param".into(), true.into());
     }
-    if matches!(lang, Language::Cpp) {
+    if matches!(lang, Language::Cpp | Language::Go) {
+        // Cpp uses `name_pascal` for the qualified namespace path
+        // `SCE::Generated::<Pascal>::<name>`; Go uses it for the
+        // exported function name `<Pascal>(...)` (Go forge emits
+        // PascalCase function symbols per RFC §5.J.5).
         ctx.insert(
             "name_pascal".into(),
             filters::to_pascal_case(m.name.clone()).into(),
@@ -10097,14 +10164,17 @@ fn render_algorithm_test_vector_sidecar(
         )))
     })?;
     // Filename idiom matches the per-language convention for the
-    // primary algorithm output: snake-case `<snake>_test.{rs,h}`
-    // for Rust + C11 + Cpp; Pascal-case `<Pascal>TestVectors.kt`
-    // for Kotlin so the file name agrees with the contained class
-    // name (Kotlin convention; gradle uses no special discovery
-    // beyond the `jvmTest` source-set wiring).
+    // primary algorithm output: snake-case `<snake>_test.{rs,h,go}`
+    // for Rust + C11 + Cpp + Go (Go's `*_test.go` suffix is the
+    // language-mandated test-discovery shape, picked up by `go test`
+    // automatically); Pascal-case `<Pascal>TestVectors.kt` for
+    // Kotlin so the file name agrees with the contained class name
+    // (Kotlin convention; gradle uses no special discovery beyond
+    // the `jvmTest` source-set wiring).
     let filename = match lang {
         Language::Rust => format!("{snake}_test.rs"),
         Language::C11 | Language::Cpp => format!("{snake}_test.h"),
+        Language::Go => format!("{snake}_test.go"),
         Language::Kotlin => format!(
             "{}TestVectors.kt",
             filters::to_pascal_case(m.name.clone())
