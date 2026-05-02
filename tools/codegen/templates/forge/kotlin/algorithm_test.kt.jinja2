@@ -1,0 +1,37 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.B B2-test-vector: per-row JUnit `@Test` sidecar for an
+   algorithm fixture. Emitted alongside the algorithm `.kt` file
+   into the same package whenever the algorithm SCXML carries at
+   least one `<sce:test-vector hex value/>` row. The sidecar lives
+   in the per-fixture `com.sce.generated.<snake>` package so it
+   calls the algorithm function directly without an import. The
+   Kotlin/JVM test runner discovers `@Test` methods on the
+   generated class as long as the file lands in a `jvmTest`
+   source set — `sce-forge-runtime/kotlin/build.gradle.kts`
+   already wires `build/generated/conformance/kotlin/` into
+   `jvmTest`, so the sidecar is picked up without further
+   harness scaffolding. #}
+
+// SCE Forge: Auto-generated test-vector sidecar (RFC §5.B B2)
+// Companion to {{ name_pascal }}.kt — do not edit; regenerate from the source SCXML.
+
+package com.sce.generated.{{ name }}
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class {{ name_pascal }}TestVectors {
+{% for tv in test_vectors %}
+    @Test
+    fun testVector{{ name_pascal }}L{{ tv.source_line }}() {
+        val actual: {{ return_type }} = {{ name_camel }}({{ tv.bytes_literal_kt }})
+        val expected: {{ return_type }} = {{ tv.value_literal_kt }}
+        assertEquals(
+            expected, actual,
+            "<sce:test-vector> at SCXML L{{ tv.source_line }}: {{ name_camel }}(<{{ tv.hex }}>) returned $actual, expected $expected"
+        )
+    }
+{% endfor %}
+}

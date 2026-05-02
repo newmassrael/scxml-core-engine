@@ -1006,16 +1006,17 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
     }
 }
 
-/// RFC §5.B B2-test-vector trunk: per-fixture content-aware filter
-/// matching the `render_algorithm` gate. Only Rust + C11 ship the
-/// sidecar emitter at trunk; the other four backends reject with
-/// `GenerateError::UnsupportedFeature` when their codegen flow
-/// encounters an algorithm carrying `<sce:test-vector>`. Mirroring
-/// the gate at fixture-filter time means the Cpp/Kotlin/Go/Python
-/// conformance harnesses simply drop the fixture instead of
-/// surfacing a hard codegen error from the cross-language build —
-/// each closure widens this filter as it lifts the gate (B1-β /
-/// B1-δ / B2-α pattern).
+/// RFC §5.B B2-test-vector closure rotation: per-fixture
+/// content-aware filter matching the `render_algorithm` gate. The
+/// trunk shipped Rust + C11; subsequent closures widen the
+/// supported set (Kotlin landed first). The remaining un-shipped
+/// backends reject with `GenerateError::UnsupportedFeature` when
+/// their codegen flow encounters an algorithm carrying
+/// `<sce:test-vector>`. Mirroring the gate at fixture-filter time
+/// means the still-gated conformance harnesses simply drop the
+/// fixture instead of surfacing a hard codegen error from the
+/// cross-language build — each closure widens this filter as it
+/// lifts the gate (B1-β / B1-δ / B2-α pattern).
 ///
 /// Exposed as `pub` so the `sce-codegen list-fixtures` CLI applies
 /// the same filter, keeping the cmake harness's fixture set
@@ -1023,7 +1024,7 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
 pub fn lang_supports_fixture(lang: Language, spec: &FixtureSpec) -> bool {
     match spec {
         FixtureSpec::Algorithm { has_test_vectors: true, .. } => {
-            matches!(lang, Language::Rust | Language::C11)
+            matches!(lang, Language::Rust | Language::C11 | Language::Kotlin)
         }
         _ => true,
     }

@@ -515,15 +515,16 @@ fn assert_inline_codec_structural(
 
 // ── Algorithm conformance (RFC §5.A, Phase A3) ────────────────
 
-/// RFC §5.B B2-test-vector trunk gate: the algorithm_crc16 fixture
-/// carries a canonical `<sce:test-vector>` row, so trunk codegen
-/// rejects on Cpp / Kotlin / Go / Python with the typed
-/// `generate/unsupported-feature` until each language's closure
-/// lifts the gate (mirrors the B1-β codec_variant_dispatch pattern).
-/// The four rejection tests rotate as each closure lands — the last
-/// one to ship sidecar emit removes its rejection test entirely and
-/// restores the standalone golden assertion (now extended with the
-/// per-fixture sidecar golden).
+/// RFC §5.B B2-test-vector closure rotation: the algorithm_crc16
+/// fixture carries a canonical `<sce:test-vector>` row, so codegen
+/// still rejects on Cpp / Go / Python (Kotlin closure landed first)
+/// with the typed `generate/unsupported-feature` until each
+/// language's closure lifts the gate (mirrors the B1-β
+/// codec_variant_dispatch pattern). The remaining rejection tests
+/// rotate as each closure lands — the last one to ship sidecar
+/// emit removes its rejection test entirely and restores the
+/// standalone golden assertion (now extended with the per-fixture
+/// sidecar golden).
 #[test]
 fn forge_algorithm_crc16_cpp_test_vector_gate_rejects_until_closure() {
     use sce_build::forge::error::{ForgeError, GenerateError};
@@ -1481,40 +1482,31 @@ fn forge_kotlin_codec_until_eof_basic() {
 
 // ── Algorithm (Kotlin, RFC §5.A — post-A6 matrix follow-up) ─
 
-/// RFC §5.B B2-test-vector trunk gate (Kotlin). See the cpp-side
-/// rejection test above for the rotation contract.
+/// RFC §5.B B2-test-vector Kotlin closure: the algorithm body
+/// itself is byte-stable against its prior golden — the closure
+/// only adds a sidecar emission, so the primary algorithm output
+/// stays identical to the pre-test-vector form.
 #[test]
-fn forge_kotlin_algorithm_crc16_test_vector_gate_rejects_until_closure() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
-    let scxml_path = resource_dir().join("algorithm_crc16.scxml");
-    let content = std::fs::read_to_string(&scxml_path).expect("read algorithm_crc16 fixture");
-    let result = sce_build::compile_forge_with_imports(
-        &content,
-        sce_build::DocumentLabel::symmetric("algorithm_crc16"),
+fn forge_kotlin_algorithm_crc16() {
+    assert_standalone_forge_kotlin("algorithm_crc16", "AlgorithmCrc16.kt");
+}
+
+/// RFC §5.B B2-test-vector Kotlin closure: pin the per-fixture
+/// sidecar (`<Pascal>TestVectors.kt`) emitted next to the
+/// algorithm `.kt`. The Kotlin/JVM test runner discovers the
+/// `@Test`-annotated class via the `jvmTest` source set wired in
+/// `sce-forge-runtime/kotlin/build.gradle.kts`; the sidecar
+/// itself is byte-stable as the second entry of the codegen
+/// output.
+#[test]
+fn forge_kotlin_algorithm_crc16_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "algorithm_crc16",
+        "AlgorithmCrc16TestVectors.kt",
         sce_build::generator::Language::Kotlin,
-        scxml_path.parent().unwrap(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "B2-test-vector trunk must gate <sce:test-vector> on Kotlin"
-        ),
-        Err(e) => e,
-    };
-    let inner = err.error;
-    assert!(
-        matches!(
-            inner,
-            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("algorithm_crc16") && msg.contains("Kotlin")
-        ),
-        "must surface as GenerateError::UnsupportedFeature naming the algorithm and language; got: {inner:?}"
     );
 }
 
-/// algorithm_crc16_table has no `<sce:test-vector>`; the Kotlin gate
-/// only fires on the algorithm_crc16 fixture, so the table-form
-/// standalone assertion stays intact through the trunk.
 #[test]
 fn forge_kotlin_algorithm_crc16_table() {
     assert_standalone_forge_kotlin("algorithm_crc16_table", "AlgorithmCrc16Table.kt");
