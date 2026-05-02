@@ -1374,6 +1374,16 @@ fn forge_go_codec_variant_dispatch() {
     );
 }
 
+// ── RFC §5.B B1-δ present-if primitive (Go) ─────────────────
+
+#[test]
+fn forge_go_codec_present_if_basic() {
+    assert_standalone_forge_go(
+        "codec_present_if_basic",
+        "codec_present_if_basic.go",
+    );
+}
+
 // ── Algorithm (Go, RFC §5.A — post-A6 matrix follow-up) ────
 
 #[test]

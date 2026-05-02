@@ -981,8 +981,8 @@ fn render_codec(
     // until each per-language closure landed; the final closure
     // (Python) deletes the gate entirely.
 
-    // RFC §5.B B1-δ present-if primitive (trunk + Kotlin closure):
-    // Rust + Cpp + Kotlin emit gated decode/encode. Go / C11 / Python
+    // RFC §5.B B1-δ present-if primitive (trunk + Kotlin/Go closures):
+    // Rust + Cpp + Kotlin + Go emit gated decode/encode. C11 / Python
     // stay gated until each per-language closure lands so the
     // template never silently drops the optional wrap.
     if m.has_present_if_fields()
@@ -991,12 +991,13 @@ fn render_codec(
             crate::generator::Language::Rust
                 | crate::generator::Language::Cpp
                 | crate::generator::Language::Kotlin
+                | crate::generator::Language::Go
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "codec '{name}': sce:present-if emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B1-δ trunk ships Rust + Cpp + Kotlin; Go / C11 / Python land in B1-δ closures)",
+                 (RFC §5.B B1-δ trunk ships Rust + Cpp + Kotlin + Go; C11 / Python land in B1-δ closures)",
                 name = m.name,
             )),
         ));
@@ -1158,6 +1159,14 @@ fn render_codec(
                         crate::generator::Language::Kotlin => {
                             format!("{inner}?")
                         }
+                        crate::generator::Language::Go => {
+                            // Go has no native optional; the canonical
+                            // shape for "value-or-absent" is a pointer
+                            // (`nil` ⇔ absent). Encode dereferences when
+                            // non-nil; decode allocates a stack-local
+                            // and stores its address.
+                            format!("*{inner}")
+                        }
                         // Other backends are gated above; never reached.
                         _ => inner.to_string(),
                     };
@@ -1167,7 +1176,9 @@ fn render_codec(
                     // constructor. Kotlin's data class primary constructor
                     // would otherwise call `0.toUByte()` etc. against the
                     // non-nullable carrier and fail to compile — `null`
-                    // is the only sane default for `T?`.
+                    // is the only sane default for `T?`. Go's struct
+                    // pointer fields default to `nil` automatically and
+                    // need no explicit initializer.
                     if matches!(lang, crate::generator::Language::Kotlin) {
                         obj.insert("kt_default".into(), "null".into());
                     }
@@ -1699,6 +1710,50 @@ fn present_if_streaming_decode_stmt(
                  }}"
             )
         }
+        // Go: non-gated declares the carrier-typed local outside a
+        // sub-block then assigns from a freshly-peeked slice; the
+        // sub-block scopes the temporary `raw` / `err` so multi-field
+        // codecs don't accumulate `:=` shadowing. Gated declares a
+        // pointer (`*T`) defaulted to `nil`, allocates a stack local
+        // `_v` only when the predicate fires, and stores its address.
+        // Tabs match the surrounding template indent (`Decode<X>` body
+        // is at one tab; the sub-block lives at two tabs).
+        (Language::Go, None) => {
+            let ty = go_type(&field.sce_type);
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "var {go_id} {ty}\n\t\
+                 {{\n\t\t\
+                     raw, err := cursor.PeekSlice({n})\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = {body}\n\t\t\
+                     if err := cursor.Advance({n}); err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        (Language::Go, Some(p)) => {
+            let ty = go_type(&field.sce_type);
+            let go_id = filters::to_pascal_case(id.to_string());
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "var {go_id} *{ty}\n\t\
+                 if {test} {{\n\t\t\
+                     raw, err := cursor.PeekSlice({n})\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     _v := {body}\n\t\t\
+                     if err := cursor.Advance({n}); err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = &_v\n\t\
+                 }}"
+            )
+        }
         // Other backends are gated up-front in render_codec via
         // GenerateError::UnsupportedFeature; this arm is unreachable
         // for has_present_if_fields codecs.
@@ -1755,6 +1810,21 @@ fn present_if_streaming_encode_block(
                  \n        }}"
             )
         }
+        (Language::Go, false) => streaming_fixed_field_encode_go(field, default_endian, n),
+        (Language::Go, true) => {
+            // Go: nil-check the pointer field and dereference into
+            // a local `_v` so the byte appends operate on the carrier
+            // type (mirrors the non-gated form's `s.<Id>` read but
+            // through the optional).
+            let go_id = filters::to_pascal_case(id.to_string());
+            let inner = streaming_fixed_field_encode_go_from_local(field, default_endian, n);
+            format!(
+                "\tif s.{go_id} != nil {{\n\t\t\
+                     _v := *s.{go_id}\n\
+                 {inner}\
+                 \n\t}}"
+            )
+        }
         _ => String::new(),
     }
 }
@@ -1773,6 +1843,36 @@ fn streaming_fixed_field_body(
 ) -> String {
     use crate::generator::Language;
     let endian = field.effective_endian(default_endian);
+
+    // Go: `[]byte`'s `[i]` is `byte` (== `uint8`); multi-byte fields
+    // widen through the carrier-typed `target(raw[i])` cast and fold
+    // via the bitwise `|`. n=1 returns `raw[0]` directly which is
+    // assignable to a `var x uint8` carrier. Mirrors the existing
+    // `decode_multibyte_unified` Go arm on a 0-based slice.
+    if matches!(lang, Language::Go) {
+        if n == 1 {
+            return "raw[0]".into();
+        }
+        let target = match n {
+            2 => "uint16",
+            3 | 4 => "uint32",
+            _ => "uint64",
+        };
+        let shifts: Vec<String> = (0..n)
+            .map(|i| {
+                let shift = match endian {
+                    Endian::Little => i * 8,
+                    Endian::Big | Endian::Native => (n - 1 - i) * 8,
+                };
+                if shift == 0 {
+                    format!("{target}(raw[{i}])")
+                } else {
+                    format!("{target}(raw[{i}])<<{shift}")
+                }
+            })
+            .collect();
+        return shifts.join(" | ");
+    }
 
     // Kotlin: ByteArray's `[i]` returns a signed `Byte`, and the carrier
     // is one of `UByte/UShort/UInt/ULong`. The body widens through
@@ -2000,6 +2100,67 @@ fn streaming_fixed_field_encode_kotlin(
     lines.trim_end().to_string()
 }
 
+/// Go encode counterpart — non-gated. Mirrors `encode_single_field_unified`
+/// for Go: byte fields cast directly, multi-byte fields pull bytes via
+/// `byte(s.<Id> >> shift)` in the field's effective endianness. Tab
+/// indentation matches the surrounding `Encode()` method body.
+fn streaming_fixed_field_encode_go(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let id = field.id.as_str();
+    let go_id = filters::to_pascal_case(id.to_string());
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    if n == 1 {
+        lines.push_str(&format!("\tr = append(r, s.{go_id})\n"));
+    } else {
+        for i in 0..n {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            if shift == 0 {
+                lines.push_str(&format!("\tr = append(r, byte(s.{go_id}))\n"));
+            } else {
+                lines.push_str(&format!(
+                    "\tr = append(r, byte(s.{go_id}>>{shift}))\n"
+                ));
+            }
+        }
+    }
+    lines.trim_end().to_string()
+}
+
+/// Go encode counterpart — gated, reads from `_v` local. The caller
+/// wraps this in `if s.<Id> != nil { _v := *s.<Id>; ... }` so `_v` is
+/// the unwrapped carrier value at one extra tab level.
+fn streaming_fixed_field_encode_go_from_local(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    if n == 1 {
+        lines.push_str("\t\tr = append(r, _v)\n");
+    } else {
+        for i in 0..n {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            if shift == 0 {
+                lines.push_str("\t\tr = append(r, byte(_v))\n");
+            } else {
+                lines.push_str(&format!("\t\tr = append(r, byte(_v>>{shift}))\n"));
+            }
+        }
+    }
+    lines.trim_end().to_string()
+}
+
 /// Kotlin encode counterpart — gated, reads from `_v` local.
 /// The caller wraps this in `this.<id>?.let { _v -> ... }` so `_v` is
 /// already the unwrapped non-null carrier value.
@@ -2077,6 +2238,14 @@ fn present_if_test_literal(
             format!("({id} & 0x{mask:0width$X}{suffix}) != 0", width = hex_digits)
         }
         Language::Cpp => format!("({id} & 0x{mask:0width$X}) != 0", width = hex_digits),
+        // Go: bitwise `&` accepts the carrier type directly (no widening
+        // gymnastics). Carrier id is the just-decoded local (PascalCase
+        // following the existing Go decode template). Hex literal needs
+        // no suffix because Go infers the type from the operand.
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!("({go_id} & 0x{mask:0width$X}) != 0", width = hex_digits)
+        }
         Language::Kotlin => {
             // Kotlin's UByte/UShort/UInt/ULong don't expose direct
             // bitwise infix ops with a literal Int/Long mask, so the
