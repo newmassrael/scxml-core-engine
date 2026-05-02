@@ -56,7 +56,7 @@ type {{ struct_name }} struct {
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error) {
+func Decode{{ struct_name }}(cursor *codec.SceCursor{{ parent_flags_param_decl }}) (*{{ struct_name }}, error) {
 {% if has_no_fields %}
 	// RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
 	_ = cursor
@@ -80,7 +80,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 	switch {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
 	case {{ arm.value_literal }}:
-		_arm, err := {{ arm.body_decoder }}(cursor)
+		_arm, err := {{ arm.body_decoder }}(cursor{{ arm.body_parent_flags_arg }})
 		if err != nil {
 			return nil, err
 		}
@@ -88,7 +88,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 {% endfor %}
 	default:
 {% if variant.default_arm %}
-		_arm, err := {{ variant.default_arm.body_decoder }}(cursor)
+		_arm, err := {{ variant.default_arm.body_decoder }}(cursor{{ variant.default_arm.body_parent_flags_arg }})
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +243,7 @@ func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
 {% endfor %}
 {% endif %}
 // Encode serializes the {{ struct_name }} into raw bytes.
-func (s *{{ struct_name }}) Encode() []byte {
+func (s *{{ struct_name }}) Encode({{ parent_flags_param_first }}) []byte {
 {% if has_no_fields %}
 	// RFC §5.B B5-α empty body — zero-byte payload.
 	return []byte{}
@@ -260,11 +260,11 @@ func (s *{{ struct_name }}) Encode() []byte {
 	switch {
 {% for arm in variant.arms %}
 	case s.Body.{{ arm.variant_name }} != nil:
-		r = append(r, s.Body.{{ arm.variant_name }}.Encode()...)
+		r = append(r, s.Body.{{ arm.variant_name }}.Encode({{ arm.body_parent_flags_arg_first }})...)
 {% endfor %}
 {% if variant.default_arm %}
 	case s.Body.{{ variant.default_arm.variant_name }} != nil:
-		r = append(r, s.Body.{{ variant.default_arm.variant_name }}.Body.Encode()...)
+		r = append(r, s.Body.{{ variant.default_arm.variant_name }}.Body.Encode({{ variant.default_arm.body_parent_flags_arg_first }})...)
 {% endif %}
 	}
 	return r

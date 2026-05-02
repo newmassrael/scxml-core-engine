@@ -1068,20 +1068,19 @@ fn render_codec(
         match lang {
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
-            | crate::generator::Language::Kotlin => { /* trunk + Kotlin closure */ }
-            crate::generator::Language::Go
-            | crate::generator::Language::C11
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go => { /* trunk + Kotlin + Go closures */ }
+            crate::generator::Language::C11
             | crate::generator::Language::Python => {
                 return Err(ForgeError::Generate(
                     crate::forge::error::GenerateError::UnsupportedFeature(format!(
                         "codec '{}' uses RFC §5.B B5-γ parent-flags dependency \
                          (`<sce:requires-parent-flags>` on this codec or on an \
                          imported variant arm body). Trunk emit landed on Rust + \
-                         Cpp + Kotlin; the per-language closure for {} ships in a \
+                         Cpp + Kotlin + Go; the per-language closure for {} ships in a \
                          follow-up commit (precedent: B1-β / B1-δ / B2-α / B3-α).",
                         m.name,
                         match lang {
-                            crate::generator::Language::Go => "go",
                             crate::generator::Language::C11 => "c11",
                             crate::generator::Language::Python => "python",
                             _ => unreachable!(),
@@ -1641,11 +1640,18 @@ fn render_codec(
             crate::generator::Language::Kotlin => {
                 (", parentFlags: UByte", "parentFlags: UByte")
             }
-            // Other 3 languages gated above with UnsupportedFeature, so
+            // Go: idiomatic camelCase function parameter (`parentFlags`)
+            // typed as `byte` (Go's alias for `uint8` — mirrors v1's
+            // uint8 lock-in for parent flag carrier type). Go function
+            // parameters can sit unused without a compiler complaint, so
+            // no defensive `_ = parentFlags` guard is needed in the
+            // template body (unlike Rust's `let _ = ...` / Cpp's
+            // `(void)...` / Kotlin's `@Suppress("UNUSED_PARAMETER")`).
+            crate::generator::Language::Go => (", parentFlags byte", "parentFlags byte"),
+            // Other 2 languages gated above with UnsupportedFeature, so
             // the empty fragment is unreachable for valid emit. Default
             // to empty to keep the JSON shape uniform.
-            crate::generator::Language::Go
-            | crate::generator::Language::C11
+            crate::generator::Language::C11
             | crate::generator::Language::Python => ("", ""),
         }
     } else {
@@ -1781,7 +1787,20 @@ fn render_codec(
                     .map(|r| r.carrier.clone());
                 let body_parent_flags_arg = body_parent_flags_carrier
                     .as_ref()
-                    .map(|c| format!(", {}", c))
+                    .map(|c| match lang {
+                        // Go: the just-decoded prefix-field local is
+                        // PascalCase (`Header := raw[0]`) — the variant
+                        // arm decode site reads from that same local, so
+                        // the carrier id needs the PascalCase conversion.
+                        crate::generator::Language::Go => {
+                            format!(", {}", filters::to_pascal_case(c.clone()))
+                        }
+                        // Rust / Cpp / Kotlin / (future C11/Python):
+                        // the just-decoded local matches the snake_case
+                        // carrier id verbatim, so a bare id reads
+                        // correctly at the call site.
+                        _ => format!(", {}", c),
+                    })
                     .unwrap_or_default();
                 let body_parent_flags_arg_first = body_parent_flags_carrier
                     .as_ref()
@@ -1796,7 +1815,14 @@ fn render_codec(
                         // template's `r.add({{ expr }})` and `this.<id>`
                         // accessor sites).
                         crate::generator::Language::Kotlin => format!("this.{}", c),
-                        // Other 3 languages gated above; emit bare id
+                        // Go: variant arm encode is a method on `*Foo`
+                        // (receiver `s`), so the carrier reads through
+                        // `s.<Pascal>`. PascalCase mirrors the parent
+                        // struct's exported field naming.
+                        crate::generator::Language::Go => {
+                            format!("s.{}", filters::to_pascal_case(c.clone()))
+                        }
+                        // Other 2 languages gated above; emit bare id
                         // as a deterministic placeholder.
                         _ => c.clone(),
                     })
@@ -1848,7 +1874,12 @@ fn render_codec(
                     .map(|r| r.carrier.clone());
                 let body_parent_flags_arg = body_parent_flags_carrier
                     .as_ref()
-                    .map(|c| format!(", {}", c))
+                    .map(|c| match lang {
+                        crate::generator::Language::Go => {
+                            format!(", {}", filters::to_pascal_case(c.clone()))
+                        }
+                        _ => format!(", {}", c),
+                    })
                     .unwrap_or_default();
                 let body_parent_flags_arg_first = body_parent_flags_carrier
                     .as_ref()
@@ -1856,6 +1887,9 @@ fn render_codec(
                         crate::generator::Language::Rust => format!("self.{}", c),
                         crate::generator::Language::Cpp => c.clone(),
                         crate::generator::Language::Kotlin => format!("this.{}", c),
+                        crate::generator::Language::Go => {
+                            format!("s.{}", filters::to_pascal_case(c.clone()))
+                        }
                         _ => c.clone(),
                     })
                     .unwrap_or_default();
@@ -4870,15 +4904,19 @@ fn present_if_test_literal(
         }
         Language::Cpp => format!("({id} & 0x{mask:0width$X}) != 0", width = hex_digits),
         // Go: bitwise `&` accepts the carrier type directly (no widening
-        // gymnastics). Carrier id is the just-decoded local (PascalCase
-        // following the existing Go decode template). Hex literal needs
-        // no suffix because Go infers the type from the operand. For
-        // parent-scope, the parent_flags param is declared at the
-        // call-site as `parentFlags` (camelCase Go param) — the
-        // PascalCase conversion of `parent_flags` lands at `ParentFlags`,
-        // which we then lower-case the first char of for Go param idiom.
+        // gymnastics). Hex literal needs no suffix because Go infers
+        // the type from the operand. For Local scope the carrier id
+        // is the just-decoded prefix-field local (PascalCase following
+        // the existing Go decode template's `{{ field.id }} := ...`).
+        // For Parent scope the carrier is the function parameter
+        // declared by `parent_flags_param_decl` as `parentFlags byte`
+        // (camelCase per Go function-parameter convention) — so the
+        // bare camelCase identifier reads correctly.
         Language::Go => {
-            let go_id = filters::to_pascal_case(id.to_string());
+            let go_id = match carrier {
+                PresentIfCarrier::Parent => filters::to_camel_case(id.to_string()),
+                PresentIfCarrier::Local(_) => filters::to_pascal_case(id.to_string()),
+            };
             format!("({go_id} & 0x{mask:0width$X}) != 0", width = hex_digits)
         }
         // C11: present-if has no nullable wrapper, so both decode and

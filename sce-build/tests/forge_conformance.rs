@@ -4689,10 +4689,10 @@ fn crossfile_matrix_validator_interpolation() {
 // ═══════════════════════════════════════════════════════════════
 
 /// RFC §5.B B5-γ trunk gate: a codec declaring
-/// `<sce:requires-parent-flags>` rejects on Go/C11/Python until the
+/// `<sce:requires-parent-flags>` rejects on C11/Python until the
 /// per-language closures land (precedent: B1-β / B1-δ / B2-α / B3-α
-/// trunk-then-closures cadence). Kotlin closure landed in this commit;
-/// the Kotlin gate-rejection test rotated to a positive emission test.
+/// trunk-then-closures cadence). Kotlin + Go closures landed; their
+/// gate-rejection tests rotated to positive emission tests.
 fn assert_b5_gamma_gate_rejects(scxml: &str, language: sce_build::generator::Language) {
     use sce_build::forge::error::{ForgeError, GenerateError};
 
@@ -4750,11 +4750,30 @@ fn forge_kotlin_codec_init_syn_envelope() {
     );
 }
 
+/// RFC §5.B B5-γ Go closure: body codec with parent-flags dependency
+/// emits `parentFlags byte` parameter on `Decode<Pascal>` / `Encode`;
+/// `parent.<flag>` predicates compile to `(parentFlags & 0xNN) != 0`.
+/// Go function parameters tolerate being unused, so no `_ = parentFlags`
+/// guard is needed (mirrors Kotlin's `@Suppress("UNUSED_PARAMETER")`
+/// but the Go compiler doesn't enforce the use).
 #[test]
-fn forge_codec_init_syn_body_go_gate_rejects() {
-    assert_b5_gamma_gate_rejects(
-        "codec_init_syn_body.scxml",
-        sce_build::generator::Language::Go,
+fn forge_go_codec_init_syn_body() {
+    assert_standalone_forge_go(
+        "codec_init_syn_body",
+        "codec_init_syn_body.go",
+    );
+}
+
+/// RFC §5.B B5-γ Go closure: variant parent threading carrier value.
+/// The envelope's `switch { case s.Body.X != nil ... }` arms call
+/// `s.Body.X.Encode(s.Header)` and the companion
+/// `Decode<Body>(cursor, Header)` passes the just-decoded PascalCase
+/// local. Mirrors the Rust + Cpp + Kotlin goldens.
+#[test]
+fn forge_go_codec_init_syn_envelope() {
+    assert_standalone_forge_go(
+        "codec_init_syn_envelope",
+        "codec_init_syn_envelope.go",
     );
 }
 
