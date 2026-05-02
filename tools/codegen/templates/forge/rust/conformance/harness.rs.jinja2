@@ -28,6 +28,15 @@ mod fixtures {
 {% for f in fixtures %}
     pub mod {{ f.name }} {
         include!(concat!(env!("OUT_DIR"), "/{{ f.name }}.rs"));
+        {# RFC §5.B B2-test-vector: pull the per-fixture sidecar
+           into the same module so cargo test discovers each
+           `<sce:test-vector>` row as a free `#[test]` reachable
+           from the conformance test crate. The sidecar emits
+           only when `<sce:test-vector>` rows are declared
+           (algorithm kind, Rust + C11 backends at trunk). #}
+        {% if f.has_test_vectors %}
+        include!(concat!(env!("OUT_DIR"), "/{{ f.name }}_test.rs"));
+        {% endif %}
     }
 {% endfor %}
 }

@@ -35,4 +35,13 @@
     </sce:foreach>
     <sce:return expr="crc"/>
   </sce:body>
+  <!--
+    RFC §5.B B2-test-vector: canonical CRC16-CCITT-FALSE reference
+    vector (ASCII "123456789" -> 0x29B1). Coexists with the bulk
+    9-case JSON oracle (numerical_reference.json) — this inline
+    anchor pins the RFC example into the SCXML so the per-backend
+    sidecar (`<fixture>_test.{rs,h}`) round-trips it through the
+    same algorithm body the conformance harness exercises.
+  -->
+  <sce:test-vector hex="313233343536373839" value="0x29B1"/>
 </scxml>

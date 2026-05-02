@@ -357,6 +357,18 @@ pub enum FixtureSpec {
         /// filename). C11 harness rendering rewrites this to the prefixed
         /// form `<fixture>_<function>` to match the flat-scope identifier.
         function: String,
+        /// Derived at harness-rendering time from SCXML — true iff at
+        /// least one `<sce:test-vector>` element appears under the
+        /// algorithm root. RFC §5.B B2-test-vector trunk emits a
+        /// per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11
+        /// only; the conformance filter drops the fixture from
+        /// Cpp/Kotlin/Go/Python harnesses until those closures land
+        /// (mirrors B1-β codec_variant_dispatch's per-language gate).
+        /// Empty in fixtures.json (manifest-side override is rejected);
+        /// computed by `read_algorithm_has_test_vectors` so the SCXML
+        /// stays the single source of truth.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        has_test_vectors: bool,
     },
 }
 
@@ -812,7 +824,7 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Algorithm { args, function, .. } => {
+                FixtureSpec::Algorithm { args, function, has_test_vectors, .. } => {
                     if function.is_empty() {
                         return Err(format!(
                             "fixture {}: algorithm `function` must not be \
@@ -826,6 +838,14 @@ impl Manifest {
                             "fixture {}: algorithm requires at least one \
                              `args` entry — a zero-arg algorithm has no \
                              oracle-driven cases to compare",
+                            f.name
+                        ));
+                    }
+                    if *has_test_vectors {
+                        return Err(format!(
+                            "fixture {}: algorithm `has_test_vectors` is \
+                             derived from the SCXML (presence of \
+                             <sce:test-vector>); remove it from fixtures.json",
                             f.name
                         ));
                     }
@@ -983,6 +1003,29 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // conformance harness. `bytes` arg lowers to `sce_forge_bytes_t`
         // value-type per the A5 `algorithm_param_type` arm.
         FixtureSpec::Algorithm { .. } => true,
+    }
+}
+
+/// RFC §5.B B2-test-vector trunk: per-fixture content-aware filter
+/// matching the `render_algorithm` gate. Only Rust + C11 ship the
+/// sidecar emitter at trunk; the other four backends reject with
+/// `GenerateError::UnsupportedFeature` when their codegen flow
+/// encounters an algorithm carrying `<sce:test-vector>`. Mirroring
+/// the gate at fixture-filter time means the Cpp/Kotlin/Go/Python
+/// conformance harnesses simply drop the fixture instead of
+/// surfacing a hard codegen error from the cross-language build —
+/// each closure widens this filter as it lifts the gate (B1-β /
+/// B1-δ / B2-α pattern).
+///
+/// Exposed as `pub` so the `sce-codegen list-fixtures` CLI applies
+/// the same filter, keeping the cmake harness's fixture set
+/// auto-derived from the same single source of truth.
+pub fn lang_supports_fixture(lang: Language, spec: &FixtureSpec) -> bool {
+    match spec {
+        FixtureSpec::Algorithm { has_test_vectors: true, .. } => {
+            matches!(lang, Language::Rust | Language::C11)
+        }
+        _ => true,
     }
 }
 
@@ -1168,6 +1211,36 @@ fn read_lookup_enum_values(scxml_path: &Path) -> Result<Vec<String>, String> {
 /// stateless free-function call shape and the stateful struct + pointer
 /// pass shape (RFC §5.J.2 V2c). Other backends emit uniform method calls
 /// regardless of state and ignore the flag.
+/// RFC §5.B B2-test-vector: scan the algorithm SCXML root for any
+/// `<sce:test-vector>` child element. The forge parser already
+/// validates the attributes (hex even-length, value matches return
+/// type, kind == algorithm) and stores the parsed vectors on
+/// `AlgorithmModel.test_vectors`; this scan only needs to surface
+/// whether any are present so the harness filter can pick the right
+/// `(kind, language)` matrix arm. Returns false when the file contains
+/// zero `<sce:test-vector>` children, matching the no-sidecar default.
+///
+/// Exposed publicly under the `has_test_vectors` re-export so the
+/// `sce-codegen list-fixtures --has-test-vectors` CLI can drive the
+/// cmake harness's sidecar OUTPUT enumeration from the same SCXML
+/// scan as the harness renderer.
+pub fn has_test_vectors(scxml_path: &Path) -> Result<bool, String> {
+    read_algorithm_has_test_vectors(scxml_path)
+}
+
+fn read_algorithm_has_test_vectors(scxml_path: &Path) -> Result<bool, String> {
+    let text = std::fs::read_to_string(scxml_path)
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
+    let doc = roxmltree::Document::parse(&text)
+        .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
+    let sce_ns = crate::forge::model::SCE_NAMESPACE;
+    Ok(doc.root_element().children().any(|n| {
+        n.is_element()
+            && n.tag_name().namespace() == Some(sce_ns)
+            && n.tag_name().name() == "test-vector"
+    }))
+}
+
 fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
     let text = std::fs::read_to_string(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
@@ -1351,7 +1424,9 @@ pub fn render_harness(
                     }
                 }
             }
-            FixtureSpec::Algorithm { function, .. } => {
+            FixtureSpec::Algorithm { function, has_test_vectors, .. } => {
+                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
+                *has_test_vectors = read_algorithm_has_test_vectors(&scxml_path)?;
                 // RFC §7 A5/A6: C11 algorithm template emits a free function
                 // named exactly `<algorithm_snake>` (no fixture prefix because
                 // the algorithm name *is* the fixture stem in every shipped
@@ -1438,6 +1513,11 @@ pub fn render_harness(
     if matches!(language, Language::C11) {
         fixtures.retain(|f| c11_supported_kind(&f.spec));
     }
+    // RFC §5.B B2-test-vector: drop fixtures whose content-aware gate
+    // disagrees with the requested language (e.g. an algorithm
+    // carrying `<sce:test-vector>` flows through Rust + C11 only at
+    // trunk; Cpp/Kotlin/Go/Python pick it up as their closures land).
+    fixtures.retain(|f| lang_supports_fixture(language, &f.spec));
 
     // Per-kind presence flags let per-language harness scaffolds pull in
     // kind-specific runtime imports (e.g. Go `forge` package, Kotlin

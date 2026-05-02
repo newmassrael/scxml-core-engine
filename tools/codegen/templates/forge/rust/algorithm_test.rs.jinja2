@@ -1,0 +1,27 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.B B2-test-vector: per-row `#[test]` sidecar for an algorithm
+   fixture. Emitted alongside the algorithm header into a sibling file
+   `<fixture>_test.rs` whenever the algorithm SCXML carries at least
+   one `<sce:test-vector hex value/>` row. The Rust conformance harness
+   includes this file via a second `include!()` inside the per-fixture
+   `pub mod {{ name }} { ... }` scope, so each row emits as a free
+   `#[test]` discovered by cargo test. The hex bytes lower to a `&[u8]`
+   literal; the expected value lowers to the algorithm's declared
+   return type so `assert_eq!` type-checks without coercion. #}
+
+// SCE Forge: Auto-generated test-vector sidecar (RFC §5.B B2)
+// Companion to {{ name }}.rs — do not edit; regenerate from the source SCXML.
+
+{% for tv in test_vectors %}
+#[test]
+fn test_vector_{{ name }}_l{{ tv.source_line }}() {
+    let actual = {{ name }}({{ tv.bytes_literal }});
+    let expected: {{ return_type }} = {{ tv.value_literal }};
+    assert_eq!(
+        actual, expected,
+        "<sce:test-vector> at SCXML L{{ tv.source_line }}: {{ name }}(<{{ tv.hex }}>) returned {actual:?}, expected {expected:?}"
+    );
+}
+{% endfor %}

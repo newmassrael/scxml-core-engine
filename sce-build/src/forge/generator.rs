@@ -4850,9 +4850,23 @@ pub fn generate_rust_with_imports(
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
-    Ok(GeneratedOutput {
-        files: vec![(filename, code)],
-    })
+    let mut files = vec![(filename, code)];
+    // RFC §5.B B2-test-vector: sidecar `<fixture>_test.rs` emits
+    // alongside the algorithm header when `<sce:test-vector>` rows
+    // are declared. The Rust conformance harness includes the
+    // sidecar via a second `include!()` inside the per-fixture
+    // `pub mod` scope so cargo test discovers each row as a
+    // distinct `#[test]`.
+    if let ForgeDocument::Algorithm(m) = doc {
+        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Rust,
+        )? {
+            files.push(sidecar);
+        }
+    }
+    Ok(GeneratedOutput { files })
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -5047,9 +5061,23 @@ pub fn generate_c11_with_imports(
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
-    Ok(GeneratedOutput {
-        files: vec![(filename, code)],
-    })
+    let mut files = vec![(filename, code)];
+    // RFC §5.B B2-test-vector: sidecar `<fixture>_test.h` emits
+    // alongside the algorithm header when `<sce:test-vector>` rows
+    // are declared. The C11 conformance harness conditionally
+    // `#include`s the sidecar and folds the returned failure count
+    // into its global `g_failures` accumulator (matches the existing
+    // `test_<fixture>` accounting in the kind-fragment templates).
+    if let ForgeDocument::Algorithm(m) = doc {
+        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::C11,
+        )? {
+            files.push(sidecar);
+        }
+    }
+    Ok(GeneratedOutput { files })
 }
 
 // ── Procedure: C++ ──────────────────────────────────────────
@@ -9558,6 +9586,27 @@ fn render_algorithm(
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     use crate::forge::types::{InferredType, TypeCtx};
+    use crate::generator::Language;
+    // RFC §5.B B2-test-vector trunk gate: only Rust + C11 ship the
+    // `<sce:test-vector>` sidecar emitter at trunk. The remaining
+    // backends (Cpp / Kotlin / Go / Python) reject here with the typed
+    // `generate/unsupported-feature` until each closure lifts the gate.
+    // Without this rejection the codegen would silently drop the
+    // declared test vectors — author would ship apparently-valid
+    // algorithm output against an SCXML whose round-trip oracle is
+    // never exercised, defeating the RFC §5.B cross-backend
+    // byte-equivalence acceptance gate.
+    if !m.test_vectors.is_empty()
+        && !matches!(lang, Language::Rust | Language::C11)
+    {
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "algorithm '{name}': <sce:test-vector> sidecar emit is not implemented for language '{lang:?}' \
+                 (RFC §5.B B2-test-vector trunk ships Rust + C11; Cpp / Kotlin / Go / Python land in B2-test-vector closures)",
+                name = m.name,
+            )),
+        ));
+    }
     let l = LangCtx::new(lang);
     let mut ctx = l.base_context(&m.name);
 
@@ -9646,7 +9695,6 @@ fn render_algorithm(
         .collect::<Vec<_>>()
         .join(", ");
 
-    use crate::generator::Language;
     let return_type = match &m.signature.return_type {
         Some(t) => l.type_name(t).to_string(),
         None => match lang {
@@ -9723,6 +9771,204 @@ fn render_algorithm(
     );
 
     l.render(env, "algorithm", ctx)
+}
+
+/// RFC §5.B B2-test-vector trunk: emit a per-fixture test-vector
+/// sidecar alongside the algorithm header. Returns `Ok(None)` when
+/// the algorithm carries no `<sce:test-vector>` rows or the language
+/// is outside the trunk-supported set (the gate already fired in
+/// `render_algorithm`); returns `Ok(Some((filename, code)))` when a
+/// sidecar is rendered. The caller pushes the result into
+/// `GeneratedOutput.files` so the cmake harness's per-fixture
+/// `add_custom_command` picks the file up as an additional OUTPUT
+/// without speculating on every fixture having a sidecar.
+///
+/// v1 binds a single `bytes` parameter; the hex bytes lower to the
+/// language-native byte literal (`&[u8]` / `sce_forge_bytes_t`) and
+/// the value attribute lowers to a typed scalar literal compatible
+/// with the algorithm's declared return type. Multi-arg / non-bytes
+/// signatures reject with `UnsupportedFeature` because the parsed
+/// `<sce:test-vector hex value/>` row maps unambiguously only to a
+/// single-bytes-input shape (multi-field oracle grammar defers to
+/// B5 alongside the Zenoh msg-set authoring).
+fn render_algorithm_test_vector_sidecar(
+    env: &minijinja::Environment,
+    m: &AlgorithmModel,
+    lang: crate::generator::Language,
+) -> Result<Option<(String, String)>, ForgeError> {
+    use crate::generator::Language;
+    if m.test_vectors.is_empty() {
+        return Ok(None);
+    }
+    if !matches!(lang, Language::Rust | Language::C11) {
+        // Defensive: render_algorithm already gated this combination.
+        // Returning the same typed error keeps the contract single-sourced
+        // for any caller that bypasses render_algorithm.
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "algorithm '{name}': <sce:test-vector> sidecar emit is not implemented for language '{lang:?}' \
+                 (RFC §5.B B2-test-vector trunk ships Rust + C11; Cpp / Kotlin / Go / Python land in B2-test-vector closures)",
+                name = m.name,
+            )),
+        ));
+    }
+
+    // Test vectors v1 contract: signature is `(<single bytes param>) -> scalar`.
+    // The parser already validates that `<sce:return type=...>` is set
+    // (else it rejects with InvalidAttribute) and that the value
+    // matches a bool/integer scalar. The signature shape is enforced
+    // here so the emitter can lower the hex bytes unambiguously.
+    if m.signature.params.len() != 1
+        || !matches!(m.signature.params[0].sce_type, SceType::Bytes)
+    {
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "algorithm '{name}': <sce:test-vector> v1 only supports algorithms with a single \
+                 `bytes` parameter; the canonical RFC §5.B example is `(data: bytes) -> scalar`. \
+                 Multi-arg / non-bytes signatures defer to B5 alongside the Zenoh msg-set authoring.",
+                name = m.name,
+            )),
+        ));
+    }
+
+    let return_type = m.signature.return_type.as_ref().ok_or_else(|| {
+        ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(format!(
+            "algorithm '{name}': <sce:test-vector> requires a non-void return type",
+            name = m.name,
+        )))
+    })?;
+    let l = LangCtx::new(lang);
+    let return_type_native = l.type_name(return_type).to_string();
+    let snake = filters::to_snake_case(m.name.clone());
+
+    // Build the per-row context. Each row carries language-specific
+    // literals so the template stays declarative — no expression
+    // emission inside the Jinja2 file.
+    let mut rows: Vec<serde_json::Value> = Vec::with_capacity(m.test_vectors.len());
+    for tv in &m.test_vectors {
+        let bytes_literal_rust = if tv.hex.is_empty() {
+            // RFC §5.B canonical empty-input reference: an empty hex
+            // string lowers to a zero-length slice that exercises the
+            // algorithm's init-value branch (e.g. CRC16 returns 0xFFFF).
+            "&[]".to_string()
+        } else {
+            let parts: Vec<String> = tv
+                .hex
+                .iter()
+                .map(|b| format!("0x{b:02x}u8"))
+                .collect();
+            format!("&[{}]", parts.join(", "))
+        };
+        let hex_bytes_literal_c = if tv.hex.is_empty() {
+            String::new()
+        } else {
+            tv.hex
+                .iter()
+                .map(|b| format!("0x{b:02x}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let hex_str: String = tv
+            .hex
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+
+        let (value_literal_rust, value_literal_c, printf_fmt, printf_cast) = match &tv.value {
+            crate::forge::model::TestVectorValue::Bool(b) => {
+                let lit = if *b { "true" } else { "false" };
+                (lit.to_string(), lit.to_string(), "%d".to_string(), "int".to_string())
+            }
+            crate::forge::model::TestVectorValue::Uint(u) => {
+                let suffix_rust = match return_type {
+                    SceType::Uint8 => "u8",
+                    SceType::Uint16 => "u16",
+                    SceType::Uint32 => "u32",
+                    SceType::Uint64 => "u64",
+                    other => {
+                        return Err(ForgeError::Generate(
+                            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                                "algorithm '{name}': <sce:test-vector> value is unsigned but \
+                                 return type '{other:?}' is not — internal parser invariant violated",
+                                name = m.name,
+                            )),
+                        ));
+                    }
+                };
+                let rust_lit = format!("0x{u:x}{suffix_rust}");
+                let c_lit = format!("({return_type_native})0x{u:x}u");
+                (rust_lit, c_lit, "0x%llx".to_string(), "unsigned long long".to_string())
+            }
+            crate::forge::model::TestVectorValue::Int(i) => {
+                let suffix_rust = match return_type {
+                    SceType::Int8 => "i8",
+                    SceType::Int16 => "i16",
+                    SceType::Int32 => "i32",
+                    SceType::Int64 => "i64",
+                    other => {
+                        return Err(ForgeError::Generate(
+                            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                                "algorithm '{name}': <sce:test-vector> value is signed but \
+                                 return type '{other:?}' is not — internal parser invariant violated",
+                                name = m.name,
+                            )),
+                        ));
+                    }
+                };
+                let rust_lit = format!("{i}{suffix_rust}");
+                let c_lit = format!("({return_type_native})({i})");
+                (rust_lit, c_lit, "%lld".to_string(), "long long".to_string())
+            }
+        };
+
+        rows.push(serde_json::json!({
+            "source_line": tv.source_line,
+            "hex": hex_str,
+            "bytes_literal": bytes_literal_rust,
+            "hex_bytes_literal": hex_bytes_literal_c,
+            "hex_bytes": !tv.hex.is_empty(),
+            "value_literal": value_literal_rust,
+            "value_literal_c": value_literal_c,
+            "printf_fmt": printf_fmt,
+            "printf_cast": printf_cast,
+        }));
+    }
+
+    let mut ctx: std::collections::BTreeMap<String, minijinja::Value> = Default::default();
+    ctx.insert("name".into(), snake.clone().into());
+    ctx.insert("return_type".into(), return_type_native.clone().into());
+    ctx.insert(
+        "test_vectors".into(),
+        minijinja::Value::from_serialize(&rows),
+    );
+
+    if matches!(lang, Language::C11) {
+        let guard = format!("SCE_FORGE_{}_TEST_H", to_upper_snake(&m.name));
+        ctx.insert("guard".into(), guard.into());
+        ctx.insert("has_bytes_param".into(), true.into());
+    }
+    // Render via the same `algorithm_test.<ext>.jinja2` lookup that
+    // `LangCtx::load_template` uses for the main algorithm template,
+    // so the per-language extension picks the right sidecar shape
+    // (`.rs.jinja2` for Rust, `.h.jinja2` for C11).
+    let template_name = format!("algorithm_test.{}.jinja2", l.template_ext());
+    let template = env.get_template(&template_name).map_err(|e| {
+        ForgeError::Generate(crate::forge::error::GenerateError::TemplateLoad(format!(
+            "{template_name}: {e}"
+        )))
+    })?;
+    let value = minijinja::Value::from_serialize(&ctx);
+    let code = template.render(value).map_err(|e| {
+        ForgeError::Generate(crate::forge::error::GenerateError::TemplateRender(format!(
+            "{template_name}: {e}"
+        )))
+    })?;
+    let extension = match lang {
+        Language::Rust => "rs",
+        Language::C11 => "h",
+        _ => unreachable!("gated above"),
+    };
+    Ok(Some((format!("{snake}_test.{extension}"), code)))
 }
 
 /// Lower every `<sce:const>` declaration in an `AlgorithmModel` to a

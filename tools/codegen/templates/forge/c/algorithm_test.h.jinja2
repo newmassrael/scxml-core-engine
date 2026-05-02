@@ -1,0 +1,52 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.B B2-test-vector: per-fixture C11 test-vector sidecar.
+   Aggregates every `<sce:test-vector>` row into a single
+   `static inline int test_vector_<fixture>(void)` that returns the
+   row-failure count. The C11 conformance harness folds the return
+   value into its global `g_failures` counter, matching the existing
+   `test_<fixture>` body's accounting (which already mutates
+   `g_failures` from the harness scope) without leaking the harness
+   internal-linkage symbol into this header. The header includes the
+   sibling algorithm header so the symbol resolves regardless of
+   include order in the harness TU. #}
+
+/* SCE Forge: Auto-generated test-vector sidecar (RFC §5.B B2) */
+/* Companion to {{ name }}.h — do not edit; regenerate from the source SCXML. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdio.h>
+#include <string.h>
+#include "{{ name }}.h"
+
+static inline int test_vector_{{ name }}(void) {
+    int failures = 0;
+{% for tv in test_vectors %}
+    {
+{% if has_bytes_param %}
+        sce_forge_bytes_t input = {0};
+{% if tv.hex_bytes %}
+        static const uint8_t row_bytes[] = { {{ tv.hex_bytes_literal }} };
+        memcpy(input.data, row_bytes, sizeof row_bytes);
+        input.len = sizeof row_bytes;
+{% endif %}
+        {{ return_type }} actual = {{ name }}(input);
+{% else %}
+        {{ return_type }} actual = {{ name }}();
+{% endif %}
+        const {{ return_type }} expected = {{ tv.value_literal_c }};
+        if (actual != expected) {
+            fprintf(stderr,
+                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: actual={{ tv.printf_fmt }} expected={{ tv.printf_fmt }}\n",
+                ({{ tv.printf_cast }})actual, ({{ tv.printf_cast }})expected);
+            ++failures;
+        }
+    }
+{% endfor %}
+    return failures;
+}
+
+#endif  /* {{ guard }} */

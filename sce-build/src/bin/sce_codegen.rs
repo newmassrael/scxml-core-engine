@@ -456,6 +456,20 @@ enum Commands {
         /// default) emit every fixture in the manifest unchanged.
         #[arg(short, long)]
         language: Option<String>,
+        /// RFC §5.B B2-test-vector: restrict the listing to fixtures
+        /// whose SCXML carries at least one `<sce:test-vector>` element
+        /// (algorithm kind only — codec test vectors defer to B5). The
+        /// cmake harness uses this to declare the per-fixture sidecar
+        /// header `<fixture>_test.h` as an additional OUTPUT of the
+        /// generate custom_command without speculating which fixtures
+        /// emit a sidecar. Requires `--resource-dir` to locate the
+        /// per-fixture SCXML files.
+        #[arg(long)]
+        has_test_vectors: bool,
+        /// Directory containing per-fixture `<name>.scxml` source files.
+        /// Required when `--has-test-vectors` is set.
+        #[arg(long)]
+        resource_dir: Option<String>,
     },
 }
 
@@ -523,9 +537,19 @@ fn main() {
             manifest,
             output_dir,
         } => cmd_generate_conformance(&language, &manifest, &output_dir),
-        Commands::ListFixtures { manifest, format, language } => {
-            cmd_list_fixtures(&manifest, &format, language.as_deref())
-        }
+        Commands::ListFixtures {
+            manifest,
+            format,
+            language,
+            has_test_vectors,
+            resource_dir,
+        } => cmd_list_fixtures(
+            &manifest,
+            &format,
+            language.as_deref(),
+            has_test_vectors,
+            resource_dir.as_deref(),
+        ),
         Commands::Expand { scxml } => cmd_expand(&scxml),
     }
 }
@@ -2403,14 +2427,62 @@ fn cmd_expand(scxml_path: &str) {
 
 // ── Subcommand: list-fixtures ──────────────────────────────────
 
-fn cmd_list_fixtures(manifest_path: &str, format: &str, language: Option<&str>) {
-    let manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
+fn cmd_list_fixtures(
+    manifest_path: &str,
+    format: &str,
+    language: Option<&str>,
+    has_test_vectors_only: bool,
+    resource_dir: Option<&str>,
+) {
+    let mut manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
         .unwrap_or_else(|e| {
             cli_exit(CliError::ReadInput {
                 path: manifest_path.to_string(),
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
             })
         });
+    // RFC §5.B B2-test-vector: enrich algorithm fixtures with their
+    // derived `has_test_vectors` flag so `lang_supports_fixture` can
+    // reject `(Cpp/Kotlin/Go/Python, has_test_vectors=true)` exactly
+    // like `render_harness` does. The flag is SCXML-derived rather
+    // than carried in fixtures.json (manifest-side override is
+    // rejected by `Manifest::validate`), so this enrichment requires
+    // the per-fixture `<name>.scxml` to live under `--resource-dir`.
+    // `--language` callers always need the flag; the unset default
+    // skips enrichment to preserve the cheap path for tools that do
+    // not want a per-fixture SCXML scan.
+    if language.is_some() || has_test_vectors_only {
+        // Resource directory resolution: explicit `--resource-dir`
+        // wins; otherwise fall back to `<manifest_dir>/../resources/`
+        // which mirrors the in-repo layout (`tests/forge/conformance/
+        // fixtures.json` → `tests/forge/resources/`). The fallback
+        // keeps short-form invocations like `--language cpp` working
+        // without forcing every caller to pass the resource path.
+        let resource_root: std::path::PathBuf = match resource_dir {
+            Some(rd) => std::path::PathBuf::from(rd),
+            None => {
+                let manifest_dir = Path::new(manifest_path)
+                    .parent()
+                    .unwrap_or(Path::new("."));
+                manifest_dir
+                    .parent()
+                    .map(|p| p.join("resources"))
+                    .unwrap_or_else(|| manifest_dir.join("resources"))
+            }
+        };
+        for f in manifest.fixtures.iter_mut() {
+            if let sce_build::conformance::FixtureSpec::Algorithm {
+                has_test_vectors, ..
+            } = &mut f.spec
+            {
+                let scxml_path = resource_root.join(format!("{}.scxml", f.name));
+                if scxml_path.exists() {
+                    *has_test_vectors =
+                        sce_build::conformance::has_test_vectors(&scxml_path).unwrap_or(false);
+                }
+            }
+        }
+    }
     // RFC §5.J.2: when `--language c11` is passed, mirror the per-kind
     // filter `generate-conformance` applies before harness rendering so
     // the c11 cmake harness sees identically-shaped fixture sets from
@@ -2423,6 +2495,15 @@ fn cmd_list_fixtures(manifest_path: &str, format: &str, language: Option<&str>) 
         })),
         None => None,
     };
+    // RFC §5.B B2-test-vector: when `--has-test-vectors` is passed,
+    // restrict the listing to algorithm fixtures whose SCXML carries at
+    // least one `<sce:test-vector>` element. The cmake harness uses
+    // this to declare the per-fixture sidecar header as an additional
+    // OUTPUT of the generate custom_command without speculating which
+    // fixtures emit a sidecar. The enrichment block above already
+    // populated `has_test_vectors` on each algorithm fixture (using
+    // `--resource-dir` or the in-repo fallback), so the filter below
+    // can read the flag straight off the fixture spec.
     let names: Vec<&str> = manifest
         .fixtures
         .iter()
@@ -2442,13 +2523,34 @@ fn cmd_list_fixtures(manifest_path: &str, format: &str, language: Option<&str>) 
                 if !sce_build::forge::codegen_matrix::template_ships(kind, lang) {
                     return false;
                 }
-                if matches!(lang, Language::C11) {
-                    sce_build::conformance::c11_supported_kind(&f.spec)
-                } else {
-                    true
+                if matches!(lang, Language::C11)
+                    && !sce_build::conformance::c11_supported_kind(&f.spec)
+                {
+                    return false;
                 }
+                // RFC §5.B B2-test-vector: drop fixtures whose
+                // content-aware gate rejects this language. Mirrors
+                // `render_harness`'s filter; until this happens cmake
+                // would try to codegen a fixture the trunk gate
+                // rejects.
+                if !sce_build::conformance::lang_supports_fixture(lang, &f.spec) {
+                    return false;
+                }
+                true
             }
             None => true,
+        })
+        .filter(|f| {
+            if !has_test_vectors_only {
+                return true;
+            }
+            matches!(
+                &f.spec,
+                sce_build::conformance::FixtureSpec::Algorithm {
+                    has_test_vectors: true,
+                    ..
+                }
+            )
         })
         .map(|f| f.name.as_str())
         .collect();

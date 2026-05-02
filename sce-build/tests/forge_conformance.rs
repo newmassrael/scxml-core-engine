@@ -125,6 +125,54 @@ fn assert_standalone_forge_rust(scxml_name: &str, expected_filename: &str) {
     );
 }
 
+/// RFC §5.B B2-test-vector trunk: assert that a forge codegen run
+/// produces a per-fixture sidecar file (e.g. `<fixture>_test.rs`) as
+/// the second entry in `output.files`, and that its content matches
+/// the checked-in golden under `tests/forge/expected/`. Mirrors the
+/// `assert_standalone_forge_lang` shape but indexes into the sidecar
+/// position so the existing primary-file goldens stay byte-stable.
+fn assert_sidecar_forge_lang(
+    scxml_name: &str,
+    expected_filename: &str,
+    language: sce_build::generator::Language,
+) {
+    let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
+    let content = std::fs::read_to_string(&scxml_path)
+        .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
+    let stem = scxml_name;
+    let base_dir = scxml_path.parent().unwrap();
+    let options = golden_options(language);
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric(stem),
+        language,
+        base_dir,
+        &options,
+    )
+    .unwrap_or_else(|e| panic!("Forge codegen failed for {scxml_name} ({language:?}): {e}"));
+
+    assert!(
+        output.files.len() >= 2,
+        "expected sidecar emission for {scxml_name} ({language:?}); output.files.len()={}",
+        output.files.len()
+    );
+    let (_, generated) = &output.files[1];
+    let expected_path = expected_dir().join(expected_filename);
+    if std::env::var("UPDATE_GOLDEN").is_ok() {
+        std::fs::write(&expected_path, generated.trim().to_string() + "\n")
+            .unwrap_or_else(|e| panic!("Cannot write {}: {e}", expected_path.display()));
+        return;
+    }
+    let expected = std::fs::read_to_string(&expected_path)
+        .unwrap_or_else(|e| panic!("Cannot read expected {}: {e}", expected_path.display()));
+    assert_eq!(
+        generated.trim(),
+        expected.trim(),
+        "Sidecar mismatch for {scxml_name} ({language:?})\n--- expected: {}\n+++ generated",
+        expected_path.display()
+    );
+}
+
 /// Strip path-dependent comment lines for comparison.
 /// Handles `// From: ...` (C++/Rust/Go) and `// Source: ...` (Kotlin).
 fn normalize_for_comparison(code: &str) -> String {
@@ -467,9 +515,42 @@ fn assert_inline_codec_structural(
 
 // ── Algorithm conformance (RFC §5.A, Phase A3) ────────────────
 
+/// RFC §5.B B2-test-vector trunk gate: the algorithm_crc16 fixture
+/// carries a canonical `<sce:test-vector>` row, so trunk codegen
+/// rejects on Cpp / Kotlin / Go / Python with the typed
+/// `generate/unsupported-feature` until each language's closure
+/// lifts the gate (mirrors the B1-β codec_variant_dispatch pattern).
+/// The four rejection tests rotate as each closure lands — the last
+/// one to ship sidecar emit removes its rejection test entirely and
+/// restores the standalone golden assertion (now extended with the
+/// per-fixture sidecar golden).
 #[test]
-fn forge_algorithm_crc16_cpp() {
-    assert_standalone_forge("algorithm_crc16", "algorithm_crc16.h");
+fn forge_algorithm_crc16_cpp_test_vector_gate_rejects_until_closure() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+    let scxml_path = resource_dir().join("algorithm_crc16.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read algorithm_crc16 fixture");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("algorithm_crc16"),
+        sce_build::generator::Language::Cpp,
+        scxml_path.parent().unwrap(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "B2-test-vector trunk must gate <sce:test-vector> on Cpp; codegen would otherwise drop the declared test vectors silently"
+        ),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
+                if msg.contains("algorithm_crc16") && msg.contains("Cpp")
+        ),
+        "must surface as GenerateError::UnsupportedFeature naming the algorithm and language; got: {inner:?}"
+    );
 }
 
 // ── §5.F build-time const-fold (Phase A4-β — host interpreter) ──
@@ -1400,11 +1481,40 @@ fn forge_kotlin_codec_until_eof_basic() {
 
 // ── Algorithm (Kotlin, RFC §5.A — post-A6 matrix follow-up) ─
 
+/// RFC §5.B B2-test-vector trunk gate (Kotlin). See the cpp-side
+/// rejection test above for the rotation contract.
 #[test]
-fn forge_kotlin_algorithm_crc16() {
-    assert_standalone_forge_kotlin("algorithm_crc16", "AlgorithmCrc16.kt");
+fn forge_kotlin_algorithm_crc16_test_vector_gate_rejects_until_closure() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+    let scxml_path = resource_dir().join("algorithm_crc16.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read algorithm_crc16 fixture");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("algorithm_crc16"),
+        sce_build::generator::Language::Kotlin,
+        scxml_path.parent().unwrap(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "B2-test-vector trunk must gate <sce:test-vector> on Kotlin"
+        ),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
+                if msg.contains("algorithm_crc16") && msg.contains("Kotlin")
+        ),
+        "must surface as GenerateError::UnsupportedFeature naming the algorithm and language; got: {inner:?}"
+    );
 }
 
+/// algorithm_crc16_table has no `<sce:test-vector>`; the Kotlin gate
+/// only fires on the algorithm_crc16 fixture, so the table-form
+/// standalone assertion stays intact through the trunk.
 #[test]
 fn forge_kotlin_algorithm_crc16_table() {
     assert_standalone_forge_kotlin("algorithm_crc16_table", "AlgorithmCrc16Table.kt");
@@ -1424,6 +1534,75 @@ fn forge_kotlin_algorithm_const_fold_smoke() {
 #[test]
 fn forge_rust_algorithm_crc16() {
     assert_standalone_forge_rust("algorithm_crc16", "algorithm_crc16.rs");
+}
+
+/// RFC §5.B B2-test-vector trunk: pin the Rust sidecar emit so the
+/// canonical `<sce:test-vector hex="313233343536373839" value="0x29B1"/>`
+/// row round-trips through cargo test. The sidecar is the second
+/// entry in the codegen output (the algorithm header stays byte-stable
+/// against its existing golden).
+#[test]
+fn forge_rust_algorithm_crc16_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "algorithm_crc16",
+        "algorithm_crc16_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+/// RFC §5.B B2-test-vector trunk: pin the C11 sidecar emit. Mirrors
+/// the Rust sidecar test above; the lone test-vector row aggregates
+/// into a `static inline int test_vector_algorithm_crc16(void)`
+/// helper that the conformance harness folds into `g_failures`.
+#[test]
+fn forge_c11_algorithm_crc16_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "algorithm_crc16",
+        "algorithm_crc16_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+/// RFC §5.B B2-test-vector v1 enforces a single `bytes` parameter on
+/// the algorithm signature so the hex bytes lower unambiguously. A
+/// non-bytes parameter shape rejects with the typed
+/// `generate/unsupported-feature` until B5 widens the binding rules.
+#[test]
+fn forge_test_vector_non_bytes_signature_rejects() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" version="1.0">
+  <sce:signature>
+    <sce:param name="value" type="uint32"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+  <sce:test-vector hex="00" value="0x0000"/>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("non_bytes_tv"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("non-bytes signature with <sce:test-vector> must reject"),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
+                if msg.contains("non_bytes_tv") && msg.contains("bytes")
+        ),
+        "must surface as GenerateError::UnsupportedFeature explaining the signature constraint; got: {inner:?}"
+    );
 }
 
 // ── Transform (Rust) ─────────────────────────────────────────
@@ -1823,9 +2002,35 @@ fn forge_go_codec_until_eof_basic() {
 
 // ── Algorithm (Go, RFC §5.A — post-A6 matrix follow-up) ────
 
+/// RFC §5.B B2-test-vector trunk gate (Go). See the cpp-side
+/// rejection test above for the rotation contract.
 #[test]
-fn forge_go_algorithm_crc16() {
-    assert_standalone_forge_go("algorithm_crc16", "algorithm_crc16.go");
+fn forge_go_algorithm_crc16_test_vector_gate_rejects_until_closure() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+    let scxml_path = resource_dir().join("algorithm_crc16.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read algorithm_crc16 fixture");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("algorithm_crc16"),
+        sce_build::generator::Language::Go,
+        scxml_path.parent().unwrap(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "B2-test-vector trunk must gate <sce:test-vector> on Go"
+        ),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
+                if msg.contains("algorithm_crc16") && msg.contains("Go")
+        ),
+        "must surface as GenerateError::UnsupportedFeature naming the algorithm and language; got: {inner:?}"
+    );
 }
 
 #[test]
@@ -2042,9 +2247,35 @@ fn forge_python_codec_until_eof_basic() {
 
 // ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
 
+/// RFC §5.B B2-test-vector trunk gate (Python). See the cpp-side
+/// rejection test above for the rotation contract.
 #[test]
-fn forge_python_algorithm_crc16() {
-    assert_standalone_forge_python("algorithm_crc16", "algorithm_crc16.py");
+fn forge_python_algorithm_crc16_test_vector_gate_rejects_until_closure() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+    let scxml_path = resource_dir().join("algorithm_crc16.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read algorithm_crc16 fixture");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("algorithm_crc16"),
+        sce_build::generator::Language::Python,
+        scxml_path.parent().unwrap(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "B2-test-vector trunk must gate <sce:test-vector> on Python"
+        ),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
+                if msg.contains("algorithm_crc16") && msg.contains("Python")
+        ),
+        "must surface as GenerateError::UnsupportedFeature naming the algorithm and language; got: {inner:?}"
+    );
 }
 
 #[test]

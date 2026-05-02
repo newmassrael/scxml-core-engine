@@ -99,17 +99,25 @@ endif()
 # Pull the fixture catalog from sce-codegen itself in the cmake-list format
 # (single semicolon-separated literal). The Rust binary already owns the
 # manifest schema, so cmake never has to touch JSON or shell out to python.
+#
+# RFC §5.B B2-test-vector: passing `--language cpp` activates the
+# content-aware filter (`lang_supports_fixture`) so fixtures whose
+# SCXML carries `<sce:test-vector>` are dropped on backends that have
+# not yet shipped the sidecar emitter. Each closure widens the
+# supported set as it lands; until then the cpp harness skips the
+# gated fixture instead of surfacing a hard codegen error.
 execute_process(
     COMMAND "${SCE_CODEGEN}" list-fixtures
             --manifest "${FIXTURE_MANIFEST}"
             --format cmake
+            --language cpp
     OUTPUT_VARIABLE FIXTURES
     OUTPUT_STRIP_TRAILING_WHITESPACE
     RESULT_VARIABLE _manifest_rc
 )
 if(NOT _manifest_rc EQUAL 0)
     message(FATAL_ERROR
-        "sce-codegen list-fixtures failed for ${FIXTURE_MANIFEST}")
+        "sce-codegen list-fixtures --language cpp failed for ${FIXTURE_MANIFEST}")
 endif()
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

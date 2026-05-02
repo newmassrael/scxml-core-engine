@@ -100,17 +100,50 @@ if(NOT _manifest_rc EQUAL 0)
         "${FIXTURE_MANIFEST}")
 endif()
 
+# RFC §5.B B2-test-vector: ask sce-codegen for the subset of C11
+# fixtures whose SCXML carries `<sce:test-vector>` rows. Each such
+# fixture emits `<fixture>_test.h` alongside `<fixture>.h`, so the
+# per-fixture custom_command must declare both as OUTPUT for cmake's
+# dependency tracker to pick them up. The harness template includes
+# the sidecar conditionally on `f.has_test_vectors`.
+execute_process(
+    COMMAND "${SCE_CODEGEN}" list-fixtures
+            --manifest "${FIXTURE_MANIFEST}"
+            --format cmake
+            --language c11
+            --has-test-vectors
+            --resource-dir "${RESOURCE_DIR}"
+    OUTPUT_VARIABLE C11_FIXTURES_WITH_TV
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _tv_rc
+)
+if(NOT _tv_rc EQUAL 0)
+    message(FATAL_ERROR
+        "sce-codegen list-fixtures --has-test-vectors --language c11 failed for "
+        "${FIXTURE_MANIFEST}")
+endif()
+
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 
 # Step 1: per-fixture product code generation. Each fixture's SCXML is
-# fed to sce-codegen --language c11 to produce a single header.
+# fed to sce-codegen --language c11 to produce a single header. RFC §5.B
+# B2-test-vector: fixtures whose SCXML carries `<sce:test-vector>` rows
+# emit a sibling `<fixture>_test.h` sidecar; the OUTPUT list is widened
+# so cmake's dependency tracker rebuilds the harness when either file
+# moves.
 set(GENERATED_HEADERS "")
 foreach(fixture IN LISTS C11_FIXTURES)
     set(out_header "${GENERATED_DIR}/${fixture}.h")
     set(scxml "${RESOURCE_DIR}/${fixture}.scxml")
+    set(_outputs "${out_header}")
+    list(FIND C11_FIXTURES_WITH_TV "${fixture}" _tv_idx)
+    if(NOT _tv_idx EQUAL -1)
+        set(_sidecar "${GENERATED_DIR}/${fixture}_test.h")
+        list(APPEND _outputs "${_sidecar}")
+    endif()
     add_custom_command(
-        OUTPUT "${out_header}"
+        OUTPUT ${_outputs}
         COMMAND "${SCE_CODEGEN}" generate "${scxml}"
                 --language c11
                 --output-dir "${GENERATED_DIR}"
@@ -118,7 +151,7 @@ foreach(fixture IN LISTS C11_FIXTURES)
         COMMENT "Generating C11 fixture ${fixture}.h"
         VERBATIM
     )
-    list(APPEND GENERATED_HEADERS "${out_header}")
+    list(APPEND GENERATED_HEADERS ${_outputs})
 endforeach()
 
 # Step 2: render the test harness from the shared template. The
