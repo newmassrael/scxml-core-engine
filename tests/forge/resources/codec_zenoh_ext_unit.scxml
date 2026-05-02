@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh extension Unit body (RFC §5.B B5-ε,
+     surface G from the watching-zenoh authoring path).
+
+     Mirrors zenoh-pico `_z_msg_ext_encode_unit` / `_z_msg_ext_decode_unit`
+     (src/protocol/codec/ext.c lines 28-44): the Unit-encoded extension
+     body has zero body bytes — the extension's encoding kind is
+     selected by the parent entry header's `enc` bit-range, and the
+     Unit arm contributes nothing past the header byte. Decode advances
+     the cursor by 0; encode returns an empty byte sequence.
+
+     Used as the `enc=0x00` arm of `codec_zenoh_ext_entry`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_ext_unit">
+  <datamodel/>
+</scxml>

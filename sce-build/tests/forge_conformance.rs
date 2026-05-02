@@ -1016,6 +1016,101 @@ fn forge_codec_tlv_chain_basic_rust() {
     );
 }
 
+// ── RFC §5.B B5-ε surface G — TLV chain entry body keyed by carrier bits ─
+// `codec_zenoh_ext_envelope` carries a `<sce:tlv-chain>` of
+// `codec_zenoh_ext_entry` entries; each entry's body shape is selected
+// at runtime by the `enc` bit-range of its 1-byte header (mirrors
+// zenoh-pico `_z_msg_ext_decode_iter` + `_z_msg_ext_unknown_body_decode`).
+// Surface G freebie: no IR change. The `tlv_chain_body_alias` resolver
+// already accepts any imported codec; the chain decode helper invokes
+// the body codec's uniform `<codec>::decode(cursor)` /
+// `<codec>_decode(cursor, *out)` signature; a variant codec emits
+// exactly that surface, so a TLV chain of variant entries works
+// transparently. The transitive `codec_max_bytes` enrichment fix
+// landed alongside this lift (lib.rs `compute_codec_recursive_max_bytes`)
+// is what closes the C11 silent-truncation gap when the variant entry's
+// worst-case arm body exceeds the prefix size.
+
+#[test]
+fn forge_codec_zenoh_ext_unit_rust() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_ext_unit",
+        "codec_zenoh_ext_unit.rs",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zint_rust() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_ext_zint",
+        "codec_zenoh_ext_zint.rs",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zbuf_rust() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_ext_zbuf",
+        "codec_zenoh_ext_zbuf.rs",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_ext_entry_rust() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_ext_entry",
+        "codec_zenoh_ext_entry.rs",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_ext_envelope_rust() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_ext_envelope",
+        "codec_zenoh_ext_envelope.rs",
+    );
+}
+
+/// RFC §5.B B5-ε MCU gate: the envelope's `<sce:tlv-chain>` keeps the
+/// MCU-class contract — cpp/kotlin/go/python reject at codegen with
+/// `codegen/mcu-class-kind-on-non-mcu-language`, exactly mirroring
+/// `codec_tlv_chain_basic`'s rejection shape. Surface G adds variant
+/// body dispatch *inside* the chain entry; it does not relax the
+/// per-codec MCU gate.
+#[test]
+fn forge_codec_zenoh_ext_envelope_rejects_on_cpp() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let scxml_path = resource_dir().join("codec_zenoh_ext_envelope.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("Cannot read codec_zenoh_ext_envelope.scxml");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_zenoh_ext_envelope"),
+        sce_build::generator::Language::Cpp,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "MCU-class codec on Cpp must reject with \
+             codegen/mcu-class-kind-on-non-mcu-language"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
+                ref language,
+                ..
+            }) if language == "cpp"
+        ),
+        "must surface CodegenMcuClassKindOnNonMcuLanguage targeting cpp; got: {:?}",
+        err.error
+    );
+}
+
 /// RFC §5.B B3 MCU gate: a codec containing `<sce:tlv-chain>` rejects
 /// when targeting `cpp` (and the other 3 non-MCU langs by the same
 /// path). The diagnostic is the existing kind-class
@@ -3354,6 +3449,60 @@ fn forge_c11_codec_tlv_chain_basic() {
     assert_standalone_forge_c(
         "codec_tlv_chain_basic",
         "codec_tlv_chain_basic.c.h",
+    );
+}
+
+// ── RFC §5.B B5-ε surface G — TLV chain entry body keyed by carrier bits ─
+// `codec_zenoh_ext_envelope` carries a `<sce:tlv-chain>` of
+// variant-bodied `codec_zenoh_ext_entry` entries. C11 trunk pins:
+//   - the envelope's MAX_BYTES = `1 + max_depth * entry_max` (345 =
+//     1 + 8*43) — proves the transitive recursive max-bytes
+//     enrichment kicks in for variant-bearing imports
+//   - the entry's tagged-union body slot fits the chain's fixed-array
+//     `extensions[max_depth]` slot since each variant arm body is
+//     itself bounded (Unit=0, ZInt=10, ZBuf=42)
+//   - the chain decode/encode loop calls
+//     `codec_zenoh_ext_entry_decode(cursor, &out->extensions[idx])`
+//     unchanged from `codec_tlv_chain_basic`'s shape — the
+//     variant-aware dispatch is internal to the entry codec.
+
+#[test]
+fn forge_c11_codec_zenoh_ext_unit() {
+    assert_standalone_forge_c(
+        "codec_zenoh_ext_unit",
+        "codec_zenoh_ext_unit.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_ext_zint() {
+    assert_standalone_forge_c(
+        "codec_zenoh_ext_zint",
+        "codec_zenoh_ext_zint.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_ext_zbuf() {
+    assert_standalone_forge_c(
+        "codec_zenoh_ext_zbuf",
+        "codec_zenoh_ext_zbuf.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_ext_entry() {
+    assert_standalone_forge_c(
+        "codec_zenoh_ext_entry",
+        "codec_zenoh_ext_entry.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_ext_envelope() {
+    assert_standalone_forge_c(
+        "codec_zenoh_ext_envelope",
+        "codec_zenoh_ext_envelope.c.h",
     );
 }
 

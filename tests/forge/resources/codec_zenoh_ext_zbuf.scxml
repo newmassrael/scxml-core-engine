@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh extension ZBuf body (RFC §5.B B5-ε,
+     surface G from the watching-zenoh authoring path).
+
+     Mirrors zenoh-pico `_z_msg_ext_encode_zbuf` / `_z_msg_ext_decode_zbuf`
+     (src/protocol/codec/ext.c lines 62-76) which delegate to
+     `_z_slice_decode` — the on-wire shape is a base-128 VLE length
+     prefix followed by exactly that many payload bytes. Reuses the
+     B5-δ Surface D pattern (VLE sibling read by `length-ref`) that
+     `codec_init_cookie_body` already exercises.
+
+     Used as the `enc=0x02` arm of `codec_zenoh_ext_entry`.
+
+     Wire shape:
+       byte 0+ : value_len  (VLE u64, 1..=10 bytes)
+       bytes   : value      (length=value_len, max 32) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_ext_zbuf">
+  <datamodel>
+    <sce:field id="value_len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="value" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="value_len" sce:max-size="32"/>
+  </datamodel>
+</scxml>

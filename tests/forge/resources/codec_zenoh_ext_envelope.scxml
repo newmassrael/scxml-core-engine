@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh extension chain envelope — TLV chain
+     of variant-bodied entries (RFC §5.B B5-ε, surface G from the
+     watching-zenoh authoring path).
+
+     Mirrors zenoh-pico `_z_msg_ext_decode_iter` (src/protocol/codec/ext.c
+     lines 226-238): an iterative chain of `_z_msg_ext_t` entries where
+     each entry's body shape is selected at runtime by the `enc`
+     bit-range of its 1-byte header. B5-ε's surface-G lift lets the
+     `<sce:tlv-chain type="...">` body alias resolve to a variant
+     codec — `codec_zenoh_ext_entry` — without any IR change: the
+     existing `tlv_chain_body_alias` resolver only checks
+     `imp.kind == "codec"`, the chain decode helper calls the body
+     codec's uniform `<codec>::decode(cursor)` / `<codec>_decode(cursor,
+     *out)` signature, and the variant codec's emitted struct
+     (struct + body union, fixed-size per arm bound) fits the chain's
+     `out->extensions[idx]` slot just like a plain entry codec does.
+
+     `next` chain-continuation bit (zenoh-pico bit 7) is intentionally
+     **not** modeled here — the chain terminates on cursor exhaustion
+     plus `max-depth`, matching `codec_tlv_chain_basic`'s B3-α shape.
+     A per-entry termination flag is a separate IR surface (chain
+     termination strategy, distinct from "body shape"); ships when a
+     consumer needs full upstream parity for the `_Z_MSG_EXT_FLAG_Z`
+     bit. The current fixture's wire test vector is sized so the
+     decoded chain consumes exactly the fixture frame — no termination
+     ambiguity.
+
+     MCU-class — envelope contains `<sce:tlv-chain>`, so cpp/kotlin/go/
+     python reject at codegen with `codegen/mcu-class-kind-on-non-mcu-language`
+     (mirrors `codec_tlv_chain_basic`).
+
+     Wire round-trip oracle (Rust runtime smoke):
+       header_flags=0x01,
+       entries=[
+         (id=0x10, enc=0x00, body=Unit{}),                 // 1 byte:  0x10
+         (id=0x11, enc=0x01, body=ZInt{value=42}),         // 2 bytes: 0x31 0x2A
+         (id=0x12, enc=0x02, body=ZBuf{value=[0xAB,0xCD]})  // 4 bytes: 0x52 0x02 0xAB 0xCD
+       ]
+       wire = 0x01  0x10  0x31 0x2A  0x52 0x02 0xAB 0xCD   (8 bytes)
+
+     header byte breakdown (id:5 | enc:2 | reserved:1):
+       0x10 = id=16, enc=0  →  Unit
+       0x31 = id=17, enc=1  →  ZInt    (0x31 = (1<<5) | 17 = 0x20 | 0x11)
+       0x52 = id=18, enc=2  →  ZBuf    (0x52 = (2<<5) | 18 = 0x40 | 0x12) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_ext_envelope">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:field id="header_flags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="1"
+                   max-depth="8" on-overflow="reject"/>
+  </datamodel>
+</scxml>

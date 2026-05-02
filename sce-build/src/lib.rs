@@ -55,7 +55,8 @@ pub mod formatter;
 mod wasm;
 
 use model::SCXMLModel;
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 /// Two-role document label for the forge pipeline.
 ///
@@ -507,6 +508,134 @@ pub fn compile_forge_with_imports(
     Ok(output)
 }
 
+/// Recursively resolve a codec's full encode-buffer max bytes — RFC §5.B
+/// B5-ε. Mirrors the parent generator's `m.max_frame_bytes() + body_max`
+/// formula (see `forge::generator` `render_codec` max-bytes computation),
+/// but applies it transitively so a parent codec that imports a
+/// variant-bearing leaf gets a correctly-sized encode buffer.
+///
+/// Without this recursion, `validate_and_enrich_imports` populated
+/// `ImportContext::codec_max_bytes` from `cm.max_frame_bytes()` alone
+/// — the model-level value omits variant arm body / repeat body /
+/// tlv-chain body sizing because at parse time the imported codecs
+/// aren't enriched yet. For non-variant leaves that's correct (no
+/// arm body to add); for a variant-bearing import (B5-ε's first
+/// reachable consumer: `codec_zenoh_ext_envelope` carrying a TLV
+/// chain of variant-bodied `codec_zenoh_ext_entry` entries) the
+/// parent's chain MAX_BYTES would silently truncate ZBuf-encoded
+/// entries on C11.
+///
+/// Cycle detection: tracks visited canonical paths via `visited`. A
+/// cycle (A imports B imports A) returns the model-level max for the
+/// cycle leaf — same shape as the pre-fix behaviour for that one
+/// frame, while every non-cyclic frame gets the correct recursive
+/// sum.
+fn compute_codec_recursive_max_bytes(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> u32 {
+    use forge::model::BitSize;
+
+    // Resolve a single import alias to the imported codec's full
+    // recursive max-bytes. Returns `None` on filesystem / parse / kind
+    // mismatch / cycle — caller (the variant / repeat / tlv branches
+    // below) skips that contribution, falling back to a 0 increment.
+    // Skipping is safe because the parent generator's eventual
+    // max-bytes pass would also skip on the same conditions.
+    fn resolve_import_max(
+        alias: &str,
+        imports: &[forge::model::ForgeImport],
+        base_dir: &Path,
+        visited: &mut HashSet<PathBuf>,
+    ) -> Option<u32> {
+        let imp = imports.iter().find(|i| i.alias == alias)?;
+        let imp_path = base_dir.join(&imp.src);
+        // Use joined path (not canonical) for cycle detection: matches
+        // the way the rest of the enrichment resolves paths and avoids
+        // a hard dependency on the file existing at canonicalize time.
+        let visit_key = imp_path.clone();
+        if !visited.insert(visit_key.clone()) {
+            return None;
+        }
+        let result = (|| -> Option<u32> {
+            let content = std::fs::read_to_string(&imp_path).ok()?;
+            let stem = imp_path.file_stem()?.to_str()?;
+            let basename = imp_path.file_name()?.to_str()?;
+            let label = DocumentLabel {
+                identifier: stem,
+                diagnostic_label: basename,
+            };
+            let parsed =
+                forge::parser::parse_forge_with_imports(&content, label).ok()??;
+            let inner_cm = match parsed.document {
+                forge::model::ForgeDocument::Codec(c) => c,
+                _ => return None,
+            };
+            let inner_base = imp_path.parent()?.to_path_buf();
+            Some(compute_codec_recursive_max_bytes(
+                &inner_cm,
+                &parsed.imports,
+                &inner_base,
+                visited,
+            ))
+        })();
+        visited.remove(&visit_key);
+        result
+    }
+
+    // Mirrors generator.rs render_codec's mutually-exclusive branches:
+    // variant codecs add the worst-case arm body; non-variant codecs
+    // add the per-field repeat / tlv-chain body sums. A codec with
+    // both is rare in practice and the parent generator itself does
+    // not combine them today — staying byte-identical to that formula
+    // keeps the helper's output usable as a drop-in for the parent
+    // pass on any leaf (sanity invariant: imports get the same value
+    // the parent would compute if it rendered the codec directly).
+    if let Some(v) = &cm.variant {
+        let arm_body_max = v
+            .arms
+            .iter()
+            .chain(v.default_arm.iter())
+            .filter_map(|arm| {
+                resolve_import_max(&arm.body_alias, imports, base_dir, visited)
+            })
+            .max()
+            .unwrap_or(0);
+        cm.max_frame_bytes() + arm_body_max
+    } else {
+        let repeat_body_max: u32 = cm
+            .fields
+            .iter()
+            .filter(|f| f.is_repeat())
+            .filter_map(|f| {
+                let alias = f.repeat_body_alias.as_deref()?;
+                let body_max =
+                    resolve_import_max(alias, imports, base_dir, visited)?;
+                let count = forge::limits::resolve_max_count(f.max_count);
+                Some(body_max.saturating_mul(count))
+            })
+            .sum();
+        let tlv_chain_body_max: u32 = cm
+            .fields
+            .iter()
+            .filter(|f| f.is_tlv_chain())
+            .filter_map(|f| {
+                let alias = f.tlv_chain_body_alias.as_deref()?;
+                let body_max =
+                    resolve_import_max(alias, imports, base_dir, visited)?;
+                let max_depth = match &f.bit_size {
+                    BitSize::TlvChain { max_depth, .. } => *max_depth,
+                    _ => return None,
+                };
+                Some(body_max.saturating_mul(max_depth))
+            })
+            .sum();
+        cm.max_frame_bytes() + repeat_body_max + tlv_chain_body_max
+    }
+}
+
 /// Validate and enrich `<sce:import>` declarations in a single pass.
 ///
 /// For each import, reads the file once and performs:
@@ -608,13 +737,29 @@ fn validate_and_enrich_imports(
             diagnostic_label: basename,
         };
 
-        if let Some(doc) = forge::parser::parse_forge(&content, imported_label)? {
-            // RFC §5.B variant primitive (B1-β): codec imports carry
-            // their max_frame_bytes forward so the parent codec's
-            // variant emit can size its encoded buffer to fit the
-            // worst-case arm body. Non-codec imports leave it `None`.
+        if let Some(parsed) = forge::parser::parse_forge_with_imports(&content, imported_label)? {
+            let doc = parsed.document;
+            // RFC §5.B variant primitive (B1-β) + B5-ε surface G:
+            // codec imports carry their *full recursive* max_frame_bytes
+            // forward so the parent codec's variant emit / TLV chain
+            // emit / repeat emit can size its encoded buffer to fit the
+            // worst-case body even when the imported codec is itself
+            // variant-bearing (carries its own arm bodies that
+            // model-level `max_frame_bytes()` ignores). Non-codec
+            // imports leave it `None`.
             if let forge::model::ForgeDocument::Codec(cm) = &doc {
-                ctx.codec_max_bytes = Some(cm.max_frame_bytes());
+                let mut visited: HashSet<PathBuf> = HashSet::new();
+                visited.insert(src_path.clone());
+                let inner_base = src_path
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| base_dir.to_path_buf());
+                ctx.codec_max_bytes = Some(compute_codec_recursive_max_bytes(
+                    cm,
+                    &parsed.imports,
+                    &inner_base,
+                    &mut visited,
+                ));
                 // RFC §5.B B5-γ: capture the imported body codec's
                 // parent-flags dependency (if any) so the parent
                 // codec's variant arm dispatcher can thread the
