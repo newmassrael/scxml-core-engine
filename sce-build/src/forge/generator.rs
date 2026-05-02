@@ -685,9 +685,23 @@ pub fn generate_cpp_with_imports(
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
-    Ok(GeneratedOutput {
-        files: vec![(filename, code)],
-    })
+    let mut files = vec![(filename, code)];
+    // RFC §5.B B2-test-vector: sidecar `<fixture>_test.h` emits
+    // alongside the algorithm header when `<sce:test-vector>` rows
+    // are declared. The C++ conformance harness conditionally
+    // `#include`s the sidecar and folds the returned failure count
+    // into its global `g_failures` accumulator (matches the C11
+    // harness contract verbatim).
+    if let ForgeDocument::Algorithm(m) = doc {
+        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Cpp,
+        )? {
+            files.push(sidecar);
+        }
+    }
+    Ok(GeneratedOutput { files })
 }
 
 // ── Transform rendering (unified) ─────────────────────────────
@@ -9602,21 +9616,25 @@ fn render_algorithm(
     use crate::forge::types::{InferredType, TypeCtx};
     use crate::generator::Language;
     // RFC §5.B B2-test-vector closure rotation: the trunk shipped
-    // Rust + C11; the Kotlin closure widens the supported set. The
-    // remaining un-shipped backends (Cpp / Go / Python) reject here
-    // with the typed `generate/unsupported-feature` until each
-    // closure lifts the gate. Without this rejection the codegen
-    // would silently drop the declared test vectors — author would
-    // ship apparently-valid algorithm output against an SCXML whose
-    // round-trip oracle is never exercised, defeating the RFC §5.B
-    // cross-backend byte-equivalence acceptance gate.
+    // Rust + C11; subsequent closures widen the supported set
+    // (Kotlin → Cpp). The remaining un-shipped backends
+    // (Go / Python) reject here with the typed
+    // `generate/unsupported-feature` until each closure lifts the
+    // gate. Without this rejection the codegen would silently drop
+    // the declared test vectors — author would ship apparently-valid
+    // algorithm output against an SCXML whose round-trip oracle is
+    // never exercised, defeating the RFC §5.B cross-backend
+    // byte-equivalence acceptance gate.
     if !m.test_vectors.is_empty()
-        && !matches!(lang, Language::Rust | Language::C11 | Language::Kotlin)
+        && !matches!(
+            lang,
+            Language::Rust | Language::C11 | Language::Kotlin | Language::Cpp
+        )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "algorithm '{name}': <sce:test-vector> sidecar emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin; Cpp / Go / Python land in remaining closures)",
+                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin + Cpp; Go / Python land in remaining closures)",
                 name = m.name,
             )),
         ));
@@ -9814,14 +9832,17 @@ fn render_algorithm_test_vector_sidecar(
     if m.test_vectors.is_empty() {
         return Ok(None);
     }
-    if !matches!(lang, Language::Rust | Language::C11 | Language::Kotlin) {
+    if !matches!(
+        lang,
+        Language::Rust | Language::C11 | Language::Kotlin | Language::Cpp
+    ) {
         // Defensive: render_algorithm already gated this combination.
         // Returning the same typed error keeps the contract single-sourced
         // for any caller that bypasses render_algorithm.
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "algorithm '{name}': <sce:test-vector> sidecar emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin; Cpp / Go / Python land in remaining closures)",
+                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin + Cpp; Go / Python land in remaining closures)",
                 name = m.name,
             )),
         ));
@@ -10027,10 +10048,22 @@ fn render_algorithm_test_vector_sidecar(
         minijinja::Value::from_serialize(&rows),
     );
 
-    if matches!(lang, Language::C11) {
+    if matches!(lang, Language::C11 | Language::Cpp) {
+        // C11 + Cpp share the include-guard symbol shape — both
+        // sidecars are header files whose include guard mirrors the
+        // primary header's `SCE_FORGE_<NAME>_H` form (with `_TEST`
+        // inserted). The cpp sidecar additionally consumes
+        // `name_pascal` to emit the qualified namespace path
+        // `SCE::Generated::<Pascal>::<name>` for the function call.
         let guard = format!("SCE_FORGE_{}_TEST_H", to_upper_snake(&m.name));
         ctx.insert("guard".into(), guard.into());
         ctx.insert("has_bytes_param".into(), true.into());
+    }
+    if matches!(lang, Language::Cpp) {
+        ctx.insert(
+            "name_pascal".into(),
+            filters::to_pascal_case(m.name.clone()).into(),
+        );
     }
     if matches!(lang, Language::Kotlin) {
         // The forge Kotlin env does not register `to_pascal_case` /
@@ -10065,13 +10098,13 @@ fn render_algorithm_test_vector_sidecar(
     })?;
     // Filename idiom matches the per-language convention for the
     // primary algorithm output: snake-case `<snake>_test.{rs,h}`
-    // for Rust + C11; Pascal-case `<Pascal>TestVectors.kt` for
-    // Kotlin so the file name agrees with the contained class name
-    // (Kotlin convention; gradle uses no special discovery beyond
-    // the `jvmTest` source-set wiring).
+    // for Rust + C11 + Cpp; Pascal-case `<Pascal>TestVectors.kt`
+    // for Kotlin so the file name agrees with the contained class
+    // name (Kotlin convention; gradle uses no special discovery
+    // beyond the `jvmTest` source-set wiring).
     let filename = match lang {
         Language::Rust => format!("{snake}_test.rs"),
-        Language::C11 => format!("{snake}_test.h"),
+        Language::C11 | Language::Cpp => format!("{snake}_test.h"),
         Language::Kotlin => format!(
             "{}TestVectors.kt",
             filters::to_pascal_case(m.name.clone())

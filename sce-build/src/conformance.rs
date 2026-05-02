@@ -1024,7 +1024,10 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
 pub fn lang_supports_fixture(lang: Language, spec: &FixtureSpec) -> bool {
     match spec {
         FixtureSpec::Algorithm { has_test_vectors: true, .. } => {
-            matches!(lang, Language::Rust | Language::C11 | Language::Kotlin)
+            matches!(
+                lang,
+                Language::Rust | Language::C11 | Language::Kotlin | Language::Cpp
+            )
         }
         _ => true,
     }

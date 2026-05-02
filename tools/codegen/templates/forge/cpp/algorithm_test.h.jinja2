@@ -1,0 +1,50 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.B B2-test-vector: per-fixture C++ test-vector sidecar.
+   Aggregates every `<sce:test-vector>` row into a single
+   `static inline int test_vector_<fixture>()` returning the
+   row-failure count. The C++ conformance harness folds the return
+   value into its global `g_failures` counter, matching the C11
+   harness contract verbatim. The header includes the sibling
+   algorithm header so the function symbol resolves regardless of
+   include order in the harness TU. Bytes literals lower to a
+   C-style array (extent auto-deduced by the compiler) constructed
+   into `std::span<const std::uint8_t>` per RFC §5.J.5 (cpp
+   `algorithm_param_type` arm). #}
+
+/* SCE Forge: Auto-generated test-vector sidecar (RFC §5.B B2) */
+/* Companion to {{ name }}.h — do not edit; regenerate from the source SCXML. */
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <cstdio>
+#include <span>
+#include "{{ name }}.h"
+
+static inline int test_vector_{{ name }}() {
+    int failures = 0;
+{% for tv in test_vectors %}
+    {
+{% if tv.hex_bytes %}
+        static constexpr std::uint8_t row_bytes[] = { {{ tv.hex_bytes_literal }} };
+        const {{ return_type }} actual = SCE::Generated::{{ name_pascal }}::{{ name }}(std::span<const std::uint8_t>{row_bytes});
+{% else %}
+        const {{ return_type }} actual = SCE::Generated::{{ name_pascal }}::{{ name }}(std::span<const std::uint8_t>{});
+{% endif %}
+        const {{ return_type }} expected = {{ tv.value_literal_c }};
+        if (actual != expected) {
+            std::fprintf(stderr,
+                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: actual={{ tv.printf_fmt }} expected={{ tv.printf_fmt }}\n",
+                static_cast<{{ tv.printf_cast }}>(actual), static_cast<{{ tv.printf_cast }}>(expected));
+            ++failures;
+        }
+    }
+{% endfor %}
+    return failures;
+}
+
+#endif  /* {{ guard }} */

@@ -27,6 +27,14 @@
 
 {% for f in fixtures %}
 #include "{{ f.name }}.h"
+{# RFC §5.B B2-test-vector: per-fixture sidecar header carries
+   `static inline int test_vector_<fixture>()` returning the
+   row-failure count. Folded into `g_failures` from main(); the
+   header guard prevents double-include if the sidecar is reached
+   transitively in the future. #}
+{% if f.has_test_vectors %}
+#include "{{ f.name }}_test.h"
+{% endif %}
 {% endfor %}
 
 using json = nlohmann::json;
@@ -117,6 +125,9 @@ int main() {
 
 {% for f in fixtures %}
     test_{{ f.name }}(ref{% if f.kind == "interpolation" or f.kind == "transform" or f.kind == "filter" or f.kind == "lookup" or f.kind == "algorithm" %}, tol{% endif %});
+{% if f.has_test_vectors %}
+    g_failures += test_vector_{{ f.name }}();
+{% endif %}
 {% endfor %}
 
     if (g_failures > 0) {
