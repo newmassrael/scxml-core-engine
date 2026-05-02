@@ -96,6 +96,7 @@
         "codec/variant-arm-unreachable",
         "codec/present-if-refs-later-field",
         "codec/repeat-count-refs-later-field",
+        "algorithm/test-vector-unsupported-kind",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

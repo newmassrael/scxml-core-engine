@@ -427,6 +427,36 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- ═══════════════════════════════════════════════════════════════
+       Test vector — RFC §5.B "Test vector" (B2-test-vector)
+
+       Inline reference oracle declared as a top-level child of an
+       algorithm <scxml> root:
+
+         <sce:test-vector hex="313233343536373839" value="0x29B1"/>
+
+       Both attributes are required; hex must be even-length hex-only;
+       value is parsed in v1 as a boolean / signed-integer / unsigned-
+       integer literal compatible with the algorithm's declared return
+       type. v1 supports `sce:kind="algorithm"` only — declaring this
+       element under any other kind rejects with
+       `algorithm/test-vector-unsupported-kind`; codec multi-field
+       test vectors defer to B5 alongside the Zenoh msg-set authoring.
+
+       Diagnostics:
+         - test-vector under non-algorithm kind →
+             algorithm/test-vector-unsupported-kind
+         - missing hex / value attribute → validation/missing-attribute
+         - malformed hex / value literal → validation/invalid-attribute
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <xs:element name="test-vector">
+    <xs:complexType>
+      <xs:attribute name="hex" type="xs:string" use="required"/>
+      <xs:attribute name="value" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
   <!--
     Section 4.7: Validator rules use data-attribute form only.
     Validation attributes (sce:range-min, sce:range-max, sce:max-delta,

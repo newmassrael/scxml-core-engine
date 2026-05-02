@@ -922,6 +922,194 @@ fn forge_codec_repeat_forward_count_rejects() {
     );
 }
 
+// ── RFC §5.B test-vector primitive (B2-test-vector prep) ─────
+// `<sce:test-vector hex value/>` parses into AlgorithmModel.test_vectors
+// for sce:kind="algorithm" only. Multi-field codec test vectors defer
+// to B5 alongside the Zenoh msg-set authoring; v1 rejects test-vector
+// declarations under any other kind so the deferral is explicit and
+// authors don't silently lose oracle coverage. The four tests below
+// pin (1) the positive parse path, (2) the kind-gate rejection, and
+// (3+4) the two attribute-text-level malformations that reuse the
+// generic validation/invalid-attribute slot.
+
+/// Positive: an algorithm with a single `<sce:test-vector>` parses
+/// cleanly into the IR. Verifies the canonical RFC §5.B example
+/// (CRC16-CCITT-FALSE: "123456789" → 0x29B1) round-trips through the
+/// hex decoder and the integer literal parser, and that the source
+/// line of the element is preserved for future per-backend test
+/// function naming.
+#[test]
+fn forge_algorithm_test_vector_parses() {
+    use sce_build::forge::model::{ForgeDocument, TestVectorValue};
+    use sce_build::forge::parser::parse_forge;
+    use sce_build::DocumentLabel;
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="crc_oracle">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0xFFFF"/>
+  </sce:body>
+  <sce:test-vector hex="313233343536373839" value="0x29B1"/>
+</scxml>"#;
+
+    let doc = parse_forge(scxml, DocumentLabel::symmetric("crc_oracle"))
+        .expect("algorithm with <sce:test-vector> must parse cleanly")
+        .expect("fixture is sce:kind=\"algorithm\"");
+    let alg = match doc {
+        ForgeDocument::Algorithm(m) => m,
+        other => panic!("expected Algorithm doc, got {:?}", other.kind()),
+    };
+
+    assert_eq!(alg.test_vectors.len(), 1, "fixture declares one <sce:test-vector>");
+    let tv = &alg.test_vectors[0];
+    assert_eq!(
+        tv.hex,
+        vec![0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39],
+        "hex='313233343536373839' decodes to ASCII '123456789' bytes"
+    );
+    assert_eq!(
+        tv.value,
+        TestVectorValue::Uint(0x29B1),
+        "value='0x29B1' parses as Uint(0x29B1) for uint16 return type"
+    );
+    assert!(
+        tv.source_line >= 1,
+        "source_line tracks the SCXML row of the <sce:test-vector> element"
+    );
+}
+
+/// Negative: `<sce:test-vector>` declared under `sce:kind="codec"` (or
+/// any non-algorithm kind) rejects with the typed
+/// `algorithm/test-vector-unsupported-kind` diagnostic so the v1
+/// algorithm-only restriction is explicit at parse time. Multi-field
+/// codec oracle grammar defers to B5 — until then, codec round-trips
+/// belong in the existing numerical_reference.json harness.
+#[test]
+fn forge_test_vector_on_codec_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use sce_build::forge::model::ForgeKind;
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="frame_codec">
+  <datamodel>
+    <sce:field id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+  <sce:test-vector hex="01" value="0x01"/>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("frame_codec"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "<sce:test-vector> under sce:kind=\"codec\" must reject \
+             with algorithm/test-vector-unsupported-kind"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::TestVectorUnsupportedKind {
+                ref name,
+                kind: ForgeKind::Codec,
+            }) if name == "frame_codec"
+        ),
+        "must surface as ValidationError::TestVectorUnsupportedKind naming the document and the rejected kind; got: {:?}",
+        err.error
+    );
+}
+
+/// Negative: malformed `hex` (odd-length) reuses the generic
+/// `validation/invalid-attribute` slot — the repair stays
+/// attribute-text-level (fix the hex string), no new diagnostic
+/// variant warranted.
+#[test]
+fn forge_test_vector_invalid_hex_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use sce_build::forge::parser::parse_forge;
+    use sce_build::DocumentLabel;
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="crc_oracle">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0xFFFF"/>
+  </sce:body>
+  <sce:test-vector hex="ABC" value="0x29B1"/>
+</scxml>"#;
+
+    let err = parse_forge(scxml, DocumentLabel::symmetric("crc_oracle"))
+        .err()
+        .expect("odd-length hex must reject");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute {
+                ref attr,
+                ..
+            }) if attr == "hex"
+        ),
+        "odd-length hex must surface as InvalidAttribute on attr='hex'; got: {:?}",
+        err.error
+    );
+}
+
+/// Negative: malformed `value` literal (non-numeric on integer return
+/// type) reuses `validation/invalid-attribute`. Same rationale as the
+/// hex case — repair stays attribute-text-level.
+#[test]
+fn forge_test_vector_invalid_value_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use sce_build::forge::parser::parse_forge;
+    use sce_build::DocumentLabel;
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="crc_oracle">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0xFFFF"/>
+  </sce:body>
+  <sce:test-vector hex="01" value="not_a_number"/>
+</scxml>"#;
+
+    let err = parse_forge(scxml, DocumentLabel::symmetric("crc_oracle"))
+        .err()
+        .expect("non-numeric value on integer return type must reject");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute {
+                ref attr,
+                ..
+            }) if attr == "value"
+        ),
+        "non-numeric value must surface as InvalidAttribute on attr='value'; got: {:?}",
+        err.error
+    );
+}
+
 // ── RFC §5.B variant primitive (B1-β trunk) ──────────────────
 // `codec_variant_dispatch` imports two arm-body codecs and exposes
 // the discriminated-union shape across Rust + Cpp. Sub-codecs ship

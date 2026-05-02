@@ -1527,6 +1527,51 @@ pub struct AlgorithmModel {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub consts: Vec<AlgorithmConst>,
     pub body: Vec<AlgorithmStmt>,
+    /// RFC §5.B "Test vector": inline `<sce:test-vector hex value/>`
+    /// reference oracles. Each entry generates a per-backend round-trip
+    /// test that runs the algorithm on `hex` and asserts the return
+    /// value equals `value`. v1 supports algorithm kind only with
+    /// scalar return — multi-field codec test-vector defers to B5.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub test_vectors: Vec<TestVector>,
+}
+
+/// RFC §5.B test-vector value literal. v1 covers the scalar types an
+/// algorithm signature can return; child-element form for multi-field
+/// codec results defers to B5 alongside the Zenoh msg-set authoring
+/// where the consumer signal first lands.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(tag = "type", content = "value")]
+pub enum TestVectorValue {
+    /// Boolean literal (`true` / `false`).
+    #[serde(rename = "bool")]
+    Bool(bool),
+    /// Unsigned integer literal (`0x29B1`, `42`). Source preserved as
+    /// `u64` and narrowed at codegen time against the algorithm's
+    /// declared return type.
+    #[serde(rename = "uint")]
+    Uint(u64),
+    /// Signed integer literal (`-1`, `-127`). Distinct from `Uint` so
+    /// the per-backend emitter can pick the correct signed integer
+    /// type without inference.
+    #[serde(rename = "int")]
+    Int(i64),
+}
+
+/// Single `<sce:test-vector hex value/>` row (RFC §5.B). Captures the
+/// declared input bytes and expected output literal; the emitter pairs
+/// these with the algorithm's signature to render an idiomatic
+/// per-backend test function.
+#[derive(Debug, Clone, Serialize)]
+pub struct TestVector {
+    /// Decoded input bytes (parsed from the `hex=` attribute).
+    pub hex: Vec<u8>,
+    /// Expected return value.
+    pub value: TestVectorValue,
+    /// 1-based source line of the `<sce:test-vector>` element.
+    /// Round-tripped to per-backend test-function naming so authors
+    /// reading a failing test can find the SCXML row that produced it.
+    pub source_line: usize,
 }
 
 // ── Forge document ─────────────────────────────────────────────

@@ -140,6 +140,23 @@ fn parse_forge_from_node(
     label: DocumentLabel<'_>,
     kind: ForgeKind,
 ) -> Result<ForgeDocument, Located<ForgeError>> {
+    // RFC §5.B "Test vector": v1 supports algorithm kind only.
+    // Reject `<sce:test-vector>` elements declared under any other
+    // kind here so the rejection anchors at the offending element
+    // rather than at codegen time. Multi-field codec test vectors
+    // defer to B5 alongside the Zenoh msg-set authoring.
+    if !matches!(kind, ForgeKind::Algorithm) {
+        if let Some(tv_node) = find_sce_child(root, "test-vector") {
+            return Err(located(
+                &tv_node,
+                label.diagnostic_label,
+                ValidationError::TestVectorUnsupportedKind {
+                    name: label.identifier.to_string(),
+                    kind,
+                },
+            ));
+        }
+    }
     match kind {
         ForgeKind::Transform => parse_transform(root, label).map(ForgeDocument::Transform),
         ForgeKind::Lookup => parse_lookup(root, label).map(ForgeDocument::Lookup),
@@ -2930,12 +2947,206 @@ fn parse_algorithm(
         ));
     }
 
+    let test_vectors = parse_test_vectors(root, &signature, label.diagnostic_label)?;
+
     Ok(AlgorithmModel {
         name: label.identifier.to_string(),
         signature,
         consts,
         body,
+        test_vectors,
     })
+}
+
+// ── RFC §5.B test-vector parsing (B2-test-vector-prep) ──────────
+//
+// `<sce:test-vector hex="313233343536373839" value="0x29B1"/>` —
+// inline reference oracle. v1 covers algorithm kind only with scalar
+// return; multi-field codec test vectors defer to B5. Both attributes
+// are required; hex must be even-length hex-only; value must be a
+// numeric or boolean literal compatible with the algorithm's declared
+// return type (mismatches reuse `validation/invalid-attribute` —
+// repair stays attribute-text-level).
+
+fn parse_test_vectors(
+    root: &roxmltree::Node,
+    signature: &AlgorithmSignature,
+    diagnostic_label: &str,
+) -> Result<Vec<TestVector>, Located<ForgeError>> {
+    let mut vectors = Vec::new();
+    for child in root.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
+            || child.tag_name().name() != "test-vector"
+        {
+            continue;
+        }
+        vectors.push(parse_one_test_vector(&child, signature, diagnostic_label)?);
+    }
+    Ok(vectors)
+}
+
+fn parse_one_test_vector(
+    node: &roxmltree::Node,
+    signature: &AlgorithmSignature,
+    diagnostic_label: &str,
+) -> Result<TestVector, Located<ForgeError>> {
+    let hex_attr = node.attribute("hex").ok_or_else(|| {
+        located(
+            node,
+            diagnostic_label,
+            ValidationError::MissingAttribute {
+                element: "sce:test-vector".into(),
+                attr: "hex".into(),
+            },
+        )
+    })?;
+    let value_attr = node.attribute("value").ok_or_else(|| {
+        located(
+            node,
+            diagnostic_label,
+            ValidationError::MissingAttribute {
+                element: "sce:test-vector".into(),
+                attr: "value".into(),
+            },
+        )
+    })?;
+
+    let hex = decode_hex(hex_attr).map_err(|reason| {
+        located(
+            node,
+            diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "sce:test-vector".into(),
+                attr: "hex".into(),
+                value: hex_attr.to_string(),
+                expected: reason,
+            },
+        )
+    })?;
+
+    let return_type = signature.return_type.as_ref().ok_or_else(|| {
+        located(
+            node,
+            diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "sce:test-vector".into(),
+                attr: "value".into(),
+                value: value_attr.to_string(),
+                expected: "<sce:test-vector> requires a non-void return type on the algorithm signature; declare <sce:return type=\"...\"/> before adding test vectors".into(),
+            },
+        )
+    })?;
+
+    let value = parse_test_vector_value(value_attr, return_type).map_err(|reason| {
+        located(
+            node,
+            diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "sce:test-vector".into(),
+                attr: "value".into(),
+                value: value_attr.to_string(),
+                expected: reason,
+            },
+        )
+    })?;
+
+    Ok(TestVector {
+        hex,
+        value,
+        source_line: node.document().text_pos_at(node.range().start).row as usize,
+    })
+}
+
+fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
+    if s.is_empty() {
+        return Ok(Vec::new());
+    }
+    if s.len() % 2 != 0 {
+        return Err(format!(
+            "hex string must have an even number of digits (got {} characters)",
+            s.len()
+        ));
+    }
+    let mut bytes = Vec::with_capacity(s.len() / 2);
+    let bs = s.as_bytes();
+    for i in (0..bs.len()).step_by(2) {
+        let hi = hex_nibble(bs[i])?;
+        let lo = hex_nibble(bs[i + 1])?;
+        bytes.push((hi << 4) | lo);
+    }
+    Ok(bytes)
+}
+
+fn hex_nibble(b: u8) -> Result<u8, String> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(10 + (b - b'a')),
+        b'A'..=b'F' => Ok(10 + (b - b'A')),
+        _ => Err(format!(
+            "invalid hex character '{}' (allowed: 0-9, a-f, A-F)",
+            b as char
+        )),
+    }
+}
+
+fn parse_test_vector_value(s: &str, return_type: &SceType) -> Result<TestVectorValue, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err("value attribute is empty".into());
+    }
+    if matches!(return_type, SceType::Bool) {
+        return match trimmed {
+            "true" => Ok(TestVectorValue::Bool(true)),
+            "false" => Ok(TestVectorValue::Bool(false)),
+            _ => Err(format!(
+                "expected boolean literal 'true' or 'false' for bool return type (got '{trimmed}')"
+            )),
+        };
+    }
+    let is_integer = return_type.is_signed() || return_type.is_unsigned();
+    if !is_integer {
+        return Err(format!(
+            "<sce:test-vector value> only supports bool/integer scalar return types in v1; got '{return_type:?}' — multi-field codec or float-result test vectors defer to B5"
+        ));
+    }
+
+    let (negative, digits) = if let Some(rest) = trimmed.strip_prefix('-') {
+        (true, rest.trim_start())
+    } else {
+        (false, trimmed)
+    };
+
+    let magnitude = if let Some(rest) = digits.strip_prefix("0x").or_else(|| digits.strip_prefix("0X")) {
+        u64::from_str_radix(rest, 16).map_err(|e| format!(
+            "invalid hex literal after '0x': {e}"
+        ))?
+    } else if let Some(rest) = digits.strip_prefix("0b").or_else(|| digits.strip_prefix("0B")) {
+        u64::from_str_radix(rest, 2).map_err(|e| format!(
+            "invalid binary literal after '0b': {e}"
+        ))?
+    } else {
+        digits.parse::<u64>().map_err(|e| format!(
+            "invalid decimal integer literal: {e}"
+        ))?
+    };
+
+    if negative {
+        if !return_type.is_signed() {
+            return Err(format!(
+                "negative value not allowed for unsigned return type {return_type:?}"
+            ));
+        }
+        let signed = i64::try_from(magnitude)
+            .map(|n| -n)
+            .map_err(|_| format!("value '-{magnitude}' overflows i64"))?;
+        Ok(TestVectorValue::Int(signed))
+    } else if return_type.is_signed() {
+        let signed = i64::try_from(magnitude)
+            .map_err(|_| format!("value '{magnitude}' overflows i64"))?;
+        Ok(TestVectorValue::Int(signed))
+    } else {
+        Ok(TestVectorValue::Uint(magnitude))
+    }
 }
 
 fn parse_algorithm_signature(

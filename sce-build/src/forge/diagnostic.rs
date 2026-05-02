@@ -511,6 +511,15 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/repeat-count-refs-later-field")]
     CodecRepeatCountRefsLaterField,
 
+    // ── §5.B test-vector primitive (watching-zenoh RFC §5.B B2) ──
+    //    `<sce:test-vector hex value/>` is supported only on
+    //    `sce:kind="algorithm"` in v1. Multi-field codec test vectors
+    //    defer to B5 alongside the Zenoh msg-set authoring; until
+    //    then the existing `numerical_reference.json` oracle harness
+    //    is the route for codec round-trips. Stage = Validation. ──
+    #[serde(rename = "algorithm/test-vector-unsupported-kind")]
+    AlgorithmTestVectorUnsupportedKind,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -824,6 +833,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecPresentIfRefsLaterField,
         // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
         CodecRepeatCountRefsLaterField,
+        // Algorithm §5.B test-vector primitive (watching-zenoh RFC §5.B, B2-test-vector)
+        AlgorithmTestVectorUnsupportedKind,
         // Io
         IoFilesystem,
         // Cli
@@ -1030,7 +1041,8 @@ impl DiagnosticCode {
             // ── Codec §5.B variant + present-if + repeat primitives (B1-β/δ + B2) ─
             CodecVariantArmUnreachable
             | CodecPresentIfRefsLaterField
-            | CodecRepeatCountRefsLaterField => Some("watching-zenoh RFC §5.B"),
+            | CodecRepeatCountRefsLaterField
+            | AlgorithmTestVectorUnsupportedKind => Some("watching-zenoh RFC §5.B"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1292,6 +1304,7 @@ impl DiagnosticCode {
             CodecVariantArmUnreachable => "codec/variant-arm-unreachable",
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
+            AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2139,6 +2152,19 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(field.clone()),
             fix: None,
             key_fragments: vec![codec.clone(), field.clone(), refers_to.clone()],
+        },
+        ValidationError::TestVectorUnsupportedKind { name, kind } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmTestVectorUnsupportedKind,
+            stage: Stage::Validation,
+            // Repair is structural (move the test vector to an
+            // algorithm file, or use the JSON oracle harness). The
+            // (name, kind-as-attr) pair keys the violation; kind is
+            // serialised through ForgeKind::Debug to match how the
+            // error's Display surfaces it.
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), format!("{kind:?}")],
         },
     }
 }
@@ -3440,6 +3466,16 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f1e97717ebdba39a","code":"codec/repeat-count-refs-later-field","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'fragment_burst': repeat field 'frags' has sce:count=\"num_frags\" but 'num_frags' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute","actual":"frags"}"#,
             ),
+            // ── §5.B test-vector primitive (watching-zenoh RFC §5.B, B2-test-vector) ─
+            (
+                "forge/algorithm-test-vector-unsupported-kind",
+                ValidationError::TestVectorUnsupportedKind {
+                    name: "session_envelope".into(),
+                    kind: ForgeKind::Codec,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7f83a6a6349e726e","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" in v1, but 'session_envelope' declares sce:kind=\"Codec\" — multi-field codec test vectors defer to B5 (Zenoh msg-set authoring); use the numerical_reference.json oracle harness for codec round-trips until then","actual":"session_envelope"}"#,
+            ),
         ]
     }
 
@@ -4687,6 +4723,7 @@ mod tests {
             | CodecVariantArmUnreachable
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
+            | AlgorithmTestVectorUnsupportedKind
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -5027,6 +5064,7 @@ mod tests {
                 | CodecVariantArmUnreachable
                 | CodecPresentIfRefsLaterField
                 | CodecRepeatCountRefsLaterField
+                | AlgorithmTestVectorUnsupportedKind
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5110,12 +5148,12 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            167,
+            168,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 167 distinct variants to match the DiagnosticCode \
-             enum (watching-zenoh RFC §5.B B2 added the repeat \
-             primitive's build-time forward-reference check: \
-             CodecRepeatCountRefsLaterField; 166 → 167).",
+             expected 168 distinct variants to match the DiagnosticCode \
+             enum (watching-zenoh RFC §5.B B2-test-vector added the \
+             algorithm-only v1 gate: \
+             AlgorithmTestVectorUnsupportedKind; 167 → 168).",
         );
     }
 
