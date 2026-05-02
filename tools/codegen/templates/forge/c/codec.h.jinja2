@@ -250,9 +250,11 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
     }
-{% else %}{# length-ref #}
+{% else %}{# length-ref — RFC §5.B B5-δ Surface F: length_n_expr folds
+            in `sce:length-arith` (defaults to bare `(size_t)out->...`
+            when arith=0 to keep historical goldens byte-stable). #}
     {
-        size_t _n = (size_t)out->{{ field.length_field }};
+        size_t _n = {{ field.length_n_expr }};
         if (_n > {{ field.max_size }} || {{ field.byte_off }} + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;

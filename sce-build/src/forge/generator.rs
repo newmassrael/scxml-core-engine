@@ -1298,6 +1298,37 @@ fn render_codec(
                     if matches!(f.bit_size, BitSize::LengthRef) {
                         if let Some(lf) = &f.length_field {
                             obj.insert("length_field".into(), l.codec_field_id(lf).into());
+                            // RFC §5.B B5-δ Surface F: positional-decode
+                            // `_n` expression honoring `length-arith`.
+                            // C11 template reads this verbatim into the
+                            // `(size_t)out->...` slot to apply the
+                            // additive offset (the bare `length_field`
+                            // entry stays available for callers that
+                            // never want arith — keeps the template
+                            // back-compat seam clean).
+                            let arith = f.length_arith.unwrap_or(0);
+                            let n_expr = if arith == 0 {
+                                format!("(size_t)out->{}", l.codec_field_id(lf))
+                            } else if arith > 0 {
+                                format!("(size_t)((int64_t)out->{} + {arith})", l.codec_field_id(lf))
+                            } else {
+                                format!("(size_t)((int64_t)out->{} - {})", l.codec_field_id(lf), -arith)
+                            };
+                            obj.insert("length_n_expr".into(), n_expr.into());
+                            // Encode-side mirror — symmetric upper bound
+                            // for the C11 byte-copy loop. Stays
+                            // byte-stable when arith == 0 by emitting
+                            // bare `self->...` (matches the historical
+                            // template form documented in
+                            // `compute_n_c11_encode`).
+                            let n_expr_encode = if arith == 0 {
+                                format!("self->{}", l.codec_field_id(lf))
+                            } else if arith > 0 {
+                                format!("(size_t)((int64_t)self->{} + {arith})", l.codec_field_id(lf))
+                            } else {
+                                format!("(size_t)((int64_t)self->{} - {})", l.codec_field_id(lf), -arith)
+                            };
+                            obj.insert("length_n_expr_encode".into(), n_expr_encode.into());
                         }
                     }
                 }
@@ -3523,6 +3554,23 @@ fn present_if_decode_tail(
 /// already decoded into a local. When the predicate fires the bytes
 /// are consumed; when it doesn't, the codec assumes the author kept
 /// the length field at 0 (trust contract) and skips zero bytes.
+///
+/// RFC §5.B B5-δ Surfaces D + E + F extensions:
+/// - **D (VLE-length-ref)**: when the sibling field is `BitSize::Vle`,
+///   the streaming path binds it as a typed integer local before this
+///   helper runs, so `<len_field> as usize` works without code changes
+///   here. Tested by `codec_init_cookie_body`.
+/// - **E (gated length sibling)**: when the sibling itself carries
+///   `present-if`, its host-language type is wrapped (Option/optional/
+///   nullable/pointer); inside the `if predicate` branch this helper
+///   unwraps it (`.unwrap()` / `.value()` / `!!` / `*p` / pass-through
+///   for Python+C11 which lack a wrapper). Trust contract: payload's
+///   predicate matches sibling's predicate, so unwrap is safe inside
+///   the branch.
+/// - **F (length arithmetic)**: when `field.length_arith` is `Some(n)`,
+///   the byte count read from the cursor is `sibling_value + n` (v1
+///   restricts `n ∈ {-1, +1}`). First reachable consumer:
+///   zenoh-pico Scout/Hello/Init `zid` packing.
 fn present_if_decode_length_ref(
     field: &CodecField,
     fields: &[CodecField],
@@ -3535,10 +3583,27 @@ fn present_if_decode_length_ref(
         .length_field
         .as_deref()
         .expect("LengthRef bit_size requires sce:length-field attribute");
+    let sibling_gated = fields
+        .iter()
+        .find(|x| x.id == len_field)
+        .is_some_and(|x| x.present_if.is_some());
+    let arith = field.length_arith.unwrap_or(0);
+    // Per-language sibling value expression (inside the gated if-branch
+    // when payload is gated; outside otherwise). The non-gated arm
+    // requires sibling to be non-gated too (parser doesn't enforce this
+    // — it's the author trust contract; gated sibling + non-gated
+    // payload would emit code that reads the optional as if it were
+    // unwrapped).
+    let n_rust = compute_n_rust(len_field, sibling_gated, arith);
+    let n_cpp = compute_n_cpp(len_field, sibling_gated, arith);
+    let n_kotlin = compute_n_kotlin(len_field, sibling_gated, arith);
+    let n_go = compute_n_go(len_field, sibling_gated, arith);
+    let n_python = compute_n_python(len_field, sibling_gated, arith);
+    let n_c11 = compute_n_c11(len_field, sibling_gated, arith);
     match (lang, &field.present_if) {
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
-                 let _n = {len_field} as usize;\n            \
+                 let _n = {n_rust};\n            \
                  let raw = cursor.peek_slice(_n)?;\n            \
                  let _v = raw.to_vec();\n            \
                  cursor.advance(_n)?;\n            \
@@ -3549,7 +3614,7 @@ fn present_if_decode_length_ref(
             let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
-                     let _n = {len_field} as usize;\n            \
+                     let _n = {n_rust};\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = raw.to_vec();\n            \
                      cursor.advance(_n)?;\n            \
@@ -3562,7 +3627,7 @@ fn present_if_decode_length_ref(
         (Language::Cpp, None) => format!(
             "std::vector<uint8_t> {id};\n        \
              {{\n            \
-                 std::size_t _n = static_cast<std::size_t>({len_field});\n            \
+                 std::size_t _n = {n_cpp};\n            \
                  const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
                  if (raw == nullptr) return std::nullopt;\n            \
                  {id}.assign(raw, raw + _n);\n            \
@@ -3574,7 +3639,7 @@ fn present_if_decode_length_ref(
             format!(
                 "std::optional<std::vector<uint8_t>> {id};\n        \
                  if ({test}) {{\n            \
-                     std::size_t _n = static_cast<std::size_t>({len_field});\n            \
+                     std::size_t _n = {n_cpp};\n            \
                      const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
                      if (raw == nullptr) return std::nullopt;\n            \
                      {id}.emplace(raw, raw + _n);\n            \
@@ -3584,7 +3649,7 @@ fn present_if_decode_length_ref(
         }
         (Language::Kotlin, None) => format!(
             "val {id} = run {{\n                \
-                 val _n = {len_field}.toInt()\n                \
+                 val _n = {n_kotlin}\n                \
                  val raw = cursor.peekSlice(_n) ?: return null\n                \
                  val _v = raw.copyOf()\n                \
                  if (!cursor.advance(_n)) return null\n                \
@@ -3595,7 +3660,7 @@ fn present_if_decode_length_ref(
             let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "val {id} = if ({test}) {{\n                \
-                     val _n = {len_field}.toInt()\n                \
+                     val _n = {n_kotlin}\n                \
                      val raw = cursor.peekSlice(_n) ?: return null\n                \
                      val _v = raw.copyOf()\n                \
                      if (!cursor.advance(_n)) return null\n                \
@@ -3607,11 +3672,10 @@ fn present_if_decode_length_ref(
         }
         (Language::Go, None) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let go_len = filters::to_pascal_case(len_field.to_string());
             format!(
                 "var {go_id} []byte\n\t\
                  {{\n\t\t\
-                     _n := int({go_len})\n\t\t\
+                     _n := {n_go}\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
@@ -3625,12 +3689,11 @@ fn present_if_decode_length_ref(
         }
         (Language::Go, Some(p)) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let go_len = filters::to_pascal_case(len_field.to_string());
             let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "var {go_id} []byte\n\t\
                  if {test} {{\n\t\t\
-                     _n := int({go_len})\n\t\t\
+                     _n := {n_go}\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
@@ -3644,11 +3707,10 @@ fn present_if_decode_length_ref(
         }
         (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let len_snake = filters::to_snake_case(len_field.to_string());
             let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
             format!(
                 "{{\n        \
-                     size_t _n = (size_t)out->{len_snake};\n        \
+                     size_t _n = {n_c11};\n        \
                      if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
@@ -3660,12 +3722,11 @@ fn present_if_decode_length_ref(
         }
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let len_snake = filters::to_snake_case(len_field.to_string());
             let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
             let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "if ({test}) {{\n        \
-                     size_t _n = (size_t)out->{len_snake};\n        \
+                     size_t _n = {n_c11};\n        \
                      if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
@@ -3679,9 +3740,8 @@ fn present_if_decode_length_ref(
         }
         (Language::Python, None) => {
             let py_id = filters::to_snake_case(id.to_string());
-            let py_len = filters::to_snake_case(len_field.to_string());
             format!(
-                "_n = {py_len}\n            \
+                "_n = {n_python}\n            \
                  raw = cursor.peek_slice(_n)\n            \
                  {py_id} = bytes(raw)\n            \
                  cursor.advance(_n)"
@@ -3689,11 +3749,10 @@ fn present_if_decode_length_ref(
         }
         (Language::Python, Some(p)) => {
             let py_id = filters::to_snake_case(id.to_string());
-            let py_len = filters::to_snake_case(len_field.to_string());
             let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "if {test}:\n                \
-                     _n = {py_len}\n                \
+                     _n = {n_python}\n                \
                      raw = cursor.peek_slice(_n)\n                \
                      _v = bytes(raw)\n                \
                      cursor.advance(_n)\n                \
@@ -3702,6 +3761,140 @@ fn present_if_decode_length_ref(
                      {py_id} = None"
             )
         }
+    }
+}
+
+/// RFC §5.B B5-δ helpers: per-language `_n` (byte count) computation
+/// for a `length-ref` field. Combines:
+/// - sibling-gated unwrap (Surface E)
+/// - arithmetic offset (Surface F)
+/// Each language emits the smallest expression that compiles cleanly
+/// without auxiliary locals (so existing single-statement goldens stay
+/// byte-stable when both extensions are absent).
+fn compute_n_rust(len_field: &str, sibling_gated: bool, arith: i32) -> String {
+    let base = if sibling_gated {
+        // Sibling Option<T> — unwrap inside the gated branch (trust
+        // contract: payload's predicate matches sibling's predicate).
+        format!("{len_field}.unwrap() as usize")
+    } else {
+        format!("{len_field} as usize")
+    };
+    apply_arith_signed_rust(&base, arith)
+}
+
+fn apply_arith_signed_rust(base: &str, arith: i32) -> String {
+    match arith {
+        0 => base.to_string(),
+        // Use checked signed math to handle u8::MIN - 1 underflow
+        // gracefully — out-of-range values fall through to peek_slice
+        // returning NeedMoreBytes.
+        n if n > 0 => format!("({base}).wrapping_add({n})"),
+        n => format!("({base}).wrapping_sub({})", -n),
+    }
+}
+
+fn compute_n_cpp(len_field: &str, sibling_gated: bool, arith: i32) -> String {
+    let base = if sibling_gated {
+        // std::optional<T>::value() throws on empty — trust contract
+        // says it's set inside the gated branch.
+        format!("static_cast<std::size_t>({len_field}.value())")
+    } else {
+        format!("static_cast<std::size_t>({len_field})")
+    };
+    apply_arith_cpp(&base, arith)
+}
+
+fn apply_arith_cpp(base: &str, arith: i32) -> String {
+    match arith {
+        0 => base.to_string(),
+        n if n > 0 => format!("{base} + {n}"),
+        n => format!("{base} - {}", -n),
+    }
+}
+
+fn compute_n_kotlin(len_field: &str, sibling_gated: bool, arith: i32) -> String {
+    let base = if sibling_gated {
+        // Kotlin force-unwrap: !! throws NPE on null — trust contract
+        // says the gated branch only runs when predicate holds and
+        // sibling shares that predicate.
+        format!("{len_field}!!.toInt()")
+    } else {
+        format!("{len_field}.toInt()")
+    };
+    apply_arith_signed(&base, arith)
+}
+
+fn apply_arith_signed(base: &str, arith: i32) -> String {
+    match arith {
+        0 => base.to_string(),
+        n if n > 0 => format!("({base} + {n})"),
+        n => format!("({base} - {})", -n),
+    }
+}
+
+fn compute_n_go(len_field: &str, sibling_gated: bool, arith: i32) -> String {
+    let go_len = filters::to_pascal_case(len_field.to_string());
+    let base = if sibling_gated {
+        // Go *T deref panics on nil — trust contract.
+        format!("int(*{go_len})")
+    } else {
+        format!("int({go_len})")
+    };
+    apply_arith_signed(&base, arith)
+}
+
+fn compute_n_python(len_field: &str, sibling_gated: bool, arith: i32) -> String {
+    let py_len = filters::to_snake_case(len_field.to_string());
+    // Python: gated sibling is Optional[int]; inside the if-branch the
+    // local is guaranteed non-None by the same predicate. No unwrap
+    // syntax needed (int operations work transparently); but reading
+    // `int(py_len)` even when None would TypeError — defensive int()
+    // cast is safe here only when sibling_gated=False. When gated, just
+    // reference the local (guaranteed bound to int inside if-branch).
+    let _ = sibling_gated;
+    apply_arith_signed(&py_len, arith)
+}
+
+fn compute_n_c11(len_field: &str, sibling_gated: bool, arith: i32) -> String {
+    compute_n_c11_with_prefix(len_field, sibling_gated, arith, "out")
+}
+
+/// Encode-side variant — same shape but reads through `self->...`
+/// instead of the decode-side `out->...`. The encode caller previously
+/// emitted a bare `self->{len_snake}` (no `(size_t)` cast), so to keep
+/// the no-arith goldens byte-stable we strip the cast when `arith == 0`.
+fn compute_n_c11_encode(len_field: &str, arith: i32) -> String {
+    let len_snake = filters::to_snake_case(len_field.to_string());
+    if arith == 0 {
+        format!("self->{len_snake}")
+    } else {
+        compute_n_c11_with_prefix(len_field, false, arith, "self")
+    }
+}
+
+fn compute_n_c11_with_prefix(
+    len_field: &str,
+    sibling_gated: bool,
+    arith: i32,
+    struct_prefix: &str,
+) -> String {
+    let len_snake = filters::to_snake_case(len_field.to_string());
+    // C11 has no Option wrapper — sibling field is always-bound on the
+    // struct (gated absent branch zero-writes via the present-if-fixed
+    // helper). Read through `<prefix>->...` regardless of sibling_gated.
+    let _ = sibling_gated;
+    let base = format!("(size_t){struct_prefix}->{len_snake}");
+    apply_arith_c11(&base, arith)
+}
+
+fn apply_arith_c11(base: &str, arith: i32) -> String {
+    match arith {
+        0 => base.to_string(),
+        // Signed arithmetic via int64_t cast handles potential u8/u16
+        // underflow on `-1` (sibling=0 → -1 → cast to size_t = huge →
+        // peek fails NEED_MORE_BYTES → graceful).
+        n if n > 0 => format!("(size_t)((int64_t){base} + {n})"),
+        n => format!("(size_t)((int64_t){base} - {})", -n),
     }
 }
 
@@ -4138,18 +4331,20 @@ fn present_if_encode_length_ref(
         }
         (Language::C11, false) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let len_snake = filters::to_snake_case(len_field.to_string());
             // C11 reads through the per-field `_len` member, not the
             // sibling length-int member, so a partial-write fixture
             // can keep blob_len in sync with the actual encoded count.
+            // RFC §5.B B5-δ Surface F: when `length-arith` is set, the
+            // wire-correct upper bound is `sibling_value + arith`, so
+            // reuse the same `_n` computation the decode side uses.
+            let upper = compute_n_c11_encode(len_field, field.length_arith.unwrap_or(0));
             format!(
-                "    for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < self->{len_snake}; ++_bi) \
+                "    for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < {upper}; ++_bi) \
                  r.bytes[r.len++] = self->{id_snake}[_bi];"
             )
         }
         (Language::C11, true) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let len_snake = filters::to_snake_case(len_field.to_string());
             let p = field
                 .present_if
                 .as_ref()
@@ -4162,9 +4357,13 @@ fn present_if_encode_length_ref(
                 PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
                 PresentIfCarrier::Parent => "parent_flags".to_string(),
             };
+            // RFC §5.B B5-δ Surface F: per-comment in the false arm,
+            // length-arith adjusts the upper bound. Sibling-gated has
+            // no effect on C11 encode (no Optional wrapper).
+            let upper = compute_n_c11_encode(len_field, field.length_arith.unwrap_or(0));
             format!(
                 "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
-                     for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < self->{len_snake}; ++_bi) \
+                     for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < {upper}; ++_bi) \
                      r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
                  }}",
                 width = hex_digits
@@ -5247,18 +5446,34 @@ fn generate_decode_expr(
             // sibling field — index `raw` at the resolved length-field
             // byte offset instead. C11 reads the post-assignment struct
             // field through `out->...` in a separate template branch.
+            //
+            // RFC §5.B B5-δ Surface F: `length-arith="+1"|"-1"` adjusts
+            // the byte count read at the resolved offset; the additive
+            // term folds into the slice end expression with a literal
+            // `+ N`/`- N` so per-language casts stay byte-stable when
+            // `arith == 0` (no diff on existing length-ref goldens).
             let len_off = length_field_byte_off.unwrap_or(0);
+            let arith = field.length_arith.unwrap_or(0);
+            let suffix_signed = match arith {
+                0 => String::new(),
+                n if n > 0 => format!(" + {n}"),
+                n => format!(" - {}", -n),
+            };
+            // Languages without arithmetic-friendly casts on the slice
+            // index emit through a wider compute helper. For v1 (arith
+            // ∈ {-1, +1}) the suffix above is sufficient on every
+            // backend's natural integer arithmetic.
             match lang {
                 Language::Cpp =>
-                    format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + raw[{len_off}])"),
+                    format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + raw[{len_off}]{suffix_signed})"),
                 Language::Kotlin =>
-                    format!("raw.copyOfRange({byte_off}, {byte_off} + raw[{len_off}].toInt())"),
+                    format!("raw.copyOfRange({byte_off}, {byte_off} + raw[{len_off}].toInt(){suffix_signed})"),
                 Language::Rust =>
-                    format!("raw[{byte_off}..{byte_off} + raw[{len_off}] as usize].to_vec()"),
+                    format!("raw[{byte_off}..{byte_off} + raw[{len_off}] as usize{suffix_signed}].to_vec()"),
                 Language::Go =>
-                    format!("raw[{byte_off}:{byte_off}+int(raw[{len_off}])]"),
+                    format!("raw[{byte_off}:{byte_off}+int(raw[{len_off}]){suffix_signed}]"),
                 Language::Python =>
-                    format!("raw[{byte_off}:{byte_off} + raw[{len_off}]]"),
+                    format!("raw[{byte_off}:{byte_off} + raw[{len_off}]{suffix_signed}]"),
                 Language::C11 => String::new(),
             }
         }

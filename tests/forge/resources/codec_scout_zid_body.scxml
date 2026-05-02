@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Scout/Hello/Init zid length packing
+     (RFC §5.B B5-δ Surface F).
+
+     Mirrors the upstream zenoh-pico Init/Scout/Hello message's `zid`
+     field, where the wire stores `zid_len_m1 = actual_len - 1` to pack
+     the length into 4 bits and decode reconstructs the actual length
+     as `zid_len_m1 + 1` (src/protocol/codec/transport.c line 251:
+     `uint8_t zidlen = ((cbyte & 0xF0) >> 4) + (uint8_t)1;`).
+
+     This fixture exercises Surface F (length arithmetic) in isolation.
+     Author writes `sce:length-arith="+1"` on the length-ref payload;
+     the codec helper computes `_n = (sibling_value).wrapping_add(1)`
+     for decode and (in C11 only) `_bi < (size_t)((int64_t)self->len + 1)`
+     for the encode-loop upper bound. The other 5 backends already
+     trust `payload.len()` as the encode source-of-truth, so encode is
+     fully arith-aware via the author trust contract:
+     `len_sibling = payload.len() - arith` (here: `payload.len() - 1`).
+
+     The packed-into-4-bits aspect (zenoh's `cbyte` is a flags carrier
+     where bits 4-7 hold zid_len_m1) is an orthogonal "length-field
+     references a flag bit-range" surface; the v1 grammar accepts only
+     a bare field id. The dotted-path form (`length-field="cbyte.zid_len_m1"`)
+     defers to a later sub-phase when authoring full Scout/Hello
+     envelopes — recording the deferral keeps Surface F's scope clean.
+
+     Wire shape (1 byte length sibling + N+1 bytes payload):
+       byte 0   : zid_len_m1 (uint8, value = actual_len - 1)
+       byte 1+  : zid        (bytes, length = zid_len_m1 + 1)
+
+     Round-trip oracles:
+       zid_len_m1=2 zid=[0x01,0x02,0x03]            → 0x02 0x01 0x02 0x03 (4 bytes)
+       zid_len_m1=0 zid=[0xAB]                       → 0x00 0xAB (2 bytes)
+       zid_len_m1=15 zid=[16 bytes 0x10..0x1F]       → 0x0F 0x10..0x1F (17 bytes) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_scout_zid_body">
+  <datamodel>
+    <sce:field id="zid_len_m1" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="zid" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="zid_len_m1" sce:length-arith="+1"
+               sce:max-size="16"/>
+  </datamodel>
+</scxml>

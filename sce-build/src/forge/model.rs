@@ -960,6 +960,26 @@ pub struct CodecField {
     /// codec sub-features"). `None` when no alignment constraint.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dma_burst_align: Option<u32>,
+    /// RFC §5.B B5-δ Surface F — arithmetic offset on the
+    /// `length-field` source value. Authored as `sce:length-arith="+1"`
+    /// or `sce:length-arith="-1"` paired with `sce:bit-size="length-ref"`
+    /// + `sce:length-field="..."`. Effective payload length is
+    /// `sibling_value + length_arith` bytes.
+    ///
+    /// First reachable consumer: zenoh-pico Scout/Hello/Init `zid`,
+    /// where the wire stores `zid_len_m1 = actual_len - 1` to pack the
+    /// length into 4 bits, and decode reconstructs `actual_len =
+    /// zid_len_m1 + 1`.
+    ///
+    /// v1 grammar restricts the offset to `±1` (parser rejects 0 and
+    /// `|x| > 1`). Widening defers to a reachable consumer.
+    /// `length-arith` requires `length-field`; standalone `length-arith`
+    /// without a sibling reference is rejected at parse time. Author
+    /// trust contract: payload length stays `len_sibling + arith` bytes
+    /// across encode/decode round-trips (mirrors the variant tag/body
+    /// trust contract from B1-β).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length_arith: Option<i32>,
 }
 
 impl CodecField {

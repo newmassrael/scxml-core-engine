@@ -1,0 +1,46 @@
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+# Runtime: none
+# Do not edit — regenerate from the source SCXML file.
+
+from __future__ import annotations
+
+from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class CodecScoutZidBody:
+    zid_len_m1: int = 0
+    zid: bytes = b""
+
+    @classmethod
+    def decode(cls, cursor: SceCursor) -> Optional[CodecScoutZidBody]:
+        """Decode the next frame from ``cursor``. Returns ``None`` when
+        the cursor's tail is shorter than the declared minimum frame
+        (RFC §5.B L494-519); on success the cursor advances past the
+        consumed bytes. VLE codecs also return ``None`` on
+        ``VleWidthOverflow``."""
+        try:
+            _frame_len = cursor.remaining()
+            if _frame_len < 1:
+                return None
+            raw = cursor.peek_slice(_frame_len)
+        except NeedMoreBytes:
+            return None
+        value = cls(
+            zid_len_m1=raw[0],
+            zid=raw[1:1 + raw[0] + 1],
+        )
+        try:
+            cursor.advance(_frame_len)
+        except NeedMoreBytes:
+            return None
+        return value
+
+    def encode(self) -> bytes:
+        r = bytearray()
+        r.append(self.zid_len_m1 & 0xFF)
+        r.extend(self.zid)
+        return bytes(r)

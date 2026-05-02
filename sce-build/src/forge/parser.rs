@@ -1402,6 +1402,67 @@ pub fn parse_codec_field_from_node(
     let max_size = sce_attr(node, "max-size").and_then(|s| parse_int(&s));
     let length_field = sce_attr(node, "length-field");
 
+    // RFC §5.B B5-δ Surface F — `sce:length-arith="+1"|"-1"` arithmetic
+    // offset on the length sibling's value. v1 grammar restricts to
+    // `±1` (parser rejects 0 and `|x| > 1`); widening defers to a
+    // reachable consumer. Standalone `length-arith` without
+    // `length-field` is rejected (the offset has no source to apply to).
+    let length_arith = match sce_attr(node, "length-arith") {
+        None => None,
+        Some(raw) => {
+            let trimmed = raw.trim();
+            // Accept `+1`, `-1`, `1`. Reject everything else.
+            let n: i32 = match trimmed {
+                "+1" | "1" => 1,
+                "-1" => -1,
+                _ => {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::InvalidAttribute {
+                            element: format!("Codec field '{id}'"),
+                            attr: "sce:length-arith".into(),
+                            value: raw.clone(),
+                            expected: "+1 or -1 (v1 limits arithmetic offset to ±1; \
+                                       widening defers to a reachable consumer)"
+                                .into(),
+                        },
+                    ));
+                }
+            };
+            if length_field.is_none() {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: format!("Codec field '{id}'"),
+                        attr: "sce:length-arith".into(),
+                        value: raw.clone(),
+                        expected: "sce:length-arith requires sce:length-field \
+                                   (the offset has no source to apply to)"
+                            .into(),
+                    },
+                ));
+            }
+            if !matches!(bit_size, BitSize::LengthRef) {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: format!("Codec field '{id}'"),
+                        attr: "sce:length-arith".into(),
+                        value: raw.clone(),
+                        expected: "sce:length-arith requires sce:bit-size=\"length-ref\" \
+                                   (the offset adjusts the byte count read from the \
+                                   referenced sibling)"
+                            .into(),
+                    },
+                ));
+            }
+            Some(n)
+        }
+    };
+
     // RFC §5.B B1-δ present-if primitive — accept the attribute and
     // parse the v1 grammar `<field_id>.<flag_name>` here, but defer
     // the cross-field forward-reference and flags-carrier-existence
@@ -1474,6 +1535,7 @@ pub fn parse_codec_field_from_node(
         max_count: None,
         tlv_chain_body_alias: None,
         dma_burst_align,
+        length_arith,
     })
 }
 
@@ -1913,6 +1975,7 @@ fn parse_codec_repeat_from_node(
         max_count,
         tlv_chain_body_alias: None,
         dma_burst_align: None,
+        length_arith: None,
     })
 }
 
@@ -2080,6 +2143,7 @@ fn parse_codec_tlv_chain_from_node(
         max_count: None,
         tlv_chain_body_alias: Some(body_alias),
         dma_burst_align: None,
+        length_arith: None,
     })
 }
 

@@ -201,6 +201,17 @@
        `codec/dma-alignment-unsatisfiable`). -->
   <xs:attribute name="dma-burst-align" type="xs:positiveInteger"/>
 
+  <!-- RFC §5.B B5-δ Surface F (sce:length-arith attribute).
+       Arithmetic offset on the length-field source value. Effective
+       payload length is `sibling_value + length_arith` bytes.
+       Authored as `sce:length-arith="+1"` or `sce:length-arith="-1"`
+       paired with `sce:bit-size="length-ref"` + `sce:length-field="..."`.
+       v1 grammar restricts to ±1 (parser rejects 0 and `|x|>1`);
+       widening defers to a reachable consumer. First reachable
+       consumer: zenoh-pico Scout/Hello/Init `zid` length packing
+       (zid_len_m1 = actual_len - 1, decode reconstructs actual_len). -->
+  <xs:attribute name="length-arith" type="xs:integer"/>
+
   <!-- RFC §5.B B2 repeat primitive: <sce:repeat>-internal attributes
        (count / until-eof / max-count / type / id) live unqualified
        inside the <sce:repeat> element complexType — same convention
@@ -304,6 +315,7 @@
       <xs:attribute ref="sce:length-field"/>
       <xs:attribute ref="sce:present-if"/>
       <xs:attribute ref="sce:dma-burst-align"/>
+      <xs:attribute ref="sce:length-arith"/>
     </xs:complexType>
   </xs:element>
 

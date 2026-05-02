@@ -1673,6 +1673,35 @@ fn forge_codec_init_syn_envelope_cpp() {
     );
 }
 
+/// RFC §5.B B5-δ Surfaces D + E (Cpp): Init body cookie codec exercising
+/// VLE-length-ref bit-size on the length sibling AND a gated length
+/// sibling (cookie_size + cookie both gated by `parent.A`). The decode
+/// helper unwraps the std::optional<uint16_t> sibling inside the gated
+/// branch and reads its value as the byte count for the cookie payload.
+/// Lifts the B4 deferral that restricted cookie/attachment sizes to
+/// ≤ 127 bytes (single-byte VLE = u8) and the B4 deferral that gated
+/// only the payload while always-emitting the length byte.
+#[test]
+fn forge_codec_init_cookie_body_cpp() {
+    assert_standalone_forge(
+        "codec_init_cookie_body",
+        "codec_init_cookie_body.h",
+    );
+}
+
+/// RFC §5.B B5-δ Surface F (Cpp): Scout/Hello/Init zid codec exercising
+/// arithmetic offset on the length sibling. Author writes
+/// `sce:length-arith="+1"` paired with `sce:length-field="zid_len_m1"`;
+/// decode reads `_n = sibling_value + 1` bytes. Mirrors zenoh-pico's
+/// `zidlen = ((cbyte & 0xF0) >> 4) + (uint8_t)1` (`transport.c:251`).
+#[test]
+fn forge_codec_scout_zid_body_cpp() {
+    assert_standalone_forge(
+        "codec_scout_zid_body",
+        "codec_scout_zid_body.h",
+    );
+}
+
 /// RFC §5.B B1-β: `codec/variant-arm-unreachable` build-time check —
 /// a `<sce:variant>` over a uint8 tag with two arms and no
 /// `<sce:default>` leaves 254 tag values uncovered, so the parser
@@ -2527,6 +2556,31 @@ fn forge_rust_codec_init_syn_envelope() {
     assert_standalone_forge_rust(
         "codec_init_syn_envelope",
         "codec_init_syn_envelope.rs",
+    );
+}
+
+/// RFC §5.B B5-δ Surfaces D + E (Rust): Init body cookie codec.
+/// `cookie_size` is `Option<u16>` (gated VLE u16); `cookie` is
+/// `Option<Vec<u8>>` (gated length-ref bytes). Helper emits
+/// `cookie_size.unwrap() as usize` inside the predicate's true-branch.
+#[test]
+fn forge_rust_codec_init_cookie_body() {
+    assert_standalone_forge_rust(
+        "codec_init_cookie_body",
+        "codec_init_cookie_body.rs",
+    );
+}
+
+/// RFC §5.B B5-δ Surface F (Rust): Scout/Hello/Init zid codec.
+/// `length-arith="+1"` lifts the byte count by one above the sibling's
+/// value: helper emits `(zid_len_m1 as usize).wrapping_add(1)` for
+/// decode; encode trusts `zid.len()` as the source of truth (author
+/// contract: `zid_len_m1 == zid.len() - 1`).
+#[test]
+fn forge_rust_codec_scout_zid_body() {
+    assert_standalone_forge_rust(
+        "codec_scout_zid_body",
+        "codec_scout_zid_body.rs",
     );
 }
 
@@ -4801,6 +4855,191 @@ fn forge_python_codec_init_syn_envelope() {
         "codec_init_syn_envelope",
         "codec_init_syn_envelope.py",
     );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ── B5-δ Surfaces D + E + F emission tests ───────────────────
+// ═══════════════════════════════════════════════════════════════
+//
+// All six backends share the existing length-ref decode/encode
+// helper machinery — the helper now detects sibling `present_if`
+// to unwrap the gated Optional (Surface E) and applies
+// `field.length_arith` to the byte count (Surface F). Surface D
+// is "free" (the streaming helper reads `sibling as usize` which
+// works for both Fixed and Vle siblings); fixture pin proves it.
+
+/// RFC §5.B B5-δ Surfaces D + E (Kotlin): Init body cookie codec.
+/// `cookieSize: UShort?` (gated VLE u16); `cookie: ByteArray?` (gated
+/// length-ref bytes). Helper unwraps the sibling `!!.toInt()` inside
+/// the gated branch.
+#[test]
+fn forge_kotlin_codec_init_cookie_body() {
+    assert_standalone_forge_kotlin(
+        "codec_init_cookie_body",
+        "CodecInitCookieBody.kt",
+    );
+}
+
+/// RFC §5.B B5-δ Surface F (Kotlin): Scout/Hello/Init zid codec.
+/// `length-arith="+1"` emits `(zidLenM1.toInt() + 1)` for the byte
+/// count.
+#[test]
+fn forge_kotlin_codec_scout_zid_body() {
+    assert_standalone_forge_kotlin(
+        "codec_scout_zid_body",
+        "CodecScoutZidBody.kt",
+    );
+}
+
+/// RFC §5.B B5-δ Surfaces D + E (Go): Init body cookie codec.
+/// `CookieSize *uint16` (pointer = presence wrapper for VLE u16);
+/// `Cookie []byte` (slice nilness encodes presence). Helper deref
+/// emits `int(*CookieSize)` inside the gated branch.
+#[test]
+fn forge_go_codec_init_cookie_body() {
+    assert_standalone_forge_go(
+        "codec_init_cookie_body",
+        "codec_init_cookie_body.go",
+    );
+}
+
+/// RFC §5.B B5-δ Surface F (Go): Scout/Hello/Init zid codec.
+/// `length-arith="+1"` emits `(int(ZidLenM1) + 1)` for the byte count.
+#[test]
+fn forge_go_codec_scout_zid_body() {
+    assert_standalone_forge_go(
+        "codec_scout_zid_body",
+        "codec_scout_zid_body.go",
+    );
+}
+
+/// RFC §5.B B5-δ Surfaces D + E (C11): Init body cookie codec.
+/// C11 has no Option wrapper — sibling `cookie_size` is always-bound
+/// on the struct (zero on absent branch). Helper reads through
+/// `out->cookie_size` regardless of gating; the carrier bit is the
+/// presence source.
+#[test]
+fn forge_c11_codec_init_cookie_body() {
+    assert_standalone_forge_c(
+        "codec_init_cookie_body",
+        "codec_init_cookie_body.c.h",
+    );
+}
+
+/// RFC §5.B B5-δ Surface F (C11): Scout/Hello/Init zid codec.
+/// `length-arith="+1"` emits `_n = (size_t)((int64_t)out->zid_len_m1 + 1)`
+/// for decode; the encode-loop's upper bound widens symmetrically to
+/// `_bi < (size_t)((int64_t)self->zid_len_m1 + 1)` so the wire-correct
+/// number of bytes is written.
+#[test]
+fn forge_c11_codec_scout_zid_body() {
+    assert_standalone_forge_c(
+        "codec_scout_zid_body",
+        "codec_scout_zid_body.c.h",
+    );
+}
+
+/// RFC §5.B B5-δ Surfaces D + E (Python): Init body cookie codec.
+/// `cookie_size: Optional[int]` and `cookie: Optional[bytes]` — inside
+/// the gated branch the int local is guaranteed non-None by the same
+/// predicate. Helper reads `cookie_size` directly (no unwrap syntax).
+#[test]
+fn forge_python_codec_init_cookie_body() {
+    assert_standalone_forge_python(
+        "codec_init_cookie_body",
+        "codec_init_cookie_body.py",
+    );
+}
+
+/// RFC §5.B B5-δ Surface F (Python): Scout/Hello/Init zid codec.
+/// `length-arith="+1"` emits `_n = (zid_len_m1 + 1)` for the byte
+/// count — Python's arbitrary-precision int handles `+1` without
+/// overflow.
+#[test]
+fn forge_python_codec_scout_zid_body() {
+    assert_standalone_forge_python(
+        "codec_scout_zid_body",
+        "codec_scout_zid_body.py",
+    );
+}
+
+/// RFC §5.B B5-δ Surface F validation: standalone `sce:length-arith`
+/// without `sce:length-field` rejects with `validation/invalid-attribute`
+/// — the offset has no source to apply to.
+#[test]
+fn forge_codec_length_arith_without_length_field_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="bad_arith">
+  <datamodel>
+    <sce:field id="payload" sce:type="bytes" sce:byte="0" sce:bit-size="length-ref"
+               sce:length-arith="+1" sce:max-size="16"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("bad_arith"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("length-arith without length-field must reject"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
+                if attr == "sce:length-arith"
+        ),
+        "must surface as InvalidAttribute on sce:length-arith; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B5-δ Surface F validation: arithmetic offset must be ±1.
+/// v1 grammar restricts the value (parser rejects 0 and `|x|>1`);
+/// widening defers to a reachable consumer.
+#[test]
+fn forge_codec_length_arith_out_of_range_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    for bad in ["0", "+2", "-2", "5", "-3"] {
+        let scxml = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="bad_arith_range">
+  <datamodel>
+    <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="len" sce:length-arith="{bad}" sce:max-size="16"/>
+  </datamodel>
+</scxml>"#);
+        let result = sce_build::compile_forge_with_imports(
+            &scxml,
+            sce_build::DocumentLabel::symmetric("bad_arith_range"),
+            sce_build::generator::Language::Rust,
+            &resource_dir(),
+            &sce_build::ForgeCompileOptions::default(),
+        );
+        let err = match result {
+            Ok(_) => panic!("length-arith={bad} must reject (v1 limits to ±1)"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(
+                err.error,
+                ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
+                    if attr == "sce:length-arith"
+            ),
+            "length-arith={bad} must surface as InvalidAttribute; got: {:?}",
+            err.error
+        );
+    }
 }
 
 /// RFC §5.B B5-γ: cross-codec parent-flag layout mismatch — the body
