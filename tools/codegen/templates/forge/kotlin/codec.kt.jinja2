@@ -107,6 +107,20 @@ data class {{ struct_name }}(
 {{ field.present_if_encode_block }}
 {% endfor %}
         return r.toByteArray()
+{% elif has_repeat_fields %}
+        // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
+        // repeat fields iterate the host MutableList and splice each
+        // element's encode().toList() into the parent buffer. Author
+        // keeps count field == list length (trust contract).
+        val r = mutableListOf<Byte>()
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
+        return r.toByteArray()
 {% elif has_variable_fields %}
         val r = mutableListOf<Byte>()
 {% for expr in encode_exprs %}
@@ -188,6 +202,27 @@ data class {{ struct_name }}(
             // `.toLong()`, no runtime predicate metadata.
 {% for field in fields %}
             {{ field.present_if_decode_stmt }}
+{% endfor %}
+            return {{ struct_name }}(
+{% for field in fields %}
+                {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
+{% endfor %}
+            )
+{% elif has_repeat_fields %}
+            // RFC §5.B B2 repeat primitive: streaming decode mixes
+            // plain fixed-width reads (per-field via the present-if
+            // helper's non-gated arm) with `mutableListOf<T>().also { ... }`
+            // loops that iterate the imported codec's `decode()`
+            // either `count_ref.toInt()` times (length-field) or
+            // until cursor exhaustion (until-eof). Element bodies
+            // recurse into their own codec — each may itself surface
+            // null, unwinding the partial frame via `?: return null`.
+{% for field in fields %}
+{% if field.is_repeat %}
+            {{ field.repeat_decode_stmt }}
+{% else %}
+            {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
             return {{ struct_name }}(
 {% for field in fields %}

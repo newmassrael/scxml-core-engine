@@ -848,14 +848,14 @@ fn forge_codec_until_eof_basic_cpp() {
     assert_standalone_forge("codec_until_eof_basic", "codec_until_eof_basic.h");
 }
 
-/// RFC §5.B B2 trunk gate: emit on Rust + Cpp; the four remaining
-/// backends must error with `generate/unsupported-feature` until
-/// each per-language closure adds Vec<T>/List<T>/fixed-array/[]T
-/// support to the codec template plus the streaming repeat
-/// decode/encode loop. This proves the gate is reachable on at
-/// least one closure language so the TODO doesn't silently rot.
+/// RFC §5.B B2 gate: emit on Rust + Cpp + Kotlin (Kotlin closure
+/// landed); the three remaining backends must error with
+/// `generate/unsupported-feature` until each per-language closure
+/// lands. The gate-rejection test rotates onto whichever language is
+/// still gated so the TODO doesn't silently rot. The final closure
+/// (Python) deletes both the gate and this test.
 #[test]
-fn forge_codec_repeat_kotlin_gate_rejects() {
+fn forge_codec_repeat_go_gate_rejects() {
     use sce_build::forge::error::{ForgeError, GenerateError};
 
     let result = sce_build::compile_forge_with_imports(
@@ -864,14 +864,17 @@ fn forge_codec_repeat_kotlin_gate_rejects() {
         )
         .unwrap(),
         sce_build::DocumentLabel::symmetric("codec_repeat_basic"),
-        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Go,
         &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
+        &sce_build::ForgeCompileOptions {
+            go_module_prefix: Some(GOLDEN_GO_MODULE_PREFIX.to_string()),
+            ..Default::default()
+        },
     );
     let err = match result {
         Ok(_) => panic!(
-            "B2 trunk must gate Kotlin emit on <sce:repeat> until the \
-             closure lands; expected generate/unsupported-feature"
+            "B2 must gate Go emit on <sce:repeat> until the Go closure \
+             lands; expected generate/unsupported-feature"
         ),
         Err(e) => e,
     };
@@ -879,7 +882,7 @@ fn forge_codec_repeat_kotlin_gate_rejects() {
         matches!(
             err.error,
             ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("<sce:repeat>") && msg.contains("Kotlin")
+                if msg.contains("<sce:repeat>") && msg.contains("Go")
         ),
         "trunk gate must name the feature and the unsupported language; \
          got: {:?}",
@@ -1169,6 +1172,32 @@ fn forge_kotlin_codec_present_if_basic() {
     assert_standalone_forge_kotlin(
         "codec_present_if_basic",
         "CodecPresentIfBasic.kt",
+    );
+}
+
+// ── RFC §5.B B2 repeat primitive (Kotlin, closure) ──────────
+
+#[test]
+fn forge_kotlin_codec_repeat_elem() {
+    assert_standalone_forge_kotlin(
+        "codec_repeat_elem",
+        "CodecRepeatElem.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_repeat_basic() {
+    assert_standalone_forge_kotlin(
+        "codec_repeat_basic",
+        "CodecRepeatBasic.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_until_eof_basic() {
+    assert_standalone_forge_kotlin(
+        "codec_until_eof_basic",
+        "CodecUntilEofBasic.kt",
     );
 }
 

@@ -1008,21 +1008,21 @@ fn render_codec(
         }
     }
 
-    // RFC §5.B B2 repeat primitive (trunk): emit on Rust + Cpp only.
-    // The four remaining backends each get a per-language closure
-    // commit that adds Vec<T> / List<T> / fixed-array / [] T support to
-    // the codec template plus the streaming decode/encode loop. Until
-    // those land, force authors onto Rust / Cpp so the gate fails
-    // loudly rather than silently dropping the field.
+    // RFC §5.B B2 repeat primitive (trunk + Kotlin closure): Rust +
+    // Cpp + Kotlin emit. Go / C11 / Python stay gated until each
+    // per-language closure lands so the template never silently
+    // drops the field.
     if m.has_repeat_fields()
         && !matches!(
             lang,
-            crate::generator::Language::Rust | crate::generator::Language::Cpp
+            crate::generator::Language::Rust
+                | crate::generator::Language::Cpp
+                | crate::generator::Language::Kotlin
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "codec '{name}': <sce:repeat> (RFC §5.B B2 trunk) emits on Rust + Cpp only; \
+                "codec '{name}': <sce:repeat> (RFC §5.B B2) emits on Rust + Cpp + Kotlin; \
                  the {lang:?} closure lands when the per-language template adds the streaming \
                  repeat decode/encode loop and the host-language list type",
                 name = m.name,
@@ -1082,6 +1082,13 @@ fn render_codec(
                     let wrapped = match lang {
                         crate::generator::Language::Rust => format!("Vec<{body_type}>"),
                         crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
+                        // Kotlin: `MutableList<T>` mirrors the codec's
+                        // existing `mutableListOf<Byte>()` encode buffer
+                        // shape; decode pushes elements via `.add(...)`.
+                        // The data class field stays `var` so the
+                        // generated procedure_l2 can re-assign on a
+                        // fresh frame without wrapping in `.toList()`.
+                        crate::generator::Language::Kotlin => format!("MutableList<{body_type}>"),
                         // Closures land when each backend's host-list
                         // shape is wired up; trunk gate above prevents
                         // reaching this arm on those languages.
@@ -1096,6 +1103,14 @@ fn render_codec(
                         "repeat_encode_block".into(),
                         repeat_streaming_encode_block(f, lang).into(),
                     );
+                    // Kotlin's data-class primary constructor needs a
+                    // default value for every property; the trunk's
+                    // `0.toUByte()` family default would miscompile
+                    // against `MutableList<T>`. `mutableListOf()` is
+                    // type-inferred from the field type.
+                    if matches!(lang, crate::generator::Language::Kotlin) {
+                        obj.insert("kt_default".into(), "mutableListOf()".into());
+                    }
                 } else {
                     let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
                     obj.insert("max_size".into(), resolved.into());
@@ -1116,7 +1131,12 @@ fn render_codec(
                 }
             }
             if matches!(lang, crate::generator::Language::Kotlin) {
-                obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
+                // Repeat fields already set kt_default = "mutableListOf()"
+                // above; the carrier-typed default would miscompile
+                // against MutableList<T>.
+                if !f.is_repeat() {
+                    obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
+                }
                 // RFC §5.B B1-γ flags primitive on Kotlin: bitwise ops on
                 // UByte/UShort/UInt/ULong are awkward (no UByte literal,
                 // mask must round-trip through a wider signed type). The
@@ -1668,11 +1688,20 @@ fn resolve_repeat_body_type(
     Ok(match lang {
         crate::generator::Language::Rust => imp.type_name.clone(),
         crate::generator::Language::Cpp => imp.member_type.clone(),
+        // Kotlin: each imported codec lives in its own sibling
+        // package (`com.sce.generated.<snake>`); the codec template's
+        // own `import com.sce.generated.<snake>.*` brings the bare
+        // Pascal name into top-level scope. Variant arms need FQN to
+        // sidestep the inner sealed-class collision, but a repeat
+        // field's element type has no such shadow — bare Pascal
+        // (`imp.type_name`) keeps the data-class field declaration
+        // and decode loop both compact and unambiguous.
+        crate::generator::Language::Kotlin => imp.type_name.clone(),
         // Closures land per-language. Trunk's `render_codec` gate
-        // prevents reaching this arm on Kotlin / Go / C11 / Python
-        // until each backend's repeat decode/encode pattern is wired
-        // up; the placeholder mirrors `imp.type_name` so future
-        // additions need only revisit this single call site.
+        // prevents reaching this arm on Go / C11 / Python until each
+        // backend's repeat decode/encode pattern is wired up; the
+        // placeholder mirrors `imp.type_name` so future additions
+        // need only revisit this single call site.
         _ => imp.type_name.clone(),
     })
 }
@@ -1746,8 +1775,32 @@ fn repeat_streaming_decode_stmt(
                  {id}.push_back(*_elem);\n        \
              }}"
         ),
+        // Kotlin: `mutableListOf<T>().also { ... }` chains the build
+        // step inline so the result `val` carries the typed list.
+        // `{body_type}.decode(cursor)` returns `T?`; `?: return null`
+        // unwinds the partial frame from the `companion.decode()`
+        // body (12-space indent context; inner block lines render at
+        // 16 spaces, closing brace at 12).
+        //
+        // Length-field counts: `repeat(N) { ... }` is the Kotlin
+        // idiomatic count loop; the carrier widens through `.toInt()`
+        // to satisfy the `Int`-typed loop bound.
+        (Language::Kotlin, CountRef::LengthField(len_field)) => format!(
+            "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().also {{\n                \
+                 repeat({len_field}.toInt()) {{\n                    \
+                     it.add({body_type}.decode(cursor) ?: return null)\n                \
+                 }}\n            \
+             }}"
+        ),
+        (Language::Kotlin, CountRef::UntilEof) => format!(
+            "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().also {{\n                \
+                 while (cursor.remaining() > 0) {{\n                    \
+                     it.add({body_type}.decode(cursor) ?: return null)\n                \
+                 }}\n            \
+             }}"
+        ),
         // Closures land per-language; the trunk gate above prevents
-        // reaching this arm on Kotlin / Go / C11 / Python.
+        // reaching this arm on Go / C11 / Python.
         _ => format!("/* unsupported language for repeat decode */"),
     }
 }
@@ -1777,6 +1830,16 @@ fn repeat_streaming_encode_block(
             "        for (const auto& _e : {id}) {{\n            \
                  auto _sub = _e.encode();\n            \
                  r.insert(r.end(), _sub.begin(), _sub.end());\n        \
+             }}"
+        ),
+        // Kotlin: `for (_e in this.<id>) { r.addAll(_e.encode().toList()) }`.
+        // The codec-level `r` is the `mutableListOf<Byte>()` declared
+        // by the encode template; the imported codec's `encode()`
+        // returns `ByteArray`, converted to `List<Byte>` for `addAll`.
+        // 8-space indent matches the surrounding template context.
+        Language::Kotlin => format!(
+            "        for (_e in this.{id}) {{\n            \
+                 r.addAll(_e.encode().toList())\n        \
              }}"
         ),
         _ => "        // unsupported language for repeat encode\n".to_string(),
