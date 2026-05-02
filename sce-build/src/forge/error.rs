@@ -528,6 +528,28 @@ pub enum ValidationError {
         burst_align: u32,
         reason: String,
     },
+
+    /// RFC §5.B B5-γ parent-flags dependency: a body codec declared
+    /// `<sce:requires-parent-flags carrier="X">` but the parent codec
+    /// (resolved through a variant arm wire-up) doesn't satisfy the
+    /// declared layout. Three orthogonal causes:
+    ///   (a) parent codec lacks a field named `<carrier>`;
+    ///   (b) the named carrier exists but is not a `<sce:flags>`
+    ///       container or is not a uint8 (v1 fixes parent flag
+    ///       carrier type at uint8 per Zenoh transport pattern);
+    ///   (c) a flag declared in the body's block has a name or
+    ///       `bit=` that doesn't match the parent's actual layout.
+    /// Repair is structural: fix the body's declared parent-flag
+    /// layout to match the parent's carrier shape, or wire the body
+    /// codec to a different parent.
+    #[error(
+        "codec '{body_codec}' (body): requires-parent-flags layout mismatch against parent codec '{parent_codec}' — {reason}"
+    )]
+    CodecParentFlagMismatch {
+        body_codec: String,
+        parent_codec: String,
+        reason: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

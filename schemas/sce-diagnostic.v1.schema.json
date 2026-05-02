@@ -99,6 +99,7 @@
         "algorithm/test-vector-unsupported-kind",
         "codec/tlv-chain-depth-unspecified",
         "codec/dma-alignment-unsatisfiable",
+        "codec/parent-flag-mismatch",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

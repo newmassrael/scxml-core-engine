@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec parent-flags variant wire-up (RFC §5.B B5-γ).
+
+     Mirrors the upstream Zenoh transport envelope pattern (zenoh-pico
+     src/protocol/codec/transport.c:_z_transport_message_decode_inner +
+     definitions/transport.h:_Z_MID_T_INIT = 0x01 for the InitSyn
+     dispatch case). The header's MID bits (0..4) select the variant
+     arm; the same header's S-flag (bit 6) gates body fields inside
+     the dispatched-to body codec via `<sce:requires-parent-flags>`.
+
+     Cross-codec validator (B5-γ) confirms this codec's
+     `<sce:flags id="header">` declares 'S' at bit=6 — matching the
+     body codec's `<sce:requires-parent-flags carrier="header">`
+     declaration. Mismatch on either name or bit fires
+     `codec/parent-flag-mismatch` at codegen time.
+
+     Wire shape:
+       byte 0   : header (mid:5 + S:1, with reserved upper bits)
+       byte 1+  : InitSyn body bytes (1 or 4 bytes depending on S-flag)
+
+     Round-trip oracles (header byte = MID 0x01 + S-flag = 0x41):
+       0x41 0x02 0x55 0xCA 0xFE → InitSyn{version=2, sn_res=0x55, batch_size=0xCAFE}
+       0x01 0x02                → InitSyn{version=2, sn_res/batch_size absent} -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_init_syn_envelope">
+  <sce:import src="codec_init_syn_body.scxml" kind="codec" as="codec_init_syn_body"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="S"   bit="6"/>
+    </sce:flags>
+    <sce:variant tag="header.mid">
+      <sce:arm value="0x01" type="codec_init_syn_body"/>
+      <sce:default type="codec_init_syn_body"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

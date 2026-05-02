@@ -542,6 +542,25 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/dma-alignment-unsatisfiable")]
     CodecDmaAlignmentUnsatisfiable,
 
+    // ── §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B) ──
+    //    A body codec with `<sce:requires-parent-flags carrier="X">`
+    //    declares its body fields read flags from a parent codec's
+    //    flags carrier (Zenoh upstream pattern: `_z_init_decode(..,
+    //    uint8_t header)` gates `sn_res + req_id_res + batch_size`
+    //    on the parent header's S-flag). The cross-codec validator
+    //    (variant arm wire-up) confirms the parent codec has
+    //    `<sce:flags id="<carrier>">` of uint8 with each declared
+    //    flag name + bit position matching exactly. Mismatch
+    //    surfaces here on three axes: (a) parent codec lacks the
+    //    named carrier; (b) carrier is not flags-bearing or is not
+    //    uint8; (c) declared flag name+bit doesn't match the parent
+    //    layout. Repair is structural — fix the body's declared
+    //    parent-flag layout to match the parent's carrier shape,
+    //    or wire the body codec to a different parent. Stage =
+    //    Validation. ──
+    #[serde(rename = "codec/parent-flag-mismatch")]
+    CodecParentFlagMismatch,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -861,6 +880,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecTlvChainDepthUnspecified,
         // Codec §5.B B3 DMA alignment primitive (watching-zenoh RFC §5.B)
         CodecDmaAlignmentUnsatisfiable,
+        // Codec §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B)
+        CodecParentFlagMismatch,
         // Io
         IoFilesystem,
         // Cli
@@ -1070,7 +1091,8 @@ impl DiagnosticCode {
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
             | CodecTlvChainDepthUnspecified
-            | CodecDmaAlignmentUnsatisfiable => Some("watching-zenoh RFC §5.B"),
+            | CodecDmaAlignmentUnsatisfiable
+            | CodecParentFlagMismatch => Some("watching-zenoh RFC §5.B"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1335,6 +1357,7 @@ impl DiagnosticCode {
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
             CodecTlvChainDepthUnspecified => "codec/tlv-chain-depth-unspecified",
             CodecDmaAlignmentUnsatisfiable => "codec/dma-alignment-unsatisfiable",
+            CodecParentFlagMismatch => "codec/parent-flag-mismatch",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2226,6 +2249,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(field.clone()),
             fix: None,
             key_fragments: vec![codec.clone(), field.clone(), burst_align.to_string()],
+        },
+        ValidationError::CodecParentFlagMismatch {
+            body_codec,
+            parent_codec,
+            reason: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecParentFlagMismatch,
+            stage: Stage::Validation,
+            // Repair is structural (fix the body's declared parent-
+            // flag layout to match the parent's carrier shape, or
+            // wire the body codec to a different parent) — no
+            // closed candidate set. (body_codec, parent_codec) keys
+            // the violation across multiple variant arm wire-ups
+            // referencing the same body codec.
+            expected: None,
+            actual: Some(body_codec.clone()),
+            fix: None,
+            key_fragments: vec![body_codec.clone(), parent_codec.clone()],
         },
     }
 }
@@ -3559,6 +3600,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:98584368c0e405fa","code":"codec/dma-alignment-unsatisfiable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': field 'aligned_payload' with sce:dma-burst-align=\"32\" cannot be honored — preceding field 'value' has bit-size 'vle' (variable-length); static padding cannot honor sce:dma-burst-align when any prior field's wire size depends on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-following alignment\")","actual":"aligned_payload"}"#,
             ),
+            // ── §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B) ─
+            (
+                "forge/codec-parent-flag-mismatch",
+                ValidationError::CodecParentFlagMismatch {
+                    body_codec: "codec_init_syn_body".into(),
+                    parent_codec: "codec_init_envelope".into(),
+                    reason: "body declares <sce:flag name=\"S\" bit=\"6\"/> but parent codec's <sce:flags id=\"header\"> has 'S' at bit=5 (Zenoh transport header layout: S-flag is bit 6 — fix one side to align)".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a724cb80443a21ac","code":"codec/parent-flag-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_init_syn_body' (body): requires-parent-flags layout mismatch against parent codec 'codec_init_envelope' — body declares <sce:flag name=\"S\" bit=\"6\"/> but parent codec's <sce:flags id=\"header\"> has 'S' at bit=5 (Zenoh transport header layout: S-flag is bit 6 — fix one side to align)","actual":"codec_init_syn_body"}"#,
+            ),
         ]
     }
 
@@ -4809,6 +4861,7 @@ mod tests {
             | AlgorithmTestVectorUnsupportedKind
             | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
+            | CodecParentFlagMismatch
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -5152,6 +5205,7 @@ mod tests {
                 | AlgorithmTestVectorUnsupportedKind
                 | CodecTlvChainDepthUnspecified
                 | CodecDmaAlignmentUnsatisfiable
+                | CodecParentFlagMismatch
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5235,13 +5289,14 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            170,
+            171,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 170 distinct variants to match the DiagnosticCode \
+             expected 171 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
-             169 → 170).",
+             169 → 170, then B5-γ parent-flags dependency: \
+             CodecParentFlagMismatch; 170 → 171).",
         );
     }
 

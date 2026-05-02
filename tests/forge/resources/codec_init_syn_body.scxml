@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec parent-flags dependency (RFC §5.B B5-γ,
+     surface C from the watching-zenoh authoring path).
+
+     Mirrors the upstream Zenoh InitSyn body's layout (zenoh-pico
+     src/protocol/codec/transport.c:_z_init_decode lines 237-285 + the
+     S-flag gate at line 260, _Z_FLAG_T_INIT_S = 0x40 in
+     include/zenoh-pico/protocol/definitions/transport.h:67):
+     the body is dispatched to from a parent codec's variant tag, and
+     reads flags from the parent's header carrier to gate which body
+     fields are present on the wire.
+
+     B5-γ adds `<sce:requires-parent-flags carrier="X">` to declare
+     the body codec's dependency on a parent's flags carrier. Body
+     fields use the new `sce:present-if="parent.<flag>"` grammar to
+     gate on those flags. Codegen extends decode/encode signatures
+     with a `parent_flags: u8` parameter; the variant arm dispatcher
+     in the parent codec threads its carrier value into the body's
+     decoder call. v1 fixes parent flag carrier type at uint8 (Zenoh
+     transport pattern; widening defers to a reachable consumer).
+
+     Wire shape (1 or 4 bytes, gated by parent.S):
+       byte 0  : version    (uint8, always present)
+       byte 1  : sn_res     (uint8, gated on parent.S)
+       byte 2-3: batch_size (uint16 BE, gated on parent.S)
+
+     Round-trip oracles:
+       parent_flags=0x40 (S=true):  version=0x02 sn_res=0x55 batch_size=0xCAFE → 0x02 0x55 0xCA 0xFE
+       parent_flags=0x00 (S=false): version=0x02 (sn_res/batch_size absent)   → 0x02 -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_init_syn_body">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="S" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="sn_res" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="parent.S"/>
+    <sce:field id="batch_size" sce:type="uint16" sce:byte="2" sce:bit-size="16"
+               sce:present-if="parent.S"/>
+  </datamodel>
+</scxml>

@@ -91,7 +91,17 @@ impl {{ struct_name }} {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'_>{{ parent_flags_param_decl }}) -> Result<Self, CodecError> {
+{% if has_parent_flags %}
+        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
+        // carrier value, threaded through by the variant arm dispatcher.
+        // Body fields gated via `parent.<flag>` predicates read from
+        // this parameter; suppress unused-variable warnings when no
+        // gated field happens to consume it (defensive guard for
+        // codecs that declare `<sce:requires-parent-flags>` but
+        // don't yet wire any predicate to it).
+        let _ = parent_flags;
+{% endif %}
 {% if has_no_fields %}
         // RFC §5.B B5-α empty body — nothing to read; the surrounding
         // header byte (and the wire-protocol layer that demuxes it)
@@ -113,12 +123,12 @@ impl {{ struct_name }} {
         // wire.
         let body = match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
-            {{ arm.value_literal }} => {{ struct_name }}Body::{{ arm.variant_name }}({{ arm.body_type }}::decode(cursor)?),
+            {{ arm.value_literal }} => {{ struct_name }}Body::{{ arm.variant_name }}({{ arm.body_type }}::decode(cursor{{ arm.body_parent_flags_arg }})?),
 {% endfor %}
 {% if variant.default_arm %}
             other => {{ struct_name }}Body::{{ variant.default_arm.variant_name }} {
                 tag: other,
-                body: {{ variant.default_arm.body_type }}::decode(cursor)?,
+                body: {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_parent_flags_arg }})?,
             },
 {% else %}
             // Build-time `codec/variant-arm-unreachable` proves the
@@ -298,7 +308,11 @@ impl {{ struct_name }} {
 {% endif %}
 {% endfor %}
 {% endif %}
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self{{ parent_flags_param_decl }}) -> Vec<u8> {
+{% if has_parent_flags %}
+        // RFC §5.B B5-γ: see `decode` — same parameter, same suppress.
+        let _ = parent_flags;
+{% endif %}
 {% if has_no_fields %}
         // RFC §5.B B5-α empty body — zero-byte payload (the surrounding
         // wire-protocol header byte alone marks this codec on the wire).
@@ -317,12 +331,12 @@ impl {{ struct_name }} {
         match &self.body {
 {% for arm in variant.arms %}
             {{ struct_name }}Body::{{ arm.variant_name }}(b) => {
-                r.extend(b.encode());
+                r.extend(b.encode({{ arm.body_parent_flags_arg_first }}));
             }
 {% endfor %}
 {% if variant.default_arm %}
             {{ struct_name }}Body::{{ variant.default_arm.variant_name }} { body, .. } => {
-                r.extend(body.encode());
+                r.extend(body.encode({{ variant.default_arm.body_parent_flags_arg_first }}));
             }
 {% endif %}
         }

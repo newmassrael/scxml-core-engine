@@ -61,7 +61,16 @@ struct {{ struct_name }} {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor) {
+    static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor{{ parent_flags_param_decl }}) {
+{% if has_parent_flags %}
+        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
+        // carrier value, threaded by the variant arm dispatcher.
+        // Defensive (void) suppress for codecs that declare
+        // `<sce:requires-parent-flags>` but don't yet wire any
+        // gated field — keeps the param accessible to per-field
+        // gates without UB on unused-parameter warnings.
+        (void)parent_flags;
+{% endif %}
 {% if has_no_fields %}
         // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
         (void)cursor;
@@ -79,7 +88,7 @@ struct {{ struct_name }} {
         switch ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
             case {{ arm.value_literal }}: {
-                auto _arm = {{ arm.body_type }}::decode(cursor);
+                auto _arm = {{ arm.body_type }}::decode(cursor{{ arm.body_parent_flags_arg }});
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
@@ -87,7 +96,7 @@ struct {{ struct_name }} {
 {% endfor %}
             default: {
 {% if variant.default_arm %}
-                auto _arm = {{ variant.default_arm.body_type }}::decode(cursor);
+                auto _arm = {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_parent_flags_arg }});
                 if (!_arm.has_value()) return std::nullopt;
                 body = {{ struct_name }}{{ variant.default_arm.variant_name }}{
                     .tag = {{ variant.tag_store_expr }},
@@ -239,7 +248,10 @@ struct {{ struct_name }} {
 {% endif %}
 {% endfor %}
 {% endif %}
-    std::vector<uint8_t> encode() const {
+    std::vector<uint8_t> encode({{ parent_flags_param_first }}) const {
+{% if has_parent_flags %}
+        (void)parent_flags;
+{% endif %}
 {% if has_no_fields %}
         // RFC §5.B B5-α empty body — zero-byte payload.
         return {};
@@ -253,13 +265,13 @@ struct {{ struct_name }} {
         // Append the active arm body's encoded bytes.
 {% for arm in variant.arms %}
         if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-            auto _sub = _p->encode();
+            auto _sub = _p->encode({{ arm.body_parent_flags_arg_first }});
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
 {% endfor %}
 {% if variant.default_arm %}
         if (auto _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) {
-            auto _sub = _p->body.encode();
+            auto _sub = _p->body.encode({{ variant.default_arm.body_parent_flags_arg_first }});
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
 {% endif %}

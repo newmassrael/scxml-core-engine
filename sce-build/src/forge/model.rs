@@ -802,20 +802,90 @@ pub struct FlagDef {
     pub width: u32,
 }
 
-/// RFC §5.B B1-δ present-if predicate — a single bit-test on a
-/// flags-bearing sibling field declared earlier in the same codec.
+/// RFC §5.B B5-γ present-if predicate scope — distinguishes the
+/// B1-δ local form (carrier in same codec) from the B5-γ parent
+/// form (carrier in declared `<sce:requires-parent-flags>` block,
+/// passed by value into the codec's decode/encode signature as
+/// `parent_flags`).
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PresentIfScope {
+    /// `<field_id>.<flag_name>` — B1-δ form. Carrier is a
+    /// flags-bearing sibling field declared earlier in the same
+    /// codec; predicate reads `(self.<carrier> & mask) != 0`.
+    Local,
+    /// `parent.<flag_name>` — B5-γ form. Carrier is the codec's
+    /// declared `requires_parent_flags`; predicate reads
+    /// `(parent_flags & mask) != 0` against the value threaded in
+    /// by the variant arm dispatcher.
+    Parent,
+}
+
+/// RFC §5.B B1-δ + B5-γ present-if predicate — a single bit-test
+/// on either a flags-bearing sibling field declared earlier in the
+/// same codec (B1-δ Local scope) or a flag declared in the codec's
+/// `<sce:requires-parent-flags>` block (B5-γ Parent scope).
 ///
-/// v1 grammar is exactly `<field_id>.<flag_name>`: the predicate is
-/// true iff the named flag bit on the carrier is set. Richer
-/// expressions (negation, conjunction, equality against a value) are
-/// deferred to a later B-stage when downstream authoring surfaces a
-/// reachable consumer; the v1 form is sufficient for the Zenoh
-/// optional-field shapes (e.g. attachment, timestamp, encoding-info)
-/// targeted by B4.
+/// v1 grammar covers two forms:
+///   - `<field_id>.<flag_name>` (Local) — the predicate is true
+///     iff the named flag bit on the local carrier is set.
+///     Sufficient for the Zenoh optional-field shapes targeted by
+///     B4 (attachment, timestamp, encoding-info).
+///   - `parent.<flag_name>` (Parent) — the predicate is true iff
+///     the named flag bit is set on the value passed in by the
+///     parent variant dispatcher. `field_id` is empty when scope =
+///     Parent (the carrier is implicit — the codec's declared
+///     `requires_parent_flags.carrier`). Required for Zenoh
+///     transport-level Init/Hello body codecs whose body fields
+///     are gated by parent header flags (S-flag, A-flag, L-flag).
+///
+/// Richer expressions (negation, conjunction, equality against a
+/// value) are deferred to a later B-stage when downstream authoring
+/// surfaces a reachable consumer.
 #[derive(Debug, Clone, Serialize)]
 pub struct PresentIfPredicate {
+    /// Predicate scope. Defaults to `Local` for back-compat with
+    /// pre-B5-γ goldens; serialized only when `Parent` to keep
+    /// existing local-scope JSON shape byte-stable.
+    #[serde(skip_serializing_if = "is_local_scope")]
+    pub scope: PresentIfScope,
+    /// Carrier field id when `scope = Local`. Empty when `scope =
+    /// Parent` (the carrier is implicit — the codec's declared
+    /// `requires_parent_flags.carrier`).
     pub field_id: String,
     pub flag_name: String,
+}
+
+fn is_local_scope(scope: &PresentIfScope) -> bool {
+    matches!(scope, PresentIfScope::Local)
+}
+
+/// RFC §5.B B5-γ — the codec's declared dependency on a parent
+/// codec's flags carrier. Authored as `<sce:requires-parent-flags
+/// carrier="X"><sce:flag name="N" bit="B"/></sce:requires-parent-flags>`
+/// under `<sce:codec>`.
+///
+/// Validator (cross-codec, at variant arm wire-up) confirms the
+/// parent codec has `<sce:flags id="<carrier>">` of `uint8` with
+/// each declared flag name + bit position matching exactly.
+/// Mismatch surfaces as `codec/parent-flag-mismatch`.
+///
+/// Codegen extends the codec's decode/encode signature with a
+/// `parent_flags: u8` parameter (per-language idiom) when this
+/// field is `Some`; variant arm dispatcher threads the parent's
+/// flag-carrier value into the arm decoder call.
+///
+/// v1 fixes the parent flag carrier type at `uint8` (Zenoh
+/// transport pattern). Future widening to uint16+ defers to a
+/// reachable consumer.
+#[derive(Debug, Clone, Serialize)]
+pub struct RequiresParentFlags {
+    /// Parent codec's flags-carrier field id (e.g. `"header"`).
+    pub carrier: String,
+    /// Per-flag declarations mirroring the parent's `<sce:flags>`
+    /// child layout. Validator confirms exact name + bit match
+    /// against the parent codec.
+    pub flags: Vec<FlagDef>,
 }
 
 /// A single field in a codec's byte layout.
@@ -1014,6 +1084,18 @@ pub struct CodecModel {
     /// than a flat struct.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variant: Option<CodecVariant>,
+    /// RFC §5.B B5-γ parent-flags dependency — the codec's body
+    /// fields read flags from a parent codec's flags carrier
+    /// (Zenoh upstream pattern: `_z_init_decode(.., uint8_t header)`
+    /// gates `sn_res + req_id_res + batch_size` on parent's S-flag
+    /// bit 6). When `Some`, codegen extends the decode/encode
+    /// signature with a `parent_flags: u8` parameter and the variant
+    /// arm dispatcher threads the parent's flag-carrier value
+    /// through. Cross-codec validator confirms the parent codec's
+    /// `<sce:flags id="<carrier>">` matches the body's declared
+    /// flag layout (name + bit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requires_parent_flags: Option<RequiresParentFlags>,
 }
 
 impl CodecModel {
@@ -1122,6 +1204,15 @@ impl CodecModel {
     /// B3-α: TLV chain. B3-β: DMA alignment.
     pub fn has_mcu_only_features(&self) -> bool {
         self.has_tlv_chain_fields() || self.has_dma_aligned_fields()
+    }
+
+    /// Whether the codec declares a `<sce:requires-parent-flags>`
+    /// block (RFC §5.B B5-γ). Drives the per-backend signature
+    /// extension that adds a `parent_flags: u8` parameter to
+    /// decode/encode and the variant arm dispatcher's threading
+    /// of the parent's flag-carrier value through the call.
+    pub fn has_parent_flags(&self) -> bool {
+        self.requires_parent_flags.is_some()
     }
 }
 

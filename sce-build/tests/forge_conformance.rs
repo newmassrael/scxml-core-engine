@@ -1644,6 +1644,35 @@ fn forge_codec_transport_envelope_cpp() {
     );
 }
 
+/// RFC §5.B B5-γ trunk (Cpp): body codec with `<sce:requires-parent-flags
+/// carrier="header"><sce:flag name="S" bit="6"/></sce:requires-parent-flags>`
+/// emits decode/encode signatures that take a `std::uint8_t parent_flags`
+/// parameter. Body fields gated by `sce:present-if="parent.S"` read the
+/// bit from this parameter rather than from a sibling carrier. Mirrors
+/// zenoh-pico's `_z_init_decode(.., uint8_t header)` upstream pattern.
+#[test]
+fn forge_codec_init_syn_body_cpp() {
+    assert_standalone_forge(
+        "codec_init_syn_body",
+        "codec_init_syn_body.h",
+    );
+}
+
+/// RFC §5.B B5-γ trunk (Cpp): variant parent codec whose arm body
+/// declares `<sce:requires-parent-flags carrier="header">` — the
+/// dispatch threads the parent's `header` flags-carrier value into
+/// the body's `decode(cursor, header)` / `encode(header)` calls.
+/// Cross-codec layout match (parent's `<sce:flags id="header">` has
+/// 'S' at bit=6) validated at codegen time per
+/// `codec/parent-flag-mismatch`.
+#[test]
+fn forge_codec_init_syn_envelope_cpp() {
+    assert_standalone_forge(
+        "codec_init_syn_envelope",
+        "codec_init_syn_envelope.h",
+    );
+}
+
 /// RFC §5.B B1-β: `codec/variant-arm-unreachable` build-time check —
 /// a `<sce:variant>` over a uint8 tag with two arms and no
 /// `<sce:default>` leaves 254 tag values uncovered, so the parser
@@ -2471,6 +2500,33 @@ fn forge_rust_codec_transport_envelope() {
     assert_standalone_forge_rust(
         "codec_transport_envelope",
         "codec_transport_envelope.rs",
+    );
+}
+
+/// RFC §5.B B5-γ trunk (Rust): body codec with parent-flags dependency.
+/// Decode/encode signatures gain a `parent_flags: u8` parameter; body
+/// fields gated via `parent.<flag>` predicates emit
+/// `(parent_flags & 0x40) != 0` style bit-tests. Mirrors
+/// `_z_init_decode` upstream signature shape.
+#[test]
+fn forge_rust_codec_init_syn_body() {
+    assert_standalone_forge_rust(
+        "codec_init_syn_body",
+        "codec_init_syn_body.rs",
+    );
+}
+
+/// RFC §5.B B5-γ trunk (Rust): variant parent threading carrier value.
+/// Each arm dispatches `Body::decode(cursor, header)` for arm bodies
+/// declaring `<sce:requires-parent-flags carrier="header">`; encode
+/// passes `body.encode(header)` symmetrically. Cross-codec validator
+/// confirms parent's flag layout matches the body's declared
+/// `<sce:flag name="S" bit="6"/>`.
+#[test]
+fn forge_rust_codec_init_syn_envelope() {
+    assert_standalone_forge_rust(
+        "codec_init_syn_envelope",
+        "codec_init_syn_envelope.rs",
     );
 }
 
@@ -4626,6 +4682,126 @@ fn crossfile_matrix_validator_lookup() {
 #[test]
 fn crossfile_matrix_validator_interpolation() {
     assert_crossfile_codegen_languages("crossfile_validator_interpolation", SIX_BACKENDS);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ── B5-γ parent-flags dependency rejections ──────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/// RFC §5.B B5-γ trunk gate: a codec declaring
+/// `<sce:requires-parent-flags>` rejects on Kotlin/Go/C11/Python until
+/// the per-language closures land (precedent: B1-β / B1-δ / B2-α / B3-α
+/// trunk-then-closures cadence).
+fn assert_b5_gamma_gate_rejects(scxml: &str, language: sce_build::generator::Language) {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let scxml_path = resource_dir().join(scxml);
+    let content = std::fs::read_to_string(&scxml_path)
+        .unwrap_or_else(|_| panic!("Cannot read {scxml}"));
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric(scxml.trim_end_matches(".scxml")),
+        language,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions {
+            go_module_prefix: Some("github.com/sce/test/generated".to_string()),
+            ..Default::default()
+        },
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "B5-γ parent-flags codec on {language:?} must reject with \
+             GenerateError::UnsupportedFeature until per-language closure \
+             lands"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(&err.error, ForgeError::Generate(GenerateError::UnsupportedFeature(_))),
+        "must surface GenerateError::UnsupportedFeature; got: {:?}",
+        err.error
+    );
+}
+
+#[test]
+fn forge_codec_init_syn_body_kotlin_gate_rejects() {
+    assert_b5_gamma_gate_rejects(
+        "codec_init_syn_body.scxml",
+        sce_build::generator::Language::Kotlin,
+    );
+}
+
+#[test]
+fn forge_codec_init_syn_body_go_gate_rejects() {
+    assert_b5_gamma_gate_rejects(
+        "codec_init_syn_body.scxml",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_codec_init_syn_body_c11_gate_rejects() {
+    assert_b5_gamma_gate_rejects(
+        "codec_init_syn_body.scxml",
+        sce_build::generator::Language::C11,
+    );
+}
+
+#[test]
+fn forge_codec_init_syn_body_python_gate_rejects() {
+    assert_b5_gamma_gate_rejects(
+        "codec_init_syn_body.scxml",
+        sce_build::generator::Language::Python,
+    );
+}
+
+/// RFC §5.B B5-γ: cross-codec parent-flag layout mismatch — the body
+/// codec declares `<sce:flag name="S" bit="6"/>` but the parent codec's
+/// `<sce:flags id="header">` places 'S' at a DIFFERENT bit. The
+/// codegen-time cross-codec validator surfaces
+/// `codec/parent-flag-mismatch` with a precise reason naming the
+/// offending flag and both bit positions.
+#[test]
+fn forge_codec_parent_flag_bit_mismatch_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_init_syn_envelope_mismatch">
+  <sce:import src="codec_init_syn_body.scxml" kind="codec" as="codec_init_syn_body"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="S"   bit="5"/>
+    </sce:flags>
+    <sce:variant tag="header.mid">
+      <sce:arm value="0x01" type="codec_init_syn_body"/>
+      <sce:default type="codec_init_syn_body"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"##;
+    let result = sce_build::compile_forge_with_imports(
+        parent_scxml,
+        sce_build::DocumentLabel::symmetric("codec_init_syn_envelope_mismatch"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "parent flag bit-mismatch must reject with codec/parent-flag-mismatch"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::CodecParentFlagMismatch { .. })
+        ),
+        "must surface CodecParentFlagMismatch; got: {:?}",
+        err.error
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════

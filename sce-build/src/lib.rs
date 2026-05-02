@@ -615,6 +615,13 @@ fn validate_and_enrich_imports(
             // worst-case arm body. Non-codec imports leave it `None`.
             if let forge::model::ForgeDocument::Codec(cm) = &doc {
                 ctx.codec_max_bytes = Some(cm.max_frame_bytes());
+                // RFC §5.B B5-γ: capture the imported body codec's
+                // parent-flags dependency (if any) so the parent
+                // codec's variant arm dispatcher can thread the
+                // declared carrier value into the arm decoder call,
+                // and the cross-codec validator can confirm layout
+                // match against the parent's `<sce:flags id="X">`.
+                ctx.codec_requires_parent_flags = cm.requires_parent_flags.clone();
             }
             if !ctx.is_stateful {
                 if let Some(name) = discover_primary_function(&doc, language) {

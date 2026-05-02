@@ -108,6 +108,18 @@ pub struct ImportContext {
     /// whose model failed to parse during enrichment.
     #[serde(skip)]
     pub codec_max_bytes: Option<u32>,
+
+    /// For codec imports: the imported codec's
+    /// `requires_parent_flags` block (RFC §5.B B5-γ). When `Some`,
+    /// the variant arm dispatcher (B5-β/γ) threads the parent's
+    /// flag-carrier value into the arm decoder call, and the
+    /// cross-codec validator confirms the parent codec's
+    /// `<sce:flags id="<carrier>">` matches the body's declared
+    /// flag layout. `None` for non-codec imports, for codec imports
+    /// whose model failed to parse during enrichment, and for codec
+    /// imports that don't declare a parent-flags dependency.
+    #[serde(skip)]
+    pub codec_requires_parent_flags: Option<crate::forge::model::RequiresParentFlags>,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -236,6 +248,7 @@ fn resolve_single_import(
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_requires_parent_flags: None,
             }
         }
         crate::generator::Language::Kotlin => {
@@ -264,6 +277,7 @@ fn resolve_single_import(
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_requires_parent_flags: None,
             }
         }
         crate::generator::Language::Rust => {
@@ -294,6 +308,7 @@ fn resolve_single_import(
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_requires_parent_flags: None,
             }
         }
         crate::generator::Language::Go => {
@@ -350,6 +365,7 @@ fn resolve_single_import(
                 member_method_sigs: Vec::new(),
                 go_init_expr,
                 codec_max_bytes: None,
+                codec_requires_parent_flags: None,
             }
         }
         crate::generator::Language::Python => {
@@ -380,6 +396,7 @@ fn resolve_single_import(
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_requires_parent_flags: None,
             }
         }
         crate::generator::Language::C11 => {
@@ -411,6 +428,7 @@ fn resolve_single_import(
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_requires_parent_flags: None,
             }
         }
     }
@@ -1017,6 +1035,63 @@ fn render_codec(
         }
     }
 
+    // RFC §5.B B5-γ: cross-codec parent-flags layout validation.
+    // When THIS codec (the parent) has a `<sce:variant>` whose arm
+    // bodies declare `<sce:requires-parent-flags carrier="X">`, the
+    // parent must have a `<sce:flags id="X">` carrier of uint8 with
+    // each declared flag name+bit matching exactly. Mismatch surfaces
+    // as `codec/parent-flag-mismatch`. Body codecs without variant
+    // wire-up at this site (e.g. authored standalone before the
+    // parent ships) skip this check — the diagnostic only fires when
+    // the body is actually wired up to a concrete parent. Body codecs
+    // emitted in isolation (no variant arm referencing them yet) are
+    // still emitted with the parent_flags signature; the actual layout
+    // confirm rides the FIRST parent that wires them up.
+    if let Some(v) = &m.variant {
+        validate_cross_codec_parent_flags(m, v, imports)?;
+    }
+
+    // RFC §5.B B5-γ: per-language gate for codecs that declare
+    // `<sce:requires-parent-flags>` directly. Trunk lands on Rust +
+    // Cpp first; Kotlin/Go/C11/Python typed-reject until the per-
+    // language closures land (mirrors B1-β / B1-δ / B2-α / B3-α
+    // trunk-then-closures cadence). When THIS codec has a variant
+    // whose arm bodies declare requires-parent-flags, the gate also
+    // applies — the parent codec emits the dispatch wiring that
+    // threads the carrier value through, and that wiring lives in
+    // the per-language template. Body codecs imported into a parent
+    // (i.e. arm bodies) are detected through `imports` lookup.
+    let body_imports_parent_flags = imports
+        .iter()
+        .any(|i| i.codec_requires_parent_flags.is_some());
+    if m.has_parent_flags() || body_imports_parent_flags {
+        match lang {
+            crate::generator::Language::Rust | crate::generator::Language::Cpp => { /* trunk */ }
+            crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11
+            | crate::generator::Language::Python => {
+                return Err(ForgeError::Generate(
+                    crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                        "codec '{}' uses RFC §5.B B5-γ parent-flags dependency \
+                         (`<sce:requires-parent-flags>` on this codec or on an \
+                         imported variant arm body). Trunk emit lands on Rust + \
+                         Cpp first; the per-language closure for {} ships in a \
+                         follow-up commit (precedent: B1-β / B1-δ / B2-α / B3-α).",
+                        m.name,
+                        match lang {
+                            crate::generator::Language::Kotlin => "kotlin",
+                            crate::generator::Language::Go => "go",
+                            crate::generator::Language::C11 => "c11",
+                            crate::generator::Language::Python => "python",
+                            _ => unreachable!(),
+                        }
+                    )),
+                ));
+            }
+        }
+    }
+
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
@@ -1346,6 +1421,7 @@ fn render_codec(
                     present_if_streaming_decode_stmt(
                         f,
                         &m.fields,
+                        m.requires_parent_flags.as_ref(),
                         m.default_endian,
                         lang,
                     )
@@ -1356,6 +1432,7 @@ fn render_codec(
                     present_if_streaming_encode_block(
                         f,
                         &m.fields,
+                        m.requires_parent_flags.as_ref(),
                         m.default_endian,
                         lang,
                     )
@@ -1536,6 +1613,46 @@ fn render_codec(
         "has_dma_aligned_fields".into(),
         m.has_dma_aligned_fields().into(),
     );
+    // RFC §5.B B5-γ parent-flags dependency: when the codec declares
+    // `<sce:requires-parent-flags>`, decode/encode signatures gain a
+    // per-language `parent_flags: u8` parameter. Templates branch on
+    // `has_parent_flags` to inject the parameter; the per-language
+    // fragments (`parent_flags_param_decl` for the parameter
+    // declaration with leading `, `, and `parent_flags_param_first`
+    // without the comma for first-arg sites) factor the language
+    // idiom out of the templates. v1 fixes parent flag carrier type
+    // at uint8 — no width branching needed.
+    ctx.insert("has_parent_flags".into(), m.has_parent_flags().into());
+    // Param fragments emit only when THIS codec declares
+    // `<sce:requires-parent-flags>`. Codecs that merely import a body
+    // with parent-flags (variant parent envelopes) keep their own
+    // signatures unchanged — the threading happens at the call-site
+    // via the per-arm `body_parent_flags_arg` / `_arg_first` keys.
+    let (parent_flags_param_decl, parent_flags_param_first) = if m.has_parent_flags() {
+        match lang {
+            crate::generator::Language::Rust => (", parent_flags: u8", "parent_flags: u8"),
+            crate::generator::Language::Cpp => {
+                (", std::uint8_t parent_flags", "std::uint8_t parent_flags")
+            }
+            // Other 4 languages gated above with UnsupportedFeature, so
+            // the empty fragment is unreachable for valid emit. Default
+            // to empty to keep the JSON shape uniform.
+            crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11
+            | crate::generator::Language::Python => ("", ""),
+        }
+    } else {
+        ("", "")
+    };
+    ctx.insert(
+        "parent_flags_param_decl".into(),
+        parent_flags_param_decl.into(),
+    );
+    ctx.insert(
+        "parent_flags_param_first".into(),
+        parent_flags_param_first.into(),
+    );
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
 
     // RFC §5.B variant primitive (B1-β trunk): build per-arm rendering
@@ -1627,6 +1744,49 @@ fn render_codec(
                 // splice loop in encode() so `_sub` carries the body's
                 // own `<snake>_encoded_t` shape, not the parent's.
                 let c_body_encoded_type = format!("{arm_snake}_encoded_t");
+                // RFC §5.B B5-γ: when the arm body imports a codec
+                // with `<sce:requires-parent-flags carrier="X">`,
+                // thread the parent's local carrier value into the
+                // body decoder/encoder call. Carrier id matches the
+                // body's declared `requires_parent_flags.carrier`,
+                // which the cross-codec validator has confirmed
+                // points at a real `<sce:flags>` field on this
+                // parent codec. Empty string when the arm body has
+                // no parent-flags dependency (templates render the
+                // call without a comma + arg).
+                // RFC §5.B B5-γ: per-call-site arg fragments.
+                //
+                // Decode site: the carrier value is a freshly-decoded
+                // local (named after the carrier field id), so a bare
+                // identifier reads correctly in both Rust and Cpp.
+                // Comma-prefixed for placement after `cursor`.
+                //
+                // Encode site: the encode method runs on `&self` /
+                // `*this`, so the carrier value is a struct field.
+                //   - Rust: explicit `self.<carrier>` prefix.
+                //   - Cpp: bare `<carrier>` (implicit `this`).
+                // Empty strings when the arm body has no parent-flags
+                // dependency (templates render the call without any
+                // arg).
+                let body_parent_flags_carrier = imports
+                    .iter()
+                    .find(|i| i.alias == arm.body_alias)
+                    .and_then(|i| i.codec_requires_parent_flags.as_ref())
+                    .map(|r| r.carrier.clone());
+                let body_parent_flags_arg = body_parent_flags_carrier
+                    .as_ref()
+                    .map(|c| format!(", {}", c))
+                    .unwrap_or_default();
+                let body_parent_flags_arg_first = body_parent_flags_carrier
+                    .as_ref()
+                    .map(|c| match lang {
+                        crate::generator::Language::Rust => format!("self.{}", c),
+                        crate::generator::Language::Cpp => c.clone(),
+                        // Other 4 languages gated above; emit bare id
+                        // as a deterministic placeholder.
+                        _ => c.clone(),
+                    })
+                    .unwrap_or_default();
                 let mut obj = serde_json::Map::new();
                 obj.insert("value_literal".into(), value_literal.into());
                 obj.insert("variant_name".into(), variant_name.into());
@@ -1636,6 +1796,14 @@ fn render_codec(
                 obj.insert("c_kind_constant".into(), c_kind_constant.into());
                 obj.insert("c_union_field".into(), arm_snake.into());
                 obj.insert("c_body_encoded_type".into(), c_body_encoded_type.into());
+                obj.insert(
+                    "body_parent_flags_arg".into(),
+                    body_parent_flags_arg.into(),
+                );
+                obj.insert(
+                    "body_parent_flags_arg_first".into(),
+                    body_parent_flags_arg_first.into(),
+                );
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1654,6 +1822,28 @@ fn render_codec(
                 let c_kind_constant = format!("{c_parent_upper}_BODY_KIND_DEFAULT");
                 let d_snake = filters::to_snake_case(d.body_alias.clone());
                 let c_body_encoded_type = format!("{d_snake}_encoded_t");
+                // RFC §5.B B5-γ: same shape as enumerated arms — the
+                // default arm's body codec might also declare
+                // `<sce:requires-parent-flags>` (typical for Zenoh
+                // close-message default arm gated by the same header
+                // bits as enumerated arms).
+                let body_parent_flags_carrier = imports
+                    .iter()
+                    .find(|i| i.alias == d.body_alias)
+                    .and_then(|i| i.codec_requires_parent_flags.as_ref())
+                    .map(|r| r.carrier.clone());
+                let body_parent_flags_arg = body_parent_flags_carrier
+                    .as_ref()
+                    .map(|c| format!(", {}", c))
+                    .unwrap_or_default();
+                let body_parent_flags_arg_first = body_parent_flags_carrier
+                    .as_ref()
+                    .map(|c| match lang {
+                        crate::generator::Language::Rust => format!("self.{}", c),
+                        crate::generator::Language::Cpp => c.clone(),
+                        _ => c.clone(),
+                    })
+                    .unwrap_or_default();
                 let mut obj = serde_json::Map::new();
                 obj.insert(
                     "variant_name".into(),
@@ -1667,6 +1857,14 @@ fn render_codec(
                 // enumerated arm whose body alias happens to be `default`.
                 obj.insert("c_union_field".into(), "default_body".to_string().into());
                 obj.insert("c_body_encoded_type".into(), c_body_encoded_type.into());
+                obj.insert(
+                    "body_parent_flags_arg".into(),
+                    body_parent_flags_arg.into(),
+                );
+                obj.insert(
+                    "body_parent_flags_arg_first".into(),
+                    body_parent_flags_arg_first.into(),
+                );
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .transpose()?;
@@ -1934,6 +2132,139 @@ fn resolve_variant_arm_body_type(
 /// `(cursor)` and the language-specific error wiring. Free-function
 /// backends (Go) use `<package>.Decode<Pascal>` because the imported
 /// codec exposes a top-level decoder, not a method on the struct.
+/// RFC §5.B B5-γ: cross-codec parent-flags layout validator.
+///
+/// Walks `variant`'s arms (and `default`) and, for each arm body
+/// that declares `<sce:requires-parent-flags carrier="X">`, confirms
+/// that THIS codec (the parent) has a `<sce:flags id="X">` carrier of
+/// `uint8` with every flag name+bit matching exactly. Mismatch
+/// surfaces as `codec/parent-flag-mismatch` with a precise reason
+/// naming one of three orthogonal causes:
+///   (a) parent codec lacks a field named `<carrier>`;
+///   (b) the named carrier exists but is not a `<sce:flags>` container,
+///       or is not a uint8 (v1 fixes parent flag carrier type at uint8);
+///   (c) a flag declared in the body's block has a name or `bit=` that
+///       doesn't match the parent's actual layout.
+///
+/// Imports without parsed model (failed enrichment) skip — the
+/// diagnostic that surfaces is the upstream parse/import error, not
+/// this layout check.
+fn validate_cross_codec_parent_flags(
+    parent: &CodecModel,
+    variant: &CodecVariant,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    use crate::forge::error::ValidationError;
+    use crate::forge::model::SceType;
+
+    // Collect each arm's body alias once (arms + default).
+    let mut aliases: Vec<&str> = variant
+        .arms
+        .iter()
+        .map(|a| a.body_alias.as_str())
+        .collect();
+    if let Some(d) = &variant.default_arm {
+        aliases.push(d.body_alias.as_str());
+    }
+    aliases.sort();
+    aliases.dedup();
+
+    for alias in aliases {
+        let imp = match imports.iter().find(|i| i.alias == alias) {
+            Some(i) => i,
+            None => continue, // upstream variant body resolution will reject
+        };
+        let body_req = match &imp.codec_requires_parent_flags {
+            Some(r) => r,
+            None => continue, // body has no parent-flags dependency
+        };
+
+        let body_codec_name = alias;
+        let parent_codec_name = parent.name.as_str();
+        let mismatch = |reason: String| {
+            ForgeError::Validation(ValidationError::CodecParentFlagMismatch {
+                body_codec: body_codec_name.to_string(),
+                parent_codec: parent_codec_name.to_string(),
+                reason,
+            })
+        };
+
+        // (a) parent must have a field named `<carrier>`.
+        let carrier = match parent.fields.iter().find(|f| f.id == body_req.carrier) {
+            Some(f) => f,
+            None => {
+                let known: Vec<&str> = parent.fields.iter().map(|f| f.id.as_str()).collect();
+                return Err(mismatch(format!(
+                    "body declares <sce:requires-parent-flags carrier=\"{}\"> but \
+                     parent codec has no field named '{}' (known parent fields: \
+                     [{}])",
+                    body_req.carrier,
+                    body_req.carrier,
+                    known.join(", ")
+                )));
+            }
+        };
+
+        // (b) carrier must be a flags-bearing field of uint8 (v1 lock-in).
+        if !carrier.is_flags_carrier() {
+            return Err(mismatch(format!(
+                "body declares <sce:requires-parent-flags carrier=\"{}\"> but \
+                 parent's '{}' is a plain field (not a <sce:flags> container) — \
+                 declare the carrier as <sce:flags id=\"{}\" sce:type=\"uint8\" \
+                 sce:byte=\"...\"> with named-bit children to expose its flags",
+                body_req.carrier, body_req.carrier, body_req.carrier
+            )));
+        }
+        if !matches!(carrier.sce_type, SceType::Uint8) {
+            return Err(mismatch(format!(
+                "body declares <sce:requires-parent-flags carrier=\"{}\"> but \
+                 parent's '{}' is sce:type=\"{:?}\"; v1 fixes parent flag carrier \
+                 type at uint8 (Zenoh transport pattern — widening defers to a \
+                 reachable consumer)",
+                body_req.carrier, body_req.carrier, carrier.sce_type
+            )));
+        }
+
+        // (c) every body-declared flag must match parent's layout exactly.
+        for body_flag in &body_req.flags {
+            let parent_flag = match carrier.flags.iter().find(|f| f.name == body_flag.name) {
+                Some(f) => f,
+                None => {
+                    let known: Vec<&str> = carrier.flags.iter().map(|f| f.name.as_str()).collect();
+                    return Err(mismatch(format!(
+                        "body declares <sce:flag name=\"{}\" bit=\"{}\"/> but \
+                         parent's <sce:flags id=\"{}\"> has no flag named '{}' \
+                         (known flags: [{}])",
+                        body_flag.name,
+                        body_flag.bit,
+                        body_req.carrier,
+                        body_flag.name,
+                        known.join(", ")
+                    )));
+                }
+            };
+            if parent_flag.bit != body_flag.bit {
+                return Err(mismatch(format!(
+                    "body declares <sce:flag name=\"{}\" bit=\"{}\"/> but parent's \
+                     <sce:flags id=\"{}\"> places '{}' at bit={} — fix one side \
+                     to align (the parent's bit position is the wire-format \
+                     truth)",
+                    body_flag.name,
+                    body_flag.bit,
+                    body_req.carrier,
+                    body_flag.name,
+                    parent_flag.bit
+                )));
+            }
+            // v1 single-bit only on the body side (parser enforced
+            // width=1 in parse_requires_parent_flags); the parent
+            // can have a wider declaration but the body's bit-test
+            // still uses width=1, so width-mismatch is not an error.
+        }
+    }
+    Ok(())
+}
+
 fn resolve_variant_arm_decoder(
     body_alias: &str,
     lang: crate::generator::Language,
@@ -2630,17 +2961,18 @@ fn resolve_length_field_byte_off(
 fn present_if_streaming_decode_stmt(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     default_endian: Endian,
     lang: crate::generator::Language,
 ) -> String {
     match &field.bit_size {
         BitSize::Fixed { bits } => {
-            present_if_decode_fixed(field, fields, default_endian, lang, *bits)
+            present_if_decode_fixed(field, fields, parent_flags, default_endian, lang, *bits)
         }
-        BitSize::Tail => present_if_decode_tail(field, fields, lang),
-        BitSize::LengthRef => present_if_decode_length_ref(field, fields, lang),
+        BitSize::Tail => present_if_decode_tail(field, fields, parent_flags, lang),
+        BitSize::LengthRef => present_if_decode_length_ref(field, fields, parent_flags, lang),
         BitSize::Vle { width_bits } => {
-            present_if_decode_vle(field, fields, lang, *width_bits)
+            present_if_decode_vle(field, fields, parent_flags, lang, *width_bits)
         }
         // Repeat / TLV-chain fields are routed to their dedicated
         // streaming helpers by the template's per-field dispatch —
@@ -2661,6 +2993,7 @@ fn present_if_streaming_decode_stmt(
 fn present_if_decode_fixed(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     default_endian: Endian,
     lang: crate::generator::Language,
     bits: u32,
@@ -2683,7 +3016,7 @@ fn present_if_decode_fixed(
              }};"
         ),
         (Language::Rust, Some(p)) => {
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
                      let raw = cursor.peek_slice({n})?;\n            \
@@ -2709,7 +3042,7 @@ fn present_if_decode_fixed(
         }
         (Language::Cpp, Some(p)) => {
             let ty = cpp_type(&field.sce_type);
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "std::optional<{ty}> {id};\n        \
                  if ({test}) {{\n            \
@@ -2738,7 +3071,7 @@ fn present_if_decode_fixed(
              }}"
         ),
         (Language::Kotlin, Some(p)) => {
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "val {id} = if ({test}) {{\n                \
                      val raw = cursor.peekSlice({n}) ?: return null\n                \
@@ -2778,7 +3111,7 @@ fn present_if_decode_fixed(
         (Language::Go, Some(p)) => {
             let ty = go_type(&field.sce_type);
             let go_id = filters::to_pascal_case(id.to_string());
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "var {go_id} *{ty}\n\t\
                  if {test} {{\n\t\t\
@@ -2815,7 +3148,7 @@ fn present_if_decode_fixed(
         }
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             let c_ty = c_type(&field.sce_type);
             format!(
                 "if ({test}) {{\n        \
@@ -2848,7 +3181,7 @@ fn present_if_decode_fixed(
         }
         (Language::Python, Some(p)) => {
             let py_id = filters::to_snake_case(id.to_string());
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "if {test}:\n                \
                      raw = cursor.peek_slice({n})\n                \
@@ -2872,6 +3205,7 @@ fn present_if_decode_fixed(
 fn present_if_decode_tail(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -2887,7 +3221,7 @@ fn present_if_decode_tail(
              }};"
         ),
         (Language::Rust, Some(p)) => {
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
                      let _n = cursor.remaining();\n            \
@@ -2911,7 +3245,7 @@ fn present_if_decode_tail(
              }}"
         ),
         (Language::Cpp, Some(p)) => {
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "std::optional<std::vector<uint8_t>> {id};\n        \
                  if ({test}) {{\n            \
@@ -2937,7 +3271,7 @@ fn present_if_decode_tail(
              }}"
         ),
         (Language::Kotlin, Some(p)) => {
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "val {id} = if ({test}) {{\n                \
                      val _n = cursor.remaining()\n                \
@@ -2974,7 +3308,7 @@ fn present_if_decode_tail(
         }
         (Language::Go, Some(p)) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "var {go_id} []byte\n\t\
                  if {test} {{\n\t\t\
@@ -3013,7 +3347,7 @@ fn present_if_decode_tail(
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
             let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "if ({test}) {{\n        \
                      size_t _n = sce_forge_cursor_remaining(cursor);\n        \
@@ -3042,7 +3376,7 @@ fn present_if_decode_tail(
         }
         (Language::Python, Some(p)) => {
             let py_id = filters::to_snake_case(id.to_string());
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "if {test}:\n                \
                      _n = cursor.remaining()\n                \
@@ -3065,6 +3399,7 @@ fn present_if_decode_tail(
 fn present_if_decode_length_ref(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -3084,7 +3419,7 @@ fn present_if_decode_length_ref(
              }};"
         ),
         (Language::Rust, Some(p)) => {
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "let {id} = if {test} {{\n            \
                      let _n = {len_field} as usize;\n            \
@@ -3108,7 +3443,7 @@ fn present_if_decode_length_ref(
              }}"
         ),
         (Language::Cpp, Some(p)) => {
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "std::optional<std::vector<uint8_t>> {id};\n        \
                  if ({test}) {{\n            \
@@ -3130,7 +3465,7 @@ fn present_if_decode_length_ref(
              }}"
         ),
         (Language::Kotlin, Some(p)) => {
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "val {id} = if ({test}) {{\n                \
                      val _n = {len_field}.toInt()\n                \
@@ -3164,7 +3499,7 @@ fn present_if_decode_length_ref(
         (Language::Go, Some(p)) => {
             let go_id = filters::to_pascal_case(id.to_string());
             let go_len = filters::to_pascal_case(len_field.to_string());
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "var {go_id} []byte\n\t\
                  if {test} {{\n\t\t\
@@ -3200,7 +3535,7 @@ fn present_if_decode_length_ref(
             let id_snake = filters::to_snake_case(id.to_string());
             let len_snake = filters::to_snake_case(len_field.to_string());
             let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "if ({test}) {{\n        \
                      size_t _n = (size_t)out->{len_snake};\n        \
@@ -3228,7 +3563,7 @@ fn present_if_decode_length_ref(
         (Language::Python, Some(p)) => {
             let py_id = filters::to_snake_case(id.to_string());
             let py_len = filters::to_snake_case(len_field.to_string());
-            let test = present_if_test_literal(fields, p, lang);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
             format!(
                 "if {test}:\n                \
                      _n = {py_len}\n                \
@@ -3252,6 +3587,7 @@ fn present_if_decode_length_ref(
 fn present_if_decode_vle(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
     width_bits: u32,
 ) -> String {
@@ -3293,7 +3629,7 @@ fn present_if_decode_vle(
         return vle_decode_stmt(&local_id, width_bits, lang);
     }
     let p = field.present_if.as_ref().expect("guarded by branch above");
-    let test = present_if_test_literal(fields, p, lang);
+    let test = present_if_test_literal(fields, parent_flags, p, lang);
     let body_id = format!("_v");
     let inner = vle_decode_stmt(&body_id, width_bits, lang);
     match lang {
@@ -3393,17 +3729,18 @@ fn present_if_decode_vle(
 fn present_if_streaming_encode_block(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     default_endian: Endian,
     lang: crate::generator::Language,
 ) -> String {
     match &field.bit_size {
         BitSize::Fixed { bits } => {
-            present_if_encode_fixed(field, fields, default_endian, lang, *bits)
+            present_if_encode_fixed(field, fields, parent_flags, default_endian, lang, *bits)
         }
-        BitSize::Tail => present_if_encode_tail(field, fields, lang),
-        BitSize::LengthRef => present_if_encode_length_ref(field, fields, lang),
+        BitSize::Tail => present_if_encode_tail(field, fields, parent_flags, lang),
+        BitSize::LengthRef => present_if_encode_length_ref(field, fields, parent_flags, lang),
         BitSize::Vle { width_bits } => {
-            present_if_encode_vle(field, fields, lang, *width_bits)
+            present_if_encode_vle(field, fields, parent_flags, lang, *width_bits)
         }
         // Repeat / TLV-chain fields render via their dedicated
         // streaming encode helpers through the template's per-field
@@ -3420,6 +3757,7 @@ fn present_if_streaming_encode_block(
 fn present_if_encode_fixed(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     default_endian: Endian,
     lang: crate::generator::Language,
     bits: u32,
@@ -3485,11 +3823,17 @@ fn present_if_encode_fixed(
             // — they read from `self-><id>` either way; the only
             // difference is the surrounding gate.
             let p = field.present_if.as_ref().expect("gated arm requires predicate");
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, p);
-            let carrier_snake = filters::to_snake_case(carrier.id.clone());
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
+            // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
+            // for Local-scope carriers (struct member) and bare
+            // `parent_flags` for Parent-scope (function arg).
+            let carrier_snake = match &carrier {
+                PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
+                PresentIfCarrier::Parent => "parent_flags".to_string(),
+            };
             let inner = streaming_fixed_field_encode_c11_inner(field, default_endian, n);
             format!(
-                "    if ((self->{carrier_snake} & 0x{mask:0width$X}) != 0) {{\n\
+                "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n\
                  {inner}\
                  \n    }}",
                 width = hex_digits
@@ -3518,6 +3862,7 @@ fn present_if_encode_fixed(
 fn present_if_encode_tail(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -3581,10 +3926,16 @@ fn present_if_encode_tail(
                 .present_if
                 .as_ref()
                 .expect("gated arm requires predicate");
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, p);
-            let carrier_snake = filters::to_snake_case(carrier.id.clone());
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
+            // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
+            // for Local-scope carriers (struct member) and bare
+            // `parent_flags` for Parent-scope (function arg).
+            let carrier_snake = match &carrier {
+                PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
+                PresentIfCarrier::Parent => "parent_flags".to_string(),
+            };
             format!(
-                "    if ((self->{carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
+                "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
                      for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
                      r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
                  }}",
@@ -3612,6 +3963,7 @@ fn present_if_encode_tail(
 fn present_if_encode_length_ref(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -3675,10 +4027,16 @@ fn present_if_encode_length_ref(
                 .present_if
                 .as_ref()
                 .expect("gated arm requires predicate");
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, p);
-            let carrier_snake = filters::to_snake_case(carrier.id.clone());
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
+            // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
+            // for Local-scope carriers (struct member) and bare
+            // `parent_flags` for Parent-scope (function arg).
+            let carrier_snake = match &carrier {
+                PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
+                PresentIfCarrier::Parent => "parent_flags".to_string(),
+            };
             format!(
-                "    if ((self->{carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
+                "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
                      for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < self->{len_snake}; ++_bi) \
                      r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
                  }}",
@@ -3705,6 +4063,7 @@ fn present_if_encode_length_ref(
 fn present_if_encode_vle(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
     width_bits: u32,
 ) -> String {
@@ -3787,15 +4146,21 @@ fn present_if_encode_vle(
             // presence source. The VLE encode loop reads the field
             // directly from `self-><id>` which is always present.
             let id_snake = filters::to_snake_case(id.to_string());
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, p);
-            let carrier_snake = filters::to_snake_case(carrier.id.clone());
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
+            // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
+            // for Local-scope carriers (struct member) and bare
+            // `parent_flags` for Parent-scope (function arg).
+            let carrier_snake = match &carrier {
+                PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
+                PresentIfCarrier::Parent => "parent_flags".to_string(),
+            };
             let inner = vle_encode_block(
                 &format!("self->{id_snake}"),
                 width_bits,
                 lang,
             );
             format!(
-                "    if ((self->{carrier_snake} & 0x{mask:0width$X}) != 0) {{\n\
+                "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n\
                  {inner}\n    \
                  }}",
                 width = hex_digits
@@ -4390,45 +4755,89 @@ fn streaming_fixed_field_encode_kotlin_from_local(
 /// just-decoded local `<carrier_id>` (decode site) — encode never needs
 /// it because encode tests the optional itself. Carrier and flag are
 /// guaranteed to exist by `validate_codec_present_if_predicates`.
-/// Resolve a present-if predicate against the codec's field list and
-/// return `(mask, hex_digits, carrier)`. The validator has already
-/// ensured the carrier exists, names a flag bit, and is an unsigned
-/// integer — `expect()` calls here are dead in well-formed input but
-/// surface a clear panic message if a future parser change drops a
-/// validation step.
+///
+/// RFC §5.B B5-γ: when `pred.scope == Parent`, the `carrier` value in
+/// the returned tuple is `LocalCarrier::Parent` — the implicit carrier
+/// is the codec's `parent_flags: u8` parameter (validated to match
+/// the parent codec's flags-carrier). Mask is computed from the body's
+/// declared parent-flags layout (validated to match the parent at
+/// variant arm wire-up time); hex_digits is fixed at 2 because v1
+/// fixes parent flag carrier type at uint8.
+///
+/// Resolve a present-if predicate against the codec's field list (or
+/// parent-flags block) and return `(mask, hex_digits, carrier)`. The
+/// validator has already ensured the carrier exists, names a flag
+/// bit, and is an unsigned integer — `expect()` calls here are dead
+/// in well-formed input but surface a clear panic message if a future
+/// parser change drops a validation step.
+enum PresentIfCarrier<'a> {
+    Local(&'a CodecField),
+    Parent,
+}
+
 fn present_if_carrier_info<'a>(
     fields: &'a [CodecField],
+    parent_flags: Option<&'a RequiresParentFlags>,
     pred: &PresentIfPredicate,
-) -> (u64, usize, &'a CodecField) {
-    let carrier = fields
-        .iter()
-        .find(|f| f.id == pred.field_id)
-        .expect("validator ensured carrier exists");
-    let flag = carrier
-        .flags
-        .iter()
-        .find(|f| f.name == pred.flag_name)
-        .expect("validator ensured flag exists");
-    let mask: u64 = 1u64 << flag.bit;
-    let bit_width = carrier
-        .sce_type
-        .int_bit_width()
-        .expect("validator ensured carrier is unsigned-int");
-    let hex_digits = (bit_width / 4) as usize;
-    (mask, hex_digits, carrier)
+) -> (u64, usize, PresentIfCarrier<'a>) {
+    match pred.scope {
+        PresentIfScope::Local => {
+            let carrier = fields
+                .iter()
+                .find(|f| f.id == pred.field_id)
+                .expect("validator ensured carrier exists");
+            let flag = carrier
+                .flags
+                .iter()
+                .find(|f| f.name == pred.flag_name)
+                .expect("validator ensured flag exists");
+            let mask: u64 = 1u64 << flag.bit;
+            let bit_width = carrier
+                .sce_type
+                .int_bit_width()
+                .expect("validator ensured carrier is unsigned-int");
+            let hex_digits = (bit_width / 4) as usize;
+            (mask, hex_digits, PresentIfCarrier::Local(carrier))
+        }
+        PresentIfScope::Parent => {
+            let block = parent_flags
+                .expect("validator ensured codec declares requires-parent-flags");
+            let flag = block
+                .flags
+                .iter()
+                .find(|f| f.name == pred.flag_name)
+                .expect("validator ensured flag exists in declared parent-flags block");
+            let mask: u64 = 1u64 << flag.bit;
+            // v1 fixes parent flag carrier type at uint8 — 2 hex digits.
+            (mask, 2, PresentIfCarrier::Parent)
+        }
+    }
 }
 
 fn present_if_test_literal(
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     pred: &PresentIfPredicate,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let (mask, hex_digits, carrier) = present_if_carrier_info(fields, pred);
-    let id = carrier.id.as_str();
+    let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, pred);
+    // RFC §5.B B5-γ: parent-scope predicates uniformly read from the
+    // codec's `parent_flags` parameter (per-language idiom: `u8` /
+    // `uint8_t` / `UByte` / `byte` / `int`). The carrier name is fixed
+    // for parent scope; per-language identifier conversion still applies
+    // (e.g. Go uses PascalCase locals — `ParentFlags`; Kotlin/Python use
+    // snake_case parameters — `parent_flags`). Parent scope is uint8
+    // by v1 lock-in, so the per-language type-driven idioms (Rust int
+    // suffix, Kotlin widen-to-Int-or-Long) reduce to the uint8 arm.
+    let (id_owned, carrier_type) = match &carrier {
+        PresentIfCarrier::Local(c) => (c.id.clone(), c.sce_type.clone()),
+        PresentIfCarrier::Parent => ("parent_flags".to_string(), SceType::Uint8),
+    };
+    let id = id_owned.as_str();
     match lang {
         Language::Rust => {
-            let suffix = match &carrier.sce_type {
+            let suffix = match &carrier_type {
                 SceType::Uint8 => "u8",
                 SceType::Uint16 => "u16",
                 SceType::Uint32 => "u32",
@@ -4441,7 +4850,11 @@ fn present_if_test_literal(
         // Go: bitwise `&` accepts the carrier type directly (no widening
         // gymnastics). Carrier id is the just-decoded local (PascalCase
         // following the existing Go decode template). Hex literal needs
-        // no suffix because Go infers the type from the operand.
+        // no suffix because Go infers the type from the operand. For
+        // parent-scope, the parent_flags param is declared at the
+        // call-site as `parentFlags` (camelCase Go param) — the
+        // PascalCase conversion of `parent_flags` lands at `ParentFlags`,
+        // which we then lower-case the first char of for Go param idiom.
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!("({go_id} & 0x{mask:0width$X}) != 0", width = hex_digits)
@@ -4452,13 +4865,21 @@ fn present_if_test_literal(
         // `self->` — `present_if_test_literal` is only called from the
         // decode helper, so the `out->` prefix is hardcoded here. The
         // C11 encode helper inlines its own `(self-> ...)` test for
-        // symmetry without needing a second helper variant.
+        // symmetry without needing a second helper variant. For parent-
+        // scope, the parent_flags param is a function arg (no struct
+        // prefix) — bare identifier.
         Language::C11 => {
             let c_id = filters::to_snake_case(id.to_string());
-            format!(
-                "(out->{c_id} & 0x{mask:0width$X}) != 0",
-                width = hex_digits
-            )
+            match carrier {
+                PresentIfCarrier::Parent => format!(
+                    "({c_id} & 0x{mask:0width$X}) != 0",
+                    width = hex_digits
+                ),
+                PresentIfCarrier::Local(_) => format!(
+                    "(out->{c_id} & 0x{mask:0width$X}) != 0",
+                    width = hex_digits
+                ),
+            }
         }
         // Python: bitwise `&` accepts unbounded ints directly. Carrier
         // id is the just-decoded local (snake_case). No suffix is
@@ -4480,13 +4901,19 @@ fn present_if_test_literal(
             // `.toLong()` (UInt/ULong) before comparing. The hex mask
             // gets an `L` suffix in the Long path so the literal is
             // typed.
-            let (view, suffix) = match &carrier.sce_type {
+            let (view, suffix) = match &carrier_type {
                 SceType::Uint8 | SceType::Uint16 => (".toInt()", ""),
                 SceType::Uint32 | SceType::Uint64 => (".toLong()", "L"),
                 _ => (".toInt()", ""),
             };
+            // For parent scope, Kotlin uses camelCase param `parentFlags`.
+            let kt_id = if matches!(carrier, PresentIfCarrier::Parent) {
+                filters::to_camel_case(id.to_string())
+            } else {
+                id.to_string()
+            };
             format!(
-                "({id}{view} and 0x{mask:0width$X}{suffix}) != 0",
+                "({kt_id}{view} and 0x{mask:0width$X}{suffix}) != 0",
                 width = hex_digits
             )
         }
@@ -11534,6 +11961,7 @@ mod tests {
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_requires_parent_flags: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -11551,6 +11979,7 @@ mod tests {
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
+                codec_requires_parent_flags: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);
