@@ -1069,6 +1069,17 @@ fn render_codec(
                 "is_tlv_chain".into(),
                 serde_json::Value::Bool(f.is_tlv_chain()),
             );
+            // RFC §5.B B3 DMA alignment: surface burst_align so the
+            // template can emit a per-field language-level alignment
+            // assertion (Rust `const _: () = assert!`, C11
+            // `_Static_assert`) on the literal byte offset. Build-time
+            // validation already guarantees `byte_offset % burst_align
+            // == 0` and that all preceding fields are Fixed; the
+            // assertion is structural drift detection (catches manual
+            // edits to byte_offset that break the invariant).
+            if let Some(n) = f.dma_burst_align {
+                obj.insert("dma_burst_align".into(), n.into());
+            }
             obj.insert("byte_off".into(), f.byte_offset.into());
             if f.is_variable_length() {
                 if let BitSize::Vle { width_bits } = &f.bit_size {
@@ -1513,6 +1524,10 @@ fn render_codec(
     ctx.insert("has_repeat_fields".into(), has_repeat_fields.into());
     ctx.insert("has_tlv_chain_fields".into(), m.has_tlv_chain_fields().into());
     ctx.insert("has_tail_fields".into(), m.has_tail_fields().into());
+    ctx.insert(
+        "has_dma_aligned_fields".into(),
+        m.has_dma_aligned_fields().into(),
+    );
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
 
     // RFC §5.B variant primitive (B1-β trunk): build per-arm rendering

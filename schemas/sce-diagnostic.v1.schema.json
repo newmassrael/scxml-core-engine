@@ -98,6 +98,7 @@
         "codec/repeat-count-refs-later-field",
         "algorithm/test-vector-unsupported-kind",
         "codec/tlv-chain-depth-unspecified",
+        "codec/dma-alignment-unsatisfiable",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

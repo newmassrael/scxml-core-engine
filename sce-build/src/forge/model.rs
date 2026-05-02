@@ -871,6 +871,20 @@ pub struct CodecField {
     /// aliases at codegen time (mirrors `repeat_body_alias`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tlv_chain_body_alias: Option<String>,
+    /// RFC §5.B B3 DMA alignment primitive — `sce:dma-burst-align="N"`
+    /// declares this field's start offset within the encoded buffer is
+    /// constrained to an N-byte boundary (typical N: 16, 32, 64). The
+    /// constraint is build-time: codegen verifies `byte_offset % N == 0`
+    /// (rejects with `codec/dma-alignment-unsatisfiable` otherwise) AND
+    /// validates that every preceding field is Fixed bit-size (so the
+    /// post-padding layout is statically computable). Codegen emits
+    /// language-level alignment assertions (`_Static_assert` / `const _:
+    /// () = assert!`) on the literal offset for drift protection.
+    /// MCU-class — codecs containing this attribute emit only on Rust +
+    /// C11 (mirrors TLV chain gating per RFC line 521-525 "MCU-only
+    /// codec sub-features"). `None` when no alignment constraint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dma_burst_align: Option<u32>,
 }
 
 impl CodecField {
@@ -1058,6 +1072,15 @@ impl CodecModel {
         self.fields.iter().any(|f| f.is_tlv_chain())
     }
 
+    /// Whether the codec has any field with `sce:dma-burst-align` (RFC
+    /// §5.B B3). Forces the encode buffer to be zero-initialised so
+    /// padding bytes between fields land as deterministic zeros on the
+    /// wire (peer interop), and triggers per-field language-level
+    /// alignment assertions in the generated code. MCU-class.
+    pub fn has_dma_aligned_fields(&self) -> bool {
+        self.fields.iter().any(|f| f.dma_burst_align.is_some())
+    }
+
     /// Whether the codec has any tail-bytes field (`<sce:field
     /// sce:bit-size="tail">`). A tail field by definition consumes
     /// to the end of the frame, so the codec's decode cannot be
@@ -1081,9 +1104,9 @@ impl CodecModel {
     /// diagnostic (`codegen/mcu-class-kind-on-non-mcu-language`,
     /// repurposed at codec-content granularity).
     ///
-    /// B3-α: TLV chain. B3-β extends with DMA alignment.
+    /// B3-α: TLV chain. B3-β: DMA alignment.
     pub fn has_mcu_only_features(&self) -> bool {
-        self.has_tlv_chain_fields()
+        self.has_tlv_chain_fields() || self.has_dma_aligned_fields()
     }
 }
 

@@ -1103,6 +1103,198 @@ fn forge_codec_tlv_chain_diagnostic_event_overflow_rejects() {
     );
 }
 
+// ── RFC §5.B B3 DMA alignment primitive (Cpp/Rust trunk) ────
+// `codec_dma_aligned_basic` declares a uint8 msg_id + uint8 reserved
+// at bytes 0-1, then a tail-bytes aligned_payload at byte 32 with
+// sce:dma-burst-align="32" — codegen emits 30 bytes of zero padding
+// in encode, plus a compile-time assertion that the literal byte
+// offset is 32-aligned (drift detection). MCU-class — same gate as
+// TLV chain rejects cpp/kotlin/go/python.
+
+#[test]
+fn forge_codec_dma_aligned_basic_rust() {
+    assert_standalone_forge_rust(
+        "codec_dma_aligned_basic",
+        "codec_dma_aligned_basic.rs",
+    );
+}
+
+/// RFC §5.B B3 MCU gate: a codec with `sce:dma-burst-align` on any
+/// field rejects when targeting cpp via the existing codec-content
+/// MCU mechanism (mirrors TLV chain). The diagnostic kind name folds
+/// the codec identifier + the MCU-only-features marker.
+#[test]
+fn forge_codec_dma_aligned_rejects_on_cpp() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let scxml_path = resource_dir().join("codec_dma_aligned_basic.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("Cannot read codec_dma_aligned_basic.scxml");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_dma_aligned_basic"),
+        sce_build::generator::Language::Cpp,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "codec containing sce:dma-burst-align must reject on Cpp via \
+             codegen/mcu-class-kind-on-non-mcu-language"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
+                ref language,
+                ..
+            }) if language == "cpp"
+        ),
+        "must surface CodegenMcuClassKindOnNonMcuLanguage targeting cpp; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B3: misaligned `sce:byte` rejects with
+/// `codec/dma-alignment-unsatisfiable` (e.g. byte=33 against
+/// burst-align=32). The reason string names both numbers and the
+/// closest aligned offsets so the author sees the repair direction.
+#[test]
+fn forge_codec_dma_misaligned_byte_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="misaligned">
+  <datamodel>
+    <sce:field id="msg_id"   sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="aligned_payload" sce:type="bytes" sce:byte="33"
+               sce:bit-size="tail" sce:max-size="32"
+               sce:dma-burst-align="32"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("misaligned"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "byte=33 with burst-align=32 must reject with \
+             codec/dma-alignment-unsatisfiable"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::CodecDmaAlignmentUnsatisfiable {
+                ref codec, ref field, burst_align: 32, ..
+            }) if codec == "misaligned" && field == "aligned_payload"
+        ),
+        "must surface CodecDmaAlignmentUnsatisfiable naming codec + field + burst_align; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B3 line 558-583 "fixed-offset positions only — no VLE-
+/// following alignment": a `sce:dma-burst-align` field after any
+/// variable-length predecessor (vle here) rejects with the same
+/// diagnostic. The reason names the offending predecessor + its
+/// bit-size kind so the repair is unambiguous.
+#[test]
+fn forge_codec_dma_after_vle_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="vle_then_dma">
+  <datamodel>
+    <sce:field id="value" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="aligned_payload" sce:type="bytes" sce:byte="32"
+               sce:bit-size="tail" sce:max-size="32"
+               sce:dma-burst-align="32"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("vle_then_dma"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "sce:dma-burst-align after a vle field must reject with \
+             codec/dma-alignment-unsatisfiable"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::CodecDmaAlignmentUnsatisfiable {
+                ref codec, ref field, burst_align: 32, ref reason,
+            }) if codec == "vle_then_dma"
+                && field == "aligned_payload"
+                && reason.contains("vle")
+                && reason.contains("'value'")
+        ),
+        "reason must name the offending predecessor + its bit-size; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B3: non-power-of-2 burst-align value (3, 5, ...) rejects
+/// with the generic `validation/invalid-attribute` slot — the repair
+/// is text-level (pick a power of 2). v0: 0 also rejects (alignment
+/// to a 0-byte boundary is meaningless).
+#[test]
+fn forge_codec_dma_non_power_of_two_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="bad_align">
+  <datamodel>
+    <sce:field id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="aligned_payload" sce:type="bytes" sce:byte="3"
+               sce:bit-size="tail" sce:max-size="32"
+               sce:dma-burst-align="3"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("bad_align"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "sce:dma-burst-align=\"3\" must reject with \
+             validation/invalid-attribute"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, ref value, .. })
+                if attr == "sce:dma-burst-align" && value == "3"
+        ),
+        "must surface ValidationError::InvalidAttribute naming dma-burst-align + 3; got: {:?}",
+        err.error
+    );
+}
+
 /// RFC §5.B B2: `codec/repeat-count-refs-later-field` build-time check —
 /// a `<sce:repeat sce:count="num_frags">` whose `num_frags` field is
 /// declared *after* the repeat must reject so the streaming decoder
@@ -2566,6 +2758,23 @@ fn forge_c11_codec_tlv_chain_basic() {
     assert_standalone_forge_c(
         "codec_tlv_chain_basic",
         "codec_tlv_chain_basic.c.h",
+    );
+}
+
+// ── RFC §5.B B3 DMA alignment primitive (C11, trunk) ────────
+// `codec_dma_aligned_basic` declares msg_id + reserved at bytes 0-1
+// then a tail-bytes aligned_payload at byte 32 with
+// sce:dma-burst-align="32". Codegen emits a `_Static_assert` on the
+// literal byte offset (drift detection) + `memset(r.bytes, 0,
+// sizeof(r.bytes))` at encode start so the 30 padding bytes between
+// the prefix and the aligned field land as deterministic zeros on
+// the wire. MCU-class — same gate rejects cpp/kotlin/go/python.
+
+#[test]
+fn forge_c11_codec_dma_aligned_basic() {
+    assert_standalone_forge_c(
+        "codec_dma_aligned_basic",
+        "codec_dma_aligned_basic.c.h",
     );
 }
 

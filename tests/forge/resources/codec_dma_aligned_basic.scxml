@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: DMA alignment primitive (RFC §5.B B3).
+     uint8 msg_id at byte 0 + uint8 reserved at byte 1, followed by
+     30 bytes of zero padding (codegen-emitted), then a tail-bytes
+     `aligned_payload` field starting at byte 32 with
+     sce:dma-burst-align="32".
+
+     MCU-class — emits only on Rust + C11 per RFC §5.J.4. Build-time
+     validation enforces (a) byte_offset divisible by burst_align and
+     (b) all preceding fields Fixed bit-size; codecs containing this
+     attribute on cpp/kotlin/go/python typed-reject through the
+     codec-content MCU gate.
+
+     Wire round-trip oracle:
+       msg_id=0x01, reserved=0x00, aligned_payload="HELLO"
+       → 0x01 0x00 [30 × 0x00] 0x48 0x45 0x4C 0x4C 0x4F  (37 bytes)
+     The 30 padding bytes are deterministic zeros so peers stay
+     byte-compatible regardless of host allocator (RFC line 546-557
+     "wire layout, not host allocator"). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_dma_aligned_basic">
+  <datamodel>
+    <sce:field id="msg_id"   sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="reserved" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="aligned_payload" sce:type="bytes" sce:byte="32"
+               sce:bit-size="tail" sce:max-size="64"
+               sce:dma-burst-align="32"/>
+  </datamodel>
+</scxml>

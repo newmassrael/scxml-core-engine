@@ -190,6 +190,17 @@
          - non-flags carrier or unknown flag → validation/invalid-attribute -->
   <xs:attribute name="present-if" type="xs:string"/>
 
+  <!-- RFC §5.B B3 DMA alignment primitive (sce:dma-burst-align attribute).
+       Constrains the field's start offset within the encoded buffer to
+       an N-byte boundary (typical N: 16, 32, 64). MCU-class — codecs
+       containing this attribute emit only on Rust + C11 per the §5.J.4
+       matrix. The XSD type is positiveInteger; semantic checks land in
+       sce-build (`parse_codec_field_from_node` rejects non-power-of-2
+       N, `validate_codec_dma_alignment` rejects misaligned `sce:byte`
+       and variable-length predecessors with
+       `codec/dma-alignment-unsatisfiable`). -->
+  <xs:attribute name="dma-burst-align" type="xs:positiveInteger"/>
+
   <!-- RFC §5.B B2 repeat primitive: <sce:repeat>-internal attributes
        (count / until-eof / max-count / type / id) live unqualified
        inside the <sce:repeat> element complexType — same convention
@@ -292,6 +303,7 @@
       <xs:attribute ref="sce:max-size"/>
       <xs:attribute ref="sce:length-field"/>
       <xs:attribute ref="sce:present-if"/>
+      <xs:attribute ref="sce:dma-burst-align"/>
     </xs:complexType>
   </xs:element>
 

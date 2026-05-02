@@ -12,6 +12,19 @@ use sce_forge_runtime::codec::{CodecError, SceCursor};
 {{ imp.include_stmt }}
 {% endfor %}
 {% endif %}
+{% if has_dma_aligned_fields -%}
+// RFC §5.B B3 DMA alignment primitive: structural drift detection.
+// Build-time validation already guaranteed `byte_offset % burst_align
+// == 0` and that all preceding fields are Fixed bit-size. These
+// `const _: () = assert!` declarations catch any future hand-edit to
+// the byte_offset that would break the wire-layout invariant.
+{% for field in fields %}{% if field.dma_burst_align -%}
+const _: () = assert!(
+    {{ field.byte_off }} % {{ field.dma_burst_align }} == 0,
+    "RFC §5.B B3: codec field '{{ field.id }}' offset must be {{ field.dma_burst_align }}-aligned"
+);
+{% endif %}{% endfor %}
+{% endif %}
 
 {% if has_variant %}
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
@@ -330,6 +343,16 @@ impl {{ struct_name }} {
 {% endfor %}
 {% for field in fields %}
 {% if field.is_variable %}
+{% if has_dma_aligned_fields %}
+        // RFC §5.B B3 DMA padding: zero-fill any gap between the
+        // current write position and this field's authored byte
+        // offset (deterministic zeros on the wire so peers stay
+        // byte-compatible regardless of host allocator — RFC §5.B
+        // "wire layout, not host allocator").
+        while r.len() < {{ field.byte_off }} {
+            r.push(0);
+        }
+{% endif %}
         r.extend_from_slice(&self.{{ field.id }});
 {% endif %}
 {% endfor %}

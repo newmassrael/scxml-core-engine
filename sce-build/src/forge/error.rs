@@ -509,6 +509,25 @@ pub enum ValidationError {
         codec: String,
         field: String,
     },
+
+    /// RFC §5.B B3 DMA alignment primitive: a field with
+    /// `sce:dma-burst-align="N"` cannot be honored at build time —
+    /// either its authored `sce:byte` is not divisible by `N`, or one
+    /// of its preceding fields is variable-length (vle / length-ref /
+    /// tail / repeat / tlv-chain) so the field's wire offset is
+    /// runtime-dependent. RFC line 558-583 "fixed-offset positions
+    /// only — no VLE-following alignment". Repair is structural:
+    /// reorder fields, lower the alignment requirement, or change the
+    /// variable predecessor to a fixed-width carrier.
+    #[error(
+        "codec '{codec}': field '{field}' with sce:dma-burst-align=\"{burst_align}\" cannot be honored — {reason}"
+    )]
+    CodecDmaAlignmentUnsatisfiable {
+        codec: String,
+        field: String,
+        burst_align: u32,
+        reason: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

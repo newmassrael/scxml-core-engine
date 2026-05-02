@@ -606,6 +606,14 @@ fn parse_codec(
     // reuses the generic `validation/invalid-attribute`.
     validate_codec_repeat_count_refs(&fields, label, &datamodel)?;
 
+    // RFC §5.B B3 DMA alignment validation — `sce:dma-burst-align="N"`
+    // requires (a) the field's authored `sce:byte` be divisible by N,
+    // and (b) every preceding field is Fixed bit-size (so post-padding
+    // layout is statically computable). Both gates fold into
+    // `codec/dma-alignment-unsatisfiable` so the author sees one
+    // diagnostic naming the offending field.
+    validate_codec_dma_alignment(&fields, label, &datamodel)?;
+
     // RFC §5.B variant primitive (B1-β): optional <sce:variant> suffix
     // under <datamodel>. Resolves the tag field reference against the
     // codec's own field list; arm body aliases (resolved against
@@ -1078,6 +1086,45 @@ pub fn parse_codec_field_from_node(
         Some(raw) => Some(parse_present_if_predicate(&raw, node, doc_name, &id)?),
     };
 
+    // RFC §5.B B3 DMA alignment primitive — `sce:dma-burst-align="N"`
+    // declares this field's encoded-buffer offset is constrained to an
+    // N-byte boundary. v1 attribute-text-level validation: must parse
+    // as positive integer and N must be a power of 2 (typical: 16 / 32
+    // / 64; reject 0 / 3 / 5). Cross-field validation
+    // (`codec/dma-alignment-unsatisfiable` — preceding field non-fixed)
+    // runs in `validate_codec_dma_alignment` after the field list is
+    // assembled.
+    let dma_burst_align = match sce_attr(node, "dma-burst-align") {
+        None => None,
+        Some(raw) => {
+            let n = parse_int(&raw).ok_or_else(|| {
+                located(
+                    node,
+                    doc_name,
+                    ValidationError::NumericParse {
+                        element: format!("Codec field '{id}'"),
+                        attr: "sce:dma-burst-align".into(),
+                        value: raw.clone(),
+                        detail: "expected positive integer".into(),
+                    },
+                )
+            })?;
+            if n == 0 || (n & (n - 1)) != 0 {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: format!("Codec field '{id}'"),
+                        attr: "sce:dma-burst-align".into(),
+                        value: raw.clone(),
+                        expected: "positive power-of-2 integer (e.g. 16, 32, 64)".into(),
+                    },
+                ));
+            }
+            Some(n)
+        }
+    };
+
     Ok(CodecField {
         id,
         sce_type,
@@ -1096,6 +1143,7 @@ pub fn parse_codec_field_from_node(
         repeat_body_alias: None,
         max_count: None,
         tlv_chain_body_alias: None,
+        dma_burst_align,
     })
 }
 
@@ -1443,6 +1491,7 @@ fn parse_codec_repeat_from_node(
         repeat_body_alias: Some(body_alias),
         max_count,
         tlv_chain_body_alias: None,
+        dma_burst_align: None,
     })
 }
 
@@ -1609,6 +1658,7 @@ fn parse_codec_tlv_chain_from_node(
         repeat_body_alias: None,
         max_count: None,
         tlv_chain_body_alias: Some(body_alias),
+        dma_burst_align: None,
     })
 }
 
@@ -1673,6 +1723,88 @@ fn validate_codec_repeat_count_refs(
             }
         }
         by_id_so_far.insert(field.id.as_str(), field);
+    }
+    Ok(())
+}
+
+/// RFC §5.B B3 DMA alignment cross-field validation. For every field
+/// carrying `sce:dma-burst-align="N"`:
+///
+/// 1. The field's authored `sce:byte` MUST be divisible by N (the
+///    primitive guarantees a wire-level alignment, so the offset
+///    itself has to be aligned — author, not codegen, owns the byte
+///    layout).
+/// 2. Every preceding field MUST be Fixed bit-size (RFC line 558-583
+///    "fixed-offset positions only — no VLE-following alignment").
+///    Variable-length predecessors (Vle / LengthRef / Tail / Repeat /
+///    TlvChain) make the wire offset of the aligned field runtime-
+///    dependent, so static padding cannot honor the constraint.
+///
+/// Both failure modes fold into `codec/dma-alignment-unsatisfiable`
+/// (the repair is structural — either reorder fields, lower the
+/// alignment requirement, or change the variable predecessor to a
+/// fixed-width carrier). Power-of-2 / parse validation on N already
+/// happened in `parse_codec_field_from_node`.
+fn validate_codec_dma_alignment(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    for (idx, field) in fields.iter().enumerate() {
+        let Some(burst_align) = field.dma_burst_align else {
+            continue;
+        };
+        // Gate 1: byte offset divisible by burst-align.
+        if field.byte_offset % burst_align != 0 {
+            return Err(located(
+                datamodel,
+                label.diagnostic_label,
+                ValidationError::CodecDmaAlignmentUnsatisfiable {
+                    codec: label.identifier.to_string(),
+                    field: field.id.clone(),
+                    burst_align,
+                    reason: format!(
+                        "field's authored sce:byte={} is not divisible by burst-align {} \
+                         (offset must land on a {}-byte boundary; the closest aligned \
+                         offsets are {} and {})",
+                        field.byte_offset,
+                        burst_align,
+                        burst_align,
+                        (field.byte_offset / burst_align) * burst_align,
+                        ((field.byte_offset / burst_align) + 1) * burst_align,
+                    ),
+                },
+            ));
+        }
+        // Gate 2: every preceding field must be Fixed.
+        for prev in &fields[..idx] {
+            if !matches!(prev.bit_size, BitSize::Fixed { .. }) {
+                let kind = match &prev.bit_size {
+                    BitSize::Tail => "tail",
+                    BitSize::LengthRef => "length-ref",
+                    BitSize::Vle { .. } => "vle",
+                    BitSize::Repeat { .. } => "repeat",
+                    BitSize::TlvChain { .. } => "tlv-chain",
+                    BitSize::Fixed { .. } => unreachable!("matches! guard"),
+                };
+                return Err(located(
+                    datamodel,
+                    label.diagnostic_label,
+                    ValidationError::CodecDmaAlignmentUnsatisfiable {
+                        codec: label.identifier.to_string(),
+                        field: field.id.clone(),
+                        burst_align,
+                        reason: format!(
+                            "preceding field '{}' has bit-size '{}' (variable-length); static padding \
+                             cannot honor sce:dma-burst-align when any prior field's wire size depends \
+                             on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-\
+                             following alignment\")",
+                            prev.id, kind,
+                        ),
+                    },
+                ));
+            }
+        }
     }
     Ok(())
 }

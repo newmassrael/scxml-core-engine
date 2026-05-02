@@ -530,6 +530,18 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/tlv-chain-depth-unspecified")]
     CodecTlvChainDepthUnspecified,
 
+    // ── §5.B B3 DMA alignment primitive (watching-zenoh RFC §5.B) ──
+    //    `sce:dma-burst-align="N"` requires the field's `sce:byte` be
+    //    divisible by N AND every preceding field be Fixed bit-size
+    //    (RFC line 558-583 "fixed-offset positions only — no VLE-
+    //    following alignment"). Variable-length predecessor or
+    //    misaligned offset → reject here so the wire-layout invariant
+    //    is enforced statically. Repair is structural — reorder
+    //    fields, lower the alignment requirement, or change the
+    //    variable predecessor. Stage = Validation. ──
+    #[serde(rename = "codec/dma-alignment-unsatisfiable")]
+    CodecDmaAlignmentUnsatisfiable,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -847,6 +859,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmTestVectorUnsupportedKind,
         // Codec §5.B B3 TLV chain primitive (watching-zenoh RFC §5.B)
         CodecTlvChainDepthUnspecified,
+        // Codec §5.B B3 DMA alignment primitive (watching-zenoh RFC §5.B)
+        CodecDmaAlignmentUnsatisfiable,
         // Io
         IoFilesystem,
         // Cli
@@ -1050,12 +1064,13 @@ impl DiagnosticCode {
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch => Some("watching-zenoh RFC §5.F"),
 
-            // ── Codec §5.B variant + present-if + repeat + tlv-chain primitives (B1-β/δ + B2 + B3) ─
+            // ── Codec §5.B variant + present-if + repeat + tlv-chain + dma-align primitives (B1-β/δ + B2 + B3) ─
             CodecVariantArmUnreachable
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
-            | CodecTlvChainDepthUnspecified => Some("watching-zenoh RFC §5.B"),
+            | CodecTlvChainDepthUnspecified
+            | CodecDmaAlignmentUnsatisfiable => Some("watching-zenoh RFC §5.B"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1319,6 +1334,7 @@ impl DiagnosticCode {
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
             CodecTlvChainDepthUnspecified => "codec/tlv-chain-depth-unspecified",
+            CodecDmaAlignmentUnsatisfiable => "codec/dma-alignment-unsatisfiable",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2192,6 +2208,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(field.clone()),
             fix: None,
             key_fragments: vec![codec.clone(), field.clone()],
+        },
+        ValidationError::CodecDmaAlignmentUnsatisfiable {
+            codec,
+            field,
+            burst_align,
+            reason: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecDmaAlignmentUnsatisfiable,
+            stage: Stage::Validation,
+            // Repair is structural (reorder fields, lower the
+            // alignment, or change the variable predecessor) — no
+            // closed candidate set. (codec, field, burst_align) keys
+            // the violation across multiple aligned fields on the
+            // same codec.
+            expected: None,
+            actual: Some(field.clone()),
+            fix: None,
+            key_fragments: vec![codec.clone(), field.clone(), burst_align.to_string()],
         },
     }
 }
@@ -3513,6 +3547,18 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:569cbc9e420b26e4","code":"codec/tlv-chain-depth-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': tlv-chain field 'extensions' is missing the required `max-depth` attribute — TLV chains are MCU-class and the decoder needs a build-time bound to size its working set (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0","actual":"extensions"}"#,
             ),
+            // ── §5.B B3 DMA alignment primitive (watching-zenoh RFC §5.B) ─
+            (
+                "forge/codec-dma-alignment-unsatisfiable",
+                ValidationError::CodecDmaAlignmentUnsatisfiable {
+                    codec: "session_envelope".into(),
+                    field: "aligned_payload".into(),
+                    burst_align: 32,
+                    reason: "preceding field 'value' has bit-size 'vle' (variable-length); static padding cannot honor sce:dma-burst-align when any prior field's wire size depends on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-following alignment\")".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:98584368c0e405fa","code":"codec/dma-alignment-unsatisfiable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': field 'aligned_payload' with sce:dma-burst-align=\"32\" cannot be honored — preceding field 'value' has bit-size 'vle' (variable-length); static padding cannot honor sce:dma-burst-align when any prior field's wire size depends on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-following alignment\")","actual":"aligned_payload"}"#,
+            ),
         ]
     }
 
@@ -4762,6 +4808,7 @@ mod tests {
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
             | CodecTlvChainDepthUnspecified
+            | CodecDmaAlignmentUnsatisfiable
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -5104,6 +5151,7 @@ mod tests {
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
                 | CodecTlvChainDepthUnspecified
+                | CodecDmaAlignmentUnsatisfiable
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5187,11 +5235,13 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            169,
+            170,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 169 distinct variants to match the DiagnosticCode \
+             expected 170 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
-             chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169).",
+             chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
+             then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
+             169 → 170).",
         );
     }
 
