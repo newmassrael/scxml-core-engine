@@ -643,6 +643,35 @@
       ]
     },
     {
+      "name": "codec_zenoh_close",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {
+          "name": "reason",
+          "type": "u8",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
+      "name": "codec_zenoh_frame",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {
+          "name": "sn",
+          "type": "u64",
+          "compare": "equality"
+        },
+        {
+          "name": "payload",
+          "type": "bytes",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
       "name": "timer_diag_scheduler",
       "kind": "timer",
       "ref_section": "timers",

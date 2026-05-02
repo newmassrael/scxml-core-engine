@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh transport-layer Close body (RFC §5.B
+     B5-prep — first reachable downstream consumer of B1-B4 primitives
+     from the watching-zenoh authoring path).
+
+     Upstream zenoh-pico shape (`_z_close_encode` in
+     src/protocol/codec/transport.c:335-343): the Close body is a
+     single uint8 reason code. The 1-byte transport-message header
+     (MID + flags) is written by `_z_transport_message_encode` BEFORE
+     dispatching to `_z_close_encode`, so the body codec scope is the
+     reason byte alone.
+
+     Pure composition of existing primitives: a single Fixed uint8
+     field. No new IR / parser / template surface. Validates that
+     B1-B4 compose for an actual Zenoh transport-message body. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_close">
+  <datamodel>
+    <sce:field id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>

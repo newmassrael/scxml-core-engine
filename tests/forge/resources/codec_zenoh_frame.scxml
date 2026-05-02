@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh transport-layer Frame body (RFC §5.B
+     B5-prep — first reachable downstream consumer of B1-B4 primitives
+     from the watching-zenoh authoring path).
+
+     Upstream zenoh-pico shape (`_z_frame_encode` in
+     src/protocol/codec/transport.c:386-395): VLE-encoded sequence
+     number (`_z_zsize_encode` = base-128 LSB-first VLE u64) followed
+     by the Frame's batched NetworkMessage payload, which is consumed
+     to the end of the Frame's slice (no internal length — Frame is
+     itself sized by its enclosing transport-link batching layer).
+
+     Applied combination: B1-α VLE primitive (`sn`) + B1's tail
+     bit-size (`payload`). The transport-message header byte is
+     written separately by `_z_transport_message_encode` so the body
+     codec scope is sn + payload only.
+
+     The `_Z_FLAG_T_Z` extension-chain branch is rejected upstream
+     for Frame (`_z_frame_encode` line 388-390 errors on it), so this
+     body has no extension chain — pure VLE + tail.
+
+     max-size for payload is set to 65536 (a permissive upper bound
+     for a single Frame batch); deploy-time configuration can tighten
+     this in the watching-zenoh consumer via deploy.yaml. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_frame">
+  <datamodel>
+    <sce:field id="sn"      sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="payload" sce:type="bytes"  sce:byte="1" sce:bit-size="tail"
+               sce:max-size="65536"/>
+  </datamodel>
+</scxml>

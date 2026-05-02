@@ -856,6 +856,27 @@ fn forge_codec_vle_zint_u64() {
     assert_standalone_forge("codec_vle_zint_u64", "codec_vle_zint_u64.h");
 }
 
+// ── RFC §5.B B5-prep Zenoh transport-message body codecs ────
+// First reachable downstream consumers of B1-B4 primitives from
+// the watching-zenoh authoring path (RFC §7 Phase B sequence).
+// Pure composition — no new IR / parser / template surface.
+// Validates that B-phase primitives compose for actual Zenoh
+// transport-message body shapes. Upstream parity:
+// `_z_close_encode` / `_z_frame_encode` in zenoh-pico
+// src/protocol/codec/transport.c. KeepAlive's empty body defers
+// — `parser.rs` rejects zero-field codecs (EmptyCollection),
+// which is its own primitive concern.
+
+#[test]
+fn forge_codec_zenoh_close_cpp() {
+    assert_standalone_forge("codec_zenoh_close", "codec_zenoh_close.h");
+}
+
+#[test]
+fn forge_codec_zenoh_frame_cpp() {
+    assert_standalone_forge("codec_zenoh_frame", "codec_zenoh_frame.h");
+}
+
 // ── RFC §5.B B1-γ flags primitive ────────────────────────────
 // `codec_flags_basic` declares a uint8 carrier `header` with four
 // named bits; codegen emits per-flag get/set accessors while the wire
@@ -1746,6 +1767,18 @@ fn forge_kotlin_codec_vle_zint_u64() {
     assert_standalone_forge_kotlin("codec_vle_zint_u64", "CodecVleZintU64.kt");
 }
 
+// ── RFC §5.B B5-prep Zenoh transport-message body codecs (Kotlin) ─
+
+#[test]
+fn forge_kotlin_codec_zenoh_close() {
+    assert_standalone_forge_kotlin("codec_zenoh_close", "CodecZenohClose.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_frame() {
+    assert_standalone_forge_kotlin("codec_zenoh_frame", "CodecZenohFrame.kt");
+}
+
 // ── RFC §5.B B1-γ flags primitive (Kotlin) ───────────────────
 
 #[test]
@@ -2082,6 +2115,18 @@ fn forge_rust_codec_length_ref() {
     assert_standalone_forge_rust("codec_length_ref", "codec_length_ref.rs");
 }
 
+// ── RFC §5.B B5-prep Zenoh transport-message body codecs (Rust) ──
+
+#[test]
+fn forge_rust_codec_zenoh_close() {
+    assert_standalone_forge_rust("codec_zenoh_close", "codec_zenoh_close.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_frame() {
+    assert_standalone_forge_rust("codec_zenoh_frame", "codec_zenoh_frame.rs");
+}
+
 // ── RFC §5.B B1-γ flags primitive (Rust) ─────────────────────
 
 #[test]
@@ -2311,6 +2356,18 @@ fn forge_go_codec_length_ref() {
 #[test]
 fn forge_go_codec_vle_zint_u64() {
     assert_standalone_forge_go("codec_vle_zint_u64", "codec_vle_zint_u64.go");
+}
+
+// ── RFC §5.B B5-prep Zenoh transport-message body codecs (Go) ────
+
+#[test]
+fn forge_go_codec_zenoh_close() {
+    assert_standalone_forge_go("codec_zenoh_close", "codec_zenoh_close.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_frame() {
+    assert_standalone_forge_go("codec_zenoh_frame", "codec_zenoh_frame.go");
 }
 
 // ── RFC §5.B B1-γ flags primitive (Go) ───────────────────────
@@ -2568,6 +2625,18 @@ fn forge_python_codec_vle_zint_u64() {
     assert_standalone_forge_python("codec_vle_zint_u64", "codec_vle_zint_u64.py");
 }
 
+// ── RFC §5.B B5-prep Zenoh transport-message body codecs (Python) ─
+
+#[test]
+fn forge_python_codec_zenoh_close() {
+    assert_standalone_forge_python("codec_zenoh_close", "codec_zenoh_close.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_frame() {
+    assert_standalone_forge_python("codec_zenoh_frame", "codec_zenoh_frame.py");
+}
+
 // ── RFC §5.B B1-γ flags primitive (Python) ───────────────────
 
 #[test]
@@ -2754,6 +2823,18 @@ fn forge_c11_codec_length_ref() {
 #[test]
 fn forge_c11_codec_vle_zint_u64() {
     assert_standalone_forge_c("codec_vle_zint_u64", "codec_vle_zint_u64.c.h");
+}
+
+// ── RFC §5.B B5-prep Zenoh transport-message body codecs (C11) ───
+
+#[test]
+fn forge_c11_codec_zenoh_close() {
+    assert_standalone_forge_c("codec_zenoh_close", "codec_zenoh_close.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_frame() {
+    assert_standalone_forge_c("codec_zenoh_frame", "codec_zenoh_frame.c.h");
 }
 
 // ── RFC §5.B B1-γ flags primitive (C11) ──────────────────────
