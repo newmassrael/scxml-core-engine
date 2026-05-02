@@ -752,7 +752,7 @@ fn parse_codec_variant(
     // convention for SCE-element-internal attributes; SCE-namespaced
     // attributes are reserved for attributes declared on non-SCE host
     // elements like <data sce:byte=...>).
-    let tag_field = variant_node
+    let raw_tag = variant_node
         .attribute("tag")
         .ok_or_else(|| {
             located(
@@ -766,13 +766,48 @@ fn parse_codec_variant(
         })?
         .to_string();
 
+    // RFC §5.B B5-β multi-bit-flag dispatch: `tag="<carrier>.<flag>"`
+    // names a bit-range within a flags-bearing carrier; bare
+    // `tag="<field>"` (B1-β whole-field form) keeps the original
+    // semantics. Grammar mirrors B1-δ present-if predicate exactly so
+    // authors learn one dotted-path convention.
+    let (tag_field, tag_flag): (String, Option<String>) = match raw_tag.split_once('.') {
+        Some((carrier, flag)) => {
+            let carrier = carrier.trim();
+            let flag = flag.trim();
+            if carrier.is_empty() || flag.is_empty() {
+                return Err(located(
+                    &variant_node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:variant>".into(),
+                        attr: "tag".into(),
+                        value: raw_tag.clone(),
+                        expected: "either a bare field id (e.g. 'msg_id') for whole-field \
+                                   dispatch, or a '<carrier>.<flag>' dotted path (e.g. \
+                                   'header.mid') for multi-bit-flag dispatch — both halves \
+                                   must be non-empty"
+                            .into(),
+                    },
+                ));
+            }
+            (carrier.to_string(), Some(flag.to_string()))
+        }
+        None => (raw_tag.clone(), None),
+    };
+
     // Resolve tag against the codec's own fields and capture its type
     // for arm-domain reasoning. The tag field MUST be unsigned-int
     // (uint8/uint16/uint32/uint64) because the arm `value=` matches a
     // wire-decoded unsigned scalar; signed / bytes / float tags have
     // no valid discriminator semantics.
-    let tag_type = match fields.iter().find(|f| f.id == tag_field) {
-        Some(f) if f.sce_type.is_unsigned() => f.sce_type.clone(),
+    //
+    // For the B5-β `<carrier>.<flag>` form, the carrier additionally
+    // MUST be a `<sce:flags>`-bearing field (parser invariant: flags
+    // carriers are always unsigned-int, so the unsigned check still
+    // holds), and `flag` MUST name one of its `<sce:flag>` children.
+    let tag_field_ref = match fields.iter().find(|f| f.id == tag_field) {
+        Some(f) if f.sce_type.is_unsigned() => f,
         Some(f) => {
             return Err(located(
                 &variant_node,
@@ -801,6 +836,57 @@ fn parse_codec_variant(
                 },
             ));
         }
+    };
+    let tag_type = tag_field_ref.sce_type.clone();
+
+    // B5-β: if the tag uses dotted form, the carrier must carry flags
+    // and the named flag must exist. Width of the named flag determines
+    // both the dispatch domain (1<<width) and the result-type used by
+    // arm value literals downstream. Failures stay on
+    // `validation/invalid-attribute` because the repair is still
+    // attribute-text-level (mirrors B1-δ present-if's choice).
+    let tag_flag_width: Option<u32> = match &tag_flag {
+        Some(flag_name) => {
+            if tag_field_ref.flags.is_empty() {
+                return Err(located(
+                    &variant_node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:variant>".into(),
+                        attr: "tag".into(),
+                        value: format!("{tag_field}.{flag_name}"),
+                        expected: format!(
+                            "carrier '{tag_field}' must be authored as <sce:flags> with \
+                             <sce:flag> children for the dotted-path form; '{tag_field}' \
+                             is a plain field — either author it as <sce:flags> or use \
+                             bare tag=\"{tag_field}\" for whole-field dispatch"
+                        ),
+                    },
+                ));
+            }
+            match tag_field_ref.flags.iter().find(|f| f.name == *flag_name) {
+                Some(flag_def) => Some(flag_def.width.max(1)),
+                None => {
+                    let available: Vec<String> =
+                        tag_field_ref.flags.iter().map(|f| f.name.clone()).collect();
+                    return Err(located(
+                        &variant_node,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: "<sce:variant>".into(),
+                            attr: "tag".into(),
+                            value: format!("{tag_field}.{flag_name}"),
+                            expected: format!(
+                                "flag '{flag_name}' is not declared on carrier \
+                                 '{tag_field}' — available flags: {}",
+                                available.join(", ")
+                            ),
+                        },
+                    ));
+                }
+            }
+        }
+        None => None,
     };
 
     let mut arms: Vec<VariantArm> = Vec::new();
@@ -913,12 +999,19 @@ fn parse_codec_variant(
     // entire value domain — otherwise some incoming tag value would
     // reach the runtime decoder with no matching branch. v1 considers
     // uint8 (256) and uint16 (65536) practically enumerable; uint32 /
-    // uint64 always require a default.
+    // uint64 always require a default. For the B5-β multi-bit-flag
+    // dispatch form the domain shrinks to `1 << width` of the named
+    // bit-range (e.g. width=5 ⇒ 32 values), which is always
+    // practically enumerable since `<sce:flag>` width itself is bounded
+    // by carrier_int_bit_width ≤ 64.
     if default_arm.is_none() {
-        let domain_size: Option<u64> = match tag_type {
-            SceType::Uint8 => Some(256),
-            SceType::Uint16 => Some(65_536),
-            _ => None,
+        let domain_size: Option<u64> = match tag_flag_width {
+            Some(width) => Some(1u64 << width),
+            None => match tag_type {
+                SceType::Uint8 => Some(256),
+                SceType::Uint16 => Some(65_536),
+                _ => None,
+            },
         };
         let arm_count = arms.len();
         let exhaustive = match domain_size {
@@ -926,12 +1019,22 @@ fn parse_codec_variant(
             None => false,
         };
         if !exhaustive {
+            // Surface the named bit-range in the diagnostic label so
+            // authors immediately see they're authoring a sub-domain
+            // (otherwise "tag 'header'" would mislead toward a 256-arm
+            // exhaustiveness expectation when the actual domain is
+            // 1<<width). The diagnostic's `tag_type` field stays the
+            // carrier type for back-compat with the unreachable test.
+            let display_tag = match &tag_flag {
+                Some(flag_name) => format!("{tag_field}.{flag_name}"),
+                None => tag_field.clone(),
+            };
             return Err(located(
                 &variant_node,
                 label.diagnostic_label,
                 ValidationError::CodecVariantArmUnreachable {
                     codec: label.identifier.to_string(),
-                    tag_field: tag_field.clone(),
+                    tag_field: display_tag,
                     tag_type: format!("{tag_type:?}").to_lowercase(),
                     arm_count,
                     domain_size,
@@ -942,6 +1045,7 @@ fn parse_codec_variant(
 
     Ok(Some(CodecVariant {
         tag_field,
+        tag_flag,
         arms,
         default_arm,
     }))

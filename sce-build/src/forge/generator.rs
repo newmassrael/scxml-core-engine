@@ -1543,13 +1543,44 @@ fn render_codec(
     // `<sce:import>` table → ImportContext gives us the per-language
     // qualified type name. Tag-type literal suffix (e.g. `0x01u8`) is
     // language-derived so the match pattern type-checks without coercion.
+    //
+    // RFC §5.B B5-β multi-bit-flag dispatch (`<sce:variant
+    // tag="<carrier>.<flag>"/>`): when `v.tag_flag` is set the
+    // *effective* tag type is the smallest unsigned that holds the
+    // named flag's `width` bits — the dispatch reads
+    // `(carrier >> bit) & ((1<<width)-1)`. For the bare `tag="<field>"`
+    // form (B1-β) `tag_flag` is `None` and the effective tag type is
+    // the carrier's full type (whole-field dispatch — back-compat).
     if let Some(v) = &m.variant {
-        let tag_type = m
+        let carrier_field = m
             .fields
             .iter()
             .find(|f| f.id == v.tag_field)
-            .map(|f| f.sce_type.clone())
             .expect("parser validated tag_field references an existing field");
+        let carrier_type = carrier_field.sce_type.clone();
+        let (tag_type, tag_flag_def) = match &v.tag_flag {
+            None => (carrier_type.clone(), None),
+            Some(flag_name) => {
+                let flag_def = carrier_field
+                    .flags
+                    .iter()
+                    .find(|f| f.name == *flag_name)
+                    .expect(
+                        "parser validated tag_flag references an existing flag on the carrier",
+                    );
+                let width = flag_def.width.max(1);
+                let result_type = if width <= 8 {
+                    SceType::Uint8
+                } else if width <= 16 {
+                    SceType::Uint16
+                } else if width <= 32 {
+                    SceType::Uint32
+                } else {
+                    SceType::Uint64
+                };
+                (result_type, Some(flag_def))
+            }
+        };
         let tag_native = l.type_name(&tag_type).to_string();
         let arm_value_suffix = match (lang, &tag_type) {
             (crate::generator::Language::Rust, SceType::Uint8) => "u8",
@@ -1643,6 +1674,123 @@ fn render_codec(
         let mut variant_obj = serde_json::Map::new();
         variant_obj.insert("tag_field".into(), l.codec_field_id(&v.tag_field).into());
         variant_obj.insert("tag_native_type".into(), tag_native.into());
+        // RFC §5.B B5-β: `tag_match_expr` / `tag_store_expr` factor the
+        // dispatch and default-arm-tag-storage expressions out of the
+        // 6 templates so the same template body emits both whole-field
+        // and multi-bit-flag dispatch shapes. Whole-field values match
+        // the literal text the templates emitted before B5-β so existing
+        // variant goldens stay byte-stable; multi-bit-flag values
+        // emit `(carrier >> bit) & ((1<<width)-1)` in per-language idiom.
+        let carrier_id = l.codec_field_id(&v.tag_field);
+        let (tag_match_expr, tag_store_expr) = match (&tag_flag_def, lang) {
+            // ── Whole-field (B1-β back-compat) ──────────────────────
+            (None, crate::generator::Language::Rust) => {
+                (carrier_id.clone(), carrier_id.clone())
+            }
+            (None, crate::generator::Language::Cpp) => {
+                (carrier_id.clone(), carrier_id.clone())
+            }
+            (None, crate::generator::Language::Go) => {
+                (carrier_id.clone(), carrier_id.clone())
+            }
+            (None, crate::generator::Language::C11) => {
+                let qualified = format!("out->{carrier_id}");
+                (qualified.clone(), qualified)
+            }
+            (None, crate::generator::Language::Python) => {
+                (carrier_id.clone(), carrier_id.clone())
+            }
+            (None, crate::generator::Language::Kotlin) => {
+                // Kotlin needs Int (or Long for u32/u64) for `when` matching;
+                // store expression uses the bare field whose type is already
+                // the correct UByte/UShort/UInt/ULong.
+                let cast_op = match &tag_type {
+                    SceType::Uint8 | SceType::Uint16 => ".toInt()",
+                    _ => ".toLong()",
+                };
+                (
+                    format!("{carrier_id}{cast_op}"),
+                    carrier_id.clone(),
+                )
+            }
+            // ── Multi-bit-flag (B5-β) — masked-shifted formula ──────
+            (Some(flag), lang_) => {
+                let bit = flag.bit;
+                let width = flag.width.max(1);
+                let value_mask: u64 = (1u64 << width) - 1;
+                let result_bits: u32 = if width <= 8 {
+                    8
+                } else if width <= 16 {
+                    16
+                } else if width <= 32 {
+                    32
+                } else {
+                    64
+                };
+                let value_hex_digits = (result_bits as usize) / 4;
+                let value_mask_lit =
+                    format!("0x{:0width$X}", value_mask, width = value_hex_digits);
+                match lang_ {
+                    crate::generator::Language::Rust => {
+                        let result_ty = format!("u{result_bits}");
+                        // Mask in carrier width then narrowing-cast to result type.
+                        // Both halves of the bit-and need the same type, so the
+                        // mask carries an `as <result_type>` after the carrier
+                        // already shifted into result-type-fitting bits via the
+                        // narrowing cast on the outer expression.
+                        let expr = format!(
+                            "((({carrier_id} >> {bit}) & ({value_mask_lit} as {result_ty})) as {result_ty})"
+                        );
+                        (expr.clone(), expr)
+                    }
+                    crate::generator::Language::Cpp => {
+                        let result_ty = format!("uint{result_bits}_t");
+                        let expr = format!(
+                            "static_cast<{result_ty}>(({carrier_id} >> {bit}) & static_cast<{result_ty}>({value_mask_lit}))"
+                        );
+                        (expr.clone(), expr)
+                    }
+                    crate::generator::Language::Go => {
+                        let result_ty = format!("uint{result_bits}");
+                        let expr = format!(
+                            "{result_ty}(({carrier_id} >> {bit}) & {value_mask_lit})"
+                        );
+                        (expr.clone(), expr)
+                    }
+                    crate::generator::Language::C11 => {
+                        let result_ty = format!("uint{result_bits}_t");
+                        let expr = format!(
+                            "({result_ty})((out->{carrier_id} >> {bit}) & ({result_ty}){value_mask_lit})"
+                        );
+                        (expr.clone(), expr)
+                    }
+                    crate::generator::Language::Python => {
+                        // Python ints are unbounded — no narrowing cast needed.
+                        let expr = format!("(({carrier_id} >> {bit}) & {value_mask_lit})");
+                        (expr.clone(), expr)
+                    }
+                    crate::generator::Language::Kotlin => {
+                        // Match needs Int/Long for `when` matching. Store needs
+                        // result_type (UByte/UShort/UInt/ULong) for the Default
+                        // arm's `tag` field whose declared type is tag_native_type.
+                        let (kt_result_ty, kt_match_to) = match result_bits {
+                            8 => ("UByte", ".toInt()"),
+                            16 => ("UShort", ".toInt()"),
+                            32 => ("UInt", ".toLong()"),
+                            _ => ("ULong", ".toLong()"),
+                        };
+                        let inner =
+                            format!("(({carrier_id}.toInt() shr {bit}) and {value_mask_lit})");
+                        (
+                            format!("{inner}{kt_match_to}"),
+                            format!("{inner}.to{kt_result_ty}()"),
+                        )
+                    }
+                }
+            }
+        };
+        variant_obj.insert("tag_match_expr".into(), tag_match_expr.into());
+        variant_obj.insert("tag_store_expr".into(), tag_store_expr.into());
         // C11 emits two new typedefs alongside the codec struct: an
         // enum naming each kind constant and a struct holding the
         // discriminant + union of bodies. Names are derived from the
@@ -1659,24 +1807,15 @@ fn render_codec(
                 format!("{snake}_body_t").into(),
             );
         }
-        // Kotlin: `when` matches an Int (or Long for Uint32/64) against
-        // plain integer literals. `tag_field.toInt()` widens UByte/UShort
-        // safely; `tag_field.toLong()` is needed for UInt/ULong because
-        // `UInt.toInt()` would overflow values above 2^31. Other backends
-        // ignore these keys — Rust/Cpp use `tag_field` directly.
+        // Kotlin only: zero-valued tag literal for the default-only
+        // variant body initializer (parser allows arms.is_empty() +
+        // default_arm.is_some()); without this the `{% else %}` branch
+        // would emit invalid Kotlin. `tag_native_type` (above) is the
+        // *effective* tag type — for B5-β multi-bit-flag dispatch this
+        // is the result-type (smallest unsigned holding the bit-range
+        // width), not the carrier type. The zero-valued constructor
+        // therefore matches whichever is appropriate.
         if matches!(lang, crate::generator::Language::Kotlin) {
-            let cast_op = match &tag_type {
-                SceType::Uint8 | SceType::Uint16 => ".toInt()",
-                SceType::Uint32 | SceType::Uint64 => ".toLong()",
-                _ => "",
-            };
-            variant_obj.insert(
-                "kt_tag_match_expr".into(),
-                format!("{}{}", l.codec_field_id(&v.tag_field), cast_op).into(),
-            );
-            // Zero-valued tag literal for the default-only variant body
-            // initializer (parser allows arms.is_empty() + default_arm.is_some());
-            // without this the `{% else %}` branch would emit invalid Kotlin.
             let zero_method = match &tag_type {
                 SceType::Uint8 => "toUByte",
                 SceType::Uint16 => "toUShort",

@@ -1630,6 +1630,20 @@ fn forge_codec_variant_dispatch_cpp() {
     );
 }
 
+/// RFC §5.B B5-β multi-bit-flag variant dispatch (Cpp): `<sce:variant
+/// tag="header.mid">` extracts the 5-bit MID slice from a uint8 flags
+/// carrier and dispatches into KeepAlive (empty body) / Close (uint8
+/// reason) / Default arms — mirrors zenoh-pico's transport-message
+/// envelope shape (`_z_transport_message_decode`,
+/// `_Z_MID_MASK = 0x1f`).
+#[test]
+fn forge_codec_transport_envelope_cpp() {
+    assert_standalone_forge(
+        "codec_transport_envelope",
+        "codec_transport_envelope.h",
+    );
+}
+
 /// RFC §5.B B1-β: `codec/variant-arm-unreachable` build-time check —
 /// a `<sce:variant>` over a uint8 tag with two arms and no
 /// `<sce:default>` leaves 254 tag values uncovered, so the parser
@@ -1680,6 +1694,155 @@ fn forge_codec_variant_missing_default_rejects() {
             }) if tag_field == "msg_id"
         ),
         "must surface as ValidationError::CodecVariantArmUnreachable with the offending tag and arm count; got: {inner:?}"
+    );
+}
+
+/// RFC §5.B B5-β multi-bit-flag dispatch: `<sce:variant
+/// tag="<carrier>.<flag>"/>` requires the carrier to be a
+/// `<sce:flags>`-bearing field. Pointing at a plain field rejects
+/// with `validation/invalid-attribute` so the author sees the
+/// correct repair (either author the carrier as `<sce:flags>` or
+/// switch to bare `tag="<field>"` whole-field dispatch).
+#[test]
+fn forge_codec_variant_dotted_tag_carrier_not_flags_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="dotted_carrier_plain">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <datamodel>
+    <data id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="header.mid">
+      <sce:arm value="0x01" type="codec_variant_session_open"/>
+      <sce:default type="codec_variant_session_open"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("dotted_carrier_plain"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "dotted-form variant tag with non-flags carrier must reject with validation/invalid-attribute"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
+                if attr == "tag"
+        ),
+        "must surface as ValidationError::InvalidAttribute on the variant's tag attribute; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B5-β multi-bit-flag dispatch: the named flag must exist
+/// on the carrier. Typo'd or undeclared flag names reject with
+/// `validation/invalid-attribute`, naming the available flags so
+/// the author sees the right repair.
+#[test]
+fn forge_codec_variant_dotted_tag_unknown_flag_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="dotted_unknown_flag">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="z"   bit="5"/>
+    </sce:flags>
+    <sce:variant tag="header.kind">
+      <sce:arm value="0x01" type="codec_variant_session_open"/>
+      <sce:default type="codec_variant_session_open"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("dotted_unknown_flag"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "dotted-form variant tag with unknown flag must reject with validation/invalid-attribute"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, ref expected, .. })
+                if attr == "tag" && expected.contains("mid") && expected.contains("z")
+        ),
+        "must surface as ValidationError::InvalidAttribute naming the available flags; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B5-β multi-bit-flag dispatch: when the named bit-range
+/// has small width (e.g. width=1 → domain {0,1}), the arm-domain
+/// validator computes domain = `1 << width` and the
+/// `codec/variant-arm-unreachable` diagnostic still surfaces if
+/// arms don't cover that domain without `<sce:default>`. This pins
+/// the FlagBitRange branch of the exhaustiveness check.
+#[test]
+fn forge_codec_variant_dotted_tag_arm_unreachable_uses_flag_width() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="dotted_underexhaustive">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="2"/>
+    </sce:flags>
+    <sce:variant tag="header.kind">
+      <sce:arm value="0x00" type="codec_variant_session_open"/>
+      <sce:arm value="0x01" type="codec_variant_session_open"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("dotted_underexhaustive"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "2-arm coverage of width-2 domain (4 values) without default must reject"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::CodecVariantArmUnreachable {
+                ref tag_field,
+                arm_count: 2,
+                domain_size: Some(4),
+                ..
+            }) if tag_field == "header.kind"
+        ),
+        "must surface as ValidationError::CodecVariantArmUnreachable with width-derived domain=4 \
+         and dotted tag display; got: {:?}",
+        err.error
     );
 }
 
@@ -1847,6 +2010,14 @@ fn forge_kotlin_codec_variant_dispatch() {
     assert_standalone_forge_kotlin(
         "codec_variant_dispatch",
         "CodecVariantDispatch.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_transport_envelope() {
+    assert_standalone_forge_kotlin(
+        "codec_transport_envelope",
+        "CodecTransportEnvelope.kt",
     );
 }
 
@@ -2295,6 +2466,14 @@ fn forge_rust_codec_variant_dispatch() {
     );
 }
 
+#[test]
+fn forge_rust_codec_transport_envelope() {
+    assert_standalone_forge_rust(
+        "codec_transport_envelope",
+        "codec_transport_envelope.rs",
+    );
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Go conformance tests ─────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -2468,6 +2647,14 @@ fn forge_go_codec_variant_dispatch() {
     assert_standalone_forge_go(
         "codec_variant_dispatch",
         "codec_variant_dispatch.go",
+    );
+}
+
+#[test]
+fn forge_go_codec_transport_envelope() {
+    assert_standalone_forge_go(
+        "codec_transport_envelope",
+        "codec_transport_envelope.go",
     );
 }
 
@@ -2753,6 +2940,14 @@ fn forge_python_codec_variant_dispatch() {
     );
 }
 
+#[test]
+fn forge_python_codec_transport_envelope() {
+    assert_standalone_forge_python(
+        "codec_transport_envelope",
+        "codec_transport_envelope.py",
+    );
+}
+
 // ── RFC §5.B B1-δ present-if primitive (Python) ─────────────
 
 #[test]
@@ -2965,6 +3160,14 @@ fn forge_c11_codec_variant_dispatch() {
     assert_standalone_forge_c(
         "codec_variant_dispatch",
         "codec_variant_dispatch.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_transport_envelope() {
+    assert_standalone_forge_c(
+        "codec_transport_envelope",
+        "codec_transport_envelope.c.h",
     );
 }
 

@@ -111,7 +111,7 @@ impl {{ struct_name }} {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match {{ variant.tag_field }} {
+        let body = match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
             {{ arm.value_literal }} => {{ struct_name }}Body::{{ arm.variant_name }}({{ arm.body_type }}::decode(cursor)?),
 {% endfor %}

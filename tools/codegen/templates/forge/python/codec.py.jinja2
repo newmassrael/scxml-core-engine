@@ -90,7 +90,7 @@ class {{ struct_name }}:
         # wire.
         body = {{ struct_name }}Body()
 {% for arm in variant.arms %}
-        {{ "if" if loop.first else "elif" }} {{ variant.tag_field }} == {{ arm.value_literal }}:
+        {{ "if" if loop.first else "elif" }} {{ variant.tag_match_expr }} == {{ arm.value_literal }}:
             body.kind = "{{ arm.variant_name }}"
             _arm = {{ arm.body_type }}.decode(cursor)
             if _arm is None:
@@ -100,7 +100,7 @@ class {{ struct_name }}:
         else:
 {% if variant.default_arm %}
             body.kind = "{{ variant.default_arm.variant_name }}"
-            body.default_tag = {{ variant.tag_field }}
+            body.default_tag = {{ variant.tag_store_expr }}
             _arm = {{ variant.default_arm.body_type }}.decode(cursor)
             if _arm is None:
                 return None

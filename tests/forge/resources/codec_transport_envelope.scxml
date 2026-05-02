@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec multi-bit-flag variant dispatch (RFC §5.B B5-β,
+     surface B from the watching-zenoh authoring path).
+
+     Mirrors the upstream Zenoh transport-message envelope (zenoh-pico
+     src/protocol/codec/transport.c:_z_transport_message_decode lines 546-575
+     + include/zenoh-pico/protocol/definitions/core.h `#define _Z_MID_MASK 0x1f`):
+     the leading 1-byte header packs a 5-bit message ID (bits 0..4, mirroring
+     `_Z_MID_MASK = 0x1f`) plus three single-bit per-message flags (bits 5..7).
+     The decoder dispatches on the masked-and-shifted MID slice, NOT on the
+     full header byte — the per-message flags above bit 4 are consumed by the
+     selected arm body, not by the variant tag.
+
+     B5-β extends `<sce:variant tag="...">` to accept the dotted-path form
+     `tag="<carrier>.<flag>"` where `<carrier>` names a `<sce:flags>`-bearing
+     field and `<flag>` names one of its `<sce:flag>` children. The dispatch
+     value is `(carrier >> bit) & ((1 << width) - 1)`. Whole-field dispatch
+     (B1-β bare `tag="<field>"`) stays the back-compat default.
+
+     Wire shape (1 + body bytes):
+       byte 0: header  bits 0..4 = mid       (5 bits, 32-value domain)
+                       bit  5    = flag_z    (per-message flag, body-consumed)
+                       bit  6    = flag_x    (per-message flag, body-consumed)
+                       bit  7    = flag_w    (per-message flag, body-consumed)
+       bytes 1..N: arm body bytes (KeepAlive=0; Close=1 reason byte)
+
+     Arm coverage:
+       0x04 → KeepAlive (mirrors _Z_MID_T_KEEP_ALIVE = 0x04, empty body)
+       0x03 → Close     (mirrors _Z_MID_T_CLOSE      = 0x03, single uint8 reason)
+       <sce:default> → Close (catch-all; preserves runtime mid for round-trip) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_transport_envelope">
+  <sce:import src="codec_zenoh_keep_alive.scxml" kind="codec" as="codec_zenoh_keep_alive"/>
+  <sce:import src="codec_zenoh_close.scxml" kind="codec" as="codec_zenoh_close"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid"    bit="0" width="5"/>
+      <sce:flag name="flag_z" bit="5"/>
+      <sce:flag name="flag_x" bit="6"/>
+      <sce:flag name="flag_w" bit="7"/>
+    </sce:flags>
+    <sce:variant tag="header.mid">
+      <sce:arm value="0x04" type="codec_zenoh_keep_alive"/>
+      <sce:arm value="0x03" type="codec_zenoh_close"/>
+      <sce:default type="codec_zenoh_close"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

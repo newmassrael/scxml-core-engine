@@ -76,7 +76,7 @@ struct {{ struct_name }} {
         if (!cursor.advance({{ min_bytes }})) return std::nullopt;
         // Dispatch on tag value into the matching arm body.
         {{ struct_name }}Body body;
-        switch ({{ variant.tag_field }}) {
+        switch ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
             case {{ arm.value_literal }}: {
                 auto _arm = {{ arm.body_type }}::decode(cursor);
@@ -90,7 +90,7 @@ struct {{ struct_name }} {
                 auto _arm = {{ variant.default_arm.body_type }}::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = {{ struct_name }}{{ variant.default_arm.variant_name }}{
-                    .tag = {{ variant.tag_field }},
+                    .tag = {{ variant.tag_store_expr }},
                     .body = *_arm,
                 };
                 break;

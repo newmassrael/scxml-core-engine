@@ -967,17 +967,27 @@ pub struct VariantArm {
 
 /// Discriminated-union suffix on a codec — RFC §5.B Codec DSL.
 ///
-/// Decode reads the named tag field, then dispatches into the matching
-/// arm's body codec. Encode writes the tag bytes followed by the active
+/// Decode reads the named tag field (or named flag bit-range within it,
+/// when `tag_flag` is set), then dispatches into the matching arm's
+/// body codec. Encode writes the tag bytes followed by the active
 /// arm's body bytes. The optional `<sce:default>` arm catches any tag
 /// value not enumerated; absent default + non-exhaustive arm coverage
 /// fires `codec/variant-arm-unreachable` at build time (see RFC §5.B).
 #[derive(Debug, Clone, Serialize)]
 pub struct CodecVariant {
     /// `id` of the field (within this codec's `fields`) whose decoded
-    /// value selects an arm. Must reference an unsigned-int field
-    /// (uint8/uint16/uint32/uint64) — enforced at parse time.
+    /// value (or named bit-range, see `tag_flag`) selects an arm. Must
+    /// reference an unsigned-int field (uint8/uint16/uint32/uint64) —
+    /// enforced at parse time.
     pub tag_field: String,
+    /// RFC §5.B B5-β multi-bit-flag dispatch: when `Some(name)`, the
+    /// `tag_field` MUST be a `<sce:flags>`-bearing carrier and `name`
+    /// names one of its `<sce:flag>` bit-ranges. The dispatch value is
+    /// `(carrier >> bit) & ((1 << width) - 1)` — the bit-range's
+    /// shifted-and-masked unsigned scalar. When `None`, the dispatch
+    /// reads the field's whole value (B1-β whole-field form).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag_flag: Option<String>,
     /// Enumerated arms in document order.
     pub arms: Vec<VariantArm>,
     /// Catch-all arm for tag values outside the enumerated set.

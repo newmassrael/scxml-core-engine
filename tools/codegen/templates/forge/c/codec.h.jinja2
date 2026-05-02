@@ -133,7 +133,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
      * tag value so encode can round-trip it back onto the wire. */
     out->body.default_tag = 0;
     sce_forge_codec_status_t _arm_st;
-    switch (out->{{ variant.tag_field }}) {
+    switch ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
         case {{ arm.value_literal }}:
             out->body.kind = {{ arm.c_kind_constant }};
@@ -144,7 +144,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
         default:
 {% if variant.default_arm %}
             out->body.kind = {{ variant.default_arm.c_kind_constant }};
-            out->body.default_tag = out->{{ variant.tag_field }};
+            out->body.default_tag = {{ variant.tag_store_expr }};
             _arm_st = {{ variant.default_arm.body_decoder }}(cursor, &out->body.arm.{{ variant.default_arm.c_union_field }});
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;

@@ -77,7 +77,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 	// the cursor. The default arm (when declared) carries the runtime
 	// tag value so encode can round-trip it back onto the wire.
 	body := {{ struct_name }}Body{}
-	switch {{ variant.tag_field }} {
+	switch {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
 	case {{ arm.value_literal }}:
 		_arm, err := {{ arm.body_decoder }}(cursor)
@@ -93,7 +93,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 			return nil, err
 		}
 		body.{{ variant.default_arm.variant_name }} = &{{ struct_name }}{{ variant.default_arm.variant_name }}{
-			Tag: {{ variant.tag_field }},
+			Tag: {{ variant.tag_store_expr }},
 			Body: *_arm,
 		}
 {% else %}
