@@ -4685,44 +4685,12 @@ fn crossfile_matrix_validator_interpolation() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ── B5-γ parent-flags dependency rejections ──────────────────
+// ── B5-γ parent-flags dependency emission tests ──────────────
 // ═══════════════════════════════════════════════════════════════
-
-/// RFC §5.B B5-γ trunk gate: a codec declaring
-/// `<sce:requires-parent-flags>` rejects on Python until the closure
-/// lands (precedent: B1-β / B1-δ / B2-α / B3-α trunk-then-closures
-/// cadence). Kotlin + Go + C11 closures landed; their gate-rejection
-/// tests rotated to positive emission tests.
-fn assert_b5_gamma_gate_rejects(scxml: &str, language: sce_build::generator::Language) {
-    use sce_build::forge::error::{ForgeError, GenerateError};
-
-    let scxml_path = resource_dir().join(scxml);
-    let content = std::fs::read_to_string(&scxml_path)
-        .unwrap_or_else(|_| panic!("Cannot read {scxml}"));
-    let result = sce_build::compile_forge_with_imports(
-        &content,
-        sce_build::DocumentLabel::symmetric(scxml.trim_end_matches(".scxml")),
-        language,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions {
-            go_module_prefix: Some("github.com/sce/test/generated".to_string()),
-            ..Default::default()
-        },
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "B5-γ parent-flags codec on {language:?} must reject with \
-             GenerateError::UnsupportedFeature until per-language closure \
-             lands"
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(&err.error, ForgeError::Generate(GenerateError::UnsupportedFeature(_))),
-        "must surface GenerateError::UnsupportedFeature; got: {:?}",
-        err.error
-    );
-}
+//
+// All six language closures landed; the historical gate-rejection
+// helper (`assert_b5_gamma_gate_rejects`) and its 4 per-language
+// rejection tests deleted at this final closure.
 
 /// RFC §5.B B5-γ Kotlin closure: body codec with parent-flags
 /// dependency emits `parentFlags: UByte` parameter on decode/encode;
@@ -4806,11 +4774,32 @@ fn forge_c11_codec_init_syn_envelope() {
     );
 }
 
+/// RFC §5.B B5-γ Python closure (final): body codec with parent-flags
+/// dependency emits `parent_flags: int` parameter on `decode`/`encode`
+/// (after the `cls, cursor` / `self` preceding args); `parent.<flag>`
+/// predicates compile to `(parent_flags & 0xNN) != 0`. `_ = parent_flags`
+/// defensive guard suppresses unused-variable warnings (mirrors Rust's
+/// `let _ = parent_flags;` and Cpp's `(void)parent_flags;`).
 #[test]
-fn forge_codec_init_syn_body_python_gate_rejects() {
-    assert_b5_gamma_gate_rejects(
-        "codec_init_syn_body.scxml",
-        sce_build::generator::Language::Python,
+fn forge_python_codec_init_syn_body() {
+    assert_standalone_forge_python(
+        "codec_init_syn_body",
+        "codec_init_syn_body.py",
+    );
+}
+
+/// RFC §5.B B5-γ Python closure (final): variant parent threading
+/// carrier value. Decode-site dispatcher reads the just-decoded
+/// snake_case carrier local; encode-site dispatcher reads through
+/// `self.<snake>`. Mirrors the Rust + Cpp + Kotlin + Go + C11 goldens.
+/// This is the FINAL B5-γ closure — the per-language gate code in
+/// `render_codec` and the 4 historical gate-rejection tests are
+/// deleted in the same commit.
+#[test]
+fn forge_python_codec_init_syn_envelope() {
+    assert_standalone_forge_python(
+        "codec_init_syn_envelope",
+        "codec_init_syn_envelope.py",
     );
 }
 
