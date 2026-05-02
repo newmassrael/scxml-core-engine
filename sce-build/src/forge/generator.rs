@@ -986,27 +986,16 @@ fn render_codec(
     // here until each per-language closure landed; Python (the final
     // closure) deletes the gate entirely.
 
-    // RFC §5.B B1-δ v1 trunk constraint: present-if'd fields must be
-    // BitSize::Fixed. Variable-length carriers (Tail / LengthRef / Vle)
-    // need length-prefix or until-eof support that lands in B2; until
-    // then the parser-side validator rejects the combination so the
-    // gated render is well-defined.
-    if m.has_present_if_fields() {
-        for f in &m.fields {
-            if f.present_if.is_some() && !matches!(f.bit_size, BitSize::Fixed { .. }) {
-                return Err(ForgeError::Generate(
-                    crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                        "codec '{name}': field '{field}' combines sce:present-if with a variable-length \
-                         bit-size (tail / length-ref / vle); v1 trunk only supports present-if on \
-                         fixed-width fields. Variable-length gated fields land alongside the B2 \
-                         len-prefix / until-eof primitives",
-                        name = m.name,
-                        field = f.id,
-                    )),
-                ));
-            }
-        }
-    }
+    // RFC §5.B B2-β: the v1 BitSize::Fixed-only constraint on
+    // present-if is lifted. Gated fields can now combine present-if
+    // with Tail / LengthRef / Vle bit-sizes; the streaming helper
+    // dispatches on bit_size and emits the appropriate per-language
+    // shape (Fixed: peek + advance N; Tail: peek + advance remaining;
+    // LengthRef: peek + advance sibling-int bytes; Vle: streaming
+    // base-128 read). Repeat fields stay routed through the dedicated
+    // repeat helper — `parse_codec_repeat_from_node` never sets a
+    // present_if predicate so the combination is impossible by
+    // construction.
 
     // RFC §5.B B2 repeat primitive (closures complete): all six
     // backends now emit repeat codecs. The historical gate sat here
@@ -1042,9 +1031,17 @@ fn render_codec(
                         "vle_decode_stmt".into(),
                         vle_decode_stmt(&l.codec_field_id(&f.id), *width_bits, lang).into(),
                     );
+                    // VLE encode reads from the self-prefixed struct
+                    // member at the non-gated callsite; per-language
+                    // self/receiver shape via `codec_field_ref`.
                     obj.insert(
                         "vle_encode_block".into(),
-                        vle_encode_block(&l.codec_field_id(&f.id), *width_bits, lang).into(),
+                        vle_encode_block(
+                            &l.codec_field_ref(&l.codec_field_id(&f.id)),
+                            *width_bits,
+                            lang,
+                        )
+                        .into(),
                     );
                 } else if matches!(&f.bit_size, BitSize::Repeat { .. }) {
                     // RFC §5.B B2 repeat primitive — populate the per-
@@ -1259,10 +1256,22 @@ fn render_codec(
                         crate::generator::Language::Go => {
                             // Go has no native optional; the canonical
                             // shape for "value-or-absent" is a pointer
-                            // (`nil` ⇔ absent). Encode dereferences when
-                            // non-nil; decode allocates a stack-local
-                            // and stores its address.
-                            format!("*{inner}")
+                            // (`nil` ⇔ absent). For bytes-typed fields
+                            // (Tail / LengthRef) the slice itself is
+                            // nullable, so a bare `[]byte` carries the
+                            // same presence signal without a pointer
+                            // wrapper — see the helper's Tail/LengthRef
+                            // arms which decode via `append([]byte(nil), ...)`.
+                            // Fixed and Vle keep `*T` because their
+                            // value types have no nil distinction.
+                            if matches!(
+                                f.bit_size,
+                                BitSize::Tail | BitSize::LengthRef
+                            ) {
+                                inner.to_string()
+                            } else {
+                                format!("*{inner}")
+                            }
                         }
                         crate::generator::Language::Python => {
                             // Python's PEP 604 union (`int | None`) is
@@ -2095,14 +2104,19 @@ fn resolve_length_field_byte_off(
     })
 }
 
-/// RFC §5.B B1-δ present-if helpers.
+/// RFC §5.B B1-δ + B2-β present-if helpers.
 ///
 /// `present_if_streaming_decode_stmt` returns a single fully-formed
 /// per-field decode statement that consumes from the cursor and binds
-/// `field_id` (or skips/`None`s when the predicate is false). v1 trunk
-/// supports `BitSize::Fixed` only — variable-length fields gated by
-/// present-if defer to the B-stage that introduces a reachable
-/// consumer (the parser rejects v1 mixing).
+/// `field_id` (or skips/`None`s when the predicate is false). The
+/// dispatcher splits on `field.bit_size`:
+///   - `BitSize::Fixed`     → `present_if_decode_fixed`     (B1-δ)
+///   - `BitSize::Tail`      → `present_if_decode_tail`      (B2-β)
+///   - `BitSize::LengthRef` → `present_if_decode_length_ref`(B2-β)
+///   - `BitSize::Vle`       → `present_if_decode_vle`       (B2-β)
+///   - `BitSize::Repeat`    → unreachable (parser disallows present-if
+///                            on `<sce:repeat>`; routed to
+///                            [`repeat_streaming_decode_stmt`])
 ///
 /// `predicate` is `None` for unconditionally-present fields and
 /// `Some(&PresentIfPredicate)` for gated ones; the carrier's `flags`
@@ -2114,14 +2128,39 @@ fn present_if_streaming_decode_stmt(
     default_endian: Endian,
     lang: crate::generator::Language,
 ) -> String {
+    match &field.bit_size {
+        BitSize::Fixed { bits } => {
+            present_if_decode_fixed(field, fields, default_endian, lang, *bits)
+        }
+        BitSize::Tail => present_if_decode_tail(field, fields, lang),
+        BitSize::LengthRef => present_if_decode_length_ref(field, fields, lang),
+        BitSize::Vle { width_bits } => {
+            present_if_decode_vle(field, fields, lang, *width_bits)
+        }
+        // Repeat fields are routed to `repeat_streaming_decode_stmt`
+        // by the template's per-field `is_repeat` dispatch — this
+        // helper is still called eagerly for every field in the obj-
+        // builder (so per-field obj keys stay uniform) but the
+        // template never reads the result for repeat fields. Returning
+        // an empty string keeps the JSON shape valid without
+        // committing to a sentinel comment that might leak into a
+        // golden if the dispatch ever drifts.
+        BitSize::Repeat { .. } => String::new(),
+    }
+}
+
+/// RFC §5.B B1-δ present-if + Fixed bit-size: the historical 12-arm
+/// table for fixed-width gated fields. Extracted from the
+/// `present_if_streaming_decode_stmt` body during the B2-β refactor —
+/// no behavior change for B1-δ fixtures.
+fn present_if_decode_fixed(
+    field: &CodecField,
+    fields: &[CodecField],
+    default_endian: Endian,
+    lang: crate::generator::Language,
+    bits: u32,
+) -> String {
     use crate::generator::Language;
-    let bits = match field.bit_size {
-        BitSize::Fixed { bits } => bits,
-        // v1 trunk parser rejects this combination — the unreachable
-        // arm is kept so a future relaxation surfaces as a logic error
-        // rather than an empty render.
-        _ => return format!("/* unsupported present-if + non-fixed field shape */"),
-    };
     let n = bits.div_ceil(8);
 
     // Build the per-language slice-read body that materializes the
@@ -2318,6 +2357,497 @@ fn present_if_streaming_decode_stmt(
     }
 }
 
+/// RFC §5.B B2-β present-if + Tail bit-size: read all remaining
+/// cursor bytes into the field's bytes-typed host (per language) when
+/// the predicate fires; bind to absent (None / nil / empty) when
+/// clear. The non-gated form (Tail field appearing in a codec that
+/// has *some* present-if'd field elsewhere) reads remaining bytes
+/// unconditionally — the streaming branch path requires per-field
+/// cursor advance to stay sequential.
+fn present_if_decode_tail(
+    field: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = field.id.as_str();
+    match (lang, &field.present_if) {
+        (Language::Rust, None) => format!(
+            "let {id} = {{\n            \
+                 let _n = cursor.remaining();\n            \
+                 let raw = cursor.peek_slice(_n)?;\n            \
+                 let _v = raw.to_vec();\n            \
+                 cursor.advance(_n)?;\n            \
+                 _v\n        \
+             }};"
+        ),
+        (Language::Rust, Some(p)) => {
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "let {id} = if {test} {{\n            \
+                     let _n = cursor.remaining();\n            \
+                     let raw = cursor.peek_slice(_n)?;\n            \
+                     let _v = raw.to_vec();\n            \
+                     cursor.advance(_n)?;\n            \
+                     Some(_v)\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }};"
+            )
+        }
+        (Language::Cpp, None) => format!(
+            "std::vector<uint8_t> {id};\n        \
+             {{\n            \
+                 std::size_t _n = cursor.remaining();\n            \
+                 const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
+                 if (raw == nullptr) return std::nullopt;\n            \
+                 {id}.assign(raw, raw + _n);\n            \
+                 if (!cursor.advance(_n)) return std::nullopt;\n        \
+             }}"
+        ),
+        (Language::Cpp, Some(p)) => {
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "std::optional<std::vector<uint8_t>> {id};\n        \
+                 if ({test}) {{\n            \
+                     std::size_t _n = cursor.remaining();\n            \
+                     const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
+                     if (raw == nullptr) return std::nullopt;\n            \
+                     {id}.emplace(raw, raw + _n);\n            \
+                     if (!cursor.advance(_n)) return std::nullopt;\n        \
+                 }}"
+            )
+        }
+        // Kotlin: `cursor.peekSlice(n)` returns `ByteArray?`; `.copyOf()`
+        // produces an owned copy so the codec instance doesn't share
+        // the cursor's internal buffer (cursor backing storage is the
+        // caller's input bytes).
+        (Language::Kotlin, None) => format!(
+            "val {id} = run {{\n                \
+                 val _n = cursor.remaining()\n                \
+                 val raw = cursor.peekSlice(_n) ?: return null\n                \
+                 val _v = raw.copyOf()\n                \
+                 if (!cursor.advance(_n)) return null\n                \
+                 _v\n            \
+             }}"
+        ),
+        (Language::Kotlin, Some(p)) => {
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "val {id} = if ({test}) {{\n                \
+                     val _n = cursor.remaining()\n                \
+                     val raw = cursor.peekSlice(_n) ?: return null\n                \
+                     val _v = raw.copyOf()\n                \
+                     if (!cursor.advance(_n)) return null\n                \
+                     _v\n            \
+                 }} else {{\n                \
+                     null\n            \
+                 }}"
+            )
+        }
+        // Go: slice nilness already encodes presence (`[]byte` nil =
+        // absent), so the gated form uses `[]byte` directly without a
+        // pointer wrapper. The decode appends into a fresh slice
+        // (`append([]byte(nil), raw...)`) to copy the cursor's bytes
+        // into a codec-owned slice.
+        (Language::Go, None) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "var {go_id} []byte\n\t\
+                 {{\n\t\t\
+                     _n := cursor.Remaining()\n\t\t\
+                     raw, err := cursor.PeekSlice(_n)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = append([]byte(nil), raw...)\n\t\t\
+                     if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        (Language::Go, Some(p)) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "var {go_id} []byte\n\t\
+                 if {test} {{\n\t\t\
+                     _n := cursor.Remaining()\n\t\t\
+                     raw, err := cursor.PeekSlice(_n)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = append([]byte(nil), raw...)\n\t\t\
+                     if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        // C11: `out-><id>[max]` + `out-><id>_len` is the existing tail
+        // shape from the non-streaming `has_variable_fields` branch,
+        // reused here. MAX overflow surfaces as NEED_MORE_BYTES (typed
+        // buffer-overflow lands in B7). Each field wraps in its own
+        // `{ ... }` so per-field locals don't shadow.
+        (Language::C11, None) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
+            format!(
+                "{{\n        \
+                     size_t _n = sce_forge_cursor_remaining(cursor);\n        \
+                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     memcpy(out->{id_snake}, raw, _n);\n        \
+                     out->{id_snake}_len = _n;\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
+        }
+        (Language::C11, Some(p)) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "if ({test}) {{\n        \
+                     size_t _n = sce_forge_cursor_remaining(cursor);\n        \
+                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     memcpy(out->{id_snake}, raw, _n);\n        \
+                     out->{id_snake}_len = _n;\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }} else {{\n        \
+                     out->{id_snake}_len = 0;\n    \
+                 }}"
+            )
+        }
+        // Python: `bytes(raw)` produces an immutable bytes object from
+        // the cursor's view (which is a memoryview); the codec
+        // instance can hold it without aliasing the cursor.
+        (Language::Python, None) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "_n = cursor.remaining()\n            \
+                 raw = cursor.peek_slice(_n)\n            \
+                 {py_id} = bytes(raw)\n            \
+                 cursor.advance(_n)"
+            )
+        }
+        (Language::Python, Some(p)) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "if {test}:\n                \
+                     _n = cursor.remaining()\n                \
+                     raw = cursor.peek_slice(_n)\n                \
+                     _v = bytes(raw)\n                \
+                     cursor.advance(_n)\n                \
+                     {py_id} = _v\n            \
+                 else:\n                \
+                     {py_id} = None"
+            )
+        }
+    }
+}
+
+/// RFC §5.B B2-β present-if + LengthRef bit-size: read N bytes from
+/// the cursor where N is the value of a sibling integer field
+/// already decoded into a local. When the predicate fires the bytes
+/// are consumed; when it doesn't, the codec assumes the author kept
+/// the length field at 0 (trust contract) and skips zero bytes.
+fn present_if_decode_length_ref(
+    field: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = field.id.as_str();
+    let len_field = field
+        .length_field
+        .as_deref()
+        .expect("LengthRef bit_size requires sce:length-field attribute");
+    match (lang, &field.present_if) {
+        (Language::Rust, None) => format!(
+            "let {id} = {{\n            \
+                 let _n = {len_field} as usize;\n            \
+                 let raw = cursor.peek_slice(_n)?;\n            \
+                 let _v = raw.to_vec();\n            \
+                 cursor.advance(_n)?;\n            \
+                 _v\n        \
+             }};"
+        ),
+        (Language::Rust, Some(p)) => {
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "let {id} = if {test} {{\n            \
+                     let _n = {len_field} as usize;\n            \
+                     let raw = cursor.peek_slice(_n)?;\n            \
+                     let _v = raw.to_vec();\n            \
+                     cursor.advance(_n)?;\n            \
+                     Some(_v)\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }};"
+            )
+        }
+        (Language::Cpp, None) => format!(
+            "std::vector<uint8_t> {id};\n        \
+             {{\n            \
+                 std::size_t _n = static_cast<std::size_t>({len_field});\n            \
+                 const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
+                 if (raw == nullptr) return std::nullopt;\n            \
+                 {id}.assign(raw, raw + _n);\n            \
+                 if (!cursor.advance(_n)) return std::nullopt;\n        \
+             }}"
+        ),
+        (Language::Cpp, Some(p)) => {
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "std::optional<std::vector<uint8_t>> {id};\n        \
+                 if ({test}) {{\n            \
+                     std::size_t _n = static_cast<std::size_t>({len_field});\n            \
+                     const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
+                     if (raw == nullptr) return std::nullopt;\n            \
+                     {id}.emplace(raw, raw + _n);\n            \
+                     if (!cursor.advance(_n)) return std::nullopt;\n        \
+                 }}"
+            )
+        }
+        (Language::Kotlin, None) => format!(
+            "val {id} = run {{\n                \
+                 val _n = {len_field}.toInt()\n                \
+                 val raw = cursor.peekSlice(_n) ?: return null\n                \
+                 val _v = raw.copyOf()\n                \
+                 if (!cursor.advance(_n)) return null\n                \
+                 _v\n            \
+             }}"
+        ),
+        (Language::Kotlin, Some(p)) => {
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "val {id} = if ({test}) {{\n                \
+                     val _n = {len_field}.toInt()\n                \
+                     val raw = cursor.peekSlice(_n) ?: return null\n                \
+                     val _v = raw.copyOf()\n                \
+                     if (!cursor.advance(_n)) return null\n                \
+                     _v\n            \
+                 }} else {{\n                \
+                     null\n            \
+                 }}"
+            )
+        }
+        (Language::Go, None) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let go_len = filters::to_pascal_case(len_field.to_string());
+            format!(
+                "var {go_id} []byte\n\t\
+                 {{\n\t\t\
+                     _n := int({go_len})\n\t\t\
+                     raw, err := cursor.PeekSlice(_n)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = append([]byte(nil), raw...)\n\t\t\
+                     if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        (Language::Go, Some(p)) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let go_len = filters::to_pascal_case(len_field.to_string());
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "var {go_id} []byte\n\t\
+                 if {test} {{\n\t\t\
+                     _n := int({go_len})\n\t\t\
+                     raw, err := cursor.PeekSlice(_n)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = append([]byte(nil), raw...)\n\t\t\
+                     if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        (Language::C11, None) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let len_snake = filters::to_snake_case(len_field.to_string());
+            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
+            format!(
+                "{{\n        \
+                     size_t _n = (size_t)out->{len_snake};\n        \
+                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     memcpy(out->{id_snake}, raw, _n);\n        \
+                     out->{id_snake}_len = _n;\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
+        }
+        (Language::C11, Some(p)) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let len_snake = filters::to_snake_case(len_field.to_string());
+            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "if ({test}) {{\n        \
+                     size_t _n = (size_t)out->{len_snake};\n        \
+                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     memcpy(out->{id_snake}, raw, _n);\n        \
+                     out->{id_snake}_len = _n;\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }} else {{\n        \
+                     out->{id_snake}_len = 0;\n    \
+                 }}"
+            )
+        }
+        (Language::Python, None) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let py_len = filters::to_snake_case(len_field.to_string());
+            format!(
+                "_n = {py_len}\n            \
+                 raw = cursor.peek_slice(_n)\n            \
+                 {py_id} = bytes(raw)\n            \
+                 cursor.advance(_n)"
+            )
+        }
+        (Language::Python, Some(p)) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let py_len = filters::to_snake_case(len_field.to_string());
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "if {test}:\n                \
+                     _n = {py_len}\n                \
+                     raw = cursor.peek_slice(_n)\n                \
+                     _v = bytes(raw)\n                \
+                     cursor.advance(_n)\n                \
+                     {py_id} = _v\n            \
+                 else:\n                \
+                     {py_id} = None"
+            )
+        }
+    }
+}
+
+/// RFC §5.B B2-β present-if + Vle bit-size: streaming base-128 read
+/// (1..=ceil(width_bits/7) bytes). Non-gated form delegates to the
+/// existing `vle_decode_stmt` helper (same shape used by the
+/// has_vle_fields template branch). Gated form wraps the same loop
+/// inside an `if predicate { ... } else { None }` block, binding
+/// `Some(_v)` on success.
+fn present_if_decode_vle(
+    field: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+    width_bits: u32,
+) -> String {
+    use crate::generator::Language;
+    let id = field.id.as_str();
+    // Non-gated path: reuse the existing VLE decode helper that emits
+    // the per-language streaming loop and binds the carrier-typed
+    // local. The has_present_if_fields template branch needs every
+    // field to bind a typed local in scope so the struct literal at
+    // the end can collect them — `vle_decode_stmt` already produces
+    // exactly that shape.
+    if field.present_if.is_none() {
+        return vle_decode_stmt(&filters::to_snake_case(id.to_string()), width_bits, lang);
+    }
+    let p = field.present_if.as_ref().expect("guarded by branch above");
+    let test = present_if_test_literal(fields, p, lang);
+    let body_id = format!("_v");
+    let inner = vle_decode_stmt(&body_id, width_bits, lang);
+    match lang {
+        // Rust: `_v` is bound by `vle_decode_stmt` as a `let _v: u<W>`
+        // statement; wrap with an `if predicate { ... Some(_v) } else
+        // { None }` block. The inner `vle_decode_stmt` already emits
+        // the loop; we pin the bind name to `_v` then yield it.
+        Language::Rust => format!(
+            "let {id} = if {test} {{\n            \
+                 {inner}\n            \
+                 Some({body_id})\n        \
+             }} else {{\n            \
+                 None\n        \
+             }};"
+        ),
+        // Cpp: vle_decode_stmt emits multi-line statements ending
+        // with the bind. Wrap similarly. The optional declaration is
+        // placed first so both branches assign through the same name.
+        Language::Cpp => {
+            let ty = cpp_type(&field.sce_type);
+            format!(
+                "std::optional<{ty}> {id};\n        \
+                 if ({test}) {{\n            \
+                     {inner}\n            \
+                     {id} = {body_id};\n        \
+                 }}"
+            )
+        }
+        Language::Kotlin => {
+            let ty = kotlin_type(&field.sce_type);
+            format!(
+                "val {id}: {ty}? = if ({test}) {{\n                \
+                     {inner}\n                \
+                     {body_id}\n            \
+                 }} else {{\n                \
+                     null\n            \
+                 }}"
+            )
+        }
+        Language::Go => {
+            let ty = go_type(&field.sce_type);
+            let go_id = filters::to_pascal_case(id.to_string());
+            // vle_decode_stmt for Go binds `_v` as a typed local. Wrap
+            // in `if test { ... Pascal = &_v }` so the struct's
+            // `*T` field carries presence.
+            format!(
+                "var {go_id} *{ty}\n\t\
+                 if {test} {{\n\t\t\
+                     {inner}\n\t\t\
+                     {go_id} = &{body_id}\n\t\
+                 }}"
+            )
+        }
+        // C11: vle_decode_stmt emits a typed-local declaration plus
+        // a `read_vle_uN(cursor, &local)` block. For gating we want
+        // to write into the struct member, not redeclare; route
+        // through a `_v` local then assign. Carrier bit is presence
+        // source; absent branch zero-writes to keep the struct fully
+        // initialized.
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let inner = vle_decode_stmt(&body_id, width_bits, lang);
+            format!(
+                "if ({test}) {{\n        \
+                     {inner}\n        \
+                     out->{id_snake} = {body_id};\n    \
+                 }} else {{\n        \
+                     out->{id_snake} = 0;\n    \
+                 }}"
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            // vle_decode_stmt for Python binds `_v` as an int local.
+            format!(
+                "if {test}:\n                \
+                     {inner}\n                \
+                     {py_id} = {body_id}\n            \
+                 else:\n                \
+                     {py_id} = None"
+            )
+        }
+    }
+}
+
 /// Per-language present-if encode block. Plain fields render via the
 /// existing fixed-width byte serializer; gated fields wrap the same
 /// bytes inside an `if Some/has_value` test against the optional.
@@ -2325,17 +2855,44 @@ fn present_if_streaming_decode_stmt(
 /// optional and therefore tests the carrier bit on the struct member);
 /// the other backends carry presence in their wrapper type and ignore
 /// it.
+///
+/// RFC §5.B B2-β: dispatcher splits on `field.bit_size` mirroring the
+/// decode side. Fixed/Tail/LengthRef/Vle each get a dedicated
+/// per-language encode helper.
 fn present_if_streaming_encode_block(
     field: &CodecField,
     fields: &[CodecField],
     default_endian: Endian,
     lang: crate::generator::Language,
 ) -> String {
+    match &field.bit_size {
+        BitSize::Fixed { bits } => {
+            present_if_encode_fixed(field, fields, default_endian, lang, *bits)
+        }
+        BitSize::Tail => present_if_encode_tail(field, fields, lang),
+        BitSize::LengthRef => present_if_encode_length_ref(field, fields, lang),
+        BitSize::Vle { width_bits } => {
+            present_if_encode_vle(field, fields, lang, *width_bits)
+        }
+        // Repeat fields render via `repeat_streaming_encode_block`
+        // through the template's per-field `is_repeat` dispatch; this
+        // helper is still called eagerly for every field in the obj-
+        // builder, so an empty-string return keeps the JSON shape
+        // valid without leaking a sentinel into a golden.
+        BitSize::Repeat { .. } => String::new(),
+    }
+}
+
+/// RFC §5.B B1-δ Fixed bit-size encode (extracted from the original
+/// `present_if_streaming_encode_block` body during the B2-β refactor).
+fn present_if_encode_fixed(
+    field: &CodecField,
+    fields: &[CodecField],
+    default_endian: Endian,
+    lang: crate::generator::Language,
+    bits: u32,
+) -> String {
     use crate::generator::Language;
-    let bits = match field.bit_size {
-        BitSize::Fixed { bits } => bits,
-        _ => return String::new(),
-    };
     let n = bits.div_ceil(8);
 
     let id = field.id.as_str();
@@ -2417,6 +2974,288 @@ fn present_if_streaming_encode_block(
             let inner = streaming_fixed_field_encode_python_inner(field, default_endian, n);
             format!(
                 "        if self.{py_id} is not None:\n\
+                 {inner}"
+            )
+        }
+    }
+}
+
+/// RFC §5.B B2-β present-if + Tail bit-size encode: append all bytes
+/// of the field's bytes-typed value when the predicate / optional /
+/// nilness check passes; otherwise append nothing.
+fn present_if_encode_tail(
+    field: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = field.id.as_str();
+    match (lang, field.present_if.is_some()) {
+        (Language::Rust, false) => format!(
+            "        r.extend_from_slice(&self.{id});"
+        ),
+        (Language::Rust, true) => format!(
+            "        if let Some(_v) = &self.{id} {{\n            \
+                 r.extend_from_slice(_v);\n        \
+             }}"
+        ),
+        (Language::Cpp, false) => format!(
+            "        r.insert(r.end(), {id}.begin(), {id}.end());"
+        ),
+        (Language::Cpp, true) => format!(
+            "        if ({id}.has_value()) {{\n            \
+                 r.insert(r.end(), {id}->begin(), {id}->end());\n        \
+             }}"
+        ),
+        // Kotlin: ByteArray's `.toList()` boxes each Byte so addAll
+        // accepts it (mirrors the pattern from `has_variable_fields`).
+        (Language::Kotlin, false) => format!(
+            "        r.addAll(this.{id}.toList())"
+        ),
+        (Language::Kotlin, true) => format!(
+            "        this.{id}?.let {{ _v ->\n            \
+                 r.addAll(_v.toList())\n        \
+             }}"
+        ),
+        (Language::Go, false) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!("\tr = append(r, s.{go_id}...)")
+        }
+        (Language::Go, true) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            // Go: `[]byte` slice nilness encodes presence directly —
+            // no pointer dereference needed. `if s.X != nil` matches
+            // the decode side which sets the slice via `append([]byte(nil), ...)`.
+            format!(
+                "\tif s.{go_id} != nil {{\n\t\t\
+                     r = append(r, s.{go_id}...)\n\t\
+                 }}"
+            )
+        }
+        (Language::C11, false) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            format!(
+                "    for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
+                 r.bytes[r.len++] = self->{id_snake}[_bi];"
+            )
+        }
+        (Language::C11, true) => {
+            // C11 has no nullable wrapper — the carrier flag bit is
+            // the source of truth for presence. Test `(self->carrier
+            // & mask) != 0` directly on the struct member; absent
+            // branch appends nothing.
+            let id_snake = filters::to_snake_case(id.to_string());
+            let p = field
+                .present_if
+                .as_ref()
+                .expect("gated arm requires predicate");
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, p);
+            let carrier_snake = filters::to_snake_case(carrier.id.clone());
+            format!(
+                "    if ((self->{carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
+                     for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
+                     r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
+                 }}",
+                width = hex_digits
+            )
+        }
+        (Language::Python, false) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!("        r.extend(self.{py_id})")
+        }
+        (Language::Python, true) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "        if self.{py_id} is not None:\n            \
+                     r.extend(self.{py_id})"
+            )
+        }
+    }
+}
+
+/// RFC §5.B B2-β present-if + LengthRef bit-size encode: append the
+/// payload bytes (clamped to the sibling length field's value) when
+/// the predicate / optional fires. Author-trust contract: `<id>_len`
+/// is kept consistent with the actual payload length.
+fn present_if_encode_length_ref(
+    field: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = field.id.as_str();
+    let len_field = field
+        .length_field
+        .as_deref()
+        .expect("LengthRef bit_size requires sce:length-field attribute");
+    match (lang, field.present_if.is_some()) {
+        (Language::Rust, false) => format!(
+            "        r.extend_from_slice(&self.{id});"
+        ),
+        (Language::Rust, true) => format!(
+            "        if let Some(_v) = &self.{id} {{\n            \
+                 r.extend_from_slice(_v);\n        \
+             }}"
+        ),
+        (Language::Cpp, false) => format!(
+            "        r.insert(r.end(), {id}.begin(), {id}.end());"
+        ),
+        (Language::Cpp, true) => format!(
+            "        if ({id}.has_value()) {{\n            \
+                 r.insert(r.end(), {id}->begin(), {id}->end());\n        \
+             }}"
+        ),
+        (Language::Kotlin, false) => format!(
+            "        r.addAll(this.{id}.toList())"
+        ),
+        (Language::Kotlin, true) => format!(
+            "        this.{id}?.let {{ _v ->\n            \
+                 r.addAll(_v.toList())\n        \
+             }}"
+        ),
+        (Language::Go, false) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!("\tr = append(r, s.{go_id}...)")
+        }
+        (Language::Go, true) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "\tif s.{go_id} != nil {{\n\t\t\
+                     r = append(r, s.{go_id}...)\n\t\
+                 }}"
+            )
+        }
+        (Language::C11, false) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let len_snake = filters::to_snake_case(len_field.to_string());
+            // C11 reads through the per-field `_len` member, not the
+            // sibling length-int member, so a partial-write fixture
+            // can keep blob_len in sync with the actual encoded count.
+            format!(
+                "    for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < self->{len_snake}; ++_bi) \
+                 r.bytes[r.len++] = self->{id_snake}[_bi];"
+            )
+        }
+        (Language::C11, true) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let len_snake = filters::to_snake_case(len_field.to_string());
+            let p = field
+                .present_if
+                .as_ref()
+                .expect("gated arm requires predicate");
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, p);
+            let carrier_snake = filters::to_snake_case(carrier.id.clone());
+            format!(
+                "    if ((self->{carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
+                     for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < self->{len_snake}; ++_bi) \
+                     r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
+                 }}",
+                width = hex_digits
+            )
+        }
+        (Language::Python, false) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!("        r.extend(self.{py_id})")
+        }
+        (Language::Python, true) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "        if self.{py_id} is not None:\n            \
+                     r.extend(self.{py_id})"
+            )
+        }
+    }
+}
+
+/// RFC §5.B B2-β present-if + Vle bit-size encode: emit the VLE byte
+/// chain when the predicate / optional fires. Non-gated VLE delegates
+/// to `vle_encode_block` (same shape as the has_vle_fields branch).
+fn present_if_encode_vle(
+    field: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+    width_bits: u32,
+) -> String {
+    use crate::generator::Language;
+    let id = field.id.as_str();
+    if field.present_if.is_none() {
+        // Non-gated VLE in present-if context: reuse the existing
+        // VLE encoder (same per-language byte-emit loop the
+        // has_vle_fields branch uses). The encoder reads from the
+        // language-appropriate self/struct member.
+        return vle_encode_block(&filters::to_snake_case(id.to_string()), width_bits, lang);
+    }
+    let p = field.present_if.as_ref().expect("guarded by branch above");
+    match lang {
+        // Rust: gated optional. `if let Some(_v) = self.<id> { ... }`
+        // wraps a per-byte VLE emit loop that operates on the
+        // unwrapped `_v` value. `vle_encode_block` reads `self.<id>`
+        // by name; for gated path we substitute through a temporary.
+        Language::Rust => {
+            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            // The vle_encode_block helper for non-self paths emits
+            // `let _x = <name>;` style — but for gated we already
+            // have `_v` in scope. Strip the prefix `self.` reads by
+            // generating the body with `_v` as the name. Done via
+            // the explicit name argument above.
+            format!(
+                "        if let Some(_v) = self.{id} {{\n\
+                 {inner}\n        \
+                 }}"
+            )
+        }
+        Language::Cpp => {
+            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            format!(
+                "        if ({id}.has_value()) {{\n            \
+                     auto _v = *{id};\n\
+                 {inner}\n        \
+                 }}"
+            )
+        }
+        Language::Kotlin => {
+            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            format!(
+                "        this.{id}?.let {{ _v ->\n\
+                 {inner}\n        \
+                 }}"
+            )
+        }
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            format!(
+                "\tif s.{go_id} != nil {{\n\t\t\
+                     _v := *s.{go_id}\n\
+                 {inner}\n\t\
+                 }}"
+            )
+        }
+        Language::C11 => {
+            // C11 has no nullable wrapper — the carrier bit is the
+            // presence source. The VLE encode loop reads the field
+            // directly from `self-><id>` which is always present.
+            let id_snake = filters::to_snake_case(id.to_string());
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, p);
+            let carrier_snake = filters::to_snake_case(carrier.id.clone());
+            let inner = vle_encode_block(
+                &format!("self->{id_snake}"),
+                width_bits,
+                lang,
+            );
+            format!(
+                "    if ((self->{carrier_snake} & 0x{mask:0width$X}) != 0) {{\n\
+                 {inner}\n    \
+                 }}",
+                width = hex_digits
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            format!(
+                "        if self.{py_id} is not None:\n            \
+                     _v = self.{py_id}\n\
                  {inner}"
             )
         }
@@ -3154,65 +3993,72 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
 /// language's encode buffer accumulator (`r` for Rust/Cpp/Kotlin/Go,
 /// bytearray for Python, `r.bytes[pos++]` for C11). Width is captured
 /// only for cast/type names — the loop logic is identical across widths.
-fn vle_encode_block(field_id: &str, width_bits: u32, lang: crate::generator::Language) -> String {
+///
+/// `value_expr` is the per-language read expression for the source
+/// value: typically `self.<id>` (or `s.<Id>` for Go, `self-><id>` for
+/// C11, `self.<id>` for Python) for the non-gated callsite. The
+/// present-if gated arm passes `_v` (the locally-unwrapped optional)
+/// so the loop body reads from the unwrapped value rather than
+/// re-prefixing `self.` (which would double-deref the optional).
+fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::Language) -> String {
     use crate::generator::Language;
     match lang {
         Language::Rust => format!(
             "        {{\n            \
-                 let mut _v = self.{field_id} as u64;\n            \
-                 while _v >= 0x80 {{\n                \
-                     r.push((_v as u8 & 0x7F) | 0x80);\n                \
-                     _v >>= 7;\n            \
+                 let mut _w = {value_expr} as u64;\n            \
+                 while _w >= 0x80 {{\n                \
+                     r.push((_w as u8 & 0x7F) | 0x80);\n                \
+                     _w >>= 7;\n            \
                  }}\n            \
-                 r.push(_v as u8);\n        \
+                 r.push(_w as u8);\n        \
              }}"
         ),
         Language::Cpp => format!(
             "        {{\n            \
-                 std::uint64_t _v = static_cast<std::uint64_t>({field_id});\n            \
-                 while (_v >= 0x80) {{\n                \
-                     r.push_back(static_cast<std::uint8_t>((_v & 0x7F) | 0x80));\n                \
-                     _v >>= 7;\n            \
+                 std::uint64_t _w = static_cast<std::uint64_t>({value_expr});\n            \
+                 while (_w >= 0x80) {{\n                \
+                     r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));\n                \
+                     _w >>= 7;\n            \
                  }}\n            \
-                 r.push_back(static_cast<std::uint8_t>(_v));\n        \
+                 r.push_back(static_cast<std::uint8_t>(_w));\n        \
              }}"
         ),
         Language::C11 => format!(
             "    {{\n        \
-                 uint64_t _v = (uint64_t)self->{field_id};\n        \
-                 while (_v >= 0x80u) {{\n            \
-                     r.bytes[r.len++] = (uint8_t)((_v & 0x7Fu) | 0x80u);\n            \
-                     _v >>= 7;\n        \
+                 uint64_t _w = (uint64_t)({value_expr});\n        \
+                 while (_w >= 0x80u) {{\n            \
+                     r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);\n            \
+                     _w >>= 7;\n        \
                  }}\n        \
-                 r.bytes[r.len++] = (uint8_t)_v;\n    \
+                 r.bytes[r.len++] = (uint8_t)_w;\n    \
              }}"
         ),
         Language::Kotlin => format!(
             "        run {{\n            \
-                 var _v: ULong = {field_id}.toULong()\n            \
-                 while (_v >= 0x80UL) {{\n                \
-                     r.add((_v.toLong() and 0x7F or 0x80).toByte())\n                \
-                     _v = _v shr 7\n            \
+                 var _w: ULong = ({value_expr}).toULong()\n            \
+                 while (_w >= 0x80UL) {{\n                \
+                     r.add((_w.toLong() and 0x7F or 0x80).toByte())\n                \
+                     _w = _w shr 7\n            \
                  }}\n            \
-                 r.add(_v.toByte())\n        \
+                 r.add(_w.toByte())\n        \
              }}"
         ),
         Language::Go => format!(
             "\t{{\n\t\t\
-                 _v := uint64(s.{field_id})\n\t\t\
-                 for _v >= 0x80 {{\n\t\t\t\
-                     r = append(r, byte(_v&0x7F)|0x80)\n\t\t\t\
-                     _v >>= 7\n\t\t\
+                 _w := uint64({value_expr})\n\t\t\
+                 for _w >= 0x80 {{\n\t\t\t\
+                     r = append(r, byte(_w&0x7F)|0x80)\n\t\t\t\
+                     _w >>= 7\n\t\t\
                  }}\n\t\t\
-                 r = append(r, byte(_v))\n\t\
+                 r = append(r, byte(_w))\n\t\
              }}"
         ),
         Language::Python => format!(
-            "        _v = int(self.{field_id})\n        \
-             while _v >= 0x80:\n            \
-                 r.append((_v & 0x7F) | 0x80)\n            \
-                 _v >>= 7\n        \
-             r.append(_v)"
+            "        _w = int({value_expr})\n        \
+             while _w >= 0x80:\n            \
+                 r.append((_w & 0x7F) | 0x80)\n            \
+                 _w >>= 7\n        \
+             r.append(_w)"
         ),
         #[allow(unreachable_patterns)]
         _ => format!("/* unsupported vle_u{width_bits} encode on {lang:?} */"),

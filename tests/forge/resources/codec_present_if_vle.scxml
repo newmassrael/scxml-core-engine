@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: present-if + VLE integer (RFC §5.B B2-β).
+     uint8 carrier `flags` gates an `optional_id` field encoded as a
+     base-128 VLE uint64 (1..=10 bytes on the wire). When `has_id` is
+     clear, the encoded frame is exactly 1 byte (just the carrier);
+     when set, the frame grows by the actual VLE byte count. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_present_if_vle">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_id" bit="0"/>
+    </sce:flags>
+    <sce:field id="optional_id" sce:type="uint64" sce:byte="1" sce:bit-size="vle"
+               sce:present-if="flags.has_id"/>
+  </datamodel>
+</scxml>

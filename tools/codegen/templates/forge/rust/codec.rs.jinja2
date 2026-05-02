@@ -112,27 +112,35 @@ impl {{ struct_name }} {
 {% endfor %}
             body,
         })
-{% elif has_vle_fields %}
-        // Streaming codec: each field reads its own bytes from the
-        // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
-        // a fixed window; cursor advances per-field.
+{% elif has_present_if_fields %}
+        // RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+        // advances the cursor per field. Gated fields wrap their
+        // read inside an `if predicate { Some(...) } else { None }`
+        // block computed at codegen time from the carrier field's
+        // flag bit. B2-β extends gated fields to Tail / LengthRef /
+        // Vle bit-sizes via dispatch inside `present_if_decode_stmt`.
+        // Per-field `is_repeat` routes Repeat fields to the dedicated
+        // helper since present-if isn't allowed on `<sce:repeat>`.
+        // Note: this branch fires before has_vle_fields so a codec
+        // mixing VLE + present-if uses the unified streaming path.
 {% for field in fields %}
-        {{ field.vle_decode_stmt }}
+{% if field.is_repeat %}
+        {{ field.repeat_decode_stmt }}
+{% else %}
+        {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
         Ok(Self {
 {% for field in fields %}
             {{ field.id }},
 {% endfor %}
         })
-{% elif has_present_if_fields %}
-        // RFC §5.B B1-δ present-if primitive (trunk): streaming
-        // decode advances the cursor per field. Gated fields wrap
-        // their read inside an `if predicate { Some(...) } else
-        // { None }` block computed at codegen time from the carrier
-        // field's flag bit — the predicate test is inline literal
-        // mask + shift, no runtime predicate metadata.
+{% elif has_vle_fields %}
+        // Streaming codec: each field reads its own bytes from the
+        // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
+        // a fixed window; cursor advances per-field.
 {% for field in fields %}
-        {{ field.present_if_decode_stmt }}
+        {{ field.vle_decode_stmt }}
 {% endfor %}
         Ok(Self {
 {% for field in fields %}
@@ -240,22 +248,28 @@ impl {{ struct_name }} {
 {% endif %}
         }
         r
+{% elif has_present_if_fields %}
+        // RFC §5.B B1-δ + B2-β present-if encode: every field appends
+        // its bytes via a per-field block; gated fields skip the
+        // append when the optional is None. Per-field `is_repeat`
+        // routes Repeat fields to the dedicated helper. Author keeps
+        // the carrier's flag bit and the optional's truth value in
+        // sync (trust contract, mirrors the variant primitive).
+        // Note: this branch fires before has_vle_fields so a codec
+        // mixing VLE + present-if uses the unified encode path.
+        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
+        r
 {% elif has_vle_fields %}
         let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
 {{ field.vle_encode_block }}
-{% endfor %}
-        r
-{% elif has_present_if_fields %}
-        // RFC §5.B B1-δ present-if encode: every field appends its
-        // bytes via a per-field block; gated fields skip the append
-        // when the optional is None. Author keeps the carrier's flag
-        // bit and the optional's truth value in sync (v1 trust-the-
-        // author contract, mirrors the variant primitive's tag/body
-        // pairing).
-        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
-{% for field in fields %}
-{{ field.present_if_encode_block }}
 {% endfor %}
         r
 {% elif has_repeat_fields %}

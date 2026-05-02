@@ -820,6 +820,31 @@ fn forge_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B2-β present-if + variable-length (Cpp) ─────────
+// B2-β lifts the v1 BitSize::Fixed-only restriction so present-if
+// can gate Tail / LengthRef / Vle bit-sizes. Each fixture pairs
+// a uint8 flag carrier with a single gated variable-length field;
+// the encoded frame is exactly 1 byte when the flag is clear and
+// expands by the payload width when set.
+
+#[test]
+fn forge_codec_present_if_tail_cpp() {
+    assert_standalone_forge("codec_present_if_tail", "codec_present_if_tail.h");
+}
+
+#[test]
+fn forge_codec_present_if_length_ref_cpp() {
+    assert_standalone_forge(
+        "codec_present_if_length_ref",
+        "codec_present_if_length_ref.h",
+    );
+}
+
+#[test]
+fn forge_codec_present_if_vle_cpp() {
+    assert_standalone_forge("codec_present_if_vle", "codec_present_if_vle.h");
+}
+
 // ── RFC §5.B B2 repeat primitive (trunk, Cpp) ─────────────────
 // `codec_repeat_basic` decodes a one-byte uint8 count prefix then
 // iterates the imported `codec_repeat_elem` codec `num_frags` times.
@@ -1133,6 +1158,32 @@ fn forge_kotlin_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B2-β present-if + variable-length (Kotlin) ─────
+
+#[test]
+fn forge_kotlin_codec_present_if_tail() {
+    assert_standalone_forge_kotlin(
+        "codec_present_if_tail",
+        "CodecPresentIfTail.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_present_if_length_ref() {
+    assert_standalone_forge_kotlin(
+        "codec_present_if_length_ref",
+        "CodecPresentIfLengthRef.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_present_if_vle() {
+    assert_standalone_forge_kotlin(
+        "codec_present_if_vle",
+        "CodecPresentIfVle.kt",
+    );
+}
+
 // ── RFC §5.B B2 repeat primitive (Kotlin, closure) ──────────
 
 #[test]
@@ -1299,6 +1350,32 @@ fn forge_rust_codec_present_if_basic() {
     assert_standalone_forge_rust(
         "codec_present_if_basic",
         "codec_present_if_basic.rs",
+    );
+}
+
+// ── RFC §5.B B2-β present-if + variable-length (Rust) ───────
+
+#[test]
+fn forge_rust_codec_present_if_tail() {
+    assert_standalone_forge_rust(
+        "codec_present_if_tail",
+        "codec_present_if_tail.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_present_if_length_ref() {
+    assert_standalone_forge_rust(
+        "codec_present_if_length_ref",
+        "codec_present_if_length_ref.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_present_if_vle() {
+    assert_standalone_forge_rust(
+        "codec_present_if_vle",
+        "codec_present_if_vle.rs",
     );
 }
 
@@ -1513,6 +1590,32 @@ fn forge_go_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B2-β present-if + variable-length (Go) ─────────
+
+#[test]
+fn forge_go_codec_present_if_tail() {
+    assert_standalone_forge_go(
+        "codec_present_if_tail",
+        "codec_present_if_tail.go",
+    );
+}
+
+#[test]
+fn forge_go_codec_present_if_length_ref() {
+    assert_standalone_forge_go(
+        "codec_present_if_length_ref",
+        "codec_present_if_length_ref.go",
+    );
+}
+
+#[test]
+fn forge_go_codec_present_if_vle() {
+    assert_standalone_forge_go(
+        "codec_present_if_vle",
+        "codec_present_if_vle.go",
+    );
+}
+
 // ── RFC §5.B B2 repeat primitive (Go, closure) ──────────────
 
 #[test]
@@ -1706,6 +1809,32 @@ fn forge_python_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B2-β present-if + variable-length (Python) ─────
+
+#[test]
+fn forge_python_codec_present_if_tail() {
+    assert_standalone_forge_python(
+        "codec_present_if_tail",
+        "codec_present_if_tail.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_present_if_length_ref() {
+    assert_standalone_forge_python(
+        "codec_present_if_length_ref",
+        "codec_present_if_length_ref.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_present_if_vle() {
+    assert_standalone_forge_python(
+        "codec_present_if_vle",
+        "codec_present_if_vle.py",
+    );
+}
+
 // ── RFC §5.B B2 repeat primitive (Python, final closure) ────
 
 #[test]
@@ -1825,6 +1954,32 @@ fn forge_c11_codec_present_if_basic() {
     assert_standalone_forge_c(
         "codec_present_if_basic",
         "codec_present_if_basic.c.h",
+    );
+}
+
+// ── RFC §5.B B2-β present-if + variable-length (C11) ────────
+
+#[test]
+fn forge_c11_codec_present_if_tail() {
+    assert_standalone_forge_c(
+        "codec_present_if_tail",
+        "codec_present_if_tail.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_present_if_length_ref() {
+    assert_standalone_forge_c(
+        "codec_present_if_length_ref",
+        "codec_present_if_length_ref.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_present_if_vle() {
+    assert_standalone_forge_c(
+        "codec_present_if_vle",
+        "codec_present_if_vle.c.h",
     );
 }
 

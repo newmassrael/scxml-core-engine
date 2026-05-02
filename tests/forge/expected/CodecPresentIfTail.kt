@@ -2,17 +2,17 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-package com.sce.generated.codec_present_if_basic
+package com.sce.generated.codec_present_if_tail
 
 import com.sce.forge.runtime.SceCursor
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
-// `CodecPresentIfBasic()` before any encode()/decode() call. Defaults
+// `CodecPresentIfTail()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
-data class CodecPresentIfBasic(
+data class CodecPresentIfTail(
     var flags: UByte = 0.toUByte(),
-    var seq: UShort? = null
+    var payload: ByteArray? = null
 ) {
     // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
     // field. Kotlin's UByte / UShort / UInt / ULong don't expose direct
@@ -20,9 +20,9 @@ data class CodecPresentIfBasic(
     // `.toInt()` (UByte/UShort) or `.toLong()` (UInt/ULong), runs the
     // bit op against the Int/Long mask, then narrows back via the
     // carrier's `toU*` constructor.
-    fun hasSeq(): Boolean = (this.flags.toInt() and 0x01) != 0
+    fun hasPayload(): Boolean = (this.flags.toInt() and 0x01) != 0
 
-    fun setHasSeq(v: Boolean) {
+    fun setHasPayload(v: Boolean) {
         this.flags = if (v) {
             (this.flags.toInt() or 0x01).toUByte()
         } else {
@@ -38,9 +38,8 @@ data class CodecPresentIfBasic(
         // codec mixing VLE + present-if uses the unified encode path.
         val r = mutableListOf<Byte>()
         r.add(this.flags.toByte())
-        this.seq?.let { _v ->
-            r.add((_v.toInt() ushr 8 and 0xFF).toByte())
-            r.add((_v.toInt() and 0xFF).toByte())
+        this.payload?.let { _v ->
+            r.addAll(_v.toList())
         }
         return r.toByteArray()
     }
@@ -50,7 +49,7 @@ data class CodecPresentIfBasic(
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
-        fun decode(cursor: SceCursor): CodecPresentIfBasic? {
+        fun decode(cursor: SceCursor): CodecPresentIfTail? {
             // RFC §5.B B1-δ + B2-β present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
@@ -65,17 +64,18 @@ data class CodecPresentIfBasic(
                 if (!cursor.advance(1)) return null
                 _v
             }
-            val seq = if ((flags.toInt() and 0x01) != 0) {
-                val raw = cursor.peekSlice(2) ?: return null
-                val _v = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
-                if (!cursor.advance(2)) return null
+            val payload = if ((flags.toInt() and 0x01) != 0) {
+                val _n = cursor.remaining()
+                val raw = cursor.peekSlice(_n) ?: return null
+                val _v = raw.copyOf()
+                if (!cursor.advance(_n)) return null
                 _v
             } else {
                 null
             }
-            return CodecPresentIfBasic(
+            return CodecPresentIfTail(
                 flags = flags,
-                seq = seq
+                payload = payload
             )
         }
     }

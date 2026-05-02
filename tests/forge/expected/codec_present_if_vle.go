@@ -2,24 +2,24 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-package codec_present_if_basic
+package codec_present_if_vle
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
-// CodecPresentIfBasic represents the codec frame layout.
-type CodecPresentIfBasic struct {
+// CodecPresentIfVle represents the codec frame layout.
+type CodecPresentIfVle struct {
 	Flags uint8
-	Seq *uint16
+	OptionalId *uint64
 }
 
-// DecodeCodecPresentIfBasic decodes the next frame from cursor.
+// DecodeCodecPresentIfVle decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func DecodeCodecPresentIfBasic(cursor *codec.SceCursor) (*CodecPresentIfBasic, error) {
+func DecodeCodecPresentIfVle(cursor *codec.SceCursor) (*CodecPresentIfVle, error) {
 	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
@@ -38,21 +38,15 @@ func DecodeCodecPresentIfBasic(cursor *codec.SceCursor) (*CodecPresentIfBasic, e
 			return nil, err
 		}
 	}
-	var Seq *uint16
+	var OptionalId *uint64
 	if (Flags & 0x01) != 0 {
-		raw, err := cursor.PeekSlice(2)
-		if err != nil {
-			return nil, err
-		}
-		_v := uint16(raw[0])<<8 | uint16(raw[1])
-		if err := cursor.Advance(2); err != nil {
-			return nil, err
-		}
-		Seq = &_v
+		_v, err := cursor.ReadVLEU64()
+	if err != nil { return nil, err }
+		OptionalId = &_v
 	}
-	return &CodecPresentIfBasic{
+	return &CodecPresentIfVle{
 		Flags: Flags,
-		Seq: Seq,
+		OptionalId: OptionalId,
 	}, nil
 }
 
@@ -60,11 +54,11 @@ func DecodeCodecPresentIfBasic(cursor *codec.SceCursor) (*CodecPresentIfBasic, e
 // field. Read returns a bool from `(field & mask) != 0`; write toggles
 // the bit on/off without disturbing siblings on the same carrier. Wire
 // layout is unchanged — the carrier still occupies its declared bytes.
-func (s *CodecPresentIfBasic) HasSeq() bool {
+func (s *CodecPresentIfVle) HasId() bool {
 	return (s.Flags & 0x01) != 0
 }
 
-func (s *CodecPresentIfBasic) SetHasSeq(v bool) {
+func (s *CodecPresentIfVle) SetHasId(v bool) {
 	if v {
 		s.Flags |= 0x01
 	} else {
@@ -72,19 +66,25 @@ func (s *CodecPresentIfBasic) SetHasSeq(v bool) {
 	}
 }
 
-// Encode serializes the CodecPresentIfBasic into raw bytes.
-func (s *CodecPresentIfBasic) Encode() []byte {
+// Encode serializes the CodecPresentIfVle into raw bytes.
+func (s *CodecPresentIfVle) Encode() []byte {
 	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
 	// Gated fields skip the append on nil pointer / nil slice. Per-
 	// field `is_repeat` routes Repeat fields to the dedicated helper.
 	// Branch fires before has_vle_fields so a codec mixing VLE +
 	// present-if uses the unified encode path.
-	r := make([]byte, 0, 3)
+	r := make([]byte, 0, 11)
 	r = append(r, s.Flags)
-	if s.Seq != nil {
-		_v := *s.Seq
-		r = append(r, byte(_v>>8))
-		r = append(r, byte(_v))
+	if s.OptionalId != nil {
+		_v := *s.OptionalId
+	{
+		_w := uint64(_v)
+		for _w >= 0x80 {
+			r = append(r, byte(_w&0x7F)|0x80)
+			_w >>= 7
+		}
+		r = append(r, byte(_w))
+	}
 	}
 	return r
 }

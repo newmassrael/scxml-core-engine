@@ -44,12 +44,12 @@ static inline codec_vle_zint_u64_encoded_t codec_vle_zint_u64_encode(const codec
     codec_vle_zint_u64_encoded_t r;
     r.len = 0;
     {
-        uint64_t _v = (uint64_t)self->value;
-        while (_v >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_v & 0x7Fu) | 0x80u);
-            _v >>= 7;
+        uint64_t _w = (uint64_t)(self->value);
+        while (_w >= 0x80u) {
+            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
+            _w >>= 7;
         }
-        r.bytes[r.len++] = (uint8_t)_v;
+        r.bytes[r.len++] = (uint8_t)_w;
     }
     return r;
 }

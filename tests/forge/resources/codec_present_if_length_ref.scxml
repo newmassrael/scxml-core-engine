@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: present-if + length-ref bytes (RFC §5.B
+     B2-β). uint8 carrier `flags` gates a `payload` payload whose
+     length is read from the sibling `payload_size` field. When
+     `has_payload` bit is clear, the author keeps `payload_size` at 0
+     (trust contract — same shape as variant tag/body). The non-gated
+     `payload_size` is always present so the wire layout stays
+     predictable regardless of presence.
+
+     Note on naming: the C11 backend emits `<id>_len` as the size
+     companion of every bytes field, so a sibling integer named
+     `<id>_len` would collide with the auto-generated companion in
+     the generated struct. Authors targeting C11 should pick a length
+     attribute name that doesn't end in `_len` (the SCXML grammar has
+     no such constraint, but the generated C struct does). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_present_if_length_ref">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_payload" bit="0"/>
+    </sce:flags>
+    <sce:field id="payload_size" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="payload_size" sce:max-size="32"
+               sce:present-if="flags.has_payload"/>
+  </datamodel>
+</scxml>

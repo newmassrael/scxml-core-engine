@@ -16,12 +16,12 @@ data class CodecVleZintU64(
     fun encode(): ByteArray {
         val r = mutableListOf<Byte>()
         run {
-            var _v: ULong = value.toULong()
-            while (_v >= 0x80UL) {
-                r.add((_v.toLong() and 0x7F or 0x80).toByte())
-                _v = _v shr 7
+            var _w: ULong = (value).toULong()
+            while (_w >= 0x80UL) {
+                r.add((_w.toLong() and 0x7F or 0x80).toByte())
+                _w = _w shr 7
             }
-            r.add(_v.toByte())
+            r.add(_w.toByte())
         }
         return r.toByteArray()
     }

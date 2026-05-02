@@ -102,24 +102,31 @@ struct {{ struct_name }} {
 {% endfor %}
             .body = body,
         };
-{% elif has_vle_fields %}
-        // Streaming codec: each field reads from the cursor directly
-        // (VLE base-128 chain, 1..=ceil(N/7) bytes per field).
+{% elif has_present_if_fields %}
+        // RFC §5.B B1-δ + B2-β present-if: per-field cursor advance.
+        // Gated fields hold std::optional<T>; B2-β extends gating to
+        // Tail / LengthRef / Vle bit-sizes via dispatch inside
+        // `present_if_decode_stmt`. Per-field `is_repeat` routes
+        // Repeat fields to the dedicated helper. Branch fires before
+        // has_vle_fields so a codec mixing VLE + present-if uses the
+        // unified streaming path.
 {% for field in fields %}
-        {{ field.vle_decode_stmt }}
+{% if field.is_repeat %}
+        {{ field.repeat_decode_stmt }}
+{% else %}
+        {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
         return {{ struct_name }}{
 {% for field in fields %}
             .{{ field.id }} = {{ field.id }},
 {% endfor %}
         };
-{% elif has_present_if_fields %}
-        // RFC §5.B B1-δ present-if (trunk): per-field cursor advance.
-        // Gated fields hold std::optional<T>; the predicate test is a
-        // build-time literal mask + shift on the carrier's just-decoded
-        // local — no runtime predicate metadata.
+{% elif has_vle_fields %}
+        // Streaming codec: each field reads from the cursor directly
+        // (VLE base-128 chain, 1..=ceil(N/7) bytes per field).
 {% for field in fields %}
-        {{ field.present_if_decode_stmt }}
+        {{ field.vle_decode_stmt }}
 {% endfor %}
         return {{ struct_name }}{
 {% for field in fields %}
@@ -218,22 +225,27 @@ struct {{ struct_name }} {
         }
 {% endif %}
         return r;
+{% elif has_present_if_fields %}
+        // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
+        // append. Gated fields skip the append when the optional is
+        // empty. Per-field `is_repeat` routes Repeat fields to the
+        // dedicated helper. Branch fires before has_vle_fields so a
+        // codec mixing VLE + present-if uses the unified encode path.
+        std::vector<uint8_t> r;
+        r.reserve({{ max_bytes }});
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
+        return r;
 {% elif has_vle_fields %}
         std::vector<uint8_t> r;
         r.reserve({{ max_bytes }});
 {% for field in fields %}
 {{ field.vle_encode_block }}
-{% endfor %}
-        return r;
-{% elif has_present_if_fields %}
-        // RFC §5.B B1-δ encode: per-field byte append. Gated fields
-        // skip the append when the optional is empty (author keeps
-        // the carrier's flag bit and the optional's truth value in
-        // sync — same trust contract as the variant primitive).
-        std::vector<uint8_t> r;
-        r.reserve({{ max_bytes }});
-{% for field in fields %}
-{{ field.present_if_encode_block }}
 {% endfor %}
         return r;
 {% elif has_repeat_fields %}

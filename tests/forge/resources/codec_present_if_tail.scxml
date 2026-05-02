@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: present-if + tail bytes (RFC §5.B B2-β).
+     Lifts the B1-δ v1 BitSize::Fixed-only restriction on present-if so
+     a gated field can be a `tail` bytes payload. uint8 carrier `flags`
+     exposes a single named bit `has_payload`; when set, the trailing
+     `payload` field consumes all remaining cursor bytes. When clear,
+     the encoded frame is exactly 1 byte. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_present_if_tail">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_payload" bit="0"/>
+    </sce:flags>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail"
+               sce:max-size="64" sce:present-if="flags.has_payload"/>
+  </datamodel>
+</scxml>

@@ -39,12 +39,12 @@ struct CodecVleZintU64 {
         std::vector<uint8_t> r;
         r.reserve(10);
         {
-            std::uint64_t _v = static_cast<std::uint64_t>(value);
-            while (_v >= 0x80) {
-                r.push_back(static_cast<std::uint8_t>((_v & 0x7F) | 0x80));
-                _v >>= 7;
+            std::uint64_t _w = static_cast<std::uint64_t>(value);
+            while (_w >= 0x80) {
+                r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));
+                _w >>= 7;
             }
-            r.push_back(static_cast<std::uint8_t>(_v));
+            r.push_back(static_cast<std::uint8_t>(_w));
         }
         return r;
     }

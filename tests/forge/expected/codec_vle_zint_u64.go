@@ -34,12 +34,12 @@ func DecodeCodecVleZintU64(cursor *codec.SceCursor) (*CodecVleZintU64, error) {
 func (s *CodecVleZintU64) Encode() []byte {
 	r := make([]byte, 0, 10)
 	{
-		_v := uint64(s.Value)
-		for _v >= 0x80 {
-			r = append(r, byte(_v&0x7F)|0x80)
-			_v >>= 7
+		_w := uint64(s.Value)
+		for _w >= 0x80 {
+			r = append(r, byte(_w&0x7F)|0x80)
+			_w >>= 7
 		}
-		r = append(r, byte(_v))
+		r = append(r, byte(_w))
 	}
 	return r
 }

@@ -11,12 +11,12 @@ from typing import Optional
 
 
 @dataclass
-class CodecPresentIfBasic:
+class CodecPresentIfTail:
     flags: int = 0
-    seq: Optional[int] = None
+    payload: Optional[bytes] = None
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecPresentIfBasic]:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecPresentIfTail]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
@@ -34,17 +34,18 @@ class CodecPresentIfBasic:
             flags = raw[0]
             cursor.advance(1)
             if (flags & 0x01) != 0:
-                raw = cursor.peek_slice(2)
-                _v = (raw[0] << 8) | raw[1]
-                cursor.advance(2)
-                seq = _v
+                _n = cursor.remaining()
+                raw = cursor.peek_slice(_n)
+                _v = bytes(raw)
+                cursor.advance(_n)
+                payload = _v
             else:
-                seq = None
+                payload = None
         except NeedMoreBytes:
             return None
         return cls(
             flags=flags,
-            seq=seq,
+            payload=payload,
         )
 
     # RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
@@ -53,10 +54,10 @@ class CodecPresentIfBasic:
     # clear path masks back to the carrier's natural width to keep the
     # value inside the unsigned domain after `~mask` flips the sign.
     # Wire layout is unchanged.
-    def has_seq(self) -> bool:
+    def has_payload(self) -> bool:
         return (self.flags & 0x01) != 0
 
-    def set_has_seq(self, v: bool) -> None:
+    def set_has_payload(self, v: bool) -> None:
         if v:
             self.flags = (self.flags | 0x01) & 0xFF
         else:
@@ -70,7 +71,6 @@ class CodecPresentIfBasic:
         # codec mixing VLE + present-if uses the unified encode path.
         r = bytearray()
         r.append(self.flags & 0xFF)
-        if self.seq is not None:
-            r.append((self.seq >> 8) & 0xFF)
-            r.append(self.seq & 0xFF)
+        if self.payload is not None:
+            r.extend(self.payload)
         return bytes(r)

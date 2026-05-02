@@ -104,30 +104,35 @@ class {{ struct_name }}:
 {% endfor %}
             body=body,
         )
-{% elif has_vle_fields %}
+{% elif has_present_if_fields %}
+        # RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+        # advances the cursor per field. Per-field statements live
+        # inside one outer `try:` block so the first peek/advance
+        # failure unwinds to a single `except NeedMoreBytes`. Per-
+        # field `is_repeat` routes Repeat fields to the dedicated
+        # helper. Branch fires before has_vle_fields so a codec mixing
+        # VLE + present-if uses the unified streaming path.
         try:
 {% for field in fields %}
-            {{ field.vle_decode_stmt }}
+{% if field.is_repeat %}
+            {{ field.repeat_decode_stmt }}
+{% else %}
+            {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
-        except CodecError:
+        except NeedMoreBytes:
             return None
         return cls(
 {% for field in fields %}
             {{ field.id }}={{ field.id }},
 {% endfor %}
         )
-{% elif has_present_if_fields %}
-        # RFC §5.B B1-δ present-if primitive: streaming decode advances
-        # the cursor per field. Per-field statements live inside one
-        # outer `try:` block so the first peek/advance failure unwinds
-        # to a single `except NeedMoreBytes: return None`. Gated fields
-        # bind the local to `None` on the absent branch so the dataclass
-        # passes the local through unchanged.
+{% elif has_vle_fields %}
         try:
 {% for field in fields %}
-            {{ field.present_if_decode_stmt }}
+            {{ field.vle_decode_stmt }}
 {% endfor %}
-        except NeedMoreBytes:
+        except CodecError:
             return None
         return cls(
 {% for field in fields %}
@@ -235,20 +240,25 @@ class {{ struct_name }}:
             r.extend(self.body.{{ variant.default_arm.c_union_field }}.encode())
 {% endif %}
         return bytes(r)
+{% elif has_present_if_fields %}
+        # RFC §5.B B1-δ + B2-β present-if encode: per-field byte
+        # append. Gated fields skip the append when the optional is
+        # `None`. Per-field `is_repeat` routes Repeat fields to the
+        # dedicated helper. Branch fires before has_vle_fields so a
+        # codec mixing VLE + present-if uses the unified encode path.
+        r = bytearray()
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
+        return bytes(r)
 {% elif has_vle_fields %}
         r = bytearray()
 {% for field in fields %}
 {{ field.vle_encode_block }}
-{% endfor %}
-        return bytes(r)
-{% elif has_present_if_fields %}
-        # RFC §5.B B1-δ encode: per-field byte append. Gated fields skip
-        # the append when the optional is `None` (author keeps the
-        # carrier's flag bit and the optional's truth value in sync —
-        # same trust contract as the variant primitive).
-        r = bytearray()
-{% for field in fields %}
-{{ field.present_if_encode_block }}
 {% endfor %}
         return bytes(r)
 {% elif has_repeat_fields %}

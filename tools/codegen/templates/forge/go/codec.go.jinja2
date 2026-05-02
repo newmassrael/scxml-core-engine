@@ -103,6 +103,26 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 {% endfor %}
 		Body: body,
 	}, nil
+{% elif has_present_if_fields %}
+	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+	// advances the cursor per field. Gated fields use `*T` for fixed
+	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
+	// VLE gating uses `*T` like fixed. Per-field `is_repeat` routes
+	// Repeat fields to the dedicated helper. Branch fires before
+	// has_vle_fields so a codec mixing VLE + present-if uses the
+	// unified streaming path.
+{% for field in fields %}
+{% if field.is_repeat %}
+	{{ field.repeat_decode_stmt }}
+{% else %}
+	{{ field.present_if_decode_stmt }}
+{% endif %}
+{% endfor %}
+	return &{{ struct_name }}{
+{% for field in fields %}
+		{{ field.id }}: {{ field.id }},
+{% endfor %}
+	}, nil
 {% elif has_vle_fields %}
 	// Streaming codec: each field reads from cursor directly
 	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
@@ -110,20 +130,6 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 	// because the package owns both names.
 {% for field in fields %}
 	{{ field.vle_decode_stmt }}
-{% endfor %}
-	return &{{ struct_name }}{
-{% for field in fields %}
-		{{ field.id }}: {{ field.id }},
-{% endfor %}
-	}, nil
-{% elif has_present_if_fields %}
-	// RFC §5.B B1-δ present-if primitive: streaming decode advances
-	// the cursor per field. Gated fields use `*T` (nil = absent) and
-	// allocate a stack-local `_v` only when the predicate fires; the
-	// predicate test is an inline literal mask + shift on the just-
-	// decoded carrier (no runtime metadata).
-{% for field in fields %}
-	{{ field.present_if_decode_stmt }}
 {% endfor %}
 	return &{{ struct_name }}{
 {% for field in fields %}
@@ -233,20 +239,25 @@ func (s *{{ struct_name }}) Encode() []byte {
 {% endif %}
 	}
 	return r
+{% elif has_present_if_fields %}
+	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
+	// Gated fields skip the append on nil pointer / nil slice. Per-
+	// field `is_repeat` routes Repeat fields to the dedicated helper.
+	// Branch fires before has_vle_fields so a codec mixing VLE +
+	// present-if uses the unified encode path.
+	r := make([]byte, 0, {{ max_bytes }})
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
+	return r
 {% elif has_vle_fields %}
 	r := make([]byte, 0, {{ max_bytes }})
 {% for field in fields %}
 {{ field.vle_encode_block }}
-{% endfor %}
-	return r
-{% elif has_present_if_fields %}
-	// RFC §5.B B1-δ encode: per-field byte append. Gated fields skip
-	// the append when the pointer is nil (author keeps the carrier's
-	// flag bit and the pointer's truth value in sync — same trust
-	// contract as the variant primitive).
-	r := make([]byte, 0, {{ max_bytes }})
-{% for field in fields %}
-{{ field.present_if_encode_block }}
 {% endfor %}
 	return r
 {% elif has_repeat_fields %}

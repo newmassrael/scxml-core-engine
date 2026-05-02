@@ -2,8 +2,8 @@
 /* Runtime: none */
 /* Do not edit — regenerate from the source SCXML file. */
 
-#ifndef SCE_FORGE_CODEC_PRESENT_IF_BASIC_H
-#define SCE_FORGE_CODEC_PRESENT_IF_BASIC_H
+#ifndef SCE_FORGE_CODEC_PRESENT_IF_VLE_H
+#define SCE_FORGE_CODEC_PRESENT_IF_VLE_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -11,25 +11,25 @@
 
 #include "sce/forge/codec.h"
 
-#define CODEC_PRESENT_IF_BASIC_MIN_BYTES 3
-#define CODEC_PRESENT_IF_BASIC_MAX_BYTES 3
+#define CODEC_PRESENT_IF_VLE_MIN_BYTES 1
+#define CODEC_PRESENT_IF_VLE_MAX_BYTES 11
 
 typedef struct {
     uint8_t flags;
-    uint16_t seq;
-} codec_present_if_basic_t;
+    uint64_t optional_id;
+} codec_present_if_vle_t;
 
 typedef struct {
-    uint8_t bytes[CODEC_PRESENT_IF_BASIC_MAX_BYTES];
+    uint8_t bytes[CODEC_PRESENT_IF_VLE_MAX_BYTES];
     size_t  len;
-} codec_present_if_basic_encoded_t;
+} codec_present_if_vle_encoded_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
-static inline sce_forge_codec_status_t codec_present_if_basic_decode(sce_forge_cursor_t *cursor, codec_present_if_basic_t *out) {
+static inline sce_forge_codec_status_t codec_present_if_vle_decode(sce_forge_cursor_t *cursor, codec_present_if_vle_t *out) {
     /* RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
      * advances the cursor per field. C11 has no nullable wrapper so
      * the gated field's storage stays as plain `T` (with `_len = 0`
@@ -46,18 +46,20 @@ static inline sce_forge_codec_status_t codec_present_if_basic_decode(sce_forge_c
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
     if ((out->flags & 0x01) != 0) {
-        const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
-        if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->seq = (uint16_t)(((uint16_t)raw[0] << 8) | raw[1]);
-        if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        uint64_t _v;
+    {
+        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
+        if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
+    }
+        out->optional_id = _v;
     } else {
-        out->seq = 0;
+        out->optional_id = 0;
     }
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_present_if_basic_encoded_t codec_present_if_basic_encode(const codec_present_if_basic_t *self) {
-    codec_present_if_basic_encoded_t r;
+static inline codec_present_if_vle_encoded_t codec_present_if_vle_encode(const codec_present_if_vle_t *self) {
+    codec_present_if_vle_encoded_t r;
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` routes Repeat fields to the
@@ -66,8 +68,14 @@ static inline codec_present_if_basic_encoded_t codec_present_if_basic_encode(con
     r.len = 0;
     r.bytes[r.len++] = self->flags;
     if ((self->flags & 0x01) != 0) {
-        r.bytes[r.len++] = (uint8_t)((self->seq >> 8) & 0xFF);
-        r.bytes[r.len++] = (uint8_t)(self->seq & 0xFF);
+    {
+        uint64_t _w = (uint64_t)(self->optional_id);
+        while (_w >= 0x80u) {
+            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
+            _w >>= 7;
+        }
+        r.bytes[r.len++] = (uint8_t)_w;
+    }
     }
     return r;
 }
@@ -78,11 +86,11 @@ static inline codec_present_if_basic_encoded_t codec_present_if_basic_encode(con
  * accessor name is `<struct_snake>_<flag_name>` so multiple codecs
  * carrying same-named flags coexist in a single translation unit. Wire
  * layout is unchanged — the carrier still occupies its declared bytes. */
-static inline bool codec_present_if_basic_has_seq(const codec_present_if_basic_t *self) {
+static inline bool codec_present_if_vle_has_id(const codec_present_if_vle_t *self) {
     return (self->flags & 0x01) != 0;
 }
 
-static inline void codec_present_if_basic_set_has_seq(codec_present_if_basic_t *self, bool v) {
+static inline void codec_present_if_vle_set_has_id(codec_present_if_vle_t *self, bool v) {
     if (v) {
         self->flags = (uint8_t)(self->flags | 0x01);
     } else {
@@ -90,4 +98,4 @@ static inline void codec_present_if_basic_set_has_seq(codec_present_if_basic_t *
     }
 }
 
-#endif  /* SCE_FORGE_CODEC_PRESENT_IF_BASIC_H */
+#endif  /* SCE_FORGE_CODEC_PRESENT_IF_VLE_H */

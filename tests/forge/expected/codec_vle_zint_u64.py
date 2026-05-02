@@ -31,9 +31,9 @@ class CodecVleZintU64:
 
     def encode(self) -> bytes:
         r = bytearray()
-        _v = int(self.value)
-        while _v >= 0x80:
-            r.append((_v & 0x7F) | 0x80)
-            _v >>= 7
-        r.append(_v)
+        _w = int(self.value)
+        while _w >= 0x80:
+            r.append((_w & 0x7F) | 0x80)
+            _w >>= 7
+        r.append(_w)
         return bytes(r)

@@ -10,13 +10,13 @@ use sce_forge_runtime::codec::{CodecError, SceCursor};
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct CodecPresentIfBasic {
+pub struct CodecPresentIfTail {
     pub flags: u8,
-    pub seq: Option<u16>,
+    pub payload: Option<Vec<u8>>,
 }
 
 #[allow(dead_code)]
-impl CodecPresentIfBasic {
+impl CodecPresentIfTail {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -46,17 +46,18 @@ impl CodecPresentIfBasic {
             cursor.advance(1)?;
             _v
         };
-        let seq = if (flags & 0x01u8) != 0 {
-            let raw = cursor.peek_slice(2)?;
-            let _v = ((raw[0] as u16) << 8) | raw[1] as u16;
-            cursor.advance(2)?;
+        let payload = if (flags & 0x01u8) != 0 {
+            let _n = cursor.remaining();
+            let raw = cursor.peek_slice(_n)?;
+            let _v = raw.to_vec();
+            cursor.advance(_n)?;
             Some(_v)
         } else {
             None
         };
         Ok(Self {
             flags,
-            seq,
+            payload,
         })
     }
 
@@ -65,11 +66,11 @@ impl CodecPresentIfBasic {
     // toggles the bit on/off without disturbing siblings on the same
     // carrier. Wire layout is unchanged — the carrier still occupies
     // its declared bytes.
-    pub fn has_seq(&self) -> bool {
+    pub fn has_payload(&self) -> bool {
         (self.flags & 0x01) != 0
     }
 
-    pub fn set_has_seq(&mut self, v: bool) {
+    pub fn set_has_payload(&mut self, v: bool) {
         if v {
             self.flags |= 0x01;
         } else {
@@ -86,11 +87,10 @@ impl CodecPresentIfBasic {
         // sync (trust contract, mirrors the variant primitive).
         // Note: this branch fires before has_vle_fields so a codec
         // mixing VLE + present-if uses the unified encode path.
-        let mut r: Vec<u8> = Vec::with_capacity(3);
+        let mut r: Vec<u8> = Vec::with_capacity(65);
         r.push(self.flags);
-        if let Some(_v) = self.seq {
-            r.push((_v >> 8) as u8);
-            r.push(_v as u8);
+        if let Some(_v) = &self.payload {
+            r.extend_from_slice(_v);
         }
         r
     }

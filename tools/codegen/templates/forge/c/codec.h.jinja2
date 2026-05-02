@@ -118,22 +118,30 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endif %}
     }
     return SCE_FORGE_CODEC_OK;
+{% elif has_present_if_fields %}
+    /* RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+     * advances the cursor per field. C11 has no nullable wrapper so
+     * the gated field's storage stays as plain `T` (with `_len = 0`
+     * for absent bytes payloads); the carrier's flag bit is the
+     * source of truth for presence. B2-β extends gating to Tail /
+     * LengthRef / Vle bit-sizes via dispatch inside the helper.
+     * Per-field `is_repeat` routes Repeat fields to the dedicated
+     * helper. Branch fires before has_vle_fields so a codec mixing
+     * VLE + present-if uses the unified streaming path. */
+{% for field in fields %}
+{% if field.is_repeat %}
+    {{ field.repeat_decode_stmt }}
+{% else %}
+    {{ field.present_if_decode_stmt }}
+{% endif %}
+{% endfor %}
+    return SCE_FORGE_CODEC_OK;
 {% elif has_vle_fields %}
     /* Streaming codec: each field reads from cursor directly (VLE
      * base-128 chain, 1..=ceil(N/7) bytes per field). */
 {% for field in fields %}
     {{ field.vle_decode_stmt }}
     out->{{ field.id }} = {{ field.id }};
-{% endfor %}
-    return SCE_FORGE_CODEC_OK;
-{% elif has_present_if_fields %}
-    /* RFC §5.B B1-δ present-if primitive: streaming decode advances
-     * the cursor per field. C11 has no nullable wrapper so the gated
-     * field's storage stays as plain `T`; the carrier's flag bit is
-     * the source of truth for presence and the absent branch zeroes
-     * the field so the struct is fully initialized either way. */
-{% for field in fields %}
-    {{ field.present_if_decode_stmt }}
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_repeat_fields %}
@@ -232,20 +240,24 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
         }
 {% endif %}
     }
+{% elif has_present_if_fields %}
+    /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
+     * Gated fields skip the append when the carrier's flag bit is
+     * clear. Per-field `is_repeat` routes Repeat fields to the
+     * dedicated helper. Branch fires before has_vle_fields so a
+     * codec mixing VLE + present-if uses the unified encode path. */
+    r.len = 0;
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
 {% elif has_vle_fields %}
     r.len = 0;
 {% for field in fields %}
 {{ field.vle_encode_block }}
-{% endfor %}
-{% elif has_present_if_fields %}
-    /* RFC §5.B B1-δ encode: per-field byte append. Gated fields skip
-     * the append when the carrier's flag bit is clear (author keeps
-     * the bit and the logical truth value in sync — same trust
-     * contract as the variant primitive). `r.bytes[r.len++]` lets the
-     * length grow with the actual payload. */
-    r.len = 0;
-{% for field in fields %}
-{{ field.present_if_encode_block }}
 {% endfor %}
 {% elif has_repeat_fields %}
     /* RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
