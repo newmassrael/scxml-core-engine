@@ -981,9 +981,9 @@ fn render_codec(
     // until each per-language closure landed; the final closure
     // (Python) deletes the gate entirely.
 
-    // RFC §5.B B1-δ present-if primitive (trunk + Kotlin/Go closures):
-    // Rust + Cpp + Kotlin + Go emit gated decode/encode. C11 / Python
-    // stay gated until each per-language closure lands so the
+    // RFC §5.B B1-δ present-if primitive (trunk + Kotlin/Go/C11
+    // closures): Rust + Cpp + Kotlin + Go + C11 emit gated decode/
+    // encode. Python stays gated until its closure lands so the
     // template never silently drops the optional wrap.
     if m.has_present_if_fields()
         && !matches!(
@@ -992,12 +992,13 @@ fn render_codec(
                 | crate::generator::Language::Cpp
                 | crate::generator::Language::Kotlin
                 | crate::generator::Language::Go
+                | crate::generator::Language::C11
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "codec '{name}': sce:present-if emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B1-δ trunk ships Rust + Cpp + Kotlin + Go; C11 / Python land in B1-δ closures)",
+                 (RFC §5.B B1-δ ships Rust + Cpp + Kotlin + Go + C11; Python lands in the final B1-δ closure)",
                 name = m.name,
             )),
         ));
@@ -1144,8 +1145,13 @@ fn render_codec(
                 );
                 obj.insert(
                     "present_if_encode_block".into(),
-                    present_if_streaming_encode_block(f, m.default_endian, lang)
-                        .into(),
+                    present_if_streaming_encode_block(
+                        f,
+                        &m.fields,
+                        m.default_endian,
+                        lang,
+                    )
+                    .into(),
                 );
                 if f.present_if.is_some() {
                     let inner = l.type_name(&f.sce_type);
@@ -1754,6 +1760,40 @@ fn present_if_streaming_decode_stmt(
                  }}"
             )
         }
+        // C11: no nullable wrapper, so the gated field's value is held
+        // in the same `T`-typed struct member and the carrier bit is
+        // the source of truth for presence. Decode writes directly to
+        // `out-><id>` and zeroes it on the absent branch so the struct
+        // is fully initialized regardless of which arm fires (avoids
+        // UB from reading an indeterminate value through the public
+        // accessor). Each field's read lives in its own `{ ... }`
+        // sub-block so `raw` doesn't leak across siblings.
+        (Language::C11, None) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            format!(
+                "{{\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, {n});\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     out->{id_snake} = {body};\n        \
+                     if (!sce_forge_cursor_advance(cursor, {n})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
+        }
+        (Language::C11, Some(p)) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let test = present_if_test_literal(fields, p, lang);
+            let c_ty = c_type(&field.sce_type);
+            format!(
+                "if ({test}) {{\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, {n});\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     out->{id_snake} = ({c_ty})({body});\n        \
+                     if (!sce_forge_cursor_advance(cursor, {n})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }} else {{\n        \
+                     out->{id_snake} = 0;\n    \
+                 }}"
+            )
+        }
         // Other backends are gated up-front in render_codec via
         // GenerateError::UnsupportedFeature; this arm is unreachable
         // for has_present_if_fields codecs.
@@ -1764,8 +1804,13 @@ fn present_if_streaming_decode_stmt(
 /// Per-language present-if encode block. Plain fields render via the
 /// existing fixed-width byte serializer; gated fields wrap the same
 /// bytes inside an `if Some/has_value` test against the optional.
+/// `fields` is consulted only by the C11 arm (which has no native
+/// optional and therefore tests the carrier bit on the struct member);
+/// the other backends carry presence in their wrapper type and ignore
+/// it.
 fn present_if_streaming_encode_block(
     field: &CodecField,
+    fields: &[CodecField],
     default_endian: Endian,
     lang: crate::generator::Language,
 ) -> String {
@@ -1825,6 +1870,25 @@ fn present_if_streaming_encode_block(
                  \n\t}}"
             )
         }
+        (Language::C11, false) => streaming_fixed_field_encode_c11(field, default_endian, n),
+        (Language::C11, true) => {
+            // C11: presence is encoded by the carrier flag bit on the
+            // struct member (no nullable wrapper), so the encode site
+            // tests `(self-><carrier> & mask) != 0` directly. Inner
+            // body emits the same byte appends as the non-gated form
+            // — they read from `self-><id>` either way; the only
+            // difference is the surrounding gate.
+            let p = field.present_if.as_ref().expect("gated arm requires predicate");
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, p);
+            let carrier_snake = filters::to_snake_case(carrier.id.clone());
+            let inner = streaming_fixed_field_encode_c11_inner(field, default_endian, n);
+            format!(
+                "    if ((self->{carrier_snake} & 0x{mask:0width$X}) != 0) {{\n\
+                 {inner}\
+                 \n    }}",
+                width = hex_digits
+            )
+        }
         _ => String::new(),
     }
 }
@@ -1843,6 +1907,36 @@ fn streaming_fixed_field_body(
 ) -> String {
     use crate::generator::Language;
     let endian = field.effective_endian(default_endian);
+
+    // C11: `const uint8_t *raw` indexed positionally. n=1 returns
+    // `raw[0]` (uint8_t directly assignable to the carrier struct
+    // member). Multi-byte folds through `(target_t)raw[i] << shift`
+    // — symmetric with the existing `decode_multibyte_unified` C11
+    // arm on a 0-based slice.
+    if matches!(lang, Language::C11) {
+        if n == 1 {
+            return "raw[0]".into();
+        }
+        let target = match n {
+            2 => "uint16_t",
+            3 | 4 => "uint32_t",
+            _ => "uint64_t",
+        };
+        let shifts: Vec<String> = (0..n)
+            .map(|i| {
+                let shift = match endian {
+                    Endian::Little => i * 8,
+                    Endian::Big | Endian::Native => (n - 1 - i) * 8,
+                };
+                if shift == 0 {
+                    format!("raw[{i}]")
+                } else {
+                    format!("(({target})raw[{i}] << {shift})")
+                }
+            })
+            .collect();
+        return shifts.join(" | ");
+    }
 
     // Go: `[]byte`'s `[i]` is `byte` (== `uint8`); multi-byte fields
     // widen through the carrier-typed `target(raw[i])` cast and fold
@@ -2133,6 +2227,79 @@ fn streaming_fixed_field_encode_go(
     lines.trim_end().to_string()
 }
 
+/// C11 encode counterpart — non-gated. Mirrors `encode_single_field_unified`
+/// for C11: byte fields write `self-><id>` directly, multi-byte fields
+/// drop through `(uint8_t)((self-><id> >> shift) & 0xFF)`. The C11 encode
+/// signature uses an `encoded_t r` with `r.bytes[r.len++]` so each byte
+/// append both writes the slot and bumps the length.
+fn streaming_fixed_field_encode_c11(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let id_snake = filters::to_snake_case(field.id.clone());
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    if n == 1 {
+        lines.push_str(&format!(
+            "    r.bytes[r.len++] = self->{id_snake};\n"
+        ));
+    } else {
+        for i in 0..n {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            if shift == 0 {
+                lines.push_str(&format!(
+                    "    r.bytes[r.len++] = (uint8_t)(self->{id_snake} & 0xFF);\n"
+                ));
+            } else {
+                lines.push_str(&format!(
+                    "    r.bytes[r.len++] = (uint8_t)((self->{id_snake} >> {shift}) & 0xFF);\n"
+                ));
+            }
+        }
+    }
+    lines.trim_end().to_string()
+}
+
+/// C11 encode inner body — same per-byte writes as the non-gated form
+/// but indented one extra level so they sit inside the carrier-bit
+/// gate. C11 has no nullable wrapper so reads go through `self-><id>`
+/// in both gated and non-gated paths; only the indentation differs.
+fn streaming_fixed_field_encode_c11_inner(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let id_snake = filters::to_snake_case(field.id.clone());
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    if n == 1 {
+        lines.push_str(&format!(
+            "        r.bytes[r.len++] = self->{id_snake};\n"
+        ));
+    } else {
+        for i in 0..n {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            if shift == 0 {
+                lines.push_str(&format!(
+                    "        r.bytes[r.len++] = (uint8_t)(self->{id_snake} & 0xFF);\n"
+                ));
+            } else {
+                lines.push_str(&format!(
+                    "        r.bytes[r.len++] = (uint8_t)((self->{id_snake} >> {shift}) & 0xFF);\n"
+                ));
+            }
+        }
+    }
+    lines.trim_end().to_string()
+}
+
 /// Go encode counterpart — gated, reads from `_v` local. The caller
 /// wraps this in `if s.<Id> != nil { _v := *s.<Id>; ... }` so `_v` is
 /// the unwrapped carrier value at one extra tab level.
@@ -2204,12 +2371,16 @@ fn streaming_fixed_field_encode_kotlin_from_local(
 /// just-decoded local `<carrier_id>` (decode site) — encode never needs
 /// it because encode tests the optional itself. Carrier and flag are
 /// guaranteed to exist by `validate_codec_present_if_predicates`.
-fn present_if_test_literal(
-    fields: &[CodecField],
+/// Resolve a present-if predicate against the codec's field list and
+/// return `(mask, hex_digits, carrier)`. The validator has already
+/// ensured the carrier exists, names a flag bit, and is an unsigned
+/// integer — `expect()` calls here are dead in well-formed input but
+/// surface a clear panic message if a future parser change drops a
+/// validation step.
+fn present_if_carrier_info<'a>(
+    fields: &'a [CodecField],
     pred: &PresentIfPredicate,
-    lang: crate::generator::Language,
-) -> String {
-    use crate::generator::Language;
+) -> (u64, usize, &'a CodecField) {
     let carrier = fields
         .iter()
         .find(|f| f.id == pred.field_id)
@@ -2225,6 +2396,16 @@ fn present_if_test_literal(
         .int_bit_width()
         .expect("validator ensured carrier is unsigned-int");
     let hex_digits = (bit_width / 4) as usize;
+    (mask, hex_digits, carrier)
+}
+
+fn present_if_test_literal(
+    fields: &[CodecField],
+    pred: &PresentIfPredicate,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let (mask, hex_digits, carrier) = present_if_carrier_info(fields, pred);
     let id = carrier.id.as_str();
     match lang {
         Language::Rust => {
@@ -2245,6 +2426,20 @@ fn present_if_test_literal(
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!("({go_id} & 0x{mask:0width$X}) != 0", width = hex_digits)
+        }
+        // C11: present-if has no nullable wrapper, so both decode and
+        // encode test the carrier bit directly on the struct member.
+        // The decode site reads through `out->`, the encode site through
+        // `self->` — `present_if_test_literal` is only called from the
+        // decode helper, so the `out->` prefix is hardcoded here. The
+        // C11 encode helper inlines its own `(self-> ...)` test for
+        // symmetry without needing a second helper variant.
+        Language::C11 => {
+            let c_id = filters::to_snake_case(id.to_string());
+            format!(
+                "(out->{c_id} & 0x{mask:0width$X}) != 0",
+                width = hex_digits
+            )
         }
         Language::Kotlin => {
             // Kotlin's UByte/UShort/UInt/ULong don't expose direct

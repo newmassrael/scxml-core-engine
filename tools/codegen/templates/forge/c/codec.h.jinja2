@@ -122,6 +122,16 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     out->{{ field.id }} = {{ field.id }};
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
+{% elif has_present_if_fields %}
+    /* RFC §5.B B1-δ present-if primitive: streaming decode advances
+     * the cursor per field. C11 has no nullable wrapper so the gated
+     * field's storage stays as plain `T`; the carrier's flag bit is
+     * the source of truth for presence and the absent branch zeroes
+     * the field so the struct is fully initialized either way. */
+{% for field in fields %}
+    {{ field.present_if_decode_stmt }}
+{% endfor %}
+    return SCE_FORGE_CODEC_OK;
 {% elif has_variable_fields %}
     /* Variable-length codec: tail / length-ref fields consume bytes
      * beyond the fixed prefix. B1-prep treats the entire cursor
@@ -205,6 +215,16 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
     r.len = 0;
 {% for field in fields %}
 {{ field.vle_encode_block }}
+{% endfor %}
+{% elif has_present_if_fields %}
+    /* RFC §5.B B1-δ encode: per-field byte append. Gated fields skip
+     * the append when the carrier's flag bit is clear (author keeps
+     * the bit and the logical truth value in sync — same trust
+     * contract as the variant primitive). `r.bytes[r.len++]` lets the
+     * length grow with the actual payload. */
+    r.len = 0;
+{% for field in fields %}
+{{ field.present_if_encode_block }}
 {% endfor %}
 {% else %}
     r.len = {{ c_min_bytes_macro }};

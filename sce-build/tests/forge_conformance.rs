@@ -1645,6 +1645,16 @@ fn forge_c11_codec_variant_dispatch() {
     );
 }
 
+// ── RFC §5.B B1-δ present-if primitive (C11) ────────────────
+
+#[test]
+fn forge_c11_codec_present_if_basic() {
+    assert_standalone_forge_c(
+        "codec_present_if_basic",
+        "codec_present_if_basic.c.h",
+    );
+}
+
 // ── Crossfile codec (C11) ───────────────────────────────────
 
 #[test]
