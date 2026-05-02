@@ -4689,9 +4689,10 @@ fn crossfile_matrix_validator_interpolation() {
 // ═══════════════════════════════════════════════════════════════
 
 /// RFC §5.B B5-γ trunk gate: a codec declaring
-/// `<sce:requires-parent-flags>` rejects on Kotlin/Go/C11/Python until
-/// the per-language closures land (precedent: B1-β / B1-δ / B2-α / B3-α
-/// trunk-then-closures cadence).
+/// `<sce:requires-parent-flags>` rejects on Go/C11/Python until the
+/// per-language closures land (precedent: B1-β / B1-δ / B2-α / B3-α
+/// trunk-then-closures cadence). Kotlin closure landed in this commit;
+/// the Kotlin gate-rejection test rotated to a positive emission test.
 fn assert_b5_gamma_gate_rejects(scxml: &str, language: sce_build::generator::Language) {
     use sce_build::forge::error::{ForgeError, GenerateError};
 
@@ -4723,11 +4724,29 @@ fn assert_b5_gamma_gate_rejects(scxml: &str, language: sce_build::generator::Lan
     );
 }
 
+/// RFC §5.B B5-γ Kotlin closure: body codec with parent-flags
+/// dependency emits `parentFlags: UByte` parameter on decode/encode;
+/// `parent.<flag>` predicates compile to
+/// `(parentFlags.toInt() and 0xNN) != 0`. `@Suppress("UNUSED_PARAMETER")`
+/// on each fn declaration covers the defensive case where the
+/// declaration outlives any predicate consuming it.
 #[test]
-fn forge_codec_init_syn_body_kotlin_gate_rejects() {
-    assert_b5_gamma_gate_rejects(
-        "codec_init_syn_body.scxml",
-        sce_build::generator::Language::Kotlin,
+fn forge_kotlin_codec_init_syn_body() {
+    assert_standalone_forge_kotlin(
+        "codec_init_syn_body",
+        "CodecInitSynBody.kt",
+    );
+}
+
+/// RFC §5.B B5-γ Kotlin closure: variant parent threading carrier value.
+/// The envelope's `when (val _b = this.body)` arms call
+/// `_b.body.encode(this.header)` and the companion `decode(cursor, header)`
+/// passes the just-decoded header local. Mirrors the Rust + Cpp goldens.
+#[test]
+fn forge_kotlin_codec_init_syn_envelope() {
+    assert_standalone_forge_kotlin(
+        "codec_init_syn_envelope",
+        "CodecInitSynEnvelope.kt",
     );
 }
 

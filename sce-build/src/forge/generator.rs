@@ -1066,21 +1066,21 @@ fn render_codec(
         .any(|i| i.codec_requires_parent_flags.is_some());
     if m.has_parent_flags() || body_imports_parent_flags {
         match lang {
-            crate::generator::Language::Rust | crate::generator::Language::Cpp => { /* trunk */ }
-            crate::generator::Language::Kotlin
-            | crate::generator::Language::Go
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin => { /* trunk + Kotlin closure */ }
+            crate::generator::Language::Go
             | crate::generator::Language::C11
             | crate::generator::Language::Python => {
                 return Err(ForgeError::Generate(
                     crate::forge::error::GenerateError::UnsupportedFeature(format!(
                         "codec '{}' uses RFC §5.B B5-γ parent-flags dependency \
                          (`<sce:requires-parent-flags>` on this codec or on an \
-                         imported variant arm body). Trunk emit lands on Rust + \
-                         Cpp first; the per-language closure for {} ships in a \
+                         imported variant arm body). Trunk emit landed on Rust + \
+                         Cpp + Kotlin; the per-language closure for {} ships in a \
                          follow-up commit (precedent: B1-β / B1-δ / B2-α / B3-α).",
                         m.name,
                         match lang {
-                            crate::generator::Language::Kotlin => "kotlin",
                             crate::generator::Language::Go => "go",
                             crate::generator::Language::C11 => "c11",
                             crate::generator::Language::Python => "python",
@@ -1634,11 +1634,17 @@ fn render_codec(
             crate::generator::Language::Cpp => {
                 (", std::uint8_t parent_flags", "std::uint8_t parent_flags")
             }
-            // Other 4 languages gated above with UnsupportedFeature, so
+            // Kotlin: camelCase param name (`parentFlags`) matches the
+            // identifier already returned by `present_if_test_literal`'s
+            // Parent-scope branch, and `UByte` mirrors v1's uint8 lock-in
+            // for parent flag carrier type.
+            crate::generator::Language::Kotlin => {
+                (", parentFlags: UByte", "parentFlags: UByte")
+            }
+            // Other 3 languages gated above with UnsupportedFeature, so
             // the empty fragment is unreachable for valid emit. Default
             // to empty to keep the JSON shape uniform.
-            crate::generator::Language::Kotlin
-            | crate::generator::Language::Go
+            crate::generator::Language::Go
             | crate::generator::Language::C11
             | crate::generator::Language::Python => ("", ""),
         }
@@ -1782,7 +1788,15 @@ fn render_codec(
                     .map(|c| match lang {
                         crate::generator::Language::Rust => format!("self.{}", c),
                         crate::generator::Language::Cpp => c.clone(),
-                        // Other 4 languages gated above; emit bare id
+                        // Kotlin: variant arm encode lives inside the parent
+                        // codec's `encode()` method (an instance fn on the
+                        // data class), so `this.<carrier>` reads the parent's
+                        // flags-carrier field. Field id stays as the snake_case
+                        // form Kotlin codecs already use (mirrors the existing
+                        // template's `r.add({{ expr }})` and `this.<id>`
+                        // accessor sites).
+                        crate::generator::Language::Kotlin => format!("this.{}", c),
+                        // Other 3 languages gated above; emit bare id
                         // as a deterministic placeholder.
                         _ => c.clone(),
                     })
@@ -1841,6 +1855,7 @@ fn render_codec(
                     .map(|c| match lang {
                         crate::generator::Language::Rust => format!("self.{}", c),
                         crate::generator::Language::Cpp => c.clone(),
+                        crate::generator::Language::Kotlin => format!("this.{}", c),
                         _ => c.clone(),
                     })
                     .unwrap_or_default();
@@ -1968,12 +1983,19 @@ fn render_codec(
                         (expr.clone(), expr)
                     }
                     crate::generator::Language::Kotlin => {
-                        // Match needs Int/Long for `when` matching. Store needs
-                        // result_type (UByte/UShort/UInt/ULong) for the Default
-                        // arm's `tag` field whose declared type is tag_native_type.
+                        // `inner` widens the carrier through `.toInt()` and
+                        // masks via Kotlin's Int infix `and` — the result is
+                        // therefore already Int (8/16-bit widths). The
+                        // `when` branch's arm value literal carries an `L`
+                        // suffix at 32+ bit widths (line 1717), so the
+                        // 32/64 paths must widen `inner` to Long; 8/16 stay
+                        // bare to avoid a redundant-conversion warning under
+                        // `-Werror`. Store side casts back to result_type
+                        // (UByte/UShort/UInt/ULong) so the Default arm's
+                        // `tag` field type-checks against tag_native_type.
                         let (kt_result_ty, kt_match_to) = match result_bits {
-                            8 => ("UByte", ".toInt()"),
-                            16 => ("UShort", ".toInt()"),
+                            8 => ("UByte", ""),
+                            16 => ("UShort", ""),
                             32 => ("UInt", ".toLong()"),
                             _ => ("ULong", ".toLong()"),
                         };

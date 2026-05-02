@@ -2,11 +2,10 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-package com.sce.generated.codec_transport_envelope
+package com.sce.generated.codec_init_syn_envelope
 
 import com.sce.forge.runtime.SceCursor
-import com.sce.generated.codec_zenoh_keep_alive.*
-import com.sce.generated.codec_zenoh_close.*
+import com.sce.generated.codec_init_syn_body.*
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
@@ -14,19 +13,18 @@ import com.sce.generated.codec_zenoh_close.*
 // alongside its catch-all body. Arm body types are referenced by FQN
 // to sidestep the lexical-name collision between the inner data class
 // and the imported class (both pascalize the body alias).
-sealed class CodecTransportEnvelopeBody {
-    data class CodecZenohKeepAlive(val body: com.sce.generated.codec_zenoh_keep_alive.CodecZenohKeepAlive) : CodecTransportEnvelopeBody()
-    data class CodecZenohClose(val body: com.sce.generated.codec_zenoh_close.CodecZenohClose) : CodecTransportEnvelopeBody()
-    data class Default(val tag: UByte, val body: com.sce.generated.codec_zenoh_close.CodecZenohClose) : CodecTransportEnvelopeBody()
+sealed class CodecInitSynEnvelopeBody {
+    data class CodecInitSynBody(val body: com.sce.generated.codec_init_syn_body.CodecInitSynBody) : CodecInitSynEnvelopeBody()
+    data class Default(val tag: UByte, val body: com.sce.generated.codec_init_syn_body.CodecInitSynBody) : CodecInitSynEnvelopeBody()
 }
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
-// `CodecTransportEnvelope()` before any encode()/decode() call. Defaults
+// `CodecInitSynEnvelope()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
-data class CodecTransportEnvelope(
+data class CodecInitSynEnvelope(
     var header: UByte = 0.toUByte(),
-    var body: CodecTransportEnvelopeBody = CodecTransportEnvelopeBody.CodecZenohKeepAlive(com.sce.generated.codec_zenoh_keep_alive.CodecZenohKeepAlive())
+    var body: CodecInitSynEnvelopeBody = CodecInitSynEnvelopeBody.CodecInitSynBody(com.sce.generated.codec_init_syn_body.CodecInitSynBody())
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
@@ -46,33 +44,13 @@ data class CodecTransportEnvelope(
         this.header = ((_carrier and _shifted_mask.inv()) or _val).toUByte()
     }
 
-    fun flagZ(): Boolean = (this.header.toInt() and 0x20) != 0
+    fun S(): Boolean = (this.header.toInt() and 0x40) != 0
 
-    fun setFlagZ(v: Boolean) {
-        this.header = if (v) {
-            (this.header.toInt() or 0x20).toUByte()
-        } else {
-            (this.header.toInt() and 0x20.inv()).toUByte()
-        }
-    }
-
-    fun flagX(): Boolean = (this.header.toInt() and 0x40) != 0
-
-    fun setFlagX(v: Boolean) {
+    fun setS(v: Boolean) {
         this.header = if (v) {
             (this.header.toInt() or 0x40).toUByte()
         } else {
             (this.header.toInt() and 0x40.inv()).toUByte()
-        }
-    }
-
-    fun flagW(): Boolean = (this.header.toInt() and 0x80) != 0
-
-    fun setFlagW(v: Boolean) {
-        this.header = if (v) {
-            (this.header.toInt() or 0x80).toUByte()
-        } else {
-            (this.header.toInt() and 0x80.inv()).toUByte()
         }
     }
 
@@ -85,9 +63,8 @@ data class CodecTransportEnvelope(
         r.add(header.toByte())
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
-            is CodecTransportEnvelopeBody.CodecZenohKeepAlive -> r.addAll(_b.body.encode().toList())
-            is CodecTransportEnvelopeBody.CodecZenohClose -> r.addAll(_b.body.encode().toList())
-            is CodecTransportEnvelopeBody.Default -> r.addAll(_b.body.encode().toList())
+            is CodecInitSynEnvelopeBody.CodecInitSynBody -> r.addAll(_b.body.encode(this.header).toList())
+            is CodecInitSynEnvelopeBody.Default -> r.addAll(_b.body.encode(this.header).toList())
         }
         return r.toByteArray()
     }
@@ -97,7 +74,7 @@ data class CodecTransportEnvelope(
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
-        fun decode(cursor: SceCursor): CodecTransportEnvelope? {
+        fun decode(cursor: SceCursor): CodecInitSynEnvelope? {
             // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
             val raw = cursor.peekSlice(1) ?: return null
             val header = raw[0].toUByte()
@@ -106,21 +83,17 @@ data class CodecTransportEnvelope(
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back
             // onto the wire.
-            val body: CodecTransportEnvelopeBody = when (((header.toInt() shr 0) and 0x1F)) {
-                4 -> {
-                    val _arm = com.sce.generated.codec_zenoh_keep_alive.CodecZenohKeepAlive.decode(cursor) ?: return null
-                    CodecTransportEnvelopeBody.CodecZenohKeepAlive(_arm)
-                }
-                3 -> {
-                    val _arm = com.sce.generated.codec_zenoh_close.CodecZenohClose.decode(cursor) ?: return null
-                    CodecTransportEnvelopeBody.CodecZenohClose(_arm)
+            val body: CodecInitSynEnvelopeBody = when (((header.toInt() shr 0) and 0x1F)) {
+                1 -> {
+                    val _arm = com.sce.generated.codec_init_syn_body.CodecInitSynBody.decode(cursor, header) ?: return null
+                    CodecInitSynEnvelopeBody.CodecInitSynBody(_arm)
                 }
                 else -> {
-                    val _arm = com.sce.generated.codec_zenoh_close.CodecZenohClose.decode(cursor) ?: return null
-                    CodecTransportEnvelopeBody.Default(tag = ((header.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
+                    val _arm = com.sce.generated.codec_init_syn_body.CodecInitSynBody.decode(cursor, header) ?: return null
+                    CodecInitSynEnvelopeBody.Default(tag = ((header.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
                 }
             }
-            return CodecTransportEnvelope(
+            return CodecInitSynEnvelope(
                 header = header,
                 body = body
             )

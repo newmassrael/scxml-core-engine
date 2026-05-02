@@ -93,7 +93,10 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
 {% endif %}
-    fun encode(): ByteArray {
+{% if has_parent_flags %}
+    @Suppress("UNUSED_PARAMETER")
+{% endif %}
+    fun encode({{ parent_flags_param_first }}): ByteArray {
 {% if has_no_fields %}
         // RFC §5.B B5-α empty body — zero-byte payload.
         return ByteArray(0)
@@ -109,10 +112,10 @@ data class {{ struct_name }}(
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
 {% for arm in variant.arms %}
-            is {{ struct_name }}Body.{{ arm.variant_name }} -> r.addAll(_b.body.encode().toList())
+            is {{ struct_name }}Body.{{ arm.variant_name }} -> r.addAll(_b.body.encode({{ arm.body_parent_flags_arg_first }}).toList())
 {% endfor %}
 {% if variant.default_arm %}
-            is {{ struct_name }}Body.{{ variant.default_arm.variant_name }} -> r.addAll(_b.body.encode().toList())
+            is {{ struct_name }}Body.{{ variant.default_arm.variant_name }} -> r.addAll(_b.body.encode({{ variant.default_arm.body_parent_flags_arg_first }}).toList())
 {% endif %}
         }
         return r.toByteArray()
@@ -184,7 +187,10 @@ data class {{ struct_name }}(
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
-        fun decode(cursor: SceCursor): {{ struct_name }}? {
+{% if has_parent_flags %}
+        @Suppress("UNUSED_PARAMETER")
+{% endif %}
+        fun decode(cursor: SceCursor{{ parent_flags_param_decl }}): {{ struct_name }}? {
 {% if has_no_fields %}
             // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
             return {{ struct_name }}()
@@ -202,13 +208,13 @@ data class {{ struct_name }}(
             val body: {{ struct_name }}Body = when ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
                 {{ arm.value_literal }} -> {
-                    val _arm = {{ arm.body_type }}.decode(cursor) ?: return null
+                    val _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_parent_flags_arg }}) ?: return null
                     {{ struct_name }}Body.{{ arm.variant_name }}(_arm)
                 }
 {% endfor %}
                 else -> {
 {% if variant.default_arm %}
-                    val _arm = {{ variant.default_arm.body_type }}.decode(cursor) ?: return null
+                    val _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_parent_flags_arg }}) ?: return null
                     {{ struct_name }}Body.{{ variant.default_arm.variant_name }}(tag = {{ variant.tag_store_expr }}, body = _arm)
 {% else %}
                     // codec/variant-arm-unreachable rejected this case at parse time.
