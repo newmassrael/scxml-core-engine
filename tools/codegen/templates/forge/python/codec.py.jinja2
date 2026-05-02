@@ -14,8 +14,8 @@ from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
 {% endfor %}
 {% endif %}
 
-from dataclasses import dataclass{{ ", field" if has_variant else "" }}
-from typing import Optional
+from dataclasses import dataclass{{ ", field" if has_variant or has_repeat_fields else "" }}
+from typing import Optional{{ ", List" if has_repeat_fields else "" }}
 
 
 {% if has_variant %}
@@ -134,6 +134,29 @@ class {{ struct_name }}:
             {{ field.id }}={{ field.id }},
 {% endfor %}
         )
+{% elif has_repeat_fields %}
+        # RFC §5.B B2 repeat primitive: streaming decode mixes plain
+        # fixed-width reads (per-field via the present-if helper's
+        # non-gated arm) with `for _ in range(N)` / `while
+        # cursor.remaining() > 0` loops that iterate the imported
+        # codec's `decode()`. Element bodies recurse and may surface
+        # `None`, which propagates up via early `return None` from
+        # this outer `try:` block.
+        try:
+{% for field in fields %}
+{% if field.is_repeat %}
+            {{ field.repeat_decode_stmt }}
+{% else %}
+            {{ field.present_if_decode_stmt }}
+{% endif %}
+{% endfor %}
+        except NeedMoreBytes:
+            return None
+        return cls(
+{% for field in fields %}
+            {{ field.id }}={{ field.id }},
+{% endfor %}
+        )
 {% elif has_variable_fields %}
         try:
             _frame_len = cursor.remaining()
@@ -226,6 +249,20 @@ class {{ struct_name }}:
         r = bytearray()
 {% for field in fields %}
 {{ field.present_if_encode_block }}
+{% endfor %}
+        return bytes(r)
+{% elif has_repeat_fields %}
+        # RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
+        # fields iterate `self.<id>` and extend the bytearray with each
+        # element's `encode()`. Author keeps count field == list length
+        # (trust contract).
+        r = bytearray()
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
         return bytes(r)
 {% elif has_variable_fields %}

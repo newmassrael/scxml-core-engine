@@ -1008,29 +1008,10 @@ fn render_codec(
         }
     }
 
-    // RFC §5.B B2 repeat primitive (trunk + Kotlin + Go + C11
-    // closures): Rust + Cpp + Kotlin + Go + C11 emit. Python stays
-    // gated until its closure lands so the template never silently
-    // drops the field.
-    if m.has_repeat_fields()
-        && !matches!(
-            lang,
-            crate::generator::Language::Rust
-                | crate::generator::Language::Cpp
-                | crate::generator::Language::Kotlin
-                | crate::generator::Language::Go
-                | crate::generator::Language::C11
-        )
-    {
-        return Err(ForgeError::Generate(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "codec '{name}': <sce:repeat> (RFC §5.B B2) emits on Rust + Cpp + Kotlin + Go + C11; \
-                 the {lang:?} closure lands when the per-language template adds the streaming \
-                 repeat decode/encode loop and the host-language list type",
-                name = m.name,
-            )),
-        ));
-    }
+    // RFC §5.B B2 repeat primitive (closures complete): all six
+    // backends now emit repeat codecs. The historical gate sat here
+    // until each per-language closure landed; Python (the final
+    // closure) deletes the gate entirely.
 
     let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
     let has_present_if_fields = m.has_present_if_fields();
@@ -1110,9 +1091,14 @@ fn render_codec(
                         // is_repeat branch — set to `body_type` for
                         // shape symmetry / debugging visibility.
                         crate::generator::Language::C11 => body_type.clone(),
-                        // Closure lands per-language; trunk gate above
-                        // prevents reaching this arm on Python.
-                        _ => body_type.clone(),
+                        // Python: `List[T]` from typing — broader-compat
+                        // than PEP 585's `list[T]` (matches the existing
+                        // `Optional[T]` import the codec template already
+                        // pulls in). `field(default_factory=list)` set
+                        // below for the dataclass default since `List[T]`
+                        // is mutable and shared defaults would alias
+                        // across instances.
+                        crate::generator::Language::Python => format!("List[{body_type}]"),
                     };
                     obj.insert(type_key.into(), wrapped.into());
                     obj.insert(
@@ -1181,7 +1167,16 @@ fn render_codec(
                 obj.insert("kt_carrier_back".into(), back.into());
             }
             if matches!(lang, crate::generator::Language::Python) {
-                obj.insert("default_value".into(), python_default(&f.sce_type).into());
+                // Repeat fields default to `field(default_factory=list)` —
+                // a bare `[]` shared across instances would alias mutably
+                // through the dataclass primary constructor. Plain
+                // (non-repeat) fields keep the carrier-typed default.
+                let py_default = if f.is_repeat() {
+                    "field(default_factory=list)".to_string()
+                } else {
+                    python_default(&f.sce_type).to_string()
+                };
+                obj.insert("default_value".into(), py_default.into());
                 // RFC §5.B B1-γ flags primitive on Python: ints are
                 // unbounded, so `& ~mask` would yield a negative value.
                 // The carrier's natural width gives a hex saturation
@@ -1735,11 +1730,12 @@ fn resolve_repeat_body_type(
         // exactly what `member_type` already holds for the C11 arm of
         // `resolve_single_import`.
         crate::generator::Language::C11 => imp.member_type.clone(),
-        // Closure lands per-language. Trunk's `render_codec` gate
-        // prevents reaching this arm on Python; the placeholder
-        // mirrors `imp.type_name` so future additions need only
-        // revisit this single call site.
-        _ => imp.type_name.clone(),
+        // Python: `from .<snake> import <Pascal>` brings the imported
+        // class into top-level scope (Python `resolve_single_import`
+        // arm), so the dataclass field can reference the body type by
+        // its bare Pascal name. `imp.type_name` already holds that
+        // exact spelling.
+        crate::generator::Language::Python => imp.type_name.clone(),
     })
 }
 
@@ -1912,9 +1908,37 @@ fn repeat_streaming_decode_stmt(
                  }}"
             )
         }
-        // Closure lands per-language; trunk gate above prevents
-        // reaching this arm on Python.
-        _ => format!("/* unsupported language for repeat decode */"),
+        // Python: dataclass field receives the populated list at
+        // class instantiation time. The `for _ in range(N)` loop
+        // pattern matches Python's idiomatic count loop; until-eof
+        // uses `while cursor.remaining() > 0`. Element decode returns
+        // `Optional[T]`; `None` propagates up via early `return None`
+        // from the surrounding `try:` block in the codec template.
+        // 12-space indent context (class + method + try); inner
+        // statements at 12 + 4 = 16 spaces.
+        (Language::Python, CountRef::LengthField(len_field)) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let py_len = filters::to_snake_case(len_field.clone());
+            format!(
+                "{py_id} = []\n            \
+                 for _ in range({py_len}):\n                \
+                     _elem = {body_type}.decode(cursor)\n                \
+                     if _elem is None:\n                    \
+                         return None\n                \
+                     {py_id}.append(_elem)"
+            )
+        }
+        (Language::Python, CountRef::UntilEof) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "{py_id} = []\n            \
+                 while cursor.remaining() > 0:\n                \
+                     _elem = {body_type}.decode(cursor)\n                \
+                     if _elem is None:\n                    \
+                         return None\n                \
+                     {py_id}.append(_elem)"
+            )
+        }
     }
 }
 
@@ -2001,7 +2025,16 @@ fn repeat_streaming_encode_block(
                  }}"
             )
         }
-        _ => "        // unsupported language for repeat encode\n".to_string(),
+        // Python: iterate `self.<id>` and extend the bytearray with
+        // each element's `encode()` bytes. 8-space indent matches the
+        // surrounding `encode()` method body context.
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "        for _e in self.{py_id}:\n            \
+                     r.extend(_e.encode())"
+            )
+        }
     }
 }
 

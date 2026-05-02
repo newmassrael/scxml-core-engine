@@ -848,43 +848,6 @@ fn forge_codec_until_eof_basic_cpp() {
     assert_standalone_forge("codec_until_eof_basic", "codec_until_eof_basic.h");
 }
 
-/// RFC §5.B B2 gate: emit on Rust + Cpp + Kotlin + Go + C11 (C11
-/// closure landed); the last remaining backend (Python) must error
-/// with `generate/unsupported-feature` until its closure lands. The
-/// final Python closure deletes both the gate and this test.
-#[test]
-fn forge_codec_repeat_python_gate_rejects() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
-
-    let result = sce_build::compile_forge_with_imports(
-        &std::fs::read_to_string(
-            resource_dir().join("codec_repeat_basic.scxml"),
-        )
-        .unwrap(),
-        sce_build::DocumentLabel::symmetric("codec_repeat_basic"),
-        sce_build::generator::Language::Python,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "B2 must gate Python emit on <sce:repeat> until the Python \
-             closure lands; expected generate/unsupported-feature"
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            err.error,
-            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("<sce:repeat>") && msg.contains("Python")
-        ),
-        "trunk gate must name the feature and the unsupported language; \
-         got: {:?}",
-        err.error
-    );
-}
-
 /// RFC §5.B B2: `codec/repeat-count-refs-later-field` build-time check —
 /// a `<sce:repeat sce:count="num_frags">` whose `num_frags` field is
 /// declared *after* the repeat must reject so the streaming decoder
@@ -1741,6 +1704,23 @@ fn forge_python_codec_present_if_basic() {
         "codec_present_if_basic",
         "codec_present_if_basic.py",
     );
+}
+
+// ── RFC §5.B B2 repeat primitive (Python, final closure) ────
+
+#[test]
+fn forge_python_codec_repeat_elem() {
+    assert_standalone_forge_python("codec_repeat_elem", "codec_repeat_elem.py");
+}
+
+#[test]
+fn forge_python_codec_repeat_basic() {
+    assert_standalone_forge_python("codec_repeat_basic", "codec_repeat_basic.py");
+}
+
+#[test]
+fn forge_python_codec_until_eof_basic() {
+    assert_standalone_forge_python("codec_until_eof_basic", "codec_until_eof_basic.py");
 }
 
 // ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
