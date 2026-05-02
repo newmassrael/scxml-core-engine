@@ -981,28 +981,10 @@ fn render_codec(
     // until each per-language closure landed; the final closure
     // (Python) deletes the gate entirely.
 
-    // RFC §5.B B1-δ present-if primitive (trunk + Kotlin/Go/C11
-    // closures): Rust + Cpp + Kotlin + Go + C11 emit gated decode/
-    // encode. Python stays gated until its closure lands so the
-    // template never silently drops the optional wrap.
-    if m.has_present_if_fields()
-        && !matches!(
-            lang,
-            crate::generator::Language::Rust
-                | crate::generator::Language::Cpp
-                | crate::generator::Language::Kotlin
-                | crate::generator::Language::Go
-                | crate::generator::Language::C11
-        )
-    {
-        return Err(ForgeError::Generate(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "codec '{name}': sce:present-if emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B1-δ ships Rust + Cpp + Kotlin + Go + C11; Python lands in the final B1-δ closure)",
-                name = m.name,
-            )),
-        ));
-    }
+    // RFC §5.B B1-δ present-if primitive (closures complete): all six
+    // backends now emit gated decode/encode. The historical gate sat
+    // here until each per-language closure landed; Python (the final
+    // closure) deletes the gate entirely.
 
     // RFC §5.B B1-δ v1 trunk constraint: present-if'd fields must be
     // BitSize::Fixed. Variable-length carriers (Tail / LengthRef / Vle)
@@ -1173,20 +1155,33 @@ fn render_codec(
                             // and stores its address.
                             format!("*{inner}")
                         }
-                        // Other backends are gated above; never reached.
+                        crate::generator::Language::Python => {
+                            // Python's PEP 604 union (`int | None`) is
+                            // 3.10+; `Optional[T]` is the broader-compat
+                            // form and matches every existing typing
+                            // import in the codec template.
+                            format!("Optional[{inner}]")
+                        }
+                        // C11 has no nullable wrapper — the gated field
+                        // stays as plain `T` and presence is encoded by
+                        // the carrier flag bit (set on the struct member).
                         _ => inner.to_string(),
                     };
                     obj.insert(type_key.into(), wrapped.into());
                     // Default for the gated optional in languages that
                     // emit an explicit default in the struct/data class
-                    // constructor. Kotlin's data class primary constructor
-                    // would otherwise call `0.toUByte()` etc. against the
-                    // non-nullable carrier and fail to compile — `null`
-                    // is the only sane default for `T?`. Go's struct
-                    // pointer fields default to `nil` automatically and
-                    // need no explicit initializer.
+                    // constructor. Kotlin/Python data class would
+                    // otherwise call `0.toUByte()` / `0` against the
+                    // nullable carrier and fail to type-check — `null`
+                    // / `None` is the only sane default for the
+                    // wrapped type. Go's struct pointer fields default
+                    // to `nil` automatically and need no explicit
+                    // initializer; C11 keeps the zero-value default.
                     if matches!(lang, crate::generator::Language::Kotlin) {
                         obj.insert("kt_default".into(), "null".into());
+                    }
+                    if matches!(lang, crate::generator::Language::Python) {
+                        obj.insert("default_value".into(), "None".into());
                     }
                 }
             }
@@ -1794,10 +1789,37 @@ fn present_if_streaming_decode_stmt(
                  }}"
             )
         }
-        // Other backends are gated up-front in render_codec via
-        // GenerateError::UnsupportedFeature; this arm is unreachable
-        // for has_present_if_fields codecs.
-        _ => String::new(),
+        // Python: per-field reads live inside one outer `try:` block in
+        // the template (mirrors the existing has_vle_fields shape), so
+        // the per-field statement carries no exception handler — the
+        // first `peek_slice` / `advance` failure unwinds to the
+        // template's `except NeedMoreBytes: return None` arm. Gated
+        // fields bind the local to `None` on the absent branch so the
+        // dataclass instantiation can pass the local through unchanged.
+        // The template inserts the result at 12-space indent (class +
+        // method + try); continuation lines render at 12 spaces and
+        // gated inner blocks at 16.
+        (Language::Python, None) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "raw = cursor.peek_slice({n})\n            \
+                 {py_id} = {body}\n            \
+                 cursor.advance({n})"
+            )
+        }
+        (Language::Python, Some(p)) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "if {test}:\n                \
+                     raw = cursor.peek_slice({n})\n                \
+                     _v = {body}\n                \
+                     cursor.advance({n})\n                \
+                     {py_id} = _v\n            \
+                 else:\n                \
+                     {py_id} = None"
+            )
+        }
     }
 }
 
@@ -1889,7 +1911,20 @@ fn present_if_streaming_encode_block(
                 width = hex_digits
             )
         }
-        _ => String::new(),
+        (Language::Python, false) => streaming_fixed_field_encode_python(field, default_endian, n),
+        (Language::Python, true) => {
+            // Python: `is not None` discriminates the optional. Inner
+            // body is one indent deeper (12 cols) so it sits inside
+            // the gate; reads stay on `self.<id>` (same as the non-
+            // gated form — Python's optional only changes the
+            // surrounding test, not the byte-extraction expression).
+            let py_id = filters::to_snake_case(field.id.clone());
+            let inner = streaming_fixed_field_encode_python_inner(field, default_endian, n);
+            format!(
+                "        if self.{py_id} is not None:\n\
+                 {inner}"
+            )
+        }
     }
 }
 
@@ -1907,6 +1942,31 @@ fn streaming_fixed_field_body(
 ) -> String {
     use crate::generator::Language;
     let endian = field.effective_endian(default_endian);
+
+    // Python: `bytes`/`bytearray` indexed positionally returns `int`
+    // (Python ints are unbounded so no width casts are needed). n=1
+    // is just `raw[0]`; multi-byte folds through `(raw[i] << shift)`.
+    // Mirrors the existing `decode_multibyte_unified` Python arm on
+    // a 0-based slice.
+    if matches!(lang, Language::Python) {
+        if n == 1 {
+            return "raw[0]".into();
+        }
+        let shifts: Vec<String> = (0..n)
+            .map(|i| {
+                let shift = match endian {
+                    Endian::Little => i * 8,
+                    Endian::Big | Endian::Native => (n - 1 - i) * 8,
+                };
+                if shift == 0 {
+                    format!("raw[{i}]")
+                } else {
+                    format!("(raw[{i}] << {shift})")
+                }
+            })
+            .collect();
+        return shifts.join(" | ");
+    }
 
     // C11: `const uint8_t *raw` indexed positionally. n=1 returns
     // `raw[0]` (uint8_t directly assignable to the carrier struct
@@ -2300,6 +2360,80 @@ fn streaming_fixed_field_encode_c11_inner(
     lines.trim_end().to_string()
 }
 
+/// Python encode counterpart — non-gated. Mirrors `encode_single_field_unified`
+/// for Python: every byte append goes through `self.<id> & 0xFF` /
+/// `(self.<id> >> shift) & 0xFF` (Python ints are unbounded so the
+/// `& 0xFF` is the canonical narrow). Inside the codec's `encode()`
+/// method body (8-space indent).
+fn streaming_fixed_field_encode_python(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let py_id = filters::to_snake_case(field.id.clone());
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    if n == 1 {
+        lines.push_str(&format!(
+            "        r.append(self.{py_id} & 0xFF)\n"
+        ));
+    } else {
+        for i in 0..n {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            if shift == 0 {
+                lines.push_str(&format!(
+                    "        r.append(self.{py_id} & 0xFF)\n"
+                ));
+            } else {
+                lines.push_str(&format!(
+                    "        r.append((self.{py_id} >> {shift}) & 0xFF)\n"
+                ));
+            }
+        }
+    }
+    lines.trim_end().to_string()
+}
+
+/// Python encode counterpart — gated, indented one level deeper so
+/// the byte appends sit inside the `if self.<id> is not None:` gate.
+/// Python's optional changes only the surrounding test, not the byte
+/// extraction expression — `self.<id>` is still the correct read,
+/// because the `is not None` check has narrowed the type to `int`.
+fn streaming_fixed_field_encode_python_inner(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let py_id = filters::to_snake_case(field.id.clone());
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    if n == 1 {
+        lines.push_str(&format!(
+            "            r.append(self.{py_id} & 0xFF)\n"
+        ));
+    } else {
+        for i in 0..n {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            if shift == 0 {
+                lines.push_str(&format!(
+                    "            r.append(self.{py_id} & 0xFF)\n"
+                ));
+            } else {
+                lines.push_str(&format!(
+                    "            r.append((self.{py_id} >> {shift}) & 0xFF)\n"
+                ));
+            }
+        }
+    }
+    lines.trim_end().to_string()
+}
+
 /// Go encode counterpart — gated, reads from `_v` local. The caller
 /// wraps this in `if s.<Id> != nil { _v := *s.<Id>; ... }` so `_v` is
 /// the unwrapped carrier value at one extra tab level.
@@ -2441,6 +2575,19 @@ fn present_if_test_literal(
                 width = hex_digits
             )
         }
+        // Python: bitwise `&` accepts unbounded ints directly. Carrier
+        // id is the just-decoded local (snake_case). No suffix is
+        // needed because the literal is an `int`. Rendered without
+        // surrounding parens because Python's `if` syntax doesn't
+        // require them and the operator precedence of `&` is tighter
+        // than `!=` so disambiguation isn't necessary either.
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "({py_id} & 0x{mask:0width$X}) != 0",
+                width = hex_digits
+            )
+        }
         Language::Kotlin => {
             // Kotlin's UByte/UShort/UInt/ULong don't expose direct
             // bitwise infix ops with a literal Int/Long mask, so the
@@ -2458,9 +2605,6 @@ fn present_if_test_literal(
                 width = hex_digits
             )
         }
-        // Other backends are gated up-front in `render_codec`; this
-        // arm is unreachable for `has_present_if_fields` codecs.
-        _ => format!("({id} & 0x{mask:0width$X}) != 0", width = hex_digits),
     }
 }
 

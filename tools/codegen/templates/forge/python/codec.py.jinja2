@@ -116,6 +116,24 @@ class {{ struct_name }}:
             {{ field.id }}={{ field.id }},
 {% endfor %}
         )
+{% elif has_present_if_fields %}
+        # RFC §5.B B1-δ present-if primitive: streaming decode advances
+        # the cursor per field. Per-field statements live inside one
+        # outer `try:` block so the first peek/advance failure unwinds
+        # to a single `except NeedMoreBytes: return None`. Gated fields
+        # bind the local to `None` on the absent branch so the dataclass
+        # passes the local through unchanged.
+        try:
+{% for field in fields %}
+            {{ field.present_if_decode_stmt }}
+{% endfor %}
+        except NeedMoreBytes:
+            return None
+        return cls(
+{% for field in fields %}
+            {{ field.id }}={{ field.id }},
+{% endfor %}
+        )
 {% elif has_variable_fields %}
         try:
             _frame_len = cursor.remaining()
@@ -198,6 +216,16 @@ class {{ struct_name }}:
         r = bytearray()
 {% for field in fields %}
 {{ field.vle_encode_block }}
+{% endfor %}
+        return bytes(r)
+{% elif has_present_if_fields %}
+        # RFC §5.B B1-δ encode: per-field byte append. Gated fields skip
+        # the append when the optional is `None` (author keeps the
+        # carrier's flag bit and the optional's truth value in sync —
+        # same trust contract as the variant primitive).
+        r = bytearray()
+{% for field in fields %}
+{{ field.present_if_encode_block }}
 {% endfor %}
         return bytes(r)
 {% elif has_variable_fields %}
