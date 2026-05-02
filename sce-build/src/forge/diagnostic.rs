@@ -500,6 +500,17 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/present-if-refs-later-field")]
     CodecPresentIfRefsLaterField,
 
+    // ── §5.B repeat primitive (watching-zenoh RFC §5.B, B2). Build-
+    //    time check on `<sce:repeat sce:count="X"/>`: the referenced
+    //    count field `X` must be declared earlier in the same codec
+    //    so the streaming decoder has already consumed it by the time
+    //    the repeat loop reads N. A forward reference (count field
+    //    declared after the repeat) is rejected here; non-integer
+    //    count target and shape mismatches reuse the generic
+    //    `validation/invalid-attribute` code. Stage = Validation. ──
+    #[serde(rename = "codec/repeat-count-refs-later-field")]
+    CodecRepeatCountRefsLaterField,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -811,6 +822,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantArmUnreachable,
         // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
         CodecPresentIfRefsLaterField,
+        // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
+        CodecRepeatCountRefsLaterField,
         // Io
         IoFilesystem,
         // Cli
@@ -1014,9 +1027,10 @@ impl DiagnosticCode {
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch => Some("watching-zenoh RFC §5.F"),
 
-            // ── Codec §5.B variant + present-if primitives (B1-β/δ) ─
+            // ── Codec §5.B variant + present-if + repeat primitives (B1-β/δ + B2) ─
             CodecVariantArmUnreachable
-            | CodecPresentIfRefsLaterField => Some("watching-zenoh RFC §5.B"),
+            | CodecPresentIfRefsLaterField
+            | CodecRepeatCountRefsLaterField => Some("watching-zenoh RFC §5.B"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1277,6 +1291,7 @@ impl DiagnosticCode {
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
             CodecVariantArmUnreachable => "codec/variant-arm-unreachable",
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
+            CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2103,6 +2118,23 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // stays `None`. The triple (codec, field, refers_to)
             // uniquely keys the violation across multiple present-if
             // declarations on the same codec.
+            expected: None,
+            actual: Some(field.clone()),
+            fix: None,
+            key_fragments: vec![codec.clone(), field.clone(), refers_to.clone()],
+        },
+        ValidationError::CodecRepeatCountRefsLaterField {
+            codec,
+            field,
+            refers_to,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecRepeatCountRefsLaterField,
+            stage: Stage::Validation,
+            // Repair is positional (reorder the count field, or fix
+            // the attribute typo) — no closed candidate set, so `fix`
+            // stays `None`. The (codec, field, refers_to) triple keys
+            // the violation across multiple <sce:repeat> elements on
+            // the same codec.
             expected: None,
             actual: Some(field.clone()),
             fix: None,
@@ -3397,6 +3429,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f6f6bd818f8e28d9","code":"codec/present-if-refs-later-field","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': field 'key' has sce:present-if=\"trailer_flags.…\" but 'trailer_flags' is not declared earlier in this codec — present-if predicates must reference a flags-bearing carrier that the streaming decoder has already consumed; reorder the fields so the carrier comes first, or correct the predicate","actual":"key"}"#,
             ),
+            // ── §5.B repeat primitive (watching-zenoh RFC §5.B, B2) ─
+            (
+                "forge/codec-repeat-count-refs-later-field",
+                ValidationError::CodecRepeatCountRefsLaterField {
+                    codec: "fragment_burst".into(),
+                    field: "frags".into(),
+                    refers_to: "num_frags".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f1e97717ebdba39a","code":"codec/repeat-count-refs-later-field","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'fragment_burst': repeat field 'frags' has sce:count=\"num_frags\" but 'num_frags' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute","actual":"frags"}"#,
+            ),
         ]
     }
 
@@ -4643,6 +4686,7 @@ mod tests {
             | AlgorithmConstYieldTypeMismatch
             | CodecVariantArmUnreachable
             | CodecPresentIfRefsLaterField
+            | CodecRepeatCountRefsLaterField
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -4982,6 +5026,7 @@ mod tests {
                 | AlgorithmConstYieldTypeMismatch
                 | CodecVariantArmUnreachable
                 | CodecPresentIfRefsLaterField
+                | CodecRepeatCountRefsLaterField
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5065,12 +5110,12 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            166,
+            167,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 166 distinct variants to match the DiagnosticCode \
-             enum (watching-zenoh RFC §5.B B1-δ added the present-if \
+             expected 167 distinct variants to match the DiagnosticCode \
+             enum (watching-zenoh RFC §5.B B2 added the repeat \
              primitive's build-time forward-reference check: \
-             CodecPresentIfRefsLaterField; 165 → 166).",
+             CodecRepeatCountRefsLaterField; 166 → 167).",
         );
     }
 

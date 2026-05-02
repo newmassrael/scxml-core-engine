@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec repeat primitive (RFC §5.B B2,
+     length-field shape). One-byte uint8 `num_frags` count prefix is
+     decoded first; the trailing `frags` field is a length-prefixed
+     list of `codec_repeat_elem` elements, each carrying a uint16
+     sequence id. The streaming decode iterates `num_frags` times,
+     calling the imported codec's decode() on each element. v1 trunk
+     ships Rust + Cpp byte-stable goldens; Kotlin / Go / C11 / Python
+     gate via `generate/unsupported-feature` until per-language
+     closures land. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_repeat_basic">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:field id="num_frags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:repeat id="frags" type="codec_repeat_elem" sce:byte="1"
+                count="num_frags" max-count="32"/>
+  </datamodel>
+</scxml>

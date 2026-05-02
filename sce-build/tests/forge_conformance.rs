@@ -820,6 +820,122 @@ fn forge_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B2 repeat primitive (trunk, Cpp) ─────────────────
+// `codec_repeat_basic` decodes a one-byte uint8 count prefix then
+// iterates the imported `codec_repeat_elem` codec `num_frags` times.
+// `codec_until_eof_basic` skips the count prefix and greedily
+// consumes elements until cursor exhaustion. Both share the same
+// element body (`codec_repeat_elem`, uint16 BE seq id). v1 trunk
+// ships Rust + Cpp goldens; Kotlin / Go / C11 / Python land in
+// per-language closures. The element body fixture also doubles as
+// a standalone byte-stable reference so syn / cpp parser gates
+// compile each fixture in isolation; `super::...` (Rust) /
+// `::SCE::Generated::...` (Cpp) qualified paths resolve at link
+// time when all three goldens are in scope.
+
+#[test]
+fn forge_codec_repeat_elem_cpp() {
+    assert_standalone_forge("codec_repeat_elem", "codec_repeat_elem.h");
+}
+
+#[test]
+fn forge_codec_repeat_basic_cpp() {
+    assert_standalone_forge("codec_repeat_basic", "codec_repeat_basic.h");
+}
+
+#[test]
+fn forge_codec_until_eof_basic_cpp() {
+    assert_standalone_forge("codec_until_eof_basic", "codec_until_eof_basic.h");
+}
+
+/// RFC §5.B B2 trunk gate: emit on Rust + Cpp; the four remaining
+/// backends must error with `generate/unsupported-feature` until
+/// each per-language closure adds Vec<T>/List<T>/fixed-array/[]T
+/// support to the codec template plus the streaming repeat
+/// decode/encode loop. This proves the gate is reachable on at
+/// least one closure language so the TODO doesn't silently rot.
+#[test]
+fn forge_codec_repeat_kotlin_gate_rejects() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let result = sce_build::compile_forge_with_imports(
+        &std::fs::read_to_string(
+            resource_dir().join("codec_repeat_basic.scxml"),
+        )
+        .unwrap(),
+        sce_build::DocumentLabel::symmetric("codec_repeat_basic"),
+        sce_build::generator::Language::Kotlin,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "B2 trunk must gate Kotlin emit on <sce:repeat> until the \
+             closure lands; expected generate/unsupported-feature"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
+                if msg.contains("<sce:repeat>") && msg.contains("Kotlin")
+        ),
+        "trunk gate must name the feature and the unsupported language; \
+         got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B2: `codec/repeat-count-refs-later-field` build-time check —
+/// a `<sce:repeat sce:count="num_frags">` whose `num_frags` field is
+/// declared *after* the repeat must reject so the streaming decoder
+/// never reaches the loop without a value to count against. The
+/// rejection names the codec, the offending repeat field, and the
+/// unresolved count target.
+#[test]
+fn forge_codec_repeat_forward_count_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="forward_count">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:repeat id="frags" type="codec_repeat_elem" sce:byte="0"
+                count="num_frags" max-count="32"/>
+    <sce:field id="num_frags" sce:type="uint8" sce:byte="64" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("forward_count"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "forward-reference of <sce:repeat sce:count=\"...\"> must reject \
+             with codec/repeat-count-refs-later-field"
+        ),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Validation(ValidationError::CodecRepeatCountRefsLaterField {
+                ref field,
+                ref refers_to,
+                ..
+            }) if field == "frags" && refers_to == "num_frags"
+        ),
+        "must surface as ValidationError::CodecRepeatCountRefsLaterField with the offending repeat and count target; got: {inner:?}"
+    );
+}
+
 // ── RFC §5.B variant primitive (B1-β trunk) ──────────────────
 // `codec_variant_dispatch` imports two arm-body codecs and exposes
 // the discriminated-union shape across Rust + Cpp. Sub-codecs ship
@@ -1196,6 +1312,32 @@ fn forge_rust_codec_present_if_basic() {
     assert_standalone_forge_rust(
         "codec_present_if_basic",
         "codec_present_if_basic.rs",
+    );
+}
+
+// ── RFC §5.B B2 repeat primitive (Rust, trunk) ──────────────
+
+#[test]
+fn forge_rust_codec_repeat_elem() {
+    assert_standalone_forge_rust(
+        "codec_repeat_elem",
+        "codec_repeat_elem.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_repeat_basic() {
+    assert_standalone_forge_rust(
+        "codec_repeat_basic",
+        "codec_repeat_basic.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_until_eof_basic() {
+    assert_standalone_forge_rust(
+        "codec_until_eof_basic",
+        "codec_until_eof_basic.rs",
     );
 }
 

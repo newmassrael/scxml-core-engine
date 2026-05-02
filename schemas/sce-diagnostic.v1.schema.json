@@ -95,6 +95,7 @@
         "algorithm/const-yield-type-mismatch",
         "codec/variant-arm-unreachable",
         "codec/present-if-refs-later-field",
+        "codec/repeat-count-refs-later-field",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

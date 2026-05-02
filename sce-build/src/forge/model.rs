@@ -704,6 +704,31 @@ impl Default for Endian {
     }
 }
 
+/// RFC §5.B B2 repeat primitive — element count source for a
+/// `BitSize::Repeat` field.
+///
+/// Two shapes:
+///   - [`CountRef::LengthField`] — count comes from a sibling integer
+///     field declared earlier in the same codec (the count value is
+///     the decoded integer). Mirrors the `<sce:repeat sce:count="<id>"/>`
+///     authoring form.
+///   - [`CountRef::UntilEof`] — count is implicit; the decoder consumes
+///     elements until the cursor's remaining bytes are exhausted. The
+///     last element MUST decode cleanly off a frame boundary; a partial
+///     final element returns `NeedMoreBytes`. Mirrors `<sce:repeat
+///     sce:until-eof="true"/>`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type")]
+pub enum CountRef {
+    /// Sibling integer field id whose decoded value names the count.
+    /// Validated at parse time against forward references and against
+    /// non-integer-typed targets.
+    LengthField(String),
+    /// Greedy consume-remaining; element count is whatever fits
+    /// before cursor exhaustion.
+    UntilEof,
+}
+
 /// Bit size specification for codec fields.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
@@ -719,6 +744,12 @@ pub enum BitSize {
     /// wire bytes consumed is `1..=ceil(width_bits / 7)`. Canonical
     /// Zenoh ZInt is `Vle { width_bits: 64 }`.
     Vle { width_bits: u32 },
+    /// RFC §5.B B2 repeat primitive — list of imported-codec elements.
+    /// The decoded host type is `Vec<T>` / `std::vector<T>` / ... where
+    /// T is resolved via the field's [`CodecField::repeat_body_alias`].
+    /// `count_ref` selects the loop termination strategy
+    /// (length-field vs until-eof).
+    Repeat { count_ref: CountRef },
 }
 
 /// A single named bit on a `<sce:flags>` carrier field — RFC §5.B B1-γ.
@@ -785,6 +816,20 @@ pub struct CodecField {
     /// predicate is false.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub present_if: Option<PresentIfPredicate>,
+    /// RFC §5.B B2 repeat primitive — imported codec alias whose
+    /// decode/encode handles each element. `Some(alias)` only when
+    /// `bit_size = BitSize::Repeat`. Resolved against `<sce:import>`
+    /// aliases at codegen time (mirrors variant arm body_alias
+    /// resolution).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeat_body_alias: Option<String>,
+    /// RFC §5.B B2 maximum element count for `BitSize::Repeat` fields
+    /// — used by encode-buffer sizing to bound `min_frame + count *
+    /// element_max`. Defaults to [`crate::forge::limits::REPEAT_DEFAULT_MAX_COUNT`]
+    /// when absent (mirrors `max_size`'s fallback for Tail/LengthRef
+    /// bytes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_count: Option<u32>,
 }
 
 impl CodecField {
@@ -795,13 +840,24 @@ impl CodecField {
 
     /// Whether this is a variable-length field.
     pub fn is_variable_length(&self) -> bool {
-        matches!(self.bit_size, BitSize::Tail | BitSize::LengthRef | BitSize::Vle { .. })
+        matches!(
+            self.bit_size,
+            BitSize::Tail | BitSize::LengthRef | BitSize::Vle { .. } | BitSize::Repeat { .. }
+        )
     }
 
     /// Whether this field uses VLE encoding (consumes a streaming
     /// 1..=ceil(N/7) bytes from the cursor instead of a fixed window).
     pub fn is_vle(&self) -> bool {
         matches!(self.bit_size, BitSize::Vle { .. })
+    }
+
+    /// Whether this field is a repeat-of-imported-codec list (RFC §5.B
+    /// B2). The host language emits `Vec<T>` / `std::vector<T>` / etc.
+    /// and the streaming codec iterates element decode/encode according
+    /// to [`CountRef`].
+    pub fn is_repeat(&self) -> bool {
+        matches!(self.bit_size, BitSize::Repeat { .. })
     }
 
     /// Whether this field carries a `<sce:flag>` set (RFC §5.B B1-γ).
@@ -896,6 +952,11 @@ impl CodecModel {
     ///     [`crate::forge::limits::BYTES_DEFAULT_MAX`].
     ///   - `vle { width_bits }`: `ceil(width_bits / 7)` (3 / 5 / 10 for
     ///     u16 / u32 / u64) — base-128 worst case from RFC §5.B App. B.
+    ///   - `repeat { count_ref }` (RFC §5.B B2): contributes 0 here —
+    ///     the per-element body size lives on the imported codec and
+    ///     is only available after import enrichment, so the generator
+    ///     adds `max_count * imported_codec.max_frame_bytes()` itself
+    ///     (mirrors the variant arm body sizing at codegen time).
     pub fn max_frame_bytes(&self) -> u32 {
         let var_max: u32 = self
             .fields
@@ -903,6 +964,7 @@ impl CodecModel {
             .filter(|f| f.is_variable_length())
             .map(|f| match &f.bit_size {
                 BitSize::Vle { width_bits } => width_bits.div_ceil(7),
+                BitSize::Repeat { .. } => 0,
                 _ => crate::forge::limits::resolve_bytes_max(f.max_size),
             })
             .sum();
@@ -914,6 +976,14 @@ impl CodecModel {
     /// fixed-only fixtures vs builder-pattern for variable-length).
     pub fn has_variable_fields(&self) -> bool {
         self.fields.iter().any(|f| f.is_variable_length())
+    }
+
+    /// Whether the codec has any repeat field (RFC §5.B B2). Forces
+    /// the streaming decode/encode path because a repeat field's wire
+    /// length is runtime-determined (count_ref or until-eof) and the
+    /// per-element body invokes the imported codec's encode/decode.
+    pub fn has_repeat_fields(&self) -> bool {
+        self.fields.iter().any(|f| f.is_repeat())
     }
 
     /// Whether the codec has any present-if-gated field (RFC §5.B

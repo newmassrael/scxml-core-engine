@@ -190,6 +190,15 @@
          - non-flags carrier or unknown flag → validation/invalid-attribute -->
   <xs:attribute name="present-if" type="xs:string"/>
 
+  <!-- RFC §5.B B2 repeat primitive: <sce:repeat>-internal attributes
+       (count / until-eof / max-count / type / id) live unqualified
+       inside the <sce:repeat> element complexType — same convention
+       as <sce:arm value/type> and <sce:flag name/bit> where attrs
+       declared inside SCE-namespaced child elements stay unqualified.
+       Globally-shared `sce:byte` (also on <sce:field> / <sce:flags>)
+       remains qualified via the existing global declaration. -->
+
+
   <!-- Section 4.5: Procedure <send> hints -->
   <xs:attribute name="service" type="xs:string"/>
   <xs:attribute name="subfunc" type="xs:string"/>
@@ -372,6 +381,49 @@
       <xs:attribute ref="sce:bit-size" use="required"/>
       <xs:attribute ref="sce:bit-offset"/>
       <xs:attribute ref="sce:endian"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RFC §5.B B2 repeat primitive — `<sce:repeat>` element
+
+       List-of-imported-codec field. Sits under <datamodel> alongside
+       <sce:field> / <sce:flags> declarations; carries an imported
+       codec alias (`sce:type=`) that names each element's
+       encode/decode. The streaming codec iterates either a sibling
+       integer field's decoded value (`sce:count="<id>"`) or
+       cursor-exhaustion (`sce:until-eof="true"`); exactly one of the
+       two MUST be present.
+
+       `sce:type` here is locally redeclared as `xs:NCName` (the
+       imported codec alias) — distinct from the document-level
+       `sce:type` global which restricts to primitive `sceType` enum
+       values. XSD attribute symbol spaces are scoped per-element so
+       this redeclaration does not collide.
+
+       Forward references and shape mismatches are sce-build
+       diagnostics:
+         - forward / unknown count target → codec/repeat-count-refs-later-field
+         - non-integer count target / both or neither count form →
+           validation/invalid-attribute
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <xs:element name="repeat">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <!-- Imported codec alias (matches an `<sce:import as=...>` in
+           the same document); resolved at codegen time. Unqualified
+           on <sce:repeat> (matches the <sce:arm type=...> shape;
+           distinct from the global qualified `sce:type` which
+           restricts to primitive sceType enum values). -->
+      <xs:attribute name="type" type="xs:NCName" use="required"/>
+      <xs:attribute ref="sce:byte" use="required"/>
+      <!-- Mutually exclusive: exactly one of count / until-eof must
+           appear. sce-build enforces; XSD allows either to keep the
+           grammar declarative. -->
+      <xs:attribute name="count" type="xs:string"/>
+      <xs:attribute name="until-eof" type="xs:boolean"/>
+      <xs:attribute name="max-count" type="xs:nonNegativeInteger"/>
     </xs:complexType>
   </xs:element>
 

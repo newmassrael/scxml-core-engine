@@ -17,11 +17,31 @@
 /// `sce-forge-runtime/c/include/sce/forge/limits.h`.
 pub const BYTES_DEFAULT_MAX: u32 = 256;
 
+/// Default element-count cap for `<sce:repeat>` codec fields (RFC §5.B
+/// B2) when the SCXML author has not declared a per-field
+/// `sce:max-count` annotation. Used by the encode-buffer sizing path
+/// (`max_count * imported_codec.max_frame_bytes()`); too-low caps
+/// silently truncate at encode time, so the default is sized
+/// generously enough to cover small Zenoh fragmentation lists without
+/// runtime allocation pressure on AP targets.
+///
+/// MCU targets MUST author an explicit `sce:max-count` to lock the
+/// fixed buffer at the smallest sufficient size — defaulting here is
+/// an AP-grade convenience, not an MCU contract.
+pub const REPEAT_DEFAULT_MAX_COUNT: u32 = 16;
+
 /// Resolve a per-slot cap: if the SCXML author declared
 /// `sce:max-size="N"`, use `N`; otherwise fall back to
 /// [`BYTES_DEFAULT_MAX`].
 pub fn resolve_bytes_max(annotation: Option<u32>) -> u32 {
     annotation.unwrap_or(BYTES_DEFAULT_MAX)
+}
+
+/// Resolve a per-`<sce:repeat>` element-count cap: if the SCXML author
+/// declared `sce:max-count="N"`, use `N`; otherwise fall back to
+/// [`REPEAT_DEFAULT_MAX_COUNT`].
+pub fn resolve_max_count(annotation: Option<u32>) -> u32 {
+    annotation.unwrap_or(REPEAT_DEFAULT_MAX_COUNT)
 }
 
 #[cfg(test)]

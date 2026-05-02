@@ -139,6 +139,26 @@ impl {{ struct_name }} {
             {{ field.id }},
 {% endfor %}
         })
+{% elif has_repeat_fields %}
+        // RFC §5.B B2 repeat primitive (trunk): streaming decode
+        // mixes plain fixed-width reads (per-field via the present-if
+        // helper's non-gated arm) with repeat loops that iterate the
+        // imported codec's `decode()` either `count_ref` times
+        // (length-field) or until cursor exhaustion (until-eof).
+        // Element bodies recurse into their own codec — each may
+        // itself surface NeedMoreBytes, unwinding the partial frame.
+{% for field in fields %}
+{% if field.is_repeat %}
+        {{ field.repeat_decode_stmt }}
+{% else %}
+        {{ field.present_if_decode_stmt }}
+{% endif %}
+{% endfor %}
+        Ok(Self {
+{% for field in fields %}
+            {{ field.id }},
+{% endfor %}
+        })
 {% elif has_variable_fields %}
         // Variable-length codec: tail / length-ref fields consume bytes
         // beyond the fixed prefix. B1-prep treats the entire cursor
@@ -236,6 +256,21 @@ impl {{ struct_name }} {
         let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
 {{ field.present_if_encode_block }}
+{% endfor %}
+        r
+{% elif has_repeat_fields %}
+        // RFC §5.B B2 repeat encode: fixed prefix fields append byte-
+        // by-byte; repeat fields iterate the host-language list and
+        // splice each element's encode() into the parent buffer.
+        // Author keeps the count field's value consistent with the
+        // list length (same trust contract as variant tag/body).
+        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
         r
 {% elif has_variable_fields %}

@@ -1008,13 +1008,36 @@ fn render_codec(
         }
     }
 
+    // RFC §5.B B2 repeat primitive (trunk): emit on Rust + Cpp only.
+    // The four remaining backends each get a per-language closure
+    // commit that adds Vec<T> / List<T> / fixed-array / [] T support to
+    // the codec template plus the streaming decode/encode loop. Until
+    // those land, force authors onto Rust / Cpp so the gate fails
+    // loudly rather than silently dropping the field.
+    if m.has_repeat_fields()
+        && !matches!(
+            lang,
+            crate::generator::Language::Rust | crate::generator::Language::Cpp
+        )
+    {
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "codec '{name}': <sce:repeat> (RFC §5.B B2 trunk) emits on Rust + Cpp only; \
+                 the {lang:?} closure lands when the per-language template adds the streaming \
+                 repeat decode/encode loop and the host-language list type",
+                name = m.name,
+            )),
+        ));
+    }
+
     let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
     let has_present_if_fields = m.has_present_if_fields();
+    let has_repeat_fields = m.has_repeat_fields();
 
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
-        .map(|f| {
+        .map(|f| -> Result<serde_json::Value, ForgeError> {
             let length_byte_off = resolve_length_field_byte_off(&m.fields, f);
             let mut obj = serde_json::Map::new();
             obj.insert("id".into(), l.codec_field_id(&f.id).into());
@@ -1025,6 +1048,7 @@ fn render_codec(
             );
             obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
             obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
+            obj.insert("is_repeat".into(), serde_json::Value::Bool(f.is_repeat()));
             obj.insert("byte_off".into(), f.byte_offset.into());
             if f.is_variable_length() {
                 if let BitSize::Vle { width_bits } = &f.bit_size {
@@ -1039,14 +1063,49 @@ fn render_codec(
                         "vle_encode_block".into(),
                         vle_encode_block(&l.codec_field_id(&f.id), *width_bits, lang).into(),
                     );
+                } else if matches!(&f.bit_size, BitSize::Repeat { .. }) {
+                    // RFC §5.B B2 repeat primitive — populate the per-
+                    // field decode/encode pre-rendered statements plus
+                    // the host-language list type override (Vec<T> /
+                    // std::vector<T>) wrapping the imported codec body.
+                    obj.insert("bit_size_kind".into(), "repeat".into());
+                    let alias = f
+                        .repeat_body_alias
+                        .as_deref()
+                        .expect("parser sets repeat_body_alias for every BitSize::Repeat");
+                    let body_type = resolve_repeat_body_type(
+                        &m.name, alias, imports, lang,
+                    )?;
+                    let max_count = crate::forge::limits::resolve_max_count(f.max_count);
+                    obj.insert("max_count".into(), max_count.into());
+                    obj.insert("repeat_body_type".into(), body_type.clone().into());
+                    let wrapped = match lang {
+                        crate::generator::Language::Rust => format!("Vec<{body_type}>"),
+                        crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
+                        // Closures land when each backend's host-list
+                        // shape is wired up; trunk gate above prevents
+                        // reaching this arm on those languages.
+                        _ => body_type.clone(),
+                    };
+                    obj.insert(type_key.into(), wrapped.into());
+                    obj.insert(
+                        "repeat_decode_stmt".into(),
+                        repeat_streaming_decode_stmt(f, &body_type, lang).into(),
+                    );
+                    obj.insert(
+                        "repeat_encode_block".into(),
+                        repeat_streaming_encode_block(f, lang).into(),
+                    );
                 } else {
                     let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
                     obj.insert("max_size".into(), resolved.into());
                     let kind = match &f.bit_size {
                         BitSize::Tail => "tail",
                         BitSize::LengthRef => "length-ref",
-                        BitSize::Fixed { .. } | BitSize::Vle { .. } =>
-                            unreachable!("variable + non-vle path covers Tail/LengthRef only"),
+                        BitSize::Fixed { .. }
+                        | BitSize::Vle { .. }
+                        | BitSize::Repeat { .. } =>
+                            unreachable!("variable + non-vle + non-repeat path covers Tail/LengthRef only"),
                     };
                     obj.insert("bit_size_kind".into(), kind.into());
                     if matches!(f.bit_size, BitSize::LengthRef) {
@@ -1110,11 +1169,20 @@ fn render_codec(
             // uniform. Type override wraps gated fields in
             // `Option<T>` / `std::optional<T>` so the struct field
             // can carry the absent state.
+            //
+            // RFC §5.B B2 repeat primitive shares the same per-field
+            // streaming infrastructure: when `has_repeat_fields` the
+            // template iterates per-field and dispatches via
+            // `is_repeat` to the repeat-specific stmt vs. the
+            // present-if-style fixed-field stmt. Reusing the helper
+            // for non-repeat fields means a Repeat-only codec still
+            // gets correct streaming reads on its plain prefix
+            // fields without a second helper duplicating the work.
             obj.insert(
                 "has_present_if".into(),
                 f.present_if.is_some().into(),
             );
-            if has_present_if_fields {
+            if has_present_if_fields || has_repeat_fields {
                 obj.insert(
                     "present_if_decode_stmt".into(),
                     present_if_streaming_decode_stmt(
@@ -1185,9 +1253,9 @@ fn render_codec(
                     }
                 }
             }
-            serde_json::Value::Object(obj)
+            Ok(serde_json::Value::Object(obj))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian, lang);
 
@@ -1230,7 +1298,28 @@ fn render_codec(
             .unwrap_or(0);
         m.max_frame_bytes() + body_max
     } else {
-        m.max_frame_bytes()
+        // RFC §5.B B2 repeat primitive: each repeat field contributes
+        // `max_count * imported_codec.max_frame_bytes()` to the parent's
+        // encode-buffer worst case. `model::CodecModel::max_frame_bytes`
+        // accounts for the field's *direct* bytes but skips the body
+        // sizing because imports are only known after enrichment —
+        // closing the gap here keeps `Vec<u8>::with_capacity` / `vector::
+        // reserve` from growing on the first element.
+        let repeat_body_max: u32 = m
+            .fields
+            .iter()
+            .filter(|f| f.is_repeat())
+            .filter_map(|f| {
+                let alias = f.repeat_body_alias.as_deref()?;
+                let body_max = imports
+                    .iter()
+                    .find(|i| i.alias == alias)
+                    .and_then(|i| i.codec_max_bytes)?;
+                let count = crate::forge::limits::resolve_max_count(f.max_count);
+                Some(body_max.saturating_mul(count))
+            })
+            .sum();
+        m.max_frame_bytes() + repeat_body_max
     };
     ctx.insert("max_bytes".into(), max_bytes.into());
     ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
@@ -1239,6 +1328,7 @@ fn render_codec(
         "has_present_if_fields".into(),
         has_present_if_fields.into(),
     );
+    ctx.insert("has_repeat_fields".into(), has_repeat_fields.into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
 
     // RFC §5.B variant primitive (B1-β trunk): build per-arm rendering
@@ -1540,6 +1630,156 @@ fn resolve_variant_arm_encoder(
             format!("{snake}_encode")
         }
         _ => String::new(),
+    }
+}
+
+/// RFC §5.B B2 repeat primitive — map a `<sce:repeat sce:type="...">`
+/// body alias to the per-language qualified element type. Mirrors
+/// [`resolve_variant_arm_body_type`] (B1-β): the alias must match an
+/// `<sce:import as="...">` entry whose imported kind is `codec`. On
+/// miss → `GenerateError::UnsupportedFeature` naming the alias and the
+/// available imports.
+fn resolve_repeat_body_type(
+    codec_name: &str,
+    body_alias: &str,
+    imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, ForgeError> {
+    let imp = imports.iter().find(|i| i.alias == body_alias).ok_or_else(|| {
+        let available: Vec<&str> = imports.iter().map(|i| i.alias.as_str()).collect();
+        ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(
+            format!(
+                "codec '{codec_name}': <sce:repeat> body references unknown import alias \
+                 '{body_alias}' (available aliases: [{}]) — add `<sce:import \
+                 src=\"{body_alias}.scxml\" kind=\"codec\" as=\"{body_alias}\"/>`",
+                available.join(", ")
+            ),
+        ))
+    })?;
+    if imp.kind != "codec" {
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "codec '{codec_name}': <sce:repeat> body '{body_alias}' resolves to import kind \
+                 '{}', but repeat bodies require kind=\"codec\" (RFC §5.B B2)",
+                imp.kind
+            )),
+        ));
+    }
+    Ok(match lang {
+        crate::generator::Language::Rust => imp.type_name.clone(),
+        crate::generator::Language::Cpp => imp.member_type.clone(),
+        // Closures land per-language. Trunk's `render_codec` gate
+        // prevents reaching this arm on Kotlin / Go / C11 / Python
+        // until each backend's repeat decode/encode pattern is wired
+        // up; the placeholder mirrors `imp.type_name` so future
+        // additions need only revisit this single call site.
+        _ => imp.type_name.clone(),
+    })
+}
+
+/// RFC §5.B B2 repeat primitive — pre-rendered streaming decode
+/// statement for one repeat field. The output binds the field id to
+/// the host-language list value, iterating either a sibling integer
+/// field's count (`CountRef::LengthField`) or until cursor exhaustion
+/// (`CountRef::UntilEof`).
+///
+/// First line has no leading indent (the codec template prefixes 8
+/// spaces); inner lines carry absolute 12-space indent so they nest
+/// inside the surrounding `decode()` body alongside present-if /
+/// vle / per-field statements without re-indentation.
+fn repeat_streaming_decode_stmt(
+    field: &CodecField,
+    body_type: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = &field.id;
+    let count_ref = match &field.bit_size {
+        BitSize::Repeat { count_ref } => count_ref,
+        _ => unreachable!("repeat_streaming_decode_stmt called on non-repeat field"),
+    };
+
+    match (lang, count_ref) {
+        // Rust: `Vec<T>::with_capacity(n)` for length-field counts —
+        // n is read from the sibling local already bound by an earlier
+        // streaming statement (cast to usize for the Vec API). Until-
+        // EOF uses a default-capacity `Vec::new()` because the
+        // element count is not known up-front; vector growth is
+        // amortized O(1) so the missing reservation is acceptable for
+        // the v1 trunk shape.
+        (Language::Rust, CountRef::LengthField(len_field)) => format!(
+            "let {id} = {{\n            \
+                 let mut _vec: Vec<{body_type}> = Vec::with_capacity({len_field} as usize);\n            \
+                 for _ in 0..{len_field} {{\n                \
+                     _vec.push({body_type}::decode(cursor)?);\n            \
+                 }}\n            \
+                 _vec\n        \
+             }};"
+        ),
+        (Language::Rust, CountRef::UntilEof) => format!(
+            "let {id} = {{\n            \
+                 let mut _vec: Vec<{body_type}> = Vec::new();\n            \
+                 while cursor.remaining() > 0 {{\n                \
+                     _vec.push({body_type}::decode(cursor)?);\n            \
+                 }}\n            \
+                 _vec\n        \
+             }};"
+        ),
+        // Cpp: each `body_type::decode(cursor)` returns
+        // `std::optional<body_type>`. Mirror the variant arm pattern:
+        // unwrap with `.has_value()` check, return std::nullopt on
+        // truncation so the parent decode unwinds the partial frame.
+        (Language::Cpp, CountRef::LengthField(len_field)) => format!(
+            "std::vector<{body_type}> {id};\n        \
+             {id}.reserve({len_field});\n        \
+             for (auto _i = decltype({len_field}){{0}}; _i < {len_field}; ++_i) {{\n            \
+                 auto _elem = {body_type}::decode(cursor);\n            \
+                 if (!_elem.has_value()) return std::nullopt;\n            \
+                 {id}.push_back(*_elem);\n        \
+             }}"
+        ),
+        (Language::Cpp, CountRef::UntilEof) => format!(
+            "std::vector<{body_type}> {id};\n        \
+             while (cursor.remaining() > 0) {{\n            \
+                 auto _elem = {body_type}::decode(cursor);\n            \
+                 if (!_elem.has_value()) return std::nullopt;\n            \
+                 {id}.push_back(*_elem);\n        \
+             }}"
+        ),
+        // Closures land per-language; the trunk gate above prevents
+        // reaching this arm on Kotlin / Go / C11 / Python.
+        _ => format!("/* unsupported language for repeat decode */"),
+    }
+}
+
+/// RFC §5.B B2 repeat primitive — pre-rendered streaming encode block
+/// for one repeat field. Iterates the host-language list and appends
+/// each element's encode() bytes onto the parent's `r` buffer.
+///
+/// Output is one or more lines indented at 8 spaces (no template
+/// re-indent on subsequent lines; the codec template's `{% for %}`
+/// inserts the value verbatim where 8-space context is expected).
+///
+/// Author keeps the repeat field length consistent with the count
+/// field's value (mirrors the variant primitive's tag/body trust
+/// contract: the encoder writes whatever the struct holds).
+fn repeat_streaming_encode_block(
+    field: &CodecField,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = &field.id;
+    match lang {
+        Language::Rust => format!(
+            "        for _e in &self.{id} {{\n            r.extend(_e.encode());\n        }}"
+        ),
+        Language::Cpp => format!(
+            "        for (const auto& _e : {id}) {{\n            \
+                 auto _sub = _e.encode();\n            \
+                 r.insert(r.end(), _sub.begin(), _sub.end());\n        \
+             }}"
+        ),
+        _ => "        // unsupported language for repeat encode\n".to_string(),
     }
 }
 
@@ -2820,6 +3060,13 @@ fn generate_decode_expr(
             // per-field `vle_*` context entries) — this `decode_expr`
             // returns the empty string so the positional branch's
             // struct literal cannot accidentally render it.
+            String::new()
+        }
+        BitSize::Repeat { .. } => {
+            // RFC §5.B B2 repeat primitive — same convention as Vle:
+            // the streaming branch (`has_repeat_fields`) emits per-
+            // field decode statements via `repeat_streaming_decode_stmt`,
+            // so the positional branch never needs a single-expr form.
             String::new()
         }
     }

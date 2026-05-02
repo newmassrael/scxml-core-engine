@@ -126,6 +126,24 @@ struct {{ struct_name }} {
             .{{ field.id }} = {{ field.id }},
 {% endfor %}
         };
+{% elif has_repeat_fields %}
+        // RFC §5.B B2 repeat (trunk): per-field cursor advance. Fixed
+        // prefix fields read via the present-if helper's non-gated
+        // branch; repeat fields run a count-driven or until-eof loop
+        // over the imported codec's decode(). Element NeedMoreBytes
+        // unwinds the partial frame via std::nullopt.
+{% for field in fields %}
+{% if field.is_repeat %}
+        {{ field.repeat_decode_stmt }}
+{% else %}
+        {{ field.present_if_decode_stmt }}
+{% endif %}
+{% endfor %}
+        return {{ struct_name }}{
+{% for field in fields %}
+            .{{ field.id }} = {{ field.id }},
+{% endfor %}
+        };
 {% elif has_variable_fields %}
         std::size_t _frame_len = cursor.remaining();
         if (_frame_len < {{ min_bytes }}) return std::nullopt;
@@ -216,6 +234,21 @@ struct {{ struct_name }} {
         r.reserve({{ max_bytes }});
 {% for field in fields %}
 {{ field.present_if_encode_block }}
+{% endfor %}
+        return r;
+{% elif has_repeat_fields %}
+        // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
+        // repeat fields iterate the host vector and splice each
+        // element's encode() into the parent buffer. Author keeps
+        // count field == list length (trust contract).
+        std::vector<uint8_t> r;
+        r.reserve({{ max_bytes }});
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
         return r;
 {% elif has_variable_fields %}

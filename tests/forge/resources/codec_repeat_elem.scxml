@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: repeat element body — uint16 sequence id.
+     Imported by codec_repeat_basic.scxml and codec_until_eof_basic.scxml
+     as the per-element body codec for their <sce:repeat> fields. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_repeat_elem">
+  <datamodel>
+    <sce:field id="seq" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>

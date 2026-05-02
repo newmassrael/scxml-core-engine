@@ -534,6 +534,9 @@ fn parse_codec(
     // Also check for <sce:field> elements (used in both standalone and inline codec)
     // and <sce:flags> containers (RFC §5.B B1-γ — same wire shape as a
     // plain unsigned-int field plus named-bit accessors emitted by codegen).
+    // <sce:repeat> containers (RFC §5.B B2) sit alongside; their
+    // bit_size = Repeat carries the count_ref + body alias for the
+    // streaming codec to iterate the imported codec's encode/decode.
     for child in datamodel.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
             continue;
@@ -544,6 +547,9 @@ fn parse_codec(
             }
             "flags" => {
                 fields.push(parse_codec_flags_from_node(&child, label.diagnostic_label)?);
+            }
+            "repeat" => {
+                fields.push(parse_codec_repeat_from_node(&child, label.diagnostic_label)?);
             }
             _ => {}
         }
@@ -571,6 +577,14 @@ fn parse_codec(
     // missing flag, since both reduce to "fix the attribute
     // text").
     validate_codec_present_if_predicates(&fields, label, &datamodel)?;
+
+    // RFC §5.B B2 repeat validation — every <sce:repeat sce:count="X"/>
+    // must reference a sibling integer field declared earlier (so the
+    // streaming decoder has already decoded N before reading N
+    // elements). Forward / unknown count target → typed
+    // `codec/repeat-count-refs-later-field`; non-integer count target
+    // reuses the generic `validation/invalid-attribute`.
+    validate_codec_repeat_count_refs(&fields, label, &datamodel)?;
 
     // RFC §5.B variant primitive (B1-β): optional <sce:variant> suffix
     // under <datamodel>. Resolves the tag field reference against the
@@ -1055,6 +1069,12 @@ pub fn parse_codec_field_from_node(
         length_field,
         flags: Vec::new(),
         present_if,
+        // RFC §5.B B2 repeat primitive: `<sce:field>` carriers never
+        // hold a repeat body — only the dedicated `<sce:repeat>`
+        // element (parsed via `parse_codec_repeat_from_node`) sets
+        // these. Plain fields keep both `None`.
+        repeat_body_alias: None,
+        max_count: None,
     })
 }
 
@@ -1254,6 +1274,219 @@ fn parse_codec_flags_from_node(
 
     field.flags = flag_defs;
     Ok(field)
+}
+
+/// RFC §5.B B2 repeat primitive — parse `<sce:repeat id="..."
+/// sce:type="<imported_alias>" sce:byte="N"
+/// (sce:count="<id>" | sce:until-eof="true")
+/// [sce:max-count="N"]/>`.
+///
+/// The element produces a `CodecField` whose `bit_size` is
+/// [`BitSize::Repeat`] and whose `repeat_body_alias` names the
+/// imported codec used for each element. Mutually exclusive
+/// `sce:count` / `sce:until-eof` (exactly one required) drives the
+/// streaming loop termination strategy.
+///
+/// `sce:type` does NOT round-trip through [`SceType`] — it carries
+/// the imported codec alias verbatim (mirrors `<sce:arm type=...>`).
+/// Resolution against `<sce:import>` aliases happens downstream at
+/// codegen time when the import set is in scope.
+fn parse_codec_repeat_from_node(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<CodecField, Located<ForgeError>> {
+    // `id` is unqualified on <sce:repeat> (matches <sce:flags id=...>
+    // and <sce:variant tag=...> conventions for SCE-internal attrs).
+    let id = node
+        .attribute("id")
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: "<sce:repeat>".into(),
+                    attr: "id".into(),
+                },
+            )
+        })?
+        .to_string();
+
+    // `type` on <sce:repeat> is the imported codec alias, NOT a
+    // primitive sce:sceType — kept unqualified to match <sce:arm
+    // type=...>, distinct from the global qualified `sce:type` which
+    // restricts to primitive sceType enum values. Stored as
+    // `repeat_body_alias`; the parsed CodecField's `sce_type` is a
+    // sentinel (SceType::Bytes) since the wire shape is "byte
+    // sequence encoding N imported-codec elements" — the host
+    // language type (Vec<T> / std::vector<T>) is computed by the
+    // generator from the body alias.
+    let body_alias = node
+        .attribute("type")
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: format!("<sce:repeat id='{id}'>"),
+                    attr: "type".into(),
+                },
+            )
+        })?
+        .to_string();
+
+    // `sce:byte` is qualified — same global attribute reused on
+    // <sce:field> / <sce:flags> (consistent global usage).
+    let byte_offset_str = sce_attr(node, "byte").ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("<sce:repeat id='{id}'>"),
+                attr: "sce:byte".into(),
+            },
+        )
+    })?;
+    let byte_offset = parse_int(&byte_offset_str).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::NumericParse {
+                element: format!("<sce:repeat id='{id}'>"),
+                attr: "sce:byte".into(),
+                value: byte_offset_str.clone(),
+                detail: "expected integer".into(),
+            },
+        )
+    })?;
+
+    // Mutually exclusive count source: exactly one of count /
+    // until-eof. Both unqualified (SCE-internal). Both present or
+    // both absent → reject with a diagnostic that names the legal
+    // forms (the author can flip between length-prefix and greedy
+    // by editing one attribute).
+    let count_attr = node.attribute("count").map(|s| s.to_string());
+    let until_eof_raw = node.attribute("until-eof").map(|s| s.to_string());
+    let until_eof = match until_eof_raw.as_deref() {
+        None => false,
+        Some("true") => true,
+        Some("false") => false,
+        Some(other) => {
+            return Err(located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:repeat id='{id}'>"),
+                    attr: "sce:until-eof".into(),
+                    value: other.to_string(),
+                    expected: "\"true\" or \"false\"".into(),
+                },
+            ));
+        }
+    };
+    let count_ref = match (count_attr, until_eof) {
+        (Some(target), false) => CountRef::LengthField(target),
+        (None, true) => CountRef::UntilEof,
+        (Some(_), true) | (None, false) => {
+            return Err(located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:repeat id='{id}'>"),
+                    attr: "sce:count / sce:until-eof".into(),
+                    value: "<both or neither>".into(),
+                    expected: "exactly one of sce:count=\"<sibling_field_id>\" \
+                               or sce:until-eof=\"true\""
+                        .into(),
+                },
+            ));
+        }
+    };
+
+    let max_count = node.attribute("max-count").and_then(parse_int);
+
+    Ok(CodecField {
+        id,
+        // Wire-shape sentinel — the host-language type is derived
+        // from `repeat_body_alias` at codegen time. Bytes is the
+        // closest primitive (the encoded form is a byte sequence
+        // representing concatenated imported-codec encodings).
+        sce_type: SceType::Bytes,
+        byte_offset,
+        bit_offset: None,
+        bit_size: BitSize::Repeat { count_ref },
+        endian: None,
+        max_size: None,
+        length_field: None,
+        flags: Vec::new(),
+        present_if: None,
+        repeat_body_alias: Some(body_alias),
+        max_count,
+    })
+}
+
+/// RFC §5.B B2 repeat cross-field validation. Walks the field list
+/// in source order; every `BitSize::Repeat { LengthField(id) }` must
+/// reference a previously-declared sibling field whose `sce_type` is
+/// integer (so the decoded value is a valid element count).
+///
+/// Forward / unknown count target → typed
+/// `codec/repeat-count-refs-later-field` (the repair is structural —
+/// reorder the count to come before the repeat). Non-integer count
+/// target reuses the generic `validation/invalid-attribute` (the
+/// repair is "fix the attribute text" — pick a different field or
+/// retype the existing one).
+///
+/// `CountRef::UntilEof` needs no validation here: there is no field
+/// reference, the loop terminates on cursor exhaustion alone.
+fn validate_codec_repeat_count_refs(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    use std::collections::BTreeMap;
+    let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
+    for field in fields {
+        if let BitSize::Repeat { count_ref: CountRef::LengthField(target) } = &field.bit_size {
+            match by_id_so_far.get(target.as_str()) {
+                None => {
+                    return Err(located(
+                        datamodel,
+                        label.diagnostic_label,
+                        ValidationError::CodecRepeatCountRefsLaterField {
+                            codec: label.identifier.to_string(),
+                            field: field.id.clone(),
+                            refers_to: target.clone(),
+                        },
+                    ));
+                }
+                Some(carrier) => {
+                    let is_int = carrier.sce_type.is_unsigned()
+                        || carrier.sce_type.is_signed();
+                    if !is_int {
+                        return Err(located(
+                            datamodel,
+                            label.diagnostic_label,
+                            ValidationError::InvalidAttribute {
+                                element: format!(
+                                    "<sce:repeat id='{}'> in codec '{}'",
+                                    field.id, label.identifier
+                                ),
+                                attr: "sce:count".into(),
+                                value: target.clone(),
+                                expected: format!(
+                                    "count target must be an integer field; \
+                                     '{}' is {:?}",
+                                    target, carrier.sce_type
+                                ),
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+        by_id_so_far.insert(field.id.as_str(), field);
+    }
+    Ok(())
 }
 
 // ── Validator parsing ──────────────────────────────────────

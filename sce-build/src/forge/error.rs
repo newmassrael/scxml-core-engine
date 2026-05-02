@@ -459,6 +459,22 @@ pub enum ValidationError {
         field: String,
         refers_to: String,
     },
+
+    /// RFC §5.B repeat primitive (B2): the `sce:count` reference on a
+    /// `<sce:repeat>` element points to a field that is **not**
+    /// declared earlier in the same codec — either declared later (a
+    /// forward reference the streaming decoder cannot resolve) or never
+    /// declared at all. Author resolves by reordering the count field
+    /// to precede the `<sce:repeat>`, or by correcting a typo in the
+    /// `sce:count` attribute.
+    #[error(
+        "codec '{codec}': repeat field '{field}' has sce:count=\"{refers_to}\" but '{refers_to}' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute"
+    )]
+    CodecRepeatCountRefsLaterField {
+        codec: String,
+        field: String,
+        refers_to: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────
