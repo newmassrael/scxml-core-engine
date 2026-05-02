@@ -1437,6 +1437,14 @@ fn render_codec(
     // (`<snake>_<flag_name>` / `<snake>_set_<flag_name>`).
     let has_flags = m.fields.iter().any(|f| !f.flags.is_empty());
     ctx.insert("has_flags".into(), has_flags.into());
+    // RFC §5.B B5-α: zero-field codecs (Zenoh KeepAlive et al.) skip
+    // every cursor / encode-buffer touch; templates branch on
+    // `has_no_fields` to emit a trivial encode/decode that round-trips
+    // an empty body. `min_bytes` is 0 in this case but using a
+    // dedicated boolean keeps the template logic explicit (and
+    // forward-compatible with future zero-byte shapes that aren't
+    // strictly empty fields).
+    ctx.insert("has_no_fields".into(), m.fields.is_empty().into());
     if matches!(lang, crate::generator::Language::C11) {
         ctx.insert(
             "c_struct_snake".into(),
@@ -2328,13 +2336,30 @@ fn tlv_chain_streaming_encode_block(
     }
 }
 
-/// RFC §5.B B1-γ flags primitive — render the per-flag accessor context
-/// for one carrier field. Each entry carries the language-specific
-/// accessor / setter names alongside the precomputed bitmask literal so
-/// each codec template just iterates the list and emits the right
-/// shape. The mask is rendered hex-padded to the carrier's full width
-/// (`0x80` for u8, `0x0080` for u16, ...) so generated code reads
-/// uniformly regardless of the bit position.
+/// RFC §5.B B1-γ + B5-α flags primitive — render the per-flag accessor
+/// context for one carrier field. Each entry carries the language-
+/// specific accessor / setter names alongside two precomputed bitmask
+/// literals:
+///
+///   - `mask_literal` — shifted mask `((1<<width)-1) << bit`, in the
+///     carrier's full hex width (`0x80` for u8 single-bit at bit 7,
+///     `0x07` for u8 multi-bit at bit 0 width 3). Used for the
+///     setter's clear path and (in single-bit getters) the boolean
+///     test. Width=1 reduces to `1<<bit` so B1-γ goldens stay
+///     byte-stable.
+///
+///   - `value_mask_literal` — unshifted value mask `(1<<width)-1`,
+///     in the result-type's natural hex width. Used by multi-bit
+///     getters as `(carrier >> shift) & value_mask` and by setters
+///     as `(value & value_mask) << shift` to clamp out-of-range
+///     callers. Single-bit (width=1) entries still publish this
+///     field but templates ignore it on the bool path.
+///
+/// `multi_bit` (true ⇔ width>1) lets templates branch between the
+/// boolean shape (B1-γ back-compat) and the integer shape (B5-α QoS
+/// byte and friends). `result_type_<lang>` names the accessor's
+/// return / setter-param type per language: `bool` when single-bit,
+/// the smallest unsigned integer type that fits when multi-bit.
 fn build_flag_ctx(
     flags: &[FlagDef],
     carrier: &SceType,
@@ -2342,7 +2367,7 @@ fn build_flag_ctx(
 ) -> Vec<serde_json::Value> {
     use crate::generator::Language;
     // Hex digit count = ceil(width / 4): 2 (u8), 4 (u16), 8 (u32), 16 (u64).
-    let hex_digits: usize = match carrier.int_bit_width() {
+    let carrier_hex_digits: usize = match carrier.int_bit_width() {
         Some(w) => (w as usize) / 4,
         // Non-unsigned carriers are rejected at parse time; defensively
         // return 2 so the literal still type-checks rather than panicking.
@@ -2354,16 +2379,76 @@ fn build_flag_ctx(
             let snake = filters::to_snake_case(f.name.clone());
             let pascal = filters::to_pascal_case(f.name.clone());
             let camel = filters::to_camel_case(f.name.clone());
-            let mask: u64 = 1u64 << f.bit;
-            let mask_literal = format!("0x{:0width$X}", mask, width = hex_digits);
+            let width = f.width.max(1);
+            let multi_bit = width > 1;
+            // Shifted mask in carrier width (full bit-range claimed
+            // by this flag, used by setter clear path and bool getter).
+            let shifted_mask: u64 = ((1u64 << width) - 1) << f.bit;
+            let mask_literal =
+                format!("0x{:0width$X}", shifted_mask, width = carrier_hex_digits);
+            // Result-type natural width: the smallest unsigned int
+            // type that holds `width` bits.
+            let result_bits: u32 = if width <= 8 {
+                8
+            } else if width <= 16 {
+                16
+            } else if width <= 32 {
+                32
+            } else {
+                64
+            };
+            let value_hex_digits: usize = (result_bits as usize) / 4;
+            // Unshifted value mask, sized to result type for compact
+            // literals (e.g. width=3 → "0x07", width=10 → "0x03FF").
+            let value_mask_unshifted: u64 = (1u64 << width) - 1;
+            let value_mask_literal = format!(
+                "0x{:0width$X}",
+                value_mask_unshifted,
+                width = value_hex_digits
+            );
             let (name_acc, name_set) = match lang {
                 Language::Go => (pascal.clone(), format!("Set{pascal}")),
                 Language::Kotlin => (camel.clone(), format!("set{pascal}")),
                 _ => (snake.clone(), format!("set_{snake}")),
             };
+            // Per-language result type for multi-bit accessors.
+            // Single-bit returns bool — the `result_type_*` field is
+            // still emitted to keep template lookups uniform but the
+            // bool branch in each template ignores it.
+            let result_type = if !multi_bit {
+                match lang {
+                    Language::Rust => "bool".to_string(),
+                    Language::Cpp => "bool".to_string(),
+                    Language::Kotlin => "Boolean".to_string(),
+                    Language::Go => "bool".to_string(),
+                    Language::C11 => "bool".to_string(),
+                    Language::Python => "bool".to_string(),
+                }
+            } else {
+                match lang {
+                    Language::Rust => format!("u{result_bits}"),
+                    Language::Cpp => format!("uint{result_bits}_t"),
+                    Language::Kotlin => match result_bits {
+                        8 => "UByte".to_string(),
+                        16 => "UShort".to_string(),
+                        32 => "UInt".to_string(),
+                        _ => "ULong".to_string(),
+                    },
+                    Language::Go => format!("uint{result_bits}"),
+                    Language::C11 => format!("uint{result_bits}_t"),
+                    Language::Python => "int".to_string(),
+                }
+            };
             let mut obj = serde_json::Map::new();
             obj.insert("bit".into(), f.bit.into());
+            obj.insert("width".into(), width.into());
+            obj.insert("multi_bit".into(), multi_bit.into());
             obj.insert("mask_literal".into(), mask_literal.into());
+            obj.insert(
+                "value_mask_literal".into(),
+                value_mask_literal.into(),
+            );
+            obj.insert("result_type".into(), result_type.into());
             obj.insert("name_acc".into(), name_acc.into());
             obj.insert("name_set".into(), name_set.into());
             serde_json::Value::Object(obj)

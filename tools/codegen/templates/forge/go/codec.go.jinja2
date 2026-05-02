@@ -57,7 +57,11 @@ type {{ struct_name }} struct {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error) {
-{% if has_variant %}
+{% if has_no_fields %}
+	// RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+	_ = cursor
+	return &{{ struct_name }}{}, nil
+{% elif has_variant %}
 	// Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
 	raw, err := cursor.PeekSlice({{ min_bytes }})
 	if err != nil {
@@ -200,13 +204,27 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 }
 
 {% if has_flags %}
-// RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-// field. Read returns a bool from `(field & mask) != 0`; write toggles
-// the bit on/off without disturbing siblings on the same carrier. Wire
-// layout is unchanged — the carrier still occupies its declared bytes.
+// RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+// the carrier field. Single-bit (width=1) reads as bool; multi-bit
+// (width>=2) reads as the smallest unsigned int type that fits. Setters
+// mask + shift on the way in so out-of-range callers can't corrupt
+// sibling bits. Wire layout is unchanged — the carrier still occupies
+// its declared bytes.
 {% for field in fields %}
 {% if field.has_flags %}
 {% for fl in field.flags %}
+{% if fl.multi_bit %}
+func (s *{{ struct_name }}) {{ fl.name_acc }}() {{ fl.result_type }} {
+	return {{ fl.result_type }}((s.{{ field.id }} >> {{ fl.bit }}) & {{ fl.value_mask_literal }})
+}
+
+func (s *{{ struct_name }}) {{ fl.name_set }}(v {{ fl.result_type }}) {
+	const _shiftedMask {{ field.go_type }} = {{ fl.value_mask_literal }} << {{ fl.bit }}
+	_val := ({{ field.go_type }}(v) & {{ fl.value_mask_literal }}) << {{ fl.bit }}
+	s.{{ field.id }} = (s.{{ field.id }} &^ _shiftedMask) | _val
+}
+
+{% else %}
 func (s *{{ struct_name }}) {{ fl.name_acc }}() bool {
 	return (s.{{ field.id }} & {{ fl.mask_literal }}) != 0
 }
@@ -219,13 +237,17 @@ func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
 	}
 }
 
+{% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}
 {% endif %}
 // Encode serializes the {{ struct_name }} into raw bytes.
 func (s *{{ struct_name }}) Encode() []byte {
-{% if has_variant %}
+{% if has_no_fields %}
+	// RFC §5.B B5-α empty body — zero-byte payload.
+	return []byte{}
+{% elif has_variant %}
 	// Encode fixed prefix (tag field bytes are part of the prefix).
 	// The tag value is read from the struct field, NOT derived from
 	// the body discriminant — keeping author-set tag / body in sync

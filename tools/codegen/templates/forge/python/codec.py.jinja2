@@ -46,11 +46,18 @@ class {{ struct_name }}Body:
 {% endif %}
 @dataclass
 class {{ struct_name }}:
+{% if has_no_fields %}
+    # RFC §5.B B5-α empty body — Python @dataclass tolerates zero
+    # fields; `pass` keeps the class body syntactically non-empty so
+    # methods below attach correctly.
+    pass
+{% else %}
 {% for field in fields %}
     {{ field.id }}: {{ field.py_type }} = {{ field.default_value }}
 {% endfor %}
 {% if has_variant %}
     body: {{ struct_name }}Body = field(default_factory={{ struct_name }}Body)
+{% endif %}
 {% endif %}
 
     @classmethod
@@ -60,7 +67,11 @@ class {{ struct_name }}:
         (RFC §5.B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-{% if has_variant %}
+{% if has_no_fields %}
+        # RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+        _ = cursor
+        return cls()
+{% elif has_variant %}
         # Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
         try:
             raw = cursor.peek_slice({{ min_bytes }})
@@ -206,15 +217,26 @@ class {{ struct_name }}:
 {% endif %}
 
 {% if has_flags %}
-    # RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-    # field. Plain methods (rather than @property) for API symmetry with
-    # Rust / Cpp / Kotlin / Go / C11. Python ints are unbounded, so the
-    # clear path masks back to the carrier's natural width to keep the
-    # value inside the unsigned domain after `~mask` flips the sign.
-    # Wire layout is unchanged.
+    # RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    # the carrier field. Single-bit (width=1) reads as bool; multi-bit
+    # (width>=2) reads as ``int`` (Python ints are unbounded, so a single
+    # ``int`` covers every result-type width). Setters mask + shift on
+    # the way in so out-of-range callers can't corrupt sibling bits.
+    # Plain methods (rather than @property) for API symmetry with
+    # Rust / Cpp / Kotlin / Go / C11. Wire layout is unchanged.
 {% for field in fields %}
 {% if field.has_flags %}
 {% for fl in field.flags %}
+{% if fl.multi_bit %}
+    def {{ fl.name_acc }}(self) -> int:
+        return (self.{{ field.id }} >> {{ fl.bit }}) & {{ fl.value_mask_literal }}
+
+    def {{ fl.name_set }}(self, v: int) -> None:
+        _shifted_mask = {{ fl.value_mask_literal }} << {{ fl.bit }}
+        _val = (v & {{ fl.value_mask_literal }}) << {{ fl.bit }}
+        self.{{ field.id }} = ((self.{{ field.id }} & ({{ field.py_carrier_max }} ^ _shifted_mask)) | _val) & {{ field.py_carrier_max }}
+
+{% else %}
     def {{ fl.name_acc }}(self) -> bool:
         return (self.{{ field.id }} & {{ fl.mask_literal }}) != 0
 
@@ -224,12 +246,16 @@ class {{ struct_name }}:
         else:
             self.{{ field.id }} = self.{{ field.id }} & ({{ field.py_carrier_max }} ^ {{ fl.mask_literal }})
 
+{% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}
 {% endif %}
     def encode(self) -> bytes:
-{% if has_variant %}
+{% if has_no_fields %}
+        # RFC §5.B B5-α empty body — zero-byte payload.
+        return b""
+{% elif has_variant %}
         # Encode fixed prefix (tag field bytes are part of the prefix).
         # The tag value is read from the struct field, NOT derived from
         # the body discriminant — keeping author-set tag / body in sync

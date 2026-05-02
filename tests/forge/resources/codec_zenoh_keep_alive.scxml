@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec empty-body shape (RFC §5.B B5-α).
+     The Zenoh transport-layer KeepAlive message has zero body bytes —
+     the surrounding 1-byte transport-message header (MID + flags) is
+     written by `_z_transport_message_encode` and the KeepAlive MID
+     alone marks the message on the wire (see zenoh-pico
+     src/protocol/codec/transport.c:_z_keep_alive_encode). The body
+     codec therefore declares no fields; encode returns an empty byte
+     sequence and decode advances the cursor by 0 bytes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_keep_alive">
+  <datamodel/>
+</scxml>

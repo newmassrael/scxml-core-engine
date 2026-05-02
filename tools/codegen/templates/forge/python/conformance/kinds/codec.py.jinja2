@@ -7,7 +7,9 @@
    `encode()` returns `bytes`; `decode(cursor)` is a classmethod taking
    an `sce_forge_runtime.codec.SceCursor` and returning `Optional[...]`. #}
         for i, case in enumerate(spec["cases"]):
+{% if f.fields %}
             decoded = case["decoded"]
+{% endif %}
 {% for field in f.fields %}
 {% if field.type == "bytes" %}
             input_{{ field.name | to_snake_case }} = bytes(decoded["{{ field.name }}"])

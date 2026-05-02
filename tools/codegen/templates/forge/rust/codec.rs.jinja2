@@ -92,7 +92,14 @@ impl {{ struct_name }} {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-{% if has_variant %}
+{% if has_no_fields %}
+        // RFC §5.B B5-α empty body — nothing to read; the surrounding
+        // header byte (and the wire-protocol layer that demuxes it)
+        // already proved this codec was selected, so return the
+        // default-constructed envelope without touching the cursor.
+        let _ = cursor;
+        Ok(Self {})
+{% elif has_variant %}
         // Decode fixed prefix (RFC §5.B variant primitive B1-β: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice({{ min_bytes }})?;
@@ -253,14 +260,27 @@ impl {{ struct_name }} {
     }
 
 {% if has_flags %}
-    // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-    // field. Read returns a bool from `(field & mask) != 0`; write
-    // toggles the bit on/off without disturbing siblings on the same
-    // carrier. Wire layout is unchanged — the carrier still occupies
-    // its declared bytes.
+    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // the carrier field. Single-bit (width=1) reads as bool; multi-bit
+    // (width>=2) reads as the smallest unsigned integer that fits the
+    // range. Setters mask + shift on the way in so out-of-range
+    // callers can't corrupt sibling bits. Wire layout is unchanged —
+    // the carrier still occupies its declared bytes.
 {% for field in fields %}
 {% if field.has_flags %}
 {% for fl in field.flags %}
+{% if fl.multi_bit %}
+    pub fn {{ fl.name_acc }}(&self) -> {{ fl.result_type }} {
+        (((self.{{ field.id }} >> {{ fl.bit }}) & ({{ fl.value_mask_literal }} as {{ field.rs_type }}))) as {{ fl.result_type }}
+    }
+
+    pub fn {{ fl.name_set }}(&mut self, v: {{ fl.result_type }}) {
+        let _mask: {{ field.rs_type }} = ({{ fl.value_mask_literal }} as {{ field.rs_type }}) << {{ fl.bit }};
+        let _val: {{ field.rs_type }} = ((v as {{ field.rs_type }}) & ({{ fl.value_mask_literal }} as {{ field.rs_type }})) << {{ fl.bit }};
+        self.{{ field.id }} = (self.{{ field.id }} & !_mask) | _val;
+    }
+
+{% else %}
     pub fn {{ fl.name_acc }}(&self) -> bool {
         (self.{{ field.id }} & {{ fl.mask_literal }}) != 0
     }
@@ -273,12 +293,17 @@ impl {{ struct_name }} {
         }
     }
 
+{% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}
 {% endif %}
     pub fn encode(&self) -> Vec<u8> {
-{% if has_variant %}
+{% if has_no_fields %}
+        // RFC §5.B B5-α empty body — zero-byte payload (the surrounding
+        // wire-protocol header byte alone marks this codec on the wire).
+        Vec::new()
+{% elif has_variant %}
         // Encode fixed prefix (tag field is part of the prefix). The
         // tag value is read from the struct field, NOT derived from
         // the body discriminant — keeping author-set msg_id / body in

@@ -781,15 +781,13 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Codec { fields, .. } => {
-                    if fields.is_empty() {
-                        return Err(format!(
-                            "fixture {}: codec requires at least one `fields` \
-                             entry — an empty field list would render an \
-                             assertion-free round-trip test body",
-                            f.name
-                        ));
-                    }
+                FixtureSpec::Codec { fields: _, .. } => {
+                    // RFC §5.B B5-α empty-codec lift: zero-field codecs
+                    // (Zenoh KeepAlive et al.) are permitted. The
+                    // round-trip test body still asserts encode →
+                    // decode → encoded byte parity (an empty body
+                    // round-trips an empty byte sequence), so the
+                    // harness is not assertion-free.
                 }
                 FixtureSpec::Procedure {
                     helpers_ordered,

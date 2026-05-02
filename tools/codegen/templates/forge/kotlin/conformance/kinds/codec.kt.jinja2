@@ -8,7 +8,9 @@
    `encode` is an instance method returning ByteArray. #}
         val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
         spec["cases"]!!.jsonArray.forEachIndexed { i, caseEl ->
+{% if f.fields %}
             val decoded = caseEl.jsonObject["decoded"]!!.jsonObject
+{% endif %}
 {% for field in f.fields %}
             val input{{ field.name | to_pascal_case }} = {{ ('decoded["' ~ field.name ~ '"]!!') | kt_unmarshal(field.type) }}
 {% endfor %}

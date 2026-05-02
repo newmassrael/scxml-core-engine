@@ -38,11 +38,21 @@
 		}
 
 		cursor := codec.NewSceCursor(expectedBytes)
+{% if f.fields %}
 		roundTripped, err := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(&cursor)
 		if err != nil {
 			t.Errorf("{{ f.name }} case %d decode returned error: %v", i, err)
 			continue
 		}
+{% else %}
+		// RFC §5.B B5-α empty body — decode must succeed but there
+		// are no fields to assert against; the empty-bytes encode
+		// above already proves the round-trip.
+		if _, err := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(&cursor); err != nil {
+			t.Errorf("{{ f.name }} case %d decode returned error: %v", i, err)
+			continue
+		}
+{% endif %}
 {% for field in f.fields %}
 {% if field.type == "bytes" %}
 		if len(roundTripped.{{ field.name | to_pascal_case }}) != len(d.{{ field.name | to_pascal_case }}) {

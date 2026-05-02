@@ -62,7 +62,11 @@ struct {{ struct_name }} {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor) {
-{% if has_variant %}
+{% if has_no_fields %}
+        // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+        (void)cursor;
+        return {{ struct_name }}{};
+{% elif has_variant %}
         // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
         const std::uint8_t* raw = cursor.peek_slice({{ min_bytes }});
         if (raw == nullptr) return std::nullopt;
@@ -188,14 +192,36 @@ struct {{ struct_name }} {
     }
 
 {% if has_flags %}
-    // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-    // field. Read returns a bool from `(field & mask) != 0`; write
-    // toggles the bit without disturbing siblings on the same carrier.
-    // Wire layout is unchanged — the carrier still occupies its
-    // declared bytes.
+    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors.
+    // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
+    // the smallest unsigned integer type that fits the range. Setters
+    // mask + shift on the way in so out-of-range callers can't corrupt
+    // sibling bits. Wire layout is unchanged.
 {% for field in fields %}
 {% if field.has_flags %}
 {% for fl in field.flags %}
+{% if fl.multi_bit %}
+    {{ fl.result_type }} {{ fl.name_acc }}() const noexcept {
+        return static_cast<{{ fl.result_type }}>(
+            (this->{{ field.id }} >> {{ fl.bit }}) & static_cast<{{ field.cpp_type }}>({{ fl.value_mask_literal }})
+        );
+    }
+
+    void {{ fl.name_set }}({{ fl.result_type }} v) noexcept {
+        const {{ field.cpp_type }} _shifted_mask =
+            static_cast<{{ field.cpp_type }}>(
+                static_cast<{{ field.cpp_type }}>({{ fl.value_mask_literal }}) << {{ fl.bit }}
+            );
+        const {{ field.cpp_type }} _val =
+            static_cast<{{ field.cpp_type }}>(
+                (static_cast<{{ field.cpp_type }}>(v) & static_cast<{{ field.cpp_type }}>({{ fl.value_mask_literal }})) << {{ fl.bit }}
+            );
+        this->{{ field.id }} = static_cast<{{ field.cpp_type }}>(
+            (this->{{ field.id }} & static_cast<{{ field.cpp_type }}>(~_shifted_mask)) | _val
+        );
+    }
+
+{% else %}
     bool {{ fl.name_acc }}() const noexcept {
         return (this->{{ field.id }} & {{ fl.mask_literal }}) != 0;
     }
@@ -208,12 +234,16 @@ struct {{ struct_name }} {
         }
     }
 
+{% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}
 {% endif %}
     std::vector<uint8_t> encode() const {
-{% if has_variant %}
+{% if has_no_fields %}
+        // RFC §5.B B5-α empty body — zero-byte payload.
+        return {};
+{% elif has_variant %}
         // Encode fixed prefix (tag field bytes are part of the prefix).
         std::vector<uint8_t> r;
         r.reserve({{ max_bytes }});

@@ -15,12 +15,12 @@ data class CodecPresentIfLengthRef(
     var payload_size: UByte = 0.toUByte(),
     var payload: ByteArray? = null
 ) {
-    // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-    // field. Kotlin's UByte / UShort / UInt / ULong don't expose direct
-    // bitwise infix ops with literal masks, so the body widens through
-    // `.toInt()` (UByte/UShort) or `.toLong()` (UInt/ULong), runs the
-    // bit op against the Int/Long mask, then narrows back via the
-    // carrier's `toU*` constructor.
+    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // the carrier field. Single-bit (width=1) reads as Boolean; multi-
+    // bit (width>=2) reads as the smallest unsigned Kotlin type that
+    // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
+    // `.toInt()` and UInt/ULong through `.toLong()` for the bitwise
+    // ops; the result narrows back via the carrier's `toU*` ctor.
     fun hasPayload(): Boolean = (this.flags.toInt() and 0x01) != 0
 
     fun setHasPayload(v: Boolean) {

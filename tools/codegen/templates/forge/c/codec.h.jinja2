@@ -66,6 +66,12 @@ typedef struct {
 
 {% endif %}
 typedef struct {
+{% if has_no_fields %}
+    /* RFC §5.B B5-α empty body — C11 §6.7.2.1 requires a struct to
+     * declare at least one member; this placeholder is never on the
+     * wire (encoder writes 0 bytes regardless of its value). */
+    char _reserved;
+{% else %}
 {% for field in fields %}
 {% if field.is_repeat %}
     /* RFC §5.B B2 repeat: fixed array of {{ field.repeat_body_type }} elements (max {{ field.max_count }}) */
@@ -86,10 +92,18 @@ typedef struct {
 {% if has_variant %}
     {{ variant.c_body_typedef }} body;
 {% endif %}
+{% endif %}
 } {{ c_struct_typedef }};
 
 typedef struct {
+{% if has_no_fields %}
+    /* RFC §5.B B5-α empty body — C11 forbids zero-length arrays so the
+     * placeholder is `bytes[1]`; the encoder sets `len = 0` and never
+     * writes to `bytes`, so callers read 0 bytes from the wire. */
+    uint8_t bytes[1];
+{% else %}
     uint8_t bytes[{{ c_max_bytes_macro }}];
+{% endif %}
     size_t  len;
 } {{ c_encoded_typedef }};
 
@@ -99,7 +113,14 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out) {
-{% if has_variant %}
+{% if has_no_fields %}
+    /* RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+     * The placeholder member is initialised to 0 to keep callers out
+     * of UB territory if they ever inspect it. */
+    (void)cursor;
+    out->_reserved = 0;
+    return SCE_FORGE_CODEC_OK;
+{% elif has_variant %}
     /* Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix). */
     const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -249,7 +270,12 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 
 static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_typedef }} *self) {
     {{ c_encoded_typedef }} r;
-{% if has_variant %}
+{% if has_no_fields %}
+    /* RFC §5.B B5-α empty body — zero-byte payload. */
+    (void)self;
+    r.bytes[0] = 0;
+    r.len = 0;
+{% elif has_variant %}
     /* Encode fixed prefix (tag field bytes are part of the prefix).
      * The tag value is read from the struct field, NOT derived from
      * the body discriminant — keeping author-set tag / body in sync
@@ -356,15 +382,29 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 }
 
 {% if has_flags %}
-/* RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
- * field. Read returns a bool from `(field & mask) != 0`; write toggles
- * the bit on/off without disturbing siblings on the same carrier. The
+/* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+ * the carrier field. Single-bit (width=1) reads as bool; multi-bit
+ * (width>=2) reads as the smallest unsigned C11 integer type that fits
+ * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on
+ * the way in so out-of-range callers can't corrupt sibling bits. The
  * accessor name is `<struct_snake>_<flag_name>` so multiple codecs
  * carrying same-named flags coexist in a single translation unit. Wire
  * layout is unchanged — the carrier still occupies its declared bytes. */
 {% for field in fields %}
 {% if field.has_flags %}
 {% for fl in field.flags %}
+{% if fl.multi_bit %}
+static inline {{ fl.result_type }} {{ c_struct_snake }}_{{ fl.name_acc }}(const {{ c_struct_typedef }} *self) {
+    return ({{ fl.result_type }})((self->{{ field.id }} >> {{ fl.bit }}) & ({{ field.c_type }}){{ fl.value_mask_literal }});
+}
+
+static inline void {{ c_struct_snake }}_{{ fl.name_set }}({{ c_struct_typedef }} *self, {{ fl.result_type }} v) {
+    const {{ field.c_type }} _shifted_mask = ({{ field.c_type }})(({{ field.c_type }}){{ fl.value_mask_literal }} << {{ fl.bit }});
+    const {{ field.c_type }} _val = ({{ field.c_type }})((({{ field.c_type }})v & ({{ field.c_type }}){{ fl.value_mask_literal }}) << {{ fl.bit }});
+    self->{{ field.id }} = ({{ field.c_type }})((self->{{ field.id }} & ({{ field.c_type }})~_shifted_mask) | _val);
+}
+
+{% else %}
 static inline bool {{ c_struct_snake }}_{{ fl.name_acc }}(const {{ c_struct_typedef }} *self) {
     return (self->{{ field.id }} & {{ fl.mask_literal }}) != 0;
 }
@@ -376,6 +416,7 @@ static inline void {{ c_struct_snake }}_{{ fl.name_set }}({{ c_struct_typedef }}
         self->{{ field.id }} = ({{ field.c_type }})(self->{{ field.id }} & ({{ field.c_type }})(~({{ field.c_type }}){{ fl.mask_literal }}));
     }
 }
+{% endif %}
 
 {% endfor %}
 {% endif %}

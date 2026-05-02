@@ -575,16 +575,14 @@ fn parse_codec(
         }
     }
 
-    if fields.is_empty() {
-        return Err(located(
-            &datamodel,
-            label.diagnostic_label,
-            ValidationError::EmptyCollection {
-                kind: ForgeKind::Codec,
-                what: "field with byte layout".into(),
-            },
-        ));
-    }
+    // RFC §5.B B5-α: zero-field codecs are accepted (empty-body messages
+    // like Zenoh's KeepAlive sit at the wire-protocol level as a
+    // declared-but-empty body keyed by the surrounding header byte).
+    // Downstream validators walk the field list and tolerate
+    // emptiness. A codec with `<sce:variant>` cannot be empty
+    // because the variant's `tag` must resolve to a field; that
+    // diagnostic surfaces from `parse_codec_variant` instead, with
+    // a precise repair hint.
 
     // RFC §5.B B1-δ present-if validation — every gated field's
     // predicate must reference a flags-bearing carrier declared
@@ -1252,6 +1250,10 @@ fn parse_codec_flags_from_node(
     let bit_width = field.sce_type.int_bit_width().expect("unsigned ⇒ Some");
 
     let mut seen_names: std::collections::BTreeSet<String> = Default::default();
+    // Track which bits within the carrier are already claimed so
+    // overlapping bit-ranges (B5-α multi-bit) are rejected with a
+    // precise repair hint.
+    let mut occupied: u64 = 0;
     let mut flag_defs: Vec<FlagDef> = Vec::new();
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE)
@@ -1315,6 +1317,37 @@ fn parse_codec_flags_from_node(
                 },
             )
         })?;
+        // RFC §5.B B5-α multi-bit accessor: optional `width="W"`
+        // attribute (defaults to 1 for B1-γ single-bit back-compat).
+        // `bit + width <= carrier_int_bit_width` so the named range
+        // stays within the carrier's natural width.
+        let width = match child.attribute("width") {
+            None => 1u32,
+            Some(s) => parse_int(s).ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::NumericParse {
+                        element: format!("<sce:flag name='{name}'>"),
+                        attr: "width".into(),
+                        value: s.to_string(),
+                        detail: "expected positive integer".into(),
+                    },
+                )
+            })?,
+        };
+        if width == 0 {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flag name='{name}'>"),
+                    attr: "width".into(),
+                    value: width.to_string(),
+                    expected: "1..=carrier_bit_width".into(),
+                },
+            ));
+        }
         if bit >= bit_width {
             return Err(located(
                 &child,
@@ -1327,7 +1360,38 @@ fn parse_codec_flags_from_node(
                 },
             ));
         }
-        flag_defs.push(FlagDef { name, bit });
+        if bit + width > bit_width {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flag name='{name}'>"),
+                    attr: "width".into(),
+                    value: width.to_string(),
+                    expected: format!(
+                        "bit({bit}) + width <= {bit_width} (carrier is {bit_width}-bit)"
+                    ),
+                },
+            ));
+        }
+        // Build the bit-range mask in the carrier's natural width and
+        // reject if any bit overlaps a previously-declared sibling.
+        let range_mask: u64 = ((1u64 << width) - 1) << bit;
+        if occupied & range_mask != 0 {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flag name='{name}'>"),
+                    attr: "bit".into(),
+                    value: format!("{bit}..{}", bit + width),
+                    expected: "bit-range disjoint from siblings in same <sce:flags>"
+                        .into(),
+                },
+            ));
+        }
+        occupied |= range_mask;
+        flag_defs.push(FlagDef { name, bit, width });
     }
 
     if flag_defs.is_empty() {

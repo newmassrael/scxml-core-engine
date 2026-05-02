@@ -35,7 +35,7 @@ static void test_{{ f.name }}(void) {
 {% endif %}
 {% endfor %}
             .expected_len = {{ c.encoded | length }},
-            .expected_bytes = { {% for b in c.encoded %}{{ b }}{% if not loop.last %}, {% endif %}{% endfor %} },
+            .expected_bytes = { {% if c.encoded %}{% for b in c.encoded %}{{ b }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}0{% endif %} },
         },
 {% endfor %}
     };

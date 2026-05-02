@@ -672,6 +672,24 @@
       ]
     },
     {
+      "name": "codec_qos_byte",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {
+          "name": "qos",
+          "type": "u8",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
+      "name": "codec_zenoh_keep_alive",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": []
+    },
+    {
       "name": "timer_diag_scheduler",
       "kind": "timer",
       "ref_section": "timers",

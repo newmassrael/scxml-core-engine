@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec multi-bit flag accessor (RFC §5.B B5-α).
+     Single uint8 carrier field "qos" subdivided into five bit-ranges that
+     mirror Zenoh's `_z_n_qos_t._val` byte (zenoh-pico/include/zenoh-pico/
+     protocol/core.h):
+        priority   bits 0..2 (3 bits — 8 levels CONTROL=0..BACKGROUND=7)
+        reliable   bit  3    (1 bit  — best-effort=0, reliable=1)
+        congestion bits 4..5 (2 bits — DROP=0, BLOCK=1, future=2,3)
+        express    bit  6    (1 bit  — express channel)
+        reserved   bit  7    (1 bit  — must-be-zero, future use)
+     Codegen emits a uint8 priority/congestion getter+setter alongside
+     the bool reliable/express/reserved getter+setter. Wire layout is
+     identical to a plain uint8 field (the bit-range subdivision lives
+     entirely in the accessor surface). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_qos_byte">
+  <datamodel>
+    <sce:flags id="qos" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="priority"   bit="0" width="3"/>
+      <sce:flag name="reliable"   bit="3"/>
+      <sce:flag name="congestion" bit="4" width="2"/>
+      <sce:flag name="express"    bit="6"/>
+      <sce:flag name="reserved"   bit="7"/>
+    </sce:flags>
+  </datamodel>
+</scxml>

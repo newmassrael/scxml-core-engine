@@ -356,16 +356,19 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B B1-γ flags primitive
+       RFC §5.B B1-γ + B5-α flags primitive
 
-       Named-bit accessor container over an unsigned-int carrier field.
-       The `<sce:flags>` element occupies the same wire bytes as a plain
-       `<sce:field>` of the same `sce:type` / `sce:byte` / `sce:bit-size`;
-       its `<sce:flag name="X" bit="N"/>` children declare ergonomic
-       per-bit get/set accessors that codegen emits alongside the
-       generated struct. Bit positions are 0 = LSB, (width-1) = MSB and
-       are validated against the carrier's natural integer width by
-       sce-build at parse time.
+       Named-bit-range accessor container over an unsigned-int carrier
+       field. The `<sce:flags>` element occupies the same wire bytes as
+       a plain `<sce:field>` of the same `sce:type` / `sce:byte` /
+       `sce:bit-size`; its `<sce:flag name="X" bit="N" [width="W"]/>`
+       children declare ergonomic per-bit-range get/set accessors that
+       codegen emits alongside the generated struct. Bit positions are
+       0 = LSB, `bit + width - 1 = MSB`. `width` defaults to 1 (B1-γ
+       single-bit shape — getter/setter use bool); B5-α multi-bit
+       (width >= 2) returns the smallest unsigned int type that fits.
+       Bit-range overlap and `bit + width > carrier_bit_width` are
+       rejected at parse time by sce-build.
 
        Attributes are unqualified on `<sce:flag>` (matches the
        `<sce:entry key/value>` and `<sce:arm value/type>` convention for
@@ -379,6 +382,12 @@
            the carrier's bit width: 0..7 for uint8, 0..15 for uint16,
            0..31 for uint32, 0..63 for uint64. Enforced by sce-build. -->
       <xs:attribute name="bit" type="xs:nonNegativeInteger" use="required"/>
+      <!-- B5-α multi-bit accessor: contiguous bit-range size. Defaults
+           to 1 (single-bit B1-γ shape — bool getter/setter). When > 1
+           the accessor returns the smallest unsigned integer type that
+           fits the range. `bit + width <= carrier_bit_width` and no
+           overlap with sibling flags — both enforced by sce-build. -->
+      <xs:attribute name="width" type="xs:positiveInteger" use="optional"/>
     </xs:complexType>
   </xs:element>
 

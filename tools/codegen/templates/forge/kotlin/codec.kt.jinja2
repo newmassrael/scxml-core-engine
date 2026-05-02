@@ -31,6 +31,12 @@ sealed class {{ struct_name }}Body {
 }
 
 {% endif %}
+{% if has_no_fields %}
+// RFC §5.B B5-α empty body — Kotlin's `data class` requires at least
+// one primary-ctor parameter, so empty-body codecs (e.g. Zenoh
+// KeepAlive) emit as a plain class with a no-arg constructor.
+class {{ struct_name }} {
+{% else %}
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `{{ struct_name }}()` before any encode()/decode() call. Defaults
@@ -47,16 +53,31 @@ data class {{ struct_name }}(
 {% endif %}
 {% endif %}
 ) {
+{% endif %}
 {% if has_flags %}
-    // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-    // field. Kotlin's UByte / UShort / UInt / ULong don't expose direct
-    // bitwise infix ops with literal masks, so the body widens through
-    // `.toInt()` (UByte/UShort) or `.toLong()` (UInt/ULong), runs the
-    // bit op against the Int/Long mask, then narrows back via the
-    // carrier's `toU*` constructor.
+    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // the carrier field. Single-bit (width=1) reads as Boolean; multi-
+    // bit (width>=2) reads as the smallest unsigned Kotlin type that
+    // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
+    // `.toInt()` and UInt/ULong through `.toLong()` for the bitwise
+    // ops; the result narrows back via the carrier's `toU*` ctor.
 {% for field in fields %}
 {% if field.has_flags %}
 {% for fl in field.flags %}
+{% if fl.multi_bit %}
+    fun {{ fl.name_acc }}(): {{ fl.result_type }} {
+        val _carrier = this.{{ field.id }}.{{ field.kt_int_view }}()
+        return ((_carrier shr {{ fl.bit }}) and {{ fl.value_mask_literal }}).{{ "to" ~ fl.result_type }}()
+    }
+
+    fun {{ fl.name_set }}(v: {{ fl.result_type }}) {
+        val _carrier = this.{{ field.id }}.{{ field.kt_int_view }}()
+        val _shifted_mask = {{ fl.value_mask_literal }} shl {{ fl.bit }}
+        val _val = (v.{{ field.kt_int_view }}() and {{ fl.value_mask_literal }}) shl {{ fl.bit }}
+        this.{{ field.id }} = ((_carrier and _shifted_mask.inv()) or _val).{{ field.kt_carrier_back }}()
+    }
+
+{% else %}
     fun {{ fl.name_acc }}(): Boolean = (this.{{ field.id }}.{{ field.kt_int_view }}() and {{ fl.mask_literal }}) != 0
 
     fun {{ fl.name_set }}(v: Boolean) {
@@ -67,12 +88,16 @@ data class {{ struct_name }}(
         }
     }
 
+{% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}
 {% endif %}
     fun encode(): ByteArray {
-{% if has_variant %}
+{% if has_no_fields %}
+        // RFC §5.B B5-α empty body — zero-byte payload.
+        return ByteArray(0)
+{% elif has_variant %}
         // Encode fixed prefix (tag field bytes are part of the prefix).
         // The tag value is read from the struct field, NOT derived from
         // the body discriminant — keeping author-set tag / body in sync
@@ -160,7 +185,10 @@ data class {{ struct_name }}(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): {{ struct_name }}? {
-{% if has_variant %}
+{% if has_no_fields %}
+            // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+            return {{ struct_name }}()
+{% elif has_variant %}
             // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
             val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
 {% for field in fields %}

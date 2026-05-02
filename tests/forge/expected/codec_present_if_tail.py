@@ -48,12 +48,13 @@ class CodecPresentIfTail:
             payload=payload,
         )
 
-    # RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-    # field. Plain methods (rather than @property) for API symmetry with
-    # Rust / Cpp / Kotlin / Go / C11. Python ints are unbounded, so the
-    # clear path masks back to the carrier's natural width to keep the
-    # value inside the unsigned domain after `~mask` flips the sign.
-    # Wire layout is unchanged.
+    # RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    # the carrier field. Single-bit (width=1) reads as bool; multi-bit
+    # (width>=2) reads as ``int`` (Python ints are unbounded, so a single
+    # ``int`` covers every result-type width). Setters mask + shift on
+    # the way in so out-of-range callers can't corrupt sibling bits.
+    # Plain methods (rather than @property) for API symmetry with
+    # Rust / Cpp / Kotlin / Go / C11. Wire layout is unchanged.
     def has_payload(self) -> bool:
         return (self.flags & 0x01) != 0
 

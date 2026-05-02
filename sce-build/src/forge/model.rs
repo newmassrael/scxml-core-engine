@@ -787,14 +787,19 @@ pub enum BitSize {
     },
 }
 
-/// A single named bit on a `<sce:flags>` carrier field — RFC §5.B B1-γ.
-/// `bit` is the position within the carrier's natural integer width
-/// (0 = LSB, `width-1` = MSB), validated at parse time against the
-/// carrier's [`SceType::int_bit_width`].
+/// A single named bit-range on a `<sce:flags>` carrier field — RFC §5.B
+/// B1-γ + B5-α. `bit` is the LSB position within the carrier's natural
+/// integer width (0 = LSB), validated at parse time against the
+/// carrier's [`SceType::int_bit_width`]. `width` is the contiguous
+/// bit-range size (defaults to 1 for B1-γ single-bit shape; >1 for
+/// B5-α multi-bit accessors like Zenoh's `_z_n_qos_t._val.priority:3`).
+/// `bit + width <= carrier_int_bit_width` is parser-enforced; per-flag
+/// bit-ranges within the same carrier may not overlap.
 #[derive(Debug, Clone, Serialize)]
 pub struct FlagDef {
     pub name: String,
     pub bit: u32,
+    pub width: u32,
 }
 
 /// RFC §5.B B1-δ present-if predicate — a single bit-test on a

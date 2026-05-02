@@ -56,10 +56,12 @@ func DecodeCodecPresentIfTail(cursor *codec.SceCursor) (*CodecPresentIfTail, err
 	}, nil
 }
 
-// RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-// field. Read returns a bool from `(field & mask) != 0`; write toggles
-// the bit on/off without disturbing siblings on the same carrier. Wire
-// layout is unchanged — the carrier still occupies its declared bytes.
+// RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+// the carrier field. Single-bit (width=1) reads as bool; multi-bit
+// (width>=2) reads as the smallest unsigned int type that fits. Setters
+// mask + shift on the way in so out-of-range callers can't corrupt
+// sibling bits. Wire layout is unchanged — the carrier still occupies
+// its declared bytes.
 func (s *CodecPresentIfTail) HasPayload() bool {
 	return (s.Flags & 0x01) != 0
 }

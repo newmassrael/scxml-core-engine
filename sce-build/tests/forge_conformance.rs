@@ -877,6 +877,29 @@ fn forge_codec_zenoh_frame_cpp() {
     assert_standalone_forge("codec_zenoh_frame", "codec_zenoh_frame.h");
 }
 
+// ── RFC §5.B B5-α multi-bit flag accessor + empty-codec lift ──
+// `codec_qos_byte` mirrors zenoh's `_z_n_qos_t._val`: a uint8 carrier
+// with five bit-ranges (priority:3 + reliable:1 + congestion:2 +
+// express:1 + reserved:1). Multi-bit ranges (priority/congestion)
+// emit uint8-typed get/set; single-bit ranges (reliable/express/
+// reserved) keep the bool shape from B1-γ. `codec_zenoh_keep_alive`
+// is the first reachable consumer of the empty-body lift — the
+// surrounding 1-byte transport-message header (MID + flags) marks
+// the message; the body codec emits zero wire bytes.
+
+#[test]
+fn forge_codec_qos_byte_cpp() {
+    assert_standalone_forge("codec_qos_byte", "codec_qos_byte.h");
+}
+
+#[test]
+fn forge_codec_zenoh_keep_alive_cpp() {
+    assert_standalone_forge(
+        "codec_zenoh_keep_alive",
+        "codec_zenoh_keep_alive.h",
+    );
+}
+
 // ── RFC §5.B B1-γ flags primitive ────────────────────────────
 // `codec_flags_basic` declares a uint8 carrier `header` with four
 // named bits; codegen emits per-flag get/set accessors while the wire
@@ -1779,6 +1802,21 @@ fn forge_kotlin_codec_zenoh_frame() {
     assert_standalone_forge_kotlin("codec_zenoh_frame", "CodecZenohFrame.kt");
 }
 
+// ── RFC §5.B B5-α multi-bit + empty-codec (Kotlin) ───────────
+
+#[test]
+fn forge_kotlin_codec_qos_byte() {
+    assert_standalone_forge_kotlin("codec_qos_byte", "CodecQosByte.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_keep_alive() {
+    assert_standalone_forge_kotlin(
+        "codec_zenoh_keep_alive",
+        "CodecZenohKeepAlive.kt",
+    );
+}
+
 // ── RFC §5.B B1-γ flags primitive (Kotlin) ───────────────────
 
 #[test]
@@ -2127,6 +2165,21 @@ fn forge_rust_codec_zenoh_frame() {
     assert_standalone_forge_rust("codec_zenoh_frame", "codec_zenoh_frame.rs");
 }
 
+// ── RFC §5.B B5-α multi-bit + empty-codec (Rust) ─────────────
+
+#[test]
+fn forge_rust_codec_qos_byte() {
+    assert_standalone_forge_rust("codec_qos_byte", "codec_qos_byte.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_keep_alive() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_keep_alive",
+        "codec_zenoh_keep_alive.rs",
+    );
+}
+
 // ── RFC §5.B B1-γ flags primitive (Rust) ─────────────────────
 
 #[test]
@@ -2368,6 +2421,21 @@ fn forge_go_codec_zenoh_close() {
 #[test]
 fn forge_go_codec_zenoh_frame() {
     assert_standalone_forge_go("codec_zenoh_frame", "codec_zenoh_frame.go");
+}
+
+// ── RFC §5.B B5-α multi-bit + empty-codec (Go) ───────────────
+
+#[test]
+fn forge_go_codec_qos_byte() {
+    assert_standalone_forge_go("codec_qos_byte", "codec_qos_byte.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_keep_alive() {
+    assert_standalone_forge_go(
+        "codec_zenoh_keep_alive",
+        "codec_zenoh_keep_alive.go",
+    );
 }
 
 // ── RFC §5.B B1-γ flags primitive (Go) ───────────────────────
@@ -2637,6 +2705,21 @@ fn forge_python_codec_zenoh_frame() {
     assert_standalone_forge_python("codec_zenoh_frame", "codec_zenoh_frame.py");
 }
 
+// ── RFC §5.B B5-α multi-bit + empty-codec (Python) ───────────
+
+#[test]
+fn forge_python_codec_qos_byte() {
+    assert_standalone_forge_python("codec_qos_byte", "codec_qos_byte.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_keep_alive() {
+    assert_standalone_forge_python(
+        "codec_zenoh_keep_alive",
+        "codec_zenoh_keep_alive.py",
+    );
+}
+
 // ── RFC §5.B B1-γ flags primitive (Python) ───────────────────
 
 #[test]
@@ -2835,6 +2918,21 @@ fn forge_c11_codec_zenoh_close() {
 #[test]
 fn forge_c11_codec_zenoh_frame() {
     assert_standalone_forge_c("codec_zenoh_frame", "codec_zenoh_frame.c.h");
+}
+
+// ── RFC §5.B B5-α multi-bit + empty-codec (C11) ──────────────
+
+#[test]
+fn forge_c11_codec_qos_byte() {
+    assert_standalone_forge_c("codec_qos_byte", "codec_qos_byte.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_keep_alive() {
+    assert_standalone_forge_c(
+        "codec_zenoh_keep_alive",
+        "codec_zenoh_keep_alive.c.h",
+    );
 }
 
 // ── RFC §5.B B1-γ flags primitive (C11) ──────────────────────

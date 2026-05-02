@@ -13,10 +13,12 @@
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     int i = 0;
     for (const auto &case_entry : spec["cases"]) {
+{% if f.fields %}
         const auto &decoded_json = case_entry["decoded"];
 {% for field in f.fields %}
         auto input_{{ field.name }} = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
 {% endfor %}
+{% endif %}
         std::vector<std::uint8_t> expected_bytes;
         for (const auto &b : case_entry["encoded"]) {
             expected_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));

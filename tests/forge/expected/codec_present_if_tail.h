@@ -54,11 +54,11 @@ struct CodecPresentIfTail {
         };
     }
 
-    // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
-    // field. Read returns a bool from `(field & mask) != 0`; write
-    // toggles the bit without disturbing siblings on the same carrier.
-    // Wire layout is unchanged — the carrier still occupies its
-    // declared bytes.
+    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors.
+    // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
+    // the smallest unsigned integer type that fits the range. Setters
+    // mask + shift on the way in so out-of-range callers can't corrupt
+    // sibling bits. Wire layout is unchanged.
     bool has_payload() const noexcept {
         return (this->flags & 0x01) != 0;
     }

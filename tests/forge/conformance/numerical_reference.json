@@ -2671,6 +2671,61 @@
           "note": "sn=16384 (first 3-byte VLE), empty payload"
         }
       ]
+    },
+    "codec_qos_byte": {
+      "fixture": "CodecQosByte",
+      "signature": "(raw: &[u8]) <-> {qos: u8 @ byte 0 with priority:3 + reliable:1 + congestion:2 + express:1 + reserved:1}",
+      "description": "Multi-bit flag accessor synthetic (RFC §5.B B5-α). The wire shape is a plain uint8 — the bit-range subdivision lives entirely in the accessor surface (priority @ bits 0..2, reliable @ bit 3, congestion @ bits 4..5, express @ bit 6, reserved @ bit 7). Round-trip cases verify that the carrier byte travels through encode/decode unchanged regardless of which sub-ranges are set; per-language accessor tests (priority(), set_priority(), ...) live in each backend's smoke harness rather than here. Mirrors zenoh-pico `_z_n_qos_t._val` (zenoh-pico/include/zenoh-pico/protocol/core.h).",
+      "cases": [
+        {
+          "decoded": {
+            "qos": 0
+          },
+          "encoded": [
+            0
+          ],
+          "note": "all bit-ranges clear (priority=0, reliable=false, congestion=0, express=false, reserved=false)"
+        },
+        {
+          "decoded": {
+            "qos": 255
+          },
+          "encoded": [
+            255
+          ],
+          "note": "all bit-ranges max (priority=7, reliable=true, congestion=3, express=true, reserved=true)"
+        },
+        {
+          "decoded": {
+            "qos": 197
+          },
+          "encoded": [
+            197
+          ],
+          "note": "0xC5 = priority=5 + express=true + reserved=true (others clear)"
+        },
+        {
+          "decoded": {
+            "qos": 50
+          },
+          "encoded": [
+            50
+          ],
+          "note": "0x32 = priority=2 + congestion=3 (others clear)"
+        }
+      ]
+    },
+    "codec_zenoh_keep_alive": {
+      "fixture": "CodecZenohKeepAlive",
+      "signature": "(raw: &[u8]) <-> {} (zero-byte body)",
+      "description": "Zenoh transport-layer KeepAlive body (RFC §5.B B5-α empty-codec lift). The 1-byte transport-message header (MID + flags) marks the message; the body codec emits zero wire bytes. Empty round-trip case confirms encode produces an empty byte sequence and decode advances the cursor by 0 bytes regardless of remaining input. Upstream parity: `_z_keep_alive_encode` in zenoh-pico src/protocol/codec/transport.c.",
+      "cases": [
+        {
+          "decoded": {},
+          "encoded": [],
+          "note": "empty body — encode/decode round-trips zero bytes"
+        }
+      ]
     }
   },
   "timers": {

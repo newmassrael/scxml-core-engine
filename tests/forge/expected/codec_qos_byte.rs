@@ -10,12 +10,12 @@ use sce_forge_runtime::codec::{CodecError, SceCursor};
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct CodecFlagsBasic {
-    pub header: u8,
+pub struct CodecQosByte {
+    pub qos: u8,
 }
 
 #[allow(dead_code)]
-impl CodecFlagsBasic {
+impl CodecQosByte {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -31,7 +31,7 @@ impl CodecFlagsBasic {
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let raw = cursor.peek_slice(1)?;
         let value = Self {
-            header: raw[0],
+            qos: raw[0],
         };
         cursor.advance(1)?;
         Ok(value)
@@ -43,57 +43,65 @@ impl CodecFlagsBasic {
     // range. Setters mask + shift on the way in so out-of-range
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
+    pub fn priority(&self) -> u8 {
+        (((self.qos >> 0) & (0x07 as u8))) as u8
+    }
+
+    pub fn set_priority(&mut self, v: u8) {
+        let _mask: u8 = (0x07 as u8) << 0;
+        let _val: u8 = ((v as u8) & (0x07 as u8)) << 0;
+        self.qos = (self.qos & !_mask) | _val;
+    }
+
     pub fn reliable(&self) -> bool {
-        (self.header & 0x80) != 0
+        (self.qos & 0x08) != 0
     }
 
     pub fn set_reliable(&mut self, v: bool) {
         if v {
-            self.header |= 0x80;
+            self.qos |= 0x08;
         } else {
-            self.header &= !0x80;
+            self.qos &= !0x08;
         }
     }
 
-    pub fn more(&self) -> bool {
-        (self.header & 0x40) != 0
+    pub fn congestion(&self) -> u8 {
+        (((self.qos >> 4) & (0x03 as u8))) as u8
     }
 
-    pub fn set_more(&mut self, v: bool) {
+    pub fn set_congestion(&mut self, v: u8) {
+        let _mask: u8 = (0x03 as u8) << 4;
+        let _val: u8 = ((v as u8) & (0x03 as u8)) << 4;
+        self.qos = (self.qos & !_mask) | _val;
+    }
+
+    pub fn express(&self) -> bool {
+        (self.qos & 0x40) != 0
+    }
+
+    pub fn set_express(&mut self, v: bool) {
         if v {
-            self.header |= 0x40;
+            self.qos |= 0x40;
         } else {
-            self.header &= !0x40;
+            self.qos &= !0x40;
         }
     }
 
-    pub fn drop(&self) -> bool {
-        (self.header & 0x20) != 0
+    pub fn reserved(&self) -> bool {
+        (self.qos & 0x80) != 0
     }
 
-    pub fn set_drop(&mut self, v: bool) {
+    pub fn set_reserved(&mut self, v: bool) {
         if v {
-            self.header |= 0x20;
+            self.qos |= 0x80;
         } else {
-            self.header &= !0x20;
-        }
-    }
-
-    pub fn first(&self) -> bool {
-        (self.header & 0x10) != 0
-    }
-
-    pub fn set_first(&mut self, v: bool) {
-        if v {
-            self.header |= 0x10;
-        } else {
-            self.header &= !0x10;
+            self.qos &= !0x80;
         }
     }
 
     pub fn encode(&self) -> Vec<u8> {
         vec![
-            self.header,
+            self.qos,
         ]
     }
 }

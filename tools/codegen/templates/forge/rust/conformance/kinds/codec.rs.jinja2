@@ -19,10 +19,12 @@
         .iter()
         .enumerate()
     {
+{% if f.fields %}
         let decoded = &case["decoded"];
 {% for field in f.fields %}
         let input_{{ field.name | to_snake_case }} = {{ ('decoded["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }};
 {% endfor %}
+{% endif %}
         let expected_bytes: Vec<u8> = case["encoded"]
             .as_array()
             .expect("encoded must be array")
@@ -46,6 +48,7 @@
         );
 
         let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&expected_bytes);
+{% if f.fields %}
         let round_tripped = {{ f.name | to_pascal_case }}::decode(&mut cursor)
             .expect("{{ f.name }} decode must succeed");
 {% for field in f.fields %}
@@ -55,4 +58,11 @@
             "{{ f.name }} case {i} decode {{ field.name }}"
         );
 {% endfor %}
+{% else %}
+        // RFC §5.B B5-α empty body — decode must succeed but there are
+        // no fields to assert against. The decoded instance round-trips
+        // back to the empty byte sequence (verified above via encode).
+        {{ f.name | to_pascal_case }}::decode(&mut cursor)
+            .expect("{{ f.name }} decode must succeed");
+{% endif %}
     }
