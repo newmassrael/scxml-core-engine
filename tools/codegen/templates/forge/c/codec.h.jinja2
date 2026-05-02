@@ -112,7 +112,17 @@ typedef struct {
  * (without advancing) when the cursor's tail is shorter than the
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
-static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out) {
+static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out{{ parent_flags_param_decl }}) {
+{% if has_parent_flags %}
+    /* RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
+     * carrier value, threaded by the variant arm dispatcher. Body
+     * fields gated via `parent.<flag>` predicates read from this
+     * parameter; defensive `(void)parent_flags` suppresses the
+     * `-Wunused-parameter` warning when no gated field happens to
+     * consume it (mirrors the Rust `let _ = parent_flags;` and Cpp
+     * `(void)parent_flags;` defensive guards). */
+    (void)parent_flags;
+{% endif %}
 {% if has_no_fields %}
     /* RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
      * The placeholder member is initialised to 0 to keep callers out
@@ -137,7 +147,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% for arm in variant.arms %}
         case {{ arm.value_literal }}:
             out->body.kind = {{ arm.c_kind_constant }};
-            _arm_st = {{ arm.body_decoder }}(cursor, &out->body.arm.{{ arm.c_union_field }});
+            _arm_st = {{ arm.body_decoder }}(cursor, &out->body.arm.{{ arm.c_union_field }}{{ arm.body_parent_flags_arg }});
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
 {% endfor %}
@@ -145,7 +155,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% if variant.default_arm %}
             out->body.kind = {{ variant.default_arm.c_kind_constant }};
             out->body.default_tag = {{ variant.tag_store_expr }};
-            _arm_st = {{ variant.default_arm.body_decoder }}(cursor, &out->body.arm.{{ variant.default_arm.c_union_field }});
+            _arm_st = {{ variant.default_arm.body_decoder }}(cursor, &out->body.arm.{{ variant.default_arm.c_union_field }}{{ variant.default_arm.body_parent_flags_arg }});
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
 {% else %}
@@ -268,7 +278,11 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endif %}
 }
 
-static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_typedef }} *self) {
+static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_typedef }} *self{{ parent_flags_param_decl }}) {
+{% if has_parent_flags %}
+    /* RFC §5.B B5-γ: see decode — same parameter, same suppress. */
+    (void)parent_flags;
+{% endif %}
     {{ c_encoded_typedef }} r;
 {% if has_no_fields %}
     /* RFC §5.B B5-α empty body — zero-byte payload. */
@@ -288,7 +302,7 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
     switch (self->body.kind) {
 {% for arm in variant.arms %}
         case {{ arm.c_kind_constant }}: {
-            {{ arm.c_body_encoded_type }} _sub = {{ arm.body_encoder }}(&self->body.arm.{{ arm.c_union_field }});
+            {{ arm.c_body_encoded_type }} _sub = {{ arm.body_encoder }}(&self->body.arm.{{ arm.c_union_field }}{{ arm.body_parent_flags_arg_encode }});
             if (r.len + _sub.len <= {{ c_max_bytes_macro }}) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -298,7 +312,7 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {% endfor %}
 {% if variant.default_arm %}
         case {{ variant.default_arm.c_kind_constant }}: {
-            {{ variant.default_arm.c_body_encoded_type }} _sub = {{ variant.default_arm.body_encoder }}(&self->body.arm.{{ variant.default_arm.c_union_field }});
+            {{ variant.default_arm.c_body_encoded_type }} _sub = {{ variant.default_arm.body_encoder }}(&self->body.arm.{{ variant.default_arm.c_union_field }}{{ variant.default_arm.body_parent_flags_arg_encode }});
             if (r.len + _sub.len <= {{ c_max_bytes_macro }}) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;

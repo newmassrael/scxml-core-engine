@@ -1069,22 +1069,17 @@ fn render_codec(
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
-            | crate::generator::Language::Go => { /* trunk + Kotlin + Go closures */ }
-            crate::generator::Language::C11
-            | crate::generator::Language::Python => {
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11 => { /* trunk + Kotlin + Go + C11 closures */ }
+            crate::generator::Language::Python => {
                 return Err(ForgeError::Generate(
                     crate::forge::error::GenerateError::UnsupportedFeature(format!(
                         "codec '{}' uses RFC §5.B B5-γ parent-flags dependency \
                          (`<sce:requires-parent-flags>` on this codec or on an \
                          imported variant arm body). Trunk emit landed on Rust + \
-                         Cpp + Kotlin + Go; the per-language closure for {} ships in a \
+                         Cpp + Kotlin + Go + C11; the Python closure ships in a \
                          follow-up commit (precedent: B1-β / B1-δ / B2-α / B3-α).",
                         m.name,
-                        match lang {
-                            crate::generator::Language::C11 => "c11",
-                            crate::generator::Language::Python => "python",
-                            _ => unreachable!(),
-                        }
                     )),
                 ));
             }
@@ -1648,11 +1643,20 @@ fn render_codec(
             // template body (unlike Rust's `let _ = ...` / Cpp's
             // `(void)...` / Kotlin's `@Suppress("UNUSED_PARAMETER")`).
             crate::generator::Language::Go => (", parentFlags byte", "parentFlags byte"),
-            // Other 2 languages gated above with UnsupportedFeature, so
-            // the empty fragment is unreachable for valid emit. Default
-            // to empty to keep the JSON shape uniform.
-            crate::generator::Language::C11
-            | crate::generator::Language::Python => ("", ""),
+            // C11: snake_case `parent_flags` matches the identifier
+            // emitted by `present_if_test_literal`'s C11 Parent-scope
+            // branch (line ~4893-4905) and by the C11 encode helpers'
+            // `carrier_snake` Parent arm (line ~3852-3858 etc.). Type
+            // is `uint8_t` per v1's uint8 lock-in. C11 always has a
+            // preceding `*cursor`/`*self` arg on both decode and
+            // encode, so `_first` is unreachable for C11 (default
+            // empty) — the `_decl` (leading-comma) form is used at
+            // both sites in the C11 template.
+            crate::generator::Language::C11 => (", uint8_t parent_flags", ""),
+            // Python gated above with UnsupportedFeature, so the empty
+            // fragment is unreachable for valid emit. Default to empty
+            // to keep the JSON shape uniform.
+            crate::generator::Language::Python => ("", ""),
         }
     } else {
         ("", "")
@@ -1795,7 +1799,14 @@ fn render_codec(
                         crate::generator::Language::Go => {
                             format!(", {}", filters::to_pascal_case(c.clone()))
                         }
-                        // Rust / Cpp / Kotlin / (future C11/Python):
+                        // C11: prefix-field decode writes directly into
+                        // `out->{snake_carrier}` (no separate local), so
+                        // the variant arm dispatcher reads the
+                        // just-written value from the same path.
+                        crate::generator::Language::C11 => {
+                            format!(", out->{}", filters::to_snake_case(c.clone()))
+                        }
+                        // Rust / Cpp / Kotlin / (future Python):
                         // the just-decoded local matches the snake_case
                         // carrier id verbatim, so a bare id reads
                         // correctly at the call site.
@@ -1822,9 +1833,42 @@ fn render_codec(
                         crate::generator::Language::Go => {
                             format!("s.{}", filters::to_pascal_case(c.clone()))
                         }
-                        // Other 2 languages gated above; emit bare id
-                        // as a deterministic placeholder.
+                        // C11 encode arm dispatcher already has a
+                        // preceding `&self->body.arm.<field>` arg, so
+                        // the parent_flags arg lands AFTER it with a
+                        // leading comma — we use the same `_arg`
+                        // (leading-comma) form at the encode site
+                        // through a separate template token, but we
+                        // also leave `_arg_first` populated for
+                        // symmetry. In the C11 template the leading
+                        // comma form (`body_parent_flags_arg`) is what
+                        // gets consumed at both sites.
+                        crate::generator::Language::C11 => {
+                            format!("self->{}", filters::to_snake_case(c.clone()))
+                        }
+                        // Python gated above; emit bare id as a
+                        // deterministic placeholder.
                         _ => c.clone(),
+                    })
+                    .unwrap_or_default();
+                // RFC §5.B B5-γ C11 closure: encode-site arm dispatcher
+                // already has `&self->body.arm.<field>` as a preceding
+                // arg; the parent_flags arg appends with a leading
+                // comma. Other languages' encode sites have no
+                // preceding arg so they consume `_arg_first` directly.
+                // Empty when the body has no parent-flags dependency.
+                let body_parent_flags_arg_encode = body_parent_flags_carrier
+                    .as_ref()
+                    .map(|c| match lang {
+                        crate::generator::Language::C11 => {
+                            format!(", self->{}", filters::to_snake_case(c.clone()))
+                        }
+                        // Other languages still consume `_arg_first`
+                        // (no leading comma) at the encode site; this
+                        // fragment stays empty so the C11 template can
+                        // unconditionally inject it without risking
+                        // a stray comma in non-C11 outputs.
+                        _ => String::new(),
                     })
                     .unwrap_or_default();
                 let mut obj = serde_json::Map::new();
@@ -1836,6 +1880,10 @@ fn render_codec(
                 obj.insert("c_kind_constant".into(), c_kind_constant.into());
                 obj.insert("c_union_field".into(), arm_snake.into());
                 obj.insert("c_body_encoded_type".into(), c_body_encoded_type.into());
+                obj.insert(
+                    "body_parent_flags_arg_encode".into(),
+                    body_parent_flags_arg_encode.into(),
+                );
                 obj.insert(
                     "body_parent_flags_arg".into(),
                     body_parent_flags_arg.into(),
@@ -1878,6 +1926,9 @@ fn render_codec(
                         crate::generator::Language::Go => {
                             format!(", {}", filters::to_pascal_case(c.clone()))
                         }
+                        crate::generator::Language::C11 => {
+                            format!(", out->{}", filters::to_snake_case(c.clone()))
+                        }
                         _ => format!(", {}", c),
                     })
                     .unwrap_or_default();
@@ -1890,7 +1941,19 @@ fn render_codec(
                         crate::generator::Language::Go => {
                             format!("s.{}", filters::to_pascal_case(c.clone()))
                         }
+                        crate::generator::Language::C11 => {
+                            format!("self->{}", filters::to_snake_case(c.clone()))
+                        }
                         _ => c.clone(),
+                    })
+                    .unwrap_or_default();
+                let body_parent_flags_arg_encode = body_parent_flags_carrier
+                    .as_ref()
+                    .map(|c| match lang {
+                        crate::generator::Language::C11 => {
+                            format!(", self->{}", filters::to_snake_case(c.clone()))
+                        }
+                        _ => String::new(),
                     })
                     .unwrap_or_default();
                 let mut obj = serde_json::Map::new();
@@ -1913,6 +1976,10 @@ fn render_codec(
                 obj.insert(
                     "body_parent_flags_arg_first".into(),
                     body_parent_flags_arg_first.into(),
+                );
+                obj.insert(
+                    "body_parent_flags_arg_encode".into(),
+                    body_parent_flags_arg_encode.into(),
                 );
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })

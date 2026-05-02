@@ -4689,10 +4689,10 @@ fn crossfile_matrix_validator_interpolation() {
 // ═══════════════════════════════════════════════════════════════
 
 /// RFC §5.B B5-γ trunk gate: a codec declaring
-/// `<sce:requires-parent-flags>` rejects on C11/Python until the
-/// per-language closures land (precedent: B1-β / B1-δ / B2-α / B3-α
-/// trunk-then-closures cadence). Kotlin + Go closures landed; their
-/// gate-rejection tests rotated to positive emission tests.
+/// `<sce:requires-parent-flags>` rejects on Python until the closure
+/// lands (precedent: B1-β / B1-δ / B2-α / B3-α trunk-then-closures
+/// cadence). Kotlin + Go + C11 closures landed; their gate-rejection
+/// tests rotated to positive emission tests.
 fn assert_b5_gamma_gate_rejects(scxml: &str, language: sce_build::generator::Language) {
     use sce_build::forge::error::{ForgeError, GenerateError};
 
@@ -4777,11 +4777,32 @@ fn forge_go_codec_init_syn_envelope() {
     );
 }
 
+/// RFC §5.B B5-γ C11 closure: body codec with parent-flags dependency
+/// emits `uint8_t parent_flags` parameter on `decode`/`encode` (after
+/// the existing `*cursor`/`*self` arg); `parent.<flag>` predicates
+/// compile to `(parent_flags & 0xNN) != 0`. `(void)parent_flags;`
+/// defensive guard suppresses `-Wunused-parameter` for codecs that
+/// declare `<sce:requires-parent-flags>` without any consuming gated
+/// field (mirrors Rust's `let _ = parent_flags;` and Cpp's
+/// `(void)parent_flags;`).
 #[test]
-fn forge_codec_init_syn_body_c11_gate_rejects() {
-    assert_b5_gamma_gate_rejects(
-        "codec_init_syn_body.scxml",
-        sce_build::generator::Language::C11,
+fn forge_c11_codec_init_syn_body() {
+    assert_standalone_forge_c(
+        "codec_init_syn_body",
+        "codec_init_syn_body.c.h",
+    );
+}
+
+/// RFC §5.B B5-γ C11 closure: variant parent threading carrier value.
+/// Decode-site dispatcher reads the just-decoded carrier from
+/// `out->header` (no separate local — C11 prefix decode writes
+/// directly to the parent struct); encode-site dispatcher reads from
+/// `self->header`. Mirrors the Rust + Cpp + Kotlin + Go goldens.
+#[test]
+fn forge_c11_codec_init_syn_envelope() {
+    assert_standalone_forge_c(
+        "codec_init_syn_envelope",
+        "codec_init_syn_envelope.c.h",
     );
 }
 
