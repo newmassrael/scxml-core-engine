@@ -1006,37 +1006,6 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
     }
 }
 
-/// RFC §5.B B2-test-vector closure rotation: per-fixture
-/// content-aware filter matching the `render_algorithm` gate. The
-/// trunk shipped Rust + C11; subsequent closures widen the
-/// supported set (Kotlin landed first). The remaining un-shipped
-/// backends reject with `GenerateError::UnsupportedFeature` when
-/// their codegen flow encounters an algorithm carrying
-/// `<sce:test-vector>`. Mirroring the gate at fixture-filter time
-/// means the still-gated conformance harnesses simply drop the
-/// fixture instead of surfacing a hard codegen error from the
-/// cross-language build — each closure widens this filter as it
-/// lifts the gate (B1-β / B1-δ / B2-α pattern).
-///
-/// Exposed as `pub` so the `sce-codegen list-fixtures` CLI applies
-/// the same filter, keeping the cmake harness's fixture set
-/// auto-derived from the same single source of truth.
-pub fn lang_supports_fixture(lang: Language, spec: &FixtureSpec) -> bool {
-    match spec {
-        FixtureSpec::Algorithm { has_test_vectors: true, .. } => {
-            matches!(
-                lang,
-                Language::Rust
-                    | Language::C11
-                    | Language::Kotlin
-                    | Language::Cpp
-                    | Language::Go
-            )
-        }
-        _ => true,
-    }
-}
-
 /// Parse a `<scxml sce:kind="procedure">` source file and return the
 /// `<sce:helper name="...">` declarations in source order. The conformance
 /// harness uses this to drive positional `execute()` argument ordering from
@@ -1521,11 +1490,6 @@ pub fn render_harness(
     if matches!(language, Language::C11) {
         fixtures.retain(|f| c11_supported_kind(&f.spec));
     }
-    // RFC §5.B B2-test-vector: drop fixtures whose content-aware gate
-    // disagrees with the requested language (e.g. an algorithm
-    // carrying `<sce:test-vector>` flows through Rust + C11 only at
-    // trunk; Cpp/Kotlin/Go/Python pick it up as their closures land).
-    fixtures.retain(|f| lang_supports_fixture(language, &f.spec));
 
     // Per-kind presence flags let per-language harness scaffolds pull in
     // kind-specific runtime imports (e.g. Go `forge` package, Kotlin

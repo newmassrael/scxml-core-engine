@@ -1,0 +1,35 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.B B2-test-vector: per-row `unittest.TestCase` sidecar for
+   an algorithm fixture. Emitted alongside the algorithm `.py` file
+   into the conformance_generated dir whenever the algorithm SCXML
+   carries at least one `<sce:test-vector hex value/>` row. The
+   sidecar lives as `_sce_conformance.<snake>_test` (sibling to
+   `_sce_conformance.<snake>`) so a relative `from .<snake> import
+   <fn>` resolves at import time. The test class is re-exported
+   from `conformance_generated.py` (the harness) via an explicit
+   import; the module-level shim at
+   `sce-forge-runtime/python/tests/test_numerical_conformance.py`
+   uses `import *` so pytest discovery picks up the test class
+   alongside the existing `TestNumericalConformance`. #}
+
+# SCE Forge: Auto-generated test-vector sidecar (RFC §5.B B2)
+# Companion to {{ name }}.py — do not edit; regenerate from the source SCXML.
+
+import unittest
+
+from .{{ name }} import {{ name }}
+
+
+class {{ name_pascal }}TestVectors(unittest.TestCase):
+{% for tv in test_vectors %}
+    def test_vector_{{ name }}_l{{ tv.source_line }}(self) -> None:
+        actual = {{ name }}({{ tv.bytes_literal_py }})
+        expected = {{ tv.value_literal_py }}
+        self.assertEqual(
+            actual,
+            expected,
+            f"<sce:test-vector> at SCXML L{{ tv.source_line }}: {{ name }}(<{{ tv.hex }}>) returned {actual!r}, expected {expected!r}",
+        )
+{% endfor %}

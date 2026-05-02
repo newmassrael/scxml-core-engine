@@ -515,16 +515,6 @@ fn assert_inline_codec_structural(
 
 // ── Algorithm conformance (RFC §5.A, Phase A3) ────────────────
 
-/// RFC §5.B B2-test-vector closure rotation: the algorithm_crc16
-/// fixture carries a canonical `<sce:test-vector>` row, so codegen
-/// still rejects on Python (trunk shipped Rust + C11; Kotlin + Cpp
-/// + Go closures landed next) with the typed
-/// `generate/unsupported-feature` until the final closure lifts
-/// the gate (mirrors the B1-β codec_variant_dispatch pattern).
-/// When the Python closure lands, its rejection test is removed
-/// entirely and the standalone golden assertion is restored (now
-/// extended with the per-fixture sidecar golden).
-
 /// RFC §5.B B2-test-vector Cpp closure: the algorithm body itself
 /// stays byte-stable against its prior golden — the closure only
 /// adds a sidecar emission, so the primary algorithm output stays
@@ -2225,34 +2215,28 @@ fn forge_python_codec_until_eof_basic() {
 
 // ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
 
-/// RFC §5.B B2-test-vector trunk gate (Python). See the cpp-side
-/// rejection test above for the rotation contract.
+/// RFC §5.B B2-test-vector Python closure (final): the algorithm
+/// body itself stays byte-stable against its prior golden — the
+/// closure only adds a sidecar emission, so the primary algorithm
+/// output stays identical to the pre-test-vector form.
 #[test]
-fn forge_python_algorithm_crc16_test_vector_gate_rejects_until_closure() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
-    let scxml_path = resource_dir().join("algorithm_crc16.scxml");
-    let content = std::fs::read_to_string(&scxml_path).expect("read algorithm_crc16 fixture");
-    let result = sce_build::compile_forge_with_imports(
-        &content,
-        sce_build::DocumentLabel::symmetric("algorithm_crc16"),
+fn forge_python_algorithm_crc16() {
+    assert_standalone_forge_python("algorithm_crc16", "algorithm_crc16.py");
+}
+
+/// RFC §5.B B2-test-vector Python closure (final): pin the
+/// per-fixture sidecar (`<snake>_test.py`) emitted next to the
+/// algorithm `.py` in the conformance_generated dir. The harness
+/// module re-exports the `<Pascal>TestVectors(unittest.TestCase)`
+/// class so pytest discovery picks it up via the existing
+/// `import *` shim at
+/// `sce-forge-runtime/python/tests/test_numerical_conformance.py`.
+#[test]
+fn forge_python_algorithm_crc16_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "algorithm_crc16",
+        "algorithm_crc16_test.py",
         sce_build::generator::Language::Python,
-        scxml_path.parent().unwrap(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "B2-test-vector trunk must gate <sce:test-vector> on Python"
-        ),
-        Err(e) => e,
-    };
-    let inner = err.error;
-    assert!(
-        matches!(
-            inner,
-            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("algorithm_crc16") && msg.contains("Python")
-        ),
-        "must surface as GenerateError::UnsupportedFeature naming the algorithm and language; got: {inner:?}"
     );
 }
 

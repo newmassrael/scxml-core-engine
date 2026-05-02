@@ -5044,9 +5044,24 @@ pub fn generate_python_with_imports(
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
-    Ok(GeneratedOutput {
-        files: vec![(filename, code)],
-    })
+    let mut files = vec![(filename, code)];
+    // RFC §5.B B2-test-vector: sidecar `<snake>_test.py` emits
+    // alongside the algorithm `.py` into the conformance_generated
+    // dir whenever `<sce:test-vector>` rows are declared. The
+    // harness module re-exports the sidecar's `<Pascal>TestVectors`
+    // class so pytest's discovery via the existing wildcard import
+    // in `tests/test_numerical_conformance.py` picks it up
+    // alongside `TestNumericalConformance`.
+    if let ForgeDocument::Algorithm(m) = doc {
+        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Python,
+        )? {
+            files.push(sidecar);
+        }
+    }
+    Ok(GeneratedOutput { files })
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -9630,34 +9645,10 @@ fn render_algorithm(
 ) -> Result<String, ForgeError> {
     use crate::forge::types::{InferredType, TypeCtx};
     use crate::generator::Language;
-    // RFC §5.B B2-test-vector closure rotation: the trunk shipped
-    // Rust + C11; subsequent closures widen the supported set
-    // (Kotlin → Cpp). The remaining un-shipped backends
-    // (Go / Python) reject here with the typed
-    // `generate/unsupported-feature` until each closure lifts the
-    // gate. Without this rejection the codegen would silently drop
-    // the declared test vectors — author would ship apparently-valid
-    // algorithm output against an SCXML whose round-trip oracle is
-    // never exercised, defeating the RFC §5.B cross-backend
-    // byte-equivalence acceptance gate.
-    if !m.test_vectors.is_empty()
-        && !matches!(
-            lang,
-            Language::Rust
-                | Language::C11
-                | Language::Kotlin
-                | Language::Cpp
-                | Language::Go
-        )
-    {
-        return Err(ForgeError::Generate(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "algorithm '{name}': <sce:test-vector> sidecar emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin + Cpp + Go; Python lands in the final closure)",
-                name = m.name,
-            )),
-        ));
-    }
+    // RFC §5.B B2-test-vector: closure rotation complete — every
+    // backend (Rust + C11 + Kotlin + Cpp + Go + Python) now ships
+    // the sidecar emitter. The previously-required `render_algorithm`
+    // gate was deleted in the final (Python) closure.
     let l = LangCtx::new(lang);
     let mut ctx = l.base_context(&m.name);
 
@@ -9851,25 +9842,11 @@ fn render_algorithm_test_vector_sidecar(
     if m.test_vectors.is_empty() {
         return Ok(None);
     }
-    if !matches!(
-        lang,
-        Language::Rust
-            | Language::C11
-            | Language::Kotlin
-            | Language::Cpp
-            | Language::Go
-    ) {
-        // Defensive: render_algorithm already gated this combination.
-        // Returning the same typed error keeps the contract single-sourced
-        // for any caller that bypasses render_algorithm.
-        return Err(ForgeError::Generate(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "algorithm '{name}': <sce:test-vector> sidecar emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B2-test-vector ships Rust + C11 + Kotlin + Cpp + Go; Python lands in the final closure)",
-                name = m.name,
-            )),
-        ));
-    }
+    // RFC §5.B B2-test-vector: closure rotation complete — every
+    // backend ships the sidecar emitter. The defensive
+    // `unreachable!()`-style language gate was deleted in the final
+    // (Python) closure; the per-language match arms below are now
+    // exhaustive across `Language`.
 
     // Test vectors v1 contract: signature is `(<single bytes param>) -> scalar`.
     // The parser already validates that `<sce:return type=...>` is set
@@ -9957,20 +9934,44 @@ fn render_algorithm_test_vector_sidecar(
                 .collect();
             format!("[]byte{{{}}}", parts.join(", "))
         };
+        // Python `bytes([...])` accepts integer literals 0..255 from
+        // a list/iterable (no narrow-cast needed; Python ints are
+        // arbitrary precision). Empty hex lowers to `bytes()` (the
+        // canonical zero-length bytes literal).
+        let bytes_literal_py = if tv.hex.is_empty() {
+            "bytes()".to_string()
+        } else {
+            let parts: Vec<String> = tv
+                .hex
+                .iter()
+                .map(|b| format!("0x{b:02x}"))
+                .collect();
+            format!("bytes([{}])", parts.join(", "))
+        };
         let hex_str: String = tv
             .hex
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
 
-        let (value_literal_rust, value_literal_c, value_literal_kt, value_literal_go, printf_fmt, printf_cast) = match &tv.value {
+        let (
+            value_literal_rust,
+            value_literal_c,
+            value_literal_kt,
+            value_literal_go,
+            value_literal_py,
+            printf_fmt,
+            printf_cast,
+        ) = match &tv.value {
             crate::forge::model::TestVectorValue::Bool(b) => {
                 let lit = if *b { "true" } else { "false" };
+                let py_lit = if *b { "True" } else { "False" };
                 (
                     lit.to_string(),
                     lit.to_string(),
                     lit.to_string(),
                     lit.to_string(),
+                    py_lit.to_string(),
                     "%d".to_string(),
                     "int".to_string(),
                 )
@@ -10025,11 +10026,17 @@ fn render_algorithm_test_vector_sidecar(
                 let c_lit = format!("({return_type_native})0x{u:x}u");
                 let kt_lit = format!("0x{u:x}{kt_base_suffix}.{kt_conv}()");
                 let go_lit = format!("{go_type}(0x{u:x})");
+                // Python ints are arbitrary precision; the algorithm's
+                // body author handles narrowing inside the function
+                // (e.g. `& 0xFFFF`) so the expected value is just the
+                // bare integer literal — no width-suffix or cast.
+                let py_lit = format!("0x{u:x}");
                 (
                     rust_lit,
                     c_lit,
                     kt_lit,
                     go_lit,
+                    py_lit,
                     "0x%llx".to_string(),
                     "unsigned long long".to_string(),
                 )
@@ -10075,11 +10082,19 @@ fn render_algorithm_test_vector_sidecar(
                 let c_lit = format!("({return_type_native})({i})");
                 let kt_lit = format!("({i}{kt_base_suffix}).{kt_conv}()");
                 let go_lit = format!("{go_type}({i})");
+                // Python ints are arbitrary precision; the algorithm's
+                // body author handles narrowing inside the function,
+                // so the expected value is just the bare integer
+                // literal (parens around the negative form keep the
+                // call-site grammar unambiguous when the row appears
+                // as `expected = -1` etc.).
+                let py_lit = format!("{i}");
                 (
                     rust_lit,
                     c_lit,
                     kt_lit,
                     go_lit,
+                    py_lit,
                     "%lld".to_string(),
                     "long long".to_string(),
                 )
@@ -10094,10 +10109,12 @@ fn render_algorithm_test_vector_sidecar(
             "hex_bytes": !tv.hex.is_empty(),
             "bytes_literal_kt": bytes_literal_kt,
             "bytes_literal_go": bytes_literal_go,
+            "bytes_literal_py": bytes_literal_py,
             "value_literal": value_literal_rust,
             "value_literal_c": value_literal_c,
             "value_literal_kt": value_literal_kt,
             "value_literal_go": value_literal_go,
+            "value_literal_py": value_literal_py,
             "printf_fmt": printf_fmt,
             "printf_cast": printf_cast,
         }));
@@ -10122,25 +10139,29 @@ fn render_algorithm_test_vector_sidecar(
         ctx.insert("guard".into(), guard.into());
         ctx.insert("has_bytes_param".into(), true.into());
     }
-    if matches!(lang, Language::Cpp | Language::Go) {
-        // Cpp uses `name_pascal` for the qualified namespace path
-        // `SCE::Generated::<Pascal>::<name>`; Go uses it for the
-        // exported function name `<Pascal>(...)` (Go forge emits
-        // PascalCase function symbols per RFC §5.J.5).
+    if matches!(
+        lang,
+        Language::Cpp | Language::Go | Language::Python | Language::Kotlin
+    ) {
+        // Pre-compute Pascal-case so each backend's sidecar can
+        // emit its idiomatic call-site without invoking a Jinja
+        // filter — the forge env (per-language) does not register
+        // `to_pascal_case`/`to_camel_case`, only the
+        // conformance-harness env does via `register_kotlin_filters`.
+        // Per-language consumers:
+        //   - Cpp:    qualified namespace `SCE::Generated::<Pascal>::<name>`
+        //   - Go:     exported function name `<Pascal>(...)` (RFC §5.J.5)
+        //   - Python: sidecar test class `<Pascal>TestVectors`
+        //   - Kotlin: sidecar test class `<Pascal>TestVectors`
         ctx.insert(
             "name_pascal".into(),
             filters::to_pascal_case(m.name.clone()).into(),
         );
     }
     if matches!(lang, Language::Kotlin) {
-        // The forge Kotlin env does not register `to_pascal_case` /
-        // `to_camel_case` (only the conformance-harness env does, via
-        // `register_kotlin_filters`). Pre-compute the case forms here
-        // so the sidecar template stays declarative.
-        ctx.insert(
-            "name_pascal".into(),
-            filters::to_pascal_case(m.name.clone()).into(),
-        );
+        // Kotlin's sidecar additionally consumes `name_camel` for
+        // the algorithm function-call site (camelCase per the
+        // primary `algorithm.kt.jinja2` emit shape).
         ctx.insert(
             "name_camel".into(),
             filters::to_camel_case(m.name.clone()).into(),
@@ -10148,9 +10169,9 @@ fn render_algorithm_test_vector_sidecar(
     }
     // Render via the same `algorithm_test.<ext>.jinja2` lookup that
     // `LangCtx::load_template` uses for the main algorithm template,
-    // so the per-language extension picks the right sidecar shape
-    // (`.rs.jinja2` for Rust, `.h.jinja2` for C11, `.kt.jinja2` for
-    // Kotlin).
+    // so the per-language extension picks the right sidecar shape:
+    // `.rs.jinja2` (Rust), `.h.jinja2` (C11 + Cpp), `.go.jinja2`
+    // (Go), `.py.jinja2` (Python), `.kt.jinja2` (Kotlin).
     let template_name = format!("algorithm_test.{}.jinja2", l.template_ext());
     let template = env.get_template(&template_name).map_err(|e| {
         ForgeError::Generate(crate::forge::error::GenerateError::TemplateLoad(format!(
@@ -10164,22 +10185,24 @@ fn render_algorithm_test_vector_sidecar(
         )))
     })?;
     // Filename idiom matches the per-language convention for the
-    // primary algorithm output: snake-case `<snake>_test.{rs,h,go}`
-    // for Rust + C11 + Cpp + Go (Go's `*_test.go` suffix is the
-    // language-mandated test-discovery shape, picked up by `go test`
-    // automatically); Pascal-case `<Pascal>TestVectors.kt` for
-    // Kotlin so the file name agrees with the contained class name
-    // (Kotlin convention; gradle uses no special discovery beyond
-    // the `jvmTest` source-set wiring).
+    // primary algorithm output: snake-case `<snake>_test.{rs,h,go,py}`
+    // for Rust + C11 + Cpp + Go + Python (Go's `*_test.go` suffix is
+    // the language-mandated test-discovery shape, picked up by
+    // `go test` automatically; Python's `<snake>_test.py` is
+    // imported by the harness module so pytest discovery picks it
+    // up alongside the existing harness class); Pascal-case
+    // `<Pascal>TestVectors.kt` for Kotlin so the file name agrees
+    // with the contained class name (Kotlin convention; gradle uses
+    // no special discovery beyond the `jvmTest` source-set wiring).
     let filename = match lang {
         Language::Rust => format!("{snake}_test.rs"),
         Language::C11 | Language::Cpp => format!("{snake}_test.h"),
         Language::Go => format!("{snake}_test.go"),
+        Language::Python => format!("{snake}_test.py"),
         Language::Kotlin => format!(
             "{}TestVectors.kt",
             filters::to_pascal_case(m.name.clone())
         ),
-        _ => unreachable!("gated above"),
     };
     Ok(Some((filename, code)))
 }

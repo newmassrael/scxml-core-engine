@@ -55,5 +55,17 @@ class TestNumericalConformance(unittest.TestCase):
 
 {% endfor %}
 
+# RFC §5.B B2-test-vector: re-export per-fixture sidecar test
+# classes so `tests/test_numerical_conformance.py` (which uses
+# `import *` from this module) surfaces them to pytest's discovery
+# alongside `TestNumericalConformance`. Each sidecar lives at
+# `_sce_conformance.<snake>_test` and contains a single
+# `<Pascal>TestVectors(unittest.TestCase)` class.
+{% for f in fixtures %}
+{% if f.has_test_vectors %}
+from .{{ f.name }}_test import {{ f.name | to_pascal_case }}TestVectors  # noqa: F401, E402
+{% endif %}
+{% endfor %}
+
 if __name__ == "__main__":
     unittest.main()

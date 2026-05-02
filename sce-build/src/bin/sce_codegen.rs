@@ -2442,15 +2442,18 @@ fn cmd_list_fixtures(
             })
         });
     // RFC §5.B B2-test-vector: enrich algorithm fixtures with their
-    // derived `has_test_vectors` flag so `lang_supports_fixture` can
-    // reject `(Cpp/Kotlin/Go/Python, has_test_vectors=true)` exactly
-    // like `render_harness` does. The flag is SCXML-derived rather
-    // than carried in fixtures.json (manifest-side override is
-    // rejected by `Manifest::validate`), so this enrichment requires
-    // the per-fixture `<name>.scxml` to live under `--resource-dir`.
-    // `--language` callers always need the flag; the unset default
-    // skips enrichment to preserve the cheap path for tools that do
-    // not want a per-fixture SCXML scan.
+    // derived `has_test_vectors` flag so `--has-test-vectors` filtering
+    // (used by cmake harnesses to enumerate per-fixture sidecar
+    // OUTPUTs) reads off the fixture spec without re-scanning each
+    // SCXML at the call site. The flag is SCXML-derived rather than
+    // carried in fixtures.json (manifest-side override is rejected by
+    // `Manifest::validate`), so this enrichment requires the
+    // per-fixture `<name>.scxml` to live under `--resource-dir`.
+    // `--has-test-vectors` callers always need the flag; the
+    // `--language` short-form invocation triggers enrichment too
+    // because language harness scaffolds may emerge that read it.
+    // The unset default skips enrichment to preserve the cheap path
+    // for tools that do not want a per-fixture SCXML scan.
     if language.is_some() || has_test_vectors_only {
         // Resource directory resolution: explicit `--resource-dir`
         // wins; otherwise fall back to `<manifest_dir>/../resources/`
@@ -2526,14 +2529,6 @@ fn cmd_list_fixtures(
                 if matches!(lang, Language::C11)
                     && !sce_build::conformance::c11_supported_kind(&f.spec)
                 {
-                    return false;
-                }
-                // RFC §5.B B2-test-vector: drop fixtures whose
-                // content-aware gate rejects this language. Mirrors
-                // `render_harness`'s filter; until this happens cmake
-                // would try to codegen a fixture the trunk gate
-                // rejects.
-                if !sce_build::conformance::lang_supports_fixture(lang, &f.spec) {
                     return false;
                 }
                 true
