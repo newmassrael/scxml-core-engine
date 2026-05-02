@@ -154,9 +154,20 @@ impl {{ struct_name }} {
 {% elif has_vle_fields %}
         // Streaming codec: each field reads its own bytes from the
         // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
-        // a fixed window; cursor advances per-field.
+        // a fixed window; cursor advances per-field. RFC §5.B B4:
+        // per-field bit-size dispatch routes Fixed / LengthRef
+        // siblings of VLE fields through `present_if_decode_stmt`
+        // (predicate=None arms) — pure-VLE codecs stay byte-stable
+        // because the non-gated VLE arm there reuses
+        // `vle_decode_stmt` verbatim.
 {% for field in fields %}
-        {{ field.vle_decode_stmt }}
+{% if field.is_repeat %}
+        {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+        {{ field.tlv_chain_decode_stmt }}
+{% else %}
+        {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
         Ok(Self {
 {% for field in fields %}
@@ -313,9 +324,21 @@ impl {{ struct_name }} {
 {% endfor %}
         r
 {% elif has_vle_fields %}
+        // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        // LengthRef / Tail siblings of VLE fields through
+        // `present_if_encode_block` (predicate=None arms). Pure-VLE
+        // codecs stay byte-stable: the non-gated VLE arm there reuses
+        // `vle_encode_block` with the language-appropriate self/
+        // struct prefix.
         let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
-{{ field.vle_encode_block }}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
         r
 {% elif has_repeat_fields or has_tlv_chain_fields %}

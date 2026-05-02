@@ -1340,7 +1340,7 @@ fn render_codec(
                 "has_present_if".into(),
                 f.present_if.is_some().into(),
             );
-            if has_present_if_fields || has_repeat_fields || m.has_tlv_chain_fields() {
+            if has_present_if_fields || has_repeat_fields || m.has_tlv_chain_fields() || has_vle_fields {
                 obj.insert(
                     "present_if_decode_stmt".into(),
                     present_if_streaming_decode_stmt(
@@ -3040,7 +3040,33 @@ fn present_if_decode_vle(
     // the end can collect them — `vle_decode_stmt` already produces
     // exactly that shape.
     if field.present_if.is_none() {
-        return vle_decode_stmt(&filters::to_snake_case(id.to_string()), width_bits, lang);
+        // Per-language local-variable casing mirrors `codec_field_id` so
+        // the existing has_vle_fields template branch's `Foo: Foo`
+        // struct-literal pairing keeps working when this helper is
+        // called from the unified streaming dispatch (Go uses
+        // PascalCase, Rust/Python/C11 use snake_case, others as-is).
+        let local_id = match lang {
+            Language::Go => filters::to_pascal_case(id.to_string()),
+            Language::Rust | Language::Python | Language::C11 => {
+                filters::to_snake_case(id.to_string())
+            }
+            _ => id.to_string(),
+        };
+        // C11: the present-if-style streaming branch writes results
+        // directly into `out->{id}` (mirrors `present_if_decode_fixed`'s
+        // None arm), so non-gated VLE in this branch must do the same
+        // — the C11 has_vle_fields template branch previously emitted
+        // a local declaration plus an explicit `out->id = id;` assign,
+        // but the unified streaming path skips that follow-up. Append
+        // the assignment here so the C11 codegen output stays byte-
+        // stable across both call paths (the original has_vle_fields
+        // branch emitted local + assign as two statements; here we
+        // fuse them into one bound statement).
+        if matches!(lang, Language::C11) {
+            let inner = vle_decode_stmt(&local_id, width_bits, lang);
+            return format!("{inner}\n    out->{local_id} = {local_id};");
+        }
+        return vle_decode_stmt(&local_id, width_bits, lang);
     }
     let p = field.present_if.as_ref().expect("guarded by branch above");
     let test = present_if_test_literal(fields, p, lang);
@@ -3464,8 +3490,27 @@ fn present_if_encode_vle(
         // Non-gated VLE in present-if context: reuse the existing
         // VLE encoder (same per-language byte-emit loop the
         // has_vle_fields branch uses). The encoder reads from the
-        // language-appropriate self/struct member.
-        return vle_encode_block(&filters::to_snake_case(id.to_string()), width_bits, lang);
+        // language-appropriate self/struct member — mirrors the
+        // `codec_field_ref(codec_field_id(id))` plumbing the
+        // has_vle_fields obj-builder uses at the non-gated callsite
+        // (without that prefix Rust/Python/Go/C11 would emit a
+        // bare local-name read that doesn't resolve to the struct
+        // member).
+        let value_expr = match lang {
+            Language::Rust | Language::Python => {
+                format!("self.{}", filters::to_snake_case(id.to_string()))
+            }
+            Language::Go => {
+                format!("s.{}", filters::to_pascal_case(id.to_string()))
+            }
+            Language::C11 => {
+                format!("self->{}", filters::to_snake_case(id.to_string()))
+            }
+            // Cpp / Kotlin: encode lives inside a member function so
+            // member access resolves implicitly without a prefix.
+            Language::Cpp | Language::Kotlin => id.to_string(),
+        };
+        return vle_encode_block(&value_expr, width_bits, lang);
     }
     let p = field.present_if.as_ref().expect("guarded by branch above");
     match lang {

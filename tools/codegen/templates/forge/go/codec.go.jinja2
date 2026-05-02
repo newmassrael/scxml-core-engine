@@ -127,9 +127,16 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 	// Streaming codec: each field reads from cursor directly
 	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
 	// `field.id` — the struct literal's `Foo: Foo` is unambiguous
-	// because the package owns both names.
+	// because the package owns both names. RFC §5.B B4: per-field
+	// bit-size dispatch routes Fixed / LengthRef siblings of VLE
+	// fields through `present_if_decode_stmt` (predicate=None arms).
+	// Pure-VLE codecs stay byte-stable.
 {% for field in fields %}
-	{{ field.vle_decode_stmt }}
+{% if field.is_repeat %}
+	{{ field.repeat_decode_stmt }}
+{% else %}
+	{{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
 	return &{{ struct_name }}{
 {% for field in fields %}
@@ -255,9 +262,17 @@ func (s *{{ struct_name }}) Encode() []byte {
 {% endfor %}
 	return r
 {% elif has_vle_fields %}
+	// RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+	// LengthRef siblings of VLE fields through
+	// `present_if_encode_block` (predicate=None arms). Pure-VLE
+	// codecs stay byte-stable.
 	r := make([]byte, 0, {{ max_bytes }})
 {% for field in fields %}
-{{ field.vle_encode_block }}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
 	return r
 {% elif has_repeat_fields %}

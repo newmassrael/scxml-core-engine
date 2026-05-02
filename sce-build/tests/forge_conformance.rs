@@ -1344,6 +1344,27 @@ fn forge_codec_repeat_forward_count_rejects() {
     );
 }
 
+// ── RFC §5.B B4 applied codec shapes (Cpp) ───────────────────
+// Three Zenoh wire-extension shapes built from existing B1/B2
+// primitives — no new IR/parser/codegen surface. See
+// `tests/forge/resources/codec_ext_*.scxml` for upstream zenoh-pico
+// references and the per-fixture deferrals to B5.
+
+#[test]
+fn forge_codec_ext_timestamp_cpp() {
+    assert_standalone_forge("codec_ext_timestamp", "codec_ext_timestamp.h");
+}
+
+#[test]
+fn forge_codec_ext_attachment_cpp() {
+    assert_standalone_forge("codec_ext_attachment", "codec_ext_attachment.h");
+}
+
+#[test]
+fn forge_codec_ext_encoding_info_cpp() {
+    assert_standalone_forge("codec_ext_encoding_info", "codec_ext_encoding_info.h");
+}
+
 // ── RFC §5.B test-vector primitive (B2-test-vector prep) ─────
 // `<sce:test-vector hex value/>` parses into AlgorithmModel.test_vectors
 // for sce:kind="algorithm" only. Multi-field codec test vectors defer
@@ -1820,6 +1841,32 @@ fn forge_kotlin_codec_until_eof_basic() {
     );
 }
 
+// ── RFC §5.B B4 applied codec shapes (Kotlin) ───────────────
+
+#[test]
+fn forge_kotlin_codec_ext_timestamp() {
+    assert_standalone_forge_kotlin(
+        "codec_ext_timestamp",
+        "CodecExtTimestamp.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_ext_attachment() {
+    assert_standalone_forge_kotlin(
+        "codec_ext_attachment",
+        "CodecExtAttachment.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_ext_encoding_info() {
+    assert_standalone_forge_kotlin(
+        "codec_ext_encoding_info",
+        "CodecExtEncodingInfo.kt",
+    );
+}
+
 // ── Algorithm (Kotlin, RFC §5.A — post-A6 matrix follow-up) ─
 
 /// RFC §5.B B2-test-vector Kotlin closure: the algorithm body
@@ -2104,6 +2151,26 @@ fn forge_rust_codec_until_eof_basic() {
     );
 }
 
+// ── RFC §5.B B4 applied codec shapes (Rust) ─────────────────
+
+#[test]
+fn forge_rust_codec_ext_timestamp() {
+    assert_standalone_forge_rust("codec_ext_timestamp", "codec_ext_timestamp.rs");
+}
+
+#[test]
+fn forge_rust_codec_ext_attachment() {
+    assert_standalone_forge_rust("codec_ext_attachment", "codec_ext_attachment.rs");
+}
+
+#[test]
+fn forge_rust_codec_ext_encoding_info() {
+    assert_standalone_forge_rust(
+        "codec_ext_encoding_info",
+        "codec_ext_encoding_info.rs",
+    );
+}
+
 // ── RFC §5.B variant primitive (Rust, B1-β trunk) ────────────
 
 #[test]
@@ -2330,6 +2397,23 @@ fn forge_go_codec_repeat_basic() {
 #[test]
 fn forge_go_codec_until_eof_basic() {
     assert_standalone_forge_go("codec_until_eof_basic", "codec_until_eof_basic.go");
+}
+
+// ── RFC §5.B B4 applied codec shapes (Go) ───────────────────
+
+#[test]
+fn forge_go_codec_ext_timestamp() {
+    assert_standalone_forge_go("codec_ext_timestamp", "codec_ext_timestamp.go");
+}
+
+#[test]
+fn forge_go_codec_ext_attachment() {
+    assert_standalone_forge_go("codec_ext_attachment", "codec_ext_attachment.go");
+}
+
+#[test]
+fn forge_go_codec_ext_encoding_info() {
+    assert_standalone_forge_go("codec_ext_encoding_info", "codec_ext_encoding_info.go");
 }
 
 // ── Algorithm (Go, RFC §5.A — post-A6 matrix follow-up) ────
@@ -2570,6 +2654,26 @@ fn forge_python_codec_until_eof_basic() {
     assert_standalone_forge_python("codec_until_eof_basic", "codec_until_eof_basic.py");
 }
 
+// ── RFC §5.B B4 applied codec shapes (Python) ───────────────
+
+#[test]
+fn forge_python_codec_ext_timestamp() {
+    assert_standalone_forge_python("codec_ext_timestamp", "codec_ext_timestamp.py");
+}
+
+#[test]
+fn forge_python_codec_ext_attachment() {
+    assert_standalone_forge_python("codec_ext_attachment", "codec_ext_attachment.py");
+}
+
+#[test]
+fn forge_python_codec_ext_encoding_info() {
+    assert_standalone_forge_python(
+        "codec_ext_encoding_info",
+        "codec_ext_encoding_info.py",
+    );
+}
+
 // ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
 
 /// RFC §5.B B2-test-vector Python closure (final): the algorithm
@@ -2775,6 +2879,26 @@ fn forge_c11_codec_dma_aligned_basic() {
     assert_standalone_forge_c(
         "codec_dma_aligned_basic",
         "codec_dma_aligned_basic.c.h",
+    );
+}
+
+// ── RFC §5.B B4 applied codec shapes (C11) ──────────────────
+
+#[test]
+fn forge_c11_codec_ext_timestamp() {
+    assert_standalone_forge_c("codec_ext_timestamp", "codec_ext_timestamp.c.h");
+}
+
+#[test]
+fn forge_c11_codec_ext_attachment() {
+    assert_standalone_forge_c("codec_ext_attachment", "codec_ext_attachment.c.h");
+}
+
+#[test]
+fn forge_c11_codec_ext_encoding_info() {
+    assert_standalone_forge_c(
+        "codec_ext_encoding_info",
+        "codec_ext_encoding_info.c.h",
     );
 }
 

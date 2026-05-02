@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh ext_tstamp body codec (RFC §5.B B4
+     applied — wire-spec-subset.md §7.1 Timestamp).
+
+     Upstream zenoh-pico shape (`_z_timestamp_encode` in
+     src/protocol/codec/message.c:86-112): VLE u64 `time` (NTP64) +
+     ZenohID-as-slice (`_z_id_encode_as_slice` = VLE-len + raw bytes,
+     max 16). For a canonical zid (length ≤ 16), the VLE prefix is
+     exactly 1 byte (single-byte VLE covers values 0..127), so the
+     wire layout matches `<u8 zid_size> + <length-ref bytes zid>`
+     verbatim.
+
+     Applied combination: B1-α VLE primitive (`time`) + B2-β
+     length-ref bytes (`zid` gated on `zid_size`). No new IR/parser
+     surface — pure composition of B1/B2 primitives.
+
+     Load-bearing deferral: the upstream wire form uses `_z_zsize_encode`
+     for the zid length, which is a multi-byte VLE for lengths ≥ 128.
+     Here we restrict to the canonical zid case (≤ 16 bytes) so the
+     length sibling fits in a single u8. Generalised VLE-len-prefix
+     bytes (length sibling in VLE bit-size) is a B5 surface — surfaced
+     by full Zenoh msg-set authoring when payloads can exceed 127
+     bytes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_ext_timestamp">
+  <datamodel>
+    <sce:field id="time"    sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="zid_size" sce:type="uint8"  sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="zid"     sce:type="bytes"  sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="zid_size" sce:max-size="16"/>
+  </datamodel>
+</scxml>

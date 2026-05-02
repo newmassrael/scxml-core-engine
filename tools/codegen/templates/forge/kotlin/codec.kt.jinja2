@@ -107,9 +107,17 @@ data class {{ struct_name }}(
 {% endfor %}
         return r.toByteArray()
 {% elif has_vle_fields %}
+        // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        // LengthRef siblings of VLE fields through
+        // `present_if_encode_block` (predicate=None arms). Pure-VLE
+        // codecs stay byte-stable.
         val r = mutableListOf<Byte>()
 {% for field in fields %}
-{{ field.vle_encode_block }}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
         return r.toByteArray()
 {% elif has_repeat_fields %}
@@ -209,9 +217,16 @@ data class {{ struct_name }}(
             )
 {% elif has_vle_fields %}
             // Streaming codec: each field reads from cursor directly
-            // (VLE base-128 chain).
+            // (VLE base-128 chain). RFC §5.B B4: per-field bit-size
+            // dispatch routes Fixed / LengthRef siblings of VLE fields
+            // through `present_if_decode_stmt` (predicate=None arms).
+            // Pure-VLE codecs stay byte-stable.
 {% for field in fields %}
-            {{ field.vle_decode_stmt }}
+{% if field.is_repeat %}
+            {{ field.repeat_decode_stmt }}
+{% else %}
+            {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
             return {{ struct_name }}(
 {% for field in fields %}

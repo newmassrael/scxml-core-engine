@@ -11,11 +11,13 @@ from typing import Optional
 
 
 @dataclass
-class CodecVleZintU64:
-    value: int = 0
+class CodecExtTimestamp:
+    time: int = 0
+    zid_size: int = 0
+    zid: bytes = b""
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecVleZintU64]:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecExtTimestamp]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
@@ -26,11 +28,20 @@ class CodecVleZintU64:
         # `present_if_decode_stmt` (predicate=None arms). Pure-VLE
         # codecs stay byte-stable.
         try:
-            value = cursor.read_vle_u64()
+            time = cursor.read_vle_u64()
+            raw = cursor.peek_slice(1)
+            zid_size = raw[0]
+            cursor.advance(1)
+            _n = zid_size
+            raw = cursor.peek_slice(_n)
+            zid = bytes(raw)
+            cursor.advance(_n)
         except CodecError:
             return None
         return cls(
-            value=value,
+            time=time,
+            zid_size=zid_size,
+            zid=zid,
         )
 
     def encode(self) -> bytes:
@@ -39,9 +50,11 @@ class CodecVleZintU64:
         # `present_if_encode_block` (predicate=None arms). Pure-VLE
         # codecs stay byte-stable.
         r = bytearray()
-        _w = int(self.value)
+        _w = int(self.time)
         while _w >= 0x80:
             r.append((_w & 0x7F) | 0x80)
             _w >>= 7
         r.append(_w)
+        r.append(self.zid_size & 0xFF)
+        r.extend(self.zid)
         return bytes(r)

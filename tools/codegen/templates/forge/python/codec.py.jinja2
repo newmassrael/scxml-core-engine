@@ -128,9 +128,17 @@ class {{ struct_name }}:
 {% endfor %}
         )
 {% elif has_vle_fields %}
+        # RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        # LengthRef siblings of VLE fields through
+        # `present_if_decode_stmt` (predicate=None arms). Pure-VLE
+        # codecs stay byte-stable.
         try:
 {% for field in fields %}
-            {{ field.vle_decode_stmt }}
+{% if field.is_repeat %}
+            {{ field.repeat_decode_stmt }}
+{% else %}
+            {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
         except CodecError:
             return None
@@ -256,9 +264,17 @@ class {{ struct_name }}:
 {% endfor %}
         return bytes(r)
 {% elif has_vle_fields %}
+        # RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        # LengthRef siblings of VLE fields through
+        # `present_if_encode_block` (predicate=None arms). Pure-VLE
+        # codecs stay byte-stable.
         r = bytearray()
 {% for field in fields %}
-{{ field.vle_encode_block }}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
         return bytes(r)
 {% elif has_repeat_fields %}

@@ -30,7 +30,12 @@ typedef struct {
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_vle_zint_u64_decode(sce_forge_cursor_t *cursor, codec_vle_zint_u64_t *out) {
     /* Streaming codec: each field reads from cursor directly (VLE
-     * base-128 chain, 1..=ceil(N/7) bytes per field). */
+     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §5.B B4:
+     * per-field bit-size dispatch routes Fixed / LengthRef siblings
+     * of VLE fields through `present_if_decode_stmt` (predicate=None
+     * arms — for VLE the helper emits the local-decl + `out->` assign
+     * fused; for Fixed / LengthRef it writes directly to `out->`).
+     * Pure-VLE codecs stay byte-stable. */
     uint64_t value;
     {
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &value);
@@ -42,6 +47,10 @@ static inline sce_forge_codec_status_t codec_vle_zint_u64_decode(sce_forge_curso
 
 static inline codec_vle_zint_u64_encoded_t codec_vle_zint_u64_encode(const codec_vle_zint_u64_t *self) {
     codec_vle_zint_u64_encoded_t r;
+    /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+     * LengthRef / Tail siblings of VLE fields through
+     * `present_if_encode_block` (predicate=None arms). Pure-VLE
+     * codecs stay byte-stable. */
     r.len = 0;
     {
         uint64_t _w = (uint64_t)(self->value);

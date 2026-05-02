@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh ext_attachment body codec (RFC §5.B
+     B4 applied — wire-spec-subset.md §7.1 Attachment).
+
+     Upstream zenoh-pico shape (attachment body is a `_z_bytes_t`
+     encoded via `_z_slice_encode` in src/protocol/codec.c:247-249):
+     VLE-zsize length prefix + raw bytes. For payloads ≤ 127 bytes
+     the VLE prefix is exactly 1 byte, so the wire layout matches
+     `<u8 length> + <length-ref bytes body>` verbatim.
+
+     Applied combination: B2-β length-ref bytes. No new IR/parser
+     surface — pure composition of B1/B2 primitives.
+
+     Load-bearing deferral: payloads > 127 bytes need a multi-byte
+     VLE length prefix (length sibling in VLE bit-size). The
+     existing `length-ref` decode helper reads a single byte at the
+     length field's byte offset, so generalised VLE-length-ref is a
+     B5 surface — surfaced by full Zenoh msg-set authoring. The
+     `sce:max-size="64"` cap here keeps the canonical case
+     wire-correct without requiring that surface.
+
+     The TLV envelope around the attachment (`_Z_MSG_EXT_ENC_ZBUF
+     | 0x05` extheader byte for Query/Push/Reply siblings) is the
+     parent message's responsibility — this fixture models the body
+     payload only, mirroring B3-α's split where `codec_tlv_entry`
+     models one chain entry independent of the parent codec. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_ext_attachment">
+  <datamodel>
+    <sce:field id="length" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="body"   sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="length" sce:max-size="64"/>
+  </datamodel>
+</scxml>

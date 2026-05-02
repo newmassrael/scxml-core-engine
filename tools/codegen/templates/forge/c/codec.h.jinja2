@@ -155,10 +155,20 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     return SCE_FORGE_CODEC_OK;
 {% elif has_vle_fields %}
     /* Streaming codec: each field reads from cursor directly (VLE
-     * base-128 chain, 1..=ceil(N/7) bytes per field). */
+     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §5.B B4:
+     * per-field bit-size dispatch routes Fixed / LengthRef siblings
+     * of VLE fields through `present_if_decode_stmt` (predicate=None
+     * arms — for VLE the helper emits the local-decl + `out->` assign
+     * fused; for Fixed / LengthRef it writes directly to `out->`).
+     * Pure-VLE codecs stay byte-stable. */
 {% for field in fields %}
-    {{ field.vle_decode_stmt }}
-    out->{{ field.id }} = {{ field.id }};
+{% if field.is_repeat %}
+    {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+    {{ field.tlv_chain_decode_stmt }}
+{% else %}
+    {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_repeat_fields or has_tlv_chain_fields %}
@@ -288,9 +298,19 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {% endif %}
 {% endfor %}
 {% elif has_vle_fields %}
+    /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+     * LengthRef / Tail siblings of VLE fields through
+     * `present_if_encode_block` (predicate=None arms). Pure-VLE
+     * codecs stay byte-stable. */
     r.len = 0;
 {% for field in fields %}
-{{ field.vle_encode_block }}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
 {% elif has_repeat_fields or has_tlv_chain_fields %}
     /* RFC §5.B B2 / B3 encode: fixed prefix appends byte-by-byte;

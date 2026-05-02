@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh ext_encoding (encoding-info) codec
+     (RFC §5.B B4 applied — wire-spec-subset.md §7.1 Encoding).
+
+     Upstream zenoh-pico shape (`_z_encoding_encode` in
+     src/protocol/codec.c:356-381): u32 VLE `combined_id` carrying
+     `(encoding_id << 1) | (has_schema ? 1 : 0)` in the value bits
+     (LSB = has_schema flag, upper bits = encoding_id). When
+     has_schema is set, a VLE-len-prefix UTF-8 schema string follows.
+
+     Applied combination: B1-γ flags (VLE-bit-size carrier with bit-0
+     `has_schema` accessor) + B1-δ present-if (schema gated on
+     combined_id.has_schema) + B2-β length-ref (the schema body is a
+     length-prefix bytes payload). No new IR/parser surface — first
+     B4 fixture exercising the full B1-γ × B1-δ × B2-β fan-in.
+
+     Load-bearing deferrals to B5:
+     1. `encoding_id = combined_id >> 1` is a derived bit-shift
+        accessor on the carrier value. v1 ships only the raw
+        `combined_id` field plus the `has_schema` flag accessor;
+        downstream consumers compute the encoding id at the API
+        layer. A "derived bit-range accessor" primitive would
+        eliminate the manual shift — surfaced when the encoding-info
+        consumer authors its end-user API (B5+ message-set work).
+     2. The schema body uses a u8 length sibling, restricting the
+        canonical case to schemas ≤ 127 bytes (single-byte VLE
+        coincides with u8). Generalised VLE-length-ref is the same
+        B5 surface called out in `codec_ext_attachment.scxml`.
+     3. `schema_size` is always present (trust contract: author keeps
+        it 0 when has_schema=false). Upstream zenoh omits the entire
+        schema span — including its length — from the wire when
+        has_schema is clear, so this fixture's wire format diverges
+        by 1 byte from upstream when has_schema=false. Full upstream
+        fidelity needs a gated length sibling (the present-if
+        length-ref decode helper currently `as usize`-casts the
+        length sibling and would emit `Option<u8> as usize` for a
+        gated sibling). Surfaced when downstream needs upstream-
+        binary parity.
+     4. The schema is modeled as `bytes` (not `string`); zenoh's
+        `_z_string_t` is wire-identical to `_z_bytes_t` but
+        host-distinct, and codec-DSL string typing surfaces in B5
+        when the API split between bytes and UTF-8 strings becomes
+        observable. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_ext_encoding_info">
+  <datamodel>
+    <sce:flags id="combined_id" sce:type="uint32" sce:byte="0" sce:bit-size="vle">
+      <sce:flag name="has_schema" bit="0"/>
+    </sce:flags>
+    <sce:field id="schema_size" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="schema"     sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="schema_size" sce:max-size="64"
+               sce:present-if="combined_id.has_schema"/>
+  </datamodel>
+</scxml>
