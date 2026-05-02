@@ -961,8 +961,8 @@ fn render_codec(
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
-    // RFC §5.B variant primitive (B1-β trunk): only Rust + Cpp emit
-    // variant codecs in trunk. The remaining backends (Kotlin / Go /
+    // RFC §5.B variant primitive (B1-β trunk + Kotlin closure): Rust,
+    // Cpp, Kotlin emit variant codecs. The remaining backends (Go /
     // C11 / Python) gate here with a clear `generate/unsupported-feature`
     // until their per-language closure lands. Without this gate the
     // template would silently render a struct missing the variant body
@@ -971,13 +971,15 @@ fn render_codec(
     if m.variant.is_some()
         && !matches!(
             lang,
-            crate::generator::Language::Rust | crate::generator::Language::Cpp
+            crate::generator::Language::Rust
+                | crate::generator::Language::Cpp
+                | crate::generator::Language::Kotlin
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "codec '{name}': <sce:variant> emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B1-β trunk ships Rust + Cpp; Kotlin / Go / C11 / Python land in B1-β closures)",
+                 (RFC §5.B B1-β trunk ships Rust + Cpp + Kotlin; Go / C11 / Python land in B1-β closures)",
                 name = m.name,
             )),
         ));
@@ -1073,6 +1075,12 @@ fn render_codec(
             // u64 needs an explicit `ULL` to avoid -Werror=narrowing on
             // `case 0xFFFFFFFFFFFFFFFF:` against an int-typed switch.
             (crate::generator::Language::Cpp, SceType::Uint64) => "ULL",
+            // Kotlin's `when (x.toInt()) { 0x01 -> ... }` matches plain
+            // Int literals for Uint8/Uint16; Uint32/Uint64 widen to Long
+            // for the dispatch and need the `L` suffix on the literal.
+            // (`UInt.toInt()` would overflow above 2^31, so we always
+            // route Uint32/64 through Long.)
+            (crate::generator::Language::Kotlin, SceType::Uint32 | SceType::Uint64) => "L",
             _ => "",
         };
         let arm_ctx: Vec<serde_json::Value> = v
@@ -1118,6 +1126,36 @@ fn render_codec(
         let mut variant_obj = serde_json::Map::new();
         variant_obj.insert("tag_field".into(), l.codec_field_id(&v.tag_field).into());
         variant_obj.insert("tag_native_type".into(), tag_native.into());
+        // Kotlin: `when` matches an Int (or Long for Uint32/64) against
+        // plain integer literals. `tag_field.toInt()` widens UByte/UShort
+        // safely; `tag_field.toLong()` is needed for UInt/ULong because
+        // `UInt.toInt()` would overflow values above 2^31. Other backends
+        // ignore these keys — Rust/Cpp use `tag_field` directly.
+        if matches!(lang, crate::generator::Language::Kotlin) {
+            let cast_op = match &tag_type {
+                SceType::Uint8 | SceType::Uint16 => ".toInt()",
+                SceType::Uint32 | SceType::Uint64 => ".toLong()",
+                _ => "",
+            };
+            variant_obj.insert(
+                "kt_tag_match_expr".into(),
+                format!("{}{}", l.codec_field_id(&v.tag_field), cast_op).into(),
+            );
+            // Zero-valued tag literal for the default-only variant body
+            // initializer (parser allows arms.is_empty() + default_arm.is_some());
+            // without this the `{% else %}` branch would emit invalid Kotlin.
+            let zero_method = match &tag_type {
+                SceType::Uint8 => "toUByte",
+                SceType::Uint16 => "toUShort",
+                SceType::Uint32 => "toUInt",
+                SceType::Uint64 => "toULong",
+                _ => "toUByte",
+            };
+            variant_obj.insert(
+                "kt_zero_tag_literal".into(),
+                format!("0.{zero_method}()").into(),
+            );
+        }
         variant_obj.insert("arms".into(), serde_json::Value::Array(arm_ctx));
         if let Some(d) = default_ctx {
             variant_obj.insert("default_arm".into(), d);
@@ -1183,7 +1221,22 @@ fn resolve_variant_arm_body_type(
     Ok(match lang {
         crate::generator::Language::Rust => imp.type_name.clone(),
         crate::generator::Language::Cpp => imp.member_type.clone(),
-        _ => unreachable!("variant emit gated to Rust + Cpp in B1-β trunk"),
+        // Kotlin: each imported codec lives in its own sibling package
+        // (`com.sce.generated.<snake>`). The codec template's own
+        // `import com.sce.generated.<snake>.*` brings the class into
+        // top-level scope, but inside the sealed-class hierarchy the
+        // arm's data class shares a name with the imported class
+        // (both pascalize the body alias). Using the FQN for the body
+        // field type sidesteps the lexical-name collision without
+        // having to rewrite the import statement or rename the arm.
+        crate::generator::Language::Kotlin => format!(
+            "com.sce.generated.{}.{}",
+            filters::to_snake_case(imp.type_name.clone()),
+            imp.type_name
+        ),
+        _ => unreachable!(
+            "variant emit gated to Rust + Cpp + Kotlin until Go / C11 / Python closures land"
+        ),
     })
 }
 

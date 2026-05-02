@@ -14,17 +14,60 @@ import com.sce.forge.runtime.SceCursor
 {% endif %}
 {% endfor %}
 
+{% if has_variant %}
+// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// codec's tag-field suffix. Each arm wraps an imported codec's decoded
+// value; the optional Default arm preserves the runtime tag value
+// alongside its catch-all body. Arm body types are referenced by FQN
+// to sidestep the lexical-name collision between the inner data class
+// and the imported class (both pascalize the body alias).
+sealed class {{ struct_name }}Body {
+{% for arm in variant.arms %}
+    data class {{ arm.variant_name }}(val body: {{ arm.body_type }}) : {{ struct_name }}Body()
+{% endfor %}
+{% if variant.default_arm %}
+    data class {{ variant.default_arm.variant_name }}(val tag: {{ variant.tag_native_type }}, val body: {{ variant.default_arm.body_type }}) : {{ struct_name }}Body()
+{% endif %}
+}
+
+{% endif %}
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `{{ struct_name }}()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class {{ struct_name }}(
 {% for field in fields %}
-    var {{ field.id }}: {{ field.kt_type }} = {{ field.kt_default }}{{ "," if not loop.last else "" }}
+    var {{ field.id }}: {{ field.kt_type }} = {{ field.kt_default }}{{ "," if not loop.last or has_variant else "" }}
 {% endfor %}
+{% if has_variant %}
+{% if variant.arms %}
+    var body: {{ struct_name }}Body = {{ struct_name }}Body.{{ variant.arms[0].variant_name }}({{ variant.arms[0].body_type }}())
+{% else %}
+    var body: {{ struct_name }}Body = {{ struct_name }}Body.{{ variant.default_arm.variant_name }}(tag = {{ variant.kt_zero_tag_literal }}, body = {{ variant.default_arm.body_type }}())
+{% endif %}
+{% endif %}
 ) {
     fun encode(): ByteArray {
-{% if has_vle_fields %}
+{% if has_variant %}
+        // Encode fixed prefix (tag field bytes are part of the prefix).
+        // The tag value is read from the struct field, NOT derived from
+        // the body discriminant — keeping author-set tag / body in sync
+        // is the caller's responsibility (v1 keeps the layout simple).
+        val r = mutableListOf<Byte>()
+{% for expr in encode_exprs %}
+        r.add({{ expr }})
+{% endfor %}
+        // Append the active arm body's encoded bytes.
+        when (val _b = this.body) {
+{% for arm in variant.arms %}
+            is {{ struct_name }}Body.{{ arm.variant_name }} -> r.addAll(_b.body.encode().toList())
+{% endfor %}
+{% if variant.default_arm %}
+            is {{ struct_name }}Body.{{ variant.default_arm.variant_name }} -> r.addAll(_b.body.encode().toList())
+{% endif %}
+        }
+        return r.toByteArray()
+{% elif has_vle_fields %}
         val r = mutableListOf<Byte>()
 {% for field in fields %}
 {{ field.vle_encode_block }}
@@ -56,7 +99,41 @@ data class {{ struct_name }}(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): {{ struct_name }}? {
-{% if has_vle_fields %}
+{% if has_variant %}
+            // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+            val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
+{% for field in fields %}
+            val {{ field.id }} = {{ field.decode_expr }}
+{% endfor %}
+            if (!cursor.advance({{ min_bytes }})) return null
+            // Dispatch on the tag field; each arm decodes its body codec
+            // from the cursor. The default arm (when declared) carries
+            // the runtime tag value so encode can round-trip it back
+            // onto the wire.
+            val body: {{ struct_name }}Body = when ({{ variant.kt_tag_match_expr }}) {
+{% for arm in variant.arms %}
+                {{ arm.value_literal }} -> {
+                    val _arm = {{ arm.body_type }}.decode(cursor) ?: return null
+                    {{ struct_name }}Body.{{ arm.variant_name }}(_arm)
+                }
+{% endfor %}
+                else -> {
+{% if variant.default_arm %}
+                    val _arm = {{ variant.default_arm.body_type }}.decode(cursor) ?: return null
+                    {{ struct_name }}Body.{{ variant.default_arm.variant_name }}(tag = {{ variant.tag_field }}, body = _arm)
+{% else %}
+                    // codec/variant-arm-unreachable rejected this case at parse time.
+                    return null
+{% endif %}
+                }
+            }
+            return {{ struct_name }}(
+{% for field in fields %}
+                {{ field.id }} = {{ field.id }},
+{% endfor %}
+                body = body
+            )
+{% elif has_vle_fields %}
             // Streaming codec: each field reads from cursor directly
             // (VLE base-128 chain).
 {% for field in fields %}
