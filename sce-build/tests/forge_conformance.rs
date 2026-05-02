@@ -848,14 +848,14 @@ fn forge_codec_until_eof_basic_cpp() {
     assert_standalone_forge("codec_until_eof_basic", "codec_until_eof_basic.h");
 }
 
-/// RFC §5.B B2 gate: emit on Rust + Cpp + Kotlin (Kotlin closure
-/// landed); the three remaining backends must error with
-/// `generate/unsupported-feature` until each per-language closure
-/// lands. The gate-rejection test rotates onto whichever language is
-/// still gated so the TODO doesn't silently rot. The final closure
-/// (Python) deletes both the gate and this test.
+/// RFC §5.B B2 gate: emit on Rust + Cpp + Kotlin + Go (Go closure
+/// landed); the two remaining backends (C11 + Python) must error
+/// with `generate/unsupported-feature` until each per-language
+/// closure lands. The gate-rejection test rotates onto whichever
+/// language is still gated so the TODO doesn't silently rot. The
+/// final closure (Python) deletes both the gate and this test.
 #[test]
-fn forge_codec_repeat_go_gate_rejects() {
+fn forge_codec_repeat_c11_gate_rejects() {
     use sce_build::forge::error::{ForgeError, GenerateError};
 
     let result = sce_build::compile_forge_with_imports(
@@ -864,16 +864,13 @@ fn forge_codec_repeat_go_gate_rejects() {
         )
         .unwrap(),
         sce_build::DocumentLabel::symmetric("codec_repeat_basic"),
-        sce_build::generator::Language::Go,
+        sce_build::generator::Language::C11,
         &resource_dir(),
-        &sce_build::ForgeCompileOptions {
-            go_module_prefix: Some(GOLDEN_GO_MODULE_PREFIX.to_string()),
-            ..Default::default()
-        },
+        &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
         Ok(_) => panic!(
-            "B2 must gate Go emit on <sce:repeat> until the Go closure \
+            "B2 must gate C11 emit on <sce:repeat> until the C11 closure \
              lands; expected generate/unsupported-feature"
         ),
         Err(e) => e,
@@ -882,7 +879,7 @@ fn forge_codec_repeat_go_gate_rejects() {
         matches!(
             err.error,
             ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("<sce:repeat>") && msg.contains("Go")
+                if msg.contains("<sce:repeat>") && msg.contains("C11")
         ),
         "trunk gate must name the feature and the unsupported language; \
          got: {:?}",
@@ -1553,6 +1550,23 @@ fn forge_go_codec_present_if_basic() {
         "codec_present_if_basic",
         "codec_present_if_basic.go",
     );
+}
+
+// ── RFC §5.B B2 repeat primitive (Go, closure) ──────────────
+
+#[test]
+fn forge_go_codec_repeat_elem() {
+    assert_standalone_forge_go("codec_repeat_elem", "codec_repeat_elem.go");
+}
+
+#[test]
+fn forge_go_codec_repeat_basic() {
+    assert_standalone_forge_go("codec_repeat_basic", "codec_repeat_basic.go");
+}
+
+#[test]
+fn forge_go_codec_until_eof_basic() {
+    assert_standalone_forge_go("codec_until_eof_basic", "codec_until_eof_basic.go");
 }
 
 // ── Algorithm (Go, RFC §5.A — post-A6 matrix follow-up) ────

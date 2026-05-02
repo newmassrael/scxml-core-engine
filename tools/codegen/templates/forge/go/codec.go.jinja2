@@ -130,6 +130,27 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 		{{ field.id }}: {{ field.id }},
 {% endfor %}
 	}, nil
+{% elif has_repeat_fields %}
+	// RFC §5.B B2 repeat primitive: streaming decode mixes plain
+	// fixed-width reads (per-field via the present-if helper's
+	// non-gated arm) with `make([]T, 0, N)` + `append` loops that
+	// iterate the imported codec's `Decode<T>(cursor)` either
+	// `int(N)` times (length-field) or until `cursor.Remaining() == 0`
+	// (until-eof). Element bodies recurse into their own decoder —
+	// each may itself surface `codec.ErrNeedMoreBytes`, unwinding
+	// the partial frame.
+{% for field in fields %}
+{% if field.is_repeat %}
+	{{ field.repeat_decode_stmt }}
+{% else %}
+	{{ field.present_if_decode_stmt }}
+{% endif %}
+{% endfor %}
+	return &{{ struct_name }}{
+{% for field in fields %}
+		{{ field.id }}: {{ field.id }},
+{% endfor %}
+	}, nil
 {% elif has_variable_fields %}
 	frameLen := cursor.Remaining()
 	if frameLen < {{ min_bytes }} {
@@ -226,6 +247,20 @@ func (s *{{ struct_name }}) Encode() []byte {
 	r := make([]byte, 0, {{ max_bytes }})
 {% for field in fields %}
 {{ field.present_if_encode_block }}
+{% endfor %}
+	return r
+{% elif has_repeat_fields %}
+	// RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
+	// fields range over `s.<Pascal>` and spread each element's
+	// `Encode()` bytes into the parent buffer. Author keeps count
+	// field == slice length (trust contract).
+	r := make([]byte, 0, {{ max_bytes }})
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
 	return r
 {% elif has_variable_fields %}

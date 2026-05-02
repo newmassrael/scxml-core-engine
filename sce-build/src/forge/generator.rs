@@ -1008,9 +1008,9 @@ fn render_codec(
         }
     }
 
-    // RFC §5.B B2 repeat primitive (trunk + Kotlin closure): Rust +
-    // Cpp + Kotlin emit. Go / C11 / Python stay gated until each
-    // per-language closure lands so the template never silently
+    // RFC §5.B B2 repeat primitive (trunk + Kotlin + Go closures):
+    // Rust + Cpp + Kotlin + Go emit. C11 / Python stay gated until
+    // each per-language closure lands so the template never silently
     // drops the field.
     if m.has_repeat_fields()
         && !matches!(
@@ -1018,11 +1018,12 @@ fn render_codec(
             crate::generator::Language::Rust
                 | crate::generator::Language::Cpp
                 | crate::generator::Language::Kotlin
+                | crate::generator::Language::Go
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "codec '{name}': <sce:repeat> (RFC §5.B B2) emits on Rust + Cpp + Kotlin; \
+                "codec '{name}': <sce:repeat> (RFC §5.B B2) emits on Rust + Cpp + Kotlin + Go; \
                  the {lang:?} closure lands when the per-language template adds the streaming \
                  repeat decode/encode loop and the host-language list type",
                 name = m.name,
@@ -1076,9 +1077,13 @@ fn render_codec(
                     let body_type = resolve_repeat_body_type(
                         &m.name, alias, imports, lang,
                     )?;
+                    let body_decoder = resolve_variant_arm_decoder(alias, lang);
+                    let body_encoder = resolve_variant_arm_encoder(alias, lang);
                     let max_count = crate::forge::limits::resolve_max_count(f.max_count);
                     obj.insert("max_count".into(), max_count.into());
                     obj.insert("repeat_body_type".into(), body_type.clone().into());
+                    obj.insert("repeat_body_decoder".into(), body_decoder.clone().into());
+                    obj.insert("repeat_body_encoder".into(), body_encoder.clone().into());
                     let wrapped = match lang {
                         crate::generator::Language::Rust => format!("Vec<{body_type}>"),
                         crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
@@ -1089,6 +1094,12 @@ fn render_codec(
                         // generated procedure_l2 can re-assign on a
                         // fresh frame without wrapping in `.toList()`.
                         crate::generator::Language::Kotlin => format!("MutableList<{body_type}>"),
+                        // Go: `[]T` slice of value type (not `[]*T`) —
+                        // each element is plain data, no shared mutable
+                        // state, and `make([]T, 0, max_count)` zero-
+                        // allocates the body up to the cap. Encode
+                        // iterates by value with `for _, _e := range`.
+                        crate::generator::Language::Go => format!("[]{body_type}"),
                         // Closures land when each backend's host-list
                         // shape is wired up; trunk gate above prevents
                         // reaching this arm on those languages.
@@ -1097,7 +1108,7 @@ fn render_codec(
                     obj.insert(type_key.into(), wrapped.into());
                     obj.insert(
                         "repeat_decode_stmt".into(),
-                        repeat_streaming_decode_stmt(f, &body_type, lang).into(),
+                        repeat_streaming_decode_stmt(f, &body_type, &body_decoder, lang).into(),
                     );
                     obj.insert(
                         "repeat_encode_block".into(),
@@ -1697,8 +1708,14 @@ fn resolve_repeat_body_type(
         // (`imp.type_name`) keeps the data-class field declaration
         // and decode loop both compact and unambiguous.
         crate::generator::Language::Kotlin => imp.type_name.clone(),
+        // Go: imports are package-qualified (`<snake>.<Pascal>`);
+        // `member_type` already carries that exact spelling — same as
+        // variant arm body — so the slice element type, the decoded
+        // element value, and the imported codec's free decoder all
+        // line up against the same package alias.
+        crate::generator::Language::Go => imp.member_type.clone(),
         // Closures land per-language. Trunk's `render_codec` gate
-        // prevents reaching this arm on Go / C11 / Python until each
+        // prevents reaching this arm on C11 / Python until each
         // backend's repeat decode/encode pattern is wired up; the
         // placeholder mirrors `imp.type_name` so future additions
         // need only revisit this single call site.
@@ -1719,6 +1736,7 @@ fn resolve_repeat_body_type(
 fn repeat_streaming_decode_stmt(
     field: &CodecField,
     body_type: &str,
+    body_decoder: &str,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -1799,8 +1817,43 @@ fn repeat_streaming_decode_stmt(
                  }}\n            \
              }}"
         ),
+        // Go: PascalCase field id; imported codec exposes a free
+        // function `<snake>.Decode<Pascal>(cursor)` returning
+        // `(*<Pascal>, error)`. The slice is `[]T` (value type, not
+        // `[]*T` — element bodies are plain data with no shared
+        // mutable state). `int(LenField)` coerces uint8/16/32/64
+        // counts uniformly so the loop bound type-checks. Tabs match
+        // the surrounding `Decode<X>` body indent (1 tab outer,
+        // 2 tabs inner).
+        (Language::Go, CountRef::LengthField(len_field)) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let go_len = filters::to_pascal_case(len_field.clone());
+            format!(
+                "{go_id} := make([]{body_type}, 0, {go_len})\n\t\
+                 for _i := 0; _i < int({go_len}); _i++ {{\n\t\t\
+                     _elem, err := {body_decoder}(cursor)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = append({go_id}, *_elem)\n\t\
+                 }}"
+            )
+        }
+        (Language::Go, CountRef::UntilEof) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "{go_id} := make([]{body_type}, 0)\n\t\
+                 for cursor.Remaining() > 0 {{\n\t\t\
+                     _elem, err := {body_decoder}(cursor)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = append({go_id}, *_elem)\n\t\
+                 }}"
+            )
+        }
         // Closures land per-language; the trunk gate above prevents
-        // reaching this arm on Go / C11 / Python.
+        // reaching this arm on C11 / Python.
         _ => format!("/* unsupported language for repeat decode */"),
     }
 }
@@ -1842,6 +1895,18 @@ fn repeat_streaming_encode_block(
                  r.addAll(_e.encode().toList())\n        \
              }}"
         ),
+        // Go: range over `s.<Pascal>` by value (`_e` is a copy of
+        // each element); `_e.Encode()` returns `[]byte`, spread via
+        // `...` into the parent's `r` slice. One-tab outer indent
+        // matches the surrounding `Encode()` body context.
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "\tfor _, _e := range s.{go_id} {{\n\t\t\
+                     r = append(r, _e.Encode()...)\n\t\
+                 }}"
+            )
+        }
         _ => "        // unsupported language for repeat encode\n".to_string(),
     }
 }
