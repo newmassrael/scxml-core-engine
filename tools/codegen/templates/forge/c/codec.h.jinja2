@@ -56,7 +56,11 @@ typedef struct {
 {% endif %}
 typedef struct {
 {% for field in fields %}
-{% if field.is_variable and not field.is_vle %}
+{% if field.is_repeat %}
+    /* RFC §5.B B2 repeat: fixed array of {{ field.repeat_body_type }} elements (max {{ field.max_count }}) */
+    {{ field.repeat_body_type }} {{ field.id }}[{{ field.max_count }}];
+    size_t  {{ field.id }}_len;
+{% elif field.is_variable and not field.is_vle %}
     /* variable-length payload (sce:bit-size="{{ field.bit_size_kind }}", sce:max-size="{{ field.max_size }}") */
     uint8_t {{ field.id }}[{{ field.max_size }}];
     size_t  {{ field.id }}_len;
@@ -130,6 +134,23 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
      * the field so the struct is fully initialized either way. */
 {% for field in fields %}
     {{ field.present_if_decode_stmt }}
+{% endfor %}
+    return SCE_FORGE_CODEC_OK;
+{% elif has_repeat_fields %}
+    /* RFC §5.B B2 repeat primitive: streaming decode mixes plain
+     * fixed-width reads (per-field via the present-if helper's
+     * non-gated arm) with fixed-array repeat loops that iterate the
+     * imported codec's `<snake>_decode(cursor, &out-><id>[_i])`
+     * either `out-><len_field>` times (length-field) or until cursor
+     * exhaustion (until-eof). MAX_COUNT overflow surfaces as
+     * NEED_MORE_BYTES so the consumer treats it like cursor
+     * exhaustion (typed buffer-overflow lands in B7). */
+{% for field in fields %}
+{% if field.is_repeat %}
+    {{ field.repeat_decode_stmt }}
+{% else %}
+    {{ field.present_if_decode_stmt }}
+{% endif %}
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_variable_fields %}
@@ -225,6 +246,19 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
     r.len = 0;
 {% for field in fields %}
 {{ field.present_if_encode_block }}
+{% endfor %}
+{% elif has_repeat_fields %}
+    /* RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
+     * fields walk the per-codec encoded_t splice loop, bounded by
+     * `sizeof(r.bytes)` (== MAX_BYTES). Author keeps count field ==
+     * `<id>_len` (trust contract). */
+    r.len = 0;
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
 {% endfor %}
 {% else %}
     r.len = {{ c_min_bytes_macro }};

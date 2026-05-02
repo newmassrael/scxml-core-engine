@@ -848,14 +848,12 @@ fn forge_codec_until_eof_basic_cpp() {
     assert_standalone_forge("codec_until_eof_basic", "codec_until_eof_basic.h");
 }
 
-/// RFC §5.B B2 gate: emit on Rust + Cpp + Kotlin + Go (Go closure
-/// landed); the two remaining backends (C11 + Python) must error
-/// with `generate/unsupported-feature` until each per-language
-/// closure lands. The gate-rejection test rotates onto whichever
-/// language is still gated so the TODO doesn't silently rot. The
-/// final closure (Python) deletes both the gate and this test.
+/// RFC §5.B B2 gate: emit on Rust + Cpp + Kotlin + Go + C11 (C11
+/// closure landed); the last remaining backend (Python) must error
+/// with `generate/unsupported-feature` until its closure lands. The
+/// final Python closure deletes both the gate and this test.
 #[test]
-fn forge_codec_repeat_c11_gate_rejects() {
+fn forge_codec_repeat_python_gate_rejects() {
     use sce_build::forge::error::{ForgeError, GenerateError};
 
     let result = sce_build::compile_forge_with_imports(
@@ -864,14 +862,14 @@ fn forge_codec_repeat_c11_gate_rejects() {
         )
         .unwrap(),
         sce_build::DocumentLabel::symmetric("codec_repeat_basic"),
-        sce_build::generator::Language::C11,
+        sce_build::generator::Language::Python,
         &resource_dir(),
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
         Ok(_) => panic!(
-            "B2 must gate C11 emit on <sce:repeat> until the C11 closure \
-             lands; expected generate/unsupported-feature"
+            "B2 must gate Python emit on <sce:repeat> until the Python \
+             closure lands; expected generate/unsupported-feature"
         ),
         Err(e) => e,
     };
@@ -879,7 +877,7 @@ fn forge_codec_repeat_c11_gate_rejects() {
         matches!(
             err.error,
             ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("<sce:repeat>") && msg.contains("C11")
+                if msg.contains("<sce:repeat>") && msg.contains("Python")
         ),
         "trunk gate must name the feature and the unsupported language; \
          got: {:?}",
@@ -1848,6 +1846,23 @@ fn forge_c11_codec_present_if_basic() {
         "codec_present_if_basic",
         "codec_present_if_basic.c.h",
     );
+}
+
+// ── RFC §5.B B2 repeat primitive (C11, closure) ─────────────
+
+#[test]
+fn forge_c11_codec_repeat_elem() {
+    assert_standalone_forge_c("codec_repeat_elem", "codec_repeat_elem.c.h");
+}
+
+#[test]
+fn forge_c11_codec_repeat_basic() {
+    assert_standalone_forge_c("codec_repeat_basic", "codec_repeat_basic.c.h");
+}
+
+#[test]
+fn forge_c11_codec_until_eof_basic() {
+    assert_standalone_forge_c("codec_until_eof_basic", "codec_until_eof_basic.c.h");
 }
 
 // ── Crossfile codec (C11) ───────────────────────────────────

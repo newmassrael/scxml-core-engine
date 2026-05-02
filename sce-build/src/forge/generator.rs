@@ -1008,9 +1008,9 @@ fn render_codec(
         }
     }
 
-    // RFC §5.B B2 repeat primitive (trunk + Kotlin + Go closures):
-    // Rust + Cpp + Kotlin + Go emit. C11 / Python stay gated until
-    // each per-language closure lands so the template never silently
+    // RFC §5.B B2 repeat primitive (trunk + Kotlin + Go + C11
+    // closures): Rust + Cpp + Kotlin + Go + C11 emit. Python stays
+    // gated until its closure lands so the template never silently
     // drops the field.
     if m.has_repeat_fields()
         && !matches!(
@@ -1019,11 +1019,12 @@ fn render_codec(
                 | crate::generator::Language::Cpp
                 | crate::generator::Language::Kotlin
                 | crate::generator::Language::Go
+                | crate::generator::Language::C11
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "codec '{name}': <sce:repeat> (RFC §5.B B2) emits on Rust + Cpp + Kotlin + Go; \
+                "codec '{name}': <sce:repeat> (RFC §5.B B2) emits on Rust + Cpp + Kotlin + Go + C11; \
                  the {lang:?} closure lands when the per-language template adds the streaming \
                  repeat decode/encode loop and the host-language list type",
                 name = m.name,
@@ -1100,19 +1101,33 @@ fn render_codec(
                         // allocates the body up to the cap. Encode
                         // iterates by value with `for _, _e := range`.
                         crate::generator::Language::Go => format!("[]{body_type}"),
-                        // Closures land when each backend's host-list
-                        // shape is wired up; trunk gate above prevents
-                        // reaching this arm on those languages.
+                        // C11: fixed buffer + length pair. The struct
+                        // member is rendered directly by the C11 codec
+                        // template (`T elems[MAX]; size_t elems_len;`)
+                        // because the two-field layout would not fit in
+                        // the single `c_type` slot. The `c_type` value
+                        // here ends up unused by the template's
+                        // is_repeat branch — set to `body_type` for
+                        // shape symmetry / debugging visibility.
+                        crate::generator::Language::C11 => body_type.clone(),
+                        // Closure lands per-language; trunk gate above
+                        // prevents reaching this arm on Python.
                         _ => body_type.clone(),
                     };
                     obj.insert(type_key.into(), wrapped.into());
                     obj.insert(
                         "repeat_decode_stmt".into(),
-                        repeat_streaming_decode_stmt(f, &body_type, &body_decoder, lang).into(),
+                        repeat_streaming_decode_stmt(
+                            f, &body_type, &body_decoder, max_count, lang,
+                        )
+                        .into(),
                     );
                     obj.insert(
                         "repeat_encode_block".into(),
-                        repeat_streaming_encode_block(f, lang).into(),
+                        repeat_streaming_encode_block(
+                            f, &body_encoder, lang,
+                        )
+                        .into(),
                     );
                     // Kotlin's data-class primary constructor needs a
                     // default value for every property; the trunk's
@@ -1714,11 +1729,16 @@ fn resolve_repeat_body_type(
         // element value, and the imported codec's free decoder all
         // line up against the same package alias.
         crate::generator::Language::Go => imp.member_type.clone(),
-        // Closures land per-language. Trunk's `render_codec` gate
-        // prevents reaching this arm on C11 / Python until each
-        // backend's repeat decode/encode pattern is wired up; the
-        // placeholder mirrors `imp.type_name` so future additions
-        // need only revisit this single call site.
+        // C11: imported codec emits `typedef struct {...} <snake>_t;`
+        // (`tools/codegen/templates/forge/c/codec.h.jinja2:38`); the
+        // repeat field's element array is typed against that typedef,
+        // exactly what `member_type` already holds for the C11 arm of
+        // `resolve_single_import`.
+        crate::generator::Language::C11 => imp.member_type.clone(),
+        // Closure lands per-language. Trunk's `render_codec` gate
+        // prevents reaching this arm on Python; the placeholder
+        // mirrors `imp.type_name` so future additions need only
+        // revisit this single call site.
         _ => imp.type_name.clone(),
     })
 }
@@ -1737,6 +1757,7 @@ fn repeat_streaming_decode_stmt(
     field: &CodecField,
     body_type: &str,
     body_decoder: &str,
+    max_count: u32,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -1852,8 +1873,47 @@ fn repeat_streaming_decode_stmt(
                  }}"
             )
         }
-        // Closures land per-language; the trunk gate above prevents
-        // reaching this arm on C11 / Python.
+        // C11: fixed array `T elems[max_count]` paired with `size_t
+        // elems_len` declared in the codec template. Decode walks the
+        // array via `out-><id>[_i]` and updates `out-><id>_len` once
+        // the loop completes. Each repeat field is wrapped in its own
+        // `{ ... }` sub-block so per-field locals (`_n`, `_i`, `_st`)
+        // don't shadow across siblings (mirrors the present-if pattern
+        // for C11). MAX_COUNT overflow surfaces as NEED_MORE_BYTES so
+        // the consumer treats it like cursor exhaustion (rather than
+        // adding a separate buffer-overflow status code in the v1
+        // shape — buffer-overflow lands as a typed signal in B7).
+        (Language::C11, CountRef::LengthField(len_field)) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let len_snake = filters::to_snake_case(len_field.clone());
+            format!(
+                "{{\n        \
+                     size_t _n = (size_t)out->{len_snake};\n        \
+                     if (_n > {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     for (size_t _i = 0; _i < _n; ++_i) {{\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]);\n            \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
+                     }}\n        \
+                     out->{id_snake}_len = _n;\n    \
+                 }}"
+            )
+        }
+        (Language::C11, CountRef::UntilEof) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            format!(
+                "{{\n        \
+                     out->{id_snake}_len = 0;\n        \
+                     while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
+                         if (out->{id_snake}_len >= {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
+                         out->{id_snake}_len++;\n        \
+                     }}\n    \
+                 }}"
+            )
+        }
+        // Closure lands per-language; trunk gate above prevents
+        // reaching this arm on Python.
         _ => format!("/* unsupported language for repeat decode */"),
     }
 }
@@ -1871,6 +1931,7 @@ fn repeat_streaming_decode_stmt(
 /// contract: the encoder writes whatever the struct holds).
 fn repeat_streaming_encode_block(
     field: &CodecField,
+    body_encoder: &str,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -1904,6 +1965,39 @@ fn repeat_streaming_encode_block(
             format!(
                 "\tfor _, _e := range s.{go_id} {{\n\t\t\
                      r = append(r, _e.Encode()...)\n\t\
+                 }}"
+            )
+        }
+        // C11: walk the fixed-array up to `_len`, splicing each
+        // element's `<snake>_encoded_t.bytes[0..len]` into the
+        // parent's `r.bytes[r.len..]`. Bounds-check against the
+        // codec's MAX_BYTES via `sizeof(r.bytes)` so the helper
+        // doesn't need to thread the parent codec name through —
+        // sizeof on the fixed-array member yields the same constant
+        // value as the MAX_BYTES macro at compile time, and the
+        // compiler folds it. Mirrors the variant arm body splice
+        // pattern.
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            // Imported codec encode returns `<snake>_encoded_t`. The
+            // body_encoder is `<snake>_encode`; the snake portion of
+            // the encoded type matches the body_encoder's prefix.
+            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
+                format!("{stripped}_encoded_t")
+            } else {
+                // Defensive fallback: fall back to body_encoder + "_t"
+                // so a future mismatch surfaces at compile time (the
+                // emitted C11 will fail to typecheck) rather than
+                // silently rendering empty.
+                format!("{body_encoder}_t")
+            };
+            format!(
+                "    for (size_t _ri = 0; _ri < self->{id_snake}_len; ++_ri) {{\n        \
+                     {encoded_t} _sub = {body_encoder}(&self->{id_snake}[_ri]);\n        \
+                     if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
+                         for (size_t _rj = 0; _rj < _sub.len; ++_rj) r.bytes[r.len + _rj] = _sub.bytes[_rj];\n            \
+                         r.len += _sub.len;\n        \
+                     }}\n    \
                  }}"
             )
         }
