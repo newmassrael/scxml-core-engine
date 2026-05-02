@@ -1030,10 +1030,48 @@ fn render_codec(
             }
             if matches!(lang, crate::generator::Language::Kotlin) {
                 obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
+                // RFC §5.B B1-γ flags primitive on Kotlin: bitwise ops on
+                // UByte/UShort/UInt/ULong are awkward (no UByte literal,
+                // mask must round-trip through a wider signed type). The
+                // template widens via `.toInt()` (UByte/UShort) or
+                // `.toLong()` (UInt/ULong), runs the bitwise op against
+                // the Int/Long mask, then narrows back via the carrier's
+                // own `toU*` constructor.
+                let (view, back) = match &f.sce_type {
+                    SceType::Uint8 => ("toInt", "toUByte"),
+                    SceType::Uint16 => ("toInt", "toUShort"),
+                    SceType::Uint32 => ("toLong", "toUInt"),
+                    SceType::Uint64 => ("toLong", "toULong"),
+                    _ => ("toInt", "toUByte"),
+                };
+                obj.insert("kt_int_view".into(), view.into());
+                obj.insert("kt_carrier_back".into(), back.into());
             }
             if matches!(lang, crate::generator::Language::Python) {
                 obj.insert("default_value".into(), python_default(&f.sce_type).into());
+                // RFC §5.B B1-γ flags primitive on Python: ints are
+                // unbounded, so `& ~mask` would yield a negative value.
+                // The carrier's natural width gives a hex saturation
+                // mask (`0xFF` / `0xFFFF` / ...) the setter ANDs into the
+                // result of the clear path so the carrier stays inside
+                // the unsigned domain.
+                let py_carrier_max = match f.sce_type.int_bit_width() {
+                    Some(8) => "0xFF",
+                    Some(16) => "0xFFFF",
+                    Some(32) => "0xFFFFFFFF",
+                    Some(64) => "0xFFFFFFFFFFFFFFFF",
+                    _ => "0xFF",
+                };
+                obj.insert("py_carrier_max".into(), py_carrier_max.into());
             }
+            // RFC §5.B B1-γ flags primitive: pre-render per-flag accessor
+            // context. Each flag carries a language-specific accessor name,
+            // setter name, and the precomputed bitmask literal.
+            obj.insert("has_flags".into(), (!f.flags.is_empty()).into());
+            obj.insert(
+                "flags".into(),
+                serde_json::json!(build_flag_ctx(&f.flags, &f.sce_type, lang)),
+            );
             serde_json::Value::Object(obj)
         })
         .collect();
@@ -1042,6 +1080,18 @@ fn render_codec(
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("fields".into(), serde_json::json!(fields));
+    // RFC §5.B B1-γ flags primitive: codec-level rollup so the template
+    // can short-circuit the accessor block when no field has flags. The
+    // snake-cased struct name doubles as the C11 accessor prefix
+    // (`<snake>_<flag_name>` / `<snake>_set_<flag_name>`).
+    let has_flags = m.fields.iter().any(|f| !f.flags.is_empty());
+    ctx.insert("has_flags".into(), has_flags.into());
+    if matches!(lang, crate::generator::Language::C11) {
+        ctx.insert(
+            "c_struct_snake".into(),
+            filters::to_snake_case(m.name.clone()).into(),
+        );
+    }
     ctx.insert("min_bytes".into(), m.min_frame_bytes().into());
     // RFC §5.B variant primitive (B1-β): the parent codec's worst-case
     // encoded size is `prefix + max(arm_body_max)` because exactly one
@@ -1374,6 +1424,49 @@ fn resolve_variant_arm_encoder(
         }
         _ => String::new(),
     }
+}
+
+/// RFC §5.B B1-γ flags primitive — render the per-flag accessor context
+/// for one carrier field. Each entry carries the language-specific
+/// accessor / setter names alongside the precomputed bitmask literal so
+/// each codec template just iterates the list and emits the right
+/// shape. The mask is rendered hex-padded to the carrier's full width
+/// (`0x80` for u8, `0x0080` for u16, ...) so generated code reads
+/// uniformly regardless of the bit position.
+fn build_flag_ctx(
+    flags: &[FlagDef],
+    carrier: &SceType,
+    lang: crate::generator::Language,
+) -> Vec<serde_json::Value> {
+    use crate::generator::Language;
+    // Hex digit count = ceil(width / 4): 2 (u8), 4 (u16), 8 (u32), 16 (u64).
+    let hex_digits: usize = match carrier.int_bit_width() {
+        Some(w) => (w as usize) / 4,
+        // Non-unsigned carriers are rejected at parse time; defensively
+        // return 2 so the literal still type-checks rather than panicking.
+        None => 2,
+    };
+    flags
+        .iter()
+        .map(|f| {
+            let snake = filters::to_snake_case(f.name.clone());
+            let pascal = filters::to_pascal_case(f.name.clone());
+            let camel = filters::to_camel_case(f.name.clone());
+            let mask: u64 = 1u64 << f.bit;
+            let mask_literal = format!("0x{:0width$X}", mask, width = hex_digits);
+            let (name_acc, name_set) = match lang {
+                Language::Go => (pascal.clone(), format!("Set{pascal}")),
+                Language::Kotlin => (camel.clone(), format!("set{pascal}")),
+                _ => (snake.clone(), format!("set_{snake}")),
+            };
+            let mut obj = serde_json::Map::new();
+            obj.insert("bit".into(), f.bit.into());
+            obj.insert("mask_literal".into(), mask_literal.into());
+            obj.insert("name_acc".into(), name_acc.into());
+            obj.insert("name_set".into(), name_set.into());
+            serde_json::Value::Object(obj)
+        })
+        .collect()
 }
 
 // ── Codec expression generation (unified) ─────────────────────

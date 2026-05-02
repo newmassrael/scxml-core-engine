@@ -532,9 +532,20 @@ fn parse_codec(
     }
 
     // Also check for <sce:field> elements (used in both standalone and inline codec)
+    // and <sce:flags> containers (RFC §5.B B1-γ — same wire shape as a
+    // plain unsigned-int field plus named-bit accessors emitted by codegen).
     for child in datamodel.children().filter(|n| n.is_element()) {
-        if child.tag_name().name() == "field" && child.tag_name().namespace() == Some(SCE_NAMESPACE) {
-            fields.push(parse_codec_field_from_node(&child, label.diagnostic_label)?);
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        match child.tag_name().name() {
+            "field" => {
+                fields.push(parse_codec_field_from_node(&child, label.diagnostic_label)?);
+            }
+            "flags" => {
+                fields.push(parse_codec_flags_from_node(&child, label.diagnostic_label)?);
+            }
+            _ => {}
         }
     }
 
@@ -924,7 +935,133 @@ pub fn parse_codec_field_from_node(
         endian,
         max_size,
         length_field,
+        flags: Vec::new(),
     })
+}
+
+/// RFC §5.B B1-γ flags primitive — parse `<sce:flags id=... sce:type=...
+/// sce:byte=... sce:bit-size=N>` with `<sce:flag name="X" bit="N"/>`
+/// child decls. Reuses [`parse_codec_field_from_node`] for the carrier
+/// field (same byte-layout attrs as a plain `<sce:field>`), then walks
+/// `<sce:flag>` children. Validates: carrier type is unsigned-int (so
+/// shift / mask have well-defined wire semantics), each `bit=` lies
+/// within the carrier's bit width, and flag names are unique within
+/// the container.
+fn parse_codec_flags_from_node(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<CodecField, Located<ForgeError>> {
+    let mut field = parse_codec_field_from_node(node, doc_name)?;
+
+    // Reject signed / float / bool / string / bytes carriers — bit
+    // accessors would have undefined semantics under shift / mask.
+    if !field.sce_type.is_unsigned() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:flags id='{}'>", field.id),
+                attr: "sce:type".into(),
+                value: format!("{:?}", field.sce_type).to_lowercase(),
+                expected: "uint8 / uint16 / uint32 / uint64".into(),
+            },
+        ));
+    }
+
+    let bit_width = field.sce_type.int_bit_width().expect("unsigned ⇒ Some");
+
+    let mut seen_names: std::collections::BTreeSet<String> = Default::default();
+    let mut flag_defs: Vec<FlagDef> = Vec::new();
+    for child in node.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
+            || child.tag_name().name() != "flag"
+        {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flags id='{}'>", field.id),
+                    attr: "child element".into(),
+                    value: child.tag_name().name().to_string(),
+                    expected: "<sce:flag>".into(),
+                },
+            ));
+        }
+        let name = child
+            .attribute("name")
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:flag>".into(),
+                        attr: "name".into(),
+                    },
+                )
+            })?
+            .to_string();
+        if !seen_names.insert(name.clone()) {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flag> in <sce:flags id='{}'>", field.id),
+                    attr: "name".into(),
+                    value: name.clone(),
+                    expected: "unique within parent <sce:flags>".into(),
+                },
+            ));
+        }
+        let bit_str = child.attribute("bit").ok_or_else(|| {
+            located(
+                &child,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: format!("<sce:flag name='{name}'>"),
+                    attr: "bit".into(),
+                },
+            )
+        })?;
+        let bit = parse_int(bit_str).ok_or_else(|| {
+            located(
+                &child,
+                doc_name,
+                ValidationError::NumericParse {
+                    element: format!("<sce:flag name='{name}'>"),
+                    attr: "bit".into(),
+                    value: bit_str.to_string(),
+                    detail: "expected non-negative integer".into(),
+                },
+            )
+        })?;
+        if bit >= bit_width {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flag name='{name}'>"),
+                    attr: "bit".into(),
+                    value: bit.to_string(),
+                    expected: format!("0..{bit_width} (carrier is {bit_width}-bit)"),
+                },
+            ));
+        }
+        flag_defs.push(FlagDef { name, bit });
+    }
+
+    if flag_defs.is_empty() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Codec,
+                what: format!("<sce:flag> child of <sce:flags id='{}'>", field.id),
+            },
+        ));
+    }
+
+    field.flags = flag_defs;
+    Ok(field)
 }
 
 // ── Validator parsing ──────────────────────────────────────

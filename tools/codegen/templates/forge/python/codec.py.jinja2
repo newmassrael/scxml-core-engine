@@ -151,6 +151,29 @@ class {{ struct_name }}:
         return value
 {% endif %}
 
+{% if has_flags %}
+    # RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
+    # field. Plain methods (rather than @property) for API symmetry with
+    # Rust / Cpp / Kotlin / Go / C11. Python ints are unbounded, so the
+    # clear path masks back to the carrier's natural width to keep the
+    # value inside the unsigned domain after `~mask` flips the sign.
+    # Wire layout is unchanged.
+{% for field in fields %}
+{% if field.has_flags %}
+{% for fl in field.flags %}
+    def {{ fl.name_acc }}(self) -> bool:
+        return (self.{{ field.id }} & {{ fl.mask_literal }}) != 0
+
+    def {{ fl.name_set }}(self, v: bool) -> None:
+        if v:
+            self.{{ field.id }} = (self.{{ field.id }} | {{ fl.mask_literal }}) & {{ field.py_carrier_max }}
+        else:
+            self.{{ field.id }} = self.{{ field.id }} & ({{ field.py_carrier_max }} ^ {{ fl.mask_literal }})
+
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
     def encode(self) -> bytes:
 {% if has_variant %}
         # Encode fixed prefix (tag field bytes are part of the prefix).

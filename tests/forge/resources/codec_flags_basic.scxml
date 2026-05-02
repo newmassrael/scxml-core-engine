@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec flags primitive (RFC §5.B B1-γ).
+     Single uint8 carrier field "header" with four named bits laid out
+     to mirror the Zenoh Fragment header (see watching-zenoh/docs/
+     wire-spec-subset.md §4.2): `reliable` (bit 7), `more` (bit 6),
+     `drop` (bit 5), `first` (bit 4). Codegen emits per-flag accessors
+     while leaving the wire layout identical to a plain uint8 field. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_flags_basic">
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="reliable" bit="7"/>
+      <sce:flag name="more" bit="6"/>
+      <sce:flag name="drop" bit="5"/>
+      <sce:flag name="first" bit="4"/>
+    </sce:flags>
+  </datamodel>
+</scxml>

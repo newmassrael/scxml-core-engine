@@ -305,6 +305,20 @@ impl SceType {
     pub fn is_float(&self) -> bool {
         matches!(self, Self::Float32 | Self::Float64)
     }
+
+    /// Bit width for fixed-width integer types — used by RFC §5.B B1-γ
+    /// flags primitive to bound `<sce:flag bit="N"/>` against the carrier
+    /// type's domain. Returns `None` for non-integer types (float / bool /
+    /// string / bytes), where bit-positioned flags have no meaning.
+    pub fn int_bit_width(&self) -> Option<u32> {
+        match self {
+            Self::Uint8 | Self::Int8 => Some(8),
+            Self::Uint16 | Self::Int16 => Some(16),
+            Self::Uint32 | Self::Int32 => Some(32),
+            Self::Uint64 | Self::Int64 => Some(64),
+            _ => None,
+        }
+    }
 }
 
 // ── Field direction ────────────────────────────────────────────
@@ -707,6 +721,16 @@ pub enum BitSize {
     Vle { width_bits: u32 },
 }
 
+/// A single named bit on a `<sce:flags>` carrier field — RFC §5.B B1-γ.
+/// `bit` is the position within the carrier's natural integer width
+/// (0 = LSB, `width-1` = MSB), validated at parse time against the
+/// carrier's [`SceType::int_bit_width`].
+#[derive(Debug, Clone, Serialize)]
+pub struct FlagDef {
+    pub name: String,
+    pub bit: u32,
+}
+
 /// A single field in a codec's byte layout.
 #[derive(Debug, Clone, Serialize)]
 pub struct CodecField {
@@ -728,6 +752,14 @@ pub struct CodecField {
     /// Referenced field ID for LengthRef bit size.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub length_field: Option<String>,
+    /// Named bits — RFC §5.B B1-γ flags primitive. Empty for plain
+    /// fields; populated when the field was authored as a `<sce:flags>`
+    /// container with `<sce:flag name=... bit=N/>` children. Codegen
+    /// emits per-flag get/set accessors after the encode/decode methods
+    /// without changing the wire layout (the field still occupies the
+    /// same bytes as a regular unsigned-int).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub flags: Vec<FlagDef>,
 }
 
 impl CodecField {

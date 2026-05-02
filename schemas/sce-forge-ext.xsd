@@ -324,6 +324,47 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- ═══════════════════════════════════════════════════════════════
+       RFC §5.B B1-γ flags primitive
+
+       Named-bit accessor container over an unsigned-int carrier field.
+       The `<sce:flags>` element occupies the same wire bytes as a plain
+       `<sce:field>` of the same `sce:type` / `sce:byte` / `sce:bit-size`;
+       its `<sce:flag name="X" bit="N"/>` children declare ergonomic
+       per-bit get/set accessors that codegen emits alongside the
+       generated struct. Bit positions are 0 = LSB, (width-1) = MSB and
+       are validated against the carrier's natural integer width by
+       sce-build at parse time.
+
+       Attributes are unqualified on `<sce:flag>` (matches the
+       `<sce:entry key/value>` and `<sce:arm value/type>` convention for
+       attributes declared on SCE-namespaced child elements).
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <xs:element name="flag">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:NCName" use="required"/>
+      <!-- Bit position within the carrier (0 = LSB). Range bounded by
+           the carrier's bit width: 0..7 for uint8, 0..15 for uint16,
+           0..31 for uint32, 0..63 for uint64. Enforced by sce-build. -->
+      <xs:attribute name="bit" type="xs:nonNegativeInteger" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="flags">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:flag" minOccurs="1" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute ref="sce:type" use="required"/>
+      <xs:attribute ref="sce:byte" use="required"/>
+      <xs:attribute ref="sce:bit-size" use="required"/>
+      <xs:attribute ref="sce:bit-offset"/>
+      <xs:attribute ref="sce:endian"/>
+    </xs:complexType>
+  </xs:element>
+
   <!--
     Section 4.7: Validator rules use data-attribute form only.
     Validation attributes (sce:range-min, sce:range-max, sce:max-delta,

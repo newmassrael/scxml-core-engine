@@ -1,0 +1,92 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+
+package codec_flags_basic
+
+import (
+	"github.com/newmassrael/sce-forge-runtime/codec"
+)
+
+// CodecFlagsBasic represents the codec frame layout.
+type CodecFlagsBasic struct {
+	Header uint8
+}
+
+// DecodeCodecFlagsBasic decodes the next frame from cursor.
+// On success the cursor advances past the consumed bytes; returns
+// `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
+// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// VLE codecs may also return `codec.ErrVLEWidthOverflow`.
+func DecodeCodecFlagsBasic(cursor *codec.SceCursor) (*CodecFlagsBasic, error) {
+	raw, err := cursor.PeekSlice(1)
+	if err != nil {
+		return nil, err
+	}
+	value := &CodecFlagsBasic{
+		Header: raw[0],
+	}
+	if err := cursor.Advance(1); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
+// field. Read returns a bool from `(field & mask) != 0`; write toggles
+// the bit on/off without disturbing siblings on the same carrier. Wire
+// layout is unchanged — the carrier still occupies its declared bytes.
+func (s *CodecFlagsBasic) Reliable() bool {
+	return (s.Header & 0x80) != 0
+}
+
+func (s *CodecFlagsBasic) SetReliable(v bool) {
+	if v {
+		s.Header |= 0x80
+	} else {
+		s.Header &^= 0x80
+	}
+}
+
+func (s *CodecFlagsBasic) More() bool {
+	return (s.Header & 0x40) != 0
+}
+
+func (s *CodecFlagsBasic) SetMore(v bool) {
+	if v {
+		s.Header |= 0x40
+	} else {
+		s.Header &^= 0x40
+	}
+}
+
+func (s *CodecFlagsBasic) Drop() bool {
+	return (s.Header & 0x20) != 0
+}
+
+func (s *CodecFlagsBasic) SetDrop(v bool) {
+	if v {
+		s.Header |= 0x20
+	} else {
+		s.Header &^= 0x20
+	}
+}
+
+func (s *CodecFlagsBasic) First() bool {
+	return (s.Header & 0x10) != 0
+}
+
+func (s *CodecFlagsBasic) SetFirst(v bool) {
+	if v {
+		s.Header |= 0x10
+	} else {
+		s.Header &^= 0x10
+	}
+}
+
+// Encode serializes the CodecFlagsBasic into raw bytes.
+func (s *CodecFlagsBasic) Encode() []byte {
+	return []byte{
+		byte(s.Header),
+	}
+}

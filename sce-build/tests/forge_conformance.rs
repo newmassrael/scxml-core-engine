@@ -791,6 +791,18 @@ fn forge_codec_vle_zint_u64() {
     assert_standalone_forge("codec_vle_zint_u64", "codec_vle_zint_u64.h");
 }
 
+// ── RFC §5.B B1-γ flags primitive ────────────────────────────
+// `codec_flags_basic` declares a uint8 carrier `header` with four
+// named bits; codegen emits per-flag get/set accessors while the wire
+// layout is unchanged from a plain uint8 field. The fixture mirrors
+// the Zenoh Fragment header (reliable / more / drop / first) — see
+// watching-zenoh/docs/wire-spec-subset.md §4.2 for the upstream shape.
+
+#[test]
+fn forge_codec_flags_basic() {
+    assert_standalone_forge("codec_flags_basic", "codec_flags_basic.h");
+}
+
 // ── RFC §5.B variant primitive (B1-β trunk) ──────────────────
 // `codec_variant_dispatch` imports two arm-body codecs and exposes
 // the discriminated-union shape across Rust + Cpp. Sub-codecs ship
@@ -984,6 +996,13 @@ fn forge_kotlin_codec_vle_zint_u64() {
     assert_standalone_forge_kotlin("codec_vle_zint_u64", "CodecVleZintU64.kt");
 }
 
+// ── RFC §5.B B1-γ flags primitive (Kotlin) ───────────────────
+
+#[test]
+fn forge_kotlin_codec_flags_basic() {
+    assert_standalone_forge_kotlin("codec_flags_basic", "CodecFlagsBasic.kt");
+}
+
 // ── RFC §5.B variant primitive (Kotlin, B1-β closure) ────────
 
 #[test]
@@ -1136,6 +1155,13 @@ fn forge_rust_codec_length_ref() {
     assert_standalone_forge_rust("codec_length_ref", "codec_length_ref.rs");
 }
 
+// ── RFC §5.B B1-γ flags primitive (Rust) ─────────────────────
+
+#[test]
+fn forge_rust_codec_flags_basic() {
+    assert_standalone_forge_rust("codec_flags_basic", "codec_flags_basic.rs");
+}
+
 // ── RFC §5.B variant primitive (Rust, B1-β trunk) ────────────
 
 #[test]
@@ -1276,6 +1302,13 @@ fn forge_go_codec_length_ref() {
 #[test]
 fn forge_go_codec_vle_zint_u64() {
     assert_standalone_forge_go("codec_vle_zint_u64", "codec_vle_zint_u64.go");
+}
+
+// ── RFC §5.B B1-γ flags primitive (Go) ───────────────────────
+
+#[test]
+fn forge_go_codec_flags_basic() {
+    assert_standalone_forge_go("codec_flags_basic", "codec_flags_basic.go");
 }
 
 // ── RFC §5.B variant primitive (Go, B1-β closure) ────────────
@@ -1437,6 +1470,13 @@ fn forge_python_codec_vle_zint_u64() {
     assert_standalone_forge_python("codec_vle_zint_u64", "codec_vle_zint_u64.py");
 }
 
+// ── RFC §5.B B1-γ flags primitive (Python) ───────────────────
+
+#[test]
+fn forge_python_codec_flags_basic() {
+    assert_standalone_forge_python("codec_flags_basic", "codec_flags_basic.py");
+}
+
 // ── RFC §5.B variant primitive (Python, B1-β closure) ────────
 
 #[test]
@@ -1523,6 +1563,13 @@ fn forge_c11_codec_length_ref() {
 #[test]
 fn forge_c11_codec_vle_zint_u64() {
     assert_standalone_forge_c("codec_vle_zint_u64", "codec_vle_zint_u64.c.h");
+}
+
+// ── RFC §5.B B1-γ flags primitive (C11) ──────────────────────
+
+#[test]
+fn forge_c11_codec_flags_basic() {
+    assert_standalone_forge_c("codec_flags_basic", "codec_flags_basic.c.h");
 }
 
 // ── RFC §5.B variant primitive (C11, B1-β closure) ───────────

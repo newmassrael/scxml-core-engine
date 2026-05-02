@@ -155,6 +155,31 @@ impl {{ struct_name }} {
 {% endif %}
     }
 
+{% if has_flags %}
+    // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
+    // field. Read returns a bool from `(field & mask) != 0`; write
+    // toggles the bit on/off without disturbing siblings on the same
+    // carrier. Wire layout is unchanged — the carrier still occupies
+    // its declared bytes.
+{% for field in fields %}
+{% if field.has_flags %}
+{% for fl in field.flags %}
+    pub fn {{ fl.name_acc }}(&self) -> bool {
+        (self.{{ field.id }} & {{ fl.mask_literal }}) != 0
+    }
+
+    pub fn {{ fl.name_set }}(&mut self, v: bool) {
+        if v {
+            self.{{ field.id }} |= {{ fl.mask_literal }};
+        } else {
+            self.{{ field.id }} &= !{{ fl.mask_literal }};
+        }
+    }
+
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
     pub fn encode(&self) -> Vec<u8> {
 {% if has_variant %}
         // Encode fixed prefix (tag field is part of the prefix). The

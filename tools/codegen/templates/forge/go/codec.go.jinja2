@@ -151,6 +151,30 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 {% endif %}
 }
 
+{% if has_flags %}
+// RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
+// field. Read returns a bool from `(field & mask) != 0`; write toggles
+// the bit on/off without disturbing siblings on the same carrier. Wire
+// layout is unchanged — the carrier still occupies its declared bytes.
+{% for field in fields %}
+{% if field.has_flags %}
+{% for fl in field.flags %}
+func (s *{{ struct_name }}) {{ fl.name_acc }}() bool {
+	return (s.{{ field.id }} & {{ fl.mask_literal }}) != 0
+}
+
+func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
+	if v {
+		s.{{ field.id }} |= {{ fl.mask_literal }}
+	} else {
+		s.{{ field.id }} &^= {{ fl.mask_literal }}
+	}
+}
+
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
 // Encode serializes the {{ struct_name }} into raw bytes.
 func (s *{{ struct_name }}) Encode() []byte {
 {% if has_variant %}

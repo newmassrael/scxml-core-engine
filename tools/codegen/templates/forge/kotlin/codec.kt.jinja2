@@ -47,6 +47,30 @@ data class {{ struct_name }}(
 {% endif %}
 {% endif %}
 ) {
+{% if has_flags %}
+    // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
+    // field. Kotlin's UByte / UShort / UInt / ULong don't expose direct
+    // bitwise infix ops with literal masks, so the body widens through
+    // `.toInt()` (UByte/UShort) or `.toLong()` (UInt/ULong), runs the
+    // bit op against the Int/Long mask, then narrows back via the
+    // carrier's `toU*` constructor.
+{% for field in fields %}
+{% if field.has_flags %}
+{% for fl in field.flags %}
+    fun {{ fl.name_acc }}(): Boolean = (this.{{ field.id }}.{{ field.kt_int_view }}() and {{ fl.mask_literal }}) != 0
+
+    fun {{ fl.name_set }}(v: Boolean) {
+        this.{{ field.id }} = if (v) {
+            (this.{{ field.id }}.{{ field.kt_int_view }}() or {{ fl.mask_literal }}).{{ field.kt_carrier_back }}()
+        } else {
+            (this.{{ field.id }}.{{ field.kt_int_view }}() and {{ fl.mask_literal }}.inv()).{{ field.kt_carrier_back }}()
+        }
+    }
+
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
     fun encode(): ByteArray {
 {% if has_variant %}
         // Encode fixed prefix (tag field bytes are part of the prefix).
