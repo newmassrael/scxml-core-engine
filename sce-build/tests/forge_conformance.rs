@@ -1046,6 +1046,16 @@ fn forge_kotlin_codec_variant_dispatch() {
     );
 }
 
+// ── RFC §5.B B1-δ present-if primitive (Kotlin) ─────────────
+
+#[test]
+fn forge_kotlin_codec_present_if_basic() {
+    assert_standalone_forge_kotlin(
+        "codec_present_if_basic",
+        "CodecPresentIfBasic.kt",
+    );
+}
+
 // ── Algorithm (Kotlin, RFC §5.A — post-A6 matrix follow-up) ─
 
 #[test]

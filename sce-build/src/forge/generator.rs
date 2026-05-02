@@ -981,20 +981,22 @@ fn render_codec(
     // until each per-language closure landed; the final closure
     // (Python) deletes the gate entirely.
 
-    // RFC §5.B B1-δ present-if primitive (trunk): only Rust + Cpp
-    // emit gated decode/encode in trunk. Kotlin / Go / C11 / Python
+    // RFC §5.B B1-δ present-if primitive (trunk + Kotlin closure):
+    // Rust + Cpp + Kotlin emit gated decode/encode. Go / C11 / Python
     // stay gated until each per-language closure lands so the
     // template never silently drops the optional wrap.
     if m.has_present_if_fields()
         && !matches!(
             lang,
-            crate::generator::Language::Rust | crate::generator::Language::Cpp
+            crate::generator::Language::Rust
+                | crate::generator::Language::Cpp
+                | crate::generator::Language::Kotlin
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "codec '{name}': sce:present-if emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B1-δ trunk ships Rust + Cpp; Kotlin / Go / C11 / Python land in B1-δ closures)",
+                 (RFC §5.B B1-δ trunk ships Rust + Cpp + Kotlin; Go / C11 / Python land in B1-δ closures)",
                 name = m.name,
             )),
         ));
@@ -1153,10 +1155,22 @@ fn render_codec(
                         crate::generator::Language::Cpp => {
                             format!("std::optional<{inner}>")
                         }
+                        crate::generator::Language::Kotlin => {
+                            format!("{inner}?")
+                        }
                         // Other backends are gated above; never reached.
                         _ => inner.to_string(),
                     };
                     obj.insert(type_key.into(), wrapped.into());
+                    // Default for the gated optional in languages that
+                    // emit an explicit default in the struct/data class
+                    // constructor. Kotlin's data class primary constructor
+                    // would otherwise call `0.toUByte()` etc. against the
+                    // non-nullable carrier and fail to compile — `null`
+                    // is the only sane default for `T?`.
+                    if matches!(lang, crate::generator::Language::Kotlin) {
+                        obj.insert("kt_default".into(), "null".into());
+                    }
                 }
             }
             serde_json::Value::Object(obj)
@@ -1655,6 +1669,36 @@ fn present_if_streaming_decode_stmt(
                  }}"
             )
         }
+        // Kotlin: non-gated uses `run { ... }` whose last expression is
+        // the typed value; gated uses `if (predicate) { ... } else { null }`
+        // and infers the carrier's nullable type from the union of the
+        // carrier-typed last expression and `null`. Both forms allow the
+        // non-local `return null` (the inline `run` lambda returns from
+        // `decode`) so `peekSlice`/`advance` failures unwind correctly.
+        // The template inserts the result inside the companion-object
+        // `decode()` body (12-space indent) so inner block lines render
+        // at 16 spaces and closing braces at 12.
+        (Language::Kotlin, None) => format!(
+            "val {id} = run {{\n                \
+                 val raw = cursor.peekSlice({n}) ?: return null\n                \
+                 val _v = {body}\n                \
+                 if (!cursor.advance({n})) return null\n                \
+                 _v\n            \
+             }}"
+        ),
+        (Language::Kotlin, Some(p)) => {
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "val {id} = if ({test}) {{\n                \
+                     val raw = cursor.peekSlice({n}) ?: return null\n                \
+                     val _v = {body}\n                \
+                     if (!cursor.advance({n})) return null\n                \
+                     _v\n            \
+                 }} else {{\n                \
+                     null\n            \
+                 }}"
+            )
+        }
         // Other backends are gated up-front in render_codec via
         // GenerateError::UnsupportedFeature; this arm is unreachable
         // for has_present_if_fields codecs.
@@ -1698,6 +1742,19 @@ fn present_if_streaming_encode_block(
                  \n        }}"
             )
         }
+        (Language::Kotlin, false) => streaming_fixed_field_encode_kotlin(field, default_endian, n),
+        (Language::Kotlin, true) => {
+            // Kotlin's safe-call+let extracts the inner value when the
+            // optional is non-null; the inline lambda body emits the
+            // same byte appends as the non-gated form but reads from
+            // the lambda's `_v` parameter instead of `this.<id>`.
+            let inner = streaming_fixed_field_encode_kotlin_from_local(field, default_endian, n);
+            format!(
+                "        this.{id}?.let {{ _v ->\n\
+                 {inner}\
+                 \n        }}"
+            )
+        }
         _ => String::new(),
     }
 }
@@ -1716,6 +1773,38 @@ fn streaming_fixed_field_body(
 ) -> String {
     use crate::generator::Language;
     let endian = field.effective_endian(default_endian);
+
+    // Kotlin: ByteArray's `[i]` returns a signed `Byte`, and the carrier
+    // is one of `UByte/UShort/UInt/ULong`. The body widens through
+    // `Int` (n ≤ 4) or `Long` (n ≥ 5), folds the per-byte shifts via the
+    // infix `or`, then narrows back to the carrier via the natural
+    // `toU<W>()` constructor — symmetric with the existing
+    // `decode_multibyte_unified` Kotlin arm but on a 0-based slice.
+    if matches!(lang, Language::Kotlin) {
+        if n == 1 {
+            return "raw[0].toUByte()".into();
+        }
+        let (int_view, mask, to_type) = match n {
+            2 => ("toInt", "0xFF", "toUShort"),
+            3 | 4 => ("toInt", "0xFF", "toUInt"),
+            _ => ("toLong", "0xFFL", "toULong"),
+        };
+        let shifts: Vec<String> = (0..n)
+            .map(|i| {
+                let shift = match endian {
+                    Endian::Little => i * 8,
+                    Endian::Big | Endian::Native => (n - 1 - i) * 8,
+                };
+                if shift == 0 {
+                    format!("(raw[{i}].{int_view}() and {mask})")
+                } else {
+                    format!("((raw[{i}].{int_view}() and {mask}) shl {shift})")
+                }
+            })
+            .collect();
+        return format!("({}).{}()", shifts.join(" or "), to_type);
+    }
+
     if n == 1 {
         return match lang {
             Language::Cpp => "raw[0]".into(),
@@ -1869,6 +1958,86 @@ fn streaming_fixed_field_encode_cpp_from_local(
     lines.trim_end().to_string()
 }
 
+/// Kotlin encode counterpart — non-gated. Mirrors the Cpp/Rust shape:
+/// reads `this.<id>` and appends `n` bytes in the field's effective
+/// endianness. Multi-byte fields widen through `Int` (n ≤ 4) or `Long`
+/// (n ≥ 5), match `encode_single_field_unified` for the byte-extraction
+/// idiom — `ushr` for unsigned shift-right + `and 0xFF` mask + final
+/// `toByte()` narrow.
+fn streaming_fixed_field_encode_kotlin(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let id = field.id.as_str();
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    if n == 1 {
+        lines.push_str(&format!("        r.add(this.{id}.toByte())\n"));
+    } else {
+        let use_long = n > 4;
+        let (view, mask) = if use_long {
+            ("toLong", "0xFFL")
+        } else {
+            ("toInt", "0xFF")
+        };
+        for i in 0..n {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            if shift == 0 {
+                lines.push_str(&format!(
+                    "        r.add((this.{id}.{view}() and {mask}).toByte())\n"
+                ));
+            } else {
+                lines.push_str(&format!(
+                    "        r.add((this.{id}.{view}() ushr {shift} and {mask}).toByte())\n"
+                ));
+            }
+        }
+    }
+    lines.trim_end().to_string()
+}
+
+/// Kotlin encode counterpart — gated, reads from `_v` local.
+/// The caller wraps this in `this.<id>?.let { _v -> ... }` so `_v` is
+/// already the unwrapped non-null carrier value.
+fn streaming_fixed_field_encode_kotlin_from_local(
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
+    let endian = field.effective_endian(default_endian);
+    let mut lines = String::new();
+    if n == 1 {
+        lines.push_str("            r.add(_v.toByte())\n");
+    } else {
+        let use_long = n > 4;
+        let (view, mask) = if use_long {
+            ("toLong", "0xFFL")
+        } else {
+            ("toInt", "0xFF")
+        };
+        for i in 0..n {
+            let shift = match endian {
+                Endian::Little => i * 8,
+                Endian::Big | Endian::Native => (n - 1 - i) * 8,
+            };
+            if shift == 0 {
+                lines.push_str(&format!(
+                    "            r.add((_v.{view}() and {mask}).toByte())\n"
+                ));
+            } else {
+                lines.push_str(&format!(
+                    "            r.add((_v.{view}() ushr {shift} and {mask}).toByte())\n"
+                ));
+            }
+        }
+    }
+    lines.trim_end().to_string()
+}
+
 /// Resolves a present-if predicate into a build-time literal bit-test
 /// expression in the target language. The expression references the
 /// just-decoded local `<carrier_id>` (decode site) — encode never needs
@@ -1895,15 +2064,40 @@ fn present_if_test_literal(
         .int_bit_width()
         .expect("validator ensured carrier is unsigned-int");
     let hex_digits = (bit_width / 4) as usize;
-    let suffix = match (lang, &carrier.sce_type) {
-        (Language::Rust, SceType::Uint8) => "u8",
-        (Language::Rust, SceType::Uint16) => "u16",
-        (Language::Rust, SceType::Uint32) => "u32",
-        (Language::Rust, SceType::Uint64) => "u64",
-        _ => "",
-    };
     let id = carrier.id.as_str();
-    format!("({id} & 0x{mask:0width$X}{suffix}) != 0", width = hex_digits)
+    match lang {
+        Language::Rust => {
+            let suffix = match &carrier.sce_type {
+                SceType::Uint8 => "u8",
+                SceType::Uint16 => "u16",
+                SceType::Uint32 => "u32",
+                SceType::Uint64 => "u64",
+                _ => "",
+            };
+            format!("({id} & 0x{mask:0width$X}{suffix}) != 0", width = hex_digits)
+        }
+        Language::Cpp => format!("({id} & 0x{mask:0width$X}) != 0", width = hex_digits),
+        Language::Kotlin => {
+            // Kotlin's UByte/UShort/UInt/ULong don't expose direct
+            // bitwise infix ops with a literal Int/Long mask, so the
+            // test widens through `.toInt()` (UByte/UShort) or
+            // `.toLong()` (UInt/ULong) before comparing. The hex mask
+            // gets an `L` suffix in the Long path so the literal is
+            // typed.
+            let (view, suffix) = match &carrier.sce_type {
+                SceType::Uint8 | SceType::Uint16 => (".toInt()", ""),
+                SceType::Uint32 | SceType::Uint64 => (".toLong()", "L"),
+                _ => (".toInt()", ""),
+            };
+            format!(
+                "({id}{view} and 0x{mask:0width$X}{suffix}) != 0",
+                width = hex_digits
+            )
+        }
+        // Other backends are gated up-front in `render_codec`; this
+        // arm is unreachable for `has_present_if_fields` codecs.
+        _ => format!("({id} & 0x{mask:0width$X}) != 0", width = hex_digits),
+    }
 }
 
 /// Per-language VLE decode statement: declares a local of the field's

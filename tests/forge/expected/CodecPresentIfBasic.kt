@@ -1,0 +1,80 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.codec_present_if_basic
+
+import com.sce.forge.runtime.SceCursor
+
+// Default-valued primary constructor: the generated procedure_l2 code
+// holds codec instances as owned members and initializes them with
+// `CodecPresentIfBasic()` before any encode()/decode() call. Defaults
+// mirror the zero-initialized shape that decode() fills in on success.
+data class CodecPresentIfBasic(
+    var flags: UByte = 0.toUByte(),
+    var seq: UShort? = null
+) {
+    // RFC §5.B B1-γ flags primitive: per-bit accessors over the carrier
+    // field. Kotlin's UByte / UShort / UInt / ULong don't expose direct
+    // bitwise infix ops with literal masks, so the body widens through
+    // `.toInt()` (UByte/UShort) or `.toLong()` (UInt/ULong), runs the
+    // bit op against the Int/Long mask, then narrows back via the
+    // carrier's `toU*` constructor.
+    fun hasSeq(): Boolean = (this.flags.toInt() and 0x01) != 0
+
+    fun setHasSeq(v: Boolean) {
+        this.flags = if (v) {
+            (this.flags.toInt() or 0x01).toUByte()
+        } else {
+            (this.flags.toInt() and 0x01.inv()).toUByte()
+        }
+    }
+
+    fun encode(): ByteArray {
+        // RFC §5.B B1-δ encode: per-field byte append. Gated fields
+        // skip the append when the optional is null (author keeps the
+        // carrier's flag bit and the optional's truth value in sync —
+        // same trust contract as the variant primitive).
+        val r = mutableListOf<Byte>()
+        r.add(this.flags.toByte())
+        this.seq?.let { _v ->
+            r.add((_v.toInt() ushr 8 and 0xFF).toByte())
+            r.add((_v.toInt() and 0xFF).toByte())
+        }
+        return r.toByteArray()
+    }
+
+    companion object {
+        /// Decode the next frame from `cursor`. On success the cursor
+        /// advances past the consumed bytes; returns `null` when the
+        /// cursor's tail is shorter than the declared minimum frame
+        /// (RFC §5.B L494-519).
+        fun decode(cursor: SceCursor): CodecPresentIfBasic? {
+            // RFC §5.B B1-δ present-if primitive: streaming decode
+            // advances the cursor per field. Gated fields wrap their
+            // read inside an `if predicate ... else null` block
+            // computed at codegen time from the carrier field's flag
+            // bit — the predicate test is an inline literal mask
+            // against the carrier widened through `.toInt()` /
+            // `.toLong()`, no runtime predicate metadata.
+            val flags = run {
+                val raw = cursor.peekSlice(1) ?: return null
+                val _v = raw[0].toUByte()
+                if (!cursor.advance(1)) return null
+                _v
+            }
+            val seq = if ((flags.toInt() and 0x01) != 0) {
+                val raw = cursor.peekSlice(2) ?: return null
+                val _v = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
+                if (!cursor.advance(2)) return null
+                _v
+            } else {
+                null
+            }
+            return CodecPresentIfBasic(
+                flags = flags,
+                seq = seq
+            )
+        }
+    }
+}
